@@ -84,6 +84,17 @@ export default function Report() {
             </div>
           </CardContent>
         </Card>
+
+        <Card className="print:border-black print:shadow-none">
+          <CardContent className="p-6 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">No Shows</p>
+              <h2 className="text-4xl font-heading font-bold text-destructive">
+                {Math.max(0, (summary?.totalRegistered || 0) - (summary?.checkedIn || 0))}
+              </h2>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="space-y-6">
@@ -120,14 +131,6 @@ export default function Report() {
         </Card>
       </div>
       
-      {report?.data && Object.keys(report.data).length > 0 && (
-        <div className="space-y-6 pt-8 print:pt-4">
-          <h3 className="text-xl font-heading font-bold uppercase border-b pb-2 print:border-black">Additional Data</h3>
-          <div className="bg-muted p-4 rounded-md print:bg-transparent print:border print:border-black font-mono text-sm">
-            <pre className="whitespace-pre-wrap">{JSON.stringify(report.data, null, 2)}</pre>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
