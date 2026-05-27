@@ -1,0 +1,133 @@
+import { useRoute } from "wouter";
+import { useGetEventReport, useGetRaceDaySummary } from "@workspace/api-client-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Printer, FileText, Users, Flag, Download } from "lucide-react";
+import { format } from "date-fns";
+
+export default function Report() {
+  const [match, params] = useRoute("/events/:eventId/report");
+  const eventId = parseInt(params?.eventId || "0");
+  
+  const { data: summary, isLoading: summaryLoading } = useGetRaceDaySummary(eventId, { query: { enabled: !!eventId } as any });
+  const { data: report, isLoading: reportLoading } = useGetEventReport(eventId, { query: { enabled: !!eventId } as any });
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  if (summaryLoading || reportLoading) return <div className="p-8">Loading report data...</div>;
+
+  return (
+    <div className="p-8 max-w-5xl mx-auto space-y-8">
+      {/* Hide controls when printing */}
+      <div className="flex justify-between items-center print:hidden">
+        <div>
+          <h2 className="text-2xl font-heading font-bold uppercase tracking-tight flex items-center gap-2">
+            <FileText className="text-primary" /> Event Report
+          </h2>
+          <p className="text-muted-foreground mt-1">Summary statistics and post-race reporting.</p>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={handlePrint} className="font-heading uppercase tracking-wider">
+            <Printer size={16} className="mr-2" /> Print Report
+          </Button>
+        </div>
+      </div>
+
+      {/* Print Header - Only visible when printing or as preview */}
+      <div className="hidden print:block mb-8 text-center border-b-2 border-black pb-4">
+        <h1 className="text-4xl font-heading font-bold uppercase">{summary?.eventName}</h1>
+        <p className="text-xl mt-2 font-medium">Official Post-Race Report</p>
+        <p className="text-sm mt-1">Generated: {format(new Date(), 'PPpp')}</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="print:border-black print:shadow-none">
+          <CardContent className="p-6 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Registrations</p>
+              <h2 className="text-4xl font-heading font-bold">{summary?.totalRegistered || 0}</h2>
+            </div>
+            <Users className="text-muted-foreground/30 print:hidden" size={32} />
+          </CardContent>
+        </Card>
+        
+        <Card className="print:border-black print:shadow-none">
+          <CardContent className="p-6 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Checked In</p>
+              <h2 className="text-4xl font-heading font-bold text-secondary">{summary?.checkedIn || 0}</h2>
+            </div>
+            <div className="text-sm font-bold text-secondary bg-secondary/10 px-2 py-1 rounded print:hidden">
+              {summary?.totalRegistered ? Math.round((summary.checkedIn / summary.totalRegistered) * 100) : 0}%
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="print:border-black print:shadow-none">
+          <CardContent className="p-6 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Motos Run</p>
+              <h2 className="text-4xl font-heading font-bold">{summary?.motosCompleted || 0} / {summary?.motosScheduled || 0}</h2>
+            </div>
+            <Flag className="text-muted-foreground/30 print:hidden" size={32} />
+          </CardContent>
+        </Card>
+
+        <Card className="print:border-black print:shadow-none">
+          <CardContent className="p-6 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">RFID Linked</p>
+              <h2 className="text-4xl font-heading font-bold text-primary">{summary?.rfidLinked || 0}</h2>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="space-y-6">
+        <h3 className="text-xl font-heading font-bold uppercase border-b pb-2 print:border-black">Class Breakdown</h3>
+        
+        <Card className="print:shadow-none print:border-black overflow-hidden">
+          <Table>
+            <TableHeader className="bg-muted/50 print:bg-transparent">
+              <TableRow className="print:border-black">
+                <TableHead className="font-heading font-bold uppercase tracking-wider text-black">Class Name</TableHead>
+                <TableHead className="text-right font-heading font-bold uppercase tracking-wider text-black">Registered</TableHead>
+                <TableHead className="text-right font-heading font-bold uppercase tracking-wider text-black">Checked In</TableHead>
+                <TableHead className="text-right font-heading font-bold uppercase tracking-wider text-black">Attendance %</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summary?.classSummary?.map(cls => (
+                <TableRow key={cls.className} className="print:border-black">
+                  <TableCell className="font-bold">{cls.className}</TableCell>
+                  <TableCell className="text-right">{cls.registered}</TableCell>
+                  <TableCell className="text-right font-medium text-secondary">{cls.checkedIn}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {cls.registered ? Math.round((cls.checkedIn / cls.registered) * 100) : 0}%
+                  </TableCell>
+                </TableRow>
+              ))}
+              {(!summary?.classSummary || summary.classSummary.length === 0) && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No class data available</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      </div>
+      
+      {report?.data && Object.keys(report.data).length > 0 && (
+        <div className="space-y-6 pt-8 print:pt-4">
+          <h3 className="text-xl font-heading font-bold uppercase border-b pb-2 print:border-black">Additional Data</h3>
+          <div className="bg-muted p-4 rounded-md print:bg-transparent print:border print:border-black font-mono text-sm">
+            <pre className="whitespace-pre-wrap">{JSON.stringify(report.data, null, 2)}</pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

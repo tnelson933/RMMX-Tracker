@@ -3,20 +3,44 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Rocky Mountain Race Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: clubs
+    description: Club management
+  - name: events
+    description: Event management
+  - name: riders
+    description: Rider management
+  - name: registrations
+    description: Race registrations
+  - name: checkins
+    description: Race day check-in
+  - name: rfid
+    description: RFID transponder management
+  - name: motos
+    description: Race day moto and heat management
+  - name: results
+    description: Race results and lap times
+  - name: series
+    description: Series points and leaderboards
+  - name: reports
+    description: Reports and exports
+  - name: dashboard
+    description: Dashboard summary data
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +48,797 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # AUTH
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+
+  # CLUBS
+  /clubs:
+    get:
+      operationId: listClubs
+      tags: [clubs]
+      summary: List all clubs
+      responses:
+        "200":
+          description: List of clubs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Club"
+    post:
+      operationId: createClub
+      tags: [clubs]
+      summary: Create a club
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClubInput"
+      responses:
+        "201":
+          description: Club created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Club"
+
+  /clubs/{clubId}:
+    get:
+      operationId: getClub
+      tags: [clubs]
+      summary: Get a club
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Club details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Club"
+    patch:
+      operationId: updateClub
+      tags: [clubs]
+      summary: Update a club
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClubUpdate"
+      responses:
+        "200":
+          description: Club updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Club"
+
+  # EVENTS
+  /events:
+    get:
+      operationId: listEvents
+      tags: [events]
+      summary: List events (public, filterable by state/club/status)
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: clubId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Event"
+    post:
+      operationId: createEvent
+      tags: [events]
+      summary: Create a race event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventInput"
+      responses:
+        "201":
+          description: Event created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+
+  /events/{eventId}:
+    get:
+      operationId: getEvent
+      tags: [events]
+      summary: Get event details
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Event details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+    patch:
+      operationId: updateEvent
+      tags: [events]
+      summary: Update event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventUpdate"
+      responses:
+        "200":
+          description: Event updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+    delete:
+      operationId: deleteEvent
+      tags: [events]
+      summary: Delete event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Event deleted
+
+  # RIDERS
+  /riders:
+    get:
+      operationId: listRiders
+      tags: [riders]
+      summary: List riders
+      parameters:
+        - name: clubId
+          in: query
+          schema:
+            type: integer
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of riders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Rider"
+    post:
+      operationId: createRider
+      tags: [riders]
+      summary: Create a rider record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RiderInput"
+      responses:
+        "201":
+          description: Rider created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rider"
+
+  /riders/{riderId}:
+    get:
+      operationId: getRider
+      tags: [riders]
+      summary: Get rider details with history
+      parameters:
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Rider details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiderDetail"
+    patch:
+      operationId: updateRider
+      tags: [riders]
+      summary: Update rider
+      parameters:
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RiderUpdate"
+      responses:
+        "200":
+          description: Rider updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rider"
+
+  # REGISTRATIONS
+  /events/{eventId}/registrations:
+    get:
+      operationId: listRegistrations
+      tags: [registrations]
+      summary: List registrations for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Registrations for event
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Registration"
+    post:
+      operationId: createRegistration
+      tags: [registrations]
+      summary: Register a rider for an event (public)
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistrationInput"
+      responses:
+        "201":
+          description: Registration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+
+  /registrations/{registrationId}:
+    patch:
+      operationId: updateRegistration
+      tags: [registrations]
+      summary: Update or void a registration
+      parameters:
+        - name: registrationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistrationUpdate"
+      responses:
+        "200":
+          description: Registration updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+
+  # CHECK-IN
+  /events/{eventId}/checkins:
+    get:
+      operationId: listCheckins
+      tags: [checkins]
+      summary: List check-in status for all registered riders
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Checkin list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Checkin"
+    post:
+      operationId: checkinRider
+      tags: [checkins]
+      summary: Check in a rider
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckinInput"
+      responses:
+        "200":
+          description: Rider checked in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Checkin"
+
+  # RFID
+  /rfid:
+    get:
+      operationId: listRfidTags
+      tags: [rfid]
+      summary: List RFID transponder assignments
+      parameters:
+        - name: eventId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: RFID assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RfidAssignment"
+    post:
+      operationId: assignRfid
+      tags: [rfid]
+      summary: Assign RFID transponder to a rider for an event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RfidAssignmentInput"
+      responses:
+        "201":
+          description: RFID assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RfidAssignment"
+
+  # MOTOS / HEATS
+  /events/{eventId}/motos:
+    get:
+      operationId: listMotos
+      tags: [motos]
+      summary: List motos/heats for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Motos and heats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Moto"
+    post:
+      operationId: createMoto
+      tags: [motos]
+      summary: Create a moto/heat
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MotoInput"
+      responses:
+        "201":
+          description: Moto created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Moto"
+
+  /motos/{motoId}:
+    patch:
+      operationId: updateMoto
+      tags: [motos]
+      summary: Update moto status or lineup
+      parameters:
+        - name: motoId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MotoUpdate"
+      responses:
+        "200":
+          description: Moto updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Moto"
+
+  /events/{eventId}/generate-lineups:
+    post:
+      operationId: generateLineups
+      tags: [motos]
+      summary: Auto-generate heat lineups from checked-in riders
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LineupGenerateInput"
+      responses:
+        "200":
+          description: Lineups generated
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Moto"
+
+  # RESULTS
+  /events/{eventId}/results:
+    get:
+      operationId: listResults
+      tags: [results]
+      summary: Get race results for an event (public)
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Race results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RaceResult"
+    post:
+      operationId: submitResults
+      tags: [results]
+      summary: Submit race results for a moto
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResultsInput"
+      responses:
+        "201":
+          description: Results submitted
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RaceResult"
+
+  /events/{eventId}/results/publish:
+    post:
+      operationId: publishResults
+      tags: [results]
+      summary: Publish or unpublish event results
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishInput"
+      responses:
+        "200":
+          description: Publication status updated
+
+  # SERIES POINTS
+  /series:
+    get:
+      operationId: listSeries
+      tags: [series]
+      summary: List all series
+      responses:
+        "200":
+          description: Series list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Series"
+    post:
+      operationId: createSeries
+      tags: [series]
+      summary: Create a series
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeriesInput"
+      responses:
+        "201":
+          description: Series created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Series"
+
+  /series/{seriesId}/leaderboard:
+    get:
+      operationId: getSeriesLeaderboard
+      tags: [series]
+      summary: Get series leaderboard (public)
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Series leaderboard
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeriesStanding"
+
+  /series/{seriesId}/recalculate:
+    post:
+      operationId: recalculateSeriesPoints
+      tags: [series]
+      summary: Recalculate series points from results
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Points recalculated
+
+  # DASHBOARD / WOW ENDPOINTS
+  /dashboard/club/{clubId}:
+    get:
+      operationId: getClubDashboard
+      tags: [dashboard]
+      summary: Club dashboard summary — upcoming events, recent check-ins, total riders
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubDashboard"
+
+  /events/{eventId}/raceday-summary:
+    get:
+      operationId: getRaceDaySummary
+      tags: [dashboard]
+      summary: Race-day live summary — checked-in count, RFID linked, motos status
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Race day summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RaceDaySummary"
+
+  /public/states:
+    get:
+      operationId: listStates
+      tags: [dashboard]
+      summary: List all US states that have published events
+      responses:
+        "200":
+          description: States with events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StateInfo"
+
+  /public/recent-results:
+    get:
+      operationId: listRecentResults
+      tags: [dashboard]
+      summary: Recent published race results across all events (public feed)
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recent results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecentResultItem"
+
+  /reports/event/{eventId}:
+    get:
+      operationId: getEventReport
+      tags: [reports]
+      summary: Generate event report (registration, checkin, results summary)
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Report data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventReport"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +849,760 @@ components:
       required:
         - status
 
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [user, token]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
+
+    User:
+      type: object
+      required: [id, email, name, role]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, club_organizer, staff, public]
+        clubId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+
+    Club:
+      type: object
+      required: [id, name, state]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        state:
+          type: string
+        contactEmail:
+          type: ["string", "null"]
+        contactPhone:
+          type: ["string", "null"]
+        logoUrl:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    ClubInput:
+      type: object
+      required: [name, state]
+      properties:
+        name:
+          type: string
+        state:
+          type: string
+        contactEmail:
+          type: string
+        contactPhone:
+          type: string
+        logoUrl:
+          type: string
+        website:
+          type: string
+        description:
+          type: string
+
+    ClubUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        state:
+          type: string
+        contactEmail:
+          type: string
+        contactPhone:
+          type: string
+        logoUrl:
+          type: string
+        website:
+          type: string
+        description:
+          type: string
+
+    Event:
+      type: object
+      required: [id, clubId, name, date, state, status]
+      properties:
+        id:
+          type: integer
+        clubId:
+          type: integer
+        name:
+          type: string
+        date:
+          type: string
+        state:
+          type: string
+        location:
+          type: ["string", "null"]
+        trackName:
+          type: ["string", "null"]
+        raceClasses:
+          type: array
+          items:
+            type: string
+        registrationOpen:
+          type: ["string", "null"]
+        registrationClose:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [draft, registration_open, registration_closed, race_day, results_published, completed]
+        paymentEnabled:
+          type: boolean
+        entryFee:
+          type: ["number", "null"]
+        maxRiders:
+          type: ["integer", "null"]
+        clubName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    EventInput:
+      type: object
+      required: [clubId, name, date, state]
+      properties:
+        clubId:
+          type: integer
+        name:
+          type: string
+        date:
+          type: string
+        state:
+          type: string
+        location:
+          type: string
+        trackName:
+          type: string
+        raceClasses:
+          type: array
+          items:
+            type: string
+        registrationOpen:
+          type: string
+        registrationClose:
+          type: string
+        paymentEnabled:
+          type: boolean
+        entryFee:
+          type: number
+        maxRiders:
+          type: integer
+
+    EventUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        date:
+          type: string
+        state:
+          type: string
+        location:
+          type: string
+        trackName:
+          type: string
+        raceClasses:
+          type: array
+          items:
+            type: string
+        registrationOpen:
+          type: string
+        registrationClose:
+          type: string
+        status:
+          type: string
+        paymentEnabled:
+          type: boolean
+        entryFee:
+          type: number
+        maxRiders:
+          type: integer
+
+    Rider:
+      type: object
+      required: [id, firstName, lastName]
+      properties:
+        id:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        bibNumber:
+          type: ["string", "null"]
+        dateOfBirth:
+          type: ["string", "null"]
+        emergencyContact:
+          type: ["string", "null"]
+        emergencyPhone:
+          type: ["string", "null"]
+        rfidNumber:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    RiderDetail:
+      type: object
+      required: [id, firstName, lastName]
+      properties:
+        id:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        bibNumber:
+          type: ["string", "null"]
+        dateOfBirth:
+          type: ["string", "null"]
+        emergencyContact:
+          type: ["string", "null"]
+        emergencyPhone:
+          type: ["string", "null"]
+        rfidNumber:
+          type: ["string", "null"]
+        recentResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/RaceResult"
+        totalEvents:
+          type: integer
+        createdAt:
+          type: string
+
+    RiderInput:
+      type: object
+      required: [firstName, lastName]
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        bibNumber:
+          type: string
+        dateOfBirth:
+          type: string
+        emergencyContact:
+          type: string
+        emergencyPhone:
+          type: string
+        rfidNumber:
+          type: string
+
+    RiderUpdate:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        bibNumber:
+          type: string
+        dateOfBirth:
+          type: string
+        emergencyContact:
+          type: string
+        emergencyPhone:
+          type: string
+        rfidNumber:
+          type: string
+
+    Registration:
+      type: object
+      required: [id, eventId, riderId, riderName, raceClass, status]
+      properties:
+        id:
+          type: integer
+        eventId:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        raceClass:
+          type: string
+        status:
+          type: string
+          enum: [pending, confirmed, void]
+        paymentStatus:
+          type: string
+          enum: [unpaid, paid, refunded]
+        amountPaid:
+          type: ["number", "null"]
+        bibNumber:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    RegistrationInput:
+      type: object
+      required: [riderId, raceClass]
+      properties:
+        riderId:
+          type: integer
+        raceClass:
+          type: string
+        bibNumber:
+          type: string
+        paymentMethod:
+          type: string
+
+    RegistrationUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+        paymentStatus:
+          type: string
+        raceClass:
+          type: string
+        bibNumber:
+          type: string
+
+    Checkin:
+      type: object
+      required: [id, eventId, riderId, riderName, checkedIn]
+      properties:
+        id:
+          type: integer
+        eventId:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        raceClass:
+          type: string
+        bibNumber:
+          type: ["string", "null"]
+        checkedIn:
+          type: boolean
+        checkedInAt:
+          type: ["string", "null"]
+        rfidNumber:
+          type: ["string", "null"]
+        rfidLinked:
+          type: boolean
+
+    CheckinInput:
+      type: object
+      required: [riderId]
+      properties:
+        riderId:
+          type: integer
+        rfidNumber:
+          type: string
+        bibNumber:
+          type: string
+
+    RfidAssignment:
+      type: object
+      required: [id, riderId, rfidNumber]
+      properties:
+        id:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        rfidNumber:
+          type: string
+        eventId:
+          type: ["integer", "null"]
+        assignedAt:
+          type: string
+
+    RfidAssignmentInput:
+      type: object
+      required: [riderId, rfidNumber]
+      properties:
+        riderId:
+          type: integer
+        rfidNumber:
+          type: string
+        eventId:
+          type: integer
+
+    Moto:
+      type: object
+      required: [id, eventId, name, type, status]
+      properties:
+        id:
+          type: integer
+        eventId:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [heat, lcq, main, practice]
+        raceClass:
+          type: string
+        status:
+          type: string
+          enum: [scheduled, in_progress, completed, cancelled]
+        motoNumber:
+          type: integer
+        scheduledTime:
+          type: ["string", "null"]
+        lineup:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineupEntry"
+
+    MotoInput:
+      type: object
+      required: [name, type, raceClass, motoNumber]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [heat, lcq, main, practice]
+        raceClass:
+          type: string
+        motoNumber:
+          type: integer
+        scheduledTime:
+          type: string
+        lineup:
+          type: array
+          items:
+            type: integer
+
+    MotoUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+        lineup:
+          type: array
+          items:
+            type: integer
+        scheduledTime:
+          type: string
+
+    LineupEntry:
+      type: object
+      required: [position, riderId, riderName]
+      properties:
+        position:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        bibNumber:
+          type: ["string", "null"]
+        rfidNumber:
+          type: ["string", "null"]
+
+    LineupGenerateInput:
+      type: object
+      required: [raceFormat, classes]
+      properties:
+        raceFormat:
+          type: string
+          enum: [one_moto, two_moto, three_moto]
+        classes:
+          type: array
+          items:
+            type: string
+        ridersPerHeat:
+          type: integer
+
+    RaceResult:
+      type: object
+      required: [id, eventId, motoId, riderId, riderName, position]
+      properties:
+        id:
+          type: integer
+        eventId:
+          type: integer
+        motoId:
+          type: integer
+        motoName:
+          type: string
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        raceClass:
+          type: string
+        position:
+          type: integer
+        totalTime:
+          type: ["string", "null"]
+        lapTimes:
+          type: array
+          items:
+            type: string
+        points:
+          type: ["integer", "null"]
+        dnf:
+          type: boolean
+        dns:
+          type: boolean
+        bibNumber:
+          type: ["string", "null"]
+
+    ResultsInput:
+      type: object
+      required: [motoId, results]
+      properties:
+        motoId:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/RiderResultInput"
+
+    RiderResultInput:
+      type: object
+      required: [riderId, position]
+      properties:
+        riderId:
+          type: integer
+        position:
+          type: integer
+        totalTime:
+          type: string
+        lapTimes:
+          type: array
+          items:
+            type: string
+        dnf:
+          type: boolean
+        dns:
+          type: boolean
+
+    PublishInput:
+      type: object
+      required: [published]
+      properties:
+        published:
+          type: boolean
+
+    Series:
+      type: object
+      required: [id, name, clubId, season]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        clubId:
+          type: integer
+        season:
+          type: integer
+        classes:
+          type: array
+          items:
+            type: string
+        pointsSystem:
+          type: string
+        eventIds:
+          type: array
+          items:
+            type: integer
+        createdAt:
+          type: string
+
+    SeriesInput:
+      type: object
+      required: [name, clubId, season]
+      properties:
+        name:
+          type: string
+        clubId:
+          type: integer
+        season:
+          type: integer
+        classes:
+          type: array
+          items:
+            type: string
+        pointsSystem:
+          type: string
+        eventIds:
+          type: array
+          items:
+            type: integer
+
+    SeriesStanding:
+      type: object
+      required: [position, riderId, riderName, raceClass, totalPoints]
+      properties:
+        position:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        raceClass:
+          type: string
+        totalPoints:
+          type: integer
+        eventsEntered:
+          type: integer
+        eventResults:
+          type: array
+          items:
+            type: integer
+
+    ClubDashboard:
+      type: object
+      required: [totalEvents, upcomingEvents, totalRiders, totalRegistrations, recentActivity]
+      properties:
+        totalEvents:
+          type: integer
+        upcomingEvents:
+          type: integer
+        totalRiders:
+          type: integer
+        totalRegistrations:
+          type: integer
+        checkedInToday:
+          type: integer
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityItem"
+        upcomingEventList:
+          type: array
+          items:
+            $ref: "#/components/schemas/Event"
+
+    ActivityItem:
+      type: object
+      required: [type, description, timestamp]
+      properties:
+        type:
+          type: string
+        description:
+          type: string
+        timestamp:
+          type: string
+
+    RaceDaySummary:
+      type: object
+      required: [eventId, eventName, totalRegistered, checkedIn, notCheckedIn, rfidLinked, motosScheduled, motosCompleted]
+      properties:
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        totalRegistered:
+          type: integer
+        checkedIn:
+          type: integer
+        notCheckedIn:
+          type: integer
+        rfidLinked:
+          type: integer
+        motosScheduled:
+          type: integer
+        motosCompleted:
+          type: integer
+        classSummary:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClassSummary"
+
+    ClassSummary:
+      type: object
+      required: [className, registered, checkedIn]
+      properties:
+        className:
+          type: string
+        registered:
+          type: integer
+        checkedIn:
+          type: integer
+
+    StateInfo:
+      type: object
+      required: [state, eventCount]
+      properties:
+        state:
+          type: string
+        eventCount:
+          type: integer
+
+    RecentResultItem:
+      type: object
+      required: [eventId, eventName, state, date, topRider, raceClass]
+      properties:
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        state:
+          type: string
+        date:
+          type: string
+        topRider:
+          type: string
+        raceClass:
+          type: string
+        clubName:
+          type: string
+
+    EventReport:
+      type: object
+      required: [eventId, eventName, type, generatedAt, data]
+      properties:
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        type:
+          type: string
+        generatedAt:
+          type: string
+        data:
+          type: object

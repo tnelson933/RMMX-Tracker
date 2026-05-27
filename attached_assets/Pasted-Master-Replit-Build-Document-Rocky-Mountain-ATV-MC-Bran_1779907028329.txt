@@ -1,0 +1,545 @@
+Master Replit Build Document
+Rocky Mountain ATV/MC Branded RFID Motorcycle Race Tracking Platform
+Product Summary
+Build a web and mobile app combo for motorcycle race clubs and consumers to manage race registration, RFID-based check-in, live timing/results, lap times, scoring, series points, reporting, and public race standings.
+The platform has two major user experiences:
+1.	Club/Organizer Portal
+•	private login
+•	create and manage events
+•	configure registration options dynamically
+•	check riders in on race day
+•	assign/link RFID transponders to riders
+•	manage heats, qualifiers, moto formats, lineups
+•	publish results
+•	manage series points
+•	export reports and print results
+2.	Public Consumer App / Web View
+•	no login required for basic access
+•	view race results
+•	sort races by state and event name
+•	view live results and standings
+•	view series leaderboards
+•	mobile-friendly experience
+This should be built as a scalable SaaS-style race management system with a future path for RFID hardware integration, timing system integration, and optional payment/checkout features.
+________________________________________
+STEP 1 — Foundation, Architecture, and Branding Layer
+text
+Create the foundation for a Rocky Mountain ATV/MC branded RFID motorcycle race tracking platform with a web app and mobile-friendly app-like experience.
+
+Important: build the branding system as a theme layer that can be swapped or updated later. Use placeholder branding assets if real Rocky Mountain ATV/MC brand assets are not available or licensed. Structure the app so logos/colors/fonts can be changed centrally.
+
+Build the app with these core experiences:
+- Club/organizer login portal
+- Public results portal with no login required
+- Responsive UI for desktop, tablet, and mobile
+- Race management, registration, check-in, RFID linking, live results, series points, and reporting
+
+Architecture requirements:
+- Use a modular full-stack structure
+- Separate public pages, authenticated club pages, admin services, and shared UI components
+- Prepare the app for database-backed registration, scoring, and results
+- Build with future RFID hardware integration in mind
+- Make the project scalable for multi-club, multi-event, multi-state use
+
+Initial pages/routes:
+- Public landing page
+- Public results page
+- Public event leaderboard page
+- Club login page
+- Club dashboard
+- Event management pages
+- Registration management pages
+- Check-in pages
+- Race day management pages
+- Results and reports pages
+
+Core UI requirements:
+- Clean motorsports-inspired design
+- Rocky Mountain ATV/MC-style visual hierarchy, but with swappable theme assets
+- Strong desktop admin UI
+- Mobile-friendly public results UI
+- Fast search and filtering by state and event name
+
+Set up the base database schema planning for:
+- Clubs
+- Users
+- Events
+- Riders
+- Registrations
+- RFID tags/transponder numbers
+- Check-ins
+- Moto/heats/qualifiers
+- Results
+- Lap times
+- Series points
+- Reports/export records
+
+Start by creating the project structure, app shell, authentication framework, and theme system.
+________________________________________
+STEP 2 — Authentication, Roles, and Club Organization Management
+text
+Implement authentication and role-based access for the race platform.
+
+Roles:
+- Super Admin
+- Club Organizer
+- Staff/Timer
+- Public Visitor
+
+Requirements:
+- Secure login/logout
+- Role-based route protection
+- Club-specific data access
+- Support multiple clubs in the system
+- A club organizer should only see and manage their own club’s events and riders
+- Public visitors should only see published results and standings
+
+Club management features:
+- Create and edit club profile
+- Club name, logo, state, contact information
+- Multiple organizer/staff users per club
+- Assign roles to club staff
+- Configure club branding/theme overrides if allowed
+
+Security requirements:
+- Protect all management pages behind login
+- Keep public results pages open
+- Ensure data isolation between clubs
+- Add session persistence
+- Add password reset support
+
+Database models to implement:
+- User
+- Club
+- ClubMembership
+- Role
+- Permission
+- Session/Auth-related records as needed
+
+Deliverable for this step:
+- A club can sign in
+- A club sees its private dashboard
+- Public users can browse results without logging in
+- Each club is isolated to its own data
+________________________________________
+STEP 3 — Event Creation and Dynamic Registration Builder
+text
+Build the event creation and rider registration system for club organizers.
+
+Organizers must be able to create registration links for events that riders can use to register online.
+
+Requirements:
+- Create events by club
+- Event details:
+  - event name
+  - date
+  - location
+  - state
+  - track name
+  - race classes
+  - registration open/close dates
+  - pricing
+  - payment enabled/disabled
+  - required rider fields
+  - optional rider fields
+- Dynamic registration builder
+
+Dynamic registration options:
+- Clubs can choose which fields are required or optional
+- Clubs can enable or disable payment
+- Clubs can choose class selections
+- Clubs can define age, skill, bike class, and other race-specific custom fields
+- Support flexible registration configurations so different race organizations can use different formats
+
+Public rider registration flow:
+- Rider opens event registration link
+- Enters rider information
+- Selects class(es)
+- Pays if enabled
+- Receives registration confirmation
+- Registration is stored for check-in and race day management
+
+Organizer tools:
+- View all registrations
+- Edit/void registrations if necessary
+- Export rider lists
+- See payment status
+- See class breakdowns
+- Generate registration links
+
+Database models to implement or extend:
+- Event
+- EventRegistrationConfig
+- RegistrationFieldConfig
+- Rider
+- RiderRegistration
+- RegistrationClassSelection
+- PaymentRecord
+
+Deliverable:
+- Clubs can create flexible event registration pages
+- Riders can register through public links
+- Payment can be enabled or disabled by event
+________________________________________
+STEP 4 — Day-of-Race Check-In, Rider Linking, and RFID Assignment
+text
+Build the race-day check-in system and RFID transponder linking workflow.
+
+Requirements:
+- Fast check-in interface for staff/organizers
+- Search rider by name, bib, class, or registration status
+- Show who has checked in and who has not shown up
+- Allow RFID transponder numbers to be linked to rider profiles
+- Allow staff to assign or update RFID numbers at check-in
+- If a rider has not previously registered in the system, allow staff to create a quick rider record and link RFID manually
+
+Check-in workflow:
+- View all riders registered for the event
+- Mark riders as checked in
+- Assign RFID/transponder number
+- Confirm bike/class selection
+- Record arrival time
+- Mark no-shows automatically after cutoff if needed
+
+RFID requirements:
+- Store RFID number/transponder ID per rider and per event if needed
+- Support one-to-one mapping and event-specific overrides
+- Make RFID assignment available to timing/results systems
+- Validate that RFID-linked riders can be matched to results later
+
+UI requirements:
+- Extremely fast staff-facing check-in screen
+- Large search bar
+- Filter by class, checked-in status, RFID linked status
+- Easy mobile/tablet use in race-day environments
+
+Database models:
+- CheckIn
+- RFIDTag
+- RiderRFIDLink
+- EventAttendanceStatus
+- QuickCreateRider
+
+Deliverable:
+- Organizers can check riders in quickly
+- RFID is linked to each rider
+- The system knows who is present and who is missing
+- Race results can accurately match riders to transponders
+________________________________________
+STEP 5 — Race Day Event Management: Moto Formats, Heats, Qualifiers, Lineups
+text
+Build the race day event management system that lets clubs configure and run race schedules.
+
+Requirements:
+- Support 1, 2, or 3 moto formats
+- Configure heats
+- Configure last chance qualifiers (LCQ)
+- Configure main event lineups
+- Support class-based race scheduling
+- Generate lineups based on registrations and check-ins
+- Allow manual overrides by staff when needed
+
+Core features:
+- Create moto order
+- Generate heat assignments
+- Create qualifier ladders
+- Build main event lineups
+- Support rider advancement from heat to LCQ to main
+- Allow clubs to drag/reorder riders if needed
+- Track race status for each class/session
+
+Race day workflow:
+- Choose event
+- Select race format
+- Auto-generate start lists and lineups
+- Adjust manually if needed
+- Publish official lineup
+- Update results as races finish
+
+Database models:
+- RaceFormat
+- Moto
+- Heat
+- LCQ
+- MainEvent
+- Lineup
+- StartGateAssignment
+- AdvancementRule
+
+Deliverable:
+- Clubs can manage a full race day schedule
+- The system supports multiple formats and advancement paths
+- Staff can create and adjust lineups on the fly
+________________________________________
+STEP 6 — Live Timing, Lap Times, Results, and Points Scoring
+text
+Build the results and scoring engine for the race platform.
+
+Requirements:
+- Record live race results
+- Store positions per rider
+- Store lap times per rider
+- Support race completion order
+- Support scoring across one event and across a series
+- Publish results online immediately after races
+- Allow results to be printed
+- Generate detailed standings and leaderboards
+
+Scoring features:
+- Position scoring
+- Lap time tracking
+- Points by position
+- Series points accumulation
+- Event class standings
+- Overall series leaderboard
+
+Public results display:
+- View by state
+- View by race name
+- View by event
+- View by class
+- Live results if enabled
+- Final results after official publication
+
+Organizer tools:
+- Enter or import results
+- Edit results with permissions
+- Validate timing data
+- Publish or unpublish results
+- Print race sheets and result summaries
+
+Database models:
+- RaceResult
+- LapTime
+- RiderResult
+- EventPoints
+- SeriesPoints
+- LeaderboardSnapshot
+- ResultPublicationStatus
+
+Deliverable:
+- Results can be entered and published
+- Lap times and positions are visible
+- Series points and leaderboards are calculated automatically
+________________________________________
+STEP 7 — Reporting, Exports, Printing, and Administrative Downloads
+text
+Build detailed reporting and export features for clubs and organizers.
+
+Requirements:
+- Download detailed reports
+- Print race results immediately
+- Export to CSV, PDF, and spreadsheet-friendly formats if supported
+- Generate event summaries
+- Generate rider registration reports
+- Generate attendance reports
+- Generate RFID assignment reports
+- Generate points/leaderboard reports
+- Generate club season summaries
+
+Report types:
+- Event registration report
+- Check-in report
+- No-show report
+- RFID assignment report
+- Class lineup report
+- Moto/heat/LCQ report
+- Results report
+- Series points report
+- Financial summary report if payment is enabled
+
+Admin tools:
+- Filter reports by event, club, date, state, class
+- Download and print with one click
+- Archive reports by event
+
+Database models:
+- ReportTemplate
+- ReportExportJob
+- ReportHistory
+
+Deliverable:
+- Clubs can quickly produce printable and downloadable race documents
+- Results and standings are exportable in useful formats
+________________________________________
+STEP 8 — Public Consumer Website and App Views
+text
+Build the public, non-login consumer-facing portion of the platform.
+
+Requirements:
+- Public users can browse race results without logging in
+- Sort races by state
+- Sort races by race name
+- View live results and standings for each race
+- View series leaderboards
+- Fast mobile-friendly browsing
+- Simple search and filtering
+
+Public pages:
+- State selector
+- Event selector
+- Race results page
+- Live standings page
+- Series leaderboard page
+- Rider detail results page
+- Class standings page
+
+UX requirements:
+- Minimal friction
+- Very fast loading
+- Clear filters and navigation
+- Mobile-first layout
+- Easy to share event links
+
+Deliverable:
+- Anyone can view results on web or mobile without an account
+- Results are easy to find by state and event
+________________________________________
+STEP 9 — Mobile App / App-Like Experience for Club Managers and Public Results
+text
+Optimize the platform for mobile and tablet usage and prepare it for app-like deployment.
+
+Requirements:
+- Responsive mobile and tablet layout
+- Touch-friendly controls
+- Fast login for club staff
+- Mobile-friendly results browsing for the public
+- Tablet-friendly check-in screens
+- Large buttons and readable typography
+- App-like navigation for frequent race-day use
+
+Optional future-ready features:
+- PWA support
+- installable home-screen app behavior
+- offline cache for previously loaded results
+- push notifications for live race updates
+
+Deliverable:
+- The website behaves well on phones and tablets
+- Staff can use it trackside
+- Fans can view results on mobile easily
+________________________________________
+STEP 10 — Payment and Consumer Monetization System
+text
+Build the payment system for consumer-facing registration and future pay-to-use app features.
+
+Requirements:
+- Allow clubs to enable or disable payments for events
+- Support event registration fees
+- Record payment status on each registration
+- Support refunds or voids if needed
+- Provide payment records to organizers
+- Keep the payment layer modular so future subscriptions or premium features can be added
+
+Potential monetization paths:
+- paid event registrations
+- premium results features
+- club subscription plans
+- series management plans
+- consumer premium notifications or saved rider profiles later
+
+Deliverable:
+- Payment can be used where enabled
+- Registration can work with or without payment
+- Financial status is visible to authorized club staff
+________________________________________
+STEP 11 — RFID and Hardware Integration Planning
+text
+Prepare the system for future direct integration with RFID timing hardware and race scoring systems.
+
+Requirements:
+- Keep RFID data structured so hardware integrations can be added later
+- Design APIs for receiving timing events
+- Support external timing data feeds
+- Store raw timing inputs and processed results separately
+- Allow transponder-to-rider mapping to be reused across events
+- Support future device integrations, gateways, or import files
+
+Future-ready features:
+- RFID reader integration endpoint
+- timing hardware import endpoint
+- API webhook support
+- CSV/XML timing import support if needed
+- manual override tools for staff
+
+Deliverable:
+- The app is ready to integrate with timing hardware later without major redesign
+________________________________________
+STEP 12 — Future Features and Expansion Roadmap
+text
+Add the app structure so future features can be built without reworking the core platform.
+
+Potential future features:
+- Rider profiles with history across seasons
+- Club membership management
+- Multi-series management
+- Sponsor exposure and ads
+- SMS/email race reminders
+- Push notifications
+- Weather or track condition updates
+- Waiver management
+- Insurance uploads
+- QR-code race check-in backup
+- Live leaderboard screens for events
+- Broadcast/announcer mode
+- API access for partner integrations
+- Multi-brand theme support
+
+Deliverable:
+- The codebase is modular, scalable, and ready for expansion
+- Future features can be added with minimal disruption
+________________________________________
+Recommended Replit Build Order Summary
+Use this order so the app is built in the smartest way possible:
+1.	Foundation, architecture, branding layer
+2.	Authentication and roles
+3.	Event creation and registration builder
+4.	Day-of-race check-in and RFID linking
+5.	Race day management and lineups
+6.	Results, lap times, and scoring
+7.	Reports, exports, and printing
+8.	Public consumer results portal
+9.	Mobile/tablet optimization
+10.	Payment system
+11.	RFID hardware integration planning
+12.	Future features roadmap
+________________________________________
+Suggested Core Database Entities
+For the full platform, Replit should prepare these models early:
+•	User
+•	Club
+•	ClubMembership
+•	Event
+•	EventRegistrationConfig
+•	RegistrationFieldConfig
+•	Rider
+•	RiderRegistration
+•	RFIDTag
+•	RiderRFIDLink
+•	CheckIn
+•	Moto
+•	Heat
+•	LCQ
+•	MainEvent
+•	Lineup
+•	RaceResult
+•	LapTime
+•	SeriesPoints
+•	EventPoints
+•	ReportExportJob
+•	PaymentRecord
+•	Permission
+•	Role
+________________________________________
+Suggested Technical Stack for Replit
+A strong stack for this project would be:
+•	Frontend: Next.js or React
+•	Backend: Node.js / Express or Next.js API routes
+•	Database: PostgreSQL
+•	ORM: Prisma
+•	Auth: custom auth or NextAuth
+•	Styling: Tailwind CSS
+•	PDF/Export: server-side generation tools
+•	PWA: optional service worker support
+•	Real-time updates: WebSockets or polling for live results later
+

@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Rocky Mountain Race Platform"
+version = "1.0.0"
+id = "artifacts/race-platform"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19869
+
+[services.development]
+run = "pnpm --filter @workspace/race-platform run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/race-platform", "run", "build" ]
+publicDir = "artifacts/race-platform/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19869"
+BASE_PATH = "/"
