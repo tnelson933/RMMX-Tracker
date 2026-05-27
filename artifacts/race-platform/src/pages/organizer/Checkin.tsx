@@ -211,7 +211,7 @@ export default function Checkin() {
         <div className="flex-1 overflow-y-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filteredCheckins.map(checkin => (
-              <Card key={checkin.id} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : 'hover:border-primary/50'}`}>
+              <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
                   {(() => {
                     const confirmed = checkin.bibNumber;
