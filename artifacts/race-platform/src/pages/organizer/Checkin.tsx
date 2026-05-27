@@ -95,15 +95,31 @@ export default function Checkin() {
     });
   };
 
-  const filteredCheckins = checkins?.filter(c => {
-    const matchesSearch = c.riderName.toLowerCase().includes(search.toLowerCase()) ||
-      (c.bibNumber && c.bibNumber.includes(search));
-    if (!matchesSearch) return false;
-    if (filter === "checked_in") return c.checkedIn;
-    if (filter === "not_checked_in") return !c.checkedIn;
-    if (filter === "no_rfid") return !c.rfidLinked;
-    return true;
-  }) || [];
+  const filteredCheckins = (() => {
+    const q = search.trim().toLowerCase();
+    const passesFilter = (c: NonNullable<typeof checkins>[number]) => {
+      if (filter === "checked_in") return c.checkedIn;
+      if (filter === "not_checked_in") return !c.checkedIn;
+      if (filter === "no_rfid") return !c.rfidLinked;
+      return true;
+    };
+    const matchRank = (c: NonNullable<typeof checkins>[number]): number => {
+      if (!q) return 0;
+      const name = c.riderName.toLowerCase();
+      const bib = c.bibNumber ?? "";
+      if (name === q) return 0;
+      if (bib === q) return 1;
+      if (name.startsWith(q)) return 2;
+      const words = name.split(/\s+/);
+      if (words.some(w => w.startsWith(q))) return 3;
+      if (name.includes(q)) return 4;
+      if (bib.includes(q)) return 5;
+      return -1;
+    };
+    return (checkins ?? [])
+      .filter(c => passesFilter(c) && matchRank(c) >= 0)
+      .sort((a, b) => matchRank(a) - matchRank(b));
+  })();
 
   if (eventLoading || checkinsLoading) return <div className="p-8">Loading...</div>;
 
