@@ -94,14 +94,19 @@ router.post("/events/:eventId/checkins", async (req, res) => {
   }
 
   if (rfidNumber) {
-    await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, riderId));
+    await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, checkin.riderId));
   }
 
-  // Write confirmed bib back to the registration so the Registrations tab stays in sync
-  if (bibNumber !== undefined) {
+  // Sync the confirmed bib from the saved checkin row back to the registration.
+  // Use checkin.riderId (typed integer from DB) — not riderId from req.body — to
+  // avoid any string/integer mismatch in the Drizzle WHERE clause.
+  if (checkin.bibNumber) {
     await db.update(registrationsTable)
-      .set({ bibNumber })
-      .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, riderId)));
+      .set({ bibNumber: checkin.bibNumber })
+      .where(and(
+        eq(registrationsTable.eventId, checkin.eventId),
+        eq(registrationsTable.riderId, checkin.riderId),
+      ));
   }
 
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
