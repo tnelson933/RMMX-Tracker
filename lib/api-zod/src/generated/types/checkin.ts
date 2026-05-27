@@ -10,6 +10,8 @@ export interface Checkin {
   id: number;
   eventId: number;
   riderId: number;
+  /** @nullable */
+  registrationId?: number | null;
   riderName: string;
   raceClass?: string;
   /** @nullable */

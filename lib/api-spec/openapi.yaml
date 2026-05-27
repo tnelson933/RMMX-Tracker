@@ -1240,6 +1240,8 @@ components:
           type: integer
         riderId:
           type: integer
+        registrationId:
+          type: ["integer", "null"]
         riderName:
           type: string
         raceClass:

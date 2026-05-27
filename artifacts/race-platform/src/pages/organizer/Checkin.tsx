@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useParams } from "wouter";
-import { useGetEvent, useListCheckins, useGetRaceDaySummary, useCheckinRider, useAssignRfid } from "@workspace/api-client-react";
+import { useGetEvent, useListCheckins, useGetRaceDaySummary, useCheckinRider, useAssignRfid, useUpdateRegistration } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -123,6 +123,17 @@ export default function Checkin() {
   });
 
   const checkinMutation = useCheckinRider();
+  const saveBibMutation = useUpdateRegistration();
+
+  const handleSaveBib = (registrationId: number | null | undefined, bib: string) => {
+    if (!registrationId || !bib.trim()) return;
+    saveBibMutation.mutate({ registrationId, data: { bibNumber: bib.trim() } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
+        queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+      },
+    });
+  };
 
   const handleCheckin = (riderId: number, currentRfid?: string | null, bibOverride?: string) => {
     checkinMutation.mutate({ eventId, data: { riderId, rfidNumber: currentRfid || undefined, bibNumber: bibOverride || undefined } }, {
@@ -321,13 +332,21 @@ export default function Checkin() {
                               setBibEdits(prev => { const n = new Map(prev); n.set(checkin.riderId, v); return n; });
                             }}
                             onKeyDown={e => {
-                              if (e.key === "Enter") setBibEditId(null);
+                              if (e.key === "Enter") {
+                                setBibEditId(null);
+                                const v = editVal.trim();
+                                if (v && !duplicate) handleSaveBib(checkin.registrationId, v);
+                              }
                               if (e.key === "Escape") {
                                 setBibEditId(null);
                                 setBibEdits(prev => { const n = new Map(prev); n.delete(checkin.riderId); return n; });
                               }
                             }}
-                            onBlur={() => setBibEditId(null)}
+                            onBlur={() => {
+                              setBibEditId(null);
+                              const v = editVal.trim();
+                              if (v && !duplicate) handleSaveBib(checkin.registrationId, v);
+                            }}
                             className={`w-12 bg-transparent text-center font-heading font-black text-xl leading-none outline-none border-b-2 ${duplicate ? 'text-red-500 border-red-400' : 'text-foreground border-primary'}`}
                             style={{ appearance: "none" }}
                             inputMode="numeric"

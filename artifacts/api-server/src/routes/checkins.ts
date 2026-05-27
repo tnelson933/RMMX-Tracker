@@ -37,6 +37,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       id: c?.id ?? null,
       eventId,
       riderId: r.riderId,
+      registrationId: r.registrationId,
       riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
       raceClass: r.raceClass,
       bibNumber: r.bibNumber ?? c?.bibNumber ?? null,
