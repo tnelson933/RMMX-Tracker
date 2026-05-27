@@ -108,8 +108,8 @@ export default function Checkin() {
   if (eventLoading || checkinsLoading) return <div className="p-8">Loading...</div>;
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      <div className="bg-sidebar text-sidebar-foreground p-6 flex flex-col md:flex-row justify-between items-center gap-4">
+    <div className="flex flex-col min-h-0 h-full bg-gray-50">
+      <div className="bg-sidebar text-sidebar-foreground p-6 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
         <div>
           <h1 className="text-3xl font-heading font-bold uppercase tracking-tight text-white">{event?.name} - Check-In</h1>
         </div>
@@ -125,8 +125,8 @@ export default function Checkin() {
         </div>
       </div>
 
-      <div className="p-6 flex-1 flex flex-col gap-6">
-        <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col md:flex-row gap-4">
+      <div className="p-6 flex-1 flex flex-col gap-6 min-h-0">
+        <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col md:flex-row gap-4 sticky top-0 z-10 flex-shrink-0">
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={24} />
             <Input
