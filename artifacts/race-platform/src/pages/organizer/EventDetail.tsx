@@ -423,10 +423,6 @@ export default function EventDetail() {
                         }
                       </div>
                     </div>
-                    <div>
-                      <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Max Riders (total)</div>
-                      <div className="font-medium">{event.maxRiders ?? <span className="text-muted-foreground italic text-sm">Unlimited</span>}</div>
-                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-y-6 pt-2">
