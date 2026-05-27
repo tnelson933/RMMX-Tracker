@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLogin, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,14 @@ export default function Login() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const loginMutation = useLogin();
+  const { isAuthenticated } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
+
+  // Navigate as soon as auth state confirms login — avoids race condition where
+  // setLocation fires before AuthContext re-renders with the new user data.
+  useEffect(() => {
+    if (isAuthenticated) setLocation("/dashboard");
+  }, [isAuthenticated, setLocation]);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -43,7 +51,7 @@ export default function Login() {
       {
         onSuccess: async () => {
           await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
-          setLocation("/dashboard");
+          // Navigation is handled by the useEffect above once isAuthenticated flips true
         },
         onError: (error: any) => {
           setAuthError(error?.message || "Invalid email or password. Please try again.");
