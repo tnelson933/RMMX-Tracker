@@ -24,6 +24,8 @@ import RfidManagement from "@/pages/organizer/RfidManagement";
 import ReaderSetup from "@/pages/organizer/ReaderSetup";
 import Series from "@/pages/organizer/Series";
 import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
+import UsersAdmin from "@/pages/organizer/UsersAdmin";
+import SetPassword from "@/pages/public/SetPassword";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,6 +61,9 @@ function Router() {
       <Route path="/login">
         <PublicLayout><Login /></PublicLayout>
       </Route>
+      <Route path="/setup-account">
+        <PublicLayout><SetPassword /></PublicLayout>
+      </Route>
       <Route path="/register/:eventId">
         <Register />
       </Route>
@@ -92,6 +97,9 @@ function Router() {
       </Route>
       <Route path="/admin/clubs">
         <ProtectedRoute><ClubsAdmin /></ProtectedRoute>
+      </Route>
+      <Route path="/admin/users">
+        <ProtectedRoute><UsersAdmin /></ProtectedRoute>
       </Route>
 
       <Route component={NotFound} />

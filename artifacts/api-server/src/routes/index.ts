@@ -12,6 +12,7 @@ import resultsRouter from "./results";
 import seriesRouter from "./series";
 import dashboardRouter from "./dashboard";
 import timingRouter from "./timing";
+import usersRouter from "./users";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(motosRouter);
 router.use(resultsRouter);
 router.use(seriesRouter);
 router.use(dashboardRouter);
+router.use(usersRouter);
 
 export default router;

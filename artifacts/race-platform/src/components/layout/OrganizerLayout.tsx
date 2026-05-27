@@ -8,6 +8,7 @@ import {
   Tag, 
   Trophy,
   Building2,
+  UserCog,
   LogOut,
   ShieldCheck,
   Wifi,
@@ -83,6 +84,17 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
                   Admin
                 </span>
               </div>
+              <Link
+                href="/admin/users"
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+                  location.startsWith("/admin/users")
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <UserCog size={18} />
+                Users
+              </Link>
               <Link
                 href="/admin/clubs"
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${

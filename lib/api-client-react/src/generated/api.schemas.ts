@@ -521,6 +521,41 @@ export interface EventReport {
   data: EventReportData;
 }
 
+export interface SetupRequest {
+  email: string;
+}
+
+export interface CompleteSetupInput {
+  token: string;
+  password: string;
+}
+
+export interface OrganizerUser {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  clubId?: number | null;
+  clubName?: string | null;
+  hasPassword: boolean;
+  createdAt: string;
+}
+
+export interface CreateUserInput {
+  email: string;
+  name: string;
+  role: string;
+  clubId?: number;
+}
+
+export type RequestAccountSetup200 = {
+  ok?: boolean;
+};
+
+export type CompleteAccountSetup200 = {
+  ok?: boolean;
+};
+
 export type ListEventsParams = {
 state?: string;
 clubId?: number;

@@ -27,6 +27,9 @@ import type {
   ClubDashboard,
   ClubInput,
   ClubUpdate,
+  CompleteAccountSetup200,
+  CompleteSetupInput,
+  CreateUserInput,
   Event,
   EventInput,
   EventReport,
@@ -41,6 +44,7 @@ import type {
   Moto,
   MotoInput,
   MotoUpdate,
+  OrganizerUser,
   PublishInput,
   RaceDaySummary,
   RaceResult,
@@ -48,6 +52,7 @@ import type {
   Registration,
   RegistrationInput,
   RegistrationUpdate,
+  RequestAccountSetup200,
   ResultsInput,
   RfidAssignment,
   RfidAssignmentInput,
@@ -58,6 +63,7 @@ import type {
   Series,
   SeriesInput,
   SeriesStanding,
+  SetupRequest,
   StateInfo,
   User
 } from './api.schemas';
@@ -368,6 +374,436 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = Err
 
 
 
+
+export const getRequestAccountSetupUrl = () => {
+
+
+
+
+  return `/api/auth/request-setup`
+}
+
+/**
+ * @summary Send account setup or password reset email
+ */
+export const requestAccountSetup = async (setupRequest: SetupRequest, options?: RequestInit): Promise<RequestAccountSetup200> => {
+
+  return customFetch<RequestAccountSetup200>(getRequestAccountSetupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setupRequest,)
+  }
+);}
+
+
+
+
+export const getRequestAccountSetupMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestAccountSetup>>, TError,{data: BodyType<SetupRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestAccountSetup>>, TError,{data: BodyType<SetupRequest>}, TContext> => {
+
+const mutationKey = ['requestAccountSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestAccountSetup>>, {data: BodyType<SetupRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestAccountSetup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestAccountSetupMutationResult = NonNullable<Awaited<ReturnType<typeof requestAccountSetup>>>
+    export type RequestAccountSetupMutationBody = BodyType<SetupRequest>
+    export type RequestAccountSetupMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Send account setup or password reset email
+ */
+export const useRequestAccountSetup = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestAccountSetup>>, TError,{data: BodyType<SetupRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestAccountSetup>>,
+        TError,
+        {data: BodyType<SetupRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestAccountSetupMutationOptions(options));
+    }
+
+export const getCompleteAccountSetupUrl = () => {
+
+
+
+
+  return `/api/auth/complete-setup`
+}
+
+/**
+ * @summary Activate account and set password using a setup token
+ */
+export const completeAccountSetup = async (completeSetupInput: CompleteSetupInput, options?: RequestInit): Promise<CompleteAccountSetup200> => {
+
+  return customFetch<CompleteAccountSetup200>(getCompleteAccountSetupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      completeSetupInput,)
+  }
+);}
+
+
+
+
+export const getCompleteAccountSetupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeAccountSetup>>, TError,{data: BodyType<CompleteSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeAccountSetup>>, TError,{data: BodyType<CompleteSetupInput>}, TContext> => {
+
+const mutationKey = ['completeAccountSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeAccountSetup>>, {data: BodyType<CompleteSetupInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  completeAccountSetup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteAccountSetupMutationResult = NonNullable<Awaited<ReturnType<typeof completeAccountSetup>>>
+    export type CompleteAccountSetupMutationBody = BodyType<CompleteSetupInput>
+    export type CompleteAccountSetupMutationError = ErrorType<void>
+
+    /**
+ * @summary Activate account and set password using a setup token
+ */
+export const useCompleteAccountSetup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeAccountSetup>>, TError,{data: BodyType<CompleteSetupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof completeAccountSetup>>,
+        TError,
+        {data: BodyType<CompleteSetupInput>},
+        TContext
+      > => {
+      return useMutation(getCompleteAccountSetupMutationOptions(options));
+    }
+
+export const getListUsersUrl = () => {
+
+
+
+
+  return `/api/users`
+}
+
+/**
+ * @summary List all organizer users (super_admin only)
+ */
+export const listUsers = async ( options?: RequestInit): Promise<OrganizerUser[]> => {
+
+  return customFetch<OrganizerUser[]>(getListUsersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListUsersQueryKey = () => {
+    return [
+    `/api/users`
+    ] as const;
+    }
+
+
+export const getListUsersQueryOptions = <TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListUsersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUsers>>> = ({ signal }) => listUsers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListUsersQueryResult = NonNullable<Awaited<ReturnType<typeof listUsers>>>
+export type ListUsersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all organizer users (super_admin only)
+ */
+
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListUsersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateUserUrl = () => {
+
+
+
+
+  return `/api/users`
+}
+
+/**
+ * @summary Create a new organizer user (super_admin only)
+ */
+export const createUser = async (createUserInput: CreateUserInput, options?: RequestInit): Promise<OrganizerUser> => {
+
+  return customFetch<OrganizerUser>(getCreateUserUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createUserInput,)
+  }
+);}
+
+
+
+
+export const getCreateUserMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUser>>, TError,{data: BodyType<CreateUserInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createUser>>, TError,{data: BodyType<CreateUserInput>}, TContext> => {
+
+const mutationKey = ['createUser'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createUser>>, {data: BodyType<CreateUserInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createUser(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateUserMutationResult = NonNullable<Awaited<ReturnType<typeof createUser>>>
+    export type CreateUserMutationBody = BodyType<CreateUserInput>
+    export type CreateUserMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a new organizer user (super_admin only)
+ */
+export const useCreateUser = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUser>>, TError,{data: BodyType<CreateUserInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createUser>>,
+        TError,
+        {data: BodyType<CreateUserInput>},
+        TContext
+      > => {
+      return useMutation(getCreateUserMutationOptions(options));
+    }
+
+export const getDeleteUserUrl = (userId: number,) => {
+
+
+
+
+  return `/api/users/${userId}`
+}
+
+/**
+ * @summary Delete a user (super_admin only)
+ */
+export const deleteUser = async (userId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteUserUrl(userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteUserMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,{userId: number}, TContext> => {
+
+const mutationKey = ['deleteUser'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteUser>>, {userId: number}> = (props) => {
+          const {userId} = props ?? {};
+
+          return  deleteUser(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteUserMutationResult = NonNullable<Awaited<ReturnType<typeof deleteUser>>>
+
+    export type DeleteUserMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a user (super_admin only)
+ */
+export const useDeleteUser = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteUser>>,
+        TError,
+        {userId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteUserMutationOptions(options));
+    }
+
+export const getResendUserInviteUrl = (userId: number,) => {
+
+
+
+
+  return `/api/users/${userId}/resend-invite`
+}
+
+/**
+ * @summary Resend setup email to a user
+ */
+export const resendUserInvite = async (userId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getResendUserInviteUrl(userId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getResendUserInviteMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendUserInvite>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resendUserInvite>>, TError,{userId: number}, TContext> => {
+
+const mutationKey = ['resendUserInvite'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resendUserInvite>>, {userId: number}> = (props) => {
+          const {userId} = props ?? {};
+
+          return  resendUserInvite(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResendUserInviteMutationResult = NonNullable<Awaited<ReturnType<typeof resendUserInvite>>>
+
+    export type ResendUserInviteMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Resend setup email to a user
+ */
+export const useResendUserInvite = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendUserInvite>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resendUserInvite>>,
+        TError,
+        {userId: number},
+        TContext
+      > => {
+      return useMutation(getResendUserInviteMutationOptions(options));
+    }
 
 export const getListClubsUrl = () => {
 

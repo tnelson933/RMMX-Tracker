@@ -52,6 +52,74 @@ export const GetMeResponse = zod.object({
 
 
 /**
+ * @summary Send account setup or password reset email
+ */
+export const RequestAccountSetupBody = zod.object({
+  "email": zod.string()
+})
+
+export const RequestAccountSetupResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Activate account and set password using a setup token
+ */
+export const CompleteAccountSetupBody = zod.object({
+  "token": zod.string(),
+  "password": zod.string()
+})
+
+export const CompleteAccountSetupResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
+ * @summary List all organizer users (super_admin only)
+ */
+export const ListUsersResponseItem = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.string(),
+  "clubId": zod.number().nullish(),
+  "clubName": zod.string().nullish(),
+  "hasPassword": zod.boolean(),
+  "createdAt": zod.string()
+})
+export const ListUsersResponse = zod.array(ListUsersResponseItem)
+
+
+/**
+ * @summary Create a new organizer user (super_admin only)
+ */
+export const CreateUserBody = zod.object({
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.string(),
+  "clubId": zod.number().optional()
+})
+
+
+/**
+ * @summary Delete a user (super_admin only)
+ */
+export const DeleteUserParams = zod.object({
+  "userId": zod.coerce.number()
+})
+
+
+/**
+ * @summary Resend setup email to a user
+ */
+export const ResendUserInviteParams = zod.object({
+  "userId": zod.coerce.number()
+})
+
+
+/**
  * @summary List all clubs
  */
 export const ListClubsResponseItem = zod.object({

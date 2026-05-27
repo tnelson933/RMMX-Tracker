@@ -6,7 +6,7 @@ import { clubsTable } from "./clubs";
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  passwordHash: text("password_hash"),
   name: text("name").notNull(),
   role: text("role").notNull().default("staff"), // super_admin | club_organizer | staff
   clubId: integer("club_id").references(() => clubsTable.id),

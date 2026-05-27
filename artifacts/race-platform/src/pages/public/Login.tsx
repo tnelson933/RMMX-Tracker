@@ -168,8 +168,11 @@ export default function Login() {
             </form>
           </Form>
         </CardContent>
-        <CardFooter className="bg-muted/30 border-t p-6 text-center text-sm text-muted-foreground block font-medium">
-          Authorized personnel only. All access is logged.
+        <CardFooter className="bg-muted/30 border-t p-6 text-center text-sm text-muted-foreground font-medium flex flex-col gap-2">
+          <span>Authorized personnel only. All access is logged.</span>
+          <a href="/setup-account" className="text-primary hover:underline font-semibold">
+            First time signing in? Set up your account →
+          </a>
         </CardFooter>
       </Card>
     </div>

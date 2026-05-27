@@ -95,6 +95,117 @@ paths:
         "401":
           description: Not authenticated
 
+  /auth/request-setup:
+    post:
+      operationId: requestAccountSetup
+      tags: [auth]
+      summary: Send account setup or password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupRequest"
+      responses:
+        "200":
+          description: Email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /auth/complete-setup:
+    post:
+      operationId: completeAccountSetup
+      tags: [auth]
+      summary: Activate account and set password using a setup token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteSetupInput"
+      responses:
+        "200":
+          description: Password set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "400":
+          description: Invalid or expired token
+
+  # USERS
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all organizer users (super_admin only)
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrganizerUser"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a new organizer user (super_admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserInput"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizerUser"
+        "409":
+          description: Email already exists
+
+  /users/{userId}:
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete a user (super_admin only)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+
+  /users/{userId}/resend-invite:
+    post:
+      operationId: resendUserInvite
+      tags: [users]
+      summary: Resend setup email to a user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Email sent
+
   # CLUBS
   /clubs:
     get:
@@ -1650,3 +1761,55 @@ components:
           type: string
         data:
           type: object
+
+    SetupRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+
+    CompleteSetupInput:
+      type: object
+      required: [token, password]
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+
+    OrganizerUser:
+      type: object
+      required: [id, email, name, role, hasPassword, createdAt]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        clubId:
+          type: integer
+          nullable: true
+        clubName:
+          type: string
+          nullable: true
+        hasPassword:
+          type: boolean
+        createdAt:
+          type: string
+
+    CreateUserInput:
+      type: object
+      required: [email, name, role]
+      properties:
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        clubId:
+          type: integer
