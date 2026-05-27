@@ -49,7 +49,10 @@ const clubSchema = z.object({
   state: z.string().length(2, "Select a state"),
   contactEmail: z.string().email("Enter a valid email").or(z.literal("")).optional(),
   contactPhone: z.string().optional(),
-  website: z.string().url("Enter a valid URL").or(z.literal("")).optional(),
+  website: z.string().optional().refine(
+    val => !val || /^(https?:\/\/)?[\w\-.]+(\.[\w\-.]+)+(\/[^\s]*)?$/.test(val),
+    { message: "Enter a valid website (e.g. myclub.com)" }
+  ),
   description: z.string().optional(),
 });
 
@@ -99,7 +102,9 @@ export default function ClubsAdmin() {
       state: data.state,
       contactEmail: data.contactEmail || undefined,
       contactPhone: data.contactPhone || undefined,
-      website: data.website || undefined,
+      website: data.website
+        ? (data.website.startsWith("http") ? data.website : `https://${data.website}`)
+        : undefined,
       description: data.description || undefined,
     };
 
