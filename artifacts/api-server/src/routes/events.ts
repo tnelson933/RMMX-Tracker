@@ -1,9 +1,41 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { eventsTable, clubsTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 
 const router = Router();
+
+type EventRow = { id: number; status: string; registrationOpen: string | null; registrationClose: string | null };
+
+function computeAutoStatus(event: EventRow): string | null {
+  const now = new Date();
+  const { status, registrationOpen, registrationClose } = event;
+
+  if (status === "draft") {
+    if (registrationOpen && now >= new Date(registrationOpen)) return "registration_open";
+  }
+  if (status === "registration_open") {
+    if (registrationClose && now >= new Date(registrationClose)) return "registration_closed";
+  }
+  return null;
+}
+
+async function advanceStatuses(events: EventRow[]): Promise<Map<number, string>> {
+  const updates = new Map<number, string>();
+  for (const e of events) {
+    const next = computeAutoStatus(e);
+    if (next) updates.set(e.id, next);
+  }
+  if (updates.size > 0) {
+    const ids = [...updates.keys()];
+    await Promise.all(
+      ids.map((id) =>
+        db.update(eventsTable).set({ status: updates.get(id)! }).where(eq(eventsTable.id, id))
+      )
+    );
+  }
+  return updates;
+}
 
 router.get("/events", async (req, res) => {
   const { state, clubId, status } = req.query;
@@ -37,8 +69,10 @@ router.get("/events", async (req, res) => {
     ? await query.where(and(...conditions)).orderBy(eventsTable.date)
     : await query.orderBy(eventsTable.date);
 
+  const advanced = await advanceStatuses(events);
   return res.json(events.map(e => ({
     ...e,
+    status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
     createdAt: e.createdAt.toISOString(),
   })));
@@ -89,9 +123,11 @@ router.get("/events/:eventId", async (req, res) => {
   }).from(eventsTable).leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id)).where(eq(eventsTable.id, id));
 
   if (!events[0]) return res.status(404).json({ error: "Not found" });
+  const advanced = await advanceStatuses(events);
   const e = events[0];
   return res.json({
     ...e,
+    status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
     createdAt: e.createdAt.toISOString(),
   });
