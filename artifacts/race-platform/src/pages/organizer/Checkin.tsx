@@ -186,7 +186,7 @@ export default function Checkin() {
                           </span>
                         ) : (
                           <button
-                            onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.id ? null : checkin.id)}
+                            onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
                             className="flex items-center gap-1 text-amber-600 hover:text-amber-700 transition-colors underline-offset-2 hover:underline"
                             title="Click to assign RFID tag"
                           >
@@ -196,7 +196,7 @@ export default function Checkin() {
                       </div>
 
                       {/* Inline RFID assignment */}
-                      {rfidInputOpenId === checkin.id && !checkin.rfidLinked && (
+                      {rfidInputOpenId === checkin.riderId && !checkin.rfidLinked && (
                         <RfidInput
                           riderId={checkin.riderId}
                           eventId={eventId}
