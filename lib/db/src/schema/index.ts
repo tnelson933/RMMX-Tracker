@@ -7,4 +7,5 @@ export * from "./checkins";
 export * from "./rfid";
 export * from "./motos";
 export * from "./results";
+export * from "./lap_crossings";
 export * from "./series";

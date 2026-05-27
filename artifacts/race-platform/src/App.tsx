@@ -13,6 +13,7 @@ import EventResults from "@/pages/public/EventResults";
 import Leaderboard from "@/pages/public/Leaderboard";
 import Login from "@/pages/public/Login";
 import Register from "@/pages/public/Register";
+import LiveLeaderboard from "@/pages/public/LiveLeaderboard";
 
 import Dashboard from "@/pages/organizer/Dashboard";
 import EventLayout from "@/pages/organizer/EventLayout";
@@ -58,6 +59,9 @@ function Router() {
       </Route>
       <Route path="/register/:eventId">
         <Register />
+      </Route>
+      <Route path="/live/:motoId">
+        <LiveLeaderboard />
       </Route>
 
       <Route path="/dashboard">

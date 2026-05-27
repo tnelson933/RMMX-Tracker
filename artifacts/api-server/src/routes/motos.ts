@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { sseBroadcast, buildLeaderboard } from "./timing";
 
 const POINTS_BY_POSITION = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -32,13 +33,31 @@ router.post("/events/:eventId/motos", async (req, res) => {
 router.patch("/motos/:motoId", async (req, res) => {
   const id = Number(req.params.motoId);
   const updates: Record<string, unknown> = {};
-  if (req.body.status !== undefined) updates.status = req.body.status;
+  if (req.body.status !== undefined) {
+    updates.status = req.body.status;
+    if (req.body.status === "in_progress") updates.startedAt = new Date();
+    if (req.body.status === "completed") updates.completedAt = new Date();
+  }
   if (req.body.lineup !== undefined) updates.lineup = req.body.lineup;
   if (req.body.scheduledTime !== undefined) updates.scheduledTime = req.body.scheduledTime;
 
   const [moto] = await db.update(motosTable).set(updates as any).where(eq(motosTable.id, id)).returning();
   if (!moto) return res.status(404).json({ error: "Not found" });
-  return res.json({ ...moto, lineup: Array.isArray(moto.lineup) ? moto.lineup : [], createdAt: moto.createdAt.toISOString() });
+
+  // Broadcast status change to any live SSE viewers
+  if (req.body.status !== undefined) {
+    buildLeaderboard(id).then(snapshot => {
+      if (snapshot) sseBroadcast(id, snapshot);
+    }).catch(() => {});
+  }
+
+  return res.json({
+    ...moto,
+    lineup: Array.isArray(moto.lineup) ? moto.lineup : [],
+    createdAt: moto.createdAt.toISOString(),
+    startedAt: moto.startedAt?.toISOString() ?? null,
+    completedAt: moto.completedAt?.toISOString() ?? null,
+  });
 });
 
 router.post("/events/:eventId/generate-lineups", async (req, res) => {

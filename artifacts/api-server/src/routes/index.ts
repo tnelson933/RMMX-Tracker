@@ -11,9 +11,11 @@ import motosRouter from "./motos";
 import resultsRouter from "./results";
 import seriesRouter from "./series";
 import dashboardRouter from "./dashboard";
+import timingRouter from "./timing";
 
 const router: IRouter = Router();
 
+router.use(timingRouter);
 router.use(healthRouter);
 router.use(authRouter);
 router.use(clubsRouter);

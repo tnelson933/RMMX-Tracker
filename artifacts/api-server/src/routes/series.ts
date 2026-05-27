@@ -39,7 +39,7 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
     byClass[p.raceClass].push(p);
   }
 
-  const standings = [];
+  const standings: Array<{ position: number; riderId: number; riderName: string; raceClass: string; totalPoints: number; eventsEntered: number; eventResults: unknown[] }> = [];
   for (const [cls, riders] of Object.entries(byClass)) {
     const sorted = riders.sort((a, b) => b.totalPoints - a.totalPoints);
     sorted.forEach((r, i) => {
