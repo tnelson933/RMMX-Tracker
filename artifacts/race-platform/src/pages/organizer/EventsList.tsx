@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useListEvents, useCreateEvent, getListEventsQueryKey } from "@workspace/api-client-react";
+import { useListEvents, useCreateEvent, useListClubs, getListEventsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,21 +23,28 @@ const createEventSchema = z.object({
   state: z.string().min(1, "State is required"),
   location: z.string().optional(),
   trackName: z.string().optional(),
-  raceClasses: z.string().optional(), // Comma separated for simplicity in form
+  raceClasses: z.string().optional(),
+  clubId: z.number({ invalid_type_error: "Club is required" }).min(1, "Club is required"),
 });
 
 export default function EventsList() {
   const { user } = useAuth();
-  const clubId = user?.clubId || 0;
+  const isSuperAdmin = user?.role === "super_admin";
+  const sessionClubId = user?.clubId ?? null;
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [filter, setFilter] = useState("all");
 
-  const { data: events, isLoading } = useListEvents(
-    { clubId }, 
-    { query: { enabled: !!clubId } as any }
-  );
+  // Super admin sees all events; club organizer sees only their club's events
+  const eventsQuery = isSuperAdmin
+    ? useListEvents({})
+    : useListEvents({ clubId: sessionClubId ?? undefined }, { query: { enabled: !!sessionClubId } as any });
+  const { data: events, isLoading } = eventsQuery;
+
+  // Clubs list for the super_admin club selector
+  const { data: clubs } = useListClubs({ query: { enabled: isSuperAdmin } as any });
+
   const createMutation = useCreateEvent();
 
   const form = useForm<z.infer<typeof createEventSchema>>({
@@ -49,13 +56,14 @@ export default function EventsList() {
       location: "",
       trackName: "",
       raceClasses: "250 Pro,450 Pro,Vet A",
+      clubId: sessionClubId ?? undefined,
     }
   });
 
   const onSubmit = (data: z.infer<typeof createEventSchema>) => {
     createMutation.mutate({
       data: {
-        clubId,
+        clubId: data.clubId,
         name: data.name,
         date: new Date(data.date).toISOString(),
         state: data.state,
@@ -65,7 +73,7 @@ export default function EventsList() {
       }
     }, {
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListEventsQueryKey({ clubId }) });
+        queryClient.invalidateQueries({ queryKey: getListEventsQueryKey({}) });
         setIsCreateOpen(false);
         form.reset();
         toast({ title: "Event created successfully" });
@@ -81,7 +89,7 @@ export default function EventsList() {
     if (filter === "draft") return e.status === "draft";
     if (filter === "registration_open") return e.status === "registration_open";
     if (filter === "race_day") return e.status === "race_day";
-    if (filter === "completed") return e.status === "completed" || e.status === "results_published";
+    if (filter === "completed") return e.status === "completed";
     return true;
   }) || [];
 
@@ -105,6 +113,35 @@ export default function EventsList() {
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+
+                {isSuperAdmin && (
+                  <FormField
+                    control={form.control}
+                    name="clubId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Club</FormLabel>
+                        <Select
+                          onValueChange={(v) => field.onChange(Number(v))}
+                          value={field.value ? String(field.value) : ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a club" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {clubs?.map(c => (
+                              <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
                 <FormField
                   control={form.control}
                   name="name"
@@ -212,11 +249,14 @@ export default function EventsList() {
                         <h3 className="text-xl font-heading font-bold uppercase">{event.name}</h3>
                         <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
                           <span className="flex items-center gap-1"><MapPin size={14} /> {event.location || "TBA"}, {event.state}</span>
+                          {isSuperAdmin && event.clubName && (
+                            <span className="text-xs bg-muted px-2 py-0.5 rounded">{event.clubName}</span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-6">
                         <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                          {event.status.replace('_', ' ')}
+                          {event.status.replace(/_/g, ' ')}
                         </span>
                         <ChevronRight className="text-muted-foreground" />
                       </div>
