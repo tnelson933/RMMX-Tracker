@@ -127,8 +127,16 @@ export default function Checkin() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by rider name or bib #..."
-              className="pl-12 h-14 text-xl font-medium bg-muted/30"
+              className="pl-12 pr-12 h-14 text-xl font-medium bg-muted/30"
             />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X size={22} />
+              </button>
+            )}
           </div>
           <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
             {[
