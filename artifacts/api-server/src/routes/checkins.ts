@@ -95,6 +95,13 @@ router.post("/events/:eventId/checkins", async (req, res) => {
     await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, riderId));
   }
 
+  // Write confirmed bib back to the registration so the Registrations tab stays in sync
+  if (bibNumber !== undefined) {
+    await db.update(registrationsTable)
+      .set({ bibNumber })
+      .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, riderId)));
+  }
+
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   const rider = riders[0];
 
