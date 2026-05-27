@@ -114,6 +114,13 @@ export default function Checkin() {
     return suggestions;
   })();
 
+  const filterCounts = {
+    all: (checkins ?? []).length,
+    not_checked_in: (checkins ?? []).filter(c => !c.checkedIn).length,
+    checked_in: (checkins ?? []).filter(c => c.checkedIn).length,
+    no_rfid: (checkins ?? []).filter(c => !c.rfidLinked).length,
+  };
+
   const filteredCheckins = (() => {
     const q = search.trim().toLowerCase();
     const passesFilter = (c: NonNullable<typeof checkins>[number]) => {
@@ -189,10 +196,13 @@ export default function Checkin() {
               <Button
                 key={key}
                 variant={filter === key ? "default" : "outline"}
-                className="h-14 px-6 text-lg font-heading uppercase"
+                className="h-14 px-5 text-base font-heading uppercase flex flex-col gap-0 leading-none"
                 onClick={() => setFilter(key)}
               >
-                {label}
+                <span>{label}</span>
+                <span className={`text-xs font-mono font-bold mt-0.5 ${filter === key ? "opacity-70" : "opacity-50"}`}>
+                  {filterCounts[key as keyof typeof filterCounts]}
+                </span>
               </Button>
             ))}
           </div>
