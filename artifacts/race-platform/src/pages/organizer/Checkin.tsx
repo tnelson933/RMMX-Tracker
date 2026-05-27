@@ -284,28 +284,32 @@ export default function Checkin() {
               <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
                   {(() => {
-                    // confirmed = bib locked in the REGISTRATION table (solid, non-editable)
-                    // bibNumber = merged display value (registration ?? checkin fallback)
-                    const confirmed = checkin.registrationBib;
+                    // Bib is "locked" (solid, non-editable) ONLY once the rider is checked in.
+                    // A registrationBib set from the Registrations tab is a pre-filled suggestion
+                    // — still editable here until Check In is pressed.
+                    const confirmed = checkin.checkedIn;
                     const pending = bibEdits.get(checkin.riderId);
-                    const suggested = bibSuggestions.get(checkin.riderId) ?? checkin.bibNumber ?? undefined;
+                    // Pre-fill edit value from registration bib first, then auto-suggestion
+                    const suggested = checkin.registrationBib ?? bibSuggestions.get(checkin.riderId) ?? undefined;
                     const isEditing = bibEditId === checkin.riderId;
                     const editVal = pending ?? "";
                     const duplicate = pending !== undefined ? isBibDuplicate(checkin.riderId, pending) : false;
 
                     // What number to display when not editing
-                    const displayNum = confirmed ?? (pending !== undefined ? pending : null) ?? suggested ?? "?";
+                    const displayNum = checkin.checkedIn
+                      ? (checkin.bibNumber ?? "?")
+                      : (pending !== undefined ? pending : null) ?? checkin.registrationBib ?? suggested ?? "?";
 
                     // Text color when not editing
                     const numColor = checkin.checkedIn
                       ? "text-white"
-                      : confirmed
-                        ? "text-foreground"
-                        : pending !== undefined
-                          ? duplicate ? "text-red-500" : "text-foreground"
-                          : "text-foreground/35";
+                      : pending !== undefined
+                        ? (duplicate ? "text-red-500" : "text-foreground")
+                        : checkin.registrationBib
+                          ? "text-foreground"     // registration bib confirmed — solid but editable
+                          : "text-foreground/35"; // no bib yet — faded
 
-                    const canEdit = !confirmed && !checkin.checkedIn;
+                    const canEdit = !confirmed; // editable any time before check-in
 
                     return (
                       <div
@@ -315,7 +319,8 @@ export default function Checkin() {
                           setBibEditId(checkin.riderId);
                           setBibEdits(prev => {
                             const next = new Map(prev);
-                            if (!next.has(checkin.riderId)) next.set(checkin.riderId, suggested ?? "");
+                            // Pre-fill with registration bib first, then auto-suggestion
+                            if (!next.has(checkin.riderId)) next.set(checkin.riderId, checkin.registrationBib ?? suggested ?? "");
                             return next;
                           });
                         }}
@@ -355,7 +360,7 @@ export default function Checkin() {
                             <span className={`font-heading font-black text-2xl leading-none ${numColor}`}>
                               {displayNum}
                             </span>
-                            {(confirmed || checkin.checkedIn) && (
+                            {(checkin.checkedIn || !!checkin.registrationBib) && (
                               <span className={`text-[9px] font-bold uppercase tracking-widest ${checkin.checkedIn ? 'text-white/70' : 'text-foreground/40'}`}>
                                 BIB
                               </span>
