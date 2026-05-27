@@ -21,6 +21,7 @@ import EventsList from "@/pages/organizer/EventsList";
 import Riders from "@/pages/organizer/RidersList";
 import RiderDetail from "@/pages/organizer/RiderDetail";
 import RfidManagement from "@/pages/organizer/RfidManagement";
+import ReaderSetup from "@/pages/organizer/ReaderSetup";
 import Series from "@/pages/organizer/Series";
 import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
 
@@ -79,6 +80,9 @@ function Router() {
       </Route>
       <Route path="/riders/:riderId">
         <ProtectedRoute><RiderDetail /></ProtectedRoute>
+      </Route>
+      <Route path="/rfid/setup">
+        <ProtectedRoute><ReaderSetup /></ProtectedRoute>
       </Route>
       <Route path="/rfid">
         <ProtectedRoute><RfidManagement /></ProtectedRoute>

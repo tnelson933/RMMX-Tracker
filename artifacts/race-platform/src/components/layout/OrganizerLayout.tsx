@@ -10,6 +10,7 @@ import {
   Building2,
   LogOut,
   ShieldCheck,
+  Wifi,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -32,7 +33,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/events", label: "Events", icon: CalendarDays },
     { href: "/riders", label: "Riders", icon: Users },
-    { href: "/rfid", label: "RFID Management", icon: Tag },
+    { href: "/rfid", label: "RFID Tags", icon: Tag },
+    { href: "/rfid/setup", label: "Reader Setup", icon: Wifi },
     { href: "/series", label: "Series", icon: Trophy },
   ];
 
