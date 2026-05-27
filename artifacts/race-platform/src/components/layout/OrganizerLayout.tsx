@@ -41,7 +41,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
       <aside className="w-64 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border">
         <div className="h-16 flex items-center px-6 border-b border-sidebar-border/50">
           <span className="text-sidebar-primary font-heading font-bold text-2xl uppercase tracking-wider">
-            RMMC Ops
+            RMMT Ops
           </span>
         </div>
         

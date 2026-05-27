@@ -228,7 +228,7 @@ export default function LiveLeaderboard() {
 
           {/* Footer */}
           <div className="p-4 text-center text-white/20 text-xs">
-            Powered by Rocky Mountain Race Platform · Updates live
+            Powered by Rocky Mountain MX Tracker · Updates live
           </div>
         </>
       )}

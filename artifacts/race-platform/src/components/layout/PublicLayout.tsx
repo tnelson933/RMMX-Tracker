@@ -11,7 +11,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
             <span className="text-primary font-heading font-bold text-2xl uppercase tracking-wider">
-              RMMC
+              RMMT
             </span>
           </Link>
           <nav className="flex items-center gap-6">
@@ -37,7 +37,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
       </main>
       <footer className="border-t border-border bg-card py-8">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          &copy; {new Date().getFullYear()} Rocky Mountain ATV/MC Race Platform
+          &copy; {new Date().getFullYear()} Rocky Mountain MX Tracker
         </div>
       </footer>
     </div>
