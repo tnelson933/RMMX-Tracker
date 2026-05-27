@@ -36,6 +36,8 @@ interface EventInfo {
   status: string;
   entryFee: number | null;
   clubName: string | null;
+  registrationOpen: string | null;
+  registrationClose: string | null;
 }
 
 interface SuccessData {
@@ -151,7 +153,12 @@ export default function Register() {
     );
   }
 
-  const isOpen = event.status === "registration_open";
+  const now = new Date();
+  const openDate = event.registrationOpen ? new Date(event.registrationOpen) : null;
+  const closeDate = event.registrationClose ? new Date(event.registrationClose) : null;
+  const notYetOpen = openDate && now < openDate;
+  const pastClose = closeDate && now > closeDate;
+  const isOpen = event.status === "registration_open" && !notYetOpen && !pastClose;
 
   return (
     <div className="min-h-screen bg-background">
@@ -186,11 +193,22 @@ export default function Register() {
           <Card>
             <CardContent className="p-10 text-center space-y-4">
               <AlertCircle size={40} className="text-muted-foreground mx-auto" />
-              <h2 className="text-2xl font-heading font-bold uppercase">Registration {event.status === "completed" || event.status === "race_day" ? "Closed" : "Not Yet Open"}</h2>
+              <h2 className="text-2xl font-heading font-bold uppercase">
+                {notYetOpen ? "Registration Not Yet Open" :
+                 pastClose ? "Registration Closed" :
+                 event.status === "completed" || event.status === "race_day" ? "Registration Closed" :
+                 "Registration Not Yet Open"}
+              </h2>
               <p className="text-muted-foreground">
-                {event.status === "draft" && "Registration for this event hasn't opened yet. Check back soon."}
-                {event.status === "registration_closed" && "Registration for this event is now closed."}
-                {(event.status === "race_day" || event.status === "completed") && "This event has already taken place."}
+                {notYetOpen && openDate && (
+                  <>Registration opens <strong>{format(openDate, "EEEE, MMMM d, yyyy")}</strong>. Check back then to secure your spot.</>
+                )}
+                {pastClose && closeDate && !notYetOpen && (
+                  <>Registration closed on <strong>{format(closeDate, "MMMM d, yyyy")}</strong>.</>
+                )}
+                {!notYetOpen && !pastClose && event.status === "draft" && "Registration for this event hasn't opened yet. Check back soon."}
+                {!notYetOpen && !pastClose && event.status === "registration_closed" && "Registration for this event is now closed."}
+                {!notYetOpen && !pastClose && (event.status === "race_day" || event.status === "completed") && "This event has already taken place."}
               </p>
               <Link href="/results"><Button variant="outline" className="font-heading uppercase">View Race Results</Button></Link>
             </CardContent>

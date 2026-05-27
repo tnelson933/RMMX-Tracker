@@ -99,6 +99,8 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     status: eventsTable.status,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
+    registrationOpen: eventsTable.registrationOpen,
+    registrationClose: eventsTable.registrationClose,
     clubName: clubsTable.name,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
@@ -126,6 +128,13 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   if (!events[0]) return res.status(404).json({ error: "Event not found" });
   if (events[0].status !== "registration_open") {
     return res.status(409).json({ error: "Registration is not currently open for this event" });
+  }
+  const now = new Date();
+  if (events[0].registrationOpen && now < new Date(events[0].registrationOpen)) {
+    return res.status(409).json({ error: "Registration has not opened yet for this event" });
+  }
+  if (events[0].registrationClose && now > new Date(events[0].registrationClose)) {
+    return res.status(409).json({ error: "Registration has closed for this event" });
   }
   if (events[0].raceClasses && !events[0].raceClasses.includes(raceClass)) {
     return res.status(400).json({ error: "Invalid race class for this event" });

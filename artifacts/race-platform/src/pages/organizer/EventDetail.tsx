@@ -11,7 +11,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign } from "lucide-react";
+import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock } from "lucide-react";
 import { format } from "date-fns";
 
 const updateEventSchema = z.object({
@@ -24,6 +24,8 @@ const updateEventSchema = z.object({
   raceClasses: z.string().optional(),
   entryFee: z.string().optional(),
   maxRiders: z.coerce.number().int().positive().optional().or(z.literal("")),
+  registrationOpen: z.string().optional(),
+  registrationClose: z.string().optional(),
 });
 
 export default function EventDetail() {
@@ -60,6 +62,8 @@ export default function EventDetail() {
       raceClasses: "",
       entryFee: "",
       maxRiders: "",
+      registrationOpen: "",
+      registrationClose: "",
     }
   });
 
@@ -75,6 +79,8 @@ export default function EventDetail() {
       raceClasses: event.raceClasses ? event.raceClasses.join(", ") : "",
       entryFee: event.entryFee != null ? String(event.entryFee) : "",
       maxRiders: event.maxRiders != null ? event.maxRiders : "",
+      registrationOpen: event.registrationOpen ? format(new Date(event.registrationOpen), "yyyy-MM-dd") : "",
+      registrationClose: event.registrationClose ? format(new Date(event.registrationClose), "yyyy-MM-dd") : "",
     });
   }
 
@@ -91,6 +97,8 @@ export default function EventDetail() {
         raceClasses: data.raceClasses ? data.raceClasses.split(",").map(s => s.trim()) : [],
         entryFee: data.entryFee ? Number(data.entryFee) : undefined,
         maxRiders: data.maxRiders !== "" && data.maxRiders != null ? Number(data.maxRiders) : undefined,
+        registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
+        registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
       }
     }, {
       onSuccess: () => {
@@ -260,6 +268,33 @@ export default function EventDetail() {
                         )}
                       />
                     </div>
+                    <div className="border-t pt-4">
+                      <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5"><Clock size={12} /> Registration Window</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="registrationOpen"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Opens</FormLabel>
+                              <FormControl><Input type="date" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="registrationClose"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Closes</FormLabel>
+                              <FormControl><Input type="date" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
                     <div className="pt-4 flex justify-end gap-2">
                       <Button variant="ghost" type="button" onClick={() => setIsEditing(false)}>Cancel</Button>
                       <Button type="submit" disabled={updateMutation.isPending} className="font-heading uppercase">
@@ -307,6 +342,27 @@ export default function EventDetail() {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-2 gap-y-6 pt-2">
+                    <div>
+                      <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Registration Opens</div>
+                      <div className="font-medium flex items-center gap-2">
+                        <Clock size={16} className="text-primary" />
+                        {event.registrationOpen
+                          ? format(new Date(event.registrationOpen), "MMM d, yyyy")
+                          : <span className="text-muted-foreground italic text-sm">Not set</span>}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Registration Closes</div>
+                      <div className="font-medium flex items-center gap-2">
+                        <Clock size={16} className="text-primary" />
+                        {event.registrationClose
+                          ? format(new Date(event.registrationClose), "MMM d, yyyy")
+                          : <span className="text-muted-foreground italic text-sm">Not set</span>}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="pt-4 border-t">
                     <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-2">Race Classes</div>
                     <div className="flex flex-wrap gap-2">
@@ -337,6 +393,22 @@ export default function EventDetail() {
                   <Button onClick={copyLink} className="w-full font-heading uppercase tracking-wider" size="sm">
                     {copied ? <><Check size={14} className="mr-2" /> Copied!</> : <><Copy size={14} className="mr-2" /> Copy Link</>}
                   </Button>
+                  {(event.registrationOpen || event.registrationClose) && (
+                    <div className="border-t pt-3 space-y-1.5 text-xs text-muted-foreground">
+                      {event.registrationOpen && (
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold uppercase tracking-wider">Opens</span>
+                          <span>{format(new Date(event.registrationOpen), "MMM d, yyyy")}</span>
+                        </div>
+                      )}
+                      {event.registrationClose && (
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold uppercase tracking-wider">Closes</span>
+                          <span>{format(new Date(event.registrationClose), "MMM d, yyyy")}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : (
                 <p className="text-xs text-muted-foreground">
