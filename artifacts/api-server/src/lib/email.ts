@@ -1,6 +1,3 @@
-import { ReplitConnectors } from "@replit/connectors-sdk";
-
-const connectors = new ReplitConnectors();
 const FROM_ADDRESS = process.env.EMAIL_FROM || "RMMT Ops <onboarding@resend.dev>";
 
 export async function sendSetupEmail(opts: {
@@ -19,10 +16,20 @@ export async function sendSetupEmail(opts: {
     ? `You've been added as an organizer on RMMT Ops. Click the button below to set your password and activate your account.`
     : `We received a request to reset your RMMT Ops password. Click the button below to choose a new one.`;
 
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.warn(`[email] RESEND_API_KEY not set — setup URL for ${to}:`);
+    console.warn(`[email] ${url}`);
+    return { ok: false, reason: "no_api_key", setupUrl: url };
+  }
+
   try {
-    const res = await connectors.proxy("resend", "/emails", {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         from: FROM_ADDRESS,
         to,
@@ -61,8 +68,7 @@ export async function sendSetupEmail(opts: {
 
     return { ok: true };
   } catch (err: any) {
-    console.error("[email] Failed to send via Resend connector:", err?.message ?? err);
-    console.warn("[email] Setup URL (fallback log):", url);
+    console.error("[email] Failed to send email:", err?.message ?? err);
     return { ok: false, reason: String(err?.message ?? err), setupUrl: url };
   }
 }
