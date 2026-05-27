@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { registrationsTable, ridersTable, checkinsTable } from "@workspace/db";
+import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 const router = Router();
@@ -82,6 +82,100 @@ router.patch("/registrations/:registrationId", async (req, res) => {
     riderName: rider ? `${rider.firstName} ${rider.lastName}` : "",
     amountPaid: reg.amountPaid ? Number(reg.amountPaid) : null,
     createdAt: reg.createdAt.toISOString(),
+  });
+});
+
+// ── Public: event info for the registration form ─────────────────────────────
+router.get("/public/events/:eventId/register-info", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const rows = await db.select({
+    id: eventsTable.id,
+    name: eventsTable.name,
+    date: eventsTable.date,
+    state: eventsTable.state,
+    location: eventsTable.location,
+    trackName: eventsTable.trackName,
+    raceClasses: eventsTable.raceClasses,
+    status: eventsTable.status,
+    entryFee: eventsTable.entryFee,
+    maxRiders: eventsTable.maxRiders,
+    clubName: clubsTable.name,
+  }).from(eventsTable)
+    .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
+    .where(eq(eventsTable.id, eventId));
+
+  if (!rows[0]) return res.status(404).json({ error: "Event not found" });
+  const e = rows[0];
+  return res.json({
+    ...e,
+    entryFee: e.entryFee ? Number(e.entryFee) : null,
+  });
+});
+
+// ── Public: self-service rider registration ───────────────────────────────────
+router.post("/public/events/:eventId/register", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber } = req.body;
+
+  if (!firstName || !lastName || !email || !raceClass) {
+    return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
+  }
+
+  // Confirm event exists and is open for registration
+  const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!events[0]) return res.status(404).json({ error: "Event not found" });
+  if (events[0].status !== "registration_open") {
+    return res.status(409).json({ error: "Registration is not currently open for this event" });
+  }
+  if (events[0].raceClasses && !events[0].raceClasses.includes(raceClass)) {
+    return res.status(400).json({ error: "Invalid race class for this event" });
+  }
+
+  // Find or create rider by email
+  let rider;
+  const existing = await db.select().from(ridersTable).where(eq(ridersTable.email, email));
+  if (existing[0]) {
+    rider = existing[0];
+  } else {
+    const [created] = await db.insert(ridersTable).values({
+      firstName, lastName, email, phone: phone || null,
+      dateOfBirth: dateOfBirth || null,
+      emergencyContact: emergencyContact || null,
+      emergencyPhone: emergencyPhone || null,
+      bibNumber: bibNumber || null,
+    }).returning();
+    rider = created;
+  }
+
+  // Prevent duplicate registration
+  const dupes = await db.select().from(registrationsTable)
+    .where(and(
+      eq(registrationsTable.eventId, eventId),
+      eq(registrationsTable.riderId, rider.id),
+      eq(registrationsTable.raceClass, raceClass),
+    ));
+  if (dupes[0]) {
+    return res.status(409).json({ error: "You are already registered for this class at this event" });
+  }
+
+  const [reg] = await db.insert(registrationsTable).values({
+    eventId, riderId: rider.id, raceClass,
+    bibNumber: bibNumber || rider.bibNumber || null,
+    status: "confirmed", paymentStatus: "unpaid",
+  }).returning();
+
+  await db.insert(checkinsTable).values({
+    eventId, riderId: rider.id, raceClass,
+    bibNumber: bibNumber || rider.bibNumber || null,
+    checkedIn: false, rfidLinked: false,
+  }).onConflictDoNothing();
+
+  return res.status(201).json({
+    registrationId: reg.id,
+    riderName: `${rider.firstName} ${rider.lastName}`,
+    raceClass,
+    eventName: events[0].name,
+    eventDate: events[0].date,
   });
 });
 

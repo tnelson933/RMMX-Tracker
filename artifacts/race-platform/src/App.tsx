@@ -12,6 +12,7 @@ import Results from "@/pages/public/Results";
 import EventResults from "@/pages/public/EventResults";
 import Leaderboard from "@/pages/public/Leaderboard";
 import Login from "@/pages/public/Login";
+import Register from "@/pages/public/Register";
 
 import Dashboard from "@/pages/organizer/Dashboard";
 import EventLayout from "@/pages/organizer/EventLayout";
@@ -54,6 +55,9 @@ function Router() {
       </Route>
       <Route path="/login">
         <PublicLayout><Login /></PublicLayout>
+      </Route>
+      <Route path="/register/:eventId">
+        <Register />
       </Route>
 
       <Route path="/dashboard">

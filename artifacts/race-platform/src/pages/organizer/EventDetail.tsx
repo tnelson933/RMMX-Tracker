@@ -11,7 +11,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, MapPin, Flag, Save, Users, CheckCircle } from "lucide-react";
+import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check } from "lucide-react";
 import { format } from "date-fns";
 
 const updateEventSchema = z.object({
@@ -35,6 +35,16 @@ export default function EventDetail() {
   const updateMutation = useUpdateEvent();
 
   const [isEditing, setIsEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const registrationUrl = `${window.location.origin}/register/${eventId}`;
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(registrationUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast({ title: "Link copied to clipboard" });
+  };
 
   const form = useForm<z.infer<typeof updateEventSchema>>({
     resolver: zodResolver(updateEventSchema),
@@ -244,6 +254,30 @@ export default function EventDetail() {
         </div>
         
         <div className="space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-2 pb-3 border-b">
+              <Link2 size={18} className="text-primary" />
+              <CardTitle className="font-heading uppercase text-base">Registration Link</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-3">
+              {event.status === "registration_open" ? (
+                <>
+                  <p className="text-xs text-muted-foreground">Share this link with riders so they can register online.</p>
+                  <div className="bg-muted rounded-md px-3 py-2 text-xs font-mono break-all text-muted-foreground select-all">
+                    {registrationUrl}
+                  </div>
+                  <Button onClick={copyLink} className="w-full font-heading uppercase tracking-wider" size="sm">
+                    {copied ? <><Check size={14} className="mr-2" /> Copied!</> : <><Copy size={14} className="mr-2" /> Copy Link</>}
+                  </Button>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Set the event status to <strong>Registration Open</strong> to activate the rider registration link.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="bg-sidebar text-sidebar-foreground border-b rounded-t-lg pb-4">
               <CardTitle className="font-heading uppercase text-xl text-white">Race Day Summary</CardTitle>
