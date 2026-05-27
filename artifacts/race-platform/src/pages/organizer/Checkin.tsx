@@ -63,7 +63,7 @@ export default function Checkin() {
   const { toast } = useToast();
 
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [rfidInputOpenId, setRfidInputOpenId] = useState<number | null>(null);
 
   // Close any open RFID panel when the search changes so it can't steal focus
@@ -114,38 +114,47 @@ export default function Checkin() {
     return suggestions;
   })();
 
+  const allCheckins = checkins ?? [];
+
   const filterCounts = {
-    all: (checkins ?? []).length,
-    not_checked_in: (checkins ?? []).filter(c => !c.checkedIn).length,
-    checked_in: (checkins ?? []).filter(c => c.checkedIn).length,
-    no_rfid: (checkins ?? []).filter(c => !c.rfidLinked).length,
+    all: allCheckins.length,
+    not_checked_in: allCheckins.filter(c => !c.checkedIn).length,
+    checked_in: allCheckins.filter(c => c.checkedIn === true).length,
+    no_rfid: allCheckins.filter(c => !c.rfidLinked).length,
   };
 
-  const filteredCheckins = (() => {
-    const q = search.trim().toLowerCase();
-    const passesFilter = (c: NonNullable<typeof checkins>[number]) => {
-      if (filter === "checked_in") return c.checkedIn;
-      if (filter === "not_checked_in") return !c.checkedIn;
-      if (filter === "no_rfid") return !c.rfidLinked;
-      return true;
-    };
-    const matchRank = (c: NonNullable<typeof checkins>[number]): number => {
-      if (!q) return 0;
-      const name = c.riderName.toLowerCase();
-      const bib = c.bibNumber ?? "";
-      if (name === q) return 0;
-      if (bib === q) return 1;
-      if (name.startsWith(q)) return 2;
-      const words = name.split(/\s+/);
-      if (words.some(w => w.startsWith(q))) return 3;
-      if (name.includes(q)) return 4;
-      if (bib.includes(q)) return 5;
-      return -1;
-    };
-    return (checkins ?? [])
-      .filter(c => passesFilter(c) && matchRank(c) >= 0)
-      .sort((a, b) => matchRank(a) - matchRank(b));
-  })();
+  const q = search.trim().toLowerCase();
+
+  const statusFiltered = allCheckins.filter(c => {
+    if (statusFilter === "checked_in") return c.checkedIn === true;
+    if (statusFilter === "not_checked_in") return c.checkedIn !== true;
+    if (statusFilter === "no_rfid") return c.rfidLinked !== true;
+    return true;
+  });
+
+  const searchFiltered = q
+    ? statusFiltered.filter(c => {
+        const name = c.riderName.toLowerCase();
+        const bib = c.bibNumber ?? "";
+        return name.includes(q) || bib.includes(q);
+      })
+    : statusFiltered;
+
+  const filteredCheckins = q
+    ? [...searchFiltered].sort((a, b) => {
+        const rank = (c: typeof a) => {
+          const name = c.riderName.toLowerCase();
+          const bib = c.bibNumber ?? "";
+          if (name === q) return 0;
+          if (bib === q) return 1;
+          if (name.startsWith(q)) return 2;
+          if (name.split(/\s+/).some(w => w.startsWith(q))) return 3;
+          if (name.includes(q)) return 4;
+          return 5;
+        };
+        return rank(a) - rank(b);
+      })
+    : searchFiltered;
 
   if (eventLoading || checkinsLoading) return <div className="p-8">Loading...</div>;
 
@@ -195,12 +204,12 @@ export default function Checkin() {
             ].map(({ key, label }) => (
               <Button
                 key={key}
-                variant={filter === key ? "default" : "outline"}
+                variant={statusFilter === key ? "default" : "outline"}
                 className="h-14 px-5 text-base font-heading uppercase flex flex-col gap-0 leading-none"
-                onClick={() => setFilter(key)}
+                onClick={() => setStatusFilter(key)}
               >
                 <span>{label}</span>
-                <span className={`text-xs font-mono font-bold mt-0.5 ${filter === key ? "opacity-70" : "opacity-50"}`}>
+                <span className={`text-xs font-mono font-bold mt-0.5 ${statusFilter === key ? "opacity-70" : "opacity-50"}`}>
                   {filterCounts[key as keyof typeof filterCounts]}
                 </span>
               </Button>
