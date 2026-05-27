@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
-import { useListMotos, useGenerateLineups, useUpdateMoto, useGetEvent, getListMotosQueryKey } from "@workspace/api-client-react";
+import { useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto, useGetEvent, getListMotosQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Motos() {
@@ -18,18 +19,22 @@ export default function Motos() {
 
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
+  const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: motos, isLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
 
   const generateMutation = useGenerateLineups();
   const updateMutation = useUpdateMoto();
+  const deleteMutation = useDeleteMoto();
 
   const handleGenerate = () => {
     if (!event?.raceClasses) return;
+    const perHeat = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
     generateMutation.mutate(
-      { eventId, data: { raceFormat: format, classes: event.raceClasses } },
+      { eventId, data: { raceFormat: format, classes: event.raceClasses, ridersPerHeat: perHeat } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -41,6 +46,19 @@ export default function Motos() {
         },
       }
     );
+  };
+
+  const handleDelete = (motoId: number) => {
+    deleteMutation.mutate({ motoId }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+        setConfirmDeleteId(null);
+        toast({ title: "Heat deleted" });
+      },
+      onError: (err) => {
+        toast({ title: "Failed to delete", description: err.message, variant: "destructive" });
+      },
+    });
   };
 
   const handleStatusUpdate = (motoId: number, status: string) => {
@@ -96,6 +114,20 @@ export default function Motos() {
                     <SelectItem value="three_moto">3 Moto Format</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Max Riders Per Heat</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={ridersPerHeat}
+                  onChange={e => setRidersPerHeat(e.target.value)}
+                  placeholder="No limit (all in one heat)"
+                  className="h-9"
+                />
+                <p className="text-xs text-muted-foreground">
+                  If a class exceeds this number, riders are automatically split into separate heats.
+                </p>
               </div>
               <Button onClick={handleGenerate} disabled={generateMutation.isPending} className="w-full font-heading uppercase">
                 {generateMutation.isPending ? "Generating..." : "Generate Lineups"}
@@ -221,6 +253,15 @@ export default function Motos() {
                     <Button size="sm" variant="ghost" className="text-muted-foreground px-2" onClick={() => copyLiveLink(moto.id)}>
                       {copiedId === moto.id ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive/60 hover:text-destructive hover:bg-destructive/10 px-2"
+                      onClick={() => setConfirmDeleteId(moto.id)}
+                      title="Delete heat"
+                    >
+                      <Trash2 size={13} />
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -239,6 +280,29 @@ export default function Motos() {
           </CardContent>
         </Card>
       )}
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={confirmDeleteId !== null} onOpenChange={open => { if (!open) setConfirmDeleteId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase text-xl">Delete Heat?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            This will permanently remove the heat and its lineup. This cannot be undone.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => confirmDeleteId !== null && handleDelete(confirmDeleteId)}
+              className="font-heading uppercase tracking-wider"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete Heat"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -60,9 +60,17 @@ router.patch("/motos/:motoId", async (req, res) => {
   });
 });
 
+router.delete("/motos/:motoId", async (req, res) => {
+  const id = Number(req.params.motoId);
+  const deleted = await db.delete(motosTable).where(eq(motosTable.id, id)).returning();
+  if (deleted.length === 0) return res.status(404).json({ error: "Not found" });
+  return res.status(204).send();
+});
+
 router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { raceFormat, classes, ridersPerHeat = 8 } = req.body;
+  const { raceFormat, classes, ridersPerHeat } = req.body;
+  const maxPerHeat: number = ridersPerHeat && ridersPerHeat > 0 ? ridersPerHeat : Infinity;
 
   const checkins = await db.select({
     riderId: checkinsTable.riderId,
@@ -84,25 +92,40 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     const classRiders = checkins.filter(c => c.raceClass === cls);
     if (classRiders.length === 0) continue;
 
-    for (let m = 1; m <= motoCount; m++) {
-      const lineup = classRiders.map((r, i) => ({
-        position: i + 1,
-        riderId: r.riderId,
-        riderName: `${r.firstName} ${r.lastName}`,
-        bibNumber: r.bibNumber,
-        rfidNumber: r.rfidNumber,
-      }));
+    // Split riders into heats based on ridersPerHeat cap
+    const heatGroups: typeof classRiders[] = [];
+    for (let i = 0; i < classRiders.length; i += maxPerHeat) {
+      heatGroups.push(classRiders.slice(i, i + maxPerHeat));
+    }
+    const multiHeat = heatGroups.length > 1;
 
-      const [moto] = await db.insert(motosTable).values({
-        eventId,
-        name: `${cls} Moto ${m}`,
-        type: m === motoCount && motoCount > 1 ? "main" : "heat",
-        raceClass: cls,
-        motoNumber: motoNumber++,
-        status: "scheduled",
-        lineup,
-      }).returning();
-      motos.push(moto);
+    for (let h = 0; h < heatGroups.length; h++) {
+      const heatRiders = heatGroups[h];
+      const heatLabel = multiHeat ? ` Heat ${h + 1}` : "";
+
+      for (let m = 1; m <= motoCount; m++) {
+        const lineup = heatRiders.map((r, i) => ({
+          position: i + 1,
+          riderId: r.riderId,
+          riderName: `${r.firstName} ${r.lastName}`,
+          bibNumber: r.bibNumber,
+          rfidNumber: r.rfidNumber,
+        }));
+
+        const motoLabel = motoCount > 1 ? ` Moto ${m}` : "";
+        const name = `${cls}${heatLabel}${motoLabel}`;
+
+        const [moto] = await db.insert(motosTable).values({
+          eventId,
+          name,
+          type: "heat",
+          raceClass: cls,
+          motoNumber: motoNumber++,
+          status: "scheduled",
+          lineup,
+        }).returning();
+        motos.push(moto);
+      }
     }
   }
 

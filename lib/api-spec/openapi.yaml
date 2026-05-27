@@ -590,6 +590,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Moto"
+    delete:
+      operationId: deleteMoto
+      tags: [motos]
+      summary: Delete a moto/heat
+      parameters:
+        - name: motoId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Moto deleted
 
   /events/{eventId}/generate-lineups:
     post:

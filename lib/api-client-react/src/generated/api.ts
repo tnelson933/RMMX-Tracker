@@ -2160,6 +2160,76 @@ export const useUpdateMoto = <TError = ErrorType<unknown>,
       return useMutation(getUpdateMotoMutationOptions(options));
     }
 
+export const getDeleteMotoUrl = (motoId: number,) => {
+
+
+
+
+  return `/api/motos/${motoId}`
+}
+
+/**
+ * @summary Delete a moto/heat
+ */
+export const deleteMoto = async (motoId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteMotoUrl(motoId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteMotoMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMoto>>, TError,{motoId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteMoto>>, TError,{motoId: number}, TContext> => {
+
+const mutationKey = ['deleteMoto'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteMoto>>, {motoId: number}> = (props) => {
+          const {motoId} = props ?? {};
+
+          return  deleteMoto(motoId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteMotoMutationResult = NonNullable<Awaited<ReturnType<typeof deleteMoto>>>
+
+    export type DeleteMotoMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a moto/heat
+ */
+export const useDeleteMoto = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteMoto>>, TError,{motoId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteMoto>>,
+        TError,
+        {motoId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteMotoMutationOptions(options));
+    }
+
 export const getGenerateLineupsUrl = (eventId: number,) => {
 
 

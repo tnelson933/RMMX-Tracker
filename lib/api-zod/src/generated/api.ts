@@ -607,6 +607,14 @@ export const UpdateMotoResponse = zod.object({
 
 
 /**
+ * @summary Delete a moto/heat
+ */
+export const DeleteMotoParams = zod.object({
+  "motoId": zod.coerce.number()
+})
+
+
+/**
  * @summary Auto-generate heat lineups from checked-in riders
  */
 export const GenerateLineupsParams = zod.object({
