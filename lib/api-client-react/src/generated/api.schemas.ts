@@ -12,6 +12,7 @@ export interface HealthStatus {
 export interface LoginInput {
   email: string;
   password: string;
+  rememberMe?: boolean;
 }
 
 export type UserRole = typeof UserRole[keyof typeof UserRole];

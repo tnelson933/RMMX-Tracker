@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { ShieldAlert, KeyRound } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,6 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 const loginSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
   password: z.string().min(1, { message: "Password is required." }),
+  rememberMe: z.boolean().default(false),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -30,13 +32,14 @@ export default function Login() {
     defaultValues: {
       email: "",
       password: "",
+      rememberMe: false,
     },
   });
 
   const onSubmit = (data: LoginFormValues) => {
     setAuthError(null);
     loginMutation.mutate(
-      { data },
+      { data: { email: data.email, password: data.password, rememberMe: data.rememberMe } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
@@ -115,6 +118,29 @@ export default function Login() {
                 )}
               />
               
+              <FormField
+                control={form.control}
+                name="rememberMe"
+                render={({ field }) => (
+                  <FormItem className="flex items-center gap-3">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        id="rememberMe"
+                        className="border-muted-foreground/40 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                      />
+                    </FormControl>
+                    <label
+                      htmlFor="rememberMe"
+                      className="text-sm font-medium text-muted-foreground cursor-pointer select-none leading-none"
+                    >
+                      Remember me for 30 days
+                    </label>
+                  </FormItem>
+                )}
+              />
+
               <Button 
                 type="submit" 
                 className="w-full h-14 text-lg font-heading font-bold uppercase tracking-widest mt-2"

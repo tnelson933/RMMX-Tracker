@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 const router = Router();
 
 router.post("/auth/login", async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, rememberMe } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "Email and password required" });
   }
@@ -25,6 +25,12 @@ router.post("/auth/login", async (req, res) => {
   }
 
   (req.session as any).userId = user.id;
+
+  if (rememberMe) {
+    req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
+  } else {
+    req.session.cookie.expires = undefined; // session cookie — expires on browser close
+  }
 
   return res.json({
     user: {
