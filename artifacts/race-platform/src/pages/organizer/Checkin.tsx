@@ -184,10 +184,11 @@ export default function Checkin() {
             {filteredCheckins.map(checkin => (
               <Card key={checkin.id} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
-                  <div className={`w-16 flex-shrink-0 flex items-center justify-center ${checkin.checkedIn ? 'bg-secondary' : 'bg-muted'}`}>
-                    <span className={`font-heading font-black text-2xl leading-none ${checkin.checkedIn ? 'text-white' : 'text-foreground/50'}`}>
-                      {checkin.bibNumber ?? "—"}
+                  <div className={`w-16 flex-shrink-0 flex flex-col items-center justify-center gap-0.5 ${checkin.checkedIn ? 'bg-secondary' : 'bg-muted'}`}>
+                    <span className={`font-heading font-black text-2xl leading-none ${checkin.checkedIn ? 'text-white' : checkin.bibNumber ? 'text-foreground' : 'text-foreground/30'}`}>
+                      {checkin.bibNumber ?? "?"}
                     </span>
+                    <span className={`text-[9px] font-bold uppercase tracking-widest ${checkin.checkedIn ? 'text-white/70' : 'text-foreground/40'}`}>BIB</span>
                   </div>
 
                   <div className="p-4 flex-1 flex flex-col justify-between">
