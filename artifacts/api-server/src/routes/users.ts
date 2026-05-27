@@ -91,7 +91,7 @@ router.post("/users", async (req, res) => {
   const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
   await db.insert(passwordSetupTokensTable).values({ userId: newUser.id, token, expiresAt });
 
-  await sendSetupEmail({ to: newUser.email, name: newUser.name, token, appUrl: getAppUrl(), isNew: true });
+  const emailResult = await sendSetupEmail({ to: newUser.email, name: newUser.name, token, appUrl: getAppUrl(), isNew: true });
 
   return res.status(201).json({
     id: newUser.id,
@@ -102,6 +102,8 @@ router.post("/users", async (req, res) => {
     clubName: null,
     hasPassword: false,
     createdAt: newUser.createdAt.toISOString(),
+    emailSent: emailResult.ok,
+    setupUrl: emailResult.ok ? undefined : emailResult.setupUrl,
   });
 });
 
@@ -129,9 +131,9 @@ router.post("/users/:userId/resend-invite", async (req, res) => {
   const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
   await db.insert(passwordSetupTokensTable).values({ userId: user.id, token, expiresAt });
 
-  await sendSetupEmail({ to: user.email, name: user.name, token, appUrl: getAppUrl(), isNew: !user.passwordHash });
+  const emailResult = await sendSetupEmail({ to: user.email, name: user.name, token, appUrl: getAppUrl(), isNew: !user.passwordHash });
 
-  return res.json({ ok: true });
+  return res.json({ ok: true, emailSent: emailResult.ok, setupUrl: emailResult.ok ? undefined : emailResult.setupUrl });
 });
 
 export default router;

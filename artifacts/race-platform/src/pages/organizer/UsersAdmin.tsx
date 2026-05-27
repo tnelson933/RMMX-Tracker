@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { UserCog, Plus, Mail, Trash2, CheckCircle, Clock, RefreshCw } from "lucide-react";
+import { UserCog, Plus, Mail, Trash2, CheckCircle, Clock, RefreshCw, Copy, Check, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -24,6 +24,9 @@ export default function UsersAdmin() {
   const { toast } = useToast();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [setupLinkUrl, setSetupLinkUrl] = useState<string | null>(null);
+  const [setupLinkName, setSetupLinkName] = useState("");
+  const [copied, setCopied] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("club_organizer");
@@ -38,6 +41,12 @@ export default function UsersAdmin() {
 
   const resetForm = () => { setName(""); setEmail(""); setRole("club_organizer"); setClubIdStr(""); };
 
+  const copyLink = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleCreate = () => {
     if (!name || !email || !role) return;
     createMutation.mutate(
@@ -50,11 +59,16 @@ export default function UsersAdmin() {
         },
       },
       {
-        onSuccess: () => {
+        onSuccess: (data: any) => {
           queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
           setIsCreateOpen(false);
           resetForm();
-          toast({ title: "User created", description: "A setup email has been sent to their inbox." });
+          if (data?.setupUrl) {
+            setSetupLinkName(data.name ?? email);
+            setSetupLinkUrl(data.setupUrl);
+          } else {
+            toast({ title: "User created", description: "A setup email has been sent to their inbox." });
+          }
         },
         onError: (err: any) => {
           toast({ title: "Failed to create user", description: err?.message || "Unknown error", variant: "destructive" });
@@ -67,8 +81,13 @@ export default function UsersAdmin() {
     resendMutation.mutate(
       { userId },
       {
-        onSuccess: () => {
-          toast({ title: "Invite resent", description: `Setup email sent to ${userName}.` });
+        onSuccess: (data: any) => {
+          if (data?.setupUrl) {
+            setSetupLinkName(userName);
+            setSetupLinkUrl(data.setupUrl);
+          } else {
+            toast({ title: "Invite resent", description: `Setup email sent to ${userName}.` });
+          }
         },
         onError: () => {
           toast({ title: "Failed to resend", variant: "destructive" });
@@ -165,6 +184,37 @@ export default function UsersAdmin() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Setup link fallback dialog — shown when email delivery fails */}
+      <Dialog open={!!setupLinkUrl} onOpenChange={(v) => { if (!v) { setSetupLinkUrl(null); setCopied(false); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase text-xl flex items-center gap-2">
+              <AlertTriangle size={18} className="text-yellow-500" /> Email Not Delivered
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <p className="text-sm text-muted-foreground">
+              The setup email for <span className="font-semibold text-foreground">{setupLinkName}</span> couldn't be delivered — your Resend account needs a verified domain to send to external addresses. Copy this link and share it with them directly.
+            </p>
+            <div className="bg-muted rounded-md p-3 flex items-center gap-2">
+              <code className="text-xs flex-1 break-all text-foreground">{setupLinkUrl}</code>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5 font-heading uppercase tracking-wider"
+                onClick={() => setupLinkUrl && copyLink(setupLinkUrl)}
+              >
+                {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This link expires in 72 hours. To fix email delivery permanently, verify your domain at{" "}
+              <a href="https://resend.com/domains" target="_blank" rel="noopener noreferrer" className="text-primary underline">resend.com/domains</a>.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Card className="overflow-hidden border-sidebar-border">
         <Table>
