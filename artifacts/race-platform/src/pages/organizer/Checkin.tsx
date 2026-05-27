@@ -95,6 +95,25 @@ export default function Checkin() {
     });
   };
 
+  // Mirror the same suggestion logic as Registrations page
+  const bibSuggestions = (() => {
+    const all = checkins ?? [];
+    const confirmedBibs = new Set<number>(
+      all.map(c => c.bibNumber ? parseInt(c.bibNumber, 10) : NaN).filter(n => !isNaN(n))
+    );
+    const suggestions = new Map<number, string>();
+    const used = new Set(confirmedBibs);
+    for (const c of all) {
+      if (!c.bibNumber) {
+        let candidate = 1;
+        while (used.has(candidate)) candidate++;
+        suggestions.set(c.riderId, String(candidate));
+        used.add(candidate);
+      }
+    }
+    return suggestions;
+  })();
+
   const filteredCheckins = (() => {
     const q = search.trim().toLowerCase();
     const passesFilter = (c: NonNullable<typeof checkins>[number]) => {
@@ -184,12 +203,21 @@ export default function Checkin() {
             {filteredCheckins.map(checkin => (
               <Card key={checkin.id} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
-                  <div className={`w-16 flex-shrink-0 flex flex-col items-center justify-center gap-0.5 ${checkin.checkedIn ? 'bg-secondary' : 'bg-muted'}`}>
-                    <span className={`font-heading font-black text-2xl leading-none ${checkin.checkedIn ? 'text-white' : checkin.bibNumber ? 'text-foreground' : 'text-foreground/30'}`}>
-                      {checkin.bibNumber ?? "?"}
-                    </span>
-                    <span className={`text-[9px] font-bold uppercase tracking-widest ${checkin.checkedIn ? 'text-white/70' : 'text-foreground/40'}`}>BIB</span>
-                  </div>
+                  {(() => {
+                    const confirmed = checkin.bibNumber;
+                    const suggested = bibSuggestions.get(checkin.riderId);
+                    const isSuggested = !confirmed && !!suggested;
+                    return (
+                      <div className={`w-16 flex-shrink-0 flex flex-col items-center justify-center gap-0.5 ${checkin.checkedIn ? 'bg-secondary' : 'bg-muted'}`}>
+                        <span className={`font-heading font-black text-2xl leading-none ${checkin.checkedIn ? 'text-white' : confirmed ? 'text-foreground' : 'text-foreground/35'}`}>
+                          {confirmed ?? suggested ?? "?"}
+                        </span>
+                        <span className={`text-[9px] font-bold uppercase tracking-widest ${checkin.checkedIn ? 'text-white/70' : 'text-foreground/40'}`}>
+                          {isSuggested ? "est." : "BIB"}
+                        </span>
+                      </div>
+                    );
+                  })()}
 
                   <div className="p-4 flex-1 flex flex-col justify-between">
                     <div>
