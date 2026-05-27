@@ -41,8 +41,8 @@ export default function Login() {
     loginMutation.mutate(
       { data: { email: data.email, password: data.password, rememberMe: data.rememberMe } },
       {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+        onSuccess: async () => {
+          await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
           setLocation("/dashboard");
         },
         onError: (error: any) => {
