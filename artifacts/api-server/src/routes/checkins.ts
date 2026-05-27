@@ -40,6 +40,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       registrationId: r.registrationId,
       riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
       raceClass: r.raceClass,
+      registrationBib: r.bibNumber ?? null,
       bibNumber: r.bibNumber ?? c?.bibNumber ?? null,
       checkedIn: c?.checkedIn ?? false,
       checkedInAt: c?.checkedInAt?.toISOString() ?? null,

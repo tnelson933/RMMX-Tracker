@@ -1246,6 +1246,8 @@ components:
           type: string
         raceClass:
           type: string
+        registrationBib:
+          type: ["string", "null"]
         bibNumber:
           type: ["string", "null"]
         checkedIn:

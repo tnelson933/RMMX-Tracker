@@ -15,6 +15,8 @@ export interface Checkin {
   riderName: string;
   raceClass?: string;
   /** @nullable */
+  registrationBib?: string | null;
+  /** @nullable */
   bibNumber?: string | null;
   checkedIn: boolean;
   /** @nullable */

@@ -210,15 +210,11 @@ export default function Checkin() {
       })
     : searchFiltered;
 
-  // Set of bib numbers already confirmed on the server by OTHER riders
-  const confirmedBibSet = new Set<string>(
-    allCheckins.filter(c => c.bibNumber).map(c => String(c.bibNumber))
-  );
-
+  // Only bibs confirmed in the REGISTRATION table count as truly taken
   const isBibDuplicate = (riderId: number, value: string) => {
     const v = value.trim();
     if (!v) return false;
-    return allCheckins.some(c => c.riderId !== riderId && String(c.bibNumber) === v);
+    return allCheckins.some(c => c.riderId !== riderId && c.registrationBib != null && String(c.registrationBib) === v);
   };
 
   if (eventLoading || checkinsLoading) return <div className="p-8">Loading...</div>;
@@ -288,9 +284,11 @@ export default function Checkin() {
               <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
                   {(() => {
-                    const confirmed = checkin.bibNumber;
+                    // confirmed = bib locked in the REGISTRATION table (solid, non-editable)
+                    // bibNumber = merged display value (registration ?? checkin fallback)
+                    const confirmed = checkin.registrationBib;
                     const pending = bibEdits.get(checkin.riderId);
-                    const suggested = bibSuggestions.get(checkin.riderId);
+                    const suggested = bibSuggestions.get(checkin.riderId) ?? checkin.bibNumber ?? undefined;
                     const isEditing = bibEditId === checkin.riderId;
                     const editVal = pending ?? "";
                     const duplicate = pending !== undefined ? isBibDuplicate(checkin.riderId, pending) : false;
