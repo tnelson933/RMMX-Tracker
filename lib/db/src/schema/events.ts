@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, numeric, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clubsTable } from "./clubs";
@@ -18,6 +18,7 @@ export const eventsTable = pgTable("events", {
   paymentEnabled: boolean("payment_enabled").notNull().default(false),
   entryFee: numeric("entry_fee", { precision: 10, scale: 2 }),
   maxRiders: integer("max_riders"),
+  raceClassLimits: jsonb("race_class_limits").$type<Record<string, number | null>>().default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

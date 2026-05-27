@@ -5,6 +5,7 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { EventInputRaceClassLimits } from './eventInputRaceClassLimits';
 
 export interface EventInput {
   clubId: number;
@@ -14,6 +15,7 @@ export interface EventInput {
   location?: string;
   trackName?: string;
   raceClasses?: string[];
+  raceClassLimits?: EventInputRaceClassLimits;
   registrationOpen?: string;
   registrationClose?: string;
   paymentEnabled?: boolean;

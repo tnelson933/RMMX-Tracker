@@ -982,6 +982,10 @@ components:
           type: array
           items:
             type: string
+        raceClassLimits:
+          type: object
+          additionalProperties:
+            type: ["integer", "null"]
         registrationOpen:
           type: ["string", "null"]
         registrationClose:
@@ -1020,6 +1024,10 @@ components:
           type: array
           items:
             type: string
+        raceClassLimits:
+          type: object
+          additionalProperties:
+            type: ["integer", "null"]
         registrationOpen:
           type: string
         registrationClose:
@@ -1048,6 +1056,10 @@ components:
           type: array
           items:
             type: string
+        raceClassLimits:
+          type: object
+          additionalProperties:
+            type: ["integer", "null"]
         registrationOpen:
           type: string
         registrationClose:

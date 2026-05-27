@@ -5,6 +5,7 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { EventRaceClassLimits } from './eventRaceClassLimits';
 import type { EventStatus } from './eventStatus';
 
 export interface Event {
@@ -18,6 +19,7 @@ export interface Event {
   /** @nullable */
   trackName?: string | null;
   raceClasses?: string[];
+  raceClassLimits?: EventRaceClassLimits;
   /** @nullable */
   registrationOpen?: string | null;
   /** @nullable */

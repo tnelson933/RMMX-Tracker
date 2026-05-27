@@ -17,6 +17,7 @@ router.get("/events", async (req, res) => {
     location: eventsTable.location,
     trackName: eventsTable.trackName,
     raceClasses: eventsTable.raceClasses,
+    raceClassLimits: eventsTable.raceClassLimits,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
     status: eventsTable.status,
@@ -44,12 +45,13 @@ router.get("/events", async (req, res) => {
 });
 
 router.post("/events", async (req, res) => {
-  const { clubId, name, date, state, location, trackName, raceClasses, registrationOpen, registrationClose, paymentEnabled, entryFee, maxRiders } = req.body;
+  const { clubId, name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, entryFee, maxRiders } = req.body;
   if (!clubId || !name || !date || !state) return res.status(400).json({ error: "clubId, name, date, state required" });
 
   const [event] = await db.insert(eventsTable).values({
     clubId, name, date, state, location, trackName,
     raceClasses: raceClasses || [],
+    raceClassLimits: raceClassLimits || {},
     registrationOpen, registrationClose,
     paymentEnabled: paymentEnabled || false,
     entryFee: entryFee ? String(entryFee) : null,
@@ -75,6 +77,7 @@ router.get("/events/:eventId", async (req, res) => {
     location: eventsTable.location,
     trackName: eventsTable.trackName,
     raceClasses: eventsTable.raceClasses,
+    raceClassLimits: eventsTable.raceClassLimits,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
     status: eventsTable.status,
@@ -97,9 +100,9 @@ router.get("/events/:eventId", async (req, res) => {
 router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "registrationOpen", "registrationClose", "status", "paymentEnabled", "maxRiders"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "maxRiders"];
   for (const f of fields) {
-    if (req.body[f] !== undefined) updates[f === "raceClasses" ? "raceClasses" : f] = req.body[f];
+    if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
   if (req.body.entryFee !== undefined) updates.entryFee = req.body.entryFee ? String(req.body.entryFee) : null;
 

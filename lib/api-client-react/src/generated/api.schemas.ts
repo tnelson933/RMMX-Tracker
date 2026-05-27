@@ -77,6 +77,8 @@ export interface ClubUpdate {
   description?: string;
 }
 
+export type EventRaceClassLimits = {[key: string]: number | null};
+
 export type EventStatus = typeof EventStatus[keyof typeof EventStatus];
 
 
@@ -100,6 +102,7 @@ export interface Event {
   /** @nullable */
   trackName?: string | null;
   raceClasses?: string[];
+  raceClassLimits?: EventRaceClassLimits;
   /** @nullable */
   registrationOpen?: string | null;
   /** @nullable */
@@ -115,6 +118,8 @@ export interface Event {
   createdAt?: string;
 }
 
+export type EventInputRaceClassLimits = {[key: string]: number | null};
+
 export interface EventInput {
   clubId: number;
   name: string;
@@ -123,12 +128,15 @@ export interface EventInput {
   location?: string;
   trackName?: string;
   raceClasses?: string[];
+  raceClassLimits?: EventInputRaceClassLimits;
   registrationOpen?: string;
   registrationClose?: string;
   paymentEnabled?: boolean;
   entryFee?: number;
   maxRiders?: number;
 }
+
+export type EventUpdateRaceClassLimits = {[key: string]: number | null};
 
 export interface EventUpdate {
   name?: string;
@@ -137,6 +145,7 @@ export interface EventUpdate {
   location?: string;
   trackName?: string;
   raceClasses?: string[];
+  raceClassLimits?: EventUpdateRaceClassLimits;
   registrationOpen?: string;
   registrationClose?: string;
   status?: string;

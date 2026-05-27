@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -138,6 +138,18 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   }
   if (events[0].raceClasses && !events[0].raceClasses.includes(raceClass)) {
     return res.status(400).json({ error: "Invalid race class for this event" });
+  }
+
+  // Enforce per-class rider limit
+  const limits = (events[0].raceClassLimits ?? {}) as Record<string, number | null>;
+  const classLimit = limits[raceClass];
+  if (classLimit != null && classLimit > 0) {
+    const classCount = await db.select({ count: sql<number>`count(*)::int` })
+      .from(registrationsTable)
+      .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.raceClass, raceClass)));
+    if ((classCount[0]?.count ?? 0) >= classLimit) {
+      return res.status(409).json({ error: `${raceClass} is full (${classLimit} rider limit reached)` });
+    }
   }
 
   // Find or create rider by email
