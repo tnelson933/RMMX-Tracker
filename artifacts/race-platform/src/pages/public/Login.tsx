@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { ShieldAlert, KeyRound } from "lucide-react";
+import rmLogo from "@assets/rm-logo.png";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const loginSchema = z.object({
@@ -68,7 +69,7 @@ export default function Login() {
       <Card className="w-full max-w-md shadow-2xl border-sidebar-border/20">
         <div className="bg-sidebar p-8 text-center border-b border-sidebar-border relative overflow-hidden">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjMWExYTFhIj48L3JlY3Q+CjxwYXRoIGQ9Ik0wIDBMOCA4Wk04IDBMMCA4WiIgc3Ryb2tlPSIjMjI0IiBzdHJva2Utd2lkdGg9IjEiPjwvcGF0aD4KPC9zdmc+')] opacity-20"></div>
-          <ShieldAlert className="w-12 h-12 text-primary mx-auto mb-4 relative z-10" />
+          <img src={rmLogo} alt="Rocky Mountain" className="w-16 h-16 mx-auto mb-4 relative z-10 drop-shadow-lg" />
           <CardTitle className="text-3xl font-heading font-bold uppercase tracking-tight text-sidebar-foreground relative z-10">
             Organizer Portal
           </CardTitle>

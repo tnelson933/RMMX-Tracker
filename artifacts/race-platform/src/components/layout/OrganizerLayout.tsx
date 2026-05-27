@@ -14,6 +14,7 @@ import {
   Wifi,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import rmLogo from "@assets/rm-logo.png";
 
 export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -42,8 +43,9 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-[100dvh] flex bg-gray-50">
       <aside className="w-64 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border">
-        <div className="h-16 flex items-center px-6 border-b border-sidebar-border/50">
-          <span className="text-sidebar-primary font-heading font-bold text-2xl uppercase tracking-wider">
+        <div className="h-16 flex items-center px-4 gap-3 border-b border-sidebar-border/50">
+          <img src={rmLogo} alt="Rocky Mountain" className="h-9 w-9 shrink-0" />
+          <span className="text-sidebar-primary font-heading font-bold text-xl uppercase tracking-wider">
             RMMT Ops
           </span>
         </div>

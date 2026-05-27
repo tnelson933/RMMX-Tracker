@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import rmLogo from "@assets/rm-logo.png";
 
 export function PublicLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -9,8 +10,9 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col bg-background">
       <header className="border-b border-border bg-card">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-primary font-heading font-bold text-2xl uppercase tracking-wider">
+          <Link href="/" className="flex items-center gap-2.5">
+            <img src={rmLogo} alt="Rocky Mountain" className="h-9 w-9" />
+            <span className="text-primary font-heading font-bold text-xl uppercase tracking-wider hidden sm:block">
               RMMT
             </span>
           </Link>
