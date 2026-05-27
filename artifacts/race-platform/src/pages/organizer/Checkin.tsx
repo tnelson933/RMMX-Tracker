@@ -56,6 +56,46 @@ function RfidInput({ riderId, eventId, onDone }: { riderId: number; eventId: num
   );
 }
 
+type CheckinRow = { checkedIn: boolean; riderId: number; rfidNumber?: string | null };
+
+function CheckinButton({
+  checkin,
+  pending,
+  isPending,
+  isBibDuplicate,
+  onCheckin,
+}: {
+  checkin: CheckinRow;
+  pending: string | undefined;
+  isPending: boolean;
+  isBibDuplicate: (riderId: number, value: string) => boolean;
+  onCheckin: (bibToSave?: string) => void;
+}) {
+  const hasDuplicate = pending !== undefined && isBibDuplicate(checkin.riderId, pending);
+  const bibToSave = pending && !hasDuplicate ? pending : undefined;
+  return (
+    <Button
+      className={`h-16 w-full text-xl font-heading uppercase tracking-widest mt-3 ${
+        checkin.checkedIn
+          ? "bg-muted text-muted-foreground hover:bg-muted/80"
+          : hasDuplicate
+          ? "bg-red-500/80 text-white cursor-not-allowed"
+          : "bg-primary hover:bg-primary/90"
+      }`}
+      onClick={() => !hasDuplicate && onCheckin(bibToSave)}
+      disabled={isPending || hasDuplicate}
+    >
+      {checkin.checkedIn ? (
+        <span className="flex items-center gap-2">
+          <CheckCircle size={24} /> Checked In
+        </span>
+      ) : (
+        "Check In"
+      )}
+    </Button>
+  );
+}
+
 export default function Checkin() {
   const params = useParams();
   const eventId = parseInt(params.eventId || "0");
@@ -65,6 +105,8 @@ export default function Checkin() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [rfidInputOpenId, setRfidInputOpenId] = useState<number | null>(null);
+  const [bibEditId, setBibEditId] = useState<number | null>(null);
+  const [bibEdits, setBibEdits] = useState<Map<number, string>>(new Map());
 
   // Close any open RFID panel when the search changes so it can't steal focus
   const handleSearchChange = (value: string) => {
@@ -82,8 +124,8 @@ export default function Checkin() {
 
   const checkinMutation = useCheckinRider();
 
-  const handleCheckin = (riderId: number, currentRfid?: string | null) => {
-    checkinMutation.mutate({ eventId, data: { riderId, rfidNumber: currentRfid || undefined } }, {
+  const handleCheckin = (riderId: number, currentRfid?: string | null, bibOverride?: string) => {
+    checkinMutation.mutate({ eventId, data: { riderId, rfidNumber: currentRfid || undefined, bibNumber: bibOverride || undefined } }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
         queryClient.invalidateQueries({ queryKey: getGetRaceDaySummaryQueryKey(eventId) });
@@ -156,6 +198,17 @@ export default function Checkin() {
       })
     : searchFiltered;
 
+  // Set of bib numbers already confirmed on the server by OTHER riders
+  const confirmedBibSet = new Set<string>(
+    allCheckins.filter(c => c.bibNumber).map(c => String(c.bibNumber))
+  );
+
+  const isBibDuplicate = (riderId: number, value: string) => {
+    const v = value.trim();
+    if (!v) return false;
+    return allCheckins.some(c => c.riderId !== riderId && String(c.bibNumber) === v);
+  };
+
   if (eventLoading || checkinsLoading) return <div className="p-8">Loading...</div>;
 
   return (
@@ -224,16 +277,73 @@ export default function Checkin() {
                 <CardContent className="p-0 flex h-full">
                   {(() => {
                     const confirmed = checkin.bibNumber;
+                    const pending = bibEdits.get(checkin.riderId);
                     const suggested = bibSuggestions.get(checkin.riderId);
-                    const isSuggested = !confirmed && !!suggested;
+                    const isEditing = bibEditId === checkin.riderId;
+                    const editVal = pending ?? "";
+                    const duplicate = pending !== undefined ? isBibDuplicate(checkin.riderId, pending) : false;
+
+                    // What number to display when not editing
+                    const displayNum = confirmed ?? (pending !== undefined ? pending : null) ?? suggested ?? "?";
+
+                    // Text color when not editing
+                    const numColor = checkin.checkedIn
+                      ? "text-white"
+                      : confirmed
+                        ? "text-foreground"
+                        : pending !== undefined
+                          ? duplicate ? "text-red-500" : "text-foreground"
+                          : "text-foreground/35";
+
+                    const canEdit = !confirmed && !checkin.checkedIn;
+
                     return (
-                      <div className={`w-16 flex-shrink-0 flex flex-col items-center justify-center gap-0.5 ${checkin.checkedIn ? 'bg-secondary' : 'bg-muted'}`}>
-                        <span className={`font-heading font-black text-2xl leading-none ${checkin.checkedIn ? 'text-white' : confirmed ? 'text-foreground' : 'text-foreground/35'}`}>
-                          {confirmed ?? suggested ?? "?"}
-                        </span>
-                        <span className={`text-[9px] font-bold uppercase tracking-widest ${checkin.checkedIn ? 'text-white/70' : 'text-foreground/40'}`}>
-                          {isSuggested ? "est." : "BIB"}
-                        </span>
+                      <div
+                        className={`w-16 flex-shrink-0 flex flex-col items-center justify-center gap-0.5 ${checkin.checkedIn ? 'bg-secondary' : 'bg-muted'} ${canEdit ? 'cursor-pointer hover:brightness-95 transition-all' : ''}`}
+                        onClick={() => {
+                          if (!canEdit || isEditing) return;
+                          setBibEditId(checkin.riderId);
+                          setBibEdits(prev => {
+                            const next = new Map(prev);
+                            if (!next.has(checkin.riderId)) next.set(checkin.riderId, suggested ?? "");
+                            return next;
+                          });
+                        }}
+                        title={canEdit ? "Click to set bib number" : undefined}
+                      >
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            value={editVal}
+                            onChange={e => {
+                              const v = e.target.value.replace(/\D/g, "").slice(0, 4);
+                              setBibEdits(prev => { const n = new Map(prev); n.set(checkin.riderId, v); return n; });
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") setBibEditId(null);
+                              if (e.key === "Escape") {
+                                setBibEditId(null);
+                                setBibEdits(prev => { const n = new Map(prev); n.delete(checkin.riderId); return n; });
+                              }
+                            }}
+                            onBlur={() => setBibEditId(null)}
+                            className={`w-12 bg-transparent text-center font-heading font-black text-xl leading-none outline-none border-b-2 ${duplicate ? 'text-red-500 border-red-400' : 'text-foreground border-primary'}`}
+                            style={{ appearance: "none" }}
+                            inputMode="numeric"
+                            placeholder="—"
+                          />
+                        ) : (
+                          <>
+                            <span className={`font-heading font-black text-2xl leading-none ${numColor}`}>
+                              {displayNum}
+                            </span>
+                            {(confirmed || checkin.checkedIn) && (
+                              <span className={`text-[9px] font-bold uppercase tracking-widest ${checkin.checkedIn ? 'text-white/70' : 'text-foreground/40'}`}>
+                                BIB
+                              </span>
+                            )}
+                          </>
+                        )}
                       </div>
                     );
                   })()}
@@ -270,17 +380,13 @@ export default function Checkin() {
                       )}
                     </div>
 
-                    <Button
-                      className={`h-16 w-full text-xl font-heading uppercase tracking-widest mt-3 ${checkin.checkedIn ? 'bg-muted text-muted-foreground hover:bg-muted/80' : 'bg-primary hover:bg-primary/90'}`}
-                      onClick={() => handleCheckin(checkin.riderId, checkin.rfidNumber)}
-                      disabled={checkinMutation.isPending}
-                    >
-                      {checkin.checkedIn ? (
-                        <span className="flex items-center gap-2"><CheckCircle size={24} /> Checked In</span>
-                      ) : (
-                        "Check In"
-                      )}
-                    </Button>
+                    <CheckinButton
+                      checkin={checkin}
+                      pending={bibEdits.get(checkin.riderId)}
+                      isPending={checkinMutation.isPending}
+                      isBibDuplicate={isBibDuplicate}
+                      onCheckin={(bibToSave) => handleCheckin(checkin.riderId, checkin.rfidNumber, bibToSave)}
+                    />
                   </div>
                 </CardContent>
               </Card>
