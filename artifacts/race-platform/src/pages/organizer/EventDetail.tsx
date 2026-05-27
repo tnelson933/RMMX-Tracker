@@ -11,7 +11,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check } from "lucide-react";
+import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign } from "lucide-react";
 import { format } from "date-fns";
 
 const updateEventSchema = z.object({
@@ -22,6 +22,8 @@ const updateEventSchema = z.object({
   trackName: z.string().optional(),
   status: z.string(),
   raceClasses: z.string().optional(),
+  entryFee: z.string().optional(),
+  maxRiders: z.coerce.number().int().positive().optional().or(z.literal("")),
 });
 
 export default function EventDetail() {
@@ -56,6 +58,8 @@ export default function EventDetail() {
       trackName: "",
       status: "draft",
       raceClasses: "",
+      entryFee: "",
+      maxRiders: "",
     }
   });
 
@@ -69,6 +73,8 @@ export default function EventDetail() {
       trackName: event.trackName || "",
       status: event.status,
       raceClasses: event.raceClasses ? event.raceClasses.join(", ") : "",
+      entryFee: event.entryFee != null ? String(event.entryFee) : "",
+      maxRiders: event.maxRiders != null ? event.maxRiders : "",
     });
   }
 
@@ -83,6 +89,8 @@ export default function EventDetail() {
         trackName: data.trackName,
         status: data.status,
         raceClasses: data.raceClasses ? data.raceClasses.split(",").map(s => s.trim()) : [],
+        entryFee: data.entryFee ? Number(data.entryFee) : undefined,
+        maxRiders: data.maxRiders !== "" && data.maxRiders != null ? Number(data.maxRiders) : undefined,
       }
     }, {
       onSuccess: () => {
@@ -208,6 +216,50 @@ export default function EventDetail() {
                         </FormItem>
                       )}
                     />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="entryFee"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Entry Fee ($)</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <DollarSign size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                  {...field}
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  placeholder="0.00"
+                                  className="pl-8"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="maxRiders"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Max Riders</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value ?? ""}
+                                type="number"
+                                min="1"
+                                placeholder="Unlimited"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                     <div className="pt-4 flex justify-end gap-2">
                       <Button variant="ghost" type="button" onClick={() => setIsEditing(false)}>Cancel</Button>
                       <Button type="submit" disabled={updateMutation.isPending} className="font-heading uppercase">
@@ -239,6 +291,22 @@ export default function EventDetail() {
                     </div>
                   </div>
                   
+                  <div className="grid grid-cols-2 gap-y-6 pt-2">
+                    <div>
+                      <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Entry Fee</div>
+                      <div className="font-heading font-bold text-xl flex items-center gap-1">
+                        {event.entryFee != null
+                          ? <><span className="text-primary"><DollarSign size={18} className="inline -mt-0.5" /></span>{Number(event.entryFee).toFixed(2)}</>
+                          : <span className="text-muted-foreground text-sm font-normal italic">Not set</span>
+                        }
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Max Riders</div>
+                      <div className="font-medium">{event.maxRiders ?? <span className="text-muted-foreground italic text-sm">Unlimited</span>}</div>
+                    </div>
+                  </div>
+
                   <div className="pt-4 border-t">
                     <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-2">Race Classes</div>
                     <div className="flex flex-wrap gap-2">
