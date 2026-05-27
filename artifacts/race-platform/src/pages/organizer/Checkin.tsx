@@ -66,6 +66,12 @@ export default function Checkin() {
   const [filter, setFilter] = useState("all");
   const [rfidInputOpenId, setRfidInputOpenId] = useState<number | null>(null);
 
+  // Close any open RFID panel when the search changes so it can't steal focus
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setRfidInputOpenId(null);
+  };
+
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: checkins, isLoading: checkinsLoading } = useListCheckins(eventId, {
     query: { enabled: !!eventId, refetchInterval: 30000 } as any
@@ -125,13 +131,13 @@ export default function Checkin() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={24} />
             <Input
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => handleSearchChange(e.target.value)}
               placeholder="Search by rider name or bib #..."
               className="pl-12 pr-12 h-14 text-xl font-medium bg-muted/30"
             />
             {search && (
               <button
-                onClick={() => setSearch("")}
+                onClick={() => handleSearchChange("")}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               >
                 <X size={22} />
