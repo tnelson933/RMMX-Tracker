@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Tag, Check, X } from "lucide-react";
+import { Plus, Search, Check, X, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import * as XLSX from "xlsx";
+import { format } from "date-fns";
 
 export default function Registrations() {
   const [match, params] = useRoute("/events/:eventId/registrations");
@@ -64,6 +66,22 @@ export default function Registrations() {
     (r.bibNumber && r.bibNumber.includes(search))
   ) || [];
 
+  const handleExport = () => {
+    const rows = (registrations ?? []).map((r) => ({
+      "Registration ID": r.id,
+      "Rider Name": r.riderName,
+      "Race Class": r.raceClass,
+      "Bib #": r.bibNumber ?? "",
+      "Status": r.status,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Registrations");
+    const slug = (event?.name ?? `event-${eventId}`).replace(/[^a-z0-9]/gi, "_").toLowerCase();
+    const dateStr = format(new Date(), "yyyy-MM-dd");
+    XLSX.writeFile(wb, `${slug}_registrations_${dateStr}.xlsx`);
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -77,12 +95,22 @@ export default function Registrations() {
           />
         </div>
         
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="font-heading uppercase tracking-wider w-full sm:w-auto">
-              <Plus size={16} className="mr-2" /> Add Registration
+        <div className="flex gap-2 w-full sm:w-auto">
+          {(registrations?.length ?? 0) > 0 && (
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              className="font-heading uppercase tracking-wider w-full sm:w-auto"
+            >
+              <Download size={16} className="mr-2" /> Export Excel
             </Button>
-          </DialogTrigger>
+          )}
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button className="font-heading uppercase tracking-wider w-full sm:w-auto">
+                <Plus size={16} className="mr-2" /> Add Registration
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="font-heading uppercase text-xl">Add Registration</DialogTitle>
@@ -114,7 +142,8 @@ export default function Registrations() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <Card>
