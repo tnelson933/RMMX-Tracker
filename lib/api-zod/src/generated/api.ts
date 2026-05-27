@@ -133,6 +133,14 @@ export const UpdateClubResponse = zod.object({
 
 
 /**
+ * @summary Delete a club (super_admin only)
+ */
+export const DeleteClubParams = zod.object({
+  "clubId": zod.coerce.number()
+})
+
+
+/**
  * @summary List events (public, filterable by state/club/status)
  */
 export const ListEventsQueryParams = zod.object({

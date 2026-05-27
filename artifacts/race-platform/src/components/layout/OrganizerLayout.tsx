@@ -7,7 +7,9 @@ import {
   Users, 
   Tag, 
   Trophy,
-  LogOut
+  Building2,
+  LogOut,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -23,6 +25,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
       }
     });
   };
+
+  const isAdmin = user?.role === "super_admin";
 
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -68,6 +72,28 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+
+          {isAdmin && (
+            <div className="mt-4 pt-4 border-t border-sidebar-border/40">
+              <div className="flex items-center gap-2 px-3 mb-2">
+                <ShieldCheck size={12} className="text-primary" />
+                <span className="text-[10px] font-heading font-bold uppercase tracking-widest text-primary">
+                  Admin
+                </span>
+              </div>
+              <Link
+                href="/admin/clubs"
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+                  location.startsWith("/admin/clubs")
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Building2 size={18} />
+                Clubs
+              </Link>
+            </div>
+          )}
         </nav>
 
         <div className="p-4 border-t border-sidebar-border/50">

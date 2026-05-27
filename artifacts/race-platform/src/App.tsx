@@ -22,6 +22,7 @@ import Riders from "@/pages/organizer/RidersList";
 import RiderDetail from "@/pages/organizer/RiderDetail";
 import RfidManagement from "@/pages/organizer/RfidManagement";
 import Series from "@/pages/organizer/Series";
+import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -84,6 +85,9 @@ function Router() {
       </Route>
       <Route path="/series">
         <ProtectedRoute><Series /></ProtectedRoute>
+      </Route>
+      <Route path="/admin/clubs">
+        <ProtectedRoute><ClubsAdmin /></ProtectedRoute>
       </Route>
 
       <Route component={NotFound} />

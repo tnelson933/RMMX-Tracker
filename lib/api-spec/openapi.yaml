@@ -169,6 +169,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Club"
+    delete:
+      operationId: deleteClub
+      tags: [clubs]
+      summary: Delete a club (super_admin only)
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Club deleted
 
   # EVENTS
   /events:

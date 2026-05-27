@@ -666,6 +666,76 @@ export const useUpdateClub = <TError = ErrorType<unknown>,
       return useMutation(getUpdateClubMutationOptions(options));
     }
 
+export const getDeleteClubUrl = (clubId: number,) => {
+
+
+
+
+  return `/api/clubs/${clubId}`
+}
+
+/**
+ * @summary Delete a club (super_admin only)
+ */
+export const deleteClub = async (clubId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteClubUrl(clubId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteClubMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteClub>>, TError,{clubId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteClub>>, TError,{clubId: number}, TContext> => {
+
+const mutationKey = ['deleteClub'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteClub>>, {clubId: number}> = (props) => {
+          const {clubId} = props ?? {};
+
+          return  deleteClub(clubId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteClubMutationResult = NonNullable<Awaited<ReturnType<typeof deleteClub>>>
+
+    export type DeleteClubMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a club (super_admin only)
+ */
+export const useDeleteClub = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteClub>>, TError,{clubId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteClub>>,
+        TError,
+        {clubId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteClubMutationOptions(options));
+    }
+
 export const getListEventsUrl = (params?: ListEventsParams,) => {
   const normalizedParams = new URLSearchParams();
 
