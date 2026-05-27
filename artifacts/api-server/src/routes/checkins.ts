@@ -1,47 +1,63 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { checkinsTable, ridersTable, rfidAssignmentsTable } from "@workspace/db";
+import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 const router = Router();
 
+// List all registered riders for an event with their check-in status overlaid.
+// Source of truth is registrations — every registered rider appears here.
 router.get("/events/:eventId/checkins", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const checkins = await db.select({
-    id: checkinsTable.id,
-    eventId: checkinsTable.eventId,
-    riderId: checkinsTable.riderId,
-    raceClass: checkinsTable.raceClass,
-    bibNumber: checkinsTable.bibNumber,
-    checkedIn: checkinsTable.checkedIn,
-    checkedInAt: checkinsTable.checkedInAt,
-    rfidNumber: checkinsTable.rfidNumber,
-    rfidLinked: checkinsTable.rfidLinked,
+
+  // Fetch all registrations + rider info
+  const regs = await db.select({
+    registrationId: registrationsTable.id,
+    riderId: registrationsTable.riderId,
+    raceClass: registrationsTable.raceClass,
+    bibNumber: registrationsTable.bibNumber,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
-  }).from(checkinsTable)
-    .leftJoin(ridersTable, eq(checkinsTable.riderId, ridersTable.id))
-    .where(eq(checkinsTable.eventId, eventId))
+  }).from(registrationsTable)
+    .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+    .where(eq(registrationsTable.eventId, eventId))
     .orderBy(ridersTable.lastName);
 
-  return res.json(checkins.map(c => ({
-    id: c.id,
-    eventId: c.eventId,
-    riderId: c.riderId,
-    riderName: `${c.firstName} ${c.lastName}`,
-    raceClass: c.raceClass,
-    bibNumber: c.bibNumber,
-    checkedIn: c.checkedIn,
-    checkedInAt: c.checkedInAt?.toISOString() ?? null,
-    rfidNumber: c.rfidNumber,
-    rfidLinked: c.rfidLinked,
-  })));
+  if (regs.length === 0) return res.json([]);
+
+  // Fetch all existing checkin rows for the event in one query
+  const checkinRows = await db.select().from(checkinsTable)
+    .where(eq(checkinsTable.eventId, eventId));
+
+  const checkinByRider = new Map(checkinRows.map(c => [c.riderId, c]));
+
+  return res.json(regs.map(r => {
+    const c = checkinByRider.get(r.riderId);
+    return {
+      id: c?.id ?? null,
+      eventId,
+      riderId: r.riderId,
+      riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
+      raceClass: r.raceClass,
+      bibNumber: r.bibNumber ?? c?.bibNumber ?? null,
+      checkedIn: c?.checkedIn ?? false,
+      checkedInAt: c?.checkedInAt?.toISOString() ?? null,
+      rfidNumber: c?.rfidNumber ?? null,
+      rfidLinked: c?.rfidLinked ?? false,
+    };
+  }));
 });
 
 router.post("/events/:eventId/checkins", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const { riderId, rfidNumber, bibNumber } = req.body;
   if (!riderId) return res.status(400).json({ error: "riderId required" });
+
+  // Look up the registration for class info
+  const regs = await db.select().from(registrationsTable)
+    .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, riderId)));
+  const raceClass = regs[0]?.raceClass ?? "Unknown";
+  const regBib = regs[0]?.bibNumber ?? null;
 
   const existing = await db.select().from(checkinsTable)
     .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.riderId, riderId)));
@@ -61,22 +77,22 @@ router.post("/events/:eventId/checkins", async (req, res) => {
     const [updated] = await db.update(checkinsTable).set(updates as any)
       .where(eq(checkinsTable.id, existing[0].id)).returning();
     checkin = updated;
-
-    // Also update rider's rfid if provided
-    if (rfidNumber) {
-      await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, riderId));
-    }
   } else {
     const [created] = await db.insert(checkinsTable).values({
-      eventId, riderId,
-      raceClass: "Unknown",
-      bibNumber,
+      eventId,
+      riderId,
+      raceClass,
+      bibNumber: bibNumber ?? regBib ?? null,
       checkedIn: true,
       checkedInAt: new Date(),
       rfidNumber,
       rfidLinked: !!rfidNumber,
     }).returning();
     checkin = created;
+  }
+
+  if (rfidNumber) {
+    await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, riderId));
   }
 
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
