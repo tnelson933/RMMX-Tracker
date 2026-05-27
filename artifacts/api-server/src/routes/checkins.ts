@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 
 const router = Router();
 
@@ -20,7 +20,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     lastName: ridersTable.lastName,
   }).from(registrationsTable)
     .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
-    .where(eq(registrationsTable.eventId, eventId))
+    .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")))
     .orderBy(ridersTable.lastName);
 
   if (regs.length === 0) return res.json([]);
