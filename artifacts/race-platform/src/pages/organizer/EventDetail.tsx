@@ -30,7 +30,6 @@ const updateEventSchema = z.object({
   })),
   paymentEnabled: z.boolean().default(false),
   entryFee: z.string().optional(),
-  maxRiders: z.coerce.number().int().positive().optional().or(z.literal("")),
   registrationOpen: z.string().optional(),
   registrationClose: z.string().optional(),
 });
@@ -84,7 +83,6 @@ export default function EventDetail() {
       raceClasses: [],
       paymentEnabled: false,
       entryFee: "",
-      maxRiders: "",
       registrationOpen: "",
       registrationClose: "",
     }
@@ -113,7 +111,6 @@ export default function EventDetail() {
       })),
       paymentEnabled: evt.entryFee != null,
       entryFee: evt.entryFee != null ? String(evt.entryFee) : "",
-      maxRiders: evt.maxRiders != null ? evt.maxRiders : "",
       registrationOpen: evt.registrationOpen ? format(new Date(evt.registrationOpen), "yyyy-MM-dd") : "",
       registrationClose: evt.registrationClose ? format(new Date(evt.registrationClose), "yyyy-MM-dd") : "",
     });
@@ -140,7 +137,6 @@ export default function EventDetail() {
         raceClasses: classNames,
         raceClassLimits: classLimits,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
-        maxRiders: data.maxRiders !== "" && data.maxRiders != null ? Number(data.maxRiders) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
       }
@@ -388,25 +384,6 @@ export default function EventDetail() {
                                   disabled={!watchPaymentEnabled}
                                 />
                               </div>
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="maxRiders"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Max Riders (total)</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                value={field.value ?? ""}
-                                type="number"
-                                min="1"
-                                placeholder="Unlimited"
-                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
