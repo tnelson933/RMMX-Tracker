@@ -106,7 +106,7 @@ export default function EventDetail() {
     const limits = (evt.raceClassLimits ?? {}) as Record<string, number | null>;
     form.reset({
       name: evt.name,
-      date: format(new Date(evt.date), "yyyy-MM-dd"),
+      date: evt.date.substring(0, 10),
       state: evt.state,
       location: evt.location || "",
       trackName: evt.trackName || "",
@@ -117,8 +117,8 @@ export default function EventDetail() {
       })),
       paymentEnabled: evt.entryFee != null,
       entryFee: evt.entryFee != null ? String(evt.entryFee) : "",
-      registrationOpen: evt.registrationOpen ? format(new Date(evt.registrationOpen), "yyyy-MM-dd") : "",
-      registrationClose: evt.registrationClose ? format(new Date(evt.registrationClose), "yyyy-MM-dd") : "",
+      registrationOpen: evt.registrationOpen ? evt.registrationOpen.substring(0, 10) : "",
+      registrationClose: evt.registrationClose ? evt.registrationClose.substring(0, 10) : "",
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
     setEditSeriesId(currentSeries ? String(currentSeries.id) : "none");
@@ -137,7 +137,7 @@ export default function EventDetail() {
       eventId,
       data: {
         name: data.name,
-        date: new Date(data.date).toISOString(),
+        date: data.date,
         state: data.state,
         location: data.location,
         trackName: data.trackName,

@@ -95,7 +95,7 @@ export default function EventsList() {
       data: {
         clubId: data.clubId,
         name: data.name,
-        date: new Date(data.date).toISOString(),
+        date: data.date,
         state: data.state,
         location: data.location,
         trackName: data.trackName,
