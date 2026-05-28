@@ -242,6 +242,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           return res.status(201).json({
             requiresPayment: true,
             checkoutUrl: session.url,
+            sessionId: session.id,
             registrationId: reg.id,
             riderName: `${rider.firstName} ${rider.lastName}`,
             raceClass,

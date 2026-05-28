@@ -141,12 +141,9 @@ export default function Register() {
     }
   }, []);
 
-  const verifyPayment = async (regId: number, sessionId: string | null) => {
-    if (!sessionId) {
-      setSubmitError("No payment session found. Please contact the event organizer.");
-      return;
-    }
-    setVerifying(true);
+  const verifyPayment = async (regId: number, sessionId: string | null, silent = false) => {
+    if (!sessionId) return;
+    if (!silent) setVerifying(true);
     try {
       const res = await fetch(`/api/public/registrations/${regId}/verify-payment`, {
         method: "POST",
@@ -157,17 +154,27 @@ export default function Register() {
       if (res.ok && data.registrationId) {
         setSuccess(data);
         setPendingPayment(null);
-      } else if (res.status === 402) {
-        setSubmitError("Payment hasn't been completed yet. Please finish payment in the Stripe tab first.");
-      } else {
+        setSubmitError(null);
+      } else if (!silent && res.status === 402) {
+        setSubmitError("Payment hasn't completed yet. Finish the payment in the Stripe tab.");
+      } else if (!silent && !res.ok) {
         setSubmitError(data.error || "Could not verify payment. Please try again.");
       }
     } catch {
-      setSubmitError("Something went wrong. Please try again.");
+      if (!silent) setSubmitError("Something went wrong. Please try again.");
     } finally {
-      setVerifying(false);
+      if (!silent) setVerifying(false);
     }
   };
+
+  // Auto-poll for payment confirmation every 4 seconds while on the pending screen
+  useEffect(() => {
+    if (!pendingPayment?.sessionId || success) return;
+    const id = setInterval(() => {
+      verifyPayment(pendingPayment.registrationId, pendingPayment.sessionId, true);
+    }, 4000);
+    return () => clearInterval(id);
+  }, [pendingPayment?.sessionId, pendingPayment?.registrationId, !!success]);
 
   const onSubmit = async (data: RegisterForm) => {
     setSubmitting(true);
@@ -186,7 +193,7 @@ export default function Register() {
         setPendingPayment({
           checkoutUrl: json.checkoutUrl,
           registrationId: json.registrationId,
-          sessionId: null,
+          sessionId: json.sessionId ?? null,
           riderName: json.riderName,
           raceClass: json.raceClass,
           eventName: json.eventName,
@@ -281,33 +288,44 @@ export default function Register() {
             </div>
             <h2 className="text-3xl font-heading font-bold uppercase tracking-tight">Complete Payment</h2>
             <p className="text-muted-foreground">
-              Your spot is reserved. Complete payment to confirm your registration.
+              Your spot is reserved. Finish paying in the Stripe window — this page will update automatically once payment goes through.
             </p>
           </div>
 
           <Card>
             <CardContent className="p-6 space-y-3">
-              <div className="flex justify-between">
-                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Rider</span>
-                <span className="font-heading font-bold">{pendingPayment.riderName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Class</span>
-                <span className="font-heading font-bold text-primary">{pendingPayment.raceClass}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Event</span>
-                <span className="font-medium text-right text-sm">{pendingPayment.eventName}</span>
-              </div>
-              <div className="flex justify-between border-t pt-3 mt-1">
-                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Amount Due</span>
-                <span className="font-heading font-bold text-lg flex items-center gap-0.5">
-                  <DollarSign size={16} className="text-primary" />
-                  {pendingPayment.entryFee.toFixed(2)}
-                </span>
-              </div>
+              {pendingPayment.riderName && (
+                <div className="flex justify-between">
+                  <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Rider</span>
+                  <span className="font-heading font-bold">{pendingPayment.riderName}</span>
+                </div>
+              )}
+              {pendingPayment.raceClass && (
+                <div className="flex justify-between">
+                  <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Class</span>
+                  <span className="font-heading font-bold text-primary">{pendingPayment.raceClass}</span>
+                </div>
+              )}
+              {pendingPayment.eventName && (
+                <div className="flex justify-between">
+                  <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Event</span>
+                  <span className="font-medium text-right text-sm">{pendingPayment.eventName}</span>
+                </div>
+              )}
+              {pendingPayment.entryFee > 0 && (
+                <div className="flex justify-between border-t pt-3 mt-1">
+                  <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Amount Due</span>
+                  <span className="font-heading font-bold text-lg">${pendingPayment.entryFee.toFixed(2)}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
+
+          {/* Auto-poll status indicator */}
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 size={14} className="animate-spin" />
+            Waiting for payment confirmation…
+          </div>
 
           {submitError && (
             <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-4 py-3 text-sm flex items-center gap-2">
@@ -322,21 +340,19 @@ export default function Register() {
               onClick={() => window.open(pendingPayment.checkoutUrl, "_blank")}
             >
               <ExternalLink size={18} className="mr-2" />
-              Pay ${pendingPayment.entryFee.toFixed(2)} with Stripe
+              Reopen Stripe Checkout
             </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              Stripe Checkout opens in a new tab. Return here after paying and click the button below.
-            </p>
             <Button
-              variant="outline"
-              className="w-full font-heading uppercase tracking-wider"
+              variant="ghost"
+              size="sm"
+              className="w-full text-muted-foreground"
               onClick={() => verifyPayment(pendingPayment.registrationId, pendingPayment.sessionId)}
               disabled={verifying}
             >
               {verifying ? (
-                <><Loader2 size={16} className="mr-2 animate-spin" /> Checking...</>
+                <><Loader2 size={14} className="mr-1.5 animate-spin" /> Checking…</>
               ) : (
-                <><CheckCircle2 size={16} className="mr-2" /> I've Completed Payment</>
+                "Check now"
               )}
             </Button>
           </div>
