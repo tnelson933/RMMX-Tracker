@@ -9,7 +9,7 @@ import { Switch as UISwitch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, CheckCircle, Activity, Globe } from "lucide-react";
+import { Save, CheckCircle, Activity, Globe, Trophy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function EnterResults() {
@@ -19,6 +19,7 @@ export default function EnterResults() {
   const { toast } = useToast();
   
   const [selectedMotoId, setSelectedMotoId] = useState<string>("");
+  const [selectedClass, setSelectedClass] = useState<string>("");
   const [resultsData, setResultsData] = useState<Record<number, { pos: string, time: string, dnf: boolean, dns: boolean }>>({});
 
   const { data: motos, isLoading: motosLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
@@ -55,6 +56,47 @@ export default function EnterResults() {
       setResultsData(initialData);
     }
   }, [selectedMotoId, existingResults, activeMoto]);
+
+  // ── Overall standings computation ─────────────────────────────────────────
+  const raceClasses = [...new Set((motos || []).map(m => m.raceClass))].sort();
+  const displayClass = selectedClass || raceClasses[0] || "";
+
+  const classMotos = (motos || [])
+    .filter(m => m.raceClass === displayClass && (m.status === 'completed' || m.status === 'in_progress'))
+    .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+
+  const classResults = (existingResults || []).filter(r =>
+    classMotos.some(m => m.id === r.motoId)
+  );
+
+  const riderMap = new Map<number, { riderName: string; positions: Map<number, { pos: number; dnf: boolean; dns: boolean }> }>();
+  classResults.forEach(r => {
+    if (!riderMap.has(r.riderId)) {
+      riderMap.set(r.riderId, { riderName: r.riderName, positions: new Map() });
+    }
+    riderMap.get(r.riderId)!.positions.set(r.motoId, { pos: r.position, dnf: r.dnf ?? false, dns: r.dns ?? false });
+  });
+
+  const overallStandings = Array.from(riderMap.entries()).map(([riderId, data]) => {
+    const motoPositions = classMotos.map(moto => {
+      const result = data.positions.get(moto.id);
+      if (!result) return { display: '-' as string | number, value: 999 };
+      if (result.dnf) return { display: 'DNF', value: 999 };
+      if (result.dns) return { display: 'DNS', value: 999 };
+      return { display: result.pos, value: result.pos };
+    });
+    const total = motoPositions.reduce((sum, p) => sum + p.value, 0);
+    return { riderId, riderName: data.riderName, motoPositions, total };
+  }).sort((a, b) => a.total - b.total);
+
+  // Assign overall positions (handle ties)
+  const standingsWithPos = overallStandings.map((row, idx, arr) => {
+    let overallPos = idx + 1;
+    if (idx > 0 && row.total === arr[idx - 1].total) {
+      overallPos = standingsWithPos[idx - 1].overallPos;
+    }
+    return { ...row, overallPos };
+  });
 
   const handleUpdateField = (riderId: number, field: string, value: any) => {
     setResultsData(prev => ({
@@ -230,6 +272,90 @@ export default function EnterResults() {
             <p className="text-muted-foreground">Start and complete motos on the Motos tab before entering results.</p>
           </CardContent>
         </Card>
+      )}
+
+      {/* ── Overall Standings ───────────────────────────────────────────────── */}
+      {raceClasses.length > 0 && (
+        <div className="space-y-4 pt-4">
+          <h2 className="text-2xl font-heading font-bold uppercase tracking-tight flex items-center gap-2">
+            <Trophy className="text-primary" /> Class Overall Standings
+          </h2>
+
+          {/* Class selector */}
+          <div className="flex flex-wrap gap-2">
+            {raceClasses.map(cls => (
+              <button
+                key={cls}
+                onClick={() => setSelectedClass(cls ?? "")}
+                className={`px-4 py-1.5 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+                  displayClass === cls
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                }`}
+              >
+                {cls}
+              </button>
+            ))}
+          </div>
+
+          <Card className="border-sidebar-border">
+            <CardHeader className="bg-sidebar text-sidebar-foreground border-b py-3 px-6">
+              <CardTitle className="font-heading uppercase tracking-wider text-base">
+                {displayClass} — Overall
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {standingsWithPos.length > 0 ? (
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow>
+                      <TableHead className="w-16 text-center">OA Pos</TableHead>
+                      <TableHead>Rider</TableHead>
+                      {classMotos.map(m => (
+                        <TableHead key={m.id} className="w-24 text-center text-xs">
+                          Moto {m.motoNumber}
+                        </TableHead>
+                      ))}
+                      <TableHead className="w-20 text-center">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {standingsWithPos.map((row, idx) => (
+                      <TableRow key={row.riderId} className={idx === 0 ? "bg-primary/5" : ""}>
+                        <TableCell className="text-center">
+                          <span className={`font-heading font-bold text-lg ${idx === 0 ? "text-primary" : ""}`}>
+                            {row.overallPos}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-bold">{row.riderName}</TableCell>
+                        {row.motoPositions.map((p, i) => (
+                          <TableCell key={i} className="text-center font-mono text-sm">
+                            {p.display === 'DNF' ? (
+                              <span className="text-destructive font-bold text-xs">DNF</span>
+                            ) : p.display === 'DNS' || p.display === '-' ? (
+                              <span className="text-muted-foreground text-xs">{p.display}</span>
+                            ) : (
+                              <span className="font-bold">{p.display}</span>
+                            )}
+                          </TableCell>
+                        ))}
+                        <TableCell className="text-center">
+                          <span className="font-heading font-bold text-primary">
+                            {row.total >= 999 * classMotos.length ? "–" : row.total}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="p-10 text-center text-muted-foreground">
+                  No completed moto results for <strong>{displayClass}</strong> yet.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );
