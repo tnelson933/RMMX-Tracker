@@ -2,8 +2,16 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
+import { getUncachableStripeClient } from "../stripeClient";
 
 const router = Router();
+
+function getAppUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL;
+  const domains = process.env.REPLIT_DOMAINS;
+  if (domains) return `https://${domains.split(",")[0]}`;
+  return "http://localhost:80";
+}
 
 router.get("/events/:eventId/registrations", async (req, res) => {
   const eventId = Number(req.params.eventId);
@@ -47,7 +55,6 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     eventId, riderId, raceClass, bibNumber, status: "confirmed", paymentStatus: "unpaid",
   }).returning();
 
-  // Auto-create checkin record
   await db.insert(checkinsTable).values({
     eventId, riderId, raceClass, bibNumber, checkedIn: false, rfidLinked: false,
   }).onConflictDoNothing();
@@ -98,6 +105,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     raceClasses: eventsTable.raceClasses,
     status: eventsTable.status,
     entryFee: eventsTable.entryFee,
+    paymentEnabled: eventsTable.paymentEnabled,
     maxRiders: eventsTable.maxRiders,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
@@ -179,10 +187,14 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     return res.status(409).json({ error: "You are already registered for this class at this event" });
   }
 
+  // Determine if payment is required
+  const needsPayment = !!events[0].paymentEnabled && events[0].entryFee != null;
+  const regStatus = needsPayment ? "pending" : "confirmed";
+
   const [reg] = await db.insert(registrationsTable).values({
     eventId, riderId: rider.id, raceClass,
     bibNumber: bibNumber || rider.bibNumber || null,
-    status: "confirmed", paymentStatus: "unpaid",
+    status: regStatus, paymentStatus: "unpaid",
   }).returning();
 
   await db.insert(checkinsTable).values({
@@ -191,6 +203,62 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     checkedIn: false, rfidLinked: false,
   }).onConflictDoNothing();
 
+  // If payment required, create Stripe Checkout session
+  if (needsPayment && events[0].entryFee) {
+    try {
+      const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, events[0].clubId));
+      if (club?.stripeAccountId) {
+        const stripe = await getUncachableStripeClient();
+        const appUrl = getAppUrl();
+        const entryFee = Number(events[0].entryFee);
+
+        const session = await stripe.checkout.sessions.create({
+          mode: "payment",
+          line_items: [{
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: `${events[0].name} — ${raceClass} Entry`,
+              },
+              unit_amount: Math.round(entryFee * 100),
+            },
+            quantity: 1,
+          }],
+          payment_intent_data: {
+            transfer_data: {
+              destination: club.stripeAccountId,
+            },
+          },
+          success_url: `${appUrl}/register/${eventId}?reg_id=${reg.id}&session_id={CHECKOUT_SESSION_ID}&payment_success=1`,
+          cancel_url: `${appUrl}/register/${eventId}?payment_cancelled=1`,
+          metadata: {
+            registrationId: String(reg.id),
+            eventId: String(eventId),
+          },
+          customer_email: email,
+        });
+
+        if (session.url) {
+          return res.status(201).json({
+            requiresPayment: true,
+            checkoutUrl: session.url,
+            registrationId: reg.id,
+            riderName: `${rider.firstName} ${rider.lastName}`,
+            raceClass,
+            eventName: events[0].name,
+            entryFee,
+          });
+        }
+      }
+    } catch (err: any) {
+      req.log?.warn({ err: err?.message }, "[checkout] Failed to create Stripe Checkout session — registering without payment");
+      // Fall back: confirm registration without payment gate
+      await db.update(registrationsTable)
+        .set({ status: "confirmed" })
+        .where(eq(registrationsTable.id, reg.id));
+    }
+  }
+
   return res.status(201).json({
     registrationId: reg.id,
     riderName: `${rider.firstName} ${rider.lastName}`,
@@ -198,6 +266,49 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     eventName: events[0].name,
     eventDate: events[0].date,
   });
+});
+
+// ── Public: verify Stripe payment and confirm registration ─────────────────────
+router.post("/public/registrations/:id/verify-payment", async (req, res) => {
+  const id = Number(req.params.id);
+  const { sessionId } = req.body;
+  if (!sessionId) return res.status(400).json({ error: "sessionId required" });
+
+  try {
+    const stripe = await getUncachableStripeClient();
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (session.metadata?.registrationId !== String(id)) {
+      return res.status(403).json({ error: "Session does not match registration" });
+    }
+    if (session.payment_status !== "paid") {
+      return res.status(402).json({ error: "Payment not yet completed", paymentStatus: session.payment_status });
+    }
+
+    const amountPaid = session.amount_total != null ? session.amount_total / 100 : null;
+
+    const [reg] = await db.update(registrationsTable)
+      .set({ paymentStatus: "paid", status: "confirmed", amountPaid: amountPaid != null ? String(amountPaid) : null })
+      .where(eq(registrationsTable.id, id))
+      .returning();
+
+    if (!reg) return res.status(404).json({ error: "Registration not found" });
+
+    const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, reg.riderId));
+    const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, reg.eventId));
+
+    return res.json({
+      registrationId: reg.id,
+      riderName: rider ? `${rider.firstName} ${rider.lastName}` : "",
+      raceClass: reg.raceClass,
+      eventName: event?.name ?? "",
+      eventDate: event?.date ?? "",
+      amountPaid,
+    });
+  } catch (err: any) {
+    req.log?.error({ err: err?.message }, "[verify-payment] Error");
+    return res.status(500).json({ error: err?.message ?? "Verification failed" });
+  }
 });
 
 export default router;

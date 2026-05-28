@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft } from "lucide-react";
+import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign } from "lucide-react";
 import { format } from "date-fns";
 
 const registerSchema = z.object({
@@ -35,6 +35,7 @@ interface EventInfo {
   raceClasses: string[];
   status: string;
   entryFee: number | null;
+  paymentEnabled: boolean;
   clubName: string | null;
   registrationOpen: string | null;
   registrationClose: string | null;
@@ -45,6 +46,17 @@ interface SuccessData {
   riderName: string;
   raceClass: string;
   eventName: string;
+  amountPaid?: number | null;
+}
+
+interface PendingPayment {
+  checkoutUrl: string;
+  registrationId: number;
+  sessionId: string | null;
+  riderName: string;
+  raceClass: string;
+  eventName: string;
+  entryFee: number;
 }
 
 export default function Register() {
@@ -57,6 +69,9 @@ export default function Register() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<SuccessData | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [paymentCancelled, setPaymentCancelled] = useState(false);
 
   const form = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
@@ -76,9 +91,88 @@ export default function Register() {
       .finally(() => setLoading(false));
   }, [eventId]);
 
+  // Handle return from Stripe — payment_success=1 or payment_cancelled=1 in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const regId = params.get("reg_id");
+    const sessionId = params.get("session_id");
+    const isSuccess = params.get("payment_success") === "1";
+    const isCancelled = params.get("payment_cancelled") === "1";
+
+    // Clean URL params
+    if (isSuccess || isCancelled) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    if (isCancelled) {
+      setPaymentCancelled(true);
+      return;
+    }
+
+    if (isSuccess && regId && sessionId) {
+      // Auto-verify payment on return from Stripe
+      setVerifying(true);
+      fetch(`/api/public/registrations/${regId}/verify-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.registrationId) {
+            setSuccess(data);
+          } else {
+            // Payment may still be processing — show pending state
+            setPendingPayment({
+              checkoutUrl: "",
+              registrationId: Number(regId),
+              sessionId,
+              riderName: "",
+              raceClass: "",
+              eventName: "",
+              entryFee: 0,
+            });
+          }
+        })
+        .catch(() => {
+          setSubmitError("Could not verify your payment. Please contact the event organizer with your confirmation number.");
+        })
+        .finally(() => setVerifying(false));
+    }
+  }, []);
+
+  const verifyPayment = async (regId: number, sessionId: string | null) => {
+    if (!sessionId) {
+      setSubmitError("No payment session found. Please contact the event organizer.");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const res = await fetch(`/api/public/registrations/${regId}/verify-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.registrationId) {
+        setSuccess(data);
+        setPendingPayment(null);
+      } else if (res.status === 402) {
+        setSubmitError("Payment hasn't been completed yet. Please finish payment in the Stripe tab first.");
+      } else {
+        setSubmitError(data.error || "Could not verify payment. Please try again.");
+      }
+    } catch {
+      setSubmitError("Something went wrong. Please try again.");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const onSubmit = async (data: RegisterForm) => {
     setSubmitting(true);
     setSubmitError(null);
+    setPaymentCancelled(false);
     try {
       const res = await fetch(`/api/public/events/${eventId}/register`, {
         method: "POST",
@@ -87,7 +181,22 @@ export default function Register() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Registration failed");
-      setSuccess(json);
+
+      if (json.requiresPayment && json.checkoutUrl) {
+        setPendingPayment({
+          checkoutUrl: json.checkoutUrl,
+          registrationId: json.registrationId,
+          sessionId: null,
+          riderName: json.riderName,
+          raceClass: json.raceClass,
+          eventName: json.eventName,
+          entryFee: json.entryFee,
+        });
+        // Open Stripe Checkout in a new tab
+        window.open(json.checkoutUrl, "_blank");
+      } else {
+        setSuccess(json);
+      }
     } catch (e: any) {
       setSubmitError(e.message || "Something went wrong. Please try again.");
     } finally {
@@ -95,10 +204,12 @@ export default function Register() {
     }
   };
 
-  if (loading) {
+  if (loading || verifying) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="font-heading text-xl uppercase tracking-widest text-muted-foreground animate-pulse">Loading Event...</div>
+        <div className="font-heading text-xl uppercase tracking-widest text-muted-foreground animate-pulse">
+          {verifying ? "Verifying payment..." : "Loading Event..."}
+        </div>
       </div>
     );
   }
@@ -145,9 +256,90 @@ export default function Register() {
                 <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Confirmation #</span>
                 <span className="font-mono text-sm">REG-{success.registrationId.toString().padStart(5, '0')}</span>
               </div>
+              {success.amountPaid != null && success.amountPaid > 0 && (
+                <div className="flex justify-between border-t pt-3 mt-1">
+                  <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Paid</span>
+                  <span className="font-heading font-bold text-green-600">${success.amountPaid.toFixed(2)}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
           <Link href="/"><Button variant="outline" className="w-full font-heading uppercase">Back to Home</Button></Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Payment pending screen — shown after form submit when payment is required
+  if (pendingPayment && pendingPayment.checkoutUrl) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="max-w-md w-full space-y-6">
+          <div className="text-center space-y-3">
+            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+              <CreditCard size={36} className="text-primary" />
+            </div>
+            <h2 className="text-3xl font-heading font-bold uppercase tracking-tight">Complete Payment</h2>
+            <p className="text-muted-foreground">
+              Your spot is reserved. Complete payment to confirm your registration.
+            </p>
+          </div>
+
+          <Card>
+            <CardContent className="p-6 space-y-3">
+              <div className="flex justify-between">
+                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Rider</span>
+                <span className="font-heading font-bold">{pendingPayment.riderName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Class</span>
+                <span className="font-heading font-bold text-primary">{pendingPayment.raceClass}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Event</span>
+                <span className="font-medium text-right text-sm">{pendingPayment.eventName}</span>
+              </div>
+              <div className="flex justify-between border-t pt-3 mt-1">
+                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Amount Due</span>
+                <span className="font-heading font-bold text-lg flex items-center gap-0.5">
+                  <DollarSign size={16} className="text-primary" />
+                  {pendingPayment.entryFee.toFixed(2)}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {submitError && (
+            <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-4 py-3 text-sm flex items-center gap-2">
+              <AlertCircle size={16} className="shrink-0" />
+              {submitError}
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <Button
+              className="w-full font-heading uppercase tracking-wider text-base h-12"
+              onClick={() => window.open(pendingPayment.checkoutUrl, "_blank")}
+            >
+              <ExternalLink size={18} className="mr-2" />
+              Pay ${pendingPayment.entryFee.toFixed(2)} with Stripe
+            </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              Stripe Checkout opens in a new tab. Return here after paying and click the button below.
+            </p>
+            <Button
+              variant="outline"
+              className="w-full font-heading uppercase tracking-wider"
+              onClick={() => verifyPayment(pendingPayment.registrationId, pendingPayment.sessionId)}
+              disabled={verifying}
+            >
+              {verifying ? (
+                <><Loader2 size={16} className="mr-2 animate-spin" /> Checking...</>
+              ) : (
+                <><CheckCircle2 size={16} className="mr-2" /> I've Completed Payment</>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -217,8 +409,20 @@ export default function Register() {
           <div className="space-y-6">
             <div>
               <h2 className="text-2xl font-heading font-bold uppercase">Rider Registration</h2>
-              <p className="text-muted-foreground mt-1">Fill out the form below to secure your spot. A confirmation will be shown when complete.</p>
+              <p className="text-muted-foreground mt-1">
+                Fill out the form below to secure your spot.
+                {event.paymentEnabled && event.entryFee && (
+                  <> You'll be redirected to Stripe to pay the <strong>${event.entryFee} entry fee</strong> after submitting.</>
+                )}
+              </p>
             </div>
+
+            {paymentCancelled && (
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-700 rounded-md px-4 py-3 text-sm flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                Payment was cancelled. Your registration was not confirmed. Fill out the form again to try again.
+              </div>
+            )}
 
             {submitError && (
               <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-4 py-3 text-sm flex items-center gap-2">
@@ -337,8 +541,18 @@ export default function Register() {
                   </CardContent>
                 </Card>
 
-                <Button type="submit" disabled={submitting} className="w-full font-heading uppercase tracking-wider text-base h-12">
-                  {submitting ? "Submitting..." : "Complete Registration →"}
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full font-heading uppercase tracking-wider text-base h-12"
+                >
+                  {submitting ? (
+                    <><Loader2 size={18} className="mr-2 animate-spin" /> Processing...</>
+                  ) : event.paymentEnabled && event.entryFee ? (
+                    <><CreditCard size={18} className="mr-2" /> Register & Pay ${event.entryFee} →</>
+                  ) : (
+                    "Complete Registration →"
+                  )}
                 </Button>
                 <p className="text-center text-xs text-muted-foreground">By registering you agree to the event's waiver and rules.</p>
               </form>
