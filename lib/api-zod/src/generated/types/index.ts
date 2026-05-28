@@ -46,6 +46,7 @@ export * from './motoUpdate';
 export * from './organizerUser';
 export * from './publishInput';
 export * from './raceDaySummary';
+export * from './raceDaySummaryPaymentSummary';
 export * from './raceResult';
 export * from './recentResultItem';
 export * from './registration';

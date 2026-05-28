@@ -478,6 +478,14 @@ export interface ClubDashboard {
   upcomingEventList?: Event[];
 }
 
+export type RaceDaySummaryPaymentSummary = {
+  cardTotal?: number;
+  cashTotal?: number;
+  totalCollected?: number;
+  cardCount?: number;
+  cashCount?: number;
+};
+
 export interface ClassSummary {
   className: string;
   registered: number;
@@ -494,6 +502,7 @@ export interface RaceDaySummary {
   motosScheduled: number;
   motosCompleted: number;
   classSummary?: ClassSummary[];
+  paymentSummary?: RaceDaySummaryPaymentSummary;
 }
 
 export interface StateInfo {

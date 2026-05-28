@@ -889,7 +889,14 @@ export const GetRaceDaySummaryResponse = zod.object({
   "className": zod.string(),
   "registered": zod.number(),
   "checkedIn": zod.number()
-})).optional()
+})).optional(),
+  "paymentSummary": zod.object({
+  "cardTotal": zod.number().optional(),
+  "cashTotal": zod.number().optional(),
+  "totalCollected": zod.number().optional(),
+  "cardCount": zod.number().optional(),
+  "cashCount": zod.number().optional()
+}).optional()
 })
 
 

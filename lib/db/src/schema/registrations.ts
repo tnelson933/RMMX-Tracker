@@ -11,6 +11,7 @@ export const registrationsTable = pgTable("registrations", {
   raceClass: text("race_class").notNull(),
   status: text("status").notNull().default("confirmed"), // pending | confirmed | void
   paymentStatus: text("payment_status").notNull().default("unpaid"), // unpaid | paid | refunded
+  paymentMethod: text("payment_method"), // card | cash | null
   amountPaid: numeric("amount_paid", { precision: 10, scale: 2 }),
   bibNumber: text("bib_number"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ClassSummary } from './classSummary';
+import type { RaceDaySummaryPaymentSummary } from './raceDaySummaryPaymentSummary';
 
 export interface RaceDaySummary {
   eventId: number;
@@ -17,4 +18,5 @@ export interface RaceDaySummary {
   motosScheduled: number;
   motosCompleted: number;
   classSummary?: ClassSummary[];
+  paymentSummary?: RaceDaySummaryPaymentSummary;
 }

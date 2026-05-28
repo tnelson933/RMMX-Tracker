@@ -105,6 +105,21 @@ router.get("/events/:eventId/raceday-summary", async (req, res) => {
     };
   }));
 
+  // Payment summary — aggregate by method
+  const paymentRows = await db.select({
+    paymentMethod: registrationsTable.paymentMethod,
+    total: sql<string>`COALESCE(SUM(${registrationsTable.amountPaid}), 0)`,
+    cnt: count(),
+  }).from(registrationsTable)
+    .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.paymentStatus, "paid")))
+    .groupBy(registrationsTable.paymentMethod);
+
+  let cardTotal = 0, cashTotal = 0, cardCount = 0, cashCount = 0;
+  for (const row of paymentRows) {
+    if (row.paymentMethod === "card") { cardTotal = Number(row.total); cardCount = row.cnt; }
+    else if (row.paymentMethod === "cash") { cashTotal = Number(row.total); cashCount = row.cnt; }
+  }
+
   return res.json({
     eventId,
     eventName: events[0].name,
@@ -115,6 +130,13 @@ router.get("/events/:eventId/raceday-summary", async (req, res) => {
     motosScheduled: motosTotal.count,
     motosCompleted: motosCompleted.count,
     classSummary,
+    paymentSummary: {
+      cardTotal,
+      cashTotal,
+      totalCollected: cardTotal + cashTotal,
+      cardCount,
+      cashCount,
+    },
   });
 });
 

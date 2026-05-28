@@ -291,7 +291,7 @@ export default function Registrations() {
       const res = await fetch(`/api/registrations/${regSuccess.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentStatus: "paid", amountPaid: amount }),
+        body: JSON.stringify({ paymentStatus: "paid", amountPaid: amount, paymentMethod: "cash" }),
       });
       if (!res.ok) throw new Error("Failed to record payment");
       await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });

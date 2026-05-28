@@ -115,13 +115,14 @@ router.post("/events/:eventId/registrations", async (req, res) => {
 
 router.patch("/registrations/:registrationId", async (req, res) => {
   const id = Number(req.params.registrationId);
-  const { status, paymentStatus, raceClass, bibNumber, amountPaid } = req.body;
+  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod } = req.body;
   const updates: Record<string, unknown> = {};
   if (status !== undefined) updates.status = status;
   if (paymentStatus !== undefined) updates.paymentStatus = paymentStatus;
   if (raceClass !== undefined) updates.raceClass = raceClass;
   if (bibNumber !== undefined) updates.bibNumber = bibNumber;
   if (amountPaid !== undefined) updates.amountPaid = String(amountPaid);
+  if (paymentMethod !== undefined) updates.paymentMethod = paymentMethod;
 
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();
   if (!reg) return res.status(404).json({ error: "Not found" });
@@ -387,7 +388,7 @@ router.post("/public/registrations/:id/verify-payment", async (req, res) => {
     const amountPaid = session.amount_total != null ? session.amount_total / 100 : null;
 
     const [reg] = await db.update(registrationsTable)
-      .set({ paymentStatus: "paid", status: "confirmed", amountPaid: amountPaid != null ? String(amountPaid) : null })
+      .set({ paymentStatus: "paid", status: "confirmed", paymentMethod: "card", amountPaid: amountPaid != null ? String(amountPaid) : null })
       .where(eq(registrationsTable.id, id))
       .returning();
 

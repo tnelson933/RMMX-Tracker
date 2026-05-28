@@ -1762,6 +1762,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ClassSummary"
+        paymentSummary:
+          type: object
+          properties:
+            cardTotal:
+              type: number
+            cashTotal:
+              type: number
+            totalCollected:
+              type: number
+            cardCount:
+              type: integer
+            cashCount:
+              type: integer
 
     ClassSummary:
       type: object
