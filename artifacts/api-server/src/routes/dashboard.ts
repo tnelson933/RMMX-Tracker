@@ -105,14 +105,14 @@ router.get("/events/:eventId/raceday-summary", async (req, res) => {
     };
   }));
 
-  // Payment summary — aggregate by method
+  // Payment summary — aggregate by method; NULL method treated as "card"
   const paymentRows = await db.select({
-    paymentMethod: registrationsTable.paymentMethod,
+    paymentMethod: sql<string>`COALESCE(${registrationsTable.paymentMethod}, 'card')`,
     total: sql<string>`COALESCE(SUM(${registrationsTable.amountPaid}), 0)`,
     cnt: count(),
   }).from(registrationsTable)
     .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.paymentStatus, "paid")))
-    .groupBy(registrationsTable.paymentMethod);
+    .groupBy(sql`COALESCE(${registrationsTable.paymentMethod}, 'card')`);
 
   let cardTotal = 0, cashTotal = 0, cardCount = 0, cashCount = 0;
   for (const row of paymentRows) {
