@@ -193,8 +193,7 @@ router.get("/public/states", async (req, res) => {
     state: eventsTable.state,
     count: count(),
   }).from(eventsTable)
-    .leftJoin(eventPublicationTable, eq(eventsTable.id, eventPublicationTable.eventId))
-    .where(sql`${eventPublicationTable.published} = true OR ${eventsTable.status} != 'draft'`)
+    .where(eq(eventsTable.status, 'completed'))
     .groupBy(eventsTable.state)
     .orderBy(eventsTable.state);
 
@@ -203,33 +202,18 @@ router.get("/public/states", async (req, res) => {
 
 router.get("/public/recent-results", async (req, res) => {
   const { state, limit = "10" } = req.query;
-  let query = db.select({
+  const baseCondition = eq(eventsTable.status, 'completed');
+  const events = await db.select({
     id: eventsTable.id,
     name: eventsTable.name,
     state: eventsTable.state,
     date: eventsTable.date,
     clubName: clubsTable.name,
   }).from(eventsTable)
-    .leftJoin(eventPublicationTable, eq(eventsTable.id, eventPublicationTable.eventId))
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
-    .where(eq(eventPublicationTable.published, true))
+    .where(state ? and(baseCondition, eq(eventsTable.state, String(state))) : baseCondition)
     .orderBy(eventsTable.date)
     .limit(Number(limit));
-
-  const events = await (state
-    ? db.select({
-        id: eventsTable.id,
-        name: eventsTable.name,
-        state: eventsTable.state,
-        date: eventsTable.date,
-        clubName: clubsTable.name,
-      }).from(eventsTable)
-        .leftJoin(eventPublicationTable, eq(eventsTable.id, eventPublicationTable.eventId))
-        .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
-        .where(and(eq(eventPublicationTable.published, true), eq(eventsTable.state, String(state))))
-        .orderBy(eventsTable.date)
-        .limit(Number(limit))
-    : query);
 
   const results = [];
   for (const e of events) {
