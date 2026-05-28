@@ -244,12 +244,12 @@ export default function Motos() {
 
                   <div className="ml-auto flex gap-1.5">
                     {/* Live timing link — always available */}
-                    <Link href={`/live/${moto.id}`} target="_blank">
+                    <a href={`/live/${moto.id}`} target="_blank" rel="noopener noreferrer">
                       <Button size="sm" variant="ghost" className={`font-heading uppercase text-xs gap-1 ${moto.status === "in_progress" ? "text-primary" : "text-muted-foreground"}`}>
                         <Radio size={13} /> Live
                         <ExternalLink size={11} />
                       </Button>
-                    </Link>
+                    </a>
                     <Button size="sm" variant="ghost" className="text-muted-foreground px-2" onClick={() => copyLiveLink(moto.id)}>
                       {copiedId === moto.id ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
                     </Button>
