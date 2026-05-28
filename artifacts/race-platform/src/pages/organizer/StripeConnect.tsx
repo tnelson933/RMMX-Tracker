@@ -67,7 +67,14 @@ export default function StripeConnect() {
       window.location.href = data.url;
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      const isConnectNotEnabled = err.message?.toLowerCase().includes("signed up for connect");
+      toast({
+        title: "Stripe Connect not enabled",
+        description: isConnectNotEnabled
+          ? "Your Stripe account hasn't enabled Connect yet. Visit dashboard.stripe.com/connect to activate it, then try again."
+          : err.message,
+        variant: "destructive",
+      });
     },
   });
 
