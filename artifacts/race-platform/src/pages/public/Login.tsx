@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { ShieldAlert, KeyRound } from "lucide-react";
+import { ShieldAlert, KeyRound, Eye, EyeOff } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -29,6 +29,7 @@ export default function Login() {
   const loginMutation = useLogin();
   const { isAuthenticated } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Navigate as soon as auth state confirms login — avoids race condition where
   // setLocation fires before AuthContext re-renders with the new user data.
@@ -115,12 +116,23 @@ export default function Login() {
                   <FormItem>
                     <FormLabel className="font-heading uppercase tracking-wider text-muted-foreground font-bold">Password</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="password" 
-                        placeholder="••••••••" 
-                        {...field} 
-                        className="h-12 bg-muted/50 focus:bg-background border-muted-foreground/20 text-lg tracking-widest font-mono"
-                      />
+                      <div className="relative">
+                        <Input 
+                          type={showPassword ? "text" : "password"}
+                          placeholder="••••••••" 
+                          {...field} 
+                          className="h-12 bg-muted/50 focus:bg-background border-muted-foreground/20 text-lg tracking-widest font-mono pr-12"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                          tabIndex={-1}
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                          {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
