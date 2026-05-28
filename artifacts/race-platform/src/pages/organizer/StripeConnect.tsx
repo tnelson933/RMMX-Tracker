@@ -324,7 +324,18 @@ export default function StripeConnect() {
           <div className="grid gap-3 sm:grid-cols-3 text-sm text-muted-foreground">
             <div className="space-y-1">
               <div className="font-medium text-foreground">1. Connect</div>
-              <div>Set up your Stripe Express account with your banking info</div>
+              <div>
+                Set up your Stripe Express account with your banking info. First-time setup requires{" "}
+                <a
+                  href="https://dashboard.stripe.com/connect"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline underline-offset-2 hover:opacity-80"
+                >
+                  enabling Connect
+                </a>{" "}
+                on your Stripe account.
+              </div>
             </div>
             <div className="space-y-1">
               <div className="font-medium text-foreground">2. Enable on Events</div>
