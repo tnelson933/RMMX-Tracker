@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, MapPin, Trophy, Flag, ChevronRight, Search } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 
 export default function Results() {
   const [location] = useLocation();
@@ -64,10 +64,10 @@ export default function Results() {
                     <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="relative z-10 flex flex-col items-center">
                       <span className="text-sm font-bold text-sidebar-foreground/70 uppercase tracking-widest mb-1">
-                        {format(new Date(event.date), 'MMM yyyy')}
+                        {format(parseISO(event.date.substring(0, 10)), 'MMM yyyy')}
                       </span>
                       <span className="text-5xl font-heading font-bold leading-none">
-                        {format(new Date(event.date), 'dd')}
+                        {format(parseISO(event.date.substring(0, 10)), 'dd')}
                       </span>
                     </div>
                   </div>

@@ -15,7 +15,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 
 const updateEventSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -477,7 +477,7 @@ export default function EventDetail() {
                   <div className="grid grid-cols-2 gap-y-6">
                     <div>
                       <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Date</div>
-                      <div className="font-medium flex items-center gap-2"><Calendar size={16} className="text-primary"/> {format(new Date(event.date), 'MMMM d, yyyy')}</div>
+                      <div className="font-medium flex items-center gap-2"><Calendar size={16} className="text-primary"/> {format(parseISO(event.date.substring(0, 10)), 'MMMM d, yyyy')}</div>
                     </div>
                     <div>
                       <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Status</div>

@@ -11,7 +11,7 @@ import {
   Calendar, MapPin, Trophy, Flag, ChevronLeft, ChevronRight,
   Clock, Award, Radio, CheckCircle, AlertCircle, Activity,
 } from "lucide-react";
-import { format, isToday } from "date-fns";
+import { format, parseISO, isToday } from "date-fns";
 import { Button } from "@/components/ui/button";
 
 export default function EventResults() {
@@ -140,7 +140,7 @@ export default function EventResults() {
               <div className="flex flex-wrap gap-x-8 gap-y-3 text-sidebar-foreground/80">
                 <div className="flex items-center gap-2">
                   <Calendar size={18} className="text-primary" />
-                  <span className="font-medium">{format(new Date(event.date), "EEEE, MMMM d, yyyy")}</span>
+                  <span className="font-medium">{format(parseISO(event.date.substring(0, 10)), "EEEE, MMMM d, yyyy")}</span>
                 </div>
                 {event.location && (
                   <div className="flex items-center gap-2">

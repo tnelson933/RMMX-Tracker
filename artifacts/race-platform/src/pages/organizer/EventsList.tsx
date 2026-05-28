@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Calendar, MapPin, Plus, ChevronRight, Info } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -396,8 +396,8 @@ export default function EventsList() {
                 <Card className="hover-elevate cursor-pointer hover:border-primary transition-all">
                   <CardContent className="p-0 flex items-center">
                     <div className="bg-sidebar p-4 flex flex-col justify-center items-center text-sidebar-foreground w-24 shrink-0 rounded-l-md border-r">
-                      <span className="text-xs font-bold uppercase tracking-widest mb-1">{format(new Date(event.date), 'MMM')}</span>
-                      <span className="text-3xl font-heading font-bold leading-none">{format(new Date(event.date), 'dd')}</span>
+                      <span className="text-xs font-bold uppercase tracking-widest mb-1">{format(parseISO(event.date.substring(0, 10)), 'MMM')}</span>
+                      <span className="text-3xl font-heading font-bold leading-none">{format(parseISO(event.date.substring(0, 10)), 'dd')}</span>
                     </div>
                     <div className="p-4 flex-1 flex items-center justify-between">
                       <div>

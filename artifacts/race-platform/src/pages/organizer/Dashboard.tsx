@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, Users, CheckCircle, Plus, Tag, Activity } from "lucide-react";
 import { Link } from "wouter";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -97,8 +97,8 @@ export default function Dashboard() {
                     <CardContent className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="bg-muted px-4 py-2 rounded text-center min-w-16">
-                          <div className="text-xs font-bold text-muted-foreground uppercase">{format(new Date(event.date), 'MMM')}</div>
-                          <div className="text-xl font-heading font-bold">{format(new Date(event.date), 'dd')}</div>
+                          <div className="text-xs font-bold text-muted-foreground uppercase">{format(parseISO(event.date.substring(0, 10)), 'MMM')}</div>
+                          <div className="text-xl font-heading font-bold">{format(parseISO(event.date.substring(0, 10)), 'dd')}</div>
                         </div>
                         <div>
                           <h3 className="font-heading font-bold text-xl uppercase">{event.name}</h3>

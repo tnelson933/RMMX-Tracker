@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 
 const registerSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -381,7 +381,7 @@ export default function Register() {
               <p className="text-white/50 text-sm font-bold uppercase tracking-widest mb-1">{event.clubName}</p>
               <h1 className="text-4xl font-heading font-bold uppercase tracking-tight leading-none">{event.name}</h1>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-white/70 text-sm">
-                <span className="flex items-center gap-1.5"><Calendar size={14} /> {format(new Date(event.date), 'EEEE, MMMM d, yyyy')}</span>
+                <span className="flex items-center gap-1.5"><Calendar size={14} /> {format(parseISO(event.date.substring(0, 10)), 'EEEE, MMMM d, yyyy')}</span>
                 {event.location && <span className="flex items-center gap-1.5"><MapPin size={14} /> {event.location}, {event.state}</span>}
                 {event.trackName && <span className="flex items-center gap-1.5"><Flag size={14} /> {event.trackName}</span>}
               </div>

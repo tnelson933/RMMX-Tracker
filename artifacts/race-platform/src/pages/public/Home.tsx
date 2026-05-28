@@ -15,7 +15,7 @@ import {
   Flag, Clock, Activity, AlertCircle, CheckCircle,
 } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
-import { format, isToday, isFuture, isPast } from "date-fns";
+import { format, parseISO, isToday, isFuture, isPast } from "date-fns";
 
 type Tab = "today" | "upcoming" | "past";
 
@@ -102,7 +102,7 @@ function TodayCard({ event }: { event: UpcomingEventItem }) {
             <div className="space-y-1.5 text-sm text-muted-foreground mb-3">
               <div className="flex items-center gap-1.5">
                 <Calendar size={13} className="flex-shrink-0 text-muted-foreground/60" />
-                {format(new Date(event.date), "EEEE, MMMM d, yyyy")}
+                {format(parseISO(event.date.substring(0, 10)), "EEEE, MMMM d, yyyy")}
               </div>
               {(event.location || event.trackName) && (
                 <div className="flex items-center gap-1.5">
@@ -150,7 +150,7 @@ function UpcomingCard({ event }: { event: UpcomingEventItem }) {
           <div className="space-y-1.5 text-sm text-muted-foreground mb-4 flex-1">
             <div className="flex items-center gap-1.5">
               <Calendar size={13} className="flex-shrink-0 text-muted-foreground/60" />
-              {format(new Date(event.date), "EEEE, MMMM d, yyyy")}
+              {format(parseISO(event.date.substring(0, 10)), "EEEE, MMMM d, yyyy")}
             </div>
             {(event.location || event.trackName) && (
               <div className="flex items-center gap-1.5">
@@ -205,7 +205,7 @@ function PastCard({ result }: { result: RecentResultItem }) {
             <div className="flex items-center text-sm text-muted-foreground gap-4 mt-2">
               <span className="flex items-center gap-1.5">
                 <Calendar size={13} />
-                {format(new Date(result.date), "MMM d, yyyy")}
+                {format(parseISO(result.date.substring(0, 10)), "MMM d, yyyy")}
               </span>
               {result.clubName && (
                 <span className="flex items-center gap-1.5 truncate">
