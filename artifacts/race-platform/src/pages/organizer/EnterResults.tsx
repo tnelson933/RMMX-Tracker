@@ -84,36 +84,37 @@ export default function EnterResults() {
 
   const riderMap = new Map<number, {
     riderName: string;
-    positions: Map<number, { pos: number; dnf: boolean; dns: boolean }>;
+    motos: Map<number, { points: number; dnf: boolean; dns: boolean }>;
     times: Map<number, number>;
   }>();
   classResults.forEach(r => {
     if (!riderMap.has(r.riderId)) {
-      riderMap.set(r.riderId, { riderName: r.riderName, positions: new Map(), times: new Map() });
+      riderMap.set(r.riderId, { riderName: r.riderName, motos: new Map(), times: new Map() });
     }
     const entry = riderMap.get(r.riderId)!;
-    entry.positions.set(r.motoId, { pos: r.position, dnf: r.dnf ?? false, dns: r.dns ?? false });
+    entry.motos.set(r.motoId, { points: r.points ?? 0, dnf: r.dnf ?? false, dns: r.dns ?? false });
     entry.times.set(r.motoId, parseTimeSeconds(r.totalTime));
   });
 
   const overallStandings = Array.from(riderMap.entries()).map(([riderId, data]) => {
-    const motoPositions = classMotos.map(moto => {
-      const result = data.positions.get(moto.id);
-      if (!result) return { display: '-' as string | number, value: 999 };
-      if (result.dnf) return { display: 'DNF', value: 999 };
-      if (result.dns) return { display: 'DNS', value: 999 };
-      return { display: result.pos, value: result.pos };
+    const motoPoints = classMotos.map(moto => {
+      const result = data.motos.get(moto.id);
+      if (!result) return { display: '-' as string | number, value: 0 };
+      if (result.dnf) return { display: 'DNF', value: 0 };
+      if (result.dns) return { display: 'DNS', value: 0 };
+      return { display: result.points, value: result.points };
     });
-    const total = motoPositions.reduce((sum, p) => sum + p.value, 0);
-    // Sum only motos where the rider actually finished (not DNF/DNS/missing)
+    const total = motoPoints.reduce((sum, p) => sum + p.value, 0);
+    // Sum only motos where the rider actually finished
     const totalTimeSeconds = classMotos.reduce((sum, moto) => {
       const t = data.times.get(moto.id);
       return isFinite(t ?? Infinity) ? sum + (t ?? 0) : sum;
     }, 0);
-    return { riderId, riderName: data.riderName, motoPositions, total, totalTimeSeconds };
-  }).sort((a, b) => a.total - b.total || a.totalTimeSeconds - b.totalTimeSeconds);
+    return { riderId, riderName: data.riderName, motoPoints, total, totalTimeSeconds };
+  // Sort descending by points; tiebreak by lower total time
+  }).sort((a, b) => b.total - a.total || a.totalTimeSeconds - b.totalTimeSeconds);
 
-  // Assign positions — ties broken by time, so only truly equal (same total + same time) share a rank
+  // Assign positions — ties broken by time; only identical points + time share a rank
   const standingsWithPos = overallStandings.map((row, idx, arr) => {
     let overallPos = idx + 1;
     if (idx > 0 && row.total === arr[idx - 1].total && row.totalTimeSeconds === arr[idx - 1].totalTimeSeconds) {
@@ -340,7 +341,7 @@ export default function EnterResults() {
                           Moto {m.motoNumber}
                         </TableHead>
                       ))}
-                      <TableHead className="w-20 text-center">Total</TableHead>
+                      <TableHead className="w-20 text-center">Points</TableHead>
                       <TableHead className="w-32 text-center">Total Time</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -353,7 +354,7 @@ export default function EnterResults() {
                           </span>
                         </TableCell>
                         <TableCell className="font-bold">{row.riderName}</TableCell>
-                        {row.motoPositions.map((p, i) => (
+                        {row.motoPoints.map((p, i) => (
                           <TableCell key={i} className="text-center font-mono text-sm">
                             {p.display === 'DNF' ? (
                               <span className="text-destructive font-bold text-xs">DNF</span>
@@ -365,9 +366,7 @@ export default function EnterResults() {
                           </TableCell>
                         ))}
                         <TableCell className="text-center">
-                          <span className="font-heading font-bold text-primary">
-                            {row.total >= 999 * classMotos.length ? "–" : row.total}
-                          </span>
+                          <span className="font-heading font-bold text-primary">{row.total}</span>
                         </TableCell>
                         <TableCell className="text-center font-mono text-sm text-muted-foreground">
                           {row.totalTimeDisplay}

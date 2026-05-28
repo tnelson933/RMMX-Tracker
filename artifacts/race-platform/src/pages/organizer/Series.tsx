@@ -397,7 +397,7 @@ export default function SeriesManagement() {
                                   </TableHead>
                                 ))}
                                 <TableHead className="text-center w-20">Events</TableHead>
-                                <TableHead className="text-center w-24">Total</TableHead>
+                                <TableHead className="text-center w-24">Points</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -449,7 +449,7 @@ export default function SeriesManagement() {
                   </Card>
 
                   <p className="text-xs text-muted-foreground px-1">
-                    Standings ranked by lowest total position score. Parenthesized scores indicate a no-show penalty (last place + 1 for each missed moto).
+                    Standings ranked by highest total points. Riders who miss an event receive 0 points for each moto missed (shown in parentheses).
                   </p>
                 </>
               ) : (

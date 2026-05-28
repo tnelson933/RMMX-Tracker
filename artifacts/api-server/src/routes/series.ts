@@ -62,6 +62,7 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
     riderLastName: ridersTable.lastName,
     raceClass: raceResultsTable.raceClass,
     position: raceResultsTable.position,
+    points: raceResultsTable.points,
     dnf: raceResultsTable.dnf,
     dns: raceResultsTable.dns,
   })
@@ -126,15 +127,13 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
           const result = results.find(r => r.riderId === riderId);
           if (result) {
             attended = true;
-            // DNF/DNS = last place + 1 in that moto
-            const pos = (result.dnf || result.dns) ? results.length + 1 : (result.position ?? results.length + 1);
-            eventScore += pos;
-            motoPositions.push(pos);
+            // DNF/DNS = 0 points; otherwise use stored points
+            const pts = (result.dnf || result.dns) ? 0 : (result.points ?? 0);
+            eventScore += pts;
+            motoPositions.push(pts);
           } else {
-            // Missed moto: penalty = riders who did compete + 1
-            const penalty = results.length + 1;
-            eventScore += penalty;
-            motoPositions.push(penalty);
+            // Missed moto = 0 points
+            motoPositions.push(0);
           }
         }
 
@@ -160,8 +159,8 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
       });
     }
 
-    // Sort ascending by totalScore, assign positions with tie handling
-    classRows.sort((a, b) => a.totalScore - b.totalScore);
+    // Sort descending by totalScore (highest points wins), assign positions with tie handling
+    classRows.sort((a, b) => b.totalScore - a.totalScore);
     classRows.forEach((row, idx) => {
       if (idx > 0 && row.totalScore === classRows[idx - 1].totalScore) {
         row.position = classRows[idx - 1].position;
