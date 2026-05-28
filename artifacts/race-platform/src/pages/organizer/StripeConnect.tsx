@@ -77,7 +77,7 @@ export default function StripeConnect() {
       return res.json() as Promise<{ url: string }>;
     },
     onSuccess: (data) => {
-      window.location.href = data.url;
+      window.open(data.url, "_blank");
     },
     onError: (err: Error) => {
       const isConnectNotEnabled = err.message?.toLowerCase().includes("signed up for connect");
