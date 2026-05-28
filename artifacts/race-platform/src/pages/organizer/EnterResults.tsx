@@ -159,7 +159,17 @@ export default function EnterResults() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {activeMoto.lineup.map(entry => {
+                  {[...activeMoto.lineup].sort((a, b) => {
+                    const aData = resultsData[a.riderId];
+                    const bData = resultsData[b.riderId];
+                    const aDnfDns = aData?.dnf || aData?.dns;
+                    const bDnfDns = bData?.dnf || bData?.dns;
+                    if (aDnfDns && !bDnfDns) return 1;
+                    if (!aDnfDns && bDnfDns) return -1;
+                    const aPos = parseInt(aData?.pos) || 999;
+                    const bPos = parseInt(bData?.pos) || 999;
+                    return aPos - bPos;
+                  }).map(entry => {
                     const rowData = resultsData[entry.riderId] || { pos: "", time: "", dnf: false, dns: false };
                     const isDnfDns = rowData.dnf || rowData.dns;
                     
