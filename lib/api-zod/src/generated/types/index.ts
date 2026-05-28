@@ -64,6 +64,7 @@ export * from './riderInput';
 export * from './riderResultInput';
 export * from './riderUpdate';
 export * from './series';
+export * from './seriesEventBreakdown';
 export * from './seriesInput';
 export * from './seriesStanding';
 export * from './seriesUpdateInput';

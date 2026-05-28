@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable } from "@workspace/db";
+import { eq, inArray, and } from "drizzle-orm";
 
 const router = Router();
 
@@ -32,75 +32,152 @@ router.patch("/series/:seriesId", async (req, res) => {
 
 router.get("/series/:seriesId/leaderboard", async (req, res) => {
   const seriesId = Number(req.params.seriesId);
-  const points = await db.select({
-    id: seriesPointsTable.id,
-    riderId: seriesPointsTable.riderId,
-    raceClass: seriesPointsTable.raceClass,
-    totalPoints: seriesPointsTable.totalPoints,
-    eventsEntered: seriesPointsTable.eventsEntered,
-    eventResults: seriesPointsTable.eventResults,
-    firstName: ridersTable.firstName,
-    lastName: ridersTable.lastName,
-  }).from(seriesPointsTable)
-    .leftJoin(ridersTable, eq(seriesPointsTable.riderId, ridersTable.id))
-    .where(eq(seriesPointsTable.seriesId, seriesId))
-    .orderBy(seriesPointsTable.totalPoints);
+  const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
+  if (!series) return res.status(404).json({ error: "Not found" });
 
-  const byClass: Record<string, typeof points> = {};
-  for (const p of points) {
-    if (!byClass[p.raceClass]) byClass[p.raceClass] = [];
-    byClass[p.raceClass].push(p);
+  const eventIds = series.eventIds as number[];
+  if (eventIds.length === 0) return res.json([]);
+
+  // Load event names
+  const events = await db.select({ id: eventsTable.id, name: eventsTable.name })
+    .from(eventsTable)
+    .where(inArray(eventsTable.id, eventIds));
+  const eventNameMap: Record<number, string> = {};
+  events.forEach(e => { eventNameMap[e.id] = e.name; });
+
+  // Load all completed motos across all series events
+  const allMotos = await db.select()
+    .from(motosTable)
+    .where(and(inArray(motosTable.eventId, eventIds), eq(motosTable.status, "completed")));
+
+  if (allMotos.length === 0) return res.json([]);
+
+  const motoIds = allMotos.map(m => m.id);
+
+  // Load all results for those motos
+  const allResults = await db.select({
+    motoId: raceResultsTable.motoId,
+    riderId: raceResultsTable.riderId,
+    riderName: ridersTable.firstName,
+    riderLastName: ridersTable.lastName,
+    raceClass: raceResultsTable.raceClass,
+    position: raceResultsTable.position,
+    dnf: raceResultsTable.dnf,
+    dns: raceResultsTable.dns,
+  })
+    .from(raceResultsTable)
+    .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
+    .where(inArray(raceResultsTable.motoId, motoIds));
+
+  // Build: raceClass → eventId → array of { moto, results[] }
+  type MotoEntry = { moto: typeof allMotos[0]; results: typeof allResults };
+  const classByEvent: Record<string, Record<number, MotoEntry[]>> = {};
+
+  for (const moto of allMotos) {
+    const cls = moto.raceClass ?? "";
+    if (!classByEvent[cls]) classByEvent[cls] = {};
+    if (!classByEvent[cls][moto.eventId]) classByEvent[cls][moto.eventId] = [];
+    const motoResults = allResults.filter(r => r.motoId === moto.id);
+    classByEvent[cls][moto.eventId].push({ moto, results: motoResults });
   }
 
-  const standings: Array<{ position: number; riderId: number; riderName: string; raceClass: string; totalPoints: number; eventsEntered: number; eventResults: unknown[] }> = [];
-  for (const [cls, riders] of Object.entries(byClass)) {
-    const sorted = riders.sort((a, b) => b.totalPoints - a.totalPoints);
-    sorted.forEach((r, i) => {
-      standings.push({
-        position: i + 1,
-        riderId: r.riderId,
-        riderName: `${r.firstName} ${r.lastName}`,
-        raceClass: r.raceClass,
-        totalPoints: r.totalPoints,
-        eventsEntered: r.eventsEntered,
-        eventResults: Array.isArray(r.eventResults) ? r.eventResults : [],
+  const standings: Array<{
+    position: number;
+    riderId: number;
+    riderName: string;
+    raceClass: string;
+    totalScore: number;
+    eventsEntered: number;
+    events: Array<{ eventId: number; eventName: string; eventScore: number; attended: boolean; motos: number[] }>;
+  }> = [];
+
+  for (const [raceClass, eventMap] of Object.entries(classByEvent)) {
+    // Collect all unique riders who appear in any moto for this class
+    const riderNames: Record<number, string> = {};
+    for (const motoEntries of Object.values(eventMap)) {
+      for (const { results } of motoEntries) {
+        for (const r of results) {
+          riderNames[r.riderId] = `${r.riderName ?? ""} ${r.riderLastName ?? ""}`.trim();
+        }
+      }
+    }
+    const allRiderIds = Object.keys(riderNames).map(Number);
+
+    const classRows: typeof standings = [];
+
+    for (const riderId of allRiderIds) {
+      let totalScore = 0;
+      let eventsEntered = 0;
+      const eventBreakdowns: typeof standings[0]["events"] = [];
+
+      // Iterate in series event order
+      for (const eventId of eventIds) {
+        const motoEntries = eventMap[eventId];
+        if (!motoEntries || motoEntries.length === 0) continue; // no motos in this class for this event
+
+        // Sort motos by motoNumber so columns are consistent
+        const sortedMotos = [...motoEntries].sort((a, b) => (a.moto.motoNumber ?? 0) - (b.moto.motoNumber ?? 0));
+
+        let eventScore = 0;
+        const motoPositions: number[] = [];
+        let attended = false;
+
+        for (const { results } of sortedMotos) {
+          const result = results.find(r => r.riderId === riderId);
+          if (result) {
+            attended = true;
+            // DNF/DNS = last place + 1 in that moto
+            const pos = (result.dnf || result.dns) ? results.length + 1 : (result.position ?? results.length + 1);
+            eventScore += pos;
+            motoPositions.push(pos);
+          } else {
+            // Missed moto: penalty = riders who did compete + 1
+            const penalty = results.length + 1;
+            eventScore += penalty;
+            motoPositions.push(penalty);
+          }
+        }
+
+        if (attended) eventsEntered++;
+        totalScore += eventScore;
+        eventBreakdowns.push({
+          eventId,
+          eventName: eventNameMap[eventId] ?? `Event ${eventId}`,
+          eventScore,
+          attended,
+          motos: motoPositions,
+        });
+      }
+
+      classRows.push({
+        position: 0, // assigned below
+        riderId,
+        riderName: riderNames[riderId],
+        raceClass,
+        totalScore,
+        eventsEntered,
+        events: eventBreakdowns,
       });
+    }
+
+    // Sort ascending by totalScore, assign positions with tie handling
+    classRows.sort((a, b) => a.totalScore - b.totalScore);
+    classRows.forEach((row, idx) => {
+      if (idx > 0 && row.totalScore === classRows[idx - 1].totalScore) {
+        row.position = classRows[idx - 1].position;
+      } else {
+        row.position = idx + 1;
+      }
     });
+
+    standings.push(...classRows);
   }
 
   return res.json(standings);
 });
 
+// Keep recalculate endpoint (no-op now — standings are computed live)
 router.post("/series/:seriesId/recalculate", async (req, res) => {
-  const seriesId = Number(req.params.seriesId);
-  const series = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
-  if (!series[0]) return res.status(404).json({ error: "Not found" });
-
-  const eventIds = series[0].eventIds as number[];
-
-  // Delete existing points
-  await db.delete(seriesPointsTable).where(eq(seriesPointsTable.seriesId, seriesId));
-
-  // Aggregate results by rider+class across all events
-  const pointsByRiderClass: Record<string, { riderId: number; raceClass: string; totalPoints: number; eventsEntered: number; eventResults: number[] }> = {};
-
-  for (const eventId of eventIds) {
-    const results = await db.select().from(raceResultsTable).where(eq(raceResultsTable.eventId, eventId));
-    for (const r of results) {
-      const key = `${r.riderId}-${r.raceClass}`;
-      if (!pointsByRiderClass[key]) {
-        pointsByRiderClass[key] = { riderId: r.riderId, raceClass: r.raceClass, totalPoints: 0, eventsEntered: 0, eventResults: [] };
-      }
-      pointsByRiderClass[key].totalPoints += r.points || 0;
-      pointsByRiderClass[key].eventsEntered += 1;
-      pointsByRiderClass[key].eventResults.push(r.points || 0);
-    }
-  }
-
-  for (const data of Object.values(pointsByRiderClass)) {
-    await db.insert(seriesPointsTable).values({ seriesId, ...data });
-  }
-
   return res.json({ ok: true });
 });
 

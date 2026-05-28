@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Trophy, Plus, ChevronRight, Medal, X } from "lucide-react";
+import { Trophy, Plus, ChevronRight, Medal, X, Calendar } from "lucide-react";
 
 const createSeriesSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -24,9 +25,10 @@ export default function SeriesManagement() {
   const clubId = user?.clubId || 0;
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
+
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedSeriesId, setSelectedSeriesId] = useState<number | null>(null);
+  const [selectedClass, setSelectedClass] = useState<string>("");
   const [classList, setClassList] = useState<string[]>([]);
   const [classInput, setClassInput] = useState("");
 
@@ -35,7 +37,7 @@ export default function SeriesManagement() {
     query: { enabled: !!selectedSeriesId } as any
   });
 
-  // Set default selection
+  // Set default series selection
   if (seriesList?.length && !selectedSeriesId) {
     setSelectedSeriesId(seriesList[0].id);
   }
@@ -86,7 +88,23 @@ export default function SeriesManagement() {
   };
 
   const selectedSeries = seriesList?.find(s => s.id === selectedSeriesId);
-  const classes = Array.from(new Set(leaderboard?.map(l => l.raceClass) || []));
+
+  // Unique race classes from leaderboard
+  const raceClasses = [...new Set((leaderboard || []).map(l => l.raceClass))].sort();
+  const displayClass = selectedClass || raceClasses[0] || "";
+
+  // Standings for the selected class
+  const classStandings = (leaderboard || [])
+    .filter(l => l.raceClass === displayClass)
+    .sort((a, b) => a.position - b.position);
+
+  // Events that have motos for this class (derive from first rider's breakdown)
+  const eventColumns = classStandings[0]?.events || [];
+
+  const positionCell = (pos: number, isPenalty: boolean) => {
+    if (isPenalty) return <span className="text-muted-foreground text-xs italic">({pos})</span>;
+    return <span className="font-bold">{pos}</span>;
+  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
@@ -95,9 +113,9 @@ export default function SeriesManagement() {
           <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
             <Trophy className="text-primary" /> Series Management
           </h1>
-          <p className="text-muted-foreground mt-1">Manage championships and view leaderboards.</p>
+          <p className="text-muted-foreground mt-1">Manage championships and view position-based standings.</p>
         </div>
-        
+
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
             <Button className="font-heading uppercase tracking-wider">
@@ -170,6 +188,7 @@ export default function SeriesManagement() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        {/* Series list */}
         <div className="lg:col-span-1 space-y-4">
           <h3 className="font-heading font-bold uppercase text-muted-foreground tracking-wider mb-2">Your Series</h3>
           {isLoading ? (
@@ -179,10 +198,10 @@ export default function SeriesManagement() {
             </div>
           ) : seriesList?.length ? (
             seriesList.map(series => (
-              <Card 
-                key={series.id} 
+              <Card
+                key={series.id}
                 className={`cursor-pointer transition-colors ${selectedSeriesId === series.id ? 'border-primary bg-primary/5' : 'hover:border-primary/50'}`}
-                onClick={() => setSelectedSeriesId(series.id)}
+                onClick={() => { setSelectedSeriesId(series.id); setSelectedClass(""); }}
               >
                 <CardContent className="p-4 flex items-center justify-between">
                   <div>
@@ -200,65 +219,130 @@ export default function SeriesManagement() {
           )}
         </div>
 
-        <div className="lg:col-span-3">
+        {/* Standings panel */}
+        <div className="lg:col-span-3 space-y-4">
           {selectedSeries ? (
-            <Card>
-              <CardHeader className="bg-sidebar text-sidebar-foreground border-b pb-4 rounded-t-lg">
-                <CardTitle className="font-heading uppercase text-2xl text-white">
-                  {selectedSeries.name} - {selectedSeries.season} Leaderboard
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                {leaderboardLoading ? (
-                  <div className="p-16 text-center text-muted-foreground">Loading standings...</div>
-                ) : classes.length > 0 ? (
-                  <div className="divide-y">
-                    {classes.map(raceClass => {
-                      const classStandings = leaderboard?.filter(l => l.raceClass === raceClass).sort((a,b) => a.position - b.position) || [];
-                      return (
-                        <div key={raceClass} className="p-6">
-                          <h3 className="text-xl font-heading font-bold uppercase mb-4 text-primary">{raceClass}</h3>
+            <>
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-heading font-bold uppercase tracking-tight">
+                  {selectedSeries.name} — {selectedSeries.season}
+                </h2>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Calendar size={14} />
+                  {(selectedSeries.eventIds as number[])?.length ?? 0} event(s)
+                </div>
+              </div>
+
+              {leaderboardLoading ? (
+                <div className="p-16 text-center text-muted-foreground">Loading standings...</div>
+              ) : raceClasses.length > 0 ? (
+                <>
+                  {/* Class pill selector */}
+                  <div className="flex flex-wrap gap-2">
+                    {raceClasses.map(cls => (
+                      <button
+                        key={cls}
+                        onClick={() => setSelectedClass(cls ?? "")}
+                        className={`px-4 py-1.5 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+                          displayClass === cls
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                        }`}
+                      >
+                        {cls}
+                      </button>
+                    ))}
+                  </div>
+
+                  <Card className="border-sidebar-border">
+                    <CardHeader className="bg-sidebar text-sidebar-foreground border-b py-3 px-6">
+                      <CardTitle className="font-heading uppercase tracking-wider text-base text-white">
+                        {displayClass} — Series Overall
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      {classStandings.length > 0 ? (
+                        <div className="overflow-x-auto">
                           <Table>
-                            <TableHeader>
+                            <TableHeader className="bg-muted/50">
                               <TableRow>
                                 <TableHead className="w-16 text-center">Pos</TableHead>
                                 <TableHead>Rider</TableHead>
-                                <TableHead className="text-center w-24">Events</TableHead>
-                                <TableHead className="text-right w-24">Points</TableHead>
+                                {eventColumns.map(ev => (
+                                  <TableHead key={ev.eventId} className="text-center text-xs min-w-28">
+                                    <div className="font-medium truncate max-w-24">{ev.eventName}</div>
+                                    <div className="text-muted-foreground font-normal">Score</div>
+                                  </TableHead>
+                                ))}
+                                <TableHead className="text-center w-20">Events</TableHead>
+                                <TableHead className="text-center w-24">Total</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {classStandings.map(standing => (
-                                <TableRow key={standing.riderId}>
-                                  <TableCell className="text-center font-heading font-bold text-lg">
-                                    {standing.position === 1 ? <Medal className="mx-auto text-yellow-500" size={20} /> :
-                                     standing.position === 2 ? <Medal className="mx-auto text-gray-400" size={20} /> :
-                                     standing.position === 3 ? <Medal className="mx-auto text-amber-700" size={20} /> :
-                                     standing.position}
+                              {classStandings.map((row, idx) => (
+                                <TableRow key={row.riderId} className={idx === 0 ? "bg-primary/5" : ""}>
+                                  <TableCell className="text-center">
+                                    {row.position === 1 ? <Medal className="mx-auto text-yellow-500" size={20} /> :
+                                     row.position === 2 ? <Medal className="mx-auto text-slate-400" size={20} /> :
+                                     row.position === 3 ? <Medal className="mx-auto text-amber-700" size={20} /> :
+                                     <span className="font-heading font-bold">{row.position}</span>}
                                   </TableCell>
-                                  <TableCell className="font-bold">{standing.riderName}</TableCell>
-                                  <TableCell className="text-center font-mono text-muted-foreground">{standing.eventsEntered || 0}</TableCell>
-                                  <TableCell className="text-right font-heading font-bold text-xl text-primary">{standing.totalPoints}</TableCell>
+                                  <TableCell className="font-bold">{row.riderName}</TableCell>
+                                  {(row.events || []).map(ev => (
+                                    <TableCell key={ev.eventId} className="text-center">
+                                      {ev.attended ? (
+                                        <div>
+                                          <div className="font-heading font-bold text-sm">{ev.eventScore}</div>
+                                          <div className="text-xs text-muted-foreground font-mono">
+                                            {ev.motos?.join(" · ")}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div>
+                                          <div className="font-heading font-bold text-sm text-muted-foreground">({ev.eventScore})</div>
+                                          <div className="text-xs text-destructive/70">no-show</div>
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                  ))}
+                                  <TableCell className="text-center">
+                                    <Badge variant={row.eventsEntered > 0 ? "default" : "secondary"} className="font-mono">
+                                      {row.eventsEntered}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <span className="font-heading font-bold text-lg text-primary">{row.totalScore}</span>
+                                  </TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>
                           </Table>
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="p-16 text-center">
+                      ) : (
+                        <div className="p-10 text-center text-muted-foreground">
+                          No completed results for <strong>{displayClass}</strong> yet.
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <p className="text-xs text-muted-foreground px-1">
+                    Standings ranked by lowest total position score. Parenthesized scores indicate a no-show penalty (last place + 1 for each missed moto).
+                  </p>
+                </>
+              ) : (
+                <Card>
+                  <CardContent className="p-16 text-center">
                     <Trophy className="mx-auto text-muted-foreground opacity-20 mb-4" size={48} />
                     <h3 className="text-xl font-heading font-bold mb-2">No Standings Yet</h3>
-                    <p className="text-muted-foreground">Results will appear here once events are completed and scored.</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    <p className="text-muted-foreground">Standings appear once events in this series have completed motos with results.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           ) : (
             <div className="h-full flex items-center justify-center p-12 border rounded-lg border-dashed text-muted-foreground">
-              Select a series to view its leaderboard.
+              Select a series to view its standings.
             </div>
           )}
         </div>

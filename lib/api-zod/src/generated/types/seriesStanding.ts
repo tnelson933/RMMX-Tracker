@@ -5,13 +5,15 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { SeriesEventBreakdown } from './seriesEventBreakdown';
 
 export interface SeriesStanding {
   position: number;
   riderId: number;
   riderName: string;
   raceClass: string;
-  totalPoints: number;
-  eventsEntered?: number;
-  eventResults?: number[];
+  /** Sum of finish positions across all motos (lower is better) */
+  totalScore: number;
+  eventsEntered: number;
+  events?: SeriesEventBreakdown[];
 }

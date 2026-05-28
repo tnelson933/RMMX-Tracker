@@ -108,7 +108,7 @@ export default function Leaderboard() {
                           </TableCell>
                           <TableCell className="font-bold text-lg">{standing.riderName}</TableCell>
                           <TableCell className="text-center font-mono font-medium text-muted-foreground">{standing.eventsEntered || 0}</TableCell>
-                          <TableCell className="text-right font-heading font-bold text-2xl text-primary">{standing.totalPoints}</TableCell>
+                          <TableCell className="text-right font-heading font-bold text-2xl text-primary">{standing.totalScore}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

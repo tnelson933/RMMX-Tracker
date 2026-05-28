@@ -459,14 +459,25 @@ export interface SeriesUpdateInput {
   eventIds?: number[];
 }
 
+export interface SeriesEventBreakdown {
+  eventId: number;
+  eventName: string;
+  /** Sum of positions for this event's motos */
+  eventScore: number;
+  attended: boolean;
+  /** Per-moto finish positions (penalty applied for missed motos) */
+  motos?: number[];
+}
+
 export interface SeriesStanding {
   position: number;
   riderId: number;
   riderName: string;
   raceClass: string;
-  totalPoints: number;
-  eventsEntered?: number;
-  eventResults?: number[];
+  /** Sum of finish positions across all motos (lower is better) */
+  totalScore: number;
+  eventsEntered: number;
+  events?: SeriesEventBreakdown[];
 }
 
 export interface ActivityItem {

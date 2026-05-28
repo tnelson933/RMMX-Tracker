@@ -840,9 +840,15 @@ export const GetSeriesLeaderboardResponseItem = zod.object({
   "riderId": zod.number(),
   "riderName": zod.string(),
   "raceClass": zod.string(),
-  "totalPoints": zod.number(),
-  "eventsEntered": zod.number().optional(),
-  "eventResults": zod.array(zod.number()).optional()
+  "totalScore": zod.number().describe('Sum of finish positions across all motos (lower is better)'),
+  "eventsEntered": zod.number(),
+  "events": zod.array(zod.object({
+  "eventId": zod.number(),
+  "eventName": zod.string(),
+  "eventScore": zod.number().describe('Sum of positions for this event\'s motos'),
+  "attended": zod.boolean(),
+  "motos": zod.array(zod.number()).optional().describe('Per-moto finish positions (penalty applied for missed motos)')
+})).optional()
 })
 export const GetSeriesLeaderboardResponse = zod.array(GetSeriesLeaderboardResponseItem)
 

@@ -1726,7 +1726,7 @@ components:
 
     SeriesStanding:
       type: object
-      required: [position, riderId, riderName, raceClass, totalPoints]
+      required: [position, riderId, riderName, raceClass, totalScore, eventsEntered]
       properties:
         position:
           type: integer
@@ -1736,14 +1736,34 @@ components:
           type: string
         raceClass:
           type: string
-        totalPoints:
+        totalScore:
           type: integer
+          description: Sum of finish positions across all motos (lower is better)
         eventsEntered:
           type: integer
-        eventResults:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeriesEventBreakdown"
+
+    SeriesEventBreakdown:
+      type: object
+      required: [eventId, eventName, eventScore, attended]
+      properties:
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        eventScore:
+          type: integer
+          description: Sum of positions for this event's motos
+        attended:
+          type: boolean
+        motos:
           type: array
           items:
             type: integer
+          description: Per-moto finish positions (penalty applied for missed motos)
 
     ClubDashboard:
       type: object
