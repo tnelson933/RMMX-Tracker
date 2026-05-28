@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable } from "@workspace/db";
-import { eq, and, count, sql } from "drizzle-orm";
+import { eq, and, count, sql, inArray, desc } from "drizzle-orm";
 
 const router = Router();
 
@@ -20,15 +20,13 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
   let checkedInToday = 0;
   if (eventIdList.length > 0) {
     const regCount = await db.select({ count: count() }).from(registrationsTable)
-      .where(sql`${registrationsTable.eventId} = ANY(${eventIdList})`);
+      .where(inArray(registrationsTable.eventId, eventIdList));
     totalRegistrations = regCount[0]?.count || 0;
 
-    const today = new Date().toISOString().split('T')[0];
     const checkinCount = await db.select({ count: count() }).from(checkinsTable)
       .where(and(
-        sql`${checkinsTable.eventId} = ANY(${eventIdList})`,
+        inArray(checkinsTable.eventId, eventIdList),
         eq(checkinsTable.checkedIn, true),
-        sql`DATE(${checkinsTable.checkedInAt}) = ${today}`
       ));
     checkedInToday = checkinCount[0]?.count || 0;
   }
@@ -56,15 +54,65 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     .orderBy(eventsTable.date)
     .limit(5);
 
+  // Real recent activity: last 10 registrations + check-ins across club events
+  let recentActivity: { type: string; description: string; timestamp: string }[] = [];
+  if (eventIdList.length > 0) {
+    const recentRegs = await db
+      .select({
+        id: registrationsTable.id,
+        raceClass: registrationsTable.raceClass,
+        createdAt: registrationsTable.createdAt,
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+        eventName: eventsTable.name,
+      })
+      .from(registrationsTable)
+      .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+      .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+      .where(inArray(registrationsTable.eventId, eventIdList))
+      .orderBy(desc(registrationsTable.createdAt))
+      .limit(10);
+
+    const recentCheckins = await db
+      .select({
+        id: checkinsTable.id,
+        raceClass: checkinsTable.raceClass,
+        checkedInAt: checkinsTable.checkedInAt,
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+        eventName: eventsTable.name,
+      })
+      .from(checkinsTable)
+      .innerJoin(ridersTable, eq(checkinsTable.riderId, ridersTable.id))
+      .innerJoin(eventsTable, eq(checkinsTable.eventId, eventsTable.id))
+      .where(and(inArray(checkinsTable.eventId, eventIdList), eq(checkinsTable.checkedIn, true)))
+      .orderBy(desc(checkinsTable.checkedInAt))
+      .limit(10);
+
+    const activityItems = [
+      ...recentRegs.map(r => ({
+        type: "registration" as const,
+        description: `${r.firstName} ${r.lastName} registered for ${r.eventName} — ${r.raceClass}`,
+        timestamp: r.createdAt.toISOString(),
+      })),
+      ...recentCheckins.map(c => ({
+        type: "checkin" as const,
+        description: `${c.firstName} ${c.lastName} checked in at ${c.eventName} — ${c.raceClass}`,
+        timestamp: c.checkedInAt ? c.checkedInAt.toISOString() : new Date().toISOString(),
+      })),
+    ];
+    recentActivity = activityItems
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 10);
+  }
+
   return res.json({
     totalEvents: eventsCount.count,
     upcomingEvents: upcomingCount.count,
     totalRiders: ridersCount.count,
     totalRegistrations,
     checkedInToday,
-    recentActivity: [
-      { type: "system", description: "Race platform ready", timestamp: new Date().toISOString() },
-    ],
+    recentActivity,
     upcomingEventList: upcomingEvents.map(e => ({
       ...e,
       entryFee: e.entryFee ? Number(e.entryFee) : null,

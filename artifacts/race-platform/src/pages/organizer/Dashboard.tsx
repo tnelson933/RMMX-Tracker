@@ -73,7 +73,7 @@ export default function Dashboard() {
         <Card className="border-secondary bg-secondary/5">
           <CardContent className="p-6 flex items-center justify-between">
             <div>
-              <p className="text-sm font-bold text-secondary uppercase tracking-widest mb-1">Checked In Today</p>
+              <p className="text-sm font-bold text-secondary uppercase tracking-widest mb-1">Total Checked In</p>
               <h2 className="text-4xl font-heading font-bold text-secondary">{dashboard?.checkedInToday || 0}</h2>
             </div>
             <div className="h-12 w-12 rounded-full bg-secondary/20 flex items-center justify-center text-secondary">
