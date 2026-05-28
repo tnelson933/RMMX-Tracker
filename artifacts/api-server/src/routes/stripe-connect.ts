@@ -34,12 +34,24 @@ router.get("/stripe/connect/status", async (req, res) => {
   if (!auth.clubId) return res.json({ connected: false, onboardingComplete: false, accountId: null });
 
   const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, auth.clubId));
-  if (!club) return res.json({ connected: false, onboardingComplete: false, accountId: null });
+  if (!club) return res.json({ connected: false, onboardingComplete: false, accountId: null, email: null });
+
+  let accountEmail: string | null = null;
+  if (club.stripeAccountId) {
+    try {
+      const stripe = await getUncachableStripeClient();
+      const account = await stripe.accounts.retrieve(club.stripeAccountId);
+      accountEmail = account.email ?? null;
+    } catch {
+      // non-fatal — email will just be null
+    }
+  }
 
   return res.json({
     connected: !!club.stripeAccountId,
     onboardingComplete: club.stripeOnboardingComplete ?? false,
     accountId: club.stripeAccountId ?? null,
+    email: accountEmail,
   });
 });
 

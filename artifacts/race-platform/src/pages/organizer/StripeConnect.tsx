@@ -197,65 +197,6 @@ export default function StripeConnect() {
             </Button>
           </CardContent>
         </Card>
-      ) : !status?.onboardingComplete ? (
-        <Card className="border-amber-500/30">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-3">
-              <div className="bg-amber-500/10 rounded-full p-3">
-                <AlertCircle size={24} className="text-amber-600" />
-              </div>
-              <div>
-                <CardTitle className="font-heading uppercase flex items-center gap-2">
-                  Setup Incomplete
-                  <Badge variant="outline" className="border-amber-500/40 text-amber-600 text-xs normal-case font-normal">Pending</Badge>
-                </CardTitle>
-                <CardDescription>Complete your Stripe account setup to start accepting payments</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Your Stripe account has been created but setup isn't complete. Click below to finish providing your business information and bank details.
-            </p>
-            <div className="flex gap-3">
-              <Button
-                onClick={() => startMutation.mutate()}
-                disabled={startMutation.isPending}
-                className="font-heading uppercase tracking-wider"
-              >
-                {startMutation.isPending ? (
-                  <><Loader2 size={16} className="mr-2 animate-spin" /> Loading...</>
-                ) : (
-                  <><ArrowRight size={16} className="mr-2" /> Continue Setup</>
-                )}
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="sm" className="text-muted-foreground">
-                    <Unlink size={14} className="mr-1" /> Disconnect
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Disconnect Stripe Account?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will remove your Stripe Connect account from this club. You can reconnect at any time.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => disconnectMutation.mutate()}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      Disconnect
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          </CardContent>
-        </Card>
       ) : (
         <Card className="border-green-500/30">
           <CardHeader className="pb-2">
@@ -268,30 +209,23 @@ export default function StripeConnect() {
                   Stripe Connected
                   <Badge className="bg-green-500/15 text-green-700 border-green-500/30 text-xs normal-case font-normal">Active</Badge>
                 </CardTitle>
-                <CardDescription>Your account is set up and ready to accept payments</CardDescription>
+                <CardDescription>Payment collection is enabled for your club</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Payment collection is enabled for your club. When creating an event, check <strong>Collect Payments</strong> and set an entry fee to charge riders at registration.
-            </p>
-            <div className="flex gap-3 flex-wrap">
-              <Button
-                onClick={() => dashboardMutation.mutate()}
-                disabled={dashboardMutation.isPending}
-                variant="outline"
-                className="font-heading uppercase tracking-wider"
-              >
-                {dashboardMutation.isPending ? (
-                  <><Loader2 size={16} className="mr-2 animate-spin" /> Loading...</>
-                ) : (
-                  <><ExternalLink size={16} className="mr-2" /> Open Stripe Dashboard</>
-                )}
-              </Button>
+            {/* Connected account email */}
+            <div className="flex items-center justify-between rounded-md border border-border bg-muted/40 px-4 py-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <CreditCard size={16} className="text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide leading-none mb-0.5">Connected account</p>
+                  <p className="text-sm font-medium truncate">{(status as any)?.email ?? "Stripe account"}</p>
+                </div>
+              </div>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  <Button variant="ghost" size="sm" className="text-muted-foreground shrink-0 ml-4">
                     <Unlink size={14} className="mr-1" /> Disconnect
                   </Button>
                 </AlertDialogTrigger>
@@ -314,6 +248,29 @@ export default function StripeConnect() {
                 </AlertDialogContent>
               </AlertDialog>
             </div>
+
+            {!status?.onboardingComplete && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700">
+                <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                <span>Your Stripe account setup isn't fully complete. <button onClick={() => startMutation.mutate()} className="underline underline-offset-2 font-medium hover:opacity-80">Finish setup</button> to activate payouts.</span>
+              </div>
+            )}
+
+            <p className="text-sm text-muted-foreground">
+              When creating an event, check <strong>Collect Payments</strong> and set an entry fee to charge riders at registration.
+            </p>
+            <Button
+              onClick={() => dashboardMutation.mutate()}
+              disabled={dashboardMutation.isPending}
+              variant="outline"
+              className="font-heading uppercase tracking-wider"
+            >
+              {dashboardMutation.isPending ? (
+                <><Loader2 size={16} className="mr-2 animate-spin" /> Loading...</>
+              ) : (
+                <><ExternalLink size={16} className="mr-2" /> Open Stripe Dashboard</>
+              )}
+            </Button>
           </CardContent>
         </Card>
       )}
