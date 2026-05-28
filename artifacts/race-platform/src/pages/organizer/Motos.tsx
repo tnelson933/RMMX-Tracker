@@ -8,8 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2 } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { LiveBroadcast } from "./LiveBroadcast";
 
 export default function Motos() {
   const [match, params] = useRoute("/events/:eventId/motos");
@@ -18,6 +19,7 @@ export default function Motos() {
   const { toast } = useToast();
 
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -90,12 +92,21 @@ export default function Motos() {
           <p className="text-muted-foreground">Manage heats, mains, and RFID timing.</p>
         </div>
 
-        <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>
-          <DialogTrigger asChild>
-            <Button className="font-heading uppercase tracking-wider">
-              <Settings size={16} className="mr-2" /> Generate Lineups
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showBroadcast ? "default" : "outline"}
+            className={`font-heading uppercase tracking-wider gap-2 ${showBroadcast ? "bg-red-600 hover:bg-red-700 text-white border-red-600" : ""}`}
+            onClick={() => setShowBroadcast(v => !v)}
+          >
+            <Video size={16} /> {showBroadcast ? "Hide Video Feed" : "Live Video Feed"}
+          </Button>
+
+          <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>
+            <DialogTrigger asChild>
+              <Button className="font-heading uppercase tracking-wider">
+                <Settings size={16} className="mr-2" /> Generate Lineups
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="font-heading uppercase text-xl">Generate Moto Lineups</DialogTitle>
@@ -134,8 +145,20 @@ export default function Motos() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
+
+      {/* Live Video Feed panel */}
+      {showBroadcast && (
+        <div className="border rounded-xl p-5 bg-card space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Video size={16} className="text-red-500" />
+            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">Live Video Broadcast</h3>
+          </div>
+          <LiveBroadcast eventId={eventId} />
+        </div>
+      )}
 
       {/* RFID timing info banner */}
       <div className="bg-primary/5 border border-primary/20 rounded-md px-4 py-3 flex items-start gap-3">

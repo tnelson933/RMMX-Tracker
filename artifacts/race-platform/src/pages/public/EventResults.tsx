@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import { useGetEvent, useListResults, RaceResult } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Calendar, MapPin, Trophy, Flag, ChevronLeft, ChevronRight, Clock, Award } from "lucide-react";
+import { Calendar, MapPin, Trophy, Flag, ChevronLeft, ChevronRight, Clock, Award, Radio } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +17,20 @@ export default function EventResults() {
   const { data: results, isLoading: resultsLoading } = useListResults(eventId, { query: { enabled: !!eventId } as any });
   
   const [activeClass, setActiveClass] = useState<string>("");
+  const [isLive, setIsLive] = useState(false);
+
+  // Poll for live video status every 10s
+  useEffect(() => {
+    if (!eventId) return;
+    const check = () =>
+      fetch(`/api/video/status/${eventId}`)
+        .then(r => r.json())
+        .then(d => setIsLive(!!d.live))
+        .catch(() => {});
+    check();
+    const id = setInterval(check, 10_000);
+    return () => clearInterval(id);
+  }, [eventId]);
 
   // Initialize active class once event data is loaded
   if (event && !activeClass && event.raceClasses && event.raceClasses.length > 0) {
@@ -82,10 +96,23 @@ export default function EventResults() {
               </div>
             </div>
             
-            <div className="bg-sidebar-accent/50 rounded-lg p-4 border border-sidebar-border backdrop-blur-sm min-w-48 text-center">
-              <div className="text-sidebar-foreground/60 text-xs font-bold uppercase tracking-widest mb-1">Total Racers</div>
-              <div className="text-4xl font-heading font-bold text-white">
-                {new Set(results?.map(r => r.riderId)).size || 0}
+            <div className="flex flex-col items-end gap-3">
+              {isLive && (
+                <a href={`/watch/${eventId}`} target="_blank" rel="noopener noreferrer">
+                  <Button className="bg-red-600 hover:bg-red-700 text-white font-heading uppercase tracking-wider gap-2 shadow-lg">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                    </span>
+                    <Radio size={15} /> Watch Live
+                  </Button>
+                </a>
+              )}
+              <div className="bg-sidebar-accent/50 rounded-lg p-4 border border-sidebar-border backdrop-blur-sm min-w-48 text-center">
+                <div className="text-sidebar-foreground/60 text-xs font-bold uppercase tracking-widest mb-1">Total Racers</div>
+                <div className="text-4xl font-heading font-bold text-white">
+                  {new Set(results?.map(r => r.riderId)).size || 0}
+                </div>
               </div>
             </div>
           </div>

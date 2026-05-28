@@ -31,6 +31,7 @@ import StripeConnect from "@/pages/organizer/StripeConnect";
 import RiderLogin from "@/pages/rider/RiderLogin";
 import RiderPortal from "@/pages/rider/RiderPortal";
 import RiderHistory from "@/pages/rider/RiderHistory";
+import WatchLive from "@/pages/public/WatchLive";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,6 +82,9 @@ function Router() {
       </Route>
       <Route path="/live/:motoId">
         <LiveLeaderboard />
+      </Route>
+      <Route path="/watch/:eventId">
+        <WatchLive />
       </Route>
 
       <Route path="/rider/login">
