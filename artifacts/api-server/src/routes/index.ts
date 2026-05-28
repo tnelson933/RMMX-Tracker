@@ -13,6 +13,7 @@ import seriesRouter from "./series";
 import dashboardRouter from "./dashboard";
 import timingRouter from "./timing";
 import usersRouter from "./users";
+import stripeConnectRouter from "./stripe-connect";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(resultsRouter);
 router.use(seriesRouter);
 router.use(dashboardRouter);
 router.use(usersRouter);
+router.use(stripeConnectRouter);
 
 export default router;

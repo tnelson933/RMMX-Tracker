@@ -26,6 +26,7 @@ import Series from "@/pages/organizer/Series";
 import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
 import UsersAdmin from "@/pages/organizer/UsersAdmin";
 import SetPassword from "@/pages/public/SetPassword";
+import StripeConnect from "@/pages/organizer/StripeConnect";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -100,6 +101,9 @@ function Router() {
       </Route>
       <Route path="/admin/users">
         <ProtectedRoute><UsersAdmin /></ProtectedRoute>
+      </Route>
+      <Route path="/payments">
+        <ProtectedRoute><StripeConnect /></ProtectedRoute>
       </Route>
 
       <Route component={NotFound} />

@@ -548,6 +548,21 @@ export interface CreateUserInput {
   clubId?: number;
 }
 
+export interface StripeConnectStatus {
+  connected: boolean;
+  onboardingComplete: boolean;
+  /** @nullable */
+  accountId?: string | null;
+}
+
+export interface StripeConnectStartResult {
+  url: string;
+}
+
+export interface StripeConnectDashboardLink {
+  url: string;
+}
+
 export type RequestAccountSetup200 = {
   ok?: boolean;
 };
@@ -574,5 +589,9 @@ eventId?: number;
 export type ListRecentResultsParams = {
 state?: string;
 limit?: number;
+};
+
+export type DisconnectStripeConnect200 = {
+  ok?: boolean;
 };
 

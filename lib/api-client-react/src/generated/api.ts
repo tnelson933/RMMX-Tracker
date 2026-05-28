@@ -30,6 +30,7 @@ import type {
   CompleteAccountSetup200,
   CompleteSetupInput,
   CreateUserInput,
+  DisconnectStripeConnect200,
   Event,
   EventInput,
   EventReport,
@@ -65,6 +66,9 @@ import type {
   SeriesStanding,
   SetupRequest,
   StateInfo,
+  StripeConnectDashboardLink,
+  StripeConnectStartResult,
+  StripeConnectStatus,
   User
 } from './api.schemas';
 
@@ -3645,4 +3649,298 @@ export function useGetEventReport<TData = Awaited<ReturnType<typeof getEventRepo
 
 
 
+
+export const getGetStripeConnectStatusUrl = () => {
+
+
+
+
+  return `/api/stripe/connect/status`
+}
+
+/**
+ * @summary Get Stripe Connect status for current club
+ */
+export const getStripeConnectStatus = async ( options?: RequestInit): Promise<StripeConnectStatus> => {
+
+  return customFetch<StripeConnectStatus>(getGetStripeConnectStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStripeConnectStatusQueryKey = () => {
+    return [
+    `/api/stripe/connect/status`
+    ] as const;
+    }
+
+
+export const getGetStripeConnectStatusQueryOptions = <TData = Awaited<ReturnType<typeof getStripeConnectStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeConnectStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStripeConnectStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStripeConnectStatus>>> = ({ signal }) => getStripeConnectStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStripeConnectStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStripeConnectStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getStripeConnectStatus>>>
+export type GetStripeConnectStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get Stripe Connect status for current club
+ */
+
+export function useGetStripeConnectStatus<TData = Awaited<ReturnType<typeof getStripeConnectStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeConnectStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStripeConnectStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getStartStripeConnectUrl = () => {
+
+
+
+
+  return `/api/stripe/connect/start`
+}
+
+/**
+ * @summary Create Stripe Connect account and return onboarding URL
+ */
+export const startStripeConnect = async ( options?: RequestInit): Promise<StripeConnectStartResult> => {
+
+  return customFetch<StripeConnectStartResult>(getStartStripeConnectUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getStartStripeConnectMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startStripeConnect>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startStripeConnect>>, TError,void, TContext> => {
+
+const mutationKey = ['startStripeConnect'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startStripeConnect>>, void> = () => {
+
+
+          return  startStripeConnect(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartStripeConnectMutationResult = NonNullable<Awaited<ReturnType<typeof startStripeConnect>>>
+
+    export type StartStripeConnectMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create Stripe Connect account and return onboarding URL
+ */
+export const useStartStripeConnect = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startStripeConnect>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startStripeConnect>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getStartStripeConnectMutationOptions(options));
+    }
+
+export const getGetStripeConnectDashboardLinkUrl = () => {
+
+
+
+
+  return `/api/stripe/connect/dashboard-link`
+}
+
+/**
+ * @summary Get Stripe Express dashboard login link
+ */
+export const getStripeConnectDashboardLink = async ( options?: RequestInit): Promise<StripeConnectDashboardLink> => {
+
+  return customFetch<StripeConnectDashboardLink>(getGetStripeConnectDashboardLinkUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStripeConnectDashboardLinkQueryKey = () => {
+    return [
+    `/api/stripe/connect/dashboard-link`
+    ] as const;
+    }
+
+
+export const getGetStripeConnectDashboardLinkQueryOptions = <TData = Awaited<ReturnType<typeof getStripeConnectDashboardLink>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeConnectDashboardLink>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStripeConnectDashboardLinkQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStripeConnectDashboardLink>>> = ({ signal }) => getStripeConnectDashboardLink({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStripeConnectDashboardLink>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStripeConnectDashboardLinkQueryResult = NonNullable<Awaited<ReturnType<typeof getStripeConnectDashboardLink>>>
+export type GetStripeConnectDashboardLinkQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get Stripe Express dashboard login link
+ */
+
+export function useGetStripeConnectDashboardLink<TData = Awaited<ReturnType<typeof getStripeConnectDashboardLink>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeConnectDashboardLink>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStripeConnectDashboardLinkQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getDisconnectStripeConnectUrl = () => {
+
+
+
+
+  return `/api/stripe/connect`
+}
+
+/**
+ * @summary Disconnect Stripe Connect account
+ */
+export const disconnectStripeConnect = async ( options?: RequestInit): Promise<DisconnectStripeConnect200> => {
+
+  return customFetch<DisconnectStripeConnect200>(getDisconnectStripeConnectUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDisconnectStripeConnectMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectStripeConnect>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disconnectStripeConnect>>, TError,void, TContext> => {
+
+const mutationKey = ['disconnectStripeConnect'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectStripeConnect>>, void> = () => {
+
+
+          return  disconnectStripeConnect(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisconnectStripeConnectMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectStripeConnect>>>
+
+    export type DisconnectStripeConnectMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Disconnect Stripe Connect account
+ */
+export const useDisconnectStripeConnect = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectStripeConnect>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof disconnectStripeConnect>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getDisconnectStripeConnectMutationOptions(options));
+    }
 

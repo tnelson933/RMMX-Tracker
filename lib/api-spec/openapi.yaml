@@ -976,6 +976,61 @@ paths:
               schema:
                 $ref: "#/components/schemas/EventReport"
 
+  /stripe/connect/status:
+    get:
+      operationId: getStripeConnectStatus
+      tags: [stripe]
+      summary: Get Stripe Connect status for current club
+      responses:
+        "200":
+          description: Stripe Connect status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StripeConnectStatus"
+
+  /stripe/connect/start:
+    post:
+      operationId: startStripeConnect
+      tags: [stripe]
+      summary: Create Stripe Connect account and return onboarding URL
+      responses:
+        "200":
+          description: Onboarding URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StripeConnectStartResult"
+
+  /stripe/connect/dashboard-link:
+    get:
+      operationId: getStripeConnectDashboardLink
+      tags: [stripe]
+      summary: Get Stripe Express dashboard login link
+      responses:
+        "200":
+          description: Dashboard link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StripeConnectDashboardLink"
+
+  /stripe/connect:
+    delete:
+      operationId: disconnectStripeConnect
+      tags: [stripe]
+      summary: Disconnect Stripe Connect account
+      responses:
+        "200":
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
 components:
   schemas:
     HealthStatus:
@@ -1813,3 +1868,28 @@ components:
           type: string
         clubId:
           type: integer
+
+    StripeConnectStatus:
+      type: object
+      required: [connected, onboardingComplete]
+      properties:
+        connected:
+          type: boolean
+        onboardingComplete:
+          type: boolean
+        accountId:
+          type: ["string", "null"]
+
+    StripeConnectStartResult:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+
+    StripeConnectDashboardLink:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string

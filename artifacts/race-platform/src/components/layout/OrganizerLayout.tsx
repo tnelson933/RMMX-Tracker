@@ -12,6 +12,7 @@ import {
   LogOut,
   ShieldCheck,
   Wifi,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import rmLogo from "@assets/rm-logo.png";
@@ -38,6 +39,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
     { href: "/rfid", label: "RFID Tags", icon: Tag },
     { href: "/rfid/setup", label: "Reader Setup", icon: Wifi },
     { href: "/series", label: "Series", icon: Trophy },
+    { href: "/payments", label: "Payments", icon: CreditCard },
   ];
 
   return (

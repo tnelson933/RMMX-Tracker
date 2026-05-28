@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useListEvents, useCreateEvent, useListClubs, getListEventsQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Plus, ChevronRight } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Calendar, MapPin, Plus, ChevronRight, Info } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "wouter";
 import { useForm } from "react-hook-form";
@@ -25,6 +27,10 @@ const createEventSchema = z.object({
   trackName: z.string().optional(),
   raceClasses: z.string().optional(),
   clubId: z.number({ invalid_type_error: "Club is required" }).min(1, "Club is required"),
+  registrationOpen: z.string().optional(),
+  registrationClose: z.string().optional(),
+  paymentEnabled: z.boolean().default(false),
+  entryFee: z.string().optional(),
 });
 
 export default function EventsList() {
@@ -45,6 +51,19 @@ export default function EventsList() {
   // Clubs list for the super_admin club selector
   const { data: clubs } = useListClubs({ query: { enabled: isSuperAdmin } as any });
 
+  // Check Stripe Connect status
+  const { data: stripeStatus } = useQuery({
+    queryKey: ["stripe-connect-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/stripe/connect/status", { credentials: "include" });
+      if (!res.ok) return { connected: false, onboardingComplete: false, accountId: null };
+      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null }>;
+    },
+    enabled: !isSuperAdmin,
+  });
+
+  const stripeReady = !isSuperAdmin && (stripeStatus?.connected && stripeStatus?.onboardingComplete);
+
   const createMutation = useCreateEvent();
 
   const form = useForm<z.infer<typeof createEventSchema>>({
@@ -57,8 +76,14 @@ export default function EventsList() {
       trackName: "",
       raceClasses: "250 Pro,450 Pro,Vet A",
       clubId: sessionClubId ?? undefined,
+      registrationOpen: "",
+      registrationClose: "",
+      paymentEnabled: false,
+      entryFee: "",
     }
   });
+
+  const watchPaymentEnabled = form.watch("paymentEnabled");
 
   const onSubmit = (data: z.infer<typeof createEventSchema>) => {
     createMutation.mutate({
@@ -70,6 +95,10 @@ export default function EventsList() {
         location: data.location,
         trackName: data.trackName,
         raceClasses: data.raceClasses ? data.raceClasses.split(",").map(s => s.trim()) : [],
+        registrationOpen: data.registrationOpen || undefined,
+        registrationClose: data.registrationClose || undefined,
+        paymentEnabled: data.paymentEnabled,
+        entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
       }
     }, {
       onSuccess: () => {
@@ -107,7 +136,7 @@ export default function EventsList() {
               <Plus size={16} className="mr-2" /> Create Event
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle className="font-heading uppercase text-xl">Create New Event</DialogTitle>
             </DialogHeader>
@@ -153,17 +182,106 @@ export default function EventsList() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="date"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date</FormLabel>
+                      <FormLabel>Race Date</FormLabel>
                       <FormControl><Input type="date" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                {/* Registration window + Collect Payments */}
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField
+                      control={form.control}
+                      name="registrationOpen"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Registration Opens</FormLabel>
+                          <FormControl><Input type="datetime-local" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="registrationClose"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Registration Closes</FormLabel>
+                          <FormControl><Input type="datetime-local" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Collect Payments checkbox */}
+                  {!isSuperAdmin && (
+                    <div className="flex items-center gap-2 pt-1">
+                      {stripeReady ? (
+                        <FormField
+                          control={form.control}
+                          name="paymentEnabled"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Collect Payments</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-2 cursor-default">
+                              <Checkbox disabled checked={false} />
+                              <span className="text-sm text-muted-foreground">Collect Payments</span>
+                              <Info size={14} className="text-muted-foreground" />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-56">
+                            Set up Stripe Connect under <strong>Payments</strong> in the sidebar to collect entry fees.
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Entry fee input (only when payment enabled) */}
+                  {stripeReady && watchPaymentEnabled && (
+                    <FormField
+                      control={form.control}
+                      name="entryFee"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Entry Fee ($)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="45.00"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -188,6 +306,7 @@ export default function EventsList() {
                     )}
                   />
                 </div>
+
                 <FormField
                   control={form.control}
                   name="trackName"
@@ -199,6 +318,7 @@ export default function EventsList() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="raceClasses"
@@ -210,6 +330,7 @@ export default function EventsList() {
                     </FormItem>
                   )}
                 />
+
                 <div className="pt-4 flex justify-end">
                   <Button type="submit" disabled={createMutation.isPending} className="font-heading uppercase tracking-wider">
                     {createMutation.isPending ? "Creating..." : "Create Event"}

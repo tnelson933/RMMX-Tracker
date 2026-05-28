@@ -941,3 +941,37 @@ export const GetEventReportResponse = zod.object({
 })
 
 
+/**
+ * @summary Get Stripe Connect status for current club
+ */
+export const GetStripeConnectStatusResponse = zod.object({
+  "connected": zod.boolean(),
+  "onboardingComplete": zod.boolean(),
+  "accountId": zod.string().nullish()
+})
+
+
+/**
+ * @summary Create Stripe Connect account and return onboarding URL
+ */
+export const StartStripeConnectResponse = zod.object({
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Get Stripe Express dashboard login link
+ */
+export const GetStripeConnectDashboardLinkResponse = zod.object({
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Disconnect Stripe Connect account
+ */
+export const DisconnectStripeConnectResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
