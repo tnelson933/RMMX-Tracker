@@ -197,11 +197,15 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     status: regStatus, paymentStatus: "unpaid",
   }).returning();
 
-  await db.insert(checkinsTable).values({
-    eventId, riderId: rider.id, raceClass,
-    bibNumber: bibNumber || rider.bibNumber || null,
-    checkedIn: false, rfidLinked: false,
-  }).onConflictDoNothing();
+  // Only create the check-in record now if no payment is required.
+  // For payment-required registrations, the checkin is created after payment is confirmed.
+  if (!needsPayment) {
+    await db.insert(checkinsTable).values({
+      eventId, riderId: rider.id, raceClass,
+      bibNumber: bibNumber || rider.bibNumber || null,
+      checkedIn: false, rfidLinked: false,
+    }).onConflictDoNothing();
+  }
 
   // If payment required, create Stripe Checkout session
   if (needsPayment && events[0].entryFee) {
@@ -294,6 +298,16 @@ router.post("/public/registrations/:id/verify-payment", async (req, res) => {
       .returning();
 
     if (!reg) return res.status(404).json({ error: "Registration not found" });
+
+    // Create the check-in record now that payment is confirmed
+    await db.insert(checkinsTable).values({
+      eventId: reg.eventId,
+      riderId: reg.riderId,
+      raceClass: reg.raceClass,
+      bibNumber: reg.bibNumber,
+      checkedIn: false,
+      rfidLinked: false,
+    }).onConflictDoNothing();
 
     const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, reg.riderId));
     const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, reg.eventId));

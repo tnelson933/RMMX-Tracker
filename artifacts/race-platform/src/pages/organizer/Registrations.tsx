@@ -276,13 +276,20 @@ export default function Registrations() {
                       </TableCell>
 
                       <TableCell>
-                        <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
-                          reg.status === 'confirmed' ? 'bg-secondary/10 text-secondary border-secondary/20' :
-                          reg.status === 'pending' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
-                          'bg-muted text-muted-foreground'
-                        }`}>
-                          {reg.status}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
+                            reg.status === 'confirmed' ? 'bg-secondary/10 text-secondary border-secondary/20' :
+                            reg.status === 'pending' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
+                            'bg-muted text-muted-foreground border-border'
+                          }`}>
+                            {reg.status === 'pending' ? 'Pending Payment' : reg.status}
+                          </span>
+                          {(reg as any).paymentStatus === 'paid' && (
+                            <span className="px-1.5 py-0.5 rounded text-xs font-bold uppercase tracking-wider bg-green-500/10 text-green-600 border border-green-500/20">
+                              Paid
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         {reg.status !== 'confirmed' && (
