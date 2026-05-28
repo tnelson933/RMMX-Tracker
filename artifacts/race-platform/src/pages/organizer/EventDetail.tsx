@@ -136,6 +136,7 @@ export default function EventDetail() {
         status: data.status,
         raceClasses: classNames,
         raceClassLimits: classLimits,
+        paymentEnabled: data.paymentEnabled,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
