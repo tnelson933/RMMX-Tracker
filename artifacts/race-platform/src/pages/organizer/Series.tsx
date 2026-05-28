@@ -12,12 +12,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Trophy, Plus, ChevronRight, Medal } from "lucide-react";
+import { Trophy, Plus, ChevronRight, Medal, X } from "lucide-react";
 
 const createSeriesSchema = z.object({
   name: z.string().min(1, "Name is required"),
   season: z.coerce.number().min(2000),
-  classes: z.string().optional(),
 });
 
 export default function SeriesManagement() {
@@ -28,6 +27,8 @@ export default function SeriesManagement() {
   
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedSeriesId, setSelectedSeriesId] = useState<number | null>(null);
+  const [classList, setClassList] = useState<string[]>([]);
+  const [classInput, setClassInput] = useState("");
 
   const { data: seriesList, isLoading } = useListSeries();
   const { data: leaderboard, isLoading: leaderboardLoading } = useGetSeriesLeaderboard(selectedSeriesId || 0, {
@@ -46,9 +47,20 @@ export default function SeriesManagement() {
     defaultValues: {
       name: "",
       season: new Date().getFullYear(),
-      classes: "",
     }
   });
+
+  const addClassItem = () => {
+    const trimmed = classInput.trim();
+    if (trimmed && !classList.includes(trimmed)) {
+      setClassList(prev => [...prev, trimmed]);
+    }
+    setClassInput("");
+  };
+
+  const removeClassItem = (cls: string) => {
+    setClassList(prev => prev.filter(c => c !== cls));
+  };
 
   const onSubmit = (data: z.infer<typeof createSeriesSchema>) => {
     createMutation.mutate({
@@ -56,13 +68,15 @@ export default function SeriesManagement() {
         clubId,
         name: data.name,
         season: data.season,
-        classes: data.classes ? data.classes.split(",").map(s => s.trim()) : [],
+        classes: classList,
       }
     }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListSeriesQueryKey() });
         setIsAddOpen(false);
         form.reset();
+        setClassList([]);
+        setClassInput("");
         toast({ title: "Series created successfully" });
       },
       onError: (err) => {
@@ -118,17 +132,32 @@ export default function SeriesManagement() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="classes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Classes (comma separated)</FormLabel>
-                      <FormControl><Input placeholder="250 Pro, 450 Pro" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Classes</label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="e.g. 450 Pro"
+                      value={classInput}
+                      onChange={e => setClassInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addClassItem(); } }}
+                    />
+                    <Button type="button" variant="outline" onClick={addClassItem}>
+                      <Plus size={16} />
+                    </Button>
+                  </div>
+                  {classList.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {classList.map(cls => (
+                        <span key={cls} className="inline-flex items-center gap-1.5 bg-muted px-3 py-1 rounded-full text-sm font-medium">
+                          {cls}
+                          <button type="button" onClick={() => removeClassItem(cls)} className="text-muted-foreground hover:text-destructive transition-colors">
+                            <X size={13} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
                   )}
-                />
+                </div>
                 <div className="pt-4 flex justify-end">
                   <Button type="submit" disabled={createMutation.isPending} className="font-heading uppercase tracking-wider">
                     {createMutation.isPending ? "Creating..." : "Create Series"}
