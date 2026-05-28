@@ -115,12 +115,13 @@ router.post("/events/:eventId/registrations", async (req, res) => {
 
 router.patch("/registrations/:registrationId", async (req, res) => {
   const id = Number(req.params.registrationId);
-  const { status, paymentStatus, raceClass, bibNumber } = req.body;
+  const { status, paymentStatus, raceClass, bibNumber, amountPaid } = req.body;
   const updates: Record<string, unknown> = {};
   if (status !== undefined) updates.status = status;
   if (paymentStatus !== undefined) updates.paymentStatus = paymentStatus;
   if (raceClass !== undefined) updates.raceClass = raceClass;
   if (bibNumber !== undefined) updates.bibNumber = bibNumber;
+  if (amountPaid !== undefined) updates.amountPaid = String(amountPaid);
 
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();
   if (!reg) return res.status(404).json({ error: "Not found" });
@@ -133,6 +134,56 @@ router.patch("/registrations/:registrationId", async (req, res) => {
     amountPaid: reg.amountPaid ? Number(reg.amountPaid) : null,
     createdAt: reg.createdAt.toISOString(),
   });
+});
+
+// ── Organizer: create a Stripe Checkout session for an existing on-site registration ──
+router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const regId = Number(req.params.regId);
+
+  try {
+    const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
+    if (!reg) return res.status(404).json({ error: "Registration not found" });
+    if (reg.eventId !== eventId) return res.status(403).json({ error: "Registration does not belong to this event" });
+
+    const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (!event?.entryFee) return res.status(400).json({ error: "This event has no entry fee configured" });
+
+    const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, event.clubId));
+    if (!club?.stripeAccountId) return res.status(400).json({ error: "Club has no Stripe account configured. Use cash payment instead." });
+
+    const stripe = await getUncachableStripeClient();
+    const appUrl = getAppUrl();
+    const entryFee = Number(event.entryFee);
+
+    const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, reg.riderId));
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: `${event.name} — ${reg.raceClass} Entry`,
+          },
+          unit_amount: Math.round(entryFee * 100),
+        },
+        quantity: 1,
+      }],
+      customer_email: rider?.email ?? undefined,
+      payment_intent_data: {
+        transfer_data: { destination: club.stripeAccountId },
+      },
+      metadata: { registrationId: String(regId) },
+      success_url: `${appUrl}/events/${eventId}/registrations`,
+      cancel_url: `${appUrl}/events/${eventId}/registrations`,
+    });
+
+    return res.json({ checkoutUrl: session.url, sessionId: session.id, entryFee });
+  } catch (err: any) {
+    req.log?.error({ err: err?.message }, "[charge] Error");
+    return res.status(500).json({ error: err?.message ?? "Failed to create checkout session" });
+  }
 });
 
 // ── Public: event info for the registration form ─────────────────────────────
