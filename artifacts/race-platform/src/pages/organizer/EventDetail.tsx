@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { useRoute } from "wouter";
 import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, getGetEventQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2 } from "lucide-react";
+import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info } from "lucide-react";
 import { format } from "date-fns";
 
 const updateEventSchema = z.object({
@@ -25,6 +28,7 @@ const updateEventSchema = z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
   })),
+  paymentEnabled: z.boolean().default(false),
   entryFee: z.string().optional(),
   maxRiders: z.coerce.number().int().positive().optional().or(z.literal("")),
   registrationOpen: z.string().optional(),
@@ -38,10 +42,23 @@ export default function EventDetail() {
   const eventId = parseInt(params?.eventId || "0");
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
 
   const { data: event, isLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: summary } = useGetRaceDaySummary(eventId, { query: { enabled: !!eventId } as any });
   const updateMutation = useUpdateEvent();
+
+  const { data: stripeStatus } = useQuery({
+    queryKey: ["stripe-connect-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/stripe/connect/status", { credentials: "include" });
+      if (!res.ok) return { connected: false, onboardingComplete: false };
+      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean }>;
+    },
+    enabled: !isSuperAdmin,
+  });
+  const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -65,12 +82,15 @@ export default function EventDetail() {
       trackName: "",
       status: "draft",
       raceClasses: [],
+      paymentEnabled: false,
       entryFee: "",
       maxRiders: "",
       registrationOpen: "",
       registrationClose: "",
     }
   });
+
+  const watchPaymentEnabled = form.watch("paymentEnabled");
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -91,6 +111,7 @@ export default function EventDetail() {
         name: cls,
         maxRiders: limits[cls] ?? "",
       })),
+      paymentEnabled: event.entryFee != null,
       entryFee: event.entryFee != null ? String(event.entryFee) : "",
       maxRiders: event.maxRiders != null ? event.maxRiders : "",
       registrationOpen: event.registrationOpen ? format(new Date(event.registrationOpen), "yyyy-MM-dd") : "",
@@ -118,7 +139,7 @@ export default function EventDetail() {
         status: data.status,
         raceClasses: classNames,
         raceClassLimits: classLimits,
-        entryFee: data.entryFee ? Number(data.entryFee) : undefined,
+        entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         maxRiders: data.maxRiders !== "" && data.maxRiders != null ? Number(data.maxRiders) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
@@ -309,6 +330,44 @@ export default function EventDetail() {
                       </div>
                     </div>
 
+                    <div className="space-y-3">
+                      {/* Collect Payments toggle */}
+                      {!isSuperAdmin && (
+                        <div className="flex items-center gap-2">
+                          {stripeReady ? (
+                            <FormField
+                              control={form.control}
+                              name="paymentEnabled"
+                              render={({ field }) => (
+                                <FormItem className="flex items-center gap-2 space-y-0">
+                                  <FormControl>
+                                    <Checkbox
+                                      checked={field.value}
+                                      onCheckedChange={field.onChange}
+                                    />
+                                  </FormControl>
+                                  <FormLabel className="cursor-pointer font-normal">Collect Payments</FormLabel>
+                                </FormItem>
+                              )}
+                            />
+                          ) : (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center gap-2 cursor-default">
+                                  <Checkbox disabled checked={false} />
+                                  <span className="text-sm text-muted-foreground">Collect Payments</span>
+                                  <Info size={14} className="text-muted-foreground" />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-56">
+                                Set up Stripe Connect under <strong>Payments</strong> in the sidebar to collect entry fees.
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
@@ -326,6 +385,7 @@ export default function EventDetail() {
                                   step="0.01"
                                   placeholder="0.00"
                                   className="pl-8"
+                                  disabled={!watchPaymentEnabled}
                                 />
                               </div>
                             </FormControl>
