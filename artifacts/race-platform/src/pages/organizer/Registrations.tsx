@@ -14,8 +14,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Plus, Search, Check, X, Download, Pencil, Loader2, AlertCircle,
-  CheckCircle2, Banknote, CreditCard, ExternalLink, DollarSign,
+  CheckCircle2, Banknote, CreditCard, ExternalLink, DollarSign, Smartphone,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
@@ -242,7 +243,6 @@ export default function Registrations() {
         sessionId: json.sessionId,
         entryFee: json.entryFee,
       });
-      window.open(json.checkoutUrl, "_blank");
       setStep("pay-card");
     } catch (e: any) {
       setPaymentError(e.message || "Could not start card payment.");
@@ -607,29 +607,39 @@ export default function Registrations() {
       );
     }
 
-    // ── Card payment pending (Stripe) ─────────────────────────────────────
+    // ── Card payment pending (Stripe) — QR code first ────────────────────
     if (step === "pay-card" && pendingCard) {
       return (
-        <div className="py-6 space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center mx-auto">
-              <CreditCard size={26} className="text-blue-700" />
-            </div>
-            <h3 className="text-xl font-heading font-bold uppercase">Card Payment</h3>
+        <div className="py-4 space-y-5">
+          {/* Header */}
+          <div className="text-center space-y-1">
+            <h3 className="text-xl font-heading font-bold uppercase">Scan to Pay</h3>
             <p className="text-muted-foreground text-sm">
-              Stripe Checkout opened in a new tab. Have the rider complete payment — this screen will update automatically.
+              Have the rider scan this QR code with their phone to complete checkout.
             </p>
           </div>
 
-          <div className="bg-muted rounded-lg p-4 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground font-bold uppercase tracking-widest text-xs">Amount Due</span>
-              <span className="font-heading font-bold text-base">${pendingCard.entryFee.toFixed(2)}</span>
+          {/* Amount due */}
+          <div className="flex items-center justify-between bg-muted rounded-lg px-4 py-3">
+            <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Amount Due</span>
+            <span className="font-heading font-bold text-lg">${pendingCard.entryFee.toFixed(2)}</span>
+          </div>
+
+          {/* QR code */}
+          <div className="flex justify-center">
+            <div className="rounded-2xl border-4 border-primary/20 bg-white p-4 shadow-md inline-flex">
+              <QRCodeSVG
+                value={pendingCard.checkoutUrl}
+                size={220}
+                level="M"
+                marginSize={1}
+              />
             </div>
           </div>
 
+          {/* Polling indicator */}
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 size={14} className="animate-spin" /> Waiting for payment…
+            <Loader2 size={14} className="animate-spin" /> Waiting for payment confirmation…
           </div>
 
           {paymentError && (
@@ -638,13 +648,17 @@ export default function Registrations() {
             </div>
           )}
 
-          <div className="space-y-2">
-            <Button className="w-full font-heading uppercase" variant="outline" onClick={() => window.open(pendingCard.checkoutUrl, "_blank")}>
-              <ExternalLink size={16} className="mr-2" /> Reopen Checkout
-            </Button>
+          <div className="space-y-2 pt-1">
+            {/* Manual verify */}
             <Button className="w-full font-heading uppercase" onClick={handleManualVerifyCard} disabled={submitting}>
               {submitting ? <><Loader2 size={16} className="mr-2 animate-spin" />Checking…</> : "Verify Payment Now"}
             </Button>
+
+            {/* Manual entry fallback */}
+            <Button variant="outline" className="w-full font-heading uppercase" onClick={() => window.open(pendingCard.checkoutUrl, "_blank")}>
+              <Smartphone size={16} className="mr-2" /> Enter Information Manually
+            </Button>
+
             <Button variant="ghost" size="sm" className="w-full text-muted-foreground" onClick={() => { setPaymentError(null); setStep("pay-method"); }}>
               ← Change Method
             </Button>
