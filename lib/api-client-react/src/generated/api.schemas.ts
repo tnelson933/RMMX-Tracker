@@ -452,6 +452,13 @@ export interface SeriesInput {
   eventIds?: number[];
 }
 
+export interface SeriesUpdateInput {
+  name?: string;
+  season?: number;
+  classes?: string[];
+  eventIds?: number[];
+}
+
 export interface SeriesStanding {
   position: number;
   riderId: number;

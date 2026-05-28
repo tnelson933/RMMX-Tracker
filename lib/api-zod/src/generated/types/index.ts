@@ -66,6 +66,7 @@ export * from './riderUpdate';
 export * from './series';
 export * from './seriesInput';
 export * from './seriesStanding';
+export * from './seriesUpdateInput';
 export * from './setupRequest';
 export * from './stateInfo';
 export * from './stripeConnectDashboardLink';

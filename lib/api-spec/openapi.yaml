@@ -843,6 +843,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/Series"
 
+  /series/{seriesId}:
+    patch:
+      operationId: updateSeries
+      tags: [series]
+      summary: Update a series (e.g. add/remove event IDs)
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeriesUpdateInput"
+      responses:
+        "200":
+          description: Series updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Series"
+
   /series/{seriesId}/leaderboard:
     get:
       operationId: getSeriesLeaderboard
@@ -1678,6 +1703,22 @@ components:
             type: string
         pointsSystem:
           type: string
+        eventIds:
+          type: array
+          items:
+            type: integer
+
+    SeriesUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+        season:
+          type: integer
+        classes:
+          type: array
+          items:
+            type: string
         eventIds:
           type: array
           items:

@@ -17,6 +17,19 @@ router.post("/series", async (req, res) => {
   return res.status(201).json({ ...series, createdAt: series.createdAt.toISOString() });
 });
 
+router.patch("/series/:seriesId", async (req, res) => {
+  const seriesId = Number(req.params.seriesId);
+  const { name, season, classes, eventIds } = req.body;
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) updates.name = name;
+  if (season !== undefined) updates.season = season;
+  if (classes !== undefined) updates.classes = classes;
+  if (eventIds !== undefined) updates.eventIds = eventIds;
+  const [updated] = await db.update(seriesTable).set(updates as any).where(eq(seriesTable.id, seriesId)).returning();
+  if (!updated) return res.status(404).json({ error: "Not found" });
+  return res.json({ ...updated, createdAt: updated.createdAt.toISOString() });
+});
+
 router.get("/series/:seriesId/leaderboard", async (req, res) => {
   const seriesId = Number(req.params.seriesId);
   const points = await db.select({

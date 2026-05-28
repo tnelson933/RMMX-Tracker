@@ -803,6 +803,32 @@ export const CreateSeriesBody = zod.object({
 
 
 /**
+ * @summary Update a series (e.g. add/remove event IDs)
+ */
+export const UpdateSeriesParams = zod.object({
+  "seriesId": zod.coerce.number()
+})
+
+export const UpdateSeriesBody = zod.object({
+  "name": zod.string().optional(),
+  "season": zod.number().optional(),
+  "classes": zod.array(zod.string()).optional(),
+  "eventIds": zod.array(zod.number()).optional()
+})
+
+export const UpdateSeriesResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "clubId": zod.number(),
+  "season": zod.number(),
+  "classes": zod.array(zod.string()).optional(),
+  "pointsSystem": zod.string().optional(),
+  "eventIds": zod.array(zod.number()).optional(),
+  "createdAt": zod.string().optional()
+})
+
+
+/**
  * @summary Get series leaderboard (public)
  */
 export const GetSeriesLeaderboardParams = zod.object({

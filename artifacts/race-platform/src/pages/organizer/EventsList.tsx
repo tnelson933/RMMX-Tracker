@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useListEvents, useCreateEvent, useListClubs, getListEventsQueryKey } from "@workspace/api-client-react";
+import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, getListEventsQueryKey } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ export default function EventsList() {
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [createSeriesId, setCreateSeriesId] = useState<string>("none");
 
   // Super admin sees all events; club organizer sees only their club's events
   const eventsQuery = isSuperAdmin
@@ -63,6 +64,10 @@ export default function EventsList() {
   });
 
   const stripeReady = !isSuperAdmin && (stripeStatus?.connected && stripeStatus?.onboardingComplete);
+
+  const { data: seriesList } = useListSeries({ query: {} as any });
+  const updateSeriesMutation = useUpdateSeries();
+  const clubSeriesList = seriesList?.filter(s => s.clubId === (sessionClubId ?? 0)) ?? [];
 
   const createMutation = useCreateEvent();
 
@@ -101,9 +106,21 @@ export default function EventsList() {
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
       }
     }, {
-      onSuccess: () => {
+      onSuccess: (newEvent) => {
         queryClient.invalidateQueries({ queryKey: getListEventsQueryKey({}) });
+        // Link to series if selected
+        if (createSeriesId !== "none") {
+          const targetSeries = seriesList?.find(s => s.id === Number(createSeriesId));
+          if (targetSeries) {
+            const currentIds = (targetSeries.eventIds as number[]) ?? [];
+            updateSeriesMutation.mutate({
+              seriesId: targetSeries.id,
+              data: { eventIds: [...currentIds, newEvent.id] },
+            });
+          }
+        }
         setIsCreateOpen(false);
+        setCreateSeriesId("none");
         form.reset();
         toast({ title: "Event created successfully" });
       },
@@ -330,6 +347,23 @@ export default function EventsList() {
                     </FormItem>
                   )}
                 />
+
+                {clubSeriesList.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Series</label>
+                    <Select value={createSeriesId} onValueChange={setCreateSeriesId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {clubSeriesList.map(s => (
+                          <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.season})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div className="pt-4 flex justify-end">
                   <Button type="submit" disabled={createMutation.isPending} className="font-heading uppercase tracking-wider">

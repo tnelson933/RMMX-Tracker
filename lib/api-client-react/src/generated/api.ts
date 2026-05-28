@@ -64,6 +64,7 @@ import type {
   Series,
   SeriesInput,
   SeriesStanding,
+  SeriesUpdateInput,
   SetupRequest,
   StateInfo,
   StripeConnectDashboardLink,
@@ -3109,6 +3110,78 @@ export const useCreateSeries = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateSeriesMutationOptions(options));
+    }
+
+export const getUpdateSeriesUrl = (seriesId: number,) => {
+
+
+
+
+  return `/api/series/${seriesId}`
+}
+
+/**
+ * @summary Update a series (e.g. add/remove event IDs)
+ */
+export const updateSeries = async (seriesId: number,
+    seriesUpdateInput: SeriesUpdateInput, options?: RequestInit): Promise<Series> => {
+
+  return customFetch<Series>(getUpdateSeriesUrl(seriesId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      seriesUpdateInput,)
+  }
+);}
+
+
+
+
+export const getUpdateSeriesMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSeries>>, TError,{seriesId: number;data: BodyType<SeriesUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSeries>>, TError,{seriesId: number;data: BodyType<SeriesUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateSeries'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSeries>>, {seriesId: number;data: BodyType<SeriesUpdateInput>}> = (props) => {
+          const {seriesId,data} = props ?? {};
+
+          return  updateSeries(seriesId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSeriesMutationResult = NonNullable<Awaited<ReturnType<typeof updateSeries>>>
+    export type UpdateSeriesMutationBody = BodyType<SeriesUpdateInput>
+    export type UpdateSeriesMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a series (e.g. add/remove event IDs)
+ */
+export const useUpdateSeries = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSeries>>, TError,{seriesId: number;data: BodyType<SeriesUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSeries>>,
+        TError,
+        {seriesId: number;data: BodyType<SeriesUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateSeriesMutationOptions(options));
     }
 
 export const getGetSeriesLeaderboardUrl = (seriesId: number,) => {

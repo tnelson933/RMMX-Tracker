@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRoute } from "wouter";
-import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, getGetEventQueryKey } from "@workspace/api-client-react";
+import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, getGetEventQueryKey } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,7 +46,11 @@ export default function EventDetail() {
 
   const { data: event, isLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: summary } = useGetRaceDaySummary(eventId, { query: { enabled: !!eventId } as any });
+  const { data: seriesList } = useListSeries({ query: {} as any });
   const updateMutation = useUpdateEvent();
+  const updateSeriesMutation = useUpdateSeries();
+
+  const [editSeriesId, setEditSeriesId] = useState<string>("none");
 
   const { data: stripeStatus } = useQuery({
     queryKey: ["stripe-connect-status"],
@@ -95,6 +99,8 @@ export default function EventDetail() {
     name: "raceClasses",
   });
 
+  const clubSeriesList = (seriesList ?? []).filter(s => s.clubId === event?.clubId);
+
   const resetFormFromEvent = (evt: typeof event) => {
     if (!evt) return;
     const limits = (evt.raceClassLimits ?? {}) as Record<string, number | null>;
@@ -114,6 +120,8 @@ export default function EventDetail() {
       registrationOpen: evt.registrationOpen ? format(new Date(evt.registrationOpen), "yyyy-MM-dd") : "",
       registrationClose: evt.registrationClose ? format(new Date(evt.registrationClose), "yyyy-MM-dd") : "",
     });
+    const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
+    setEditSeriesId(currentSeries ? String(currentSeries.id) : "none");
   };
 
   const onSubmit = (data: FormValues) => {
@@ -144,6 +152,25 @@ export default function EventDetail() {
     }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
+        // Handle series linking changes
+        const prevSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(eventId));
+        const newSeriesId = editSeriesId !== "none" ? Number(editSeriesId) : null;
+        const prevSeriesId = prevSeries?.id ?? null;
+        if (prevSeriesId !== newSeriesId) {
+          // Remove from old series
+          if (prevSeries) {
+            const ids = (prevSeries.eventIds as number[]).filter(id => id !== eventId);
+            updateSeriesMutation.mutate({ seriesId: prevSeries.id, data: { eventIds: ids } });
+          }
+          // Add to new series
+          if (newSeriesId) {
+            const target = (seriesList ?? []).find(s => s.id === newSeriesId);
+            if (target) {
+              const ids = [...((target.eventIds as number[]) ?? []), eventId];
+              updateSeriesMutation.mutate({ seriesId: target.id, data: { eventIds: ids } });
+            }
+          }
+        }
         setIsEditing(false);
         toast({ title: "Event updated" });
       },
@@ -419,6 +446,23 @@ export default function EventDetail() {
                         />
                       </div>
                     </div>
+
+                    {clubSeriesList.length > 0 && (
+                      <div className="border-t pt-4 space-y-1.5">
+                        <label className="text-sm font-medium">Series</label>
+                        <Select value={editSeriesId} onValueChange={setEditSeriesId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="None" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {clubSeriesList.map(s => (
+                              <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.season})</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
 
                     <div className="pt-4 flex justify-end gap-2">
                       <Button variant="ghost" type="button" onClick={() => setIsEditing(false)}>Cancel</Button>
