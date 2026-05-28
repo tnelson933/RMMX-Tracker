@@ -22,14 +22,17 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
             <Link href="/leaderboard" className="text-sm font-medium hover:text-primary transition-colors">Leaderboard</Link>
             <Link href="/rider/portal" className="text-sm font-medium hover:text-primary transition-colors hidden sm:block">Rider Portal</Link>
           </nav>
-          <div>
+          <div className="flex items-center gap-2">
+            <Link href="/rider/login">
+              <Button variant="outline" className="font-heading uppercase text-sm">Rider Login</Button>
+            </Link>
             {isAuthenticated ? (
               <Link href="/dashboard">
-                <Button variant="outline" className="font-heading uppercase">Dashboard</Button>
+                <Button variant="outline" className="font-heading uppercase text-sm">Dashboard</Button>
               </Link>
             ) : (
               <Link href="/login">
-                <Button className="font-heading uppercase">Organizer Login</Button>
+                <Button className="font-heading uppercase text-sm">Organizer Login</Button>
               </Link>
             )}
           </div>
