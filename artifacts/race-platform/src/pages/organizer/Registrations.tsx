@@ -1,17 +1,40 @@
 import { useState, useRef, useEffect } from "react";
 import { useRoute } from "wouter";
-import { useListRegistrations, useCreateRegistration, useUpdateRegistration, useGetEvent, getListRegistrationsQueryKey } from "@workspace/api-client-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useListRegistrations, useUpdateRegistration, useGetEvent, getListRegistrationsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Check, X, Download, Pencil } from "lucide-react";
+import { Plus, Search, Check, X, Download, Pencil, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
+
+const onSiteRegSchema = z.object({
+  firstName: z.string().min(1, "Required"),
+  lastName: z.string().min(1, "Required"),
+  email: z.string().email("Valid email required"),
+  phone: z.string().optional(),
+  dateOfBirth: z.string().optional(),
+  emergencyContact: z.string().optional(),
+  emergencyPhone: z.string().optional(),
+  raceClass: z.string().min(1, "Race class is required"),
+  bibNumber: z.string().optional(),
+});
+type OnSiteRegForm = z.infer<typeof onSiteRegSchema>;
+
+interface RegSuccess {
+  id: number;
+  riderName: string;
+  raceClass: string;
+}
 
 export default function Registrations() {
   const [match, params] = useRoute("/events/:eventId/registrations");
@@ -21,7 +44,9 @@ export default function Registrations() {
 
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newReg, setNewReg] = useState({ riderId: "", raceClass: "", bibNumber: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [addSuccess, setAddSuccess] = useState<RegSuccess | null>(null);
 
   // Inline bib editing state
   const [editingBibId, setEditingBibId] = useState<number | null>(null);
@@ -31,12 +56,29 @@ export default function Registrations() {
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: registrations, isLoading } = useListRegistrations(eventId, { query: { enabled: !!eventId } as any });
 
-  const createMutation = useCreateRegistration();
   const updateMutation = useUpdateRegistration();
+
+  const form = useForm<OnSiteRegForm>({
+    resolver: zodResolver(onSiteRegSchema),
+    defaultValues: {
+      firstName: "", lastName: "", email: "", phone: "",
+      dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
+      raceClass: "", bibNumber: "",
+    },
+  });
 
   useEffect(() => {
     if (editingBibId !== null) bibInputRef.current?.focus();
   }, [editingBibId]);
+
+  // Reset form when dialog closes
+  useEffect(() => {
+    if (!isAddOpen) {
+      form.reset();
+      setSubmitError(null);
+      setAddSuccess(null);
+    }
+  }, [isAddOpen]);
 
   // Build set of all confirmed bibs (as numbers) across the event
   const confirmedBibSet = new Set<number>(
@@ -77,25 +119,39 @@ export default function Registrations() {
     (suggestions.get(r.id) ?? "").includes(search)
   );
 
-  const handleCreate = () => {
-    createMutation.mutate({
-      eventId,
-      data: {
-        riderId: parseInt(newReg.riderId),
-        raceClass: newReg.raceClass,
-        bibNumber: newReg.bibNumber || undefined,
-      }
-    }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
-        setIsAddOpen(false);
-        setNewReg({ riderId: "", raceClass: "", bibNumber: "" });
-        toast({ title: "Registration added" });
-      },
-      onError: (err) => {
-        toast({ title: "Failed to add", description: err.message, variant: "destructive" });
-      }
-    });
+  const handleCreate = async (data: OnSiteRegForm) => {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          phone: data.phone || undefined,
+          dateOfBirth: data.dateOfBirth || undefined,
+          emergencyContact: data.emergencyContact || undefined,
+          emergencyPhone: data.emergencyPhone || undefined,
+          raceClass: data.raceClass,
+          bibNumber: data.bibNumber || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Registration failed");
+
+      await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
+      setAddSuccess({
+        id: json.id,
+        riderName: json.riderName,
+        raceClass: json.raceClass,
+      });
+    } catch (e: any) {
+      setSubmitError(e.message || "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleUpdateStatus = (regId: number, status: string) => {
@@ -167,32 +223,172 @@ export default function Registrations() {
                 <Plus size={16} className="mr-2" /> Add Registration
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle className="font-heading uppercase text-xl">Add Registration</DialogTitle>
+                <DialogTitle className="font-heading uppercase text-xl">On-Site Registration</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Rider ID</label>
-                  <Input value={newReg.riderId} onChange={e => setNewReg({ ...newReg, riderId: e.target.value })} placeholder="e.g. 123" />
+
+              {addSuccess ? (
+                /* Success state */
+                <div className="py-6 space-y-6 text-center">
+                  <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+                    <CheckCircle2 size={32} className="text-green-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-heading font-bold uppercase">Registered!</h3>
+                    <p className="text-muted-foreground mt-1">Rider has been confirmed and added to check-in.</p>
+                  </div>
+                  <div className="bg-muted rounded-lg p-4 text-left space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground font-bold uppercase tracking-widest">Rider</span>
+                      <span className="font-heading font-bold">{addSuccess.riderName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground font-bold uppercase tracking-widest">Class</span>
+                      <span className="font-heading font-bold text-primary">{addSuccess.raceClass}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground font-bold uppercase tracking-widest">Confirmation #</span>
+                      <span className="font-mono text-sm">REG-{addSuccess.id.toString().padStart(5, "0")}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => {
+                      form.reset();
+                      setAddSuccess(null);
+                      setSubmitError(null);
+                    }}>
+                      Register Another
+                    </Button>
+                    <Button className="flex-1 font-heading uppercase" onClick={() => setIsAddOpen(false)}>
+                      Done
+                    </Button>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Race Class</label>
-                  <Select value={newReg.raceClass} onValueChange={v => setNewReg({ ...newReg, raceClass: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select Class" /></SelectTrigger>
-                    <SelectContent>
-                      {event?.raceClasses?.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Bib Number (Optional)</label>
-                  <Input value={newReg.bibNumber} onChange={e => setNewReg({ ...newReg, bibNumber: e.target.value })} placeholder="e.g. 741" />
-                </div>
-                <Button onClick={handleCreate} disabled={createMutation.isPending || !newReg.riderId || !newReg.raceClass} className="w-full font-heading uppercase">
-                  Submit
-                </Button>
-              </div>
+              ) : (
+                /* Registration form */
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(handleCreate)} className="space-y-5 py-2">
+                    {/* Race Class */}
+                    <div className="space-y-2">
+                      <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Race Class</h3>
+                      <FormField
+                        control={form.control}
+                        name="raceClass"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Class <span className="text-destructive">*</span></FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select race class" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {event?.raceClasses?.map(c => (
+                                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* Rider Info */}
+                    <div className="space-y-3">
+                      <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Rider Info</h3>
+                      <div className="grid grid-cols-2 gap-3">
+                        <FormField control={form.control} name="firstName" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
+                            <FormControl><Input placeholder="Jake" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                        <FormField control={form.control} name="lastName" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
+                            <FormControl><Input placeholder="Morrison" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      </div>
+                      <FormField control={form.control} name="email" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input type="email" placeholder="rider@example.com" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <div className="grid grid-cols-2 gap-3">
+                        <FormField control={form.control} name="phone" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Phone</FormLabel>
+                            <FormControl><Input placeholder="602-555-0100" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                        <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Date of Birth</FormLabel>
+                            <FormControl><Input type="date" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      </div>
+                      <FormField control={form.control} name="bibNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Preferred Bib #</FormLabel>
+                          <FormControl><Input placeholder="101" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+
+                    {/* Emergency Contact */}
+                    <div className="space-y-3">
+                      <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Emergency Contact</h3>
+                      <div className="grid grid-cols-2 gap-3">
+                        <FormField control={form.control} name="emergencyContact" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Contact Name</FormLabel>
+                            <FormControl><Input placeholder="Jane Morrison" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                        <FormField control={form.control} name="emergencyPhone" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Contact Phone</FormLabel>
+                            <FormControl><Input placeholder="602-555-0200" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      </div>
+                    </div>
+
+                    {submitError && (
+                      <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-3 py-2.5 text-sm flex items-center gap-2">
+                        <AlertCircle size={15} className="shrink-0" />
+                        {submitError}
+                      </div>
+                    )}
+
+                    <Button
+                      type="submit"
+                      disabled={submitting}
+                      className="w-full font-heading uppercase tracking-wider h-11"
+                    >
+                      {submitting ? (
+                        <><Loader2 size={16} className="mr-2 animate-spin" /> Registering...</>
+                      ) : (
+                        "Complete Registration →"
+                      )}
+                    </Button>
+                  </form>
+                </Form>
+              )}
             </DialogContent>
           </Dialog>
         </div>

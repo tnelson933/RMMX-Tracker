@@ -48,18 +48,61 @@ router.get("/events/:eventId/registrations", async (req, res) => {
 
 router.post("/events/:eventId/registrations", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { riderId, raceClass, bibNumber } = req.body;
-  if (!riderId || !raceClass) return res.status(400).json({ error: "riderId and raceClass required" });
+  const {
+    riderId, raceClass, bibNumber,
+    // Full on-site rider info (alternative to riderId)
+    firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
+  } = req.body;
+
+  if (!raceClass) return res.status(400).json({ error: "raceClass required" });
+
+  let resolvedRiderId: number;
+
+  if (riderId) {
+    resolvedRiderId = Number(riderId);
+  } else if (firstName && lastName && email) {
+    // Find or create rider by email
+    const existing = await db.select().from(ridersTable).where(eq(ridersTable.email, email));
+    if (existing[0]) {
+      resolvedRiderId = existing[0].id;
+    } else {
+      const [created] = await db.insert(ridersTable).values({
+        firstName, lastName, email,
+        phone: phone || null,
+        dateOfBirth: dateOfBirth || null,
+        emergencyContact: emergencyContact || null,
+        emergencyPhone: emergencyPhone || null,
+        bibNumber: bibNumber || null,
+      }).returning();
+      resolvedRiderId = created.id;
+    }
+  } else {
+    return res.status(400).json({ error: "riderId OR firstName, lastName, and email are required" });
+  }
+
+  // Prevent duplicate registrations in the same class
+  const dupes = await db.select().from(registrationsTable).where(and(
+    eq(registrationsTable.eventId, eventId),
+    eq(registrationsTable.riderId, resolvedRiderId),
+    eq(registrationsTable.raceClass, raceClass),
+  ));
+  if (dupes[0]) {
+    return res.status(409).json({ error: "This rider is already registered for that class at this event" });
+  }
 
   const [reg] = await db.insert(registrationsTable).values({
-    eventId, riderId, raceClass, bibNumber, status: "confirmed", paymentStatus: "unpaid",
+    eventId, riderId: resolvedRiderId, raceClass,
+    bibNumber: bibNumber || null,
+    status: "confirmed", paymentStatus: "unpaid",
   }).returning();
 
   await db.insert(checkinsTable).values({
-    eventId, riderId, raceClass, bibNumber, checkedIn: false, rfidLinked: false,
+    eventId, riderId: resolvedRiderId, raceClass,
+    bibNumber: bibNumber || null,
+    checkedIn: false, rfidLinked: false,
   }).onConflictDoNothing();
 
-  const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, resolvedRiderId));
   const rider = riders[0];
 
   return res.status(201).json({
