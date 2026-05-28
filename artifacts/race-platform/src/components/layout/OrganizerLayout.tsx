@@ -33,13 +33,13 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const isAdmin = user?.role === "super_admin";
 
   const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/events", label: "Events", icon: CalendarDays },
-    { href: "/riders", label: "Riders", icon: Users },
-    { href: "/rfid", label: "RFID Tags", icon: Tag },
-    { href: "/rfid/setup", label: "Reader Setup", icon: Wifi },
-    { href: "/series", label: "Series", icon: Trophy },
-    { href: "/payments", label: "Payments", icon: CreditCard },
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: false },
+    { href: "/events", label: "Events", icon: CalendarDays, exact: false },
+    { href: "/riders", label: "Riders", icon: Users, exact: false },
+    { href: "/series", label: "Series", icon: Trophy, exact: false },
+    { href: "/rfid", label: "RFID Tags", icon: Tag, exact: true },
+    { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, exact: false },
+    { href: "/payments", label: "Payments", icon: CreditCard, exact: false },
   ];
 
   return (
@@ -61,7 +61,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
 
         <nav className="flex-1 py-4 flex flex-col gap-1 px-3">
           {navItems.map((item) => {
-            const isActive = location.startsWith(item.href);
+            const isActive = item.exact ? location === item.href : location.startsWith(item.href);
             const Icon = item.icon;
             
             return (
