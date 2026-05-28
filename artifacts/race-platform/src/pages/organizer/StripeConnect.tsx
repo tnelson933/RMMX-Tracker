@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -18,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRight, Unlink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 function useStripeConnectStatus() {
   return useQuery({
@@ -34,7 +37,9 @@ export default function StripeConnect() {
   const [location] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [justConnected, setJustConnected] = useState(false);
+  const [stripeEmail, setStripeEmail] = useState("");
 
   const { data: status, isLoading, refetch } = useStripeConnectStatus();
 
@@ -50,12 +55,20 @@ export default function StripeConnect() {
     }
   }, []);
 
+  // Pre-fill email from user account once loaded
+  useEffect(() => {
+    if (user?.email && !stripeEmail) {
+      setStripeEmail(user.email);
+    }
+  }, [user?.email]);
+
   const startMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/stripe/connect/start", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: stripeEmail.trim() || undefined }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -154,6 +167,22 @@ export default function StripeConnect() {
               <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-green-500 shrink-0" /> Stripe handles card processing &amp; compliance</li>
               <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-green-500 shrink-0" /> Full payout history and reporting in Stripe dashboard</li>
             </ul>
+            <div className="space-y-1.5 pt-1">
+              <Label htmlFor="stripe-email" className="text-sm font-medium">
+                Stripe account email
+              </Label>
+              <Input
+                id="stripe-email"
+                type="email"
+                placeholder="you@example.com"
+                value={stripeEmail}
+                onChange={(e) => setStripeEmail(e.target.value)}
+                className="max-w-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Stripe will use this to set up or link your payout account.
+              </p>
+            </div>
             <Button
               onClick={() => startMutation.mutate()}
               disabled={startMutation.isPending}

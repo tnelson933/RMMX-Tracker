@@ -57,10 +57,14 @@ router.post("/stripe/connect/start", async (req, res) => {
 
     let accountId = club.stripeAccountId;
 
+    const emailOverride = typeof req.body?.email === "string" && req.body.email.trim()
+      ? req.body.email.trim()
+      : undefined;
+
     if (!accountId) {
       const account = await stripe.accounts.create({
         type: "express",
-        email: club.contactEmail ?? undefined,
+        email: emailOverride ?? club.contactEmail ?? undefined,
         capabilities: {
           card_payments: { requested: true },
           transfers: { requested: true },
