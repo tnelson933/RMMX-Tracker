@@ -97,27 +97,27 @@ export default function EventDetail() {
     name: "raceClasses",
   });
 
-  // Init form once event loads
-  if (event && !isEditing && form.getValues("name") === "") {
-    const limits = (event.raceClassLimits ?? {}) as Record<string, number | null>;
+  const resetFormFromEvent = (evt: typeof event) => {
+    if (!evt) return;
+    const limits = (evt.raceClassLimits ?? {}) as Record<string, number | null>;
     form.reset({
-      name: event.name,
-      date: format(new Date(event.date), "yyyy-MM-dd"),
-      state: event.state,
-      location: event.location || "",
-      trackName: event.trackName || "",
-      status: event.status,
-      raceClasses: (event.raceClasses ?? []).map((cls) => ({
+      name: evt.name,
+      date: format(new Date(evt.date), "yyyy-MM-dd"),
+      state: evt.state,
+      location: evt.location || "",
+      trackName: evt.trackName || "",
+      status: evt.status,
+      raceClasses: (evt.raceClasses ?? []).map((cls) => ({
         name: cls,
         maxRiders: limits[cls] ?? "",
       })),
-      paymentEnabled: event.entryFee != null,
-      entryFee: event.entryFee != null ? String(event.entryFee) : "",
-      maxRiders: event.maxRiders != null ? event.maxRiders : "",
-      registrationOpen: event.registrationOpen ? format(new Date(event.registrationOpen), "yyyy-MM-dd") : "",
-      registrationClose: event.registrationClose ? format(new Date(event.registrationClose), "yyyy-MM-dd") : "",
+      paymentEnabled: evt.entryFee != null,
+      entryFee: evt.entryFee != null ? String(evt.entryFee) : "",
+      maxRiders: evt.maxRiders != null ? evt.maxRiders : "",
+      registrationOpen: evt.registrationOpen ? format(new Date(evt.registrationOpen), "yyyy-MM-dd") : "",
+      registrationClose: evt.registrationClose ? format(new Date(evt.registrationClose), "yyyy-MM-dd") : "",
     });
-  }
+  };
 
   const onSubmit = (data: FormValues) => {
     const classNames = data.raceClasses.map((r) => r.name.trim()).filter(Boolean);
@@ -170,7 +170,7 @@ export default function EventDetail() {
             <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
               <CardTitle className="font-heading uppercase text-xl">Event Information</CardTitle>
               {!isEditing && (
-                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>Edit</Button>
+                <Button variant="outline" size="sm" onClick={() => { resetFormFromEvent(event); setIsEditing(true); }}>Edit</Button>
               )}
             </CardHeader>
             <CardContent className="p-6">
