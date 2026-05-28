@@ -943,6 +943,22 @@ export const ListStatesResponse = zod.array(ListStatesResponseItem)
 
 
 /**
+ * @summary List upcoming and active events (non-draft, non-completed) for the public home page
+ */
+export const ListUpcomingEventsResponseItem = zod.object({
+  "eventId": zod.number(),
+  "name": zod.string(),
+  "state": zod.string(),
+  "date": zod.string(),
+  "location": zod.string().optional(),
+  "trackName": zod.string().optional(),
+  "status": zod.string(),
+  "clubName": zod.string().optional()
+})
+export const ListUpcomingEventsResponse = zod.array(ListUpcomingEventsResponseItem)
+
+
+/**
  * @summary Recent published race results across all events (public feed)
  */
 export const ListRecentResultsQueryParams = zod.object({

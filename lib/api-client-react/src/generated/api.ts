@@ -70,6 +70,7 @@ import type {
   StripeConnectDashboardLink,
   StripeConnectStartResult,
   StripeConnectStatus,
+  UpcomingEventItem,
   User
 } from './api.schemas';
 
@@ -3550,6 +3551,83 @@ export function useListStates<TData = Awaited<ReturnType<typeof listStates>>, TE
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListStatesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListUpcomingEventsUrl = () => {
+
+
+
+
+  return `/api/public/upcoming`
+}
+
+/**
+ * @summary List upcoming and active events (non-draft, non-completed) for the public home page
+ */
+export const listUpcomingEvents = async ( options?: RequestInit): Promise<UpcomingEventItem[]> => {
+
+  return customFetch<UpcomingEventItem[]>(getListUpcomingEventsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListUpcomingEventsQueryKey = () => {
+    return [
+    `/api/public/upcoming`
+    ] as const;
+    }
+
+
+export const getListUpcomingEventsQueryOptions = <TData = Awaited<ReturnType<typeof listUpcomingEvents>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUpcomingEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListUpcomingEventsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUpcomingEvents>>> = ({ signal }) => listUpcomingEvents({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUpcomingEvents>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListUpcomingEventsQueryResult = NonNullable<Awaited<ReturnType<typeof listUpcomingEvents>>>
+export type ListUpcomingEventsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List upcoming and active events (non-draft, non-completed) for the public home page
+ */
+
+export function useListUpcomingEvents<TData = Awaited<ReturnType<typeof listUpcomingEvents>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUpcomingEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListUpcomingEventsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

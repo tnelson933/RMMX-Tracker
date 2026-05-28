@@ -1,14 +1,34 @@
 import { Link } from "wouter";
-import { useListStates, useListRecentResults } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useListStates, useListRecentResults, useListUpcomingEvents, UpcomingEventItem } from "@workspace/api-client-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, MapPin, Trophy, ChevronRight, Activity } from "lucide-react";
+import { Calendar, MapPin, Trophy, ChevronRight, Activity, Radio, Flag, Clock } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
-import { format } from "date-fns";
+import { format, isToday, isFuture, isPast } from "date-fns";
+
+function statusLabel(event: UpcomingEventItem): { label: string; className: string } {
+  const date = new Date(event.date);
+  const today = isToday(date);
+  const past = isPast(date) && !today;
+
+  if (event.status === "race_day" || today) {
+    return { label: "LIVE TODAY", className: "bg-red-600 text-white animate-pulse" };
+  }
+  if (event.status === "registration_open") {
+    return { label: "REGISTRATION OPEN", className: "bg-green-600/90 text-white" };
+  }
+  if (event.status === "registration_closed") {
+    return past
+      ? { label: "RACE DAY", className: "bg-orange-500 text-white" }
+      : { label: "REG. CLOSED", className: "bg-yellow-600 text-white" };
+  }
+  return { label: "UPCOMING", className: "bg-muted text-muted-foreground" };
+}
 
 export default function Home() {
   const { data: states, isLoading: statesLoading } = useListStates();
   const { data: recentResults, isLoading: resultsLoading } = useListRecentResults({ limit: 10 });
+  const { data: upcomingEvents, isLoading: upcomingLoading } = useListUpcomingEvents({ query: {} as any });
 
   return (
     <div className="flex flex-col gap-12 pb-16">
@@ -41,11 +61,94 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Upcoming & Live Events */}
+      <section className="container mx-auto px-4">
+        <div className="flex items-center gap-3 mb-8">
+          <Radio className="text-red-500" size={28} />
+          <h2 className="text-3xl font-heading font-bold uppercase m-0">Upcoming &amp; Live Events</h2>
+        </div>
+
+        {upcomingLoading ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-36 bg-muted rounded-md animate-pulse" />
+            ))}
+          </div>
+        ) : upcomingEvents?.length ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {upcomingEvents.map(event => {
+              const { label, className } = statusLabel(event);
+              const date = new Date(event.date);
+              const liveToday = isToday(date) || event.status === "race_day";
+              return (
+                <Link key={event.eventId} href={`/results/${event.eventId}`}>
+                  <Card className={`hover-elevate cursor-pointer transition-all h-full group overflow-hidden ${liveToday ? "border-red-500/50 shadow-red-500/10 shadow-lg" : "hover:border-primary"}`}>
+                    <CardContent className="p-0">
+                      <div className={`px-4 py-2 flex items-center justify-between ${liveToday ? "bg-red-600" : "bg-sidebar"}`}>
+                        <span className={`text-xs font-bold uppercase tracking-widest px-2 py-0.5 rounded ${liveToday ? "text-white" : className}`}>
+                          {label}
+                        </span>
+                        {liveToday && (
+                          <span className="flex items-center gap-1 text-white text-xs font-bold">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                            </span>
+                            LIVE
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-4">
+                        <h3 className={`font-heading font-bold text-lg leading-tight mb-2 group-hover:text-primary transition-colors ${liveToday ? "text-foreground" : ""}`}>
+                          {event.name}
+                        </h3>
+                        <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1.5">
+                            <Calendar size={13} className="text-muted-foreground/60 flex-shrink-0" />
+                            {format(date, "EEEE, MMM d, yyyy")}
+                          </span>
+                          {(event.location || event.trackName) && (
+                            <span className="flex items-center gap-1.5">
+                              <MapPin size={13} className="text-muted-foreground/60 flex-shrink-0" />
+                              {event.trackName ? `${event.trackName}, ${event.location}` : event.location}
+                            </span>
+                          )}
+                          {event.clubName && (
+                            <span className="flex items-center gap-1.5">
+                              <Trophy size={13} className="text-muted-foreground/60 flex-shrink-0" />
+                              {event.clubName}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-3 flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                            {event.state}
+                          </span>
+                          <span className="text-primary text-sm font-heading font-bold flex items-center gap-1 group-hover:underline">
+                            {liveToday ? "View Live" : "View Event"} <ChevronRight size={14} />
+                          </span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="p-8 text-center bg-muted rounded-md text-muted-foreground">
+            <Clock className="mx-auto mb-3 opacity-40" size={40} />
+            <p className="font-heading font-bold uppercase">No upcoming events scheduled</p>
+            <p className="text-sm mt-1">Check back soon or browse past results below.</p>
+          </div>
+        )}
+      </section>
+
       {/* Find Results by State */}
       <section className="container mx-auto px-4">
         <div className="flex items-center gap-3 mb-8">
           <MapPin className="text-primary" size={28} />
-          <h2 className="text-3xl font-heading font-bold uppercase m-0">Find Events By State</h2>
+          <h2 className="text-3xl font-heading font-bold uppercase m-0">Past Results By State</h2>
         </div>
         
         {statesLoading ? (
@@ -62,7 +165,7 @@ export default function Home() {
                   <CardContent className="p-6 flex flex-col items-center justify-center text-center h-full gap-2">
                     <span className="text-3xl font-heading font-bold text-foreground">{state.state}</span>
                     <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider bg-muted px-2 py-1 rounded">
-                      {state.eventCount} Events
+                      {state.eventCount} {state.eventCount === 1 ? "Event" : "Events"}
                     </span>
                   </CardContent>
                 </Card>
@@ -71,7 +174,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="p-8 text-center bg-muted rounded-md text-muted-foreground">
-            No events found by state.
+            No completed events found.
           </div>
         )}
       </section>

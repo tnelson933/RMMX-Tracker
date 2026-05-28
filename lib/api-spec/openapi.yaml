@@ -958,6 +958,21 @@ paths:
                 items:
                   $ref: "#/components/schemas/StateInfo"
 
+  /public/upcoming:
+    get:
+      operationId: listUpcomingEvents
+      tags: [dashboard]
+      summary: List upcoming and active events (non-draft, non-completed) for the public home page
+      responses:
+        "200":
+          description: Upcoming events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UpcomingEventItem"
+
   /public/recent-results:
     get:
       operationId: listRecentResults
@@ -1856,6 +1871,27 @@ components:
           type: string
         eventCount:
           type: integer
+
+    UpcomingEventItem:
+      type: object
+      required: [eventId, name, state, date, status]
+      properties:
+        eventId:
+          type: integer
+        name:
+          type: string
+        state:
+          type: string
+        date:
+          type: string
+        location:
+          type: string
+        trackName:
+          type: string
+        status:
+          type: string
+        clubName:
+          type: string
 
     RecentResultItem:
       type: object

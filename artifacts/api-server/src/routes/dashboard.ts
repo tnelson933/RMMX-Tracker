@@ -200,6 +200,36 @@ router.get("/public/states", async (req, res) => {
   return res.json(stateData.map(s => ({ state: s.state, eventCount: s.count })));
 });
 
+router.get("/public/upcoming", async (req, res) => {
+  const events = await db.select({
+    id: eventsTable.id,
+    name: eventsTable.name,
+    state: eventsTable.state,
+    date: eventsTable.date,
+    location: eventsTable.location,
+    trackName: eventsTable.trackName,
+    status: eventsTable.status,
+    clubName: clubsTable.name,
+  }).from(eventsTable)
+    .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
+    .where(and(
+      sql`${eventsTable.status} != 'draft'`,
+      sql`${eventsTable.status} != 'completed'`,
+    ))
+    .orderBy(eventsTable.date);
+
+  return res.json(events.map(e => ({
+    eventId: e.id,
+    name: e.name,
+    state: e.state,
+    date: e.date,
+    location: e.location,
+    trackName: e.trackName,
+    status: e.status,
+    clubName: e.clubName || "",
+  })));
+});
+
 router.get("/public/recent-results", async (req, res) => {
   const { state, limit = "10" } = req.query;
   const baseCondition = eq(eventsTable.status, 'completed');

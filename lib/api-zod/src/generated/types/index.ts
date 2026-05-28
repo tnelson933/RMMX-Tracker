@@ -73,5 +73,6 @@ export * from './stateInfo';
 export * from './stripeConnectDashboardLink';
 export * from './stripeConnectStartResult';
 export * from './stripeConnectStatus';
+export * from './upcomingEventItem';
 export * from './user';
 export * from './userRole';

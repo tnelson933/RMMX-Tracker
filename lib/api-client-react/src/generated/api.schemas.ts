@@ -528,6 +528,17 @@ export interface StateInfo {
   eventCount: number;
 }
 
+export interface UpcomingEventItem {
+  eventId: number;
+  name: string;
+  state: string;
+  date: string;
+  location?: string;
+  trackName?: string;
+  status: string;
+  clubName?: string;
+}
+
 export interface RecentResultItem {
   eventId: number;
   eventName: string;
