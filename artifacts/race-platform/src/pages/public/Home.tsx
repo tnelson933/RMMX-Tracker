@@ -132,47 +132,59 @@ function TodayCard({ event }: { event: UpcomingEventItem }) {
 
 function UpcomingCard({ event }: { event: UpcomingEventItem }) {
   const { label, className } = registrationBadge(event.status);
+  const regOpen = event.status === "registration_open";
   return (
-    <Link href={`/results/${event.eventId}`}>
-      <Card className="hover-elevate cursor-pointer hover:border-primary transition-all h-full group overflow-hidden">
-        <CardContent className="p-0">
-          <div className="bg-sidebar px-4 py-2.5">
-            <span className={`text-xs font-bold uppercase tracking-widest px-2 py-0.5 rounded ${className}`}>
-              {label}
-            </span>
-          </div>
-          <div className="p-4">
-            <h3 className="font-heading font-bold text-lg leading-tight mb-3 group-hover:text-primary transition-colors">
+    <Card className="hover-elevate hover:border-primary transition-all h-full overflow-hidden flex flex-col">
+      <CardContent className="p-0 flex flex-col flex-1">
+        <div className="bg-sidebar px-4 py-2.5">
+          <span className={`text-xs font-bold uppercase tracking-widest px-2 py-0.5 rounded ${className}`}>
+            {label}
+          </span>
+        </div>
+        <div className="p-4 flex flex-col flex-1">
+          <Link href={`/results/${event.eventId}`}>
+            <h3 className="font-heading font-bold text-lg leading-tight mb-3 hover:text-primary transition-colors cursor-pointer">
               {event.name}
             </h3>
-            <div className="space-y-1.5 text-sm text-muted-foreground mb-3">
-              <div className="flex items-center gap-1.5">
-                <Calendar size={13} className="flex-shrink-0 text-muted-foreground/60" />
-                {format(new Date(event.date), "EEEE, MMMM d, yyyy")}
-              </div>
-              {(event.location || event.trackName) && (
-                <div className="flex items-center gap-1.5">
-                  <MapPin size={13} className="flex-shrink-0 text-muted-foreground/60" />
-                  {event.trackName ? `${event.trackName}, ${event.location}` : event.location}
-                </div>
-              )}
-              {event.clubName && (
-                <div className="flex items-center gap-1.5">
-                  <Trophy size={13} className="flex-shrink-0 text-muted-foreground/60" />
-                  {event.clubName}
-                </div>
-              )}
+          </Link>
+          <div className="space-y-1.5 text-sm text-muted-foreground mb-4 flex-1">
+            <div className="flex items-center gap-1.5">
+              <Calendar size={13} className="flex-shrink-0 text-muted-foreground/60" />
+              {format(new Date(event.date), "EEEE, MMMM d, yyyy")}
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider bg-muted px-2 py-0.5 rounded">{event.state}</span>
-              <span className="text-primary text-sm font-heading font-bold flex items-center gap-1 group-hover:underline">
-                Event Info <ChevronRight size={14} />
-              </span>
+            {(event.location || event.trackName) && (
+              <div className="flex items-center gap-1.5">
+                <MapPin size={13} className="flex-shrink-0 text-muted-foreground/60" />
+                {event.trackName ? `${event.trackName}, ${event.location}` : event.location}
+              </div>
+            )}
+            {event.clubName && (
+              <div className="flex items-center gap-1.5">
+                <Trophy size={13} className="flex-shrink-0 text-muted-foreground/60" />
+                {event.clubName}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2 mt-auto">
+            <span className="text-xs font-bold uppercase tracking-wider bg-muted px-2 py-0.5 rounded">{event.state}</span>
+            <div className="flex items-center gap-2">
+              {regOpen && (
+                <Link href={`/register/${event.eventId}`}>
+                  <Button size="sm" className="font-heading uppercase tracking-wider text-xs h-7 px-3">
+                    Register
+                  </Button>
+                </Link>
+              )}
+              <Link href={`/results/${event.eventId}`}>
+                <span className="text-primary text-sm font-heading font-bold flex items-center gap-1 hover:underline">
+                  Details <ChevronRight size={14} />
+                </span>
+              </Link>
             </div>
           </div>
-        </CardContent>
-      </Card>
-    </Link>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
