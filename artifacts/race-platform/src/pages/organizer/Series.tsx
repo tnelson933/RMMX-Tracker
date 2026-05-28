@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useListSeries, useCreateSeries, useGetSeriesLeaderboard, getListSeriesQueryKey } from "@workspace/api-client-react";
+import { useListSeries, useCreateSeries, useUpdateSeries, useGetSeriesLeaderboard, getListSeriesQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Trophy, Plus, ChevronRight, Medal, X, Calendar } from "lucide-react";
+import { Trophy, Plus, ChevronRight, Medal, X, Calendar, Pencil } from "lucide-react";
 
 const createSeriesSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -27,10 +27,14 @@ export default function SeriesManagement() {
   const { toast } = useToast();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingSeriesId, setEditingSeriesId] = useState<number | null>(null);
   const [selectedSeriesId, setSelectedSeriesId] = useState<number | null>(null);
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [classList, setClassList] = useState<string[]>([]);
   const [classInput, setClassInput] = useState("");
+  const [editClassList, setEditClassList] = useState<string[]>([]);
+  const [editClassInput, setEditClassInput] = useState("");
 
   const { data: seriesList, isLoading } = useListSeries();
   const { data: leaderboard, isLoading: leaderboardLoading } = useGetSeriesLeaderboard(selectedSeriesId || 0, {
@@ -43,6 +47,37 @@ export default function SeriesManagement() {
   }
 
   const createMutation = useCreateSeries();
+  const updateMutation = useUpdateSeries();
+
+  const editForm = useForm<z.infer<typeof createSeriesSchema>>({
+    resolver: zodResolver(createSeriesSchema),
+    defaultValues: { name: "", season: new Date().getFullYear() },
+  });
+
+  const openEditDialog = (series: { id: number; name: string; season: number; classes: string[] }) => {
+    setEditingSeriesId(series.id);
+    editForm.reset({ name: series.name, season: series.season });
+    setEditClassList(series.classes as string[]);
+    setEditClassInput("");
+    setIsEditOpen(true);
+  };
+
+  const onEditSubmit = (data: z.infer<typeof createSeriesSchema>) => {
+    if (!editingSeriesId) return;
+    updateMutation.mutate({
+      seriesId: editingSeriesId,
+      data: { name: data.name, season: data.season, classes: editClassList },
+    }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListSeriesQueryKey() });
+        setIsEditOpen(false);
+        toast({ title: "Series updated" });
+      },
+      onError: (err) => {
+        toast({ title: "Failed to update", description: err.message, variant: "destructive" });
+      },
+    });
+  };
 
   const form = useForm<z.infer<typeof createSeriesSchema>>({
     resolver: zodResolver(createSeriesSchema),
@@ -185,6 +220,84 @@ export default function SeriesManagement() {
             </Form>
           </DialogContent>
         </Dialog>
+
+        {/* ── Edit Series Dialog ─────────────────────────────────────────── */}
+        <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="font-heading uppercase text-xl">Edit Series</DialogTitle>
+            </DialogHeader>
+            <Form {...editForm}>
+              <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4 pt-4">
+                <FormField
+                  control={editForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Series Name</FormLabel>
+                      <FormControl><Input placeholder="Summer Championship" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editForm.control}
+                  name="season"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Season (Year)</FormLabel>
+                      <FormControl><Input type="number" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Classes</label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="e.g. 450 Pro"
+                      value={editClassInput}
+                      onChange={e => setEditClassInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const t = editClassInput.trim();
+                          if (t && !editClassList.includes(t)) setEditClassList(prev => [...prev, t]);
+                          setEditClassInput("");
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="outline" onClick={() => {
+                      const t = editClassInput.trim();
+                      if (t && !editClassList.includes(t)) setEditClassList(prev => [...prev, t]);
+                      setEditClassInput("");
+                    }}>
+                      <Plus size={16} />
+                    </Button>
+                  </div>
+                  {editClassList.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {editClassList.map(cls => (
+                        <span key={cls} className="inline-flex items-center gap-1.5 bg-muted px-3 py-1 rounded-full text-sm font-medium">
+                          {cls}
+                          <button type="button" onClick={() => setEditClassList(prev => prev.filter(c => c !== cls))} className="text-muted-foreground hover:text-destructive transition-colors">
+                            <X size={13} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="pt-4 flex justify-end gap-2">
+                  <Button type="button" variant="ghost" onClick={() => setIsEditOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={updateMutation.isPending} className="font-heading uppercase tracking-wider">
+                    {updateMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -204,11 +317,20 @@ export default function SeriesManagement() {
                 onClick={() => { setSelectedSeriesId(series.id); setSelectedClass(""); }}
               >
                 <CardContent className="p-4 flex items-center justify-between">
-                  <div>
-                    <div className="font-heading font-bold text-lg uppercase">{series.name}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-heading font-bold text-lg uppercase truncate">{series.name}</div>
                     <div className="text-sm text-muted-foreground">Season {series.season}</div>
                   </div>
-                  <ChevronRight size={16} className={selectedSeriesId === series.id ? 'text-primary' : 'text-muted-foreground'} />
+                  <div className="flex items-center gap-1 ml-2 shrink-0">
+                    <button
+                      onClick={e => { e.stopPropagation(); openEditDialog({ id: series.id, name: series.name, season: series.season, classes: series.classes as string[] }); }}
+                      className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      title="Edit series"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <ChevronRight size={16} className={selectedSeriesId === series.id ? 'text-primary' : 'text-muted-foreground'} />
+                  </div>
                 </CardContent>
               </Card>
             ))
