@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { RiderAuthProvider, useRiderAuth } from "@/contexts/RiderAuthContext";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { OrganizerLayout } from "@/components/layout/OrganizerLayout";
 import NotFound from "@/pages/not-found";
@@ -27,6 +28,9 @@ import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
 import UsersAdmin from "@/pages/organizer/UsersAdmin";
 import SetPassword from "@/pages/public/SetPassword";
 import StripeConnect from "@/pages/organizer/StripeConnect";
+import RiderLogin from "@/pages/rider/RiderLogin";
+import RiderPortal from "@/pages/rider/RiderPortal";
+import RiderHistory from "@/pages/rider/RiderHistory";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,6 +46,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (isLoading) return <div className="flex items-center justify-center h-screen bg-sidebar"><div className="text-white font-heading text-xl uppercase tracking-widest animate-pulse">Loading...</div></div>;
   if (!isAuthenticated) return <Redirect to="/login" />;
   return <OrganizerLayout>{children}</OrganizerLayout>;
+}
+
+function RiderProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useRiderAuth();
+  if (isLoading) return <div className="flex items-center justify-center h-screen"><div className="font-heading text-xl uppercase tracking-widest animate-pulse text-muted-foreground">Loading...</div></div>;
+  if (!isAuthenticated) return <Redirect to="/rider/login" />;
+  return <>{children}</>;
 }
 
 function Router() {
@@ -70,6 +81,16 @@ function Router() {
       </Route>
       <Route path="/live/:motoId">
         <LiveLeaderboard />
+      </Route>
+
+      <Route path="/rider/login">
+        <RiderLogin />
+      </Route>
+      <Route path="/rider/portal/:riderId">
+        <RiderProtectedRoute><RiderHistory /></RiderProtectedRoute>
+      </Route>
+      <Route path="/rider/portal">
+        <RiderProtectedRoute><RiderPortal /></RiderProtectedRoute>
       </Route>
 
       <Route path="/dashboard">
@@ -115,12 +136,14 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <RiderAuthProvider>
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
             <Router />
           </WouterRouter>
           <Toaster />
         </TooltipProvider>
+        </RiderAuthProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -20,6 +20,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
             <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Home</Link>
             <Link href="/results" className="text-sm font-medium hover:text-primary transition-colors">Results</Link>
             <Link href="/leaderboard" className="text-sm font-medium hover:text-primary transition-colors">Leaderboard</Link>
+            <Link href="/rider/portal" className="text-sm font-medium hover:text-primary transition-colors hidden sm:block">Rider Portal</Link>
           </nav>
           <div>
             {isAuthenticated ? (

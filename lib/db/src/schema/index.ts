@@ -10,3 +10,4 @@ export * from "./results";
 export * from "./lap_crossings";
 export * from "./series";
 export * from "./setup_tokens";
+export * from "./rider_accounts";

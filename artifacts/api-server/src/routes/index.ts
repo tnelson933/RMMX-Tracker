@@ -14,6 +14,7 @@ import dashboardRouter from "./dashboard";
 import timingRouter from "./timing";
 import usersRouter from "./users";
 import stripeConnectRouter from "./stripe-connect";
+import riderPortalRouter from "./rider-portal";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(seriesRouter);
 router.use(dashboardRouter);
 router.use(usersRouter);
 router.use(stripeConnectRouter);
+router.use(riderPortalRouter);
 
 export default router;
