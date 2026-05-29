@@ -75,7 +75,7 @@ function CheckinButton({
   const bibToSave = pending && !hasDuplicate ? pending : undefined;
   return (
     <Button
-      className={`h-16 w-full text-xl font-heading uppercase tracking-widest mt-3 ${
+      className={`h-10 md:h-16 w-full text-sm md:text-xl font-heading uppercase tracking-widest mt-2 ${
         checkin.checkedIn
           ? "bg-muted text-muted-foreground hover:bg-muted/80"
           : hasDuplicate
@@ -220,57 +220,56 @@ export default function Checkin() {
   if (eventLoading || checkinsLoading) return <div className="p-8">Loading...</div>;
 
   return (
-    <div className="flex flex-col min-h-0 h-full bg-gray-50">
-      <div className="bg-sidebar text-sidebar-foreground p-6 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0">
-        <div>
-          <h1 className="text-3xl font-heading font-bold uppercase tracking-tight text-white">{event?.name} - Check-In</h1>
-        </div>
-        <div className="flex gap-4 w-full md:w-auto">
-          <div className="bg-sidebar-accent/50 rounded-lg p-3 border border-sidebar-border backdrop-blur-sm min-w-32 text-center">
-            <div className="text-sidebar-foreground/60 text-xs font-bold uppercase tracking-widest mb-1">Checked In</div>
-            <div className="text-2xl font-heading font-bold text-secondary">{summary?.checkedIn || 0} / {summary?.totalRegistered || 0}</div>
+    <div className="bg-gray-50 min-h-full">
+      <div className="bg-sidebar text-sidebar-foreground px-4 py-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+        <h1 className="text-xl md:text-3xl font-heading font-bold uppercase tracking-tight text-white leading-tight">{event?.name} — Check-In</h1>
+        <div className="flex gap-3 w-full md:w-auto">
+          <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
+            <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">Checked In</div>
+            <div className="text-xl md:text-2xl font-heading font-bold text-secondary">{summary?.checkedIn || 0} / {summary?.totalRegistered || 0}</div>
           </div>
-          <div className="bg-sidebar-accent/50 rounded-lg p-3 border border-sidebar-border backdrop-blur-sm min-w-32 text-center">
-            <div className="text-sidebar-foreground/60 text-xs font-bold uppercase tracking-widest mb-1">RFID Linked</div>
-            <div className="text-2xl font-heading font-bold text-white">{summary?.rfidLinked || 0}</div>
+          <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
+            <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">RFID Linked</div>
+            <div className="text-xl md:text-2xl font-heading font-bold text-white">{summary?.rfidLinked || 0}</div>
           </div>
         </div>
       </div>
 
-      <div className="p-6 flex-1 flex flex-col gap-6 min-h-0">
-        <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-col md:flex-row gap-4 sticky top-0 z-10 flex-shrink-0">
+      <div className="p-3 md:p-6 flex flex-col gap-4">
+        <div className="bg-white p-3 rounded-lg shadow-sm border flex flex-col md:flex-row gap-3 sticky top-0 z-10">
           <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={24} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
             <Input
               value={search}
               onChange={e => handleSearchChange(e.target.value)}
               placeholder="Search by rider name or bib #..."
-              className="pl-12 pr-12 h-14 text-xl font-medium bg-muted/30"
+              className="pl-9 pr-9 h-10 text-base font-medium bg-muted/30"
             />
             {search && (
               <button
                 onClick={() => handleSearchChange("")}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               >
-                <X size={22} />
+                <X size={18} />
               </button>
             )}
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5 md:pb-0">
             {[
               { key: "all", label: "All" },
               { key: "not_checked_in", label: "Pending" },
-              { key: "checked_in", label: "Checked In" },
+              { key: "checked_in", label: "Done" },
               { key: "no_rfid", label: "No RFID" },
             ].map(({ key, label }) => (
               <Button
                 key={key}
                 variant={statusFilter === key ? "default" : "outline"}
-                className="h-14 px-5 text-base font-heading uppercase flex flex-col gap-0 leading-none"
+                size="sm"
+                className="h-10 px-3 text-xs md:text-sm font-heading uppercase flex flex-col gap-0 leading-none shrink-0"
                 onClick={() => setStatusFilter(key)}
               >
                 <span>{label}</span>
-                <span className={`text-xs font-mono font-bold mt-0.5 ${statusFilter === key ? "opacity-70" : "opacity-50"}`}>
+                <span className={`text-[10px] font-mono font-bold ${statusFilter === key ? "opacity-70" : "opacity-50"}`}>
                   {filterCounts[key as keyof typeof filterCounts]}
                 </span>
               </Button>
@@ -278,8 +277,7 @@ export default function Checkin() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {filteredCheckins.map(checkin => (
               <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
@@ -371,12 +369,12 @@ export default function Checkin() {
                     );
                   })()}
 
-                  <div className="p-4 flex-1 flex flex-col justify-between">
+                  <div className="p-3 flex-1 flex flex-col justify-between">
                     <div>
-                      <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-heading font-bold text-2xl uppercase">{checkin.riderName}</h3>
+                      <div className="flex justify-between items-start mb-1.5">
+                        <h3 className="font-heading font-bold text-base md:text-2xl uppercase leading-tight">{checkin.riderName}</h3>
                       </div>
-                      <div className="flex items-center gap-2 text-sm font-medium mb-4">
+                      <div className="flex items-center gap-2 text-xs md:text-sm font-medium mb-3">
                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{checkin.raceClass}</span>
                         {checkin.rfidLinked ? (
                           <span className="flex items-center gap-1 text-sidebar-primary/80">
@@ -416,14 +414,13 @@ export default function Checkin() {
             ))}
 
             {filteredCheckins.length === 0 && (
-              <div className="col-span-full py-16 text-center text-muted-foreground">
-                <Search size={48} className="mx-auto mb-4 opacity-20" />
-                <p className="text-xl font-medium">No riders found matching criteria.</p>
+              <div className="col-span-full py-12 text-center text-muted-foreground">
+                <Search size={40} className="mx-auto mb-3 opacity-20" />
+                <p className="text-base font-medium">No riders found matching criteria.</p>
               </div>
             )}
           </div>
         </div>
-      </div>
     </div>
   );
 }
