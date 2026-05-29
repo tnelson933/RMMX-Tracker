@@ -1,11 +1,12 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
-import { 
-  LayoutDashboard, 
-  CalendarDays, 
-  Users, 
-  Tag, 
+import {
+  LayoutDashboard,
+  CalendarDays,
+  Users,
+  Tag,
   Trophy,
   Building2,
   UserCog,
@@ -13,6 +14,8 @@ import {
   ShieldCheck,
   Wifi,
   CreditCard,
+  Menu,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import rmLogo from "@assets/rm-logo.png";
@@ -21,16 +24,18 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user } = useAuth();
   const logout = useLogout();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = () => {
     logout.mutate(undefined, {
       onSuccess: () => {
         window.location.href = "/";
-      }
+      },
     });
   };
 
   const isAdmin = user?.role === "super_admin";
+  const close = () => setSidebarOpen(false);
 
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: false },
@@ -42,96 +47,146 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
     { href: "/payments", label: "Payments", icon: CreditCard, exact: false },
   ];
 
+  const SidebarContent = () => (
+    <>
+      <div className="h-16 flex items-center px-4 gap-3 border-b border-sidebar-border/50 shrink-0">
+        <img src={rmLogo} alt="Rocky Mountain" className="h-9 w-9 shrink-0" />
+        <span className="text-sidebar-primary font-heading font-bold text-xl uppercase tracking-wider">
+          RMMT Ops
+        </span>
+        {/* Close button — mobile only */}
+        <button
+          className="ml-auto md:hidden p-1 rounded hover:bg-sidebar-accent text-sidebar-foreground/70"
+          onClick={close}
+          aria-label="Close menu"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <div className="p-4 border-b border-sidebar-border/50 shrink-0">
+        <div className="font-heading font-semibold text-lg">{user?.name}</div>
+        <div className="text-xs text-sidebar-foreground/70 uppercase tracking-wider">
+          {user?.role.replace("_", " ")}
+        </div>
+      </div>
+
+      <nav className="flex-1 py-4 flex flex-col gap-1 px-3 overflow-y-auto">
+        {navItems.map((item) => {
+          const isActive = item.exact ? location === item.href : location.startsWith(item.href);
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={close}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+                isActive
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <Icon size={18} />
+              {item.label}
+            </Link>
+          );
+        })}
+
+        {isAdmin && (
+          <div className="mt-4 pt-4 border-t border-sidebar-border/40">
+            <div className="flex items-center gap-2 px-3 mb-2">
+              <ShieldCheck size={12} className="text-primary" />
+              <span className="text-[10px] font-heading font-bold uppercase tracking-widest text-primary">
+                Admin
+              </span>
+            </div>
+            <Link
+              href="/admin/users"
+              onClick={close}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+                location.startsWith("/admin/users")
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <UserCog size={18} />
+              Users
+            </Link>
+            <Link
+              href="/admin/clubs"
+              onClick={close}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+                location.startsWith("/admin/clubs")
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <Building2 size={18} />
+              Clubs
+            </Link>
+          </div>
+        )}
+      </nav>
+
+      <div className="p-4 border-t border-sidebar-border/50 shrink-0">
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-transparent bg-transparent"
+          onClick={handleLogout}
+          disabled={logout.isPending}
+        >
+          <LogOut size={18} />
+          Logout
+        </Button>
+      </div>
+    </>
+  );
+
   return (
     <div className="min-h-[100dvh] flex bg-gray-50">
-      <aside className="w-64 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border">
-        <div className="h-16 flex items-center px-4 gap-3 border-b border-sidebar-border/50">
-          <img src={rmLogo} alt="Rocky Mountain" className="h-9 w-9 shrink-0" />
-          <span className="text-sidebar-primary font-heading font-bold text-xl uppercase tracking-wider">
+
+      {/* Desktop sidebar — always visible */}
+      <aside className="hidden md:flex w-64 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border shrink-0">
+        <SidebarContent />
+      </aside>
+
+      {/* Mobile sidebar — slide-in drawer */}
+      {sidebarOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="md:hidden fixed inset-0 z-40 bg-black/50"
+            onClick={close}
+          />
+          {/* Drawer */}
+          <aside className="md:hidden fixed inset-y-0 left-0 z-50 w-72 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border shadow-2xl">
+            <SidebarContent />
+          </aside>
+        </>
+      )}
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0 h-[100dvh] overflow-hidden">
+
+        {/* Mobile top bar */}
+        <div className="md:hidden flex items-center gap-3 px-4 h-14 bg-sidebar text-sidebar-foreground border-b border-sidebar-border shrink-0">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-1.5 rounded hover:bg-sidebar-accent transition-colors"
+            aria-label="Open menu"
+          >
+            <Menu size={22} />
+          </button>
+          <img src={rmLogo} alt="Rocky Mountain" className="h-7 w-7" />
+          <span className="font-heading font-bold text-base uppercase tracking-wider text-sidebar-primary">
             RMMT Ops
           </span>
         </div>
-        
-        <div className="p-4 border-b border-sidebar-border/50">
-          <div className="font-heading font-semibold text-lg">{user?.name}</div>
-          <div className="text-xs text-sidebar-foreground/70 uppercase tracking-wider">
-            {user?.role.replace('_', ' ')}
-          </div>
-        </div>
 
-        <nav className="flex-1 py-4 flex flex-col gap-1 px-3">
-          {navItems.map((item) => {
-            const isActive = item.exact ? location === item.href : location.startsWith(item.href);
-            const Icon = item.icon;
-            
-            return (
-              <Link 
-                key={item.href} 
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
-                  isActive 
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground" 
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <Icon size={18} />
-                {item.label}
-              </Link>
-            );
-          })}
-
-          {isAdmin && (
-            <div className="mt-4 pt-4 border-t border-sidebar-border/40">
-              <div className="flex items-center gap-2 px-3 mb-2">
-                <ShieldCheck size={12} className="text-primary" />
-                <span className="text-[10px] font-heading font-bold uppercase tracking-widest text-primary">
-                  Admin
-                </span>
-              </div>
-              <Link
-                href="/admin/users"
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
-                  location.startsWith("/admin/users")
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <UserCog size={18} />
-                Users
-              </Link>
-              <Link
-                href="/admin/clubs"
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
-                  location.startsWith("/admin/clubs")
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <Building2 size={18} />
-                Clubs
-              </Link>
-            </div>
-          )}
-        </nav>
-
-        <div className="p-4 border-t border-sidebar-border/50">
-          <Button 
-            variant="ghost" 
-            className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-transparent bg-transparent"
-            onClick={handleLogout}
-            disabled={logout.isPending}
-          >
-            <LogOut size={18} />
-            Logout
-          </Button>
-        </div>
-      </aside>
-      
-      <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden">
-        <div className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto">
           {children}
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
