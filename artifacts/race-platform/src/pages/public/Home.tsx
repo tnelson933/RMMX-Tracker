@@ -290,22 +290,22 @@ export default function Home() {
         />
         <div className="container mx-auto px-4 relative z-10">
           <div className="max-w-3xl mx-auto text-center">
-            <img src={rmLogo} alt="Rocky Mountain" className="w-24 h-24 mx-auto mb-6 drop-shadow-2xl" />
-            <h1 className="text-5xl md:text-7xl font-heading font-bold text-white mb-6 uppercase tracking-tight leading-tight">
+            <img src={rmLogo} alt="Rocky Mountain" className="w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-6 drop-shadow-2xl" />
+            <h1 className="text-4xl sm:text-5xl md:text-7xl font-heading font-bold text-white mb-4 sm:mb-6 uppercase tracking-tight leading-tight">
               Precision Timing.<br />
               <span className="text-primary">Ultimate Performance.</span>
             </h1>
-            <p className="text-xl text-sidebar-foreground/80 mb-10 max-w-2xl mx-auto">
+            <p className="text-base sm:text-xl text-sidebar-foreground/80 mb-8 sm:mb-10 max-w-2xl mx-auto px-2">
               The high-stakes race operations platform for club organizers and riders. Live tracking, automated lineups, and instant results.
             </p>
-            <div className="flex items-center justify-center gap-4">
-              <Link href="/results">
-                <Button size="lg" className="h-14 px-8 text-lg font-heading uppercase tracking-wider">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 px-4 sm:px-0">
+              <Link href="/results" className="w-full sm:w-auto">
+                <Button size="lg" className="w-full sm:w-auto h-12 sm:h-14 px-8 text-base sm:text-lg font-heading uppercase tracking-wider">
                   Browse Results
                 </Button>
               </Link>
-              <Link href="/leaderboard">
-                <Button size="lg" variant="outline" className="h-14 px-8 text-lg font-heading uppercase tracking-wider bg-transparent border-sidebar-foreground/20 text-white hover:bg-sidebar-accent hover:text-white">
+              <Link href="/leaderboard" className="w-full sm:w-auto">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto h-12 sm:h-14 px-8 text-base sm:text-lg font-heading uppercase tracking-wider bg-transparent border-sidebar-foreground/20 text-white hover:bg-sidebar-accent hover:text-white">
                   Series Standings
                 </Button>
               </Link>
@@ -318,12 +318,12 @@ export default function Home() {
       <section className="container mx-auto px-4">
 
         {/* Tab bar */}
-        <div className="flex items-end gap-0 border-b mb-6">
+        <div className="flex items-end gap-0 border-b mb-6 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
           {tabs.map(tab => (
             <button
               key={tab.key}
               onClick={() => switchTab(tab.key)}
-              className={`relative px-6 py-3 font-heading font-bold uppercase tracking-wider text-sm transition-colors flex items-center gap-2 ${
+              className={`relative shrink-0 px-4 sm:px-6 py-3 font-heading font-bold uppercase tracking-wider text-sm transition-colors flex items-center gap-2 ${
                 activeTab === tab.key
                   ? "text-primary border-b-2 border-primary -mb-px bg-transparent"
                   : "text-muted-foreground hover:text-foreground"
