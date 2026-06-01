@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRoute, Link } from "wouter";
 import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,15 +18,9 @@ export default function WatchLive() {
   const [viewerState, setViewerState] = useState<ViewerState>("connecting");
   const setViewerStateSynced = (s: ViewerState) => { viewerStateRef.current = s; setViewerState(s); };
 
-  // needsTap: video is playing (possibly muted) and waiting for a tap to enable audio / start
   const [needsTap, setNeedsTap] = useState(false);
-  // audioUnlocked: user explicitly enabled audio via tap
   const [audioUnlocked, setAudioUnlocked] = useState(false);
-
-  // Debug state — bytes received + video readyState/time for diagnosing black screen
-  const [bytesReceived, setBytesReceived] = useState(0);
-  const [debugInfo, setDebugInfo] = useState("");
-  const bytesRef = useRef(0);
+  const [debugLine, setDebugLine] = useState("waiting…");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -37,19 +31,20 @@ export default function WatchLive() {
   const viewerStateRef = useRef<ViewerState>("connecting");
   const cleaningUpRef = useRef(false);
   const mimeTypeRef = useRef('video/webm; codecs="vp8,opus"');
+  const bytesRef = useRef(0);
+  const lastErrRef = useRef("");
 
-  // Update debug info every second
+  // Update debug display every second
   useEffect(() => {
     const id = setInterval(() => {
       const v = videoRef.current;
       if (!v) return;
-      const rs = v.readyState;
-      const rsLabel = ["NOTHING", "METADATA", "CURRENT", "FUTURE", "ENOUGH"][rs] ?? rs;
-      const buffered = v.buffered.length > 0
+      const rs = ["NOTHING", "METADATA", "CURRENT", "FUTURE", "ENOUGH"][v.readyState] ?? v.readyState;
+      const buf = v.buffered.length > 0
         ? `${v.buffered.start(0).toFixed(1)}–${v.buffered.end(v.buffered.length - 1).toFixed(1)}s`
         : "empty";
-      setDebugInfo(`readyState:${rsLabel} t:${v.currentTime.toFixed(1)}s buf:${buffered} paused:${v.paused} bytes:${(bytesRef.current / 1024).toFixed(0)}KB`);
-      setBytesReceived(bytesRef.current);
+      const errPart = lastErrRef.current ? ` | ERR: ${lastErrRef.current}` : "";
+      setDebugLine(`rs:${rs} t:${v.currentTime.toFixed(1)}s buf:${buf} paused:${v.paused} bytes:${(bytesRef.current / 1024).toFixed(0)}KB mime:${mimeTypeRef.current}${errPart}`);
     }, 500);
     return () => clearInterval(id);
   }, []);
@@ -69,18 +64,28 @@ export default function WatchLive() {
   }
 
   function initMSE(mime: string) {
-    if (!videoRef.current) return;
+    if (!videoRef.current) {
+      lastErrRef.current = "videoRef null";
+      return;
+    }
 
     const ms = new MediaSource();
     msRef.current = ms;
     const objUrl = URL.createObjectURL(ms);
     videoRef.current.src = objUrl;
 
+    // Also listen for video-level errors
+    videoRef.current.onerror = () => {
+      const code = videoRef.current?.error?.code ?? -1;
+      const msg = videoRef.current?.error?.message ?? "";
+      lastErrRef.current = `video.error ${code}: ${msg}`;
+    };
+
     ms.addEventListener("sourceopen", () => {
-      // Revoke the ObjectURL — video element has already opened it
       URL.revokeObjectURL(objUrl);
 
       if (!MediaSource.isTypeSupported(mime)) {
+        lastErrRef.current = `mime not supported: ${mime}`;
         setViewerStateSynced("error");
         return;
       }
@@ -89,56 +94,73 @@ export default function WatchLive() {
         const sb = ms.addSourceBuffer(mime);
         sbRef.current = sb;
 
+        sb.addEventListener("error", (e) => {
+          lastErrRef.current = `SB error: ${(e as any)?.message ?? "unknown"}`;
+        });
+
         sb.addEventListener("updateend", () => {
-          // Guard: bail if this SourceBuffer was replaced by a newer initMSE call
           if (sbRef.current !== sb || msRef.current?.readyState !== "open") return;
-          // Drain the queue one chunk at a time
           if (queueRef.current.length > 0 && !sb.updating) {
             const next = queueRef.current.shift()!;
-            try { sb.appendBuffer(next); } catch { /* sb detached mid-flight */ }
+            try {
+              sb.appendBuffer(next);
+            } catch (err) {
+              lastErrRef.current = `appendBuffer(queue): ${err instanceof Error ? err.message : String(err)}`;
+            }
           }
           tryPlay();
         });
 
-        // Flush queued chunks that arrived before MSE was ready
+        // Flush first queued chunk (should be the WebM init segment)
         if (queueRef.current.length > 0 && !sb.updating) {
           const next = queueRef.current.shift()!;
-          try { sb.appendBuffer(next); } catch { /* sb detached mid-flight */ }
+          // Log first 4 bytes so we can confirm it's a WebM EBML header (1A 45 DF A3)
+          const hdr = new Uint8Array(next, 0, Math.min(4, next.byteLength));
+          const hex = Array.from(hdr).map(b => b.toString(16).padStart(2, "0")).join(" ");
+          lastErrRef.current = `init hdr: ${hex} (${next.byteLength}B)`;
+          try {
+            sb.appendBuffer(next);
+          } catch (err) {
+            lastErrRef.current = `appendBuffer(init): ${err instanceof Error ? err.message : String(err)}`;
+          }
         }
 
         setViewerStateSynced("playing");
         tryPlay();
-      } catch {
+      } catch (err) {
+        lastErrRef.current = `addSourceBuffer: ${err instanceof Error ? err.message : String(err)}`;
         setViewerStateSynced("error");
       }
     }, { once: true });
+
+    ms.addEventListener("sourceclose", () => {
+      lastErrRef.current = "MediaSource closed";
+    });
+
+    ms.addEventListener("error", () => {
+      lastErrRef.current = "MediaSource error";
+    });
   }
 
-  /**
-   * Attempt to start/continue playback.
-   * Always starts muted (to satisfy autoplay policy), then prompts user to tap for audio.
-   * Called after data is buffered and from the tap overlay.
-   */
-  function tryPlay() {
+  const tryPlay = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
 
     if (!video.paused) {
-      // Already playing (e.g. browser autoplayed). Just make sure needsTap is set
-      // so the user gets the tap-for-audio overlay.
       if (!audioUnlocked) setNeedsTap(true);
       return;
     }
 
-    // Start muted — always succeeds without a user gesture
     video.muted = true;
     video.play().then(() => {
-      setNeedsTap(true); // playing muted, show tap-for-audio overlay
-    }).catch(() => {
-      // Even muted autoplay blocked — prompt tap to start
+      setNeedsTap(true);
+    }).catch((err) => {
+      lastErrRef.current = `play() failed: ${err instanceof Error ? err.message : String(err)}`;
       setNeedsTap(true);
     });
-  }
+  // audioUnlocked intentionally omitted — we read it only at call time
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function appendChunk(data: ArrayBuffer) {
     bytesRef.current += data.byteLength;
@@ -152,8 +174,8 @@ export default function WatchLive() {
     } else {
       try {
         sb.appendBuffer(data);
-      } catch {
-        // SourceBuffer may be full or detached — try to evict old data first
+      } catch (err) {
+        lastErrRef.current = `appendBuffer(live): ${err instanceof Error ? err.message : String(err)}`;
         try {
           if (videoRef.current && msRef.current?.readyState === "open" && sb.buffered.length > 0) {
             const current = videoRef.current.currentTime;
@@ -171,6 +193,7 @@ export default function WatchLive() {
   function connect() {
     cleaningUpRef.current = false;
     bytesRef.current = 0;
+    lastErrRef.current = "";
     setViewerStateSynced("connecting");
     const ws = new WebSocket(getWsUrl(eventId));
     wsRef.current = ws;
@@ -194,7 +217,6 @@ export default function WatchLive() {
           initMSE(msg.mimeType);
         }
       } else {
-        // Binary video chunk
         if (!sbRef.current && !msRef.current) {
           initMSE(mimeTypeRef.current);
           queueRef.current.push(e.data as ArrayBuffer);
@@ -205,9 +227,7 @@ export default function WatchLive() {
       }
     };
 
-    ws.onerror = () => {
-      setViewerStateSynced("error");
-    };
+    ws.onerror = () => { setViewerStateSynced("error"); };
 
     ws.onclose = () => {
       if (!cleaningUpRef.current) {
@@ -217,31 +237,26 @@ export default function WatchLive() {
     };
   }
 
-  /** Called when the user taps the overlay. Start/unmute playback. */
   async function handleTap() {
     const video = videoRef.current;
     if (!video) return;
 
     if (video.paused) {
-      // Video isn't playing yet — start it unmuted (user gesture makes this work)
       video.muted = false;
       try {
         await video.play();
         setAudioUnlocked(true);
         setNeedsTap(false);
       } catch {
-        // Can't play unmuted; try muted
         video.muted = true;
         try {
           await video.play();
-          // Now playing muted — hide overlay, keep needsTap=false, show mute toggle
           setNeedsTap(false);
-        } catch {
-          // Still blocked — keep overlay so user can try again
+        } catch (err) {
+          lastErrRef.current = `tap play() failed: ${err instanceof Error ? err.message : String(err)}`;
         }
       }
     } else {
-      // Already playing (autoplay succeeded) — just unmute
       video.muted = false;
       setAudioUnlocked(true);
       setNeedsTap(false);
@@ -285,7 +300,6 @@ export default function WatchLive() {
           muted
         />
 
-        {/* Tap-to-watch / tap-for-audio overlay — only shown while needsTap is true */}
         {viewerState === "playing" && needsTap && (
           <button
             className="absolute inset-0 flex flex-col items-center justify-center gap-3 cursor-pointer bg-transparent hover:bg-black/10 transition-colors"
@@ -298,7 +312,6 @@ export default function WatchLive() {
           </button>
         )}
 
-        {/* Unmute toggle button — shown after user tapped and audio is on */}
         {viewerState === "playing" && audioUnlocked && !needsTap && (
           <button
             className="absolute bottom-4 right-4 flex items-center gap-1.5 bg-black/50 hover:bg-black/70 border border-white/20 rounded-full px-3 py-1.5 transition-colors"
@@ -365,12 +378,10 @@ export default function WatchLive() {
         )}
       </div>
 
-      {/* Debug status line (always visible while we're diagnosing black screen) */}
-      {viewerState === "playing" && (
-        <div className="px-4 py-1 text-center text-white/30 text-[10px] font-mono">
-          {debugInfo || "waiting for video data…"}
-        </div>
-      )}
+      {/* Debug status line — always visible while playing so we can diagnose issues */}
+      <div className="px-3 py-1 text-center text-white/30 text-[10px] font-mono break-all leading-relaxed min-h-[1.5rem]">
+        {viewerState === "playing" ? debugLine : viewerState}
+      </div>
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-white/10 text-center text-white/20 text-xs">
