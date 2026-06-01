@@ -17,9 +17,16 @@ export default function WatchLive() {
 
   const [viewerState, setViewerState] = useState<ViewerState>("connecting");
   const setViewerStateSynced = (s: ViewerState) => { viewerStateRef.current = s; setViewerState(s); };
-  const [mimeType, setMimeType] = useState<string>('video/webm; codecs="vp8,opus"');
+
+  // needsTap: video is playing (possibly muted) and waiting for a tap to enable audio / start
   const [needsTap, setNeedsTap] = useState(false);
+  // audioUnlocked: user explicitly enabled audio via tap
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+
+  // Debug state — bytes received + video readyState/time for diagnosing black screen
+  const [bytesReceived, setBytesReceived] = useState(0);
+  const [debugInfo, setDebugInfo] = useState("");
+  const bytesRef = useRef(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -29,6 +36,23 @@ export default function WatchLive() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewerStateRef = useRef<ViewerState>("connecting");
   const cleaningUpRef = useRef(false);
+  const mimeTypeRef = useRef('video/webm; codecs="vp8,opus"');
+
+  // Update debug info every second
+  useEffect(() => {
+    const id = setInterval(() => {
+      const v = videoRef.current;
+      if (!v) return;
+      const rs = v.readyState;
+      const rsLabel = ["NOTHING", "METADATA", "CURRENT", "FUTURE", "ENOUGH"][rs] ?? rs;
+      const buffered = v.buffered.length > 0
+        ? `${v.buffered.start(0).toFixed(1)}–${v.buffered.end(v.buffered.length - 1).toFixed(1)}s`
+        : "empty";
+      setDebugInfo(`readyState:${rsLabel} t:${v.currentTime.toFixed(1)}s buf:${buffered} paused:${v.paused} bytes:${(bytesRef.current / 1024).toFixed(0)}KB`);
+      setBytesReceived(bytesRef.current);
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!eventId) return;
@@ -49,36 +73,26 @@ export default function WatchLive() {
 
     const ms = new MediaSource();
     msRef.current = ms;
-    videoRef.current.src = URL.createObjectURL(ms);
+    const objUrl = URL.createObjectURL(ms);
+    videoRef.current.src = objUrl;
 
     ms.addEventListener("sourceopen", () => {
+      // Revoke the ObjectURL — video element has already opened it
+      URL.revokeObjectURL(objUrl);
+
+      if (!MediaSource.isTypeSupported(mime)) {
+        setViewerStateSynced("error");
+        return;
+      }
+
       try {
         const sb = ms.addSourceBuffer(mime);
         sbRef.current = sb;
 
-        const tryPlay = () => {
-          const video = videoRef.current;
-          if (!video || !video.paused) return;
-          // Try unmuted first (works after user interaction); fall back to muted autoplay
-          video.muted = false;
-          video.play().then(() => {
-            setAudioUnlocked(true);
-            setNeedsTap(false);
-          }).catch(() => {
-            video.muted = true;
-            video.play().then(() => {
-              // Playing muted — prompt user to tap for audio
-              setNeedsTap(true);
-            }).catch(() => {
-              // Even muted autoplay blocked — prompt tap to start
-              setNeedsTap(true);
-            });
-          });
-        };
-
         sb.addEventListener("updateend", () => {
           // Guard: bail if this SourceBuffer was replaced by a newer initMSE call
           if (sbRef.current !== sb || msRef.current?.readyState !== "open") return;
+          // Drain the queue one chunk at a time
           if (queueRef.current.length > 0 && !sb.updating) {
             const next = queueRef.current.shift()!;
             try { sb.appendBuffer(next); } catch { /* sb detached mid-flight */ }
@@ -93,13 +107,41 @@ export default function WatchLive() {
         }
 
         setViewerStateSynced("playing");
-      } catch (e) {
+        tryPlay();
+      } catch {
         setViewerStateSynced("error");
       }
     }, { once: true });
   }
 
+  /**
+   * Attempt to start/continue playback.
+   * Always starts muted (to satisfy autoplay policy), then prompts user to tap for audio.
+   * Called after data is buffered and from the tap overlay.
+   */
+  function tryPlay() {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (!video.paused) {
+      // Already playing (e.g. browser autoplayed). Just make sure needsTap is set
+      // so the user gets the tap-for-audio overlay.
+      if (!audioUnlocked) setNeedsTap(true);
+      return;
+    }
+
+    // Start muted — always succeeds without a user gesture
+    video.muted = true;
+    video.play().then(() => {
+      setNeedsTap(true); // playing muted, show tap-for-audio overlay
+    }).catch(() => {
+      // Even muted autoplay blocked — prompt tap to start
+      setNeedsTap(true);
+    });
+  }
+
   function appendChunk(data: ArrayBuffer) {
+    bytesRef.current += data.byteLength;
     const sb = sbRef.current;
     if (!sb) {
       queueRef.current.push(data);
@@ -111,7 +153,7 @@ export default function WatchLive() {
       try {
         sb.appendBuffer(data);
       } catch {
-        // SourceBuffer may be full or detached — guard every access
+        // SourceBuffer may be full or detached — try to evict old data first
         try {
           if (videoRef.current && msRef.current?.readyState === "open" && sb.buffered.length > 0) {
             const current = videoRef.current.currentTime;
@@ -128,6 +170,7 @@ export default function WatchLive() {
 
   function connect() {
     cleaningUpRef.current = false;
+    bytesRef.current = 0;
     setViewerStateSynced("connecting");
     const ws = new WebSocket(getWsUrl(eventId));
     wsRef.current = ws;
@@ -140,24 +183,23 @@ export default function WatchLive() {
           setViewerStateSynced("offline");
         } else if (msg.type === "ended") {
           setViewerStateSynced("ended");
-          // Close and reconnect after a delay — broadcaster may restart
           wsRef.current?.close();
         } else if (msg.type === "init") {
-          // Fresh stream starting — reinitialise MSE
-          setMimeType(msg.mimeType);
+          mimeTypeRef.current = msg.mimeType;
           queueRef.current = [];
           sbRef.current = null;
           msRef.current = null;
+          setNeedsTap(false);
+          setAudioUnlocked(false);
           initMSE(msg.mimeType);
         }
       } else {
         // Binary video chunk
         if (!sbRef.current && !msRef.current) {
-          // MSE not yet initialised — init now then queue
-          initMSE(mimeType);
+          initMSE(mimeTypeRef.current);
           queueRef.current.push(e.data as ArrayBuffer);
         } else {
-          setViewerStateSynced("playing");
+          if (viewerStateRef.current !== "playing") setViewerStateSynced("playing");
           appendChunk(e.data as ArrayBuffer);
         }
       }
@@ -168,13 +210,42 @@ export default function WatchLive() {
     };
 
     ws.onclose = () => {
-      // Only skip reconnect when the component is unmounting
       if (!cleaningUpRef.current) {
-        // Use a longer delay for "ended" — give the broadcaster time to restart
         const delay = viewerStateRef.current === "ended" ? 8000 : 4000;
         reconnectTimer.current = setTimeout(() => connect(), delay);
       }
     };
+  }
+
+  /** Called when the user taps the overlay. Start/unmute playback. */
+  async function handleTap() {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.paused) {
+      // Video isn't playing yet — start it unmuted (user gesture makes this work)
+      video.muted = false;
+      try {
+        await video.play();
+        setAudioUnlocked(true);
+        setNeedsTap(false);
+      } catch {
+        // Can't play unmuted; try muted
+        video.muted = true;
+        try {
+          await video.play();
+          // Now playing muted — hide overlay, keep needsTap=false, show mute toggle
+          setNeedsTap(false);
+        } catch {
+          // Still blocked — keep overlay so user can try again
+        }
+      }
+    } else {
+      // Already playing (autoplay succeeded) — just unmute
+      video.muted = false;
+      setAudioUnlocked(true);
+      setNeedsTap(false);
+    }
   }
 
   const resultsUrl = `/results/${eventId}`;
@@ -211,28 +282,14 @@ export default function WatchLive() {
           ref={videoRef}
           className="w-full max-h-[80vh] object-contain"
           playsInline
-          autoPlay
           muted
         />
 
-        {/* Tap-to-watch / tap-for-audio overlay */}
-        {viewerState === "playing" && (needsTap || !audioUnlocked) && (
+        {/* Tap-to-watch / tap-for-audio overlay — only shown while needsTap is true */}
+        {viewerState === "playing" && needsTap && (
           <button
-            className="absolute inset-0 flex flex-col items-center justify-center gap-3 cursor-pointer bg-black/40 hover:bg-black/30 transition-colors"
-            onClick={() => {
-              const video = videoRef.current;
-              if (!video) return;
-              video.muted = false;
-              video.play().then(() => {
-                setAudioUnlocked(true);
-                setNeedsTap(false);
-              }).catch(() => {
-                // Tap started playback but couldn't unmute — start muted
-                video.muted = true;
-                video.play().catch(() => {});
-                setNeedsTap(false);
-              });
-            }}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3 cursor-pointer bg-transparent hover:bg-black/10 transition-colors"
+            onClick={handleTap}
           >
             <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-5 py-3 backdrop-blur-sm">
               <VolumeX size={18} className="text-white/70" />
@@ -241,15 +298,15 @@ export default function WatchLive() {
           </button>
         )}
 
-        {/* Unmute button (shown after user tapped, playing with audio) */}
-        {viewerState === "playing" && audioUnlocked && (
+        {/* Unmute toggle button — shown after user tapped and audio is on */}
+        {viewerState === "playing" && audioUnlocked && !needsTap && (
           <button
             className="absolute bottom-4 right-4 flex items-center gap-1.5 bg-black/50 hover:bg-black/70 border border-white/20 rounded-full px-3 py-1.5 transition-colors"
             onClick={() => {
               if (videoRef.current) {
                 const nowMuted = !videoRef.current.muted;
                 videoRef.current.muted = nowMuted;
-                if (nowMuted) setAudioUnlocked(false);
+                if (nowMuted) { setAudioUnlocked(false); setNeedsTap(true); }
               }
             }}
             title="Toggle audio"
@@ -307,6 +364,13 @@ export default function WatchLive() {
           </div>
         )}
       </div>
+
+      {/* Debug status line (always visible while we're diagnosing black screen) */}
+      {viewerState === "playing" && (
+        <div className="px-4 py-1 text-center text-white/30 text-[10px] font-mono">
+          {debugInfo || "waiting for video data…"}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-white/10 text-center text-white/20 text-xs">
