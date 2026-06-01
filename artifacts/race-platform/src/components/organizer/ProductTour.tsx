@@ -90,12 +90,17 @@ interface ProductTourProps {
 export function ProductTour({ onComplete }: ProductTourProps) {
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
+  const [dismissed, setDismissed] = useState(false);
   const queryClient = useQueryClient();
   const { mutate: completeTour } = useCompleteTour({
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
-        onComplete();
+      },
+      onError: (err: any) => {
+        if (err?.status === 401) {
+          window.location.href = "/login";
+        }
       },
     },
   });
@@ -110,8 +115,12 @@ export function ProductTour({ onComplete }: ProductTourProps) {
   }
 
   function finish() {
+    setDismissed(true);
     completeTour();
+    onComplete();
   }
+
+  if (dismissed) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">

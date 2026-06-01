@@ -2,6 +2,8 @@ import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
+import ConnectPgSimple from "connect-pg-simple";
+import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { WebhookHandlers } from "./webhookHandlers";
@@ -55,9 +57,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const sessionSecret = process.env.SESSION_SECRET || "race-platform-dev-secret";
+const PgSession = ConnectPgSimple(session);
 
 app.use(
   session({
+    store: new PgSession({
+      pool: pool as any,
+      tableName: "session",
+      createTableIfMissing: true,
+      errorLog: (...args) => logger.error({ args }, "Session store error"),
+    }),
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
