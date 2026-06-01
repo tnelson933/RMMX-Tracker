@@ -152,6 +152,15 @@ export default function WatchLive() {
     const video = videoRef.current;
     if (!video) return;
 
+    // Seek to the live edge so we're always watching the most recent data.
+    // If currentTime is more than 3 s behind the buffer end, snap forward.
+    if (video.buffered.length > 0) {
+      const liveEdge = video.buffered.end(video.buffered.length - 1);
+      if (liveEdge - video.currentTime > 3) {
+        video.currentTime = Math.max(0, liveEdge - 0.5);
+      }
+    }
+
     if (!video.paused) {
       if (!audioUnlocked) setNeedsTap(true);
       return;
@@ -215,13 +224,45 @@ export default function WatchLive() {
           setViewerStateSynced("ended");
           wsRef.current?.close();
         } else if (msg.type === "init") {
-          mimeTypeRef.current = msg.mimeType;
+          const newMime = msg.mimeType as string;
+          mimeTypeRef.current = newMime;
+          // Discard stale queued chunks — they belong to the previous broadcaster session
           queueRef.current = [];
-          sbRef.current = null;
-          msRef.current = null;
-          setNeedsTap(false);
-          setAudioUnlocked(false);
-          initMSE(msg.mimeType);
+
+          const existingSb = sbRef.current;
+          const existingMs = msRef.current;
+
+          if (existingMs && existingMs.readyState === "open" && existingSb) {
+            // ── REUSE path ──────────────────────────────────────────────────────
+            // MSE is fully active. Broadcaster reconnected (common when the Replit
+            // proxy drops the broadcaster's WS). Keep the MediaSource alive — just
+            // abort any in-flight SB operation and remove old buffered data so the
+            // new initSegment + clusters don't conflict on timestamps.
+            if (existingSb.updating) {
+              try { existingSb.abort(); } catch {}
+            }
+            try {
+              if (existingSb.buffered.length > 0) {
+                existingSb.remove(0, Infinity);
+              }
+            } catch {}
+            lastErrRef.current = "broadcaster reconnect — reusing MSE";
+            setNeedsTap(false);
+          } else if (existingMs) {
+            // ── PENDING path ────────────────────────────────────────────────────
+            // A MediaSource already exists (readyState "closed" = sourceopen not yet
+            // fired, or ms just transitioned back to closed). Do NOT create another
+            // one — that would close this one and create a cascade.  The pending
+            // sourceopen will fire, create the SB, and drain the queue.
+            lastErrRef.current = "init (sourceopen pending)";
+          } else {
+            // ── FRESH INIT path ─────────────────────────────────────────────────
+            // No MediaSource at all — first connect or previous one was fully gone.
+            sbRef.current = null;
+            setNeedsTap(false);
+            setAudioUnlocked(false);
+            initMSE(newMime);
+          }
         }
       } else {
         if (!sbRef.current && !msRef.current) {

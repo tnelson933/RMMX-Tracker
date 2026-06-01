@@ -159,6 +159,14 @@ function handleViewer(ws: WebSocket, eventId: number) {
 
   logger.info({ eventId, viewers: state.viewers.size }, "Viewer connected");
 
+  // Periodic ping to keep the connection alive through the Replit proxy.
+  // The browser WebSocket API responds to protocol-level ping frames automatically.
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.ping();
+    }
+  }, 20_000);
+
   // Send current stream state immediately
   if (state.live) {
     ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType }));
@@ -178,11 +186,13 @@ function handleViewer(ws: WebSocket, eventId: number) {
   }
 
   ws.on("close", () => {
+    clearInterval(pingInterval);
     state.viewers.delete(ws);
     logger.info({ eventId, viewers: state.viewers.size }, "Viewer disconnected");
   });
 
   ws.on("error", (err) => {
+    clearInterval(pingInterval);
     logger.error({ eventId, err: err.message }, "Viewer WebSocket error");
     state.viewers.delete(ws);
   });
