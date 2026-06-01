@@ -162,8 +162,8 @@ export default function EventsList() {
         location: data.location,
         trackName: data.trackName,
         raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
-        registrationOpen: data.registrationOpen || undefined,
-        registrationClose: data.registrationClose || undefined,
+        registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
+        registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
         paymentEnabled: data.paymentEnabled,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
       }

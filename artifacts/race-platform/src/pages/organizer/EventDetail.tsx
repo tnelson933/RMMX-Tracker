@@ -31,6 +31,11 @@ function formatHour(t: string) {
   return `${hour}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+function toLocalDatetimeString(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function DateTimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const datePart = value ? value.split("T")[0] : "";
   const timePart = value ? (value.split("T")[1] ?? "").substring(0, 5) : "";
@@ -174,8 +179,8 @@ export default function EventDetail() {
       })),
       paymentEnabled: evt.entryFee != null,
       entryFee: evt.entryFee != null ? String(evt.entryFee) : "",
-      registrationOpen: evt.registrationOpen ? evt.registrationOpen.substring(0, 16) : "",
-      registrationClose: evt.registrationClose ? evt.registrationClose.substring(0, 16) : "",
+      registrationOpen: evt.registrationOpen ? toLocalDatetimeString(new Date(evt.registrationOpen)) : "",
+      registrationClose: evt.registrationClose ? toLocalDatetimeString(new Date(evt.registrationClose)) : "",
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
     setEditSeriesId(currentSeries ? String(currentSeries.id) : "none");
@@ -203,8 +208,8 @@ export default function EventDetail() {
         raceClassLimits: classLimits,
         paymentEnabled: data.paymentEnabled,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
-        registrationOpen: data.registrationOpen || undefined,
-        registrationClose: data.registrationClose || undefined,
+        registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
+        registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
       }
     }, {
       onSuccess: () => {
@@ -574,7 +579,7 @@ export default function EventDetail() {
                       <div className="font-medium flex items-center gap-2">
                         <Clock size={16} className="text-primary" />
                         {event.registrationOpen
-                          ? format(parseISO(event.registrationOpen.substring(0, 16)), "MMM d, yyyy 'at' h:mm a")
+                          ? format(new Date(event.registrationOpen), "MMM d, yyyy 'at' h:mm a")
                           : <span className="text-muted-foreground italic text-sm">Not set</span>}
                       </div>
                     </div>
@@ -583,7 +588,7 @@ export default function EventDetail() {
                       <div className="font-medium flex items-center gap-2">
                         <Clock size={16} className="text-primary" />
                         {event.registrationClose
-                          ? format(parseISO(event.registrationClose.substring(0, 16)), "MMM d, yyyy 'at' h:mm a")
+                          ? format(new Date(event.registrationClose), "MMM d, yyyy 'at' h:mm a")
                           : <span className="text-muted-foreground italic text-sm">Not set</span>}
                       </div>
                     </div>
@@ -640,13 +645,13 @@ export default function EventDetail() {
                       {event.registrationOpen && (
                         <div className="flex items-center justify-between">
                           <span className="font-bold uppercase tracking-wider">Opens</span>
-                          <span>{format(parseISO(event.registrationOpen.substring(0, 16)), "MMM d 'at' h:mm a")}</span>
+                          <span>{format(new Date(event.registrationOpen), "MMM d 'at' h:mm a")}</span>
                         </div>
                       )}
                       {event.registrationClose && (
                         <div className="flex items-center justify-between">
                           <span className="font-bold uppercase tracking-wider">Closes</span>
-                          <span>{format(parseISO(event.registrationClose.substring(0, 16)), "MMM d 'at' h:mm a")}</span>
+                          <span>{format(new Date(event.registrationClose), "MMM d 'at' h:mm a")}</span>
                         </div>
                       )}
                     </div>
