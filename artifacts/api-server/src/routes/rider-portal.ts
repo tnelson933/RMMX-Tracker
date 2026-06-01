@@ -220,7 +220,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       position: row.position,
       points: row.points,
       totalTime: row.totalTime,
-      lapTimes: (row.lapTimes as string[]) ?? [],
+      lapTimes: ((row.lapTimes as { lap: number; time: string }[]) ?? []).map((lt) => lt.time),
       dnf: row.dnf,
       dns: row.dns,
       bibNumber: row.bibNumber,
