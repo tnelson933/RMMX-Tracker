@@ -221,7 +221,7 @@ export default function EventsList() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Registration Opens</FormLabel>
-                          <FormControl><Input type="datetime-local" {...field} /></FormControl>
+                          <FormControl><Input type="datetime-local" step="900" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -232,7 +232,7 @@ export default function EventsList() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Registration Closes</FormLabel>
-                          <FormControl><Input type="datetime-local" {...field} /></FormControl>
+                          <FormControl><Input type="datetime-local" step="900" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
