@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRoute, Link } from "wouter";
-import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX } from "lucide-react";
+import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useListMotos, useListResults } from "@workspace/api-client-react";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
@@ -36,6 +37,38 @@ export default function WatchLive() {
   const lastErrRef = useRef("");
   // Rolling event log — last 5 events; gives a chronological trace instead of just the final state
   const eventLogRef = useRef<string[]>([]);
+
+  // Live moto + results — poll every 10 s
+  const { data: motos } = useListMotos(eventId, {
+    query: { enabled: !!eventId, refetchInterval: 10_000 } as any,
+  });
+  const { data: results } = useListResults(eventId, {
+    query: { enabled: !!eventId, refetchInterval: 10_000 } as any,
+  });
+
+  // Active moto: prefer in_progress, fall back to most-recently-completed
+  const activeMoto =
+    motos?.find(m => m.status === "in_progress") ??
+    [...(motos ?? [])].filter(m => m.status === "completed").pop();
+
+  // Unified rider row type satisfied by both LineupEntry and RaceResult
+  type RiderRow = { position: number; riderId: number; riderName: string; bibNumber?: string | null };
+  const liveRiders: RiderRow[] = activeMoto
+    ? activeMoto.status === "completed"
+      ? (results ?? [])
+          .filter(r => r.motoId === activeMoto.id)
+          .sort((a, b) => a.position - b.position)
+      : [...(activeMoto.lineup ?? [])].sort((a, b) => a.position - b.position)
+    : [];
+
+  const motoTypeLabel = (t: string) =>
+    t === "main" ? "Main Event" : t === "lcq" ? "LCQ" : t === "heat" ? "Heat" : "Practice";
+  const motoTypeColor = (t: string) =>
+    t === "main" ? "bg-amber-500/20 text-amber-400" :
+    t === "lcq"  ? "bg-purple-500/20 text-purple-400" :
+    t === "heat" ? "bg-blue-500/20 text-blue-400" :
+                   "bg-white/10 text-white/40";
+
   const logEvent = (msg: string) => {
     lastErrRef.current = msg;
     eventLogRef.current = [...eventLogRef.current.slice(-4), msg];
@@ -382,14 +415,105 @@ export default function WatchLive() {
         </a>
       </div>
 
-      {/* Video area */}
-      <div className="flex-1 flex items-center justify-center relative bg-black">
-        <video
-          ref={videoRef}
-          className="w-full max-h-[80vh] object-contain"
-          playsInline
-          muted
-        />
+      {/* Main content: sidebar + video */}
+      <div className="flex-1 flex min-h-0">
+
+        {/* ── Left sidebar: current moto + leaderboard ── */}
+        <div className="w-64 shrink-0 border-r border-white/10 flex flex-col overflow-hidden">
+          {activeMoto ? (
+            <>
+              {/* Moto header */}
+              <div className="px-3 py-3 border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${motoTypeColor(activeMoto.type)}`}>
+                    {motoTypeLabel(activeMoto.type)}
+                  </span>
+                  {activeMoto.raceClass && (
+                    <span className="text-white/40 text-[10px] uppercase tracking-wide">{activeMoto.raceClass}</span>
+                  )}
+                </div>
+                <div className="text-white text-sm font-heading uppercase tracking-wide leading-tight">{activeMoto.name}</div>
+                <div className="mt-1.5">
+                  {activeMoto.status === "in_progress" && (
+                    <span className="flex items-center gap-1 text-red-400 text-[10px] font-bold uppercase">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-400" />
+                      </span>
+                      In Progress · Lineup
+                    </span>
+                  )}
+                  {activeMoto.status === "completed" && (
+                    <span className="flex items-center gap-1 text-green-400 text-[10px] font-bold uppercase">
+                      <CheckCircle2 size={10} />
+                      Final Results
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Column headers */}
+              <div className="flex items-center px-3 py-1 text-white/20 text-[10px] uppercase tracking-wider border-b border-white/5 shrink-0">
+                <span className="w-5 text-right mr-2.5 shrink-0">#</span>
+                <span className="flex-1">Rider</span>
+                <span className="text-[10px] shrink-0">Bib</span>
+              </div>
+
+              {/* Rider rows */}
+              <div className="flex-1 overflow-y-auto">
+                {liveRiders.length === 0 ? (
+                  <div className="px-3 py-10 text-white/20 text-xs text-center">No lineup yet</div>
+                ) : (
+                  liveRiders.map((rider, idx) => (
+                    <div
+                      key={rider.riderId}
+                      className={`flex items-center gap-2.5 px-3 py-2 border-b border-white/5 ${
+                        activeMoto.status === "completed" && idx === 0 ? "bg-amber-500/5" : ""
+                      }`}
+                    >
+                      <span className={`text-xs font-bold w-5 text-right shrink-0 ${
+                        activeMoto.status === "completed"
+                          ? idx === 0 ? "text-amber-400"
+                          : idx === 1 ? "text-white/50"
+                          : idx === 2 ? "text-orange-600/70"
+                          : "text-white/20"
+                          : "text-white/25"
+                      }`}>
+                        {rider.position}
+                      </span>
+                      <span className="text-white/90 text-xs flex-1 truncate">{rider.riderName}</span>
+                      {rider.bibNumber ? (
+                        <span className="text-white/20 text-[10px] shrink-0">#{rider.bibNumber}</span>
+                      ) : (
+                        <span className="w-6 shrink-0" />
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="px-3 py-1.5 border-t border-white/5 text-white/15 text-[10px] text-center shrink-0">
+                ↻ updates every 10s
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center px-4">
+                <Flag size={22} className="text-white/15 mx-auto mb-2" />
+                <p className="text-white/20 text-xs">No active race</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Video (right side) ── */}
+        <div className="flex-1 flex items-center justify-center relative bg-black">
+          <video
+            ref={videoRef}
+            className="w-full max-h-[80vh] object-contain"
+            playsInline
+            muted
+          />
 
         {viewerState === "playing" && needsTap && (
           <button
@@ -467,7 +591,8 @@ export default function WatchLive() {
             )}
           </div>
         )}
-      </div>
+        </div>{/* end video panel */}
+      </div>{/* end sidebar+video flex row */}
 
       {/* Debug status line — always visible while playing so we can diagnose issues */}
       <div className="px-3 py-1 text-center text-white/30 text-[10px] font-mono break-all leading-relaxed min-h-[1.5rem]">
