@@ -37,19 +37,31 @@ router.get("/stripe/connect/status", async (req, res) => {
   if (!club) return res.json({ connected: false, onboardingComplete: false, accountId: null, email: null });
 
   let accountEmail: string | null = null;
+  let onboardingComplete = club.stripeOnboardingComplete ?? false;
+
   if (club.stripeAccountId) {
     try {
       const stripe = await getUncachableStripeClient();
       const account = await stripe.accounts.retrieve(club.stripeAccountId);
       accountEmail = account.email ?? null;
+
+      // Auto-sync: if Stripe says charges are enabled but our DB doesn't know yet, update it.
+      const stripeReady = account.charges_enabled || account.details_submitted;
+      if (stripeReady && !onboardingComplete) {
+        await db
+          .update(clubsTable)
+          .set({ stripeOnboardingComplete: true })
+          .where(eq(clubsTable.id, auth.clubId!));
+        onboardingComplete = true;
+      }
     } catch {
-      // non-fatal — email will just be null
+      // non-fatal — email will just be null, onboardingComplete stays as-is
     }
   }
 
   return res.json({
     connected: !!club.stripeAccountId,
-    onboardingComplete: club.stripeOnboardingComplete ?? false,
+    onboardingComplete,
     accountId: club.stripeAccountId ?? null,
     email: accountEmail,
   });

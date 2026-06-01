@@ -63,7 +63,7 @@ export default function EventsList() {
     enabled: !isSuperAdmin,
   });
 
-  const stripeReady = !isSuperAdmin && (stripeStatus?.connected && stripeStatus?.onboardingComplete);
+  const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
 
   const { data: seriesList } = useListSeries({ query: {} as any });
   const updateSeriesMutation = useUpdateSeries();
