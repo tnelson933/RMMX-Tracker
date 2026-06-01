@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListEvents, useUpdateEvent } from "@workspace/api-client-react";
-import { format, parseISO, isPast, startOfDay } from "date-fns";
+import { format, parseISO, isBefore, startOfDay } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -160,7 +160,7 @@ export function PastEventCheckDialog({ clubId }: PastEventCheckDialogProps) {
   const overdueEvents = (events ?? []).filter(
     (e) =>
       e.status !== "completed" &&
-      isPast(startOfDay(parseISO(e.date.substring(0, 10)))) &&
+      isBefore(startOfDay(parseISO(e.date.substring(0, 10))), startOfDay(today)) &&
       !resolvedIds.has(e.id)
   );
 
@@ -170,7 +170,7 @@ export function PastEventCheckDialog({ clubId }: PastEventCheckDialogProps) {
     const hasOverdue = events.some(
       (e) =>
         e.status !== "completed" &&
-        isPast(startOfDay(parseISO(e.date.substring(0, 10))))
+        isBefore(startOfDay(parseISO(e.date.substring(0, 10))), startOfDay(new Date()))
     );
     if (hasOverdue) setOpen(true);
   }, [events]);
