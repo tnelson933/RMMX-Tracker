@@ -3,7 +3,6 @@ import { useRoute, Link } from "wouter";
 import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useListMotos, useListResults } from "@workspace/api-client-react";
-import { Viewer360 } from "@/components/Viewer360";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
@@ -506,21 +505,17 @@ export default function WatchLive() {
 
         {/* ── Video (right side) ── */}
         <div className="flex-1 flex items-center justify-center relative bg-black">
-          {/* MSE always feeds this element; hidden in 360 mode but kept in DOM */}
+          {/* Flat equirectangular view — full panorama visible in 2D */}
           <video
             ref={videoRef}
-            className={`w-full max-h-[80vh] object-contain ${is360 ? "opacity-0 absolute w-0 h-0" : ""}`}
+            className={`${is360 ? "w-full object-fill" : "w-full max-h-[80vh] object-contain"}`}
             playsInline
             muted
           />
-          {/* 360° sphere renderer — overlays the video when active */}
-          {is360 && viewerState === "playing" && (
-            <Viewer360 videoRef={videoRef} />
-          )}
           {is360 && viewerState === "playing" && (
             <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur text-white/70 text-[10px] font-bold px-2.5 py-1 rounded-full pointer-events-none select-none">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400" />
-              360°
+              360° · FULL VIEW
             </div>
           )}
 
