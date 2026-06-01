@@ -47,10 +47,11 @@ A full-stack SaaS race operations platform for motorcycle and ATV clubs — live
 ## Seed data (dev)
 
 - 3 clubs, 3 users, 10 riders, 4 events, registrations, checkins, motos, results, series, series_points
-- Login: `jake@desertstormmx.com` / `password123` (Desert Storm MX Club, clubId=1)
-- Login: `sarah@rockymtnriders.com` / `password123` (Rocky Mountain Riders, clubId=2)
+- Organizer login: `jake@desertstormmx.com` / `password123` (Desert Storm MX Club, clubId=1)
+- Organizer login: `sarah@rockymtnriders.com` / `password123` (Rocky Mountain Riders, clubId=2)
 - Event 4 (Spring Opener 2026, AZ, completed) has motos and results — the main demo event
 - Event 1 (Desert Classic, AZ, race_day) has registrations and check-ins
+- Rider portal logins (all password `password123`): `tyler@email.com` (6 results), `marcus@email.com` (5), `blake@email.com` (5), `devon@email.com` (4), `brett@email.com` (4), `jaxon@email.com` (4)
 
 ## User preferences
 
