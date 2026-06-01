@@ -33,6 +33,12 @@ export default function WatchLive() {
   const mimeTypeRef = useRef('video/webm; codecs="vp8,opus"');
   const bytesRef = useRef(0);
   const lastErrRef = useRef("");
+  // Rolling event log — last 5 events; gives a chronological trace instead of just the final state
+  const eventLogRef = useRef<string[]>([]);
+  const logEvent = (msg: string) => {
+    lastErrRef.current = msg;
+    eventLogRef.current = [...eventLogRef.current.slice(-4), msg];
+  };
 
   // Update debug display every second
   useEffect(() => {
@@ -43,8 +49,8 @@ export default function WatchLive() {
       const buf = v.buffered.length > 0
         ? `${v.buffered.start(0).toFixed(1)}–${v.buffered.end(v.buffered.length - 1).toFixed(1)}s`
         : "empty";
-      const errPart = lastErrRef.current ? ` | ERR: ${lastErrRef.current}` : "";
-      setDebugLine(`rs:${rs} t:${v.currentTime.toFixed(1)}s buf:${buf} paused:${v.paused} bytes:${(bytesRef.current / 1024).toFixed(0)}KB mime:${mimeTypeRef.current}${errPart}`);
+      const log = eventLogRef.current.length > 0 ? ` | ${eventLogRef.current.join(" → ")}` : "";
+      setDebugLine(`rs:${rs} t:${v.currentTime.toFixed(1)}s buf:${buf} paused:${v.paused} bytes:${(bytesRef.current / 1024).toFixed(0)}KB${log}`);
     }, 500);
     return () => clearInterval(id);
   }, []);
@@ -65,20 +71,21 @@ export default function WatchLive() {
 
   function initMSE(mime: string) {
     if (!videoRef.current) {
-      lastErrRef.current = "videoRef null";
+      logEvent("videoRef null");
       return;
     }
 
     const ms = new MediaSource();
     msRef.current = ms;
     const objUrl = URL.createObjectURL(ms);
+    logEvent(`initMSE q:${queueRef.current.length}`);
     videoRef.current.src = objUrl;
 
     // Also listen for video-level errors
     videoRef.current.onerror = () => {
       const code = videoRef.current?.error?.code ?? -1;
       const msg = videoRef.current?.error?.message ?? "";
-      lastErrRef.current = `video.error ${code}: ${msg}`;
+      logEvent(`video.error ${code}: ${msg}`);
     };
 
     ms.addEventListener("sourceopen", () => {
@@ -86,22 +93,24 @@ export default function WatchLive() {
       // Do NOT revoke the objUrl here — revoking inside sourceopen can race with
       // SourceBuffer attachment on some Chrome versions and close the MediaSource.
       if (msRef.current !== ms) {
-        lastErrRef.current = "stale sourceopen ignored";
+        logEvent("stale sourceopen ignored");
         return;
       }
 
       if (!MediaSource.isTypeSupported(mime)) {
-        lastErrRef.current = `mime not supported: ${mime}`;
+        logEvent(`mime not supported: ${mime}`);
         setViewerStateSynced("error");
         return;
       }
+
+      logEvent(`sourceopen q:${queueRef.current.length}`);
 
       try {
         const sb = ms.addSourceBuffer(mime);
         sbRef.current = sb;
 
         sb.addEventListener("error", (e) => {
-          lastErrRef.current = `SB error: ${(e as any)?.message ?? "unknown"}`;
+          logEvent(`SB error: ${(e as any)?.message ?? "unknown"}`);
         });
 
         sb.addEventListener("updateend", () => {
@@ -111,7 +120,7 @@ export default function WatchLive() {
             try {
               sb.appendBuffer(next);
             } catch (err) {
-              lastErrRef.current = `appendBuffer(queue): ${err instanceof Error ? err.message : String(err)}`;
+              logEvent(`appendBuffer(queue): ${err instanceof Error ? err.message : String(err)}`);
             }
           }
           tryPlay();
@@ -123,28 +132,42 @@ export default function WatchLive() {
           // Log first 4 bytes so we can confirm it's a WebM EBML header (1A 45 DF A3)
           const hdr = new Uint8Array(next, 0, Math.min(4, next.byteLength));
           const hex = Array.from(hdr).map(b => b.toString(16).padStart(2, "0")).join(" ");
-          lastErrRef.current = `init hdr: ${hex} (${next.byteLength}B)`;
+          logEvent(`hdr:${hex}(${next.byteLength}B)`);
           try {
             sb.appendBuffer(next);
           } catch (err) {
-            lastErrRef.current = `appendBuffer(init): ${err instanceof Error ? err.message : String(err)}`;
+            logEvent(`appendBuffer(init): ${err instanceof Error ? err.message : String(err)}`);
           }
+        } else {
+          logEvent("sourceopen: queue empty — no init segment!");
         }
 
         setViewerStateSynced("playing");
         tryPlay();
       } catch (err) {
-        lastErrRef.current = `addSourceBuffer: ${err instanceof Error ? err.message : String(err)}`;
+        logEvent(`addSourceBuffer: ${err instanceof Error ? err.message : String(err)}`);
         setViewerStateSynced("error");
       }
     }, { once: true });
 
     ms.addEventListener("sourceclose", () => {
-      lastErrRef.current = "MediaSource closed";
+      // Guard: only act if THIS ms is the one currently in use.
+      // Old MediaSources fire sourceclose when video.src is updated to a new one — ignore those.
+      if (msRef.current === ms) {
+        logEvent("MS closed→reconnect");
+        msRef.current = null;
+        sbRef.current = null;
+        queueRef.current = [];  // stale mid-stream data is useless without the init segment
+        // Reconnect so the server resends init segment + buffer; without it
+        // self-healing would try to decode mid-stream clusters with no EBML header.
+        wsRef.current?.close();  // triggers auto-reconnect via onclose handler
+      } else {
+        logEvent("old MS closed (ignored)");
+      }
     });
 
     ms.addEventListener("error", () => {
-      lastErrRef.current = "MediaSource error";
+      logEvent("MediaSource error");
     });
   }
 
@@ -170,7 +193,7 @@ export default function WatchLive() {
     video.play().then(() => {
       setNeedsTap(true);
     }).catch((err) => {
-      lastErrRef.current = `play() failed: ${err instanceof Error ? err.message : String(err)}`;
+      logEvent(`play() failed: ${err instanceof Error ? err.message : String(err)}`);
       setNeedsTap(true);
     });
   // audioUnlocked intentionally omitted — we read it only at call time
@@ -191,7 +214,7 @@ export default function WatchLive() {
       try {
         sb.appendBuffer(data);
       } catch (err) {
-        lastErrRef.current = `appendBuffer(live): ${err instanceof Error ? err.message : String(err)}`;
+        logEvent(`appendBuffer(live): ${err instanceof Error ? err.message : String(err)}`);
         try {
           if (videoRef.current && msRef.current?.readyState === "open" && sb.buffered.length > 0) {
             const current = videoRef.current.currentTime;
@@ -209,7 +232,7 @@ export default function WatchLive() {
   function connect() {
     cleaningUpRef.current = false;
     bytesRef.current = 0;
-    lastErrRef.current = "";
+    eventLogRef.current = [];
     setViewerStateSynced("connecting");
     const ws = new WebSocket(getWsUrl(eventId));
     wsRef.current = ws;
@@ -226,18 +249,16 @@ export default function WatchLive() {
         } else if (msg.type === "init") {
           const newMime = msg.mimeType as string;
           mimeTypeRef.current = newMime;
-          // Discard stale queued chunks — they belong to the previous broadcaster session
-          queueRef.current = [];
 
           const existingSb = sbRef.current;
           const existingMs = msRef.current;
 
           if (existingMs && existingMs.readyState === "open" && existingSb) {
             // ── REUSE path ──────────────────────────────────────────────────────
-            // MSE is fully active. Broadcaster reconnected (common when the Replit
-            // proxy drops the broadcaster's WS). Keep the MediaSource alive — just
-            // abort any in-flight SB operation and remove old buffered data so the
-            // new initSegment + clusters don't conflict on timestamps.
+            // MSE fully active. Broadcaster reconnected (Replit proxy drops WS).
+            // Discard stale queued data, abort in-flight SB op, and clear the
+            // buffer so new initSegment + clusters don't conflict on timestamps.
+            queueRef.current = [];
             if (existingSb.updating) {
               try { existingSb.abort(); } catch {}
             }
@@ -246,18 +267,21 @@ export default function WatchLive() {
                 existingSb.remove(0, Infinity);
               }
             } catch {}
-            lastErrRef.current = "broadcaster reconnect — reusing MSE";
+            logEvent("bcst reconnect — reusing MSE");
             setNeedsTap(false);
           } else if (existingMs) {
             // ── PENDING path ────────────────────────────────────────────────────
-            // A MediaSource already exists (readyState "closed" = sourceopen not yet
-            // fired, or ms just transitioned back to closed). Do NOT create another
-            // one — that would close this one and create a cascade.  The pending
-            // sourceopen will fire, create the SB, and drain the queue.
-            lastErrRef.current = "init (sourceopen pending)";
+            // A MediaSource exists but sourceopen hasn't fired yet (readyState
+            // "closed"). Do NOT clear the queue — the WebM init segment that was
+            // already queued is essential for the decoder to initialise.
+            // Do NOT create a new MS — that would close this one and cascade.
+            // The pending sourceopen will fire, create the SB, and drain the queue.
+            logEvent(`pending q:${queueRef.current.length}`);
           } else {
             // ── FRESH INIT path ─────────────────────────────────────────────────
-            // No MediaSource at all — first connect or previous one was fully gone.
+            // No MediaSource at all (first connect, or sourceclose already cleared
+            // the refs). Discard any stale queue and start fresh.
+            queueRef.current = [];
             sbRef.current = null;
             setNeedsTap(false);
             setAudioUnlocked(false);
@@ -301,7 +325,7 @@ export default function WatchLive() {
           await video.play();
           setNeedsTap(false);
         } catch (err) {
-          lastErrRef.current = `tap play() failed: ${err instanceof Error ? err.message : String(err)}`;
+          logEvent(`tap play() failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     } else {
