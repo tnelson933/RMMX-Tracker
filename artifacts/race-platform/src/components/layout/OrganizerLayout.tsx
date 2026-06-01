@@ -245,16 +245,6 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
 
           <span className="w-px h-4 bg-white/20" />
 
-          {/* Back to broadcast link */}
-          {activeEventId && (
-            <Link
-              href={`/events/${activeEventId}/broadcast`}
-              className="text-xs text-white/70 hover:text-white transition-colors font-heading uppercase tracking-wider"
-            >
-              Back to stream
-            </Link>
-          )}
-
           {/* End stream */}
           <Button
             size="sm"
