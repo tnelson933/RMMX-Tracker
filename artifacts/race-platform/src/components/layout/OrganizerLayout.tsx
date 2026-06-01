@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
+import { PastEventCheckDialog } from "@/components/organizer/PastEventCheckDialog";
 import {
   LayoutDashboard,
   CalendarDays,
@@ -35,6 +36,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   };
 
   const isAdmin = user?.role === "super_admin";
+  const clubId = user?.clubId;
   const close = () => setSidebarOpen(false);
 
   const navItems = [
@@ -189,6 +191,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+
+      {clubId && <PastEventCheckDialog clubId={clubId} />}
     </div>
   );
 }
