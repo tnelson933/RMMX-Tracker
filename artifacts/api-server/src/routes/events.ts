@@ -155,6 +155,19 @@ router.patch("/events/:eventId", async (req, res) => {
 
   const [event] = await db.update(eventsTable).set(updates as any).where(eq(eventsTable.id, id)).returning();
   if (!event) return res.status(404).json({ error: "Not found" });
+
+  // Auto-advance status based on the (possibly updated) registration window
+  const nextStatus = computeAutoStatus({
+    id: event.id,
+    status: event.status,
+    registrationOpen: event.registrationOpen,
+    registrationClose: event.registrationClose,
+  });
+  if (nextStatus) {
+    await db.update(eventsTable).set({ status: nextStatus }).where(eq(eventsTable.id, id));
+    event.status = nextStatus;
+  }
+
   return res.json({ ...event, entryFee: event.entryFee ? Number(event.entryFee) : null, createdAt: event.createdAt.toISOString(), clubName: null });
 });
 
