@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { eventsTable, clubsTable } from "@workspace/db";
+import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
+import { sendStatsEmail } from "../lib/email";
 
 const router = Router();
 
@@ -167,6 +168,11 @@ router.get("/events/:eventId", async (req, res) => {
 
 router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
+
+  // Capture previous status before update
+  const [before] = await db.select({ status: eventsTable.status }).from(eventsTable).where(eq(eventsTable.id, id));
+  const previousStatus = before?.status;
+
   const updates: Record<string, unknown> = {};
   const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "maxRiders"];
   for (const f of fields) {
@@ -189,8 +195,88 @@ router.patch("/events/:eventId", async (req, res) => {
     event.status = nextStatus;
   }
 
+  // Fire stats emails when an event transitions to completed for the first time
+  if (event.status === "completed" && previousStatus !== "completed") {
+    fireStatsEmails(event.id, event.name, event.date).catch(err =>
+      req.log?.error({ err: err?.message }, "[stats-email] Failed to send stats emails")
+    );
+  }
+
   return res.json({ ...event, entryFee: event.entryFee ? Number(event.entryFee) : null, createdAt: event.createdAt.toISOString(), clubName: null });
 });
+
+async function fireStatsEmails(eventId: number, eventName: string, eventDate: string): Promise<void> {
+  const domains = process.env.REPLIT_DOMAINS;
+  const appUrl = process.env.APP_URL ?? (domains ? `https://${domains.split(",")[0]}` : "http://localhost:80");
+  const resultsUrl = `${appUrl}/results/${eventId}`;
+
+  // Find all opted-in confirmed registrations for this event
+  const optedIn = await db.select({
+    riderId: registrationsTable.riderId,
+    email: ridersTable.email,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+  }).from(registrationsTable)
+    .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+    .where(and(
+      eq(registrationsTable.eventId, eventId),
+      eq(registrationsTable.statsEmailOptIn, true),
+      eq(registrationsTable.status, "confirmed"),
+    ));
+
+  // Deduplicate by riderId (rider may have multiple class registrations)
+  const unique = new Map<number, { email: string; firstName: string; lastName: string }>();
+  for (const row of optedIn) {
+    if (row.riderId && row.email && !unique.has(row.riderId)) {
+      unique.set(row.riderId, { email: row.email, firstName: row.firstName ?? "", lastName: row.lastName ?? "" });
+    }
+  }
+
+  if (unique.size === 0) return;
+
+  // Fetch all results for this event (joined with moto names)
+  const allResults = await db.select({
+    riderId: raceResultsTable.riderId,
+    motoName: motosTable.name,
+    raceClass: raceResultsTable.raceClass,
+    position: raceResultsTable.position,
+    totalTime: raceResultsTable.totalTime,
+    lapTimes: raceResultsTable.lapTimes,
+    points: raceResultsTable.points,
+    dnf: raceResultsTable.dnf,
+    dns: raceResultsTable.dns,
+  }).from(raceResultsTable)
+    .leftJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
+    .where(eq(raceResultsTable.eventId, eventId));
+
+  const formattedDate = new Date(eventDate).toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+
+  for (const [riderId, rider] of unique) {
+    const riderResults = allResults
+      .filter(r => r.riderId === riderId)
+      .map(r => ({
+        motoName: r.motoName ?? "",
+        raceClass: r.raceClass,
+        position: r.position,
+        totalTime: r.totalTime,
+        lapTimes: Array.isArray(r.lapTimes) ? (r.lapTimes as string[]) : [],
+        points: r.points,
+        dnf: r.dnf,
+        dns: r.dns,
+      }));
+
+    await sendStatsEmail({
+      to: rider.email,
+      riderName: `${rider.firstName} ${rider.lastName}`,
+      eventName,
+      eventDate: formattedDate,
+      results: riderResults,
+      resultsUrl,
+    });
+  }
+}
 
 router.delete("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);

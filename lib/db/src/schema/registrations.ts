@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { eventsTable } from "./events";
@@ -14,6 +14,7 @@ export const registrationsTable = pgTable("registrations", {
   paymentMethod: text("payment_method"), // card | cash | null
   amountPaid: numeric("amount_paid", { precision: 10, scale: 2 }),
   bibNumber: text("bib_number"),
+  statsEmailOptIn: boolean("stats_email_opt_in").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

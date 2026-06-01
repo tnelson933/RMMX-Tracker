@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 const registerSchema = z.object({
@@ -21,6 +22,7 @@ const registerSchema = z.object({
   emergencyPhone: z.string().optional(),
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
+  statsEmailOptIn: z.boolean().default(false),
 });
 
 type RegisterForm = z.infer<typeof registerSchema>;
@@ -78,7 +80,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "",
+      raceClass: "", bibNumber: "", statsEmailOptIn: false,
     },
   });
 
@@ -184,7 +186,7 @@ export default function Register() {
       const res = await fetch(`/api/public/events/${eventId}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, statsEmailOptIn: data.statsEmailOptIn }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Registration failed");
@@ -556,6 +558,38 @@ export default function Register() {
                     </div>
                   </CardContent>
                 </Card>
+
+                <FormField
+                  control={form.control}
+                  name="statsEmailOptIn"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-start gap-3 rounded-lg border bg-muted/40 px-4 py-3.5">
+                        <FormControl>
+                          <Checkbox
+                            id="stats-optin"
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            className="mt-0.5"
+                          />
+                        </FormControl>
+                        <div className="space-y-0.5 leading-none">
+                          <label
+                            htmlFor="stats-optin"
+                            className="text-sm font-semibold cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Mail size={14} className="text-primary shrink-0" />
+                            Send me my race day stats
+                          </label>
+                          <p className="text-xs text-muted-foreground">
+                            We'll email your results — finish position, lap times, and points — to <strong>{form.watch("email") || "your email"}</strong> once the event is complete.
+                          </p>
+                        </div>
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <Button
                   type="submit"
