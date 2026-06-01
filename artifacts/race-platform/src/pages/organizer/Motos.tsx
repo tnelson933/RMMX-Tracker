@@ -1,14 +1,21 @@
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
-import { useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto, useGetEvent, getListMotosQueryKey } from "@workspace/api-client-react";
+import {
+  useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
+  useGetEvent, useListCheckins, useCreateMoto,
+  getListMotosQueryKey,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { LiveBroadcast } from "./LiveBroadcast";
 
@@ -19,18 +26,75 @@ export default function Motos() {
   const { toast } = useToast();
 
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
+  // Manual create moto state
+  const [newMotoName, setNewMotoName] = useState("");
+  const [newMotoType, setNewMotoType] = useState<"heat" | "lcq" | "main" | "practice">("heat");
+  const [newMotoClass, setNewMotoClass] = useState("");
+  const [selectedRiderIds, setSelectedRiderIds] = useState<Set<number>>(new Set());
+
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: motos, isLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
+  const { data: checkins } = useListCheckins(eventId, { query: { enabled: !!eventId } as any });
 
   const generateMutation = useGenerateLineups();
+  const createMotoMutation = useCreateMoto();
   const updateMutation = useUpdateMoto();
   const deleteMutation = useDeleteMoto();
+
+  // Checked-in riders for the currently selected class in the create dialog
+  const classCheckins = (checkins ?? []).filter(c => c.checkedIn && c.raceClass === newMotoClass);
+  const allSelected = classCheckins.length > 0 && classCheckins.every(c => selectedRiderIds.has(c.riderId));
+
+  const toggleRider = (riderId: number) => {
+    setSelectedRiderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(riderId)) next.delete(riderId); else next.add(riderId);
+      return next;
+    });
+  };
+
+  const resetCreateDialog = () => {
+    setNewMotoName("");
+    setNewMotoType("heat");
+    setNewMotoClass("");
+    setSelectedRiderIds(new Set());
+  };
+
+  const handleCreateMoto = () => {
+    if (!newMotoName.trim() || !newMotoClass) return;
+    const nextMotoNumber = motos?.length ? Math.max(...motos.map(m => m.motoNumber ?? 0)) + 1 : 1;
+    const lineup = classCheckins
+      .filter(c => selectedRiderIds.has(c.riderId))
+      .map((c, i) => ({
+        position: i + 1,
+        riderId: c.riderId,
+        riderName: c.riderName,
+        bibNumber: c.bibNumber || c.registrationBib || null,
+        rfidNumber: c.rfidNumber || null,
+      }));
+
+    createMotoMutation.mutate(
+      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: newMotoClass, motoNumber: nextMotoNumber, lineup: lineup as any } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          setIsCreateOpen(false);
+          resetCreateDialog();
+          toast({ title: "Moto created" });
+        },
+        onError: (err) => {
+          toast({ title: "Failed to create moto", description: err.message, variant: "destructive" });
+        },
+      }
+    );
+  };
 
   const handleGenerate = () => {
     if (!event?.raceClasses) return;
@@ -101,6 +165,146 @@ export default function Motos() {
             <Video size={16} /> {showBroadcast ? "Hide Video Feed" : "Live Video Feed"}
           </Button>
 
+          {/* Manual create moto */}
+          <Dialog open={isCreateOpen} onOpenChange={open => { setIsCreateOpen(open); if (!open) resetCreateDialog(); }}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="font-heading uppercase tracking-wider">
+                <PlusCircle size={16} className="mr-2" /> Create Moto
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="font-heading uppercase text-xl">Create Moto Manually</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-5 py-2">
+
+                {/* Name */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Moto Name</label>
+                  <Input
+                    value={newMotoName}
+                    onChange={e => setNewMotoName(e.target.value)}
+                    placeholder="e.g. 250 Pro LCQ, Open Moto 1..."
+                    className="h-9"
+                  />
+                </div>
+
+                {/* Type + Class row */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Type</label>
+                    <Select value={newMotoType} onValueChange={(v: any) => setNewMotoType(v)}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="heat">Heat</SelectItem>
+                        <SelectItem value="lcq">LCQ</SelectItem>
+                        <SelectItem value="main">Main</SelectItem>
+                        <SelectItem value="practice">Practice</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Race Class</label>
+                    <Select
+                      value={newMotoClass}
+                      onValueChange={v => { setNewMotoClass(v); setSelectedRiderIds(new Set()); }}
+                    >
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Select class" /></SelectTrigger>
+                      <SelectContent>
+                        {(event?.raceClasses ?? []).map(cls => (
+                          <SelectItem key={cls} value={cls}>{cls}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Rider picker */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium flex items-center gap-1.5">
+                      <Users size={14} /> Riders
+                      {selectedRiderIds.size > 0 && (
+                        <Badge variant="secondary" className="ml-1 font-mono">{selectedRiderIds.size} selected</Badge>
+                      )}
+                    </label>
+                    {newMotoClass && classCheckins.length > 0 && (
+                      <div className="flex gap-2">
+                        <button
+                          className="text-xs text-primary hover:underline font-medium"
+                          onClick={() => setSelectedRiderIds(new Set(classCheckins.map(c => c.riderId)))}
+                        >
+                          Select all
+                        </button>
+                        <span className="text-muted-foreground text-xs">·</span>
+                        <button
+                          className="text-xs text-muted-foreground hover:underline"
+                          onClick={() => setSelectedRiderIds(new Set())}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {!newMotoClass ? (
+                    <div className="border rounded-md bg-muted/30 py-8 text-center text-sm text-muted-foreground">
+                      Select a race class to see riders
+                    </div>
+                  ) : classCheckins.length === 0 ? (
+                    <div className="border rounded-md bg-muted/30 py-8 text-center text-sm text-muted-foreground">
+                      No checked-in riders for {newMotoClass}
+                    </div>
+                  ) : (
+                    <ScrollArea className="border rounded-md h-52">
+                      <div className="p-1">
+                        {classCheckins.map(c => (
+                          <label
+                            key={c.riderId}
+                            className="flex items-center gap-3 px-3 py-2 rounded hover:bg-muted/60 cursor-pointer select-none"
+                          >
+                            <Checkbox
+                              checked={selectedRiderIds.has(c.riderId)}
+                              onCheckedChange={() => toggleRider(c.riderId)}
+                              id={`rider-${c.riderId}`}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <span className="font-medium text-sm">{c.riderName}</span>
+                            </div>
+                            {(c.bibNumber || c.registrationBib) && (
+                              <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded border text-muted-foreground shrink-0">
+                                #{c.bibNumber || c.registrationBib}
+                              </span>
+                            )}
+                            {c.rfidNumber && (
+                              <span className="text-green-600 text-xs flex items-center gap-0.5 shrink-0">
+                                <Radio size={10} /> RFID
+                              </span>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetCreateDialog(); }}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreateMoto}
+                  disabled={createMotoMutation.isPending || !newMotoName.trim() || !newMotoClass}
+                  className="font-heading uppercase tracking-wider"
+                >
+                  {createMotoMutation.isPending ? "Creating..." : "Create Moto"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Auto generate */}
           <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>
             <DialogTrigger asChild>
               <Button className="font-heading uppercase tracking-wider">
