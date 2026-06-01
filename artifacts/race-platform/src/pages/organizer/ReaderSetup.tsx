@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle, ClipboardList, FlaskConical } from "lucide-react";
+import { Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle, ClipboardList, FlaskConical, Download, WifiOff, ShieldCheck, Terminal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -253,6 +253,104 @@ export default function ReaderSetup() {
               <p className="text-sm text-muted-foreground">
                 Use the <span className="font-semibold text-foreground">Test Connection</span> tool below to fire a simulated crossing before you go live. Select an in-progress moto, enter a known RFID tag number, and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" response confirms the endpoint is reachable and the moto is active. You should also see the crossing appear in the <span className="font-semibold text-foreground">Recent Crossings</span> table below.
               </p>
+            </div>
+          </div>
+
+        </CardContent>
+      </Card>
+
+      {/* Local Bridge — offline-safe option */}
+      <Card className="border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20">
+        <CardHeader className="pb-3 border-b border-amber-200 dark:border-amber-800/40">
+          <div className="flex items-center gap-2">
+            <WifiOff size={18} className="text-amber-600 dark:text-amber-400 shrink-0" />
+            <CardTitle className="font-heading uppercase tracking-wider text-base">Poor Track Internet? Use the Local Bridge</CardTitle>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">
+            Cell signal at outdoor venues is unreliable. The <strong>Local RFID Bridge</strong> is a free Python script
+            you run on your scoring laptop. It caches every lap locally and automatically replays them —
+            with their original hardware timestamps — the moment your connection is restored. No laps are ever lost.
+          </p>
+        </CardHeader>
+        <CardContent className="pt-5 space-y-5">
+
+          {/* How it works */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="flex flex-col gap-1.5 bg-background rounded-lg border p-3">
+              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                <ShieldCheck size={13} className="text-green-500" /> When online
+              </div>
+              <p className="text-muted-foreground text-xs">Tag reads forwarded to the cloud instantly. Zero latency change vs. direct reader → cloud.</p>
+            </div>
+            <div className="flex flex-col gap-1.5 bg-background rounded-lg border p-3">
+              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                <WifiOff size={13} className="text-amber-500" /> When offline
+              </div>
+              <p className="text-muted-foreground text-xs">Crossings queued in a local SQLite file on the laptop. Reader gets an instant 200 OK so it keeps firing.</p>
+            </div>
+            <div className="flex flex-col gap-1.5 bg-background rounded-lg border p-3">
+              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                <Wifi size={13} className="text-blue-500" /> On reconnect
+              </div>
+              <p className="text-muted-foreground text-xs">Bridge auto-replays the cache in chronological order using the reader's original hardware timestamps.</p>
+            </div>
+          </div>
+
+          {/* Setup steps */}
+          <div className="space-y-3">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Setup (3 steps)</p>
+
+            <div className="space-y-2 text-sm">
+              <div className="flex gap-3 items-start">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">1</span>
+                <div>
+                  <p className="font-medium">Install Python 3.8+ and download the bridge script</p>
+                  <p className="text-muted-foreground text-xs mt-0.5">Python is free at <code className="font-mono bg-muted px-1 rounded">python.org</code>. No extra packages needed — the script uses only the standard library.</p>
+                  <a
+                    href="/rfid_bridge.py"
+                    download="rfid_bridge.py"
+                    className="inline-flex items-center gap-1.5 mt-2 bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-heading uppercase tracking-wider px-3 py-1.5 rounded-md transition-colors"
+                  >
+                    <Download size={13} /> Download rfid_bridge.py
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex gap-3 items-start">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">2</span>
+                <div>
+                  <p className="font-medium">Run the bridge on your scoring laptop</p>
+                  <p className="text-muted-foreground text-xs mt-0.5">Open a terminal (Command Prompt on Windows) in the folder where you saved the script and run:</p>
+                  <pre className="mt-1.5 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">
+{`python rfid_bridge.py --api-url ${BASE_URL}`}
+                  </pre>
+                  <p className="text-muted-foreground text-xs mt-1.5">A status page appears at <code className="font-mono bg-muted px-1 rounded">http://localhost:5555</code> showing live sync counts.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 items-start">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">3</span>
+                <div>
+                  <p className="font-medium">Point your reader at the bridge instead of the cloud</p>
+                  <p className="text-muted-foreground text-xs mt-0.5">In your reader's HTTP output config, change the endpoint from:</p>
+                  <pre className="mt-1 bg-muted font-mono text-xs px-3 py-2 rounded border overflow-x-auto text-muted-foreground line-through">{ENDPOINT}</pre>
+                  <p className="text-muted-foreground text-xs mt-1">to:</p>
+                  <pre className="mt-1 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">http://localhost:5555/timing/crossing</pre>
+                  <p className="text-muted-foreground text-xs mt-1.5">That's it. The bridge accepts the same JSON payload your reader already sends.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Optional flags */}
+          <div className="bg-background rounded-lg border p-3 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">
+              <Terminal size={12} /> Optional flags
+            </div>
+            <div className="font-mono text-xs space-y-1 text-muted-foreground">
+              <p><span className="text-foreground">--port 5555</span>   &nbsp;Local port (default 5555)</p>
+              <p><span className="text-foreground">--retry 10</span>  &nbsp;Seconds between retry attempts when offline (default 10)</p>
+              <p><span className="text-foreground">--db path</span>   &nbsp;SQLite cache file location (default: rfid_bridge_cache.sqlite3)</p>
             </div>
           </div>
 
