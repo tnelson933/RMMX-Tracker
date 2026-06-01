@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Search, CheckCircle, Tag, X } from "lucide-react";
-import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrationsQueryKey } from "@workspace/api-client-react";
+import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrationsQueryKey, getListRidersQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
 function RfidInput({ riderId, eventId, onDone }: { riderId: number; eventId: number; onDone: () => void }) {
@@ -25,6 +25,7 @@ function RfidInput({ riderId, eventId, onDone }: { riderId: number; eventId: num
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
         queryClient.invalidateQueries({ queryKey: getGetRaceDaySummaryQueryKey(eventId) });
+        queryClient.invalidateQueries({ queryKey: getListRidersQueryKey() });
         toast({ title: "RFID tag assigned" });
         onDone();
       },
