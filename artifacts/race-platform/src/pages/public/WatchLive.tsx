@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRoute, Link } from "wouter";
-import { Radio, WifiOff, ChevronLeft, ExternalLink } from "lucide-react";
+import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
@@ -18,6 +18,8 @@ export default function WatchLive() {
   const [viewerState, setViewerState] = useState<ViewerState>("connecting");
   const setViewerStateSynced = (s: ViewerState) => { viewerStateRef.current = s; setViewerState(s); };
   const [mimeType, setMimeType] = useState<string>('video/webm; codecs="vp8,opus"');
+  const [needsTap, setNeedsTap] = useState(false);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -54,20 +56,40 @@ export default function WatchLive() {
         const sb = ms.addSourceBuffer(mime);
         sbRef.current = sb;
 
+        const tryPlay = () => {
+          const video = videoRef.current;
+          if (!video || !video.paused) return;
+          // Try unmuted first (works after user interaction); fall back to muted autoplay
+          video.muted = false;
+          video.play().then(() => {
+            setAudioUnlocked(true);
+            setNeedsTap(false);
+          }).catch(() => {
+            video.muted = true;
+            video.play().then(() => {
+              // Playing muted — prompt user to tap for audio
+              setNeedsTap(true);
+            }).catch(() => {
+              // Even muted autoplay blocked — prompt tap to start
+              setNeedsTap(true);
+            });
+          });
+        };
+
         sb.addEventListener("updateend", () => {
+          // Guard: bail if this SourceBuffer was replaced by a newer initMSE call
+          if (sbRef.current !== sb || msRef.current?.readyState !== "open") return;
           if (queueRef.current.length > 0 && !sb.updating) {
             const next = queueRef.current.shift()!;
-            sb.appendBuffer(next);
+            try { sb.appendBuffer(next); } catch { /* sb detached mid-flight */ }
           }
-          if (videoRef.current && videoRef.current.paused) {
-            videoRef.current.play().catch(() => {});
-          }
+          tryPlay();
         });
 
         // Flush queued chunks that arrived before MSE was ready
         if (queueRef.current.length > 0 && !sb.updating) {
           const next = queueRef.current.shift()!;
-          sb.appendBuffer(next);
+          try { sb.appendBuffer(next); } catch { /* sb detached mid-flight */ }
         }
 
         setViewerStateSynced("playing");
@@ -190,7 +212,52 @@ export default function WatchLive() {
           className="w-full max-h-[80vh] object-contain"
           playsInline
           autoPlay
+          muted
         />
+
+        {/* Tap-to-watch / tap-for-audio overlay */}
+        {viewerState === "playing" && (needsTap || !audioUnlocked) && (
+          <button
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3 cursor-pointer bg-black/40 hover:bg-black/30 transition-colors"
+            onClick={() => {
+              const video = videoRef.current;
+              if (!video) return;
+              video.muted = false;
+              video.play().then(() => {
+                setAudioUnlocked(true);
+                setNeedsTap(false);
+              }).catch(() => {
+                // Tap started playback but couldn't unmute — start muted
+                video.muted = true;
+                video.play().catch(() => {});
+                setNeedsTap(false);
+              });
+            }}
+          >
+            <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-5 py-3 backdrop-blur-sm">
+              <VolumeX size={18} className="text-white/70" />
+              <span className="text-white text-sm font-heading uppercase tracking-wider">Tap to watch with audio</span>
+            </div>
+          </button>
+        )}
+
+        {/* Unmute button (shown after user tapped, playing with audio) */}
+        {viewerState === "playing" && audioUnlocked && (
+          <button
+            className="absolute bottom-4 right-4 flex items-center gap-1.5 bg-black/50 hover:bg-black/70 border border-white/20 rounded-full px-3 py-1.5 transition-colors"
+            onClick={() => {
+              if (videoRef.current) {
+                const nowMuted = !videoRef.current.muted;
+                videoRef.current.muted = nowMuted;
+                if (nowMuted) setAudioUnlocked(false);
+              }
+            }}
+            title="Toggle audio"
+          >
+            <Volume2 size={14} className="text-white/60" />
+            <span className="text-white/60 text-xs">Audio on</span>
+          </button>
+        )}
 
         {viewerState !== "playing" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-4">
