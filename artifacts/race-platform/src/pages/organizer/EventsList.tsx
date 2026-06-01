@@ -11,10 +11,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, MapPin, Plus, ChevronRight, Info } from "lucide-react";
+import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link } from "wouter";
-import { useForm } from "react-hook-form";
+import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
@@ -82,7 +82,10 @@ const createEventSchema = z.object({
   state: z.string().min(1, "State is required"),
   location: z.string().optional(),
   trackName: z.string().optional(),
-  raceClasses: z.string().optional(),
+  raceClasses: z.array(z.object({
+    name: z.string().min(1, "Class name is required"),
+    maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
+  })),
   clubId: z.number({ invalid_type_error: "Club is required" }).min(1, "Club is required"),
   registrationOpen: z.string().optional(),
   registrationClose: z.string().optional(),
@@ -136,7 +139,7 @@ export default function EventsList() {
       state: "",
       location: "",
       trackName: "",
-      raceClasses: "250 Pro,450 Pro,Vet A",
+      raceClasses: [],
       clubId: sessionClubId ?? undefined,
       registrationOpen: "",
       registrationClose: "",
@@ -144,6 +147,8 @@ export default function EventsList() {
       entryFee: "",
     }
   });
+
+  const { fields, append, remove } = useFieldArray({ control: form.control, name: "raceClasses" });
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
 
@@ -156,7 +161,7 @@ export default function EventsList() {
         state: data.state,
         location: data.location,
         trackName: data.trackName,
-        raceClasses: data.raceClasses ? data.raceClasses.split(",").map(s => s.trim()) : [],
+        raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
         registrationOpen: data.registrationOpen || undefined,
         registrationClose: data.registrationClose || undefined,
         paymentEnabled: data.paymentEnabled,
@@ -397,17 +402,75 @@ export default function EventsList() {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="raceClasses"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Race Classes (comma separated)</FormLabel>
-                      <FormControl><Input placeholder="250 A, 450 B, Vet 30+" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* Race Classes */}
+                <div className="border-t pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                      <Flag size={12} /> Race Classes
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {fields.length > 0 && (
+                      <div className="grid grid-cols-[1fr_140px_32px] gap-2 mb-1">
+                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Class Name</span>
+                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Max Riders</span>
+                        <span />
+                      </div>
+                    )}
+                    {fields.map((field, index) => (
+                      <div key={field.id} className="grid grid-cols-[1fr_140px_32px] gap-2 items-start">
+                        <FormField
+                          control={form.control}
+                          name={`raceClasses.${index}.name`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input placeholder="e.g. 450 Pro" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`raceClasses.${index}.maxRiders`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  placeholder="Unlimited"
+                                  {...field}
+                                  value={field.value ?? ""}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => remove(index)}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2 border-dashed font-heading uppercase tracking-wider text-muted-foreground hover:text-foreground mt-1"
+                      onClick={() => append({ name: "", maxRiders: "" })}
+                    >
+                      <Plus size={14} /> Add Class
+                    </Button>
+                  </div>
+                </div>
 
                 {clubSeriesList.length > 0 && (
                   <div className="space-y-1.5">
