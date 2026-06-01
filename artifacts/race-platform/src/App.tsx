@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { RiderAuthProvider, useRiderAuth } from "@/contexts/RiderAuthContext";
+import { BroadcastProvider } from "@/contexts/BroadcastContext";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { OrganizerLayout } from "@/components/layout/OrganizerLayout";
 import NotFound from "@/pages/not-found";
@@ -141,12 +142,14 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <RiderAuthProvider>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
+          <BroadcastProvider>
+            <TooltipProvider>
+              <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
+                <Router />
+              </WouterRouter>
+              <Toaster />
+            </TooltipProvider>
+          </BroadcastProvider>
         </RiderAuthProvider>
       </AuthProvider>
     </QueryClientProvider>
