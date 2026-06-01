@@ -74,6 +74,8 @@ export default function WatchLive() {
   const logEvent = (msg: string) => {
     lastErrRef.current = msg;
     eventLogRef.current = [...eventLogRef.current.slice(-4), msg];
+    // eslint-disable-next-line no-console
+    console.debug("[WatchLive]", msg);
   };
 
 

@@ -71,11 +71,12 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
 
     let stream: MediaStream;
     try {
-      // No forced height constraint — let 360° cameras use their native 2:1 aspect ratio
+      // Cap at 1920px wide so 360° cameras output 1920×960 (2:1) instead of 4K/5.7K native.
+      // No height constraint — lets 360° cameras keep their native 2:1 aspect ratio.
       stream = await navigator.mediaDevices.getUserMedia({
         video: deviceId
-          ? { deviceId: { exact: deviceId } }
-          : true,
+          ? { deviceId: { exact: deviceId }, width: { ideal: 1920, max: 1920 } }
+          : { width: { ideal: 1920, max: 1920 } },
         audio: true,
       });
     } catch (err: any) {
