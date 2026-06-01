@@ -15,9 +15,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
       <header className="border-b border-border bg-card relative z-40">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5" onClick={close}>
-            <img src={rmLogo} alt="Rocky Mountain" className="h-9 w-9" />
-            <span className="text-primary font-heading font-bold text-xl uppercase tracking-wider">
-              RMMT
+            <img src={rmLogo} alt="RMMX Tracker" className="h-9 w-9" />
+            <span className="flex flex-col leading-none">
+              <span className="text-primary font-heading font-bold text-xl uppercase tracking-wider">RMMX</span>
+              <span className="text-primary/70 font-heading font-semibold text-xs uppercase tracking-widest">Tracker</span>
             </span>
           </Link>
 
@@ -86,7 +87,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
 
       <footer className="border-t border-border bg-card py-8">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          &copy; {new Date().getFullYear()} Rocky Mountain MX Tracker
+          &copy; {new Date().getFullYear()} RMMX Tracker
         </div>
       </footer>
     </div>

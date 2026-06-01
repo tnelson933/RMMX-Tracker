@@ -50,9 +50,10 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const SidebarContent = () => (
     <>
       <div className="h-16 flex items-center px-4 gap-3 border-b border-sidebar-border/50 shrink-0">
-        <img src={rmLogo} alt="Rocky Mountain" className="h-9 w-9 shrink-0" />
-        <span className="text-sidebar-primary font-heading font-bold text-xl uppercase tracking-wider">
-          RMMT Ops
+        <img src={rmLogo} alt="RMMX Tracker" className="h-9 w-9 shrink-0" />
+        <span className="flex flex-col leading-none">
+          <span className="text-sidebar-primary font-heading font-bold text-xl uppercase tracking-wider">RMMX</span>
+          <span className="text-sidebar-primary/60 font-heading font-semibold text-xs uppercase tracking-widest">Tracker</span>
         </span>
         {/* Close button — mobile only */}
         <button
@@ -177,9 +178,10 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu size={22} />
           </button>
-          <img src={rmLogo} alt="Rocky Mountain" className="h-7 w-7" />
-          <span className="font-heading font-bold text-base uppercase tracking-wider text-sidebar-primary">
-            RMMT Ops
+          <img src={rmLogo} alt="RMMX Tracker" className="h-7 w-7" />
+          <span className="flex flex-col leading-none">
+            <span className="font-heading font-bold text-base uppercase tracking-wider text-sidebar-primary">RMMX</span>
+            <span className="font-heading font-semibold text-[10px] uppercase tracking-widest text-sidebar-primary/60">Tracker</span>
           </span>
         </div>
 
