@@ -20,6 +20,7 @@ export default function WatchLive() {
 
   const [needsTap, setNeedsTap] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const audioUnlockedRef = useRef(false);
   const [debugLine, setDebugLine] = useState("waiting…");
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -185,19 +186,18 @@ export default function WatchLive() {
     }
 
     if (!video.paused) {
-      if (!audioUnlocked) setNeedsTap(true);
+      // Use the ref so we always see the live value, not a stale closure capture
+      if (!audioUnlockedRef.current) setNeedsTap(true);
       return;
     }
 
     video.muted = true;
     video.play().then(() => {
-      setNeedsTap(true);
+      if (!audioUnlockedRef.current) setNeedsTap(true);
     }).catch((err) => {
       logEvent(`play() failed: ${err instanceof Error ? err.message : String(err)}`);
-      setNeedsTap(true);
+      if (!audioUnlockedRef.current) setNeedsTap(true);
     });
-  // audioUnlocked intentionally omitted — we read it only at call time
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function appendChunk(data: ArrayBuffer) {
@@ -302,7 +302,7 @@ export default function WatchLive() {
             queueRef.current = [];
             sbRef.current = null;
             setNeedsTap(false);
-            setAudioUnlocked(false);
+            audioUnlockedRef.current = false; setAudioUnlocked(false);
             initMSE(newMime);
           }
         }
@@ -336,7 +336,7 @@ export default function WatchLive() {
       video.muted = false;
       try {
         await video.play();
-        setAudioUnlocked(true);
+        audioUnlockedRef.current = true; setAudioUnlocked(true);
         setNeedsTap(false);
       } catch {
         video.muted = true;
@@ -349,7 +349,7 @@ export default function WatchLive() {
       }
     } else {
       video.muted = false;
-      setAudioUnlocked(true);
+      audioUnlockedRef.current = true; setAudioUnlocked(true);
       setNeedsTap(false);
     }
   }
@@ -410,7 +410,7 @@ export default function WatchLive() {
               if (videoRef.current) {
                 const nowMuted = !videoRef.current.muted;
                 videoRef.current.muted = nowMuted;
-                if (nowMuted) { setAudioUnlocked(false); setNeedsTap(true); }
+                if (nowMuted) { audioUnlockedRef.current = false; setAudioUnlocked(false); setNeedsTap(true); }
               }
             }}
             title="Toggle audio"
