@@ -82,7 +82,13 @@ export default function WatchLive() {
     };
 
     ms.addEventListener("sourceopen", () => {
-      URL.revokeObjectURL(objUrl);
+      // If this MediaSource was superseded by a newer initMSE call, abandon it.
+      // Do NOT revoke the objUrl here — revoking inside sourceopen can race with
+      // SourceBuffer attachment on some Chrome versions and close the MediaSource.
+      if (msRef.current !== ms) {
+        lastErrRef.current = "stale sourceopen ignored";
+        return;
+      }
 
       if (!MediaSource.isTypeSupported(mime)) {
         lastErrRef.current = `mime not supported: ${mime}`;
@@ -165,7 +171,8 @@ export default function WatchLive() {
   function appendChunk(data: ArrayBuffer) {
     bytesRef.current += data.byteLength;
     const sb = sbRef.current;
-    if (!sb) {
+    // Guard: if there's no SourceBuffer or the parent MediaSource isn't open, queue the chunk
+    if (!sb || msRef.current?.readyState !== "open") {
       queueRef.current.push(data);
       return;
     }
