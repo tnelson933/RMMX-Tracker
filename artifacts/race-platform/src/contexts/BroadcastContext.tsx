@@ -9,11 +9,13 @@ interface BroadcastContextValue {
   camEnabled: boolean;
   duration: number;
   activeEventId: number | null;
+  is360: boolean;
 
   startBroadcast: (eventId: number, deviceId: string) => Promise<void>;
   stopBroadcast: () => void;
   toggleMic: () => void;
   toggleCam: () => void;
+  toggleIs360: () => void;
   getLiveStream: () => MediaStream | null;
 }
 
@@ -37,6 +39,9 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const [camEnabled, setCamEnabled] = useState(true);
   const [duration, setDuration] = useState(0);
   const [activeEventId, setActiveEventId] = useState<number | null>(null);
+  const [is360, setIs360] = useState(false);
+  const is360Ref = useRef(false);
+  is360Ref.current = is360;
 
   const liveStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -58,6 +63,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     setBroadcastState("stopped");
     setDuration(0);
     setActiveEventId(null);
+    setIs360(false);
   }, []);
 
   const startBroadcast = useCallback(async (eventId: number, deviceId: string) => {
@@ -93,7 +99,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
         'video/webm',
       ].find(m => MediaRecorder.isTypeSupported(m)) ?? 'video/webm';
 
-      ws.send(JSON.stringify({ type: "init", mimeType }));
+      ws.send(JSON.stringify({ type: "init", mimeType, is360: is360Ref.current }));
 
       const recorder = new MediaRecorder(stream, {
         mimeType,
@@ -136,6 +142,12 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     if (video) { video.enabled = !video.enabled; setCamEnabled(video.enabled); }
   }, []);
 
+  const toggleIs360 = useCallback(() => {
+    if (broadcastState !== "live") {
+      setIs360(v => !v);
+    }
+  }, [broadcastState]);
+
   const getLiveStream = useCallback(() => liveStreamRef.current, []);
 
   // Expose via context value below
@@ -151,10 +163,12 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       camEnabled,
       duration,
       activeEventId,
+      is360,
       startBroadcast,
       stopBroadcast,
       toggleMic,
       toggleCam,
+      toggleIs360,
       getLiveStream,
     }}>
       {children}

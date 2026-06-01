@@ -17,10 +17,12 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     micEnabled,
     camEnabled,
     duration,
+    is360,
     startBroadcast,
     stopBroadcast,
     toggleMic,
     toggleCam,
+    toggleIs360,
     getLiveStream,
   } = useBroadcast();
 
@@ -231,13 +233,24 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
       {/* Action controls */}
       <div className="flex items-center gap-2 flex-wrap">
         {!isLive ? (
-          <Button
-            onClick={handleGoLive}
-            disabled={permissionState !== "granted"}
-            className="font-heading uppercase tracking-wider gap-2 bg-red-600 hover:bg-red-700 text-white"
-          >
-            <Radio size={16} /> Go Live
-          </Button>
+          <>
+            <Button
+              onClick={handleGoLive}
+              disabled={permissionState !== "granted"}
+              className="font-heading uppercase tracking-wider gap-2 bg-red-600 hover:bg-red-700 text-white"
+            >
+              <Radio size={16} /> Go Live
+            </Button>
+            <Button
+              variant={is360 ? "default" : "outline"}
+              size="sm"
+              onClick={toggleIs360}
+              className={`font-heading uppercase text-xs tracking-wider gap-1.5 ${is360 ? "bg-cyan-600 hover:bg-cyan-700 text-white border-cyan-600" : ""}`}
+              title="Enable 360° mode for equirectangular cameras"
+            >
+              360°
+            </Button>
+          </>
         ) : (
           <>
             <Button

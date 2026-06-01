@@ -3,6 +3,7 @@ import { useRoute, Link } from "wouter";
 import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useListMotos, useListResults } from "@workspace/api-client-react";
+import { Viewer360 } from "@/components/Viewer360";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
@@ -19,6 +20,7 @@ export default function WatchLive() {
   const [viewerState, setViewerState] = useState<ViewerState>("connecting");
   const setViewerStateSynced = (s: ViewerState) => { viewerStateRef.current = s; setViewerState(s); };
 
+  const [is360, setIs360] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const audioUnlockedRef = useRef(false);
@@ -300,6 +302,7 @@ export default function WatchLive() {
         } else if (jsonMsg.type === "init") {
           const newMime = jsonMsg.mimeType as string;
           mimeTypeRef.current = newMime;
+          setIs360(jsonMsg.is360 === true);
           // ws.onclose always calls teardownMSE() before reconnecting, so msRef
           // is always null here. Always do a clean FRESH INIT — no REUSE path.
           queueRef.current = [];
@@ -503,12 +506,23 @@ export default function WatchLive() {
 
         {/* ── Video (right side) ── */}
         <div className="flex-1 flex items-center justify-center relative bg-black">
+          {/* MSE always feeds this element; hidden in 360 mode but kept in DOM */}
           <video
             ref={videoRef}
-            className="w-full max-h-[80vh] object-contain"
+            className={`w-full max-h-[80vh] object-contain ${is360 ? "opacity-0 absolute w-0 h-0" : ""}`}
             playsInline
             muted
           />
+          {/* 360° sphere renderer — overlays the video when active */}
+          {is360 && viewerState === "playing" && (
+            <Viewer360 videoRef={videoRef} />
+          )}
+          {is360 && viewerState === "playing" && (
+            <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur text-white/70 text-[10px] font-bold px-2.5 py-1 rounded-full pointer-events-none select-none">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400" />
+              360°
+            </div>
+          )}
 
         {viewerState === "playing" && needsTap && (
           <button
