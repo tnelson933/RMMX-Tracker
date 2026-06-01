@@ -22,7 +22,6 @@ export default function WatchLive() {
   const [needsTap, setNeedsTap] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const audioUnlockedRef = useRef(false);
-  const [debugLine, setDebugLine] = useState("waiting…");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -38,12 +37,12 @@ export default function WatchLive() {
   // Rolling event log — last 5 events; gives a chronological trace instead of just the final state
   const eventLogRef = useRef<string[]>([]);
 
-  // Live moto + results — poll every 10 s
+  // Live moto + results — poll every 15 s; no burst on window focus
   const { data: motos } = useListMotos(eventId, {
-    query: { enabled: !!eventId, refetchInterval: 10_000 } as any,
+    query: { enabled: !!eventId, refetchInterval: 15_000, refetchOnWindowFocus: false, staleTime: 10_000 } as any,
   });
   const { data: results } = useListResults(eventId, {
-    query: { enabled: !!eventId, refetchInterval: 10_000 } as any,
+    query: { enabled: !!eventId, refetchInterval: 15_000, refetchOnWindowFocus: false, staleTime: 10_000 } as any,
   });
 
   // Active moto: prefer in_progress, fall back to most-recently-completed
@@ -74,20 +73,6 @@ export default function WatchLive() {
     eventLogRef.current = [...eventLogRef.current.slice(-4), msg];
   };
 
-  // Update debug display every second
-  useEffect(() => {
-    const id = setInterval(() => {
-      const v = videoRef.current;
-      if (!v) return;
-      const rs = ["NOTHING", "METADATA", "CURRENT", "FUTURE", "ENOUGH"][v.readyState] ?? v.readyState;
-      const buf = v.buffered.length > 0
-        ? `${v.buffered.start(0).toFixed(1)}–${v.buffered.end(v.buffered.length - 1).toFixed(1)}s`
-        : "empty";
-      const log = eventLogRef.current.length > 0 ? ` | ${eventLogRef.current.join(" → ")}` : "";
-      setDebugLine(`rs:${rs} t:${v.currentTime.toFixed(1)}s buf:${buf} paused:${v.paused} bytes:${(bytesRef.current / 1024).toFixed(0)}KB${log}`);
-    }, 500);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     if (!eventId) return;
