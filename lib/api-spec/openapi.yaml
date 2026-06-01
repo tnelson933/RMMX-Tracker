@@ -141,6 +141,24 @@ paths:
         "400":
           description: Invalid or expired token
 
+  /auth/complete-tour:
+    post:
+      operationId: completeTour
+      tags: [auth]
+      summary: Mark the first-login product tour as completed for the current user
+      responses:
+        "200":
+          description: Tour marked complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          description: Not authenticated
+
   # USERS
   /users:
     get:
@@ -1103,7 +1121,7 @@ components:
 
     User:
       type: object
-      required: [id, email, name, role]
+      required: [id, email, name, role, tourCompleted]
       properties:
         id:
           type: integer
@@ -1116,6 +1134,8 @@ components:
           enum: [super_admin, club_organizer, staff, public]
         clubId:
           type: ["integer", "null"]
+        tourCompleted:
+          type: boolean
         createdAt:
           type: string
 

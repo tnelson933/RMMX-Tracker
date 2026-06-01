@@ -32,6 +32,7 @@ export interface User {
   role: UserRole;
   /** @nullable */
   clubId?: number | null;
+  tourCompleted: boolean;
   createdAt?: string;
 }
 
@@ -606,6 +607,10 @@ export type RequestAccountSetup200 = {
 };
 
 export type CompleteAccountSetup200 = {
+  ok?: boolean;
+};
+
+export type CompleteTour200 = {
   ok?: boolean;
 };
 

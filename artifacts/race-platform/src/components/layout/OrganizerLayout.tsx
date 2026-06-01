@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
 import { PastEventCheckDialog } from "@/components/organizer/PastEventCheckDialog";
+import { ProductTour } from "@/components/organizer/ProductTour";
 import { useBroadcast } from "@/contexts/BroadcastContext";
 import {
   LayoutDashboard,
@@ -33,6 +34,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { broadcastState, micEnabled, camEnabled, duration, activeEventId, toggleMic, toggleCam, stopBroadcast } = useBroadcast();
   const isLive = broadcastState === "live";
+  const showTour = user !== null && user !== undefined && !user.tourCompleted;
 
   const formatDuration = (s: number) => {
     const h = Math.floor(s / 3600);
@@ -264,6 +266,9 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
       )}
+
+      {/* First-login product tour */}
+      {showTour && <ProductTour onComplete={() => {}} />}
     </div>
   );
 }

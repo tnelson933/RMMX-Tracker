@@ -17,6 +17,7 @@ export * from './clubInput';
 export * from './clubUpdate';
 export * from './completeAccountSetup200';
 export * from './completeSetupInput';
+export * from './completeTour200';
 export * from './createUserInput';
 export * from './disconnectStripeConnect200';
 export * from './event';

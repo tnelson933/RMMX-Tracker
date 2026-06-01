@@ -32,6 +32,7 @@ export const LoginResponse = zod.object({
   "name": zod.string(),
   "role": zod.enum(['super_admin', 'club_organizer', 'staff', 'public']),
   "clubId": zod.number().nullish(),
+  "tourCompleted": zod.boolean(),
   "createdAt": zod.string().optional()
 }),
   "token": zod.string()
@@ -47,6 +48,7 @@ export const GetMeResponse = zod.object({
   "name": zod.string(),
   "role": zod.enum(['super_admin', 'club_organizer', 'staff', 'public']),
   "clubId": zod.number().nullish(),
+  "tourCompleted": zod.boolean(),
   "createdAt": zod.string().optional()
 })
 
@@ -72,6 +74,14 @@ export const CompleteAccountSetupBody = zod.object({
 })
 
 export const CompleteAccountSetupResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Mark the first-login product tour as completed for the current user
+ */
+export const CompleteTourResponse = zod.object({
   "ok": zod.boolean().optional()
 })
 

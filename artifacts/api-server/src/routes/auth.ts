@@ -54,6 +54,7 @@ router.post("/auth/login", async (req, res) => {
       name: user.name,
       role: user.role,
       clubId: user.clubId,
+      tourCompleted: user.tourCompleted,
       createdAt: user.createdAt.toISOString(),
     },
     token: "session",
@@ -83,8 +84,19 @@ router.get("/auth/me", async (req, res) => {
     name: user.name,
     role: user.role,
     clubId: user.clubId,
+    tourCompleted: user.tourCompleted,
     createdAt: user.createdAt.toISOString(),
   });
+});
+
+// POST /auth/complete-tour — mark the product tour as done for the current user
+router.post("/auth/complete-tour", async (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  await db.update(usersTable).set({ tourCompleted: true }).where(eq(usersTable.id, userId));
+  return res.json({ ok: true });
 });
 
 // POST /auth/request-setup — send account setup or password reset email

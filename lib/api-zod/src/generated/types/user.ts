@@ -14,5 +14,6 @@ export interface User {
   role: UserRole;
   /** @nullable */
   clubId?: number | null;
+  tourCompleted: boolean;
   createdAt?: string;
 }
