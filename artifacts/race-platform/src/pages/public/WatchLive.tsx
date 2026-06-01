@@ -16,6 +16,7 @@ export default function WatchLive() {
   const eventId = parseInt(params?.eventId ?? "0", 10);
 
   const [viewerState, setViewerState] = useState<ViewerState>("connecting");
+  const setViewerStateSynced = (s: ViewerState) => { viewerStateRef.current = s; setViewerState(s); };
   const [mimeType, setMimeType] = useState<string>('video/webm; codecs="vp8,opus"');
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -24,6 +25,7 @@ export default function WatchLive() {
   const sbRef = useRef<SourceBuffer | null>(null);
   const queueRef = useRef<ArrayBuffer[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewerStateRef = useRef<ViewerState>("connecting");
 
   useEffect(() => {
     if (!eventId) return;
@@ -66,9 +68,9 @@ export default function WatchLive() {
           sb.appendBuffer(next);
         }
 
-        setViewerState("playing");
+        setViewerStateSynced("playing");
       } catch (e) {
-        setViewerState("error");
+        setViewerStateSynced("error");
       }
     }, { once: true });
   }
@@ -85,21 +87,23 @@ export default function WatchLive() {
       try {
         sb.appendBuffer(data);
       } catch {
-        // SourceBuffer may be full — trim old data
-        if (videoRef.current && sb.buffered.length > 0) {
-          const current = videoRef.current.currentTime;
-          const start = sb.buffered.start(0);
-          if (current - start > 20) {
-            try { sb.remove(start, current - 10); } catch {}
+        // SourceBuffer may be full or detached — guard every access
+        try {
+          if (videoRef.current && msRef.current?.readyState === "open" && sb.buffered.length > 0) {
+            const current = videoRef.current.currentTime;
+            const start = sb.buffered.start(0);
+            if (current - start > 20) {
+              try { sb.remove(start, current - 10); } catch {}
+            }
           }
-        }
+        } catch {}
         queueRef.current.push(data);
       }
     }
   }
 
   function connect() {
-    setViewerState("connecting");
+    setViewerStateSynced("connecting");
     const ws = new WebSocket(getWsUrl(eventId));
     wsRef.current = ws;
     ws.binaryType = "arraybuffer";
@@ -108,9 +112,9 @@ export default function WatchLive() {
       if (typeof e.data === "string") {
         const msg = JSON.parse(e.data);
         if (msg.type === "offline") {
-          setViewerState("offline");
+          setViewerStateSynced("offline");
         } else if (msg.type === "ended") {
-          setViewerState("ended");
+          setViewerStateSynced("ended");
         } else if (msg.type === "init") {
           // Fresh stream starting — reinitialise MSE
           setMimeType(msg.mimeType);
@@ -126,18 +130,19 @@ export default function WatchLive() {
           initMSE(mimeType);
           queueRef.current.push(e.data as ArrayBuffer);
         } else {
-          setViewerState("playing");
+          setViewerStateSynced("playing");
           appendChunk(e.data as ArrayBuffer);
         }
       }
     };
 
     ws.onerror = () => {
-      setViewerState("error");
+      setViewerStateSynced("error");
     };
 
     ws.onclose = () => {
-      if (viewerState !== "ended") {
+      // Use ref instead of state to avoid stale closure
+      if (viewerStateRef.current !== "ended") {
         // Auto-reconnect after 4s
         reconnectTimer.current = setTimeout(() => connect(), 4000);
       }
