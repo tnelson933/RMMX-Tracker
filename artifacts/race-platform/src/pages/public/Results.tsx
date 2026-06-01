@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, MapPin, Trophy, Flag, ChevronRight, Search } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, subMonths } from "date-fns";
 
 export default function Results() {
   const [location] = useLocation();
@@ -16,10 +16,13 @@ export default function Results() {
   
   const { data: states, isLoading: statesLoading } = useListStates();
   
-  const { data: events, isLoading: eventsLoading } = useListEvents({
+  const { data: eventsRaw, isLoading: eventsLoading } = useListEvents({
     state: stateFilter === "all" ? undefined : stateFilter,
     status: 'completed'
   });
+
+  const cutoff = subMonths(new Date(), 3);
+  const events = eventsRaw?.filter(e => parseISO(e.date.substring(0, 10)) >= cutoff);
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
