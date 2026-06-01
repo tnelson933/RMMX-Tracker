@@ -1,2 +1,3 @@
 - [Stripe Connect setup](stripe-connect.md) — Stripe Connect Express for club organizers; key files and gotchas.
 - [Email delivery](email-delivery.md) — RESEND_API_KEY used directly (not connector SDK); domain must be verified for external sends.
+- [Replit proxy WebSocket frame conversion](replit-ws-proxy.md) — Replit proxy converts text WS frames to binary; always detect JSON by magic byte, never by typeof e.data.

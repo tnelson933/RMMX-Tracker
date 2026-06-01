@@ -239,15 +239,33 @@ export default function WatchLive() {
     ws.binaryType = "arraybuffer";
 
     ws.onmessage = (e) => {
+      // The Replit proxy converts text WebSocket frames into binary frames.
+      // Detect JSON messages by checking for the '{' magic byte (0x7b) so we
+      // handle them correctly regardless of whether they arrive as string or ArrayBuffer.
+      let jsonMsg: Record<string, unknown> | null = null;
       if (typeof e.data === "string") {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "offline") {
+        jsonMsg = JSON.parse(e.data) as Record<string, unknown>;
+      } else {
+        const bytes = new Uint8Array(e.data as ArrayBuffer);
+        if (bytes[0] === 0x7b) {
+          // Looks like JSON — decode and parse it
+          try {
+            jsonMsg = JSON.parse(new TextDecoder().decode(e.data as ArrayBuffer)) as Record<string, unknown>;
+          } catch {
+            // Not valid JSON after all — treat as binary video data (fall through)
+          }
+        }
+      }
+
+      if (jsonMsg !== null) {
+        // ── Text / JSON control message ────────────────────────────────────────
+        if (jsonMsg.type === "offline") {
           setViewerStateSynced("offline");
-        } else if (msg.type === "ended") {
+        } else if (jsonMsg.type === "ended") {
           setViewerStateSynced("ended");
           wsRef.current?.close();
-        } else if (msg.type === "init") {
-          const newMime = msg.mimeType as string;
+        } else if (jsonMsg.type === "init") {
+          const newMime = jsonMsg.mimeType as string;
           mimeTypeRef.current = newMime;
 
           const existingSb = sbRef.current;
@@ -289,6 +307,7 @@ export default function WatchLive() {
           }
         }
       } else {
+        // ── Binary video data ──────────────────────────────────────────────────
         if (!sbRef.current && !msRef.current) {
           initMSE(mimeTypeRef.current);
           queueRef.current.push(e.data as ArrayBuffer);
