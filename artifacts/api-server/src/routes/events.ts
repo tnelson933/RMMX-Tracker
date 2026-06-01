@@ -20,6 +20,27 @@ function computeAutoStatus(event: EventRow): string | null {
   return null;
 }
 
+// Recompute the correct status from scratch based on the registration window.
+// Only applies to auto-managed statuses; race_day and completed are left alone.
+function computeCorrectStatus(event: EventRow): string | null {
+  const { status, registrationOpen, registrationClose } = event;
+  if (!["draft", "registration_open", "registration_closed"].includes(status)) return null;
+
+  const now = new Date();
+  let correct: string;
+  if (registrationOpen && now >= new Date(registrationOpen)) {
+    if (!registrationClose || now < new Date(registrationClose)) {
+      correct = "registration_open";
+    } else {
+      correct = "registration_closed";
+    }
+  } else {
+    correct = "draft";
+  }
+
+  return correct !== status ? correct : null;
+}
+
 async function advanceStatuses(events: EventRow[]): Promise<Map<number, string>> {
   const updates = new Map<number, string>();
   for (const e of events) {
@@ -156,8 +177,8 @@ router.patch("/events/:eventId", async (req, res) => {
   const [event] = await db.update(eventsTable).set(updates as any).where(eq(eventsTable.id, id)).returning();
   if (!event) return res.status(404).json({ error: "Not found" });
 
-  // Auto-advance status based on the (possibly updated) registration window
-  const nextStatus = computeAutoStatus({
+  // Recompute status from the updated registration window (bidirectional)
+  const nextStatus = computeCorrectStatus({
     id: event.id,
     status: event.status,
     registrationOpen: event.registrationOpen,

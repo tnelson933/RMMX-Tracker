@@ -574,7 +574,7 @@ export default function EventDetail() {
                       <div className="font-medium flex items-center gap-2">
                         <Clock size={16} className="text-primary" />
                         {event.registrationOpen
-                          ? format(parseISO(event.registrationOpen.substring(0, 10)), "MMM d, yyyy")
+                          ? format(parseISO(event.registrationOpen.substring(0, 16)), "MMM d, yyyy 'at' h:mm a")
                           : <span className="text-muted-foreground italic text-sm">Not set</span>}
                       </div>
                     </div>
@@ -583,7 +583,7 @@ export default function EventDetail() {
                       <div className="font-medium flex items-center gap-2">
                         <Clock size={16} className="text-primary" />
                         {event.registrationClose
-                          ? format(parseISO(event.registrationClose.substring(0, 10)), "MMM d, yyyy")
+                          ? format(parseISO(event.registrationClose.substring(0, 16)), "MMM d, yyyy 'at' h:mm a")
                           : <span className="text-muted-foreground italic text-sm">Not set</span>}
                       </div>
                     </div>
@@ -640,13 +640,13 @@ export default function EventDetail() {
                       {event.registrationOpen && (
                         <div className="flex items-center justify-between">
                           <span className="font-bold uppercase tracking-wider">Opens</span>
-                          <span>{format(parseISO(event.registrationOpen.substring(0, 10)), "MMM d, yyyy")}</span>
+                          <span>{format(parseISO(event.registrationOpen.substring(0, 16)), "MMM d 'at' h:mm a")}</span>
                         </div>
                       )}
                       {event.registrationClose && (
                         <div className="flex items-center justify-between">
                           <span className="font-bold uppercase tracking-wider">Closes</span>
-                          <span>{format(parseISO(event.registrationClose.substring(0, 10)), "MMM d, yyyy")}</span>
+                          <span>{format(parseISO(event.registrationClose.substring(0, 16)), "MMM d 'at' h:mm a")}</span>
                         </div>
                       )}
                     </div>
