@@ -26,6 +26,7 @@ export default function WatchLive() {
   const queueRef = useRef<ArrayBuffer[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewerStateRef = useRef<ViewerState>("connecting");
+  const cleaningUpRef = useRef(false);
 
   useEffect(() => {
     if (!eventId) return;
@@ -35,6 +36,7 @@ export default function WatchLive() {
   }, [eventId]);
 
   function cleanup() {
+    cleaningUpRef.current = true;
     if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     wsRef.current?.close();
     wsRef.current = null;
@@ -103,6 +105,7 @@ export default function WatchLive() {
   }
 
   function connect() {
+    cleaningUpRef.current = false;
     setViewerStateSynced("connecting");
     const ws = new WebSocket(getWsUrl(eventId));
     wsRef.current = ws;
@@ -115,6 +118,8 @@ export default function WatchLive() {
           setViewerStateSynced("offline");
         } else if (msg.type === "ended") {
           setViewerStateSynced("ended");
+          // Close and reconnect after a delay — broadcaster may restart
+          wsRef.current?.close();
         } else if (msg.type === "init") {
           // Fresh stream starting — reinitialise MSE
           setMimeType(msg.mimeType);
@@ -141,10 +146,11 @@ export default function WatchLive() {
     };
 
     ws.onclose = () => {
-      // Use ref instead of state to avoid stale closure
-      if (viewerStateRef.current !== "ended") {
-        // Auto-reconnect after 4s
-        reconnectTimer.current = setTimeout(() => connect(), 4000);
+      // Only skip reconnect when the component is unmounting
+      if (!cleaningUpRef.current) {
+        // Use a longer delay for "ended" — give the broadcaster time to restart
+        const delay = viewerStateRef.current === "ended" ? 8000 : 4000;
+        reconnectTimer.current = setTimeout(() => connect(), delay);
       }
     };
   }
@@ -208,7 +214,9 @@ export default function WatchLive() {
               <>
                 <Radio size={52} className="text-white/20" />
                 <h2 className="font-heading text-2xl uppercase font-bold">Stream Ended</h2>
-                <p className="text-white/40 text-sm">The live broadcast has ended.</p>
+                <p className="text-white/40 text-sm text-center max-w-sm">
+                  The broadcast was interrupted. Reconnecting automatically…
+                </p>
                 <Link href={resultsUrl}>
                   <Button variant="outline" className="border-white/20 text-white/60 hover:text-white font-heading uppercase text-xs mt-2">
                     View Results
