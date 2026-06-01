@@ -594,11 +594,6 @@ export default function WatchLive() {
         </div>{/* end video panel */}
       </div>{/* end sidebar+video flex row */}
 
-      {/* Debug status line — always visible while playing so we can diagnose issues */}
-      <div className="px-3 py-1 text-center text-white/30 text-[10px] font-mono break-all leading-relaxed min-h-[1.5rem]">
-        {viewerState === "playing" ? debugLine : viewerState}
-      </div>
-
       {/* Footer */}
       <div className="px-4 py-3 border-t border-white/10 text-center text-white/20 text-xs">
         Rocky Mountain MX · Live Stream
