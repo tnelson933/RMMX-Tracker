@@ -142,13 +142,23 @@ export default function ReaderSetup() {
             <div className="space-y-1.5 min-w-0">
               <div className="flex items-center gap-2">
                 <Globe size={15} className="text-primary shrink-0" />
-                <p className="font-semibold text-sm">Connect the reader to your network</p>
+                <p className="font-semibold text-sm">Connect the reader to your scoring computer</p>
               </div>
               <p className="text-sm text-muted-foreground">
-                Plug the reader into your race-day router or connect it to the same Wi-Fi network as your scoring laptop. The reader must be able to reach the internet (or your local server) to POST crossings. Verify the reader has a valid IP address before continuing.
+                Readers can connect to your scoring laptop over the network <span className="font-semibold text-foreground">or</span> via USB — choose whichever your hardware supports:
               </p>
+              <ul className="text-sm text-muted-foreground space-y-2 mt-1 ml-1">
+                <li className="flex gap-2">
+                  <span className="font-semibold text-foreground shrink-0">Network (Ethernet / Wi-Fi)</span>
+                  <span>— Plug the reader into your race-day router or connect it to the same Wi-Fi as your laptop. The reader needs a valid IP address and must be able to reach the API endpoint URL. Verify connectivity with a ping before race day.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-semibold text-foreground shrink-0">USB</span>
+                  <span>— Connect the reader via USB and install any manufacturer drivers. Most USB readers expose a serial (COM) port or present as a virtual network adapter. Use the reader's companion software or a bridge utility (e.g. a serial-to-HTTP forwarder) to forward tag reads as HTTP POST requests to the endpoint below.</span>
+                </li>
+              </ul>
               <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                <span className="font-bold text-foreground">Tip:</span> If running locally on a field network with no internet, host this platform on a laptop and use its local IP address in the endpoint URL.
+                <span className="font-bold text-foreground">Tip:</span> If running on a private field network with no internet, host this platform on a local laptop and point the reader at <code className="font-mono">http://&lt;laptop-local-ip&gt;/api/timing/crossing</code> instead of the public URL.
               </div>
             </div>
           </div>
