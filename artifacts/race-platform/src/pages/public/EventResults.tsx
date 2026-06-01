@@ -71,6 +71,7 @@ export default function EventResults() {
   }, {});
 
   const activeMoto = motos?.find(m => m.status === "in_progress");
+  const activeClassMoto = motos?.find(m => m.status === "in_progress" && m.raceClass === activeClass);
 
   if (eventLoading || resultsLoading) {
     return <div className="container mx-auto px-4 py-8 h-screen flex items-center justify-center">Loading…</div>;
@@ -227,11 +228,25 @@ export default function EventResults() {
                     </div>
 
                     {classResults.length === 0 ? (
-                      <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
-                        <Activity className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} />
-                        <h3 className="text-xl font-heading font-bold mb-2">Standings Not Yet Available</h3>
-                        <p className="text-muted-foreground">Results for this class will appear here as motos are completed.</p>
-                      </div>
+                      activeClassMoto ? (
+                        <div className="text-center py-16 bg-red-50/40 dark:bg-red-950/20 rounded-lg border border-red-300/40 border-dashed">
+                          <div className="flex items-center justify-center gap-2 mb-4">
+                            <span className="relative flex h-3 w-3">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                            </span>
+                            <span className="text-red-500 font-heading font-bold uppercase tracking-wider text-sm">Moto In Progress</span>
+                          </div>
+                          <h3 className="text-xl font-heading font-bold mb-2">{activeClassMoto.name}</h3>
+                          <p className="text-muted-foreground">Standings will appear here as results are entered. Page refreshes automatically every 15s.</p>
+                        </div>
+                      ) : (
+                        <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
+                          <Activity className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} />
+                          <h3 className="text-xl font-heading font-bold mb-2">Standing By</h3>
+                          <p className="text-muted-foreground">Standings will appear here once a moto is underway.</p>
+                        </div>
+                      )
                     ) : (
                       <div className="space-y-12">
                         {motosByClass.length > 0 ? (
