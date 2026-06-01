@@ -15,7 +15,7 @@ import {
   Flag, Clock, Activity, AlertCircle, CheckCircle,
 } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
-import { format, parseISO, isToday, isFuture, isPast, subMonths } from "date-fns";
+import { format, parseISO, isToday, isFuture, isPast } from "date-fns";
 
 type Tab = "today" | "upcoming" | "past";
 
@@ -90,9 +90,13 @@ function TodayCard({ event }: { event: UpcomingEventItem }) {
               RACE DAY
             </span>
             {isLive && (
-              <span className="flex items-center gap-1.5 bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                <Radio size={12} /> LIVE STREAM
-              </span>
+              <Link
+                href={`/watch/${event.eventId}`}
+                onClick={e => e.stopPropagation()}
+                className="flex items-center gap-1.5 bg-white text-red-600 hover:bg-red-50 text-xs font-bold px-2 py-0.5 rounded-full transition-colors"
+              >
+                <Radio size={12} /> WATCH LIVE
+              </Link>
             )}
           </div>
           <div className="p-4">
@@ -238,13 +242,10 @@ export default function Home() {
 
   const { data: upcomingAll, isLoading: upcomingLoading } = useListUpcomingEvents({ query: {} as any });
   const { data: states, isLoading: statesLoading } = useListStates();
-  const { data: recentResultsRaw, isLoading: pastLoading } = useListRecentResults({
+  const { data: recentResults, isLoading: pastLoading } = useListRecentResults({
     state: selectedState === "all" ? undefined : selectedState,
-    limit: 24,
+    limit: 100,
   } as any);
-
-  const pastCutoff = subMonths(new Date(), 3);
-  const recentResults = recentResultsRaw?.filter(r => parseISO(r.date.substring(0, 10)) >= pastCutoff);
 
   const todayEvents = upcomingAll?.filter(e => isToday(new Date(e.date)) || e.status === "race_day") ?? [];
   const futureEvents = upcomingAll?.filter(e => {

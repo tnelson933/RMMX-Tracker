@@ -242,7 +242,7 @@ router.get("/public/recent-results", async (req, res) => {
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(state ? and(baseCondition, eq(eventsTable.state, String(state))) : baseCondition)
-    .orderBy(eventsTable.date)
+    .orderBy(desc(eventsTable.date))
     .limit(Number(limit));
 
   const results = [];
