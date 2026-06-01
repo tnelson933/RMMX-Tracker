@@ -51,7 +51,7 @@ A full-stack SaaS race operations platform for motorcycle and ATV clubs — live
 - Organizer login: `sarah@rockymtnriders.com` / `password123` (Rocky Mountain Riders, clubId=2)
 - Event 4 (Spring Opener 2026, AZ, completed) has motos and results — the main demo event
 - Event 1 (Desert Classic, AZ, race_day) has registrations and check-ins
-- Rider portal logins (all password `password123`): `tyler@email.com` (6 results), `marcus@email.com` (5), `blake@email.com` (5), `devon@email.com` (4), `brett@email.com` (4), `jaxon@email.com` (4)
+- Rider portal logins (all password `Rider123!`): `tyler@email.com` (6 results), `marcus@email.com` (5), `blake@email.com` (5), `devon@email.com` (4), `brett@email.com` (4), `jaxon@email.com` (4)
 
 ## User preferences
 
