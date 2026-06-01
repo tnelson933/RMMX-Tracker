@@ -511,6 +511,13 @@ export default function WatchLive() {
             className={`${is360 ? "w-full object-fill" : "w-full max-h-[80vh] object-contain"}`}
             playsInline
             muted
+            onLoadedMetadata={(e) => {
+              const v = e.currentTarget;
+              if (v.videoWidth > 0 && v.videoHeight > 0) {
+                // Auto-detect equirectangular 360° by aspect ratio (>1.8 ≈ 2:1)
+                setIs360(v.videoWidth / v.videoHeight > 1.8);
+              }
+            }}
           />
           {is360 && viewerState === "playing" && (
             <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur text-white/70 text-[10px] font-bold px-2.5 py-1 rounded-full pointer-events-none select-none">

@@ -246,13 +246,22 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
               size="sm"
               onClick={toggleIs360}
               className={`font-heading uppercase text-xs tracking-wider gap-1.5 ${is360 ? "bg-cyan-600 hover:bg-cyan-700 text-white border-cyan-600" : ""}`}
-              title="Enable 360° mode for equirectangular cameras"
+              title="360° mode auto-detects when stream starts — toggle to override manually"
             >
               360°
             </Button>
           </>
         ) : (
           <>
+            {is360 && (
+              <span
+                className="flex items-center gap-1.5 text-cyan-400 text-xs font-heading font-bold uppercase tracking-wider bg-cyan-950/60 border border-cyan-500/30 rounded px-2.5 py-1.5"
+                title="360° equirectangular camera detected automatically"
+              >
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                360° AUTO
+              </span>
+            )}
             <Button
               variant="ghost" size="sm"
               onClick={toggleMic}

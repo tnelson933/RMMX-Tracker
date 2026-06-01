@@ -71,10 +71,11 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
 
     let stream: MediaStream;
     try {
+      // No forced height constraint — let 360° cameras use their native 2:1 aspect ratio
       stream = await navigator.mediaDevices.getUserMedia({
         video: deviceId
-          ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { width: { ideal: 1280 }, height: { ideal: 720 } },
+          ? { deviceId: { exact: deviceId } }
+          : true,
         audio: true,
       });
     } catch (err: any) {
@@ -84,6 +85,15 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       setErrorMsg(msg);
       setBroadcastState("error");
       return;
+    }
+
+    // Auto-detect 360° from the video track's actual aspect ratio (equirectangular = ~2:1)
+    const videoTrack = stream.getVideoTracks()[0];
+    const settings = videoTrack?.getSettings();
+    if (settings?.width && settings?.height) {
+      const autoIs360 = settings.width / settings.height > 1.8;
+      is360Ref.current = autoIs360;
+      setIs360(autoIs360);
     }
 
     liveStreamRef.current = stream;
