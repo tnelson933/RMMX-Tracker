@@ -15,8 +15,9 @@ const ENDPOINT = `${BASE_URL}/api/timing/crossing`;
 const PAYLOAD_EXAMPLE = `{
   "rfidNumber": "1A2B3C4D",
   "motoId": 12,
-  "crossingTime": "2026-05-27T14:32:01.000Z",
-  "readerId": "finish-line-1"
+  "crossingTime": "2026-05-27T14:32:01.123456Z",
+  "readerId": "finish-line-1",
+  "antennaId": 1
 }`;
 
 const RESPONSE_EXAMPLE = `{
@@ -280,11 +281,18 @@ export default function ReaderSetup() {
               <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">
                 {PAYLOAD_EXAMPLE}
               </pre>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p><span className="font-bold text-foreground">rfidNumber</span> — transponder tag ID (required)</p>
+              <div className="text-xs text-muted-foreground space-y-1.5">
+                <p><span className="font-bold text-foreground">rfidNumber</span> — EPC tag ID reported by the reader (required)</p>
                 <p><span className="font-bold text-foreground">motoId</span> — active moto ID (required)</p>
-                <p><span className="font-bold text-foreground">crossingTime</span> — ISO 8601; omit to use server time</p>
-                <p><span className="font-bold text-foreground">readerId</span> — reader name/ID for diagnostics</p>
+                <p>
+                  <span className="font-bold text-foreground">crossingTime</span> — ISO 8601 timestamp assigned by the reader hardware at the moment of RF detection.
+                  {" "}<span className="font-semibold text-amber-600 dark:text-amber-400">Map from the reader's <code className="font-mono">FirstSeenTimestampUTC</code> field</span> — do not use the PC system clock. The reader timestamps the tag read at the hardware level (microsecond precision) before any network latency is introduced.
+                </p>
+                <p><span className="font-bold text-foreground">readerId</span> — device identifier, e.g. <code className="font-mono">"finish-line-1"</code> (optional, for diagnostics)</p>
+                <p><span className="font-bold text-foreground">antennaId</span> — integer port number (1–4) of the antenna that detected the tag (optional). Useful for multi-antenna gantry setups to identify dead zones.</p>
+              </div>
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-md px-3 py-2 text-xs text-amber-800 dark:text-amber-300 mt-2">
+                <span className="font-bold">Burst debounce:</span> The server automatically ignores duplicate reads of the same tag within a 30-second window. A single antenna pass that generates 50 raw reads will be recorded as exactly one lap crossing — no configuration needed.
               </div>
             </div>
             <div className="space-y-2">

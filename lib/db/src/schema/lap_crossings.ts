@@ -13,6 +13,7 @@ export const lapCrossingsTable = pgTable("lap_crossings", {
   lapNumber: integer("lap_number"),
   lapTimeMs: integer("lap_time_ms"),
   readerId: text("reader_id"),
+  antennaId: integer("antenna_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

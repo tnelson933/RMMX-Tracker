@@ -140,14 +140,20 @@ export async function buildLeaderboard(motoId: number) {
   };
 }
 
+// Minimum milliseconds between two valid crossings for the same tag in the same moto.
+// A rider physically cannot complete a motocross/ATV lap in under 30 seconds.
+// This prevents a single antenna burst (50+ reads in 0.2 s) from being recorded as 50 laps.
+const DEBOUNCE_MS = 30_000;
+
 // ── Core crossing processor ───────────────────────────────────────────────────
 async function processCrossing(opts: {
   rfidNumber: string;
   motoId: number;
   crossingTime: Date;
   readerId?: string;
+  antennaId?: number;
 }) {
-  const { rfidNumber, motoId, crossingTime, readerId } = opts;
+  const { rfidNumber, motoId, crossingTime, readerId, antennaId } = opts;
 
   // 1. Load moto
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
@@ -163,12 +169,25 @@ async function processCrossing(opts: {
 
   const riderId = assignments[0]?.riderId ?? null;
 
-  // 3. Previous crossings for this rider+moto
+  // 3. Previous crossings for this tag+moto
   const prevCrossings = await db
     .select()
     .from(lapCrossingsTable)
     .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.rfidNumber, rfidNumber)))
     .orderBy(asc(lapCrossingsTable.crossingTime));
+
+  // ── Debounce: reject burst reads from the same antenna pass ─────────────────
+  // A real RFID gantry fires 50+ reads in 0.2 s for one physical crossing.
+  // Use the hardware crossingTime (not server clock) to measure the gap so
+  // clock skew on the scoring laptop never inflates or deflates the window.
+  if (prevCrossings.length > 0) {
+    const lastCrossing = prevCrossings[prevCrossings.length - 1];
+    const gapMs = crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime();
+    if (gapMs < DEBOUNCE_MS) {
+      // Silent accept — not an error, just a duplicate burst read
+      return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
+    }
+  }
 
   const lapNumber = prevCrossings.length + 1;
   const prevTime =
@@ -180,7 +199,7 @@ async function processCrossing(opts: {
   // 4. Store crossing
   const [crossing] = await db
     .insert(lapCrossingsTable)
-    .values({ eventId: moto.eventId, motoId, riderId, rfidNumber, crossingTime, lapNumber, lapTimeMs, readerId: readerId ?? null })
+    .values({ eventId: moto.eventId, motoId, riderId, rfidNumber, crossingTime, lapNumber, lapTimeMs, readerId: readerId ?? null, antennaId: antennaId ?? null })
     .returning();
 
   // 5. Upsert race_results for this rider
@@ -253,7 +272,7 @@ async function processCrossing(opts: {
 
 // POST /timing/crossing — called by hardware readers (or simulation)
 router.post("/timing/crossing", async (req, res) => {
-  const { rfidNumber, motoId, crossingTime, readerId } = req.body;
+  const { rfidNumber, motoId, crossingTime, readerId, antennaId } = req.body;
   if (!rfidNumber || !motoId) {
     return res.status(400).json({ error: "rfidNumber and motoId are required" });
   }
@@ -263,13 +282,19 @@ router.post("/timing/crossing", async (req, res) => {
     return res.status(400).json({ error: "Invalid crossingTime" });
   }
 
+  const antenna = antennaId !== undefined ? Number(antennaId) : undefined;
+
   try {
-    const result = await processCrossing({ rfidNumber, motoId: Number(motoId), crossingTime: time, readerId });
+    const result = await processCrossing({ rfidNumber, motoId: Number(motoId), crossingTime: time, readerId, antennaId: antenna });
+    if (result.debounced) {
+      // Burst duplicate — acknowledge silently so the reader doesn't retry
+      return res.json({ ok: true, debounced: true });
+    }
     return res.json({
       ok: true,
-      crossingId: result.crossing.id,
+      crossingId: result.crossing!.id,
       lapNumber: result.lapNumber,
-      lapTime: formatLapTime(result.lapTimeMs),
+      lapTime: formatLapTime(result.lapTimeMs!),
       lapTimeMs: result.lapTimeMs,
     });
   } catch (err: any) {
