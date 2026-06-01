@@ -19,6 +19,63 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 
+const TIME_OPTIONS: string[] = [];
+for (let h = 0; h < 24; h++) {
+  for (let m = 0; m < 60; m += 15) {
+    TIME_OPTIONS.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+  }
+}
+
+function formatHour(t: string) {
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h < 12 ? "AM" : "PM";
+  const hour = h % 12 === 0 ? 12 : h % 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function DateTimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const datePart = value ? value.split("T")[0] : "";
+  const timePart = value ? (value.split("T")[1] ?? "").substring(0, 5) : "";
+  const nearestTime = (() => {
+    if (!timePart) return "";
+    const [h, m] = timePart.split(":").map(Number);
+    const rounded = Math.round((h * 60 + m) / 15) * 15;
+    const rh = Math.floor(rounded / 60) % 24;
+    const rm = rounded % 60;
+    return `${String(rh).padStart(2, "0")}:${String(rm).padStart(2, "0")}`;
+  })();
+
+  const handleDate = (d: string) => {
+    const t = nearestTime || "08:00";
+    onChange(d ? `${d}T${t}` : "");
+  };
+  const handleTime = (t: string) => {
+    onChange(datePart ? `${datePart}T${t}` : "");
+  };
+
+  return (
+    <div className="flex gap-2">
+      <input
+        type="date"
+        value={datePart}
+        onChange={e => handleDate(e.target.value)}
+        className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      <select
+        value={nearestTime || ""}
+        onChange={e => handleTime(e.target.value)}
+        disabled={!datePart}
+        className="flex h-9 w-32 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+      >
+        <option value="">Time</option>
+        {TIME_OPTIONS.map(t => (
+          <option key={t} value={t}>{formatHour(t)}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 const createEventSchema = z.object({
   name: z.string().min(1, "Name is required"),
   date: z.string().min(1, "Date is required"),
@@ -221,7 +278,9 @@ export default function EventsList() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Registration Opens</FormLabel>
-                          <FormControl><Input type="datetime-local" step="900" {...field} /></FormControl>
+                          <FormControl>
+                            <DateTimePicker value={field.value ?? ""} onChange={field.onChange} />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -232,7 +291,9 @@ export default function EventsList() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Registration Closes</FormLabel>
-                          <FormControl><Input type="datetime-local" step="900" {...field} /></FormControl>
+                          <FormControl>
+                            <DateTimePicker value={field.value ?? ""} onChange={field.onChange} />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
