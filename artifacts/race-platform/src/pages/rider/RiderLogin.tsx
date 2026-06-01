@@ -22,6 +22,7 @@ export default function RiderLogin() {
   const loginMutation = useMutation({
     mutationFn: () => riderApi.login(loginEmail, loginPassword),
     onSuccess: (account) => {
+      queryClient.cancelQueries({ queryKey: ["rider-auth-me"] });
       queryClient.setQueryData(["rider-auth-me"], account);
       navigate("/rider/portal");
     },
@@ -33,6 +34,7 @@ export default function RiderLogin() {
       return riderApi.register(regEmail, regPassword);
     },
     onSuccess: (account) => {
+      queryClient.cancelQueries({ queryKey: ["rider-auth-me"] });
       queryClient.setQueryData(["rider-auth-me"], account);
       navigate("/rider/portal");
     },
