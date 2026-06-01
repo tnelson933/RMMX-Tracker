@@ -210,7 +210,7 @@ export default function EventsList() {
               <Plus size={16} className="mr-2" /> Create Event
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="font-heading uppercase text-xl">Create New Event</DialogTitle>
             </DialogHeader>
@@ -271,7 +271,7 @@ export default function EventsList() {
 
                 {/* Registration window + Collect Payments */}
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <FormField
                       control={form.control}
                       name="registrationOpen"
