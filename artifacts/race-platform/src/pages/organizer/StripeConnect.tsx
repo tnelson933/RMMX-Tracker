@@ -257,7 +257,7 @@ export default function StripeConnect() {
             )}
 
             <p className="text-sm text-muted-foreground">
-              When creating an event, check <strong>Collect Payments</strong> and set an entry fee to charge riders at registration.
+              Payment collection is active. On any event, open the edit form and check <strong>Collect Payments</strong> to charge riders an entry fee at registration.
             </p>
             <Button
               onClick={() => dashboardMutation.mutate()}
