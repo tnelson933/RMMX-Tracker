@@ -82,11 +82,22 @@ router.post("/events", async (req, res) => {
   const { clubId, name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, entryFee, maxRiders } = req.body;
   if (!clubId || !name || !date || !state) return res.status(400).json({ error: "clubId, name, date, state required" });
 
+  // Determine the correct initial status based on the registration window
+  const initialStatus = (() => {
+    const now = new Date();
+    if (registrationOpen && now >= new Date(registrationOpen)) {
+      if (!registrationClose || now < new Date(registrationClose)) return "registration_open";
+      return "registration_closed";
+    }
+    return "draft";
+  })();
+
   const [event] = await db.insert(eventsTable).values({
     clubId, name, date, state, location, trackName,
     raceClasses: raceClasses || [],
     raceClassLimits: raceClassLimits || {},
     registrationOpen, registrationClose,
+    status: initialStatus,
     paymentEnabled: paymentEnabled || false,
     entryFee: entryFee ? String(entryFee) : null,
     maxRiders,
