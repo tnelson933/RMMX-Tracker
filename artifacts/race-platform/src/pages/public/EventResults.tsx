@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Calendar, MapPin, Trophy, Flag, ChevronLeft, ChevronRight,
   Clock, Award, Radio, CheckCircle, AlertCircle, Activity,
+  ChevronDown, ChevronUp, Users,
 } from "lucide-react";
 import { format, parseISO, isToday } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,7 @@ export default function EventResults() {
 
   const { data: motos, isLoading: motosLoading } = useListMotos(eventId, {
     query: {
-      enabled: !!eventId && liveMode,
+      enabled: !!eventId,
       refetchInterval: liveMode ? 15_000 : false,
     } as any,
   });
@@ -299,11 +300,11 @@ export default function EventResults() {
           </Tabs>
         ) : (
           /* RESULTS MODE (completed / upcoming non-live) */
-          event.raceClasses && event.raceClasses.length > 0 ? (
+          (event.raceClasses && event.raceClasses.length > 0) || (motos && motos.length > 0) ? (
             <Tabs value={activeClass} onValueChange={setActiveClass} className="w-full">
               <div className="bg-card rounded-t-lg border-x border-t p-2 overflow-x-auto hide-scrollbar">
                 <TabsList className="inline-flex h-auto w-auto p-1 bg-muted/50 rounded-md">
-                  {event.raceClasses.map(cls => (
+                  {(event.raceClasses ?? []).map(cls => (
                     <TabsTrigger
                       key={cls}
                       value={cls}
@@ -312,47 +313,86 @@ export default function EventResults() {
                       {cls}
                     </TabsTrigger>
                   ))}
+                  {motos && motos.length > 0 && (
+                    <TabsTrigger
+                      value="__schedule__"
+                      className="font-heading uppercase text-base px-6 py-3 rounded-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all whitespace-nowrap"
+                    >
+                      <Clock size={14} className="mr-2" /> Race Schedule
+                    </TabsTrigger>
+                  )}
                 </TabsList>
               </div>
 
-              <TabsContent value={activeClass} className="m-0 bg-card border rounded-b-lg shadow-sm">
-                <div className="p-6 md:p-8">
-                  <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-2xl font-heading font-bold uppercase flex items-center gap-3">
-                      <Trophy className="text-primary" /> {activeClass} Results
-                    </h2>
-                  </div>
-
-                  {classResults.length === 0 ? (
-                    <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
-                      <Flag className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} />
-                      <h3 className="text-xl font-heading font-bold mb-2">No Results Available</h3>
-                      <p className="text-muted-foreground">Results for this class have not been published yet.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-12">
-                      {motosByClass.length > 0 ? (
-                        motosByClass.map(motoName => {
-                          const motoResults = classResults
-                            .filter(r => r.motoName === motoName)
-                            .sort((a, b) => a.position - b.position);
-                          return (
-                            <div key={motoName} className="space-y-4">
-                              <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
-                              <ResultTable results={motoResults} />
-                            </div>
-                          );
-                        })
+              {/* One TabsContent per race class */}
+              {(event.raceClasses ?? []).map(cls => {
+                const clsResults = results?.filter(r => r.raceClass === cls) || [];
+                const clsMotoNames = Array.from(new Set(clsResults.map(r => r.motoName))).filter(Boolean) as string[];
+                return (
+                  <TabsContent key={cls} value={cls} className="m-0 bg-card border rounded-b-lg shadow-sm">
+                    <div className="p-6 md:p-8">
+                      <div className="flex items-center justify-between mb-8">
+                        <h2 className="text-2xl font-heading font-bold uppercase flex items-center gap-3">
+                          <Trophy className="text-primary" /> {cls} Results
+                        </h2>
+                      </div>
+                      {clsResults.length === 0 ? (
+                        <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
+                          <Flag className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} />
+                          <h3 className="text-xl font-heading font-bold mb-2">No Results Available</h3>
+                          <p className="text-muted-foreground">Results for this class have not been published yet.</p>
+                        </div>
                       ) : (
-                        <ResultTable results={classResults.sort((a, b) => a.position - b.position)} />
+                        <div className="space-y-12">
+                          {clsMotoNames.length > 0 ? (
+                            clsMotoNames.map(motoName => {
+                              const motoResults = clsResults
+                                .filter(r => r.motoName === motoName)
+                                .sort((a, b) => a.position - b.position);
+                              return (
+                                <div key={motoName} className="space-y-4">
+                                  <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
+                                  <ResultTable results={motoResults} />
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <ResultTable results={clsResults.sort((a, b) => a.position - b.position)} />
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              </TabsContent>
+                  </TabsContent>
+                );
+              })}
+
+              {/* Race Schedule tab */}
+              {motos && motos.length > 0 && (
+                <TabsContent value="__schedule__" className="m-0 bg-card border rounded-b-lg shadow-sm">
+                  <div className="p-6 md:p-8">
+                    <h2 className="text-2xl font-heading font-bold uppercase mb-6 flex items-center gap-3">
+                      <Clock className="text-primary" /> Race Schedule
+                    </h2>
+                    <div className="space-y-8">
+                      {Object.entries(motosByRaceClass).map(([cls, clsMotos]) => (
+                        <div key={cls}>
+                          <h3 className="text-base font-heading font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                            <Trophy size={15} /> {cls}
+                          </h3>
+                          <div className="space-y-2">
+                            {clsMotos
+                              .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0))
+                              .map(moto => <MotoScheduleRow key={moto.id} moto={moto} />)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </TabsContent>
+              )}
             </Tabs>
           ) : (
-            /* Upcoming event — no classes yet */
+            /* Upcoming event — no classes or motos yet */
             <Card>
               <CardContent className="p-12 text-center space-y-4">
                 <Calendar className="mx-auto text-primary/50" size={48} />
@@ -377,6 +417,10 @@ export default function EventResults() {
 }
 
 function MotoScheduleRow({ moto }: { moto: Moto }) {
+  const [expanded, setExpanded] = useState(false);
+  const lineup = moto.lineup ?? [];
+  const hasLineup = lineup.length > 0;
+
   const statusMap: Record<string, { icon: React.ReactNode; label: string; cls: string }> = {
     scheduled: { icon: <Clock size={15} className="text-muted-foreground" />, label: "Scheduled", cls: "text-muted-foreground" },
     in_progress: { icon: <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"/><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"/></span>, label: "IN PROGRESS", cls: "text-red-500 font-bold" },
@@ -385,25 +429,63 @@ function MotoScheduleRow({ moto }: { moto: Moto }) {
   const statusConfig = statusMap[moto.status] ?? { icon: <AlertCircle size={15} />, label: moto.status, cls: "text-muted-foreground" };
 
   return (
-    <div className={`flex items-center justify-between px-4 py-3 rounded-lg border ${moto.status === "in_progress" ? "border-red-400/50 bg-red-50/30 dark:bg-red-950/20" : "border-border bg-muted/20"}`}>
-      <div className="flex items-center gap-3">
-        {statusConfig.icon}
-        <div>
-          <div className={`font-heading font-bold uppercase tracking-wide text-sm ${moto.status === "in_progress" ? "text-foreground" : ""}`}>
-            {moto.name}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {moto.type.charAt(0).toUpperCase() + moto.type.slice(1)}
-            {moto.lineup && moto.lineup.length > 0 && ` · ${moto.lineup.length} riders`}
+    <div className={`rounded-lg border overflow-hidden ${moto.status === "in_progress" ? "border-red-400/50 bg-red-50/30 dark:bg-red-950/20" : "border-border bg-muted/20"}`}>
+      {/* Header row — clickable when lineup exists */}
+      <div
+        className={`flex items-center justify-between px-4 py-3 ${hasLineup ? "cursor-pointer hover:bg-muted/40 transition-colors" : ""}`}
+        onClick={() => hasLineup && setExpanded(v => !v)}
+      >
+        <div className="flex items-center gap-3">
+          {statusConfig.icon}
+          <div>
+            <div className={`font-heading font-bold uppercase tracking-wide text-sm ${moto.status === "in_progress" ? "text-foreground" : ""}`}>
+              {moto.name}
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+              {moto.type.charAt(0).toUpperCase() + moto.type.slice(1)}
+              {hasLineup && (
+                <>
+                  <span>·</span>
+                  <Users size={11} />
+                  {lineup.length} riders
+                </>
+              )}
+            </div>
           </div>
         </div>
+        <div className="flex items-center gap-3">
+          {moto.scheduledTime && (
+            <span className="text-sm text-muted-foreground font-mono">{moto.scheduledTime}</span>
+          )}
+          <span className={`text-xs uppercase tracking-wider ${statusConfig.cls}`}>{statusConfig.label}</span>
+          {hasLineup && (
+            <span className="text-muted-foreground ml-1">
+              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </span>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-4">
-        {moto.scheduledTime && (
-          <span className="text-sm text-muted-foreground font-mono">{moto.scheduledTime}</span>
-        )}
-        <span className={`text-xs uppercase tracking-wider ${statusConfig.cls}`}>{statusConfig.label}</span>
-      </div>
+
+      {/* Expanded rider list */}
+      {expanded && hasLineup && (
+        <div className="px-4 pb-4 pt-1 border-t bg-background">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5 pt-2">
+            {[...lineup]
+              .sort((a, b) => a.position - b.position)
+              .map(entry => (
+                <div
+                  key={entry.riderId}
+                  className="flex items-center gap-2 bg-muted/60 rounded px-2.5 py-1.5 border border-border/50"
+                >
+                  <span className="font-mono font-bold text-xs text-muted-foreground min-w-5 text-center shrink-0">
+                    #{entry.bibNumber ?? "—"}
+                  </span>
+                  <span className="text-sm font-medium truncate">{entry.riderName}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
