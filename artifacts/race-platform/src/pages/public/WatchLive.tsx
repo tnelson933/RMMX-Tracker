@@ -29,6 +29,8 @@ export default function WatchLive() {
   const sbRef = useRef<SourceBuffer | null>(null);
   const queueRef = useRef<ArrayBuffer[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stallTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastTimeRef = useRef<number>(-1);
   const viewerStateRef = useRef<ViewerState>("connecting");
   const cleaningUpRef = useRef(false);
   const mimeTypeRef = useRef('video/webm; codecs="vp8,opus"');
@@ -81,11 +83,24 @@ export default function WatchLive() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
+  function teardownMSE() {
+    // Null refs first — any subsequent sourceclose/updateend from old objects is harmless
+    msRef.current = null;
+    sbRef.current = null;
+    queueRef.current = [];
+    if (videoRef.current) {
+      videoRef.current.src = "";   // triggers sourceclose on the old MediaSource (ignored since ref is null)
+      videoRef.current.load();     // reset decoder state
+    }
+  }
+
   function cleanup() {
     cleaningUpRef.current = true;
     if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+    if (stallTimerRef.current) clearInterval(stallTimerRef.current);
     wsRef.current?.close();
     wsRef.current = null;
+    teardownMSE();
   }
 
   function initMSE(mime: string) {
@@ -285,44 +300,14 @@ export default function WatchLive() {
         } else if (jsonMsg.type === "init") {
           const newMime = jsonMsg.mimeType as string;
           mimeTypeRef.current = newMime;
-
-          const existingSb = sbRef.current;
-          const existingMs = msRef.current;
-
-          if (existingMs && existingMs.readyState === "open" && existingSb) {
-            // ── REUSE path ──────────────────────────────────────────────────────
-            // MSE fully active. Broadcaster reconnected (Replit proxy drops WS).
-            // Discard stale queued data, abort in-flight SB op, and clear the
-            // buffer so new initSegment + clusters don't conflict on timestamps.
-            queueRef.current = [];
-            if (existingSb.updating) {
-              try { existingSb.abort(); } catch {}
-            }
-            try {
-              if (existingSb.buffered.length > 0) {
-                existingSb.remove(0, Infinity);
-              }
-            } catch {}
-            logEvent("bcst reconnect — reusing MSE");
-            setNeedsTap(false);
-          } else if (existingMs) {
-            // ── PENDING path ────────────────────────────────────────────────────
-            // A MediaSource exists but sourceopen hasn't fired yet (readyState
-            // "closed"). Do NOT clear the queue — the WebM init segment that was
-            // already queued is essential for the decoder to initialise.
-            // Do NOT create a new MS — that would close this one and cascade.
-            // The pending sourceopen will fire, create the SB, and drain the queue.
-            logEvent(`pending q:${queueRef.current.length}`);
-          } else {
-            // ── FRESH INIT path ─────────────────────────────────────────────────
-            // No MediaSource at all (first connect, or sourceclose already cleared
-            // the refs). Discard any stale queue and start fresh.
-            queueRef.current = [];
-            sbRef.current = null;
-            setNeedsTap(false);
-            audioUnlockedRef.current = false; setAudioUnlocked(false);
-            initMSE(newMime);
-          }
+          // ws.onclose always calls teardownMSE() before reconnecting, so msRef
+          // is always null here. Always do a clean FRESH INIT — no REUSE path.
+          queueRef.current = [];
+          sbRef.current = null;
+          setNeedsTap(false);
+          audioUnlockedRef.current = false; setAudioUnlocked(false);
+          logEvent("init → fresh MSE");
+          initMSE(newMime);
         }
       } else {
         // ── Binary video data ──────────────────────────────────────────────────
@@ -336,11 +321,36 @@ export default function WatchLive() {
       }
     };
 
+    // Stall watchdog — if playing but currentTime hasn't advanced in 4 s, force a full reconnect
+    if (stallTimerRef.current) clearInterval(stallTimerRef.current);
+    lastTimeRef.current = -1;
+    stallTimerRef.current = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || viewerStateRef.current !== "playing") return;
+      const t = video.currentTime;
+      if (t === lastTimeRef.current && !video.paused) {
+        logEvent("stall detected — reconnecting");
+        clearInterval(stallTimerRef.current!);
+        stallTimerRef.current = null;
+        wsRef.current?.close();
+        teardownMSE();
+        setViewerStateSynced("buffering");
+        reconnectTimer.current = setTimeout(() => connect(), 1000);
+      } else {
+        lastTimeRef.current = t;
+      }
+    }, 4000);
+
     ws.onerror = () => { setViewerStateSynced("error"); };
 
     ws.onclose = () => {
+      if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
       if (!cleaningUpRef.current) {
-        const delay = viewerStateRef.current === "ended" ? 8000 : 4000;
+        // Always tear down MSE on unexpected disconnect so reconnect gets a clean slate.
+        // This eliminates the fragile REUSE path (stale currentTime + SB updating race).
+        teardownMSE();
+        setViewerStateSynced("buffering");
+        const delay = viewerStateRef.current === "ended" ? 8000 : 3000;
         reconnectTimer.current = setTimeout(() => connect(), delay);
       }
     };
