@@ -88,11 +88,18 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
   logger.info({ eventId }, "Broadcaster connected");
 
   ws.on("message", (data: Buffer | string, isBinary: boolean) => {
-    // First message may be a JSON control frame with mimeType
-    if (!isBinary && typeof data === "string") {
+    // Normalise to Buffer regardless of frame type.
+    // The Replit proxy converts text WebSocket frames to binary, so we cannot rely
+    // on !isBinary / typeof data === "string" to detect JSON control messages.
+    // Instead, detect JSON by the opening '{' byte (0x7b).
+    const chunk: Buffer = typeof data === "string"
+      ? Buffer.from(data, "utf8")
+      : (Buffer.isBuffer(data) ? data : Buffer.from(data as unknown as ArrayBuffer));
+
+    if (chunk.length > 0 && chunk[0] === 0x7b) {
       try {
-        const msg = JSON.parse(data);
-        if (msg.type === "init" && msg.mimeType) {
+        const msg = JSON.parse(chunk.toString("utf8")) as Record<string, unknown>;
+        if (msg.type === "init" && typeof msg.mimeType === "string") {
           state.mimeType = msg.mimeType;
           // Reset segments when broadcaster announces a new stream
           state.initSegment = null;
@@ -105,12 +112,13 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
             }
           }
         }
-      } catch {}
-      return;
+        return; // consumed as JSON control message
+      } catch {
+        // Not valid JSON — fall through and treat as binary video data
+      }
     }
 
     // Binary frame = video chunk
-    const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data as unknown as ArrayBuffer);
 
     // First binary chunk is the WebM initialization segment (EBML header + Tracks).
     // Store it separately so late-joining viewers always receive it before cluster chunks.
