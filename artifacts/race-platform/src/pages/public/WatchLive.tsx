@@ -488,7 +488,7 @@ export default function WatchLive() {
               </div>
 
               <div className="px-3 py-1.5 border-t border-white/5 text-white/15 text-[10px] text-center shrink-0">
-                ↻ updates every 10s
+                ↻ updates every 15s
               </div>
             </>
           ) : (
