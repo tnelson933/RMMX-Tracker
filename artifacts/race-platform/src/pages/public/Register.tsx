@@ -374,34 +374,37 @@ export default function Register() {
   return (
     <div className="min-h-screen bg-background">
       {/* Event header */}
-      <div className="bg-sidebar text-sidebar-foreground py-10 px-4">
-        <div className="max-w-2xl mx-auto">
-          <Link href="/" className="inline-flex items-center gap-1 text-white/60 hover:text-white text-sm mb-6 transition-colors">
+      <div className="bg-sidebar text-sidebar-foreground pb-10 pt-8 px-4">
+        <div className="max-w-3xl mx-auto">
+          <Link href="/" className="inline-flex items-center gap-1 text-white/60 hover:text-white text-sm mb-8 transition-colors">
             <ChevronLeft size={16} /> Back to Home
           </Link>
+
+          {/* Logo banner — full width, centered, when present */}
+          {event.clubLogoUrl && (
+            <div className="flex justify-center mb-6">
+              <img
+                src={event.clubLogoUrl}
+                alt={event.clubName || "Club logo"}
+                className="h-28 w-auto max-w-xs object-contain drop-shadow-lg"
+              />
+            </div>
+          )}
+
           <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="flex items-start gap-4">
-              {event.clubLogoUrl && (
-                <img
-                  src={event.clubLogoUrl}
-                  alt={event.clubName || "Club logo"}
-                  className="h-16 w-16 object-contain rounded-md shrink-0 mt-1"
-                />
-              )}
-              <div>
-              <p className="text-white/50 text-sm font-bold uppercase tracking-widest mb-1">{event.clubName}</p>
-              <h1 className="text-4xl font-heading font-bold uppercase tracking-tight leading-none">{event.name}</h1>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-white/70 text-sm">
+            <div>
+              <p className="text-white/50 text-sm font-bold uppercase tracking-widest mb-2">{event.clubName}</p>
+              <h1 className="text-4xl md:text-5xl font-heading font-bold uppercase tracking-tight leading-none">{event.name}</h1>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-4 text-white/70 text-sm">
                 <span className="flex items-center gap-1.5"><Calendar size={14} /> {format(parseISO(event.date.substring(0, 10)), 'EEEE, MMMM d, yyyy')}</span>
                 {event.location && <span className="flex items-center gap-1.5"><MapPin size={14} /> {event.location}, {event.state}</span>}
                 {event.trackName && <span className="flex items-center gap-1.5"><Flag size={14} /> {event.trackName}</span>}
               </div>
             </div>
-            </div>
             {event.entryFee && (
-              <div className="bg-primary rounded-md px-4 py-2 text-center shrink-0">
+              <div className="bg-primary rounded-md px-5 py-3 text-center shrink-0">
                 <div className="text-white/70 text-xs font-bold uppercase tracking-widest">Entry Fee</div>
-                <div className="text-white text-2xl font-heading font-bold">${event.entryFee}</div>
+                <div className="text-white text-3xl font-heading font-bold">${event.entryFee}</div>
               </div>
             )}
           </div>

@@ -1,9 +1,9 @@
 import { useState, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGetClubDashboard, useGetClub, useUpdateClub } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, Users, CheckCircle, Plus, Tag, Activity, Upload, ImageIcon, Loader2, X } from "lucide-react";
+import { Calendar, Users, CheckCircle, Plus, Tag, Activity, Upload, ImageIcon, Loader2, X, Sparkles } from "lucide-react";
 import { Link } from "wouter";
 import { format, parseISO } from "date-fns";
 
@@ -21,7 +21,7 @@ export default function Dashboard() {
 
   const { mutateAsync: updateClub } = useUpdateClub();
 
-  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [uploadState, setUploadState] = useState<"idle" | "processing" | "uploading" | "done" | "error">("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -29,23 +29,40 @@ export default function Dashboard() {
     const file = e.target.files?.[0];
     if (!file || !clubId) return;
 
-    const localPreview = URL.createObjectURL(file);
-    setPreviewUrl(localPreview);
+    setUploadState("processing");
+
+    let processedBlob: Blob = file;
+    let processedName = file.name.replace(/\.[^.]+$/, ".png");
+
+    try {
+      const { removeBackground } = await import("@imgly/background-removal");
+      const result = await removeBackground(file);
+      processedBlob = result;
+      const localPreview = URL.createObjectURL(result);
+      setPreviewUrl(localPreview);
+    } catch {
+      // Background removal failed — fall back to original file
+      const localPreview = URL.createObjectURL(file);
+      setPreviewUrl(localPreview);
+      processedBlob = file;
+      processedName = file.name;
+    }
+
     setUploadState("uploading");
 
     try {
       const urlRes = await fetch("/api/storage/uploads/request-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+        body: JSON.stringify({ name: processedName, size: processedBlob.size, contentType: "image/png" }),
       });
       if (!urlRes.ok) throw new Error("Failed to get upload URL");
       const { uploadURL, objectPath } = await urlRes.json();
 
       const putRes = await fetch(uploadURL, {
         method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
+        headers: { "Content-Type": "image/png" },
+        body: processedBlob,
       });
       if (!putRes.ok) throw new Error("Upload failed");
 
@@ -173,11 +190,13 @@ export default function Dashboard() {
                 <Button
                   asChild
                   variant="outline"
-                  disabled={uploadState === "uploading"}
+                  disabled={uploadState === "processing" || uploadState === "uploading"}
                   className="font-heading uppercase tracking-wider"
                 >
                   <span>
-                    {uploadState === "uploading" ? (
+                    {uploadState === "processing" ? (
+                      <><Sparkles size={15} className="mr-2 animate-pulse" /> Removing background…</>
+                    ) : uploadState === "uploading" ? (
                       <><Loader2 size={15} className="mr-2 animate-spin" /> Uploading…</>
                     ) : (
                       <><Upload size={15} className="mr-2" /> Replace Logo</>
@@ -190,7 +209,7 @@ export default function Dashboard() {
                 variant="ghost"
                 size="sm"
                 onClick={handleRemoveLogo}
-                disabled={uploadState === "uploading"}
+                disabled={uploadState === "processing" || uploadState === "uploading"}
                 className="text-muted-foreground hover:text-destructive font-heading uppercase tracking-wider"
               >
                 <X size={15} className="mr-1.5" /> Remove
@@ -224,11 +243,13 @@ export default function Dashboard() {
                 <label htmlFor="logo-upload" className="cursor-pointer">
                   <Button
                     asChild
-                    disabled={uploadState === "uploading"}
+                    disabled={uploadState === "processing" || uploadState === "uploading"}
                     className="font-heading uppercase tracking-wider"
                   >
                     <span>
-                      {uploadState === "uploading" ? (
+                      {uploadState === "processing" ? (
+                        <><Sparkles size={15} className="mr-2 animate-pulse" /> Removing background…</>
+                      ) : uploadState === "uploading" ? (
                         <><Loader2 size={15} className="mr-2 animate-spin" /> Uploading…</>
                       ) : (
                         <><Upload size={15} className="mr-2" /> Upload Logo</>
