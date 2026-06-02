@@ -49,7 +49,7 @@ router.get("/events/:eventId/registrations", async (req, res) => {
 router.post("/events/:eventId/registrations", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const {
-    riderId, raceClass, bibNumber,
+    riderId, raceClass, bibNumber, bikeBrand,
     // Full on-site rider info (alternative to riderId)
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
   } = req.body;
@@ -93,6 +93,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
   const [reg] = await db.insert(registrationsTable).values({
     eventId, riderId: resolvedRiderId, raceClass,
     bibNumber: bibNumber || null,
+    bikeBrand: bikeBrand || null,
     status: "confirmed", paymentStatus: "unpaid",
   }).returning();
 
@@ -297,6 +298,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     bibNumber: bibNumber || rider.bibNumber || null,
     status: regStatus, paymentStatus: "unpaid",
     amaNumber: amaNumber || null,
+    bikeBrand: req.body.bikeBrand || null,
     statsEmailOptIn: !!statsEmailOptIn,
   }).returning();
 

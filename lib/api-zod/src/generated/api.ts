@@ -493,6 +493,7 @@ export const ListRegistrationsResponseItem = zod.object({
   "amountPaid": zod.number().nullish(),
   "bibNumber": zod.string().nullish(),
   "amaNumber": zod.string().nullish(),
+  "bikeBrand": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 export const ListRegistrationsResponse = zod.array(ListRegistrationsResponseItem)
@@ -538,6 +539,7 @@ export const UpdateRegistrationResponse = zod.object({
   "amountPaid": zod.number().nullish(),
   "bibNumber": zod.string().nullish(),
   "amaNumber": zod.string().nullish(),
+  "bikeBrand": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 

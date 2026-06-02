@@ -12,6 +12,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
+const BIKE_BRANDS = [
+  { name: "KTM",       color: "#FF6600", text: "#ffffff" },
+  { name: "Honda",     color: "#CC0000", text: "#ffffff" },
+  { name: "Gas Gas",   color: "#E30613", text: "#ffffff" },
+  { name: "Husqvarna", color: "#F5C222", text: "#000000" },
+  { name: "Yamaha",    color: "#003087", text: "#ffffff" },
+  { name: "Kawasaki",  color: "#3D9B35", text: "#ffffff" },
+  { name: "Suzuki",    color: "#FFDE00", text: "#000000" },
+  { name: "Beta",      color: "#E8220D", text: "#ffffff" },
+] as const;
+
 const registerSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
@@ -23,6 +34,7 @@ const registerSchema = z.object({
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
   amaNumber: z.string().optional(),
+  bikeBrand: z.string().optional(),
   statsEmailOptIn: z.boolean().default(false),
 });
 
@@ -83,7 +95,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "", amaNumber: "", statsEmailOptIn: false,
+      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", statsEmailOptIn: false,
     },
   });
 
@@ -498,6 +510,43 @@ export default function Register() {
                               ))}
                             </SelectContent>
                           </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2 border-b">
+                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Bike</h3>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <FormField
+                      control={form.control}
+                      name="bikeBrand"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Manufacturer</FormLabel>
+                          <div className="grid grid-cols-4 gap-2 mt-1">
+                            {BIKE_BRANDS.map(brand => {
+                              const selected = field.value === brand.name;
+                              return (
+                                <button
+                                  key={brand.name}
+                                  type="button"
+                                  onClick={() => field.onChange(selected ? "" : brand.name)}
+                                  className="rounded-md px-2 py-3 text-sm font-bold font-heading uppercase tracking-wide transition-all border-2"
+                                  style={selected
+                                    ? { backgroundColor: brand.color, color: brand.text, borderColor: brand.color }
+                                    : { backgroundColor: "transparent", color: "inherit", borderColor: brand.color + "60" }
+                                  }
+                                >
+                                  {brand.name}
+                                </button>
+                              );
+                            })}
+                          </div>
                           <FormMessage />
                         </FormItem>
                       )}

@@ -1515,6 +1515,8 @@ components:
           type: ["string", "null"]
         amaNumber:
           type: ["string", "null"]
+        bikeBrand:
+          type: ["string", "null"]
         createdAt:
           type: string
 

@@ -21,6 +21,17 @@ import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 
+const BIKE_BRANDS = [
+  { name: "KTM",       color: "#FF6600", text: "#ffffff" },
+  { name: "Honda",     color: "#CC0000", text: "#ffffff" },
+  { name: "Gas Gas",   color: "#E30613", text: "#ffffff" },
+  { name: "Husqvarna", color: "#F5C222", text: "#000000" },
+  { name: "Yamaha",    color: "#003087", text: "#ffffff" },
+  { name: "Kawasaki",  color: "#3D9B35", text: "#ffffff" },
+  { name: "Suzuki",    color: "#FFDE00", text: "#000000" },
+  { name: "Beta",      color: "#E8220D", text: "#ffffff" },
+] as const;
+
 // ── Form schema ──────────────────────────────────────────────────────────────
 const onSiteRegSchema = z.object({
   firstName: z.string().min(1, "Required"),
@@ -32,6 +43,7 @@ const onSiteRegSchema = z.object({
   emergencyPhone: z.string().optional(),
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
+  bikeBrand: z.string().optional(),
 });
 type OnSiteRegForm = z.infer<typeof onSiteRegSchema>;
 
@@ -102,7 +114,7 @@ export default function Registrations() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "",
+      raceClass: "", bibNumber: "", bikeBrand: "",
     },
   });
 
@@ -203,6 +215,7 @@ export default function Registrations() {
           emergencyPhone: data.emergencyPhone || undefined,
           raceClass: data.raceClass,
           bibNumber: data.bibNumber || undefined,
+          bikeBrand: data.bikeBrand || undefined,
         }),
       });
       const json = await res.json();
@@ -418,6 +431,31 @@ export default function Registrations() {
                 <FormItem>
                   <FormLabel>Preferred Bib #</FormLabel>
                   <FormControl><Input placeholder="101" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="bikeBrand" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Bike Manufacturer</FormLabel>
+                  <div className="grid grid-cols-4 gap-1.5 mt-0.5">
+                    {BIKE_BRANDS.map(brand => {
+                      const selected = field.value === brand.name;
+                      return (
+                        <button
+                          key={brand.name}
+                          type="button"
+                          onClick={() => field.onChange(selected ? "" : brand.name)}
+                          className="rounded px-1.5 py-2 text-xs font-bold font-heading uppercase tracking-wide transition-all border-2"
+                          style={selected
+                            ? { backgroundColor: brand.color, color: brand.text, borderColor: brand.color }
+                            : { backgroundColor: "transparent", color: "inherit", borderColor: brand.color + "60" }
+                          }
+                        >
+                          {brand.name}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <FormMessage />
                 </FormItem>
               )} />

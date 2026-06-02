@@ -22,5 +22,7 @@ export interface Registration {
   bibNumber?: string | null;
   /** @nullable */
   amaNumber?: string | null;
+  /** @nullable */
+  bikeBrand?: string | null;
   createdAt?: string;
 }
