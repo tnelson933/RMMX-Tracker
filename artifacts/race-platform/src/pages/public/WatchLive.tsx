@@ -3,6 +3,7 @@ import { useRoute, Link } from "wouter";
 import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useListMotos, useListResults } from "@workspace/api-client-react";
+import { SplitView360 } from "@/components/SplitView360";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
@@ -509,16 +510,19 @@ export default function WatchLive() {
 
         {/* ── Video (right side) ── */}
         <div className="flex-1 flex items-center justify-center relative bg-black">
+          {/* 360 split view: front + back lenses side-by-side via canvas */}
+          {is360 && <SplitView360 videoRef={videoRef} />}
+
           {/* Dual fisheye wrapper — rotates stacked circles into side-by-side 2D view */}
           <div
-            className={isDualFisheye ? "relative overflow-hidden w-full" : "w-full flex items-center justify-center"}
+            className={isDualFisheye ? "relative overflow-hidden w-full" : (is360 ? "hidden" : "w-full flex items-center justify-center")}
             style={isDualFisheye && videoNaturalDims.h > 0
               ? { aspectRatio: `${videoNaturalDims.h} / ${videoNaturalDims.w}` }
               : undefined}
           >
             <video
               ref={videoRef}
-              className={isDualFisheye ? "" : (is360 ? "w-full object-fill" : "w-full max-h-[80vh] object-contain")}
+              className={isDualFisheye ? "" : (is360 ? "hidden" : "w-full max-h-[80vh] object-contain")}
               style={isDualFisheye && videoNaturalDims.h > 0 ? {
                 position: "absolute",
                 top: "50%",
@@ -554,7 +558,7 @@ export default function WatchLive() {
           {is360 && viewerState === "playing" && (
             <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur text-white/70 text-[10px] font-bold px-2.5 py-1 rounded-full pointer-events-none select-none">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400" />
-              360° · FULL VIEW
+              360° · SPLIT VIEW
             </div>
           )}
           {isDualFisheye && viewerState === "playing" && (
