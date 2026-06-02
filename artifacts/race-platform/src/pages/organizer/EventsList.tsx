@@ -200,10 +200,11 @@ export default function EventsList() {
         const uploadRes = await fetch("/api/storage/uploads/request-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: `event-${newEvent.id}-image.${ext}`, contentType: "image/png", folder: "events" }),
+          body: JSON.stringify({ name: `event-${newEvent.id}-image.${ext}`, size: cleanBlob.size, contentType: "image/png" }),
         });
-        const { uploadUrl, objectPath } = await uploadRes.json();
-        await fetch(uploadUrl, { method: "PUT", body: cleanBlob, headers: { "Content-Type": "image/png" } });
+        if (!uploadRes.ok) throw new Error("Failed to get upload URL");
+        const { uploadURL, objectPath } = await uploadRes.json() as { uploadURL: string; objectPath: string };
+        await fetch(uploadURL, { method: "PUT", body: cleanBlob, headers: { "Content-Type": "image/png" } });
         const imageUrl = `/api/storage${objectPath}`;
         await fetch(`/api/events/${newEvent.id}`, {
           method: "PATCH",
