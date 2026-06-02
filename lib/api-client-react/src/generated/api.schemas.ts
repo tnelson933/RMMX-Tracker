@@ -118,6 +118,8 @@ export interface Event {
   clubName?: string | null;
   /** @nullable */
   clubLogoUrl?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
   createdAt?: string;
 }
 
@@ -137,6 +139,7 @@ export interface EventInput {
   paymentEnabled?: boolean;
   entryFee?: number;
   maxRiders?: number;
+  imageUrl?: string;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -155,6 +158,7 @@ export interface EventUpdate {
   paymentEnabled?: boolean;
   entryFee?: number;
   maxRiders?: number;
+  imageUrl?: string;
 }
 
 export interface Rider {

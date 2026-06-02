@@ -206,6 +206,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     registrationClose: eventsTable.registrationClose,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
+    imageUrl: eventsTable.imageUrl,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));

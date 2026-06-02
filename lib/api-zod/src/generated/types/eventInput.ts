@@ -21,4 +21,5 @@ export interface EventInput {
   paymentEnabled?: boolean;
   entryFee?: number;
   maxRiders?: number;
+  imageUrl?: string;
 }

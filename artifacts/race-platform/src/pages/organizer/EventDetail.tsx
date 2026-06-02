@@ -14,7 +14,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info } from "lucide-react";
+import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info, Upload, ImageIcon, X, Loader2, Sparkles } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 const TIME_OPTIONS: string[] = [];
@@ -127,6 +127,55 @@ export default function EventDetail() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [imgUploadState, setImgUploadState] = useState<"idle" | "processing" | "uploading" | "done" | "error">("idle");
+
+  const handleImageUpload = async (file: File) => {
+    if (!file || !eventId) return;
+    setImgUploadState("processing");
+    let blob: Blob = file;
+    try {
+      const { removeBackground } = await import("@imgly/background-removal");
+      blob = await removeBackground(file);
+    } catch {
+      blob = file;
+    }
+    setImgUploadState("uploading");
+    try {
+      const objectPath = `/events/${eventId}/image.png`;
+      const urlRes = await fetch("/api/storage/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ objectPath, contentType: "image/png", acl: "public" }),
+      });
+      if (!urlRes.ok) throw new Error("Failed to get upload URL");
+      const { signed_url } = await urlRes.json() as { signed_url: string };
+      const putRes = await fetch(signed_url, { method: "PUT", body: blob, headers: { "Content-Type": "image/png" } });
+      if (!putRes.ok) throw new Error("Upload failed");
+      await fetch(`/api/events/${eventId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ imageUrl: `/api/storage${objectPath}` }),
+      });
+      queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
+      setImgUploadState("done");
+      setTimeout(() => setImgUploadState("idle"), 2500);
+    } catch {
+      setImgUploadState("error");
+      setTimeout(() => setImgUploadState("idle"), 3000);
+    }
+  };
+
+  const handleImageRemove = async () => {
+    await fetch(`/api/events/${eventId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ imageUrl: null }),
+    });
+    queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
+  };
 
   const registrationUrl = `${window.location.origin}/register/${eventId}`;
 
@@ -663,6 +712,74 @@ export default function EventDetail() {
                 </p>
               )}
             </CardContent>
+          </Card>
+
+          {/* Event Image upload card */}
+          <Card>
+            <CardHeader className="pb-3 border-b">
+              <CardTitle className="font-heading uppercase text-base flex items-center gap-2">
+                <ImageIcon size={16} className="text-primary" /> Event Image
+              </CardTitle>
+            </CardHeader>
+            {(event as any).imageUrl ? (
+              <>
+                <div className="px-4 pt-4">
+                  <img
+                    src={(event as any).imageUrl}
+                    alt={event.name}
+                    className="w-full h-36 object-contain rounded-md bg-muted/30"
+                  />
+                </div>
+                <CardContent className="p-4 flex flex-wrap items-center gap-2">
+                  <input
+                    id="event-img-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; handleImageUpload(f); } }}
+                  />
+                  <label htmlFor="event-img-upload" className="cursor-pointer">
+                    <Button asChild variant="outline" size="sm" disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="font-heading uppercase tracking-wider text-xs">
+                      <span>
+                        {imgUploadState === "processing" ? <><Sparkles size={13} className="mr-1.5 animate-pulse" /> Removing bg…</>
+                          : imgUploadState === "uploading" ? <><Loader2 size={13} className="mr-1.5 animate-spin" /> Uploading…</>
+                          : <><Upload size={13} className="mr-1.5" /> Replace</>}
+                      </span>
+                    </Button>
+                  </label>
+                  <Button variant="ghost" size="sm" onClick={handleImageRemove} disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="text-muted-foreground hover:text-destructive text-xs font-heading uppercase tracking-wider">
+                    <X size={13} className="mr-1" /> Remove
+                  </Button>
+                  {imgUploadState === "done" && <span className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle size={12} /> Saved</span>}
+                  {imgUploadState === "error" && <span className="text-xs text-destructive font-medium">Upload failed</span>}
+                </CardContent>
+              </>
+            ) : (
+              <CardContent className="p-4 space-y-3">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Upload a race-specific flyer or image. It will appear alongside the club logo on the public registration and race info pages.
+                </p>
+                <p className="text-xs text-muted-foreground">PNG, JPG or WebP · Background auto-removed</p>
+                <input
+                  id="event-img-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; handleImageUpload(f); } }}
+                />
+                <label htmlFor="event-img-upload" className="cursor-pointer block">
+                  <Button asChild size="sm" disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="w-full font-heading uppercase tracking-wider">
+                    <span>
+                      {imgUploadState === "processing" ? <><Sparkles size={13} className="mr-1.5 animate-pulse" /> Removing background…</>
+                        : imgUploadState === "uploading" ? <><Loader2 size={13} className="mr-1.5 animate-spin" /> Uploading…</>
+                        : <><Upload size={13} className="mr-1.5" /> Upload Event Image</>}
+                    </span>
+                  </Button>
+                </label>
+                {imgUploadState === "done" && <p className="text-xs text-green-600 font-medium flex items-center gap-1"><CheckCircle size={12} /> Saved</p>}
+                {imgUploadState === "error" && <p className="text-xs text-destructive font-medium">Upload failed — try again</p>}
+              </CardContent>
+            )}
           </Card>
 
           <Card>

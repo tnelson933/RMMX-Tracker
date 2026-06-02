@@ -78,6 +78,7 @@ router.get("/events", async (req, res) => {
     paymentEnabled: eventsTable.paymentEnabled,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
+    imageUrl: eventsTable.imageUrl,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -152,6 +153,7 @@ router.get("/events/:eventId", async (req, res) => {
     paymentEnabled: eventsTable.paymentEnabled,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
+    imageUrl: eventsTable.imageUrl,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -176,7 +178,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const previousStatus = before?.status;
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "maxRiders"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "maxRiders", "imageUrl"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }

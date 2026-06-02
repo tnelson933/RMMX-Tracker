@@ -380,14 +380,23 @@ export default function Register() {
             <ChevronLeft size={16} /> Back to Home
           </Link>
 
-          {/* Logo banner — full width, centered, when present */}
-          {event.clubLogoUrl && (
-            <div className="flex justify-center mb-6">
-              <img
-                src={event.clubLogoUrl}
-                alt={event.clubName || "Club logo"}
-                className="h-28 w-auto max-w-xs object-contain drop-shadow-lg"
-              />
+          {/* Logo / event image banner */}
+          {(event.clubLogoUrl || (event as any).imageUrl) && (
+            <div className="flex items-center justify-center gap-6 mb-6 flex-wrap">
+              {event.clubLogoUrl && (
+                <img
+                  src={event.clubLogoUrl}
+                  alt={event.clubName || "Club logo"}
+                  className="h-28 w-auto max-w-xs object-contain drop-shadow-lg"
+                />
+              )}
+              {(event as any).imageUrl && (
+                <img
+                  src={(event as any).imageUrl}
+                  alt={event.name}
+                  className="h-28 w-auto max-w-xs object-contain drop-shadow-lg rounded"
+                />
+              )}
             </div>
           )}
 

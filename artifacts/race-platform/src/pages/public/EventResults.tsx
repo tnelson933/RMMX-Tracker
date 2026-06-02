@@ -159,13 +159,22 @@ export default function EventResults() {
                   </div>
                 )}
               </div>
-              {(event as any).clubLogoUrl && (
-                <div className="mt-4">
-                  <img
-                    src={(event as any).clubLogoUrl}
-                    alt={event.clubName || "Club logo"}
-                    className="h-14 w-auto object-contain opacity-90"
-                  />
+              {((event as any).clubLogoUrl || (event as any).imageUrl) && (
+                <div className="mt-4 flex items-center gap-5 flex-wrap">
+                  {(event as any).clubLogoUrl && (
+                    <img
+                      src={(event as any).clubLogoUrl}
+                      alt={event.clubName || "Club logo"}
+                      className="h-14 w-auto object-contain opacity-90"
+                    />
+                  )}
+                  {(event as any).imageUrl && (
+                    <img
+                      src={(event as any).imageUrl}
+                      alt={event.name}
+                      className="h-16 w-auto max-w-[180px] object-contain opacity-95 rounded"
+                    />
+                  )}
                 </div>
               )}
             </div>

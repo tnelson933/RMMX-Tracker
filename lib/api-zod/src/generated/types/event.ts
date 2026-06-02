@@ -34,5 +34,7 @@ export interface Event {
   clubName?: string | null;
   /** @nullable */
   clubLogoUrl?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
   createdAt?: string;
 }

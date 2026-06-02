@@ -1300,6 +1300,8 @@ components:
           type: ["string", "null"]
         clubLogoUrl:
           type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
         createdAt:
           type: string
 
@@ -1337,6 +1339,8 @@ components:
           type: number
         maxRiders:
           type: integer
+        imageUrl:
+          type: string
 
     EventUpdate:
       type: object
@@ -1371,6 +1375,8 @@ components:
           type: number
         maxRiders:
           type: integer
+        imageUrl:
+          type: string
 
     Rider:
       type: object

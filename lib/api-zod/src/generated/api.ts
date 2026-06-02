@@ -245,6 +245,7 @@ export const ListEventsResponseItem = zod.object({
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
+  "imageUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 export const ListEventsResponse = zod.array(ListEventsResponseItem)
@@ -266,7 +267,8 @@ export const CreateEventBody = zod.object({
   "registrationClose": zod.string().optional(),
   "paymentEnabled": zod.boolean().optional(),
   "entryFee": zod.number().optional(),
-  "maxRiders": zod.number().optional()
+  "maxRiders": zod.number().optional(),
+  "imageUrl": zod.string().optional()
 })
 
 
@@ -295,6 +297,7 @@ export const GetEventResponse = zod.object({
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
+  "imageUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -319,7 +322,8 @@ export const UpdateEventBody = zod.object({
   "status": zod.string().optional(),
   "paymentEnabled": zod.boolean().optional(),
   "entryFee": zod.number().optional(),
-  "maxRiders": zod.number().optional()
+  "maxRiders": zod.number().optional(),
+  "imageUrl": zod.string().optional()
 })
 
 export const UpdateEventResponse = zod.object({
@@ -340,6 +344,7 @@ export const UpdateEventResponse = zod.object({
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
+  "imageUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -910,6 +915,7 @@ export const GetClubDashboardResponse = zod.object({
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
+  "imageUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })).optional()
 })

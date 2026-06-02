@@ -21,4 +21,5 @@ export interface EventUpdate {
   paymentEnabled?: boolean;
   entryFee?: number;
   maxRiders?: number;
+  imageUrl?: string;
 }
