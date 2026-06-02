@@ -20,6 +20,8 @@ export default function WatchLive() {
   const setViewerStateSynced = (s: ViewerState) => { viewerStateRef.current = s; setViewerState(s); };
 
   const [is360, setIs360] = useState(false);
+  const [isDualFisheye, setIsDualFisheye] = useState(false);
+  const [videoNaturalDims, setVideoNaturalDims] = useState({ w: 0, h: 0 });
   const [needsTap, setNeedsTap] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const audioUnlockedRef = useRef(false);
@@ -507,24 +509,58 @@ export default function WatchLive() {
 
         {/* ── Video (right side) ── */}
         <div className="flex-1 flex items-center justify-center relative bg-black">
-          {/* Flat equirectangular view — full panorama visible in 2D */}
-          <video
-            ref={videoRef}
-            className={`${is360 ? "w-full object-fill" : "w-full max-h-[80vh] object-contain"}`}
-            playsInline
-            muted
-            onLoadedMetadata={(e) => {
-              const v = e.currentTarget;
-              if (v.videoWidth > 0 && v.videoHeight > 0) {
-                // Auto-detect equirectangular 360° by aspect ratio (>1.8 ≈ 2:1)
-                setIs360(v.videoWidth / v.videoHeight > 1.8);
-              }
-            }}
-          />
+          {/* Dual fisheye wrapper — rotates stacked circles into side-by-side 2D view */}
+          <div
+            className={isDualFisheye ? "relative overflow-hidden w-full" : "w-full flex items-center justify-center"}
+            style={isDualFisheye && videoNaturalDims.h > 0
+              ? { aspectRatio: `${videoNaturalDims.h} / ${videoNaturalDims.w}` }
+              : undefined}
+          >
+            <video
+              ref={videoRef}
+              className={isDualFisheye ? "" : (is360 ? "w-full object-fill" : "w-full max-h-[80vh] object-contain")}
+              style={isDualFisheye && videoNaturalDims.h > 0 ? {
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                height: "100%",
+                width: `${(videoNaturalDims.w / videoNaturalDims.h) * 100}%`,
+                transform: "translate(-50%, -50%) rotate(90deg)",
+                maxWidth: "none",
+              } : undefined}
+              playsInline
+              muted
+              onLoadedMetadata={(e) => {
+                const v = e.currentTarget;
+                if (v.videoWidth > 0 && v.videoHeight > 0) {
+                  const ratio = v.videoWidth / v.videoHeight;
+                  setVideoNaturalDims({ w: v.videoWidth, h: v.videoHeight });
+                  if (ratio > 1.8) {
+                    // Equirectangular stitched 360° (2:1 landscape)
+                    setIs360(true);
+                    setIsDualFisheye(false);
+                  } else if (ratio < 0.7) {
+                    // Dual fisheye — two 180° circles stacked vertically (Insta360 X5 native)
+                    setIs360(false);
+                    setIsDualFisheye(true);
+                  } else {
+                    setIs360(false);
+                    setIsDualFisheye(false);
+                  }
+                }
+              }}
+            />
+          </div>
           {is360 && viewerState === "playing" && (
             <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur text-white/70 text-[10px] font-bold px-2.5 py-1 rounded-full pointer-events-none select-none">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400" />
               360° · FULL VIEW
+            </div>
+          )}
+          {isDualFisheye && viewerState === "playing" && (
+            <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur text-white/70 text-[10px] font-bold px-2.5 py-1 rounded-full pointer-events-none select-none">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-400" />
+              360° · DUAL FISHEYE
             </div>
           )}
 
