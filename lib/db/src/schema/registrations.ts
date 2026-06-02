@@ -14,6 +14,7 @@ export const registrationsTable = pgTable("registrations", {
   paymentMethod: text("payment_method"), // card | cash | null
   amountPaid: numeric("amount_paid", { precision: 10, scale: 2 }),
   bibNumber: text("bib_number"),
+  amaNumber: text("ama_number"),
   statsEmailOptIn: boolean("stats_email_opt_in").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

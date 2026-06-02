@@ -92,6 +92,7 @@ const updateEventSchema = z.object({
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
   })),
   paymentEnabled: z.boolean().default(false),
+  requireAma: z.boolean().default(false),
   entryFee: z.string().optional(),
   registrationOpen: z.string().optional(),
   registrationClose: z.string().optional(),
@@ -200,6 +201,7 @@ export default function EventDetail() {
       status: "draft",
       raceClasses: [],
       paymentEnabled: false,
+      requireAma: false,
       entryFee: "",
       registrationOpen: "",
       registrationClose: "",
@@ -230,6 +232,7 @@ export default function EventDetail() {
         maxRiders: limits[cls] ?? "",
       })),
       paymentEnabled: evt.entryFee != null,
+      requireAma: evt.requireAma ?? false,
       entryFee: evt.entryFee != null ? String(evt.entryFee) : "",
       registrationOpen: evt.registrationOpen ? toLocalDatetimeString(new Date(evt.registrationOpen)) : "",
       registrationClose: evt.registrationClose ? toLocalDatetimeString(new Date(evt.registrationClose)) : "",
@@ -259,6 +262,7 @@ export default function EventDetail() {
         raceClasses: classNames,
         raceClassLimits: classLimits,
         paymentEnabled: data.paymentEnabled,
+        requireAma: data.requireAma,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
@@ -556,6 +560,25 @@ export default function EventDetail() {
                     </div>
 
                     <div className="space-y-3">
+                      {/* Require AMA# checkbox */}
+                      <div className="flex items-center gap-2">
+                        <FormField
+                          control={form.control}
+                          name="requireAma"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Require AMA #</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
                       {/* Collect Payments toggle */}
                       {!isSuperAdmin && (
                         <div className="flex items-center gap-2">

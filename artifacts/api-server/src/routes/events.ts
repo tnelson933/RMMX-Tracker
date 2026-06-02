@@ -103,7 +103,7 @@ router.get("/events", async (req, res) => {
 });
 
 router.post("/events", async (req, res) => {
-  const { clubId, name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, entryFee, maxRiders } = req.body;
+  const { clubId, name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders } = req.body;
   if (!clubId || !name || !date || !state) return res.status(400).json({ error: "clubId, name, date, state required" });
 
   // Determine the correct initial status based on the registration window
@@ -123,6 +123,7 @@ router.post("/events", async (req, res) => {
     registrationOpen, registrationClose,
     status: initialStatus,
     paymentEnabled: paymentEnabled || false,
+    requireAma: requireAma || false,
     entryFee: entryFee ? String(entryFee) : null,
     maxRiders,
   }).returning();
@@ -178,7 +179,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const previousStatus = before?.status;
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "maxRiders", "imageUrl"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "maxRiders", "imageUrl"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }

@@ -201,6 +201,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     status: eventsTable.status,
     entryFee: eventsTable.entryFee,
     paymentEnabled: eventsTable.paymentEnabled,
+    requireAma: eventsTable.requireAma,
     maxRiders: eventsTable.maxRiders,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
@@ -222,7 +223,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, statsEmailOptIn } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -231,6 +232,9 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // Confirm event exists and is open for registration
   const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!events[0]) return res.status(404).json({ error: "Event not found" });
+  if (events[0].requireAma && !amaNumber) {
+    return res.status(400).json({ error: "AMA # is required for this event" });
+  }
   if (events[0].status !== "registration_open") {
     return res.status(409).json({ error: "Registration is not currently open for this event" });
   }
@@ -292,6 +296,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     eventId, riderId: rider.id, raceClass,
     bibNumber: bibNumber || rider.bibNumber || null,
     status: regStatus, paymentStatus: "unpaid",
+    amaNumber: amaNumber || null,
     statsEmailOptIn: !!statsEmailOptIn,
   }).returning();
 

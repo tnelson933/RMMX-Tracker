@@ -19,6 +19,7 @@ export interface EventInput {
   registrationOpen?: string;
   registrationClose?: string;
   paymentEnabled?: boolean;
+  requireAma?: boolean;
   entryFee?: number;
   maxRiders?: number;
   imageUrl?: string;

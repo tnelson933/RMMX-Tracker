@@ -1292,6 +1292,8 @@ components:
           enum: [draft, registration_open, registration_closed, race_day, results_published, completed]
         paymentEnabled:
           type: boolean
+        requireAma:
+          type: boolean
         entryFee:
           type: ["number", "null"]
         maxRiders:
@@ -1335,6 +1337,8 @@ components:
           type: string
         paymentEnabled:
           type: boolean
+        requireAma:
+          type: boolean
         entryFee:
           type: number
         maxRiders:
@@ -1370,6 +1374,8 @@ components:
         status:
           type: string
         paymentEnabled:
+          type: boolean
+        requireAma:
           type: boolean
         entryFee:
           type: number
@@ -1506,6 +1512,8 @@ components:
         amountPaid:
           type: ["number", "null"]
         bibNumber:
+          type: ["string", "null"]
+        amaNumber:
           type: ["string", "null"]
         createdAt:
           type: string

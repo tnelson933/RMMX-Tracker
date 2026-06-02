@@ -20,5 +20,7 @@ export interface Registration {
   amountPaid?: number | null;
   /** @nullable */
   bibNumber?: string | null;
+  /** @nullable */
+  amaNumber?: string | null;
   createdAt?: string;
 }

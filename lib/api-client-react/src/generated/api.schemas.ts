@@ -110,6 +110,7 @@ export interface Event {
   registrationClose?: string | null;
   status: EventStatus;
   paymentEnabled?: boolean;
+  requireAma?: boolean;
   /** @nullable */
   entryFee?: number | null;
   /** @nullable */
@@ -137,6 +138,7 @@ export interface EventInput {
   registrationOpen?: string;
   registrationClose?: string;
   paymentEnabled?: boolean;
+  requireAma?: boolean;
   entryFee?: number;
   maxRiders?: number;
   imageUrl?: string;
@@ -156,6 +158,7 @@ export interface EventUpdate {
   registrationClose?: string;
   status?: string;
   paymentEnabled?: boolean;
+  requireAma?: boolean;
   entryFee?: number;
   maxRiders?: number;
   imageUrl?: string;
@@ -279,6 +282,8 @@ export interface Registration {
   amountPaid?: number | null;
   /** @nullable */
   bibNumber?: string | null;
+  /** @nullable */
+  amaNumber?: string | null;
   createdAt?: string;
 }
 

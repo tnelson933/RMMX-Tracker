@@ -22,6 +22,7 @@ const registerSchema = z.object({
   emergencyPhone: z.string().optional(),
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
+  amaNumber: z.string().optional(),
   statsEmailOptIn: z.boolean().default(false),
 });
 
@@ -38,6 +39,7 @@ interface EventInfo {
   status: string;
   entryFee: number | null;
   paymentEnabled: boolean;
+  requireAma: boolean;
   clubName: string | null;
   clubLogoUrl: string | null;
   registrationOpen: string | null;
@@ -81,7 +83,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "", statsEmailOptIn: false,
+      raceClass: "", bibNumber: "", amaNumber: "", statsEmailOptIn: false,
     },
   });
 
@@ -554,6 +556,16 @@ export default function Register() {
                         <FormMessage />
                       </FormItem>
                     )} />
+                    {event.requireAma && (
+                      <FormField control={form.control} name="amaNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>AMA # <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input placeholder="123456" {...field} /></FormControl>
+                          <p className="text-xs text-muted-foreground">Your AMA membership number is required for this event.</p>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    )}
                   </CardContent>
                 </Card>
 

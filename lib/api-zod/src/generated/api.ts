@@ -241,6 +241,7 @@ export const ListEventsResponseItem = zod.object({
   "registrationClose": zod.string().nullish(),
   "status": zod.enum(['draft', 'registration_open', 'registration_closed', 'race_day', 'results_published', 'completed']),
   "paymentEnabled": zod.boolean().optional(),
+  "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().nullish(),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
@@ -266,6 +267,7 @@ export const CreateEventBody = zod.object({
   "registrationOpen": zod.string().optional(),
   "registrationClose": zod.string().optional(),
   "paymentEnabled": zod.boolean().optional(),
+  "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().optional(),
   "maxRiders": zod.number().optional(),
   "imageUrl": zod.string().optional()
@@ -293,6 +295,7 @@ export const GetEventResponse = zod.object({
   "registrationClose": zod.string().nullish(),
   "status": zod.enum(['draft', 'registration_open', 'registration_closed', 'race_day', 'results_published', 'completed']),
   "paymentEnabled": zod.boolean().optional(),
+  "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().nullish(),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
@@ -321,6 +324,7 @@ export const UpdateEventBody = zod.object({
   "registrationClose": zod.string().optional(),
   "status": zod.string().optional(),
   "paymentEnabled": zod.boolean().optional(),
+  "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().optional(),
   "maxRiders": zod.number().optional(),
   "imageUrl": zod.string().optional()
@@ -340,6 +344,7 @@ export const UpdateEventResponse = zod.object({
   "registrationClose": zod.string().nullish(),
   "status": zod.enum(['draft', 'registration_open', 'registration_closed', 'race_day', 'results_published', 'completed']),
   "paymentEnabled": zod.boolean().optional(),
+  "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().nullish(),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
@@ -487,6 +492,7 @@ export const ListRegistrationsResponseItem = zod.object({
   "paymentStatus": zod.enum(['unpaid', 'paid', 'refunded']).optional(),
   "amountPaid": zod.number().nullish(),
   "bibNumber": zod.string().nullish(),
+  "amaNumber": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 export const ListRegistrationsResponse = zod.array(ListRegistrationsResponseItem)
@@ -531,6 +537,7 @@ export const UpdateRegistrationResponse = zod.object({
   "paymentStatus": zod.enum(['unpaid', 'paid', 'refunded']).optional(),
   "amountPaid": zod.number().nullish(),
   "bibNumber": zod.string().nullish(),
+  "amaNumber": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -911,6 +918,7 @@ export const GetClubDashboardResponse = zod.object({
   "registrationClose": zod.string().nullish(),
   "status": zod.enum(['draft', 'registration_open', 'registration_closed', 'race_day', 'results_published', 'completed']),
   "paymentEnabled": zod.boolean().optional(),
+  "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().nullish(),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),

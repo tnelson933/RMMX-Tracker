@@ -26,6 +26,7 @@ export interface Event {
   registrationClose?: string | null;
   status: EventStatus;
   paymentEnabled?: boolean;
+  requireAma?: boolean;
   /** @nullable */
   entryFee?: number | null;
   /** @nullable */

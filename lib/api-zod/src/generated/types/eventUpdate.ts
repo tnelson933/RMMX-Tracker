@@ -19,6 +19,7 @@ export interface EventUpdate {
   registrationClose?: string;
   status?: string;
   paymentEnabled?: boolean;
+  requireAma?: boolean;
   entryFee?: number;
   maxRiders?: number;
   imageUrl?: string;

@@ -90,6 +90,7 @@ const createEventSchema = z.object({
   registrationOpen: z.string().optional(),
   registrationClose: z.string().optional(),
   paymentEnabled: z.boolean().default(false),
+  requireAma: z.boolean().default(false),
   entryFee: z.string().optional(),
 });
 
@@ -147,6 +148,7 @@ export default function EventsList() {
       registrationOpen: "",
       registrationClose: "",
       paymentEnabled: false,
+      requireAma: false,
       entryFee: "",
     }
   });
@@ -170,6 +172,7 @@ export default function EventsList() {
           registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
           registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
           paymentEnabled: data.paymentEnabled,
+          requireAma: data.requireAma,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         }
       });
@@ -379,6 +382,25 @@ export default function EventsList() {
                       )}
                     </div>
                   )}
+
+                  {/* Require AMA# checkbox */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <FormField
+                      control={form.control}
+                      name="requireAma"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                          <FormLabel className="cursor-pointer font-normal">Require AMA #</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   {/* Entry fee input (only when payment enabled) */}
                   {stripeReady && watchPaymentEnabled && (
