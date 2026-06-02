@@ -310,6 +310,7 @@ export default function WatchLive() {
           const newMime = jsonMsg.mimeType as string;
           mimeTypeRef.current = newMime;
           setIs360(jsonMsg.is360 === true);
+          if (jsonMsg.isDualFisheye === true) { setIsDualFisheye(true); formatLockedRef.current = true; }
           // ws.onclose always calls teardownMSE() before reconnecting, so msRef
           // is always null here. Always do a clean FRESH INIT — no REUSE path.
           queueRef.current = [];

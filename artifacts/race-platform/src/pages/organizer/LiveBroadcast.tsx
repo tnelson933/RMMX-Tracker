@@ -25,6 +25,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     toggleMic,
     toggleCam,
     toggleIs360,
+    toggleIsDualFisheye,
     getLiveStream,
   } = useBroadcast();
 
@@ -274,9 +275,18 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
               size="sm"
               onClick={toggleIs360}
               className={`font-heading uppercase text-xs tracking-wider gap-1.5 ${is360 ? "bg-cyan-600 hover:bg-cyan-700 text-white border-cyan-600" : ""}`}
-              title={is360 ? "360° mode ON — click to turn off (overrides auto-detect)" : "Enable 360° split view manually (overrides auto-detect)"}
+              title={is360 ? "360° equirectangular mode ON — click to turn off" : "Enable 360° equirectangular split view"}
             >
               {is360 ? "360° ON" : "360° OFF"}
+            </Button>
+            <Button
+              variant={isDualFisheye ? "default" : "outline"}
+              size="sm"
+              onClick={toggleIsDualFisheye}
+              className={`font-heading uppercase text-xs tracking-wider gap-1.5 ${isDualFisheye ? "bg-orange-600 hover:bg-orange-700 text-white border-orange-600" : ""}`}
+              title={isDualFisheye ? "Dual Fisheye mode ON (Insta360 X5 stacked) — click to turn off" : "Enable Dual Fisheye mode for stacked portrait cameras (e.g. Insta360 X5)"}
+            >
+              {isDualFisheye ? "Fisheye ON" : "Fisheye OFF"}
             </Button>
           </>
         ) : (

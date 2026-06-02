@@ -17,6 +17,7 @@ interface BroadcastContextValue {
   toggleMic: () => void;
   toggleCam: () => void;
   toggleIs360: () => void;
+  toggleIsDualFisheye: () => void;
   getLiveStream: () => MediaStream | null;
 }
 
@@ -44,6 +45,8 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const is360Ref = useRef(false);
   is360Ref.current = is360;
   const [isDualFisheye, setIsDualFisheye] = useState(false);
+  const isDualFisheyeRef = useRef(false);
+  isDualFisheyeRef.current = isDualFisheye;
 
   const liveStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -128,7 +131,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
         'video/webm',
       ].find(m => MediaRecorder.isTypeSupported(m)) ?? 'video/webm';
 
-      ws.send(JSON.stringify({ type: "init", mimeType, is360: is360Ref.current }));
+      ws.send(JSON.stringify({ type: "init", mimeType, is360: is360Ref.current, isDualFisheye: isDualFisheyeRef.current }));
 
       const recorder = new MediaRecorder(stream, {
         mimeType,
@@ -178,6 +181,10 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     }
   }, [broadcastState]);
 
+  const toggleIsDualFisheye = useCallback(() => {
+    setIsDualFisheye(v => !v);
+  }, []);
+
   const getLiveStream = useCallback(() => liveStreamRef.current, []);
 
   // Expose via context value below
@@ -200,6 +207,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       toggleMic,
       toggleCam,
       toggleIs360,
+      toggleIsDualFisheye,
       getLiveStream,
     }}>
       {children}

@@ -15,6 +15,7 @@ interface StreamState {
   live: boolean;
   startedAt: Date | null;
   is360: boolean;
+  isDualFisheye: boolean;
 }
 
 const MAX_BUFFER_CHUNKS = 30;
@@ -33,6 +34,7 @@ function getOrCreate(eventId: number): StreamState {
       live: false,
       startedAt: null,
       is360: false,
+      isDualFisheye: false,
     });
   }
   return streams.get(eventId)!;
@@ -104,11 +106,12 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
         if (msg.type === "init" && typeof msg.mimeType === "string") {
           state.mimeType = msg.mimeType;
           state.is360 = msg.is360 === true;
+          state.isDualFisheye = msg.isDualFisheye === true;
           // Reset segments when broadcaster announces a new stream
           state.initSegment = null;
           state.chunkBuffer = [];
-          // Notify all current viewers of the new mime type and 360 flag
-          const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360 });
+          // Notify all current viewers of the new mime type and format flags
+          const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye });
           for (const viewer of state.viewers) {
             if (viewer.readyState === WebSocket.OPEN) {
               viewer.send(initMsg);
@@ -180,7 +183,7 @@ function handleViewer(ws: WebSocket, eventId: number) {
 
   // Send current stream state immediately
   if (state.live) {
-    ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360 }));
+    ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye }));
     // Always send the WebM init segment first — without it the decoder cannot
     // parse any of the subsequent cluster chunks (video stays black).
     if (state.initSegment && ws.readyState === WebSocket.OPEN) {
