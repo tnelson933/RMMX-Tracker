@@ -174,7 +174,7 @@ export default function Dashboard() {
               <img
                 src={currentLogo}
                 alt="Club logo"
-                className="h-24 w-24 object-contain rounded-lg shrink-0"
+                className="h-40 w-40 object-contain rounded-lg shrink-0"
               />
               <div>
                 <p className="text-xs font-bold text-sidebar-foreground/50 uppercase tracking-widest mb-1">Club Logo</p>
