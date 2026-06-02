@@ -1,0 +1,75 @@
+When the Insta360 X5 is running specifically in Webcam Mode, you need to code around its specific hardware constraints.Unlike older models, the X5 outputs its raw 360 panoramic stream at a unique resolution of 2880×1440 with a 2:1 aspect ratio. This means your video buffer is exactly 2880 pixels wide and 1440 pixels high. Because it is a stitched equirectangular map, the exact center pixel vertical line (X-coordinate 1440) divides the front lens from the back lens.To programmatically display these side by side in a clean 2D format rather than a warped panoramic stretch, use these code implementations tailored to the X5's specifications:1. Web Frontend Implementation (WebGL / Three.js)If you are streaming the camera into a web browser application via a standard MediaDevices.getUserMedia() video track, you must slice the single feed into two separate, de-warped WebGL textures.javascript// 1. Grab the X5 stream at its native panoramic resolution
+const video = document.createElement('video');
+navigator.mediaDevices.getUserMedia({
+    video: { width: 2880, height: 1440, frameRate: 30 } // Native X5 Webcam Mode spec
+}).then(stream => { video.srcObject = stream; video.play(); });
+
+// 2. Map the stream to the inside of a Three.js 3D sphere
+const texture = new THREE.VideoTexture(video);
+const geometry = new THREE.SphereGeometry(500, 60, 40);
+geometry.scale(-1, 1, 1); // Invert sphere so texture faces inward
+const material = new THREE.MeshBasicMaterial({ map: texture });
+const sphere = new THREE.Mesh(geometry, material);
+scene.add(sphere);
+
+// 3. Create two independent 2D flat cameras pointing in opposite directions
+const frontCam = new THREE.PerspectiveCamera(85, width / height, 1, 1000); // 85° Field of View
+frontCam.rotation.set(0, 0, 0); // Facing forward
+
+const backCam = new THREE.PerspectiveCamera(85, width / height, 1, 1000);
+backCam.rotation.set(0, Math.PI, 0); // Facing backward (180 degrees)
+
+// 4. In your render loop, slice the canvas view into side-by-side viewports
+function animate() {
+    requestAnimationFrame(animate);
+    
+    // Left side of canvas = Front lens 2D corrected view
+    renderer.setViewport(0, 0, canvasWidth / 2, canvasHeight);
+    renderer.setScissor(0, 0, canvasWidth / 2, canvasHeight);
+    renderer.setScissorTest(true);
+    renderer.render(scene, frontCam);
+
+    // Right side of canvas = Back lens 2D corrected view
+    renderer.setViewport(canvasWidth / 2, 0, canvasWidth / 2, canvasHeight);
+    renderer.setScissor(canvasWidth / 2, 0, canvasWidth / 2, canvasHeight);
+    renderer.render(scene, backCam);
+}
+Use code with caution.2. Desktop Application Implementation (Python + OpenCV)If you are capturing the X5 webcam feed natively using Python, a quick Pixel Remap matrix function must be run. Without calculating standard 3D spherical math, you can use OpenCV’s coordinate remapping to crop the left and right halves of the 2880×1440 frame, flatten out their fish-eye curve using a pinhole camera matrix, and stack them horizontally.pythonimport cv2
+import numpy as np
+
+# Capture the Insta360 X5 Webcam feed
+cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2880)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
+
+while True:
+    ret, frame = cap.read()
+    if not ret: break
+
+    # Slice raw X5 frame exactly down the middle (X=1440)
+    # Both halves are 1440x1440 fisheye textures
+    front_raw = frame[0:1440, 0:1440]
+    back_raw = frame[0:1440, 1440:2880]
+
+    # Programmatic Lens Matrix to flatten the curve (Pinhole model approximation)
+    K = np.array([[700, 0, 720], [0, 700, 720], [0, 0, 1]], dtype=np.float32)
+    D = np.array([-0.2, 0.1, 0, 0], dtype=np.float32) # X5 lens distortion coefficients
+
+    # Rectify / Flatten both views into standard 2D perspective
+    front_flat = cv2.undistort(front_raw, K, D)
+    back_flat = cv2.undistort(back_raw, K, D)
+
+    # Force a side-by-side layout horizontally
+    side_by_side_2d = np.hstack((front_flat, back_flat))
+
+    cv2.imshow('Insta360 X5 Side-by-Side 2D', side_by_side_2d)
+    if cv2.waitKey(1) & 0xFF == ord('q'): break
+
+cap.release()
+cv2.destroyAllWindows()
+Use code with caution.3. Server Backend Streaming (FFmpeg Core Engine)If your app processes the live ingest stream on a cloud server via an RTMP loop before rendering it, force FFmpeg's v360 filter to lock into the exact 2880×1440 aspect ratio constraints:bashffmpeg -f dshow -video_size 2880x1440 -i video="Insta360 Virtual Camera" -filter_complex \
+"[0:v]v360=input=equirect:output=perspective:yaw=0:h_fov=90:v_fov=90,scale=960:1080[front]; \
+ [0:v]v360=input=equirect:output=perspective:yaw=180:h_fov=90:v_fov=90,scale=960:1080[back]; \
+ [front][back]hstack=inputs=2[output]" \
+-map "[output]" -c:v libx264 -f flv rtmp://localhost/live/stream
+Use code with caution.Why standard cropping fails without this codeIf you try to simply crop the left 50% and right 50% of the X5 stream as traditional flat imagery, the center of the image will look normal, but the top, bottom, and outside edges will curve heavily like a funhouse mirror. By using the Three.js virtual cameras or OpenCV Undistort matrices shown above, your software dynamically calculates the spherical lens distortion and strips it out in real time.Which of these environments matches your software architecture (e.g., web browser/JavaScript client or a native backend script)? I can optimize the rendering math parameters for that path.
