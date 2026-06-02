@@ -246,9 +246,9 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
               size="sm"
               onClick={toggleIs360}
               className={`font-heading uppercase text-xs tracking-wider gap-1.5 ${is360 ? "bg-cyan-600 hover:bg-cyan-700 text-white border-cyan-600" : ""}`}
-              title="360° mode auto-detects when stream starts — toggle to override manually"
+              title={is360 ? "360° mode ON — click to turn off (overrides auto-detect)" : "Enable 360° split view manually (overrides auto-detect)"}
             >
-              360°
+              {is360 ? "360° ON" : "360° OFF"}
             </Button>
           </>
         ) : (

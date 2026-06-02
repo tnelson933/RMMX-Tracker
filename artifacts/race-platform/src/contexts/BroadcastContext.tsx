@@ -47,6 +47,9 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Tracks whether the user explicitly pressed the 360° toggle before going live.
+  // When true, the manual choice wins over auto-detection.
+  const is360ManuallySetRef = useRef(false);
 
   const stopBroadcast = useCallback(() => {
     recorderRef.current?.stop();
@@ -64,6 +67,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     setDuration(0);
     setActiveEventId(null);
     setIs360(false);
+    is360ManuallySetRef.current = false;
   }, []);
 
   const startBroadcast = useCallback(async (eventId: number, deviceId: string) => {
@@ -88,13 +92,16 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Auto-detect 360° from the video track's actual aspect ratio (equirectangular = ~2:1)
-    const videoTrack = stream.getVideoTracks()[0];
-    const settings = videoTrack?.getSettings();
-    if (settings?.width && settings?.height) {
-      const autoIs360 = settings.width / settings.height > 1.8;
-      is360Ref.current = autoIs360;
-      setIs360(autoIs360);
+    // Auto-detect 360° from the video track's actual aspect ratio (equirectangular = ~2:1).
+    // Skip auto-detection if the user explicitly pressed the 360° toggle before going live.
+    if (!is360ManuallySetRef.current) {
+      const videoTrack = stream.getVideoTracks()[0];
+      const settings = videoTrack?.getSettings();
+      if (settings?.width && settings?.height) {
+        const autoIs360 = settings.width / settings.height > 1.8;
+        is360Ref.current = autoIs360;
+        setIs360(autoIs360);
+      }
     }
 
     liveStreamRef.current = stream;
@@ -155,6 +162,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
 
   const toggleIs360 = useCallback(() => {
     if (broadcastState !== "live") {
+      is360ManuallySetRef.current = true;
       setIs360(v => !v);
     }
   }, [broadcastState]);
