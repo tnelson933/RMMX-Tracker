@@ -313,7 +313,7 @@ export default function EventWidget() {
           <img src={rmLogo} alt="RMMX Tracker" style={{ width: 22, height: 22, objectFit: "contain" }} />
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
             <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#e05a1a" }}>RMMX</span>
-            <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#4b5563" }}>Tracker</span>
+            <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#e05a1a" }}>Tracker</span>
           </div>
           {isLive && <span style={{ fontSize: 10, color: "#4b5563", marginLeft: 4 }}>· auto-updates every 30s</span>}
         </div>
