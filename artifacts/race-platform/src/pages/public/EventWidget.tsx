@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { useGetEvent, useListResults, useListMotos, RaceResult } from "@workspace/api-client-react";
+import rmLogo from "@assets/rm-logo.png";
 
 function toLapNums(lapTimes: string[] | undefined): number[] {
   if (!lapTimes) return [];
@@ -307,10 +308,14 @@ export default function EventWidget() {
       </div>
 
       {/* Fixed footer */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0a0d16", borderTop: "1px solid #1a2035", padding: "8px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 11, color: "#374151" }}>
-          {isLive && <span style={{ color: "#4b5563" }}>Auto-updates every 30s · </span>}
-          Powered by <span style={{ color: "#e05a1a", fontWeight: 700 }}>Rocky Mountain Race Platform</span>
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0a0d16", borderTop: "1px solid #1a2035", padding: "7px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <img src={rmLogo} alt="RMMX Tracker" style={{ width: 22, height: 22, objectFit: "contain" }} />
+          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#e05a1a" }}>RMMX</span>
+            <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#4b5563" }}>Tracker</span>
+          </div>
+          {isLive && <span style={{ fontSize: 10, color: "#4b5563", marginLeft: 4 }}>· auto-updates every 30s</span>}
         </div>
         {(results?.length ?? 0) > 0 && (
           <div style={{ fontSize: 11, color: "#374151" }}>
