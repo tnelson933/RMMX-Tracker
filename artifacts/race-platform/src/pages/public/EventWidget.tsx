@@ -88,7 +88,7 @@ export default function EventWidget() {
   if (eventLoading) {
     return (
       <div style={{ fontFamily: "system-ui, sans-serif", background: "#0f1117", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: "#e05a1a", fontSize: 14, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", opacity: 0.7 }}>Loading…</div>
+        <div style={{ color: "#dc2626", fontSize: 14, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", opacity: 0.7 }}>Loading…</div>
       </div>
     );
   }
@@ -251,7 +251,7 @@ export default function EventWidget() {
                           const mbl = bestLapMs(laps);
                           return (
                             <div key={moto.id} style={{ marginBottom: 14 }}>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: "#e05a1a", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#dc2626", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
                                 <span style={{ textTransform: "uppercase", letterSpacing: "0.05em" }}>
                                   {motoInfo?.name ?? moto.motoName ?? `Moto`}
                                 </span>
@@ -312,8 +312,8 @@ export default function EventWidget() {
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <img src={rmLogo} alt="RMMX Tracker" style={{ width: 22, height: 22, objectFit: "contain" }} />
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#e05a1a" }}>RMMX</span>
-            <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#e05a1a" }}>Tracker</span>
+            <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#dc2626" }}>RMMX</span>
+            <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#dc2626" }}>Tracker</span>
           </div>
           {isLive && <span style={{ fontSize: 10, color: "#4b5563", marginLeft: 4 }}>· auto-updates every 30s</span>}
         </div>
