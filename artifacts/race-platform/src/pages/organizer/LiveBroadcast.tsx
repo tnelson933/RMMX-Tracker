@@ -35,6 +35,8 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
 
   const previewRef = useRef<HTMLVideoElement>(null);
   const previewStreamRef = useRef<MediaStream | null>(null);
+  // Detected locally from the preview video dimensions — works before AND after go-live.
+  const [previewIsDualFisheye, setPreviewIsDualFisheye] = useState(false);
 
   const isLive = broadcastState === "live";
 
@@ -97,9 +99,12 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
 
   async function startPreview(deviceId: string) {
     stopPreview();
+    setPreviewIsDualFisheye(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        // No height constraint — lets portrait/stacked cameras (e.g. Insta360 X5) keep their
+        // native aspect ratio so dual-fisheye detection works correctly.
+        video: { deviceId: { exact: deviceId }, width: { ideal: 1280, max: 1920 } },
         audio: false,
       });
       previewStreamRef.current = stream;
@@ -125,6 +130,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     previewStreamRef.current?.getTracks().forEach(t => t.stop());
     previewStreamRef.current = null;
     if (previewRef.current) previewRef.current.srcObject = null;
+    setPreviewIsDualFisheye(false);
   }
 
   const handleGoLive = async () => {
@@ -164,11 +170,24 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     <div className="space-y-4">
       {/* Camera preview */}
       <div className="relative bg-black rounded-xl overflow-hidden aspect-video w-full max-w-xl">
-        {/* Raw video — kept in DOM as the camera source; hidden when canvas split overlay is active */}
-        <video ref={previewRef} className={isDualFisheye ? "hidden" : "w-full h-full object-cover"} playsInline muted />
-        {/* Canvas split preview for portrait dual-fisheye cameras (Insta360 X5 webcam mode) */}
-        {isDualFisheye && (
-          <div className="absolute inset-0 flex items-center justify-center">
+        {/* Raw video — kept in DOM as the camera source; hidden when canvas split overlay is active.
+            onLoadedMetadata fires whenever srcObject changes (preview → live) and re-detects the ratio. */}
+        <video
+          ref={previewRef}
+          className={(previewIsDualFisheye || isDualFisheye) ? "hidden" : "w-full h-full object-cover"}
+          playsInline
+          muted
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.videoWidth > 0 && v.videoHeight > 0) {
+              setPreviewIsDualFisheye(v.videoWidth / v.videoHeight < 0.7);
+            }
+          }}
+        />
+        {/* Canvas split preview for portrait dual-fisheye cameras (Insta360 X5 webcam mode).
+            Fires as soon as preview starts — no need to go live first. */}
+        {(previewIsDualFisheye || isDualFisheye) && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black">
             <StackedSplitView videoRef={previewRef} />
           </div>
         )}
