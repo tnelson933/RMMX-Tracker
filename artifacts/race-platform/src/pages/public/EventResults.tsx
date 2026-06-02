@@ -83,8 +83,8 @@ export default function EventResults() {
   return (
     <div className="bg-muted/30 min-h-[calc(100vh-64px)] pb-12">
 
-      {/* Watch Live banner — shown prominently at very top when streaming */}
-      {isStreaming && (
+      {/* Watch Live banner — active stream gets full red bar; race-day events always get a subtle link */}
+      {isStreaming ? (
         <div className="bg-red-600 text-white py-3 px-4">
           <div className="container mx-auto flex items-center justify-between gap-4">
             <span className="flex items-center gap-2 font-heading font-bold uppercase tracking-wider text-sm">
@@ -97,6 +97,19 @@ export default function EventResults() {
             <a href={`/watch/${eventId}`} target="_blank" rel="noopener noreferrer">
               <Button size="sm" className="bg-white text-red-600 hover:bg-white/90 font-heading uppercase tracking-wider font-bold h-8 px-4">
                 <Radio size={14} className="mr-1.5" /> Watch Live
+              </Button>
+            </a>
+          </div>
+        </div>
+      ) : liveMode && (
+        <div className="bg-sidebar border-b border-sidebar-border py-2 px-4">
+          <div className="container mx-auto flex items-center justify-between gap-4">
+            <span className="text-sidebar-foreground/60 text-xs font-heading uppercase tracking-wider flex items-center gap-1.5">
+              <Radio size={12} /> Live stream may be available for this event
+            </span>
+            <a href={`/watch/${eventId}`} target="_blank" rel="noopener noreferrer">
+              <Button size="sm" variant="outline" className="border-sidebar-foreground/20 text-sidebar-foreground/70 hover:text-white font-heading uppercase tracking-wider text-xs h-7 px-3">
+                <Radio size={12} className="mr-1" /> Watch Stream
               </Button>
             </a>
           </div>
