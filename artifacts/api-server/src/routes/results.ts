@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { raceResultsTable, motosTable, ridersTable, eventPublicationTable } from "@workspace/db";
+import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 const POINTS_BY_POSITION = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
@@ -26,9 +26,15 @@ router.get("/events/:eventId/results", async (req, res) => {
     motoName: motosTable.name,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
+    amaNumber: registrationsTable.amaNumber,
+    bikeBrand: registrationsTable.bikeBrand,
   }).from(raceResultsTable)
     .leftJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
     .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
+    .leftJoin(registrationsTable, and(
+      eq(registrationsTable.riderId, raceResultsTable.riderId),
+      eq(registrationsTable.eventId, raceResultsTable.eventId),
+    ))
     .where(eq(raceResultsTable.eventId, eventId))
     .orderBy(raceResultsTable.position);
 
@@ -47,6 +53,8 @@ router.get("/events/:eventId/results", async (req, res) => {
     dnf: r.dnf,
     dns: r.dns,
     bibNumber: r.bibNumber,
+    amaNumber: r.amaNumber ?? null,
+    bikeBrand: r.bikeBrand ?? null,
   })));
 });
 

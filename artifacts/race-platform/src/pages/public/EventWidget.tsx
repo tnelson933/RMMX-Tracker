@@ -3,6 +3,17 @@ import { useParams } from "wouter";
 import { useGetEvent, useListResults, useListMotos, RaceResult } from "@workspace/api-client-react";
 import rmLogo from "@assets/rm-logo.png";
 
+const BRAND_COLORS: Record<string, { bg: string; text: string }> = {
+  "KTM":      { bg: "#FF6600", text: "#ffffff" },
+  "Honda":    { bg: "#CC0000", text: "#ffffff" },
+  "Gas Gas":  { bg: "#E30613", text: "#ffffff" },
+  "Husqvarna":{ bg: "#F5C222", text: "#1a1a1a" },
+  "Yamaha":   { bg: "#003087", text: "#ffffff" },
+  "Kawasaki": { bg: "#3D9B35", text: "#ffffff" },
+  "Suzuki":   { bg: "#FFDE00", text: "#1a1a1a" },
+  "Beta":     { bg: "#E8220D", text: "#ffffff" },
+};
+
 function toLapNums(lapTimes: string[] | undefined): number[] {
   if (!lapTimes) return [];
   return lapTimes.map(Number).filter(n => n > 0);
@@ -216,11 +227,17 @@ export default function EventWidget() {
                       <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {rider.riderName}
                       </div>
-                      <div style={{ fontSize: 11, color: "#94a3b8" }}>
-                        {search.trim() && <span style={{ background: "#f1f5f9", borderRadius: 3, padding: "1px 5px", marginRight: 5 }}>{rider.raceClass}</span>}
+                      <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", fontSize: 11, color: "#94a3b8" }}>
+                        {search.trim() && <span style={{ background: "#f1f5f9", borderRadius: 3, padding: "1px 5px" }}>{rider.raceClass}</span>}
                         {rider.bibNumber && <span>#{rider.bibNumber}</span>}
-                        {rider.dnf && <span style={{ color: "#dc2626", marginLeft: 4 }}>DNF</span>}
-                        {rider.dns && <span style={{ color: "#94a3b8", marginLeft: 4 }}>DNS</span>}
+                        {(rider as any).amaNumber && <span style={{ color: "#64748b" }}>AMA# {(rider as any).amaNumber}</span>}
+                        {(rider as any).bikeBrand && BRAND_COLORS[(rider as any).bikeBrand] && (
+                          <span style={{ display: "inline-block", background: BRAND_COLORS[(rider as any).bikeBrand].bg, color: BRAND_COLORS[(rider as any).bikeBrand].text, fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", borderRadius: 3, padding: "1px 6px" }}>
+                            {(rider as any).bikeBrand}
+                          </span>
+                        )}
+                        {rider.dnf && <span style={{ color: "#dc2626" }}>DNF</span>}
+                        {rider.dns && <span style={{ color: "#94a3b8" }}>DNS</span>}
                       </div>
                     </div>
                     {/* Laps */}
