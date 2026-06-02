@@ -44,8 +44,10 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const [is360, setIs360] = useState(false);
   const is360Ref = useRef(false);
   is360Ref.current = is360;
-  const [isDualFisheye, setIsDualFisheye] = useState(false);
-  const isDualFisheyeRef = useRef(false);
+  const [isDualFisheye, setIsDualFisheye] = useState(
+    () => localStorage.getItem("broadcast.dualFisheye") === "true"
+  );
+  const isDualFisheyeRef = useRef(isDualFisheye);
   isDualFisheyeRef.current = isDualFisheye;
 
   const liveStreamRef = useRef<MediaStream | null>(null);
@@ -55,7 +57,9 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   // Tracks whether the user explicitly pressed the format toggles before going live.
   // When true, the manual choice wins over auto-detection in startBroadcast.
   const is360ManuallySetRef = useRef(false);
-  const isDualFisheyeManuallySetRef = useRef(false);
+  const isDualFisheyeManuallySetRef = useRef(
+    localStorage.getItem("broadcast.dualFisheye") === "true"
+  );
 
   const stopBroadcast = useCallback(() => {
     recorderRef.current?.stop();
@@ -73,9 +77,9 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     setDuration(0);
     setActiveEventId(null);
     setIs360(false);
-    setIsDualFisheye(false);
     is360ManuallySetRef.current = false;
-    isDualFisheyeManuallySetRef.current = false;
+    // isDualFisheye preference is intentionally kept — user's fisheye setting
+    // persists across broadcast sessions (saved in localStorage).
   }, []);
 
   const startBroadcast = useCallback(async (eventId: number, deviceId: string) => {
@@ -205,6 +209,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       const next = !v;
       isDualFisheyeManuallySetRef.current = next;
       isDualFisheyeRef.current = next;
+      localStorage.setItem("broadcast.dualFisheye", String(next));
       if (next) {
         // Enabling dual fisheye — disable 360° mode (mutually exclusive)
         is360Ref.current = false;
