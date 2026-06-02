@@ -139,76 +139,110 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Club Profile */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="font-heading uppercase tracking-tight text-xl flex items-center gap-2">
-            <ImageIcon size={20} className="text-primary" /> Club Logo
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col sm:flex-row items-start gap-6">
-          <div className="relative shrink-0">
-            <div className="w-32 h-32 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/30 flex items-center justify-center overflow-hidden">
-              {currentLogo ? (
-                <img src={currentLogo} alt="Club logo" className="w-full h-full object-contain p-2" />
-              ) : (
-                <ImageIcon size={36} className="text-muted-foreground/40" />
-              )}
-            </div>
-            {currentLogo && club?.logoUrl && (
-              <button
-                onClick={handleRemoveLogo}
-                className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5 hover:bg-destructive/90 transition-colors"
-                title="Remove logo"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
+      {/* Club Logo */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+        onChange={handleFileChange}
+        className="hidden"
+        id="logo-upload"
+      />
 
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Upload your club logo. It will appear on the public rider registration page and race info/live standings pages for all your events.
-            </p>
-            <p className="text-xs text-muted-foreground">PNG, JPG, or SVG · Recommended: square, at least 200×200px</p>
-
-            <div className="flex items-center gap-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-                onChange={handleFileChange}
-                className="hidden"
-                id="logo-upload"
+      <Card className="overflow-hidden">
+        {currentLogo ? (
+          <>
+            {/* Header preview — mimics the dark event banner */}
+            <div className="bg-sidebar border-b border-sidebar-border px-8 py-8 flex items-center gap-6">
+              <img
+                src={currentLogo}
+                alt="Club logo"
+                className="h-24 w-24 object-contain rounded-lg shrink-0"
               />
-              <label htmlFor="logo-upload">
+              <div>
+                <p className="text-xs font-bold text-sidebar-foreground/50 uppercase tracking-widest mb-1">Club Logo</p>
+                <p className="text-sidebar-foreground/80 text-sm leading-relaxed">
+                  Shown on public registration pages and race info / live standings for all your events.
+                </p>
+              </div>
+            </div>
+
+            {/* Actions row */}
+            <CardContent className="p-5 flex flex-wrap items-center gap-3">
+              <label htmlFor="logo-upload" className="cursor-pointer">
                 <Button
                   asChild
-                  variant={currentLogo ? "outline" : "default"}
+                  variant="outline"
                   disabled={uploadState === "uploading"}
-                  className="font-heading uppercase tracking-wider cursor-pointer"
+                  className="font-heading uppercase tracking-wider"
                 >
                   <span>
                     {uploadState === "uploading" ? (
-                      <><Loader2 size={16} className="mr-2 animate-spin" /> Uploading…</>
+                      <><Loader2 size={15} className="mr-2 animate-spin" /> Uploading…</>
                     ) : (
-                      <><Upload size={16} className="mr-2" /> {currentLogo ? "Replace Logo" : "Upload Logo"}</>
+                      <><Upload size={15} className="mr-2" /> Replace Logo</>
                     )}
                   </span>
                 </Button>
               </label>
 
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRemoveLogo}
+                disabled={uploadState === "uploading"}
+                className="text-muted-foreground hover:text-destructive font-heading uppercase tracking-wider"
+              >
+                <X size={15} className="mr-1.5" /> Remove
+              </Button>
+
               {uploadState === "done" && (
-                <span className="text-sm text-green-600 font-medium flex items-center gap-1">
+                <span className="text-sm text-green-600 font-medium flex items-center gap-1.5 ml-1">
                   <CheckCircle size={14} /> Saved
                 </span>
               )}
               {uploadState === "error" && (
-                <span className="text-sm text-destructive font-medium">Upload failed — try again</span>
+                <span className="text-sm text-destructive font-medium ml-1">Upload failed — try again</span>
               )}
+            </CardContent>
+          </>
+        ) : (
+          /* Empty state */
+          <CardContent className="p-8 flex flex-col sm:flex-row items-center gap-6">
+            <div className="w-24 h-24 rounded-xl border-2 border-dashed border-muted-foreground/25 bg-muted/20 flex items-center justify-center shrink-0">
+              <ImageIcon size={32} className="text-muted-foreground/30" />
             </div>
-          </div>
-        </CardContent>
+            <div className="space-y-3 text-center sm:text-left">
+              <div>
+                <h3 className="font-heading font-bold uppercase tracking-tight text-lg">No Club Logo</h3>
+                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                  Upload a logo to show it on public registration pages and race info/live standings for all your events.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">PNG, JPG, SVG or WebP · Recommended square, at least 200×200px</p>
+              </div>
+              <div className="flex items-center gap-3 justify-center sm:justify-start">
+                <label htmlFor="logo-upload" className="cursor-pointer">
+                  <Button
+                    asChild
+                    disabled={uploadState === "uploading"}
+                    className="font-heading uppercase tracking-wider"
+                  >
+                    <span>
+                      {uploadState === "uploading" ? (
+                        <><Loader2 size={15} className="mr-2 animate-spin" /> Uploading…</>
+                      ) : (
+                        <><Upload size={15} className="mr-2" /> Upload Logo</>
+                      )}
+                    </span>
+                  </Button>
+                </label>
+                {uploadState === "error" && (
+                  <span className="text-sm text-destructive font-medium">Upload failed — try again</span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
