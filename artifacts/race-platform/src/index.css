@@ -86,7 +86,7 @@
   --popover: 0 0% 100%;
   --popover-foreground: 0 0% 9%;
   --popover-border: 0 0% 89.8%;
-  --primary: 0 100% 40%; /* #CC0000 */
+  --primary: 0 72% 51%; /* #dc2626 */
   --primary-foreground: 0 0% 100%;
   --secondary: 126 30% 31%; /* #38683D */
   --secondary-foreground: 0 0% 100%;
@@ -128,7 +128,7 @@
   --popover: 0 0% 9%;
   --popover-foreground: 0 0% 98%;
   --popover-border: 0 0% 15%;
-  --primary: 0 100% 40%;
+  --primary: 0 72% 51%; /* #dc2626 */
   --primary-foreground: 0 0% 100%;
   --secondary: 126 30% 31%;
   --secondary-foreground: 0 0% 100%;
