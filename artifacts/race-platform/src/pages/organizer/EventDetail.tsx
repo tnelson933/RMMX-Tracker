@@ -301,6 +301,85 @@ export default function EventDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
         <div className="lg:col-span-2 space-y-6">
+
+          {/* Event Image upload card */}
+          <Card>
+            <CardHeader className="pb-3 border-b">
+              <CardTitle className="font-heading uppercase text-base flex items-center gap-2">
+                <ImageIcon size={16} className="text-primary" /> Event Image
+              </CardTitle>
+            </CardHeader>
+            {(event as any).imageUrl ? (
+              <>
+                <div className="px-6 pt-5">
+                  <img
+                    src={(event as any).imageUrl}
+                    alt={event.name}
+                    className="w-full max-h-48 object-contain rounded-md bg-muted/30"
+                  />
+                </div>
+                <CardContent className="p-5 flex flex-wrap items-center gap-3">
+                  <input
+                    id="event-img-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; handleImageUpload(f); } }}
+                  />
+                  <label htmlFor="event-img-upload" className="cursor-pointer">
+                    <Button asChild variant="outline" disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="font-heading uppercase tracking-wider">
+                      <span>
+                        {imgUploadState === "processing" ? <><Sparkles size={14} className="mr-2 animate-pulse" /> Removing background…</>
+                          : imgUploadState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading…</>
+                          : <><Upload size={14} className="mr-2" /> Replace Image</>}
+                      </span>
+                    </Button>
+                  </label>
+                  <Button variant="ghost" onClick={handleImageRemove} disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="text-muted-foreground hover:text-destructive font-heading uppercase tracking-wider">
+                    <X size={14} className="mr-1.5" /> Remove
+                  </Button>
+                  {imgUploadState === "done" && <span className="text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle size={14} /> Saved</span>}
+                  {imgUploadState === "error" && <span className="text-sm text-destructive font-medium">Upload failed — try again</span>}
+                </CardContent>
+              </>
+            ) : (
+              <CardContent className="p-6 flex flex-col sm:flex-row items-center gap-6">
+                <div className="w-24 h-24 rounded-xl border-2 border-dashed border-muted-foreground/25 bg-muted/20 flex items-center justify-center shrink-0">
+                  <ImageIcon size={32} className="text-muted-foreground/30" />
+                </div>
+                <div className="space-y-3 text-center sm:text-left">
+                  <div>
+                    <h3 className="font-heading font-bold uppercase tracking-tight text-lg">No Event Image</h3>
+                    <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                      Upload a race-specific flyer or photo. It will appear alongside the club logo on the public registration and race info/live standings pages.
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG or WebP · Background auto-removed on upload</p>
+                  </div>
+                  <div className="flex justify-center sm:justify-start">
+                    <input
+                      id="event-img-upload"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; handleImageUpload(f); } }}
+                    />
+                    <label htmlFor="event-img-upload" className="cursor-pointer">
+                      <Button asChild disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="font-heading uppercase tracking-wider">
+                        <span>
+                          {imgUploadState === "processing" ? <><Sparkles size={14} className="mr-2 animate-pulse" /> Removing background…</>
+                            : imgUploadState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading…</>
+                            : <><Upload size={14} className="mr-2" /> Upload Event Image</>}
+                        </span>
+                      </Button>
+                    </label>
+                  </div>
+                  {imgUploadState === "done" && <p className="text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle size={14} /> Saved</p>}
+                  {imgUploadState === "error" && <p className="text-sm text-destructive font-medium">Upload failed — try again</p>}
+                </div>
+              </CardContent>
+            )}
+          </Card>
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
               <CardTitle className="font-heading uppercase text-xl">Event Information</CardTitle>
@@ -672,83 +751,6 @@ export default function EventDetail() {
             </CardContent>
           </Card>
 
-          {/* Event Image upload card */}
-          <Card>
-            <CardHeader className="pb-3 border-b">
-              <CardTitle className="font-heading uppercase text-base flex items-center gap-2">
-                <ImageIcon size={16} className="text-primary" /> Event Image
-              </CardTitle>
-            </CardHeader>
-            {(event as any).imageUrl ? (
-              <>
-                <div className="px-6 pt-5">
-                  <img
-                    src={(event as any).imageUrl}
-                    alt={event.name}
-                    className="w-full max-h-48 object-contain rounded-md bg-muted/30"
-                  />
-                </div>
-                <CardContent className="p-5 flex flex-wrap items-center gap-3">
-                  <input
-                    id="event-img-upload"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; handleImageUpload(f); } }}
-                  />
-                  <label htmlFor="event-img-upload" className="cursor-pointer">
-                    <Button asChild variant="outline" disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="font-heading uppercase tracking-wider">
-                      <span>
-                        {imgUploadState === "processing" ? <><Sparkles size={14} className="mr-2 animate-pulse" /> Removing background…</>
-                          : imgUploadState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading…</>
-                          : <><Upload size={14} className="mr-2" /> Replace Image</>}
-                      </span>
-                    </Button>
-                  </label>
-                  <Button variant="ghost" onClick={handleImageRemove} disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="text-muted-foreground hover:text-destructive font-heading uppercase tracking-wider">
-                    <X size={14} className="mr-1.5" /> Remove
-                  </Button>
-                  {imgUploadState === "done" && <span className="text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle size={14} /> Saved</span>}
-                  {imgUploadState === "error" && <span className="text-sm text-destructive font-medium">Upload failed — try again</span>}
-                </CardContent>
-              </>
-            ) : (
-              <CardContent className="p-6 flex flex-col sm:flex-row items-center gap-6">
-                <div className="w-24 h-24 rounded-xl border-2 border-dashed border-muted-foreground/25 bg-muted/20 flex items-center justify-center shrink-0">
-                  <ImageIcon size={32} className="text-muted-foreground/30" />
-                </div>
-                <div className="space-y-3 text-center sm:text-left">
-                  <div>
-                    <h3 className="font-heading font-bold uppercase tracking-tight text-lg">No Event Image</h3>
-                    <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                      Upload a race-specific flyer or photo. It will appear alongside the club logo on the public registration and race info/live standings pages.
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG or WebP · Background auto-removed on upload</p>
-                  </div>
-                  <div className="flex justify-center sm:justify-start">
-                    <input
-                      id="event-img-upload"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; handleImageUpload(f); } }}
-                    />
-                    <label htmlFor="event-img-upload" className="cursor-pointer">
-                      <Button asChild disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="font-heading uppercase tracking-wider">
-                        <span>
-                          {imgUploadState === "processing" ? <><Sparkles size={14} className="mr-2 animate-pulse" /> Removing background…</>
-                            : imgUploadState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading…</>
-                            : <><Upload size={14} className="mr-2" /> Upload Event Image</>}
-                        </span>
-                      </Button>
-                    </label>
-                  </div>
-                  {imgUploadState === "done" && <p className="text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle size={14} /> Saved</p>}
-                  {imgUploadState === "error" && <p className="text-sm text-destructive font-medium">Upload failed — try again</p>}
-                </div>
-              </CardContent>
-            )}
-          </Card>
         </div>
 
         <div className="space-y-6">
