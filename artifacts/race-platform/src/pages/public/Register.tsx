@@ -387,14 +387,14 @@ export default function Register() {
                 <img
                   src={event.clubLogoUrl}
                   alt={event.clubName || "Club logo"}
-                  className="h-28 w-auto max-w-xs object-contain drop-shadow-lg"
+                  className="h-56 w-auto max-w-sm object-contain drop-shadow-lg"
                 />
               )}
               {(event as any).imageUrl && (
                 <img
                   src={(event as any).imageUrl}
                   alt={event.name}
-                  className="h-28 w-auto max-w-xs object-contain drop-shadow-lg rounded"
+                  className="h-56 w-auto max-w-sm object-contain drop-shadow-lg rounded"
                 />
               )}
             </div>
