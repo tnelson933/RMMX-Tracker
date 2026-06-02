@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useBroadcast } from "@/contexts/BroadcastContext";
-import { StackedSplitView } from "@/components/StackedSplitView";
+import { FisheyeSplitView } from "@/components/FisheyeSplitView";
 
 interface LiveBroadcastProps {
   eventId: number;
@@ -36,6 +36,10 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
 
   const previewRef = useRef<HTMLVideoElement>(null);
   const previewStreamRef = useRef<MediaStream | null>(null);
+  // The stream currently shown in the preview area — updated on preview start and go-live.
+  // Passed to FisheyeSplitView so it can create its own internal <video> and never be
+  // blocked by display:none on the organizer's visible <video> element.
+  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
   // Detected locally from the preview video dimensions — works before AND after go-live.
   const [previewIsDualFisheye, setPreviewIsDualFisheye] = useState(false);
 
@@ -109,6 +113,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
         audio: false,
       });
       previewStreamRef.current = stream;
+      setActiveStream(stream);
       if (previewRef.current) {
         previewRef.current.srcObject = stream;
         previewRef.current.muted = true;
@@ -118,6 +123,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         previewStreamRef.current = stream;
+        setActiveStream(stream);
         if (previewRef.current) {
           previewRef.current.srcObject = stream;
           previewRef.current.muted = true;
@@ -135,14 +141,13 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
   }
 
   const handleGoLive = async () => {
-    // Stop preview stream before starting broadcast
     stopPreview();
     await startBroadcast(eventId, selectedDeviceId);
-    // Attach live stream to preview element
-    if (previewRef.current) {
-      const stream = getLiveStream();
-      if (stream) {
-        previewRef.current.srcObject = stream;
+    const liveStream = getLiveStream();
+    if (liveStream) {
+      setActiveStream(liveStream);
+      if (previewRef.current) {
+        previewRef.current.srcObject = liveStream;
         previewRef.current.muted = true;
         previewRef.current.play().catch(() => {});
       }
@@ -171,11 +176,11 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     <div className="space-y-4">
       {/* Camera preview */}
       <div className="relative bg-black rounded-xl overflow-hidden aspect-video w-full max-w-xl">
-        {/* Raw video — kept in DOM as the camera source; hidden when canvas split overlay is active.
-            onLoadedMetadata fires whenever srcObject changes (preview → live) and re-detects the ratio. */}
+        {/* Raw video — shown when fisheye is OFF; kept invisible (not display:none) when
+            the canvas overlay is active so the stream keeps playing for onLoadedMetadata. */}
         <video
           ref={previewRef}
-          className={(previewIsDualFisheye || isDualFisheye) ? "hidden" : "w-full h-full object-cover"}
+          className={(previewIsDualFisheye || isDualFisheye) ? "invisible absolute inset-0 w-full h-full" : "w-full h-full object-cover"}
           playsInline
           muted
           onLoadedMetadata={(e) => {
@@ -185,11 +190,11 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
             }
           }}
         />
-        {/* Canvas split preview for portrait dual-fisheye cameras (Insta360 X5 webcam mode).
-            Fires as soon as preview starts — no need to go live first. */}
+        {/* FisheyeSplitView: stream-based canvas — owns its own internal off-screen <video>
+            element so it is never affected by the visibility of the organizer's preview video. */}
         {(previewIsDualFisheye || isDualFisheye) && (
           <div className="absolute inset-0 flex items-center justify-center bg-black">
-            <StackedSplitView videoRef={previewRef} />
+            <FisheyeSplitView stream={activeStream} />
           </div>
         )}
 

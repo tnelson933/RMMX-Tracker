@@ -524,11 +524,12 @@ export default function WatchLive() {
           {/* Stacked dual-fisheye: canvas slices top→left, bottom→right */}
           {isDualFisheye && <StackedSplitView videoRef={videoRef} />}
 
-          {/* Normal video — hidden when a canvas renderer is active */}
-          <div className={(is360 || isDualFisheye) ? "hidden" : "w-full flex items-center justify-center"}>
+          {/* Normal video — invisible (not display:none) when a canvas renderer is active
+              so MSE decoding keeps running and StackedSplitView can read frames from it. */}
+          <div className={(is360 || isDualFisheye) ? "absolute inset-0 pointer-events-none" : "w-full flex items-center justify-center"}>
             <video
               ref={videoRef}
-              className={(is360 || isDualFisheye) ? "hidden" : "w-full max-h-[80vh] object-contain"}
+              className={(is360 || isDualFisheye) ? "opacity-0 w-full h-full object-contain" : "w-full max-h-[80vh] object-contain"}
               playsInline
               muted
               onLoadedMetadata={(e) => {
