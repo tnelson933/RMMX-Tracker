@@ -27,6 +27,8 @@ export default function WatchLive() {
   const [needsTap, setNeedsTap] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const audioUnlockedRef = useRef(false);
+  // Once a 360 format is confirmed, lock it so MSE reconnects can't reset the detection.
+  const formatLockedRef = useRef(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -530,14 +532,17 @@ export default function WatchLive() {
                   const ratio = v.videoWidth / v.videoHeight;
                   setVideoNaturalDims({ w: v.videoWidth, h: v.videoHeight });
                   if (ratio > 1.8) {
-                    // Equirectangular stitched 360° (2:1 landscape)
                     setIs360(true);
                     setIsDualFisheye(false);
+                    formatLockedRef.current = true;
                   } else if (ratio < 0.7) {
-                    // Dual fisheye — two 180° circles stacked vertically (Insta360 X5 native)
                     setIs360(false);
                     setIsDualFisheye(true);
-                  } else {
+                    formatLockedRef.current = true;
+                  } else if (!formatLockedRef.current) {
+                    // Only reset to plain video if we haven't already locked in a 360 format.
+                    // MSE reconnects can fire onLoadedMetadata with temporary/wrong dimensions;
+                    // once a 360 format is confirmed we keep it for the whole stream session.
                     setIs360(false);
                     setIsDualFisheye(false);
                   }

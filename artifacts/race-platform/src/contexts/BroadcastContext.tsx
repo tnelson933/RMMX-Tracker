@@ -10,6 +10,7 @@ interface BroadcastContextValue {
   duration: number;
   activeEventId: number | null;
   is360: boolean;
+  isDualFisheye: boolean;
 
   startBroadcast: (eventId: number, deviceId: string) => Promise<void>;
   stopBroadcast: () => void;
@@ -42,6 +43,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const [is360, setIs360] = useState(false);
   const is360Ref = useRef(false);
   is360Ref.current = is360;
+  const [isDualFisheye, setIsDualFisheye] = useState(false);
 
   const liveStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -67,6 +69,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     setDuration(0);
     setActiveEventId(null);
     setIs360(false);
+    setIsDualFisheye(false);
     is360ManuallySetRef.current = false;
   }, []);
 
@@ -92,15 +95,23 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Auto-detect 360° from the video track's actual aspect ratio (equirectangular = ~2:1).
-    // Skip auto-detection if the user explicitly pressed the 360° toggle before going live.
-    if (!is360ManuallySetRef.current) {
-      const videoTrack = stream.getVideoTracks()[0];
-      const settings = videoTrack?.getSettings();
-      if (settings?.width && settings?.height) {
-        const autoIs360 = settings.width / settings.height > 1.8;
+    // Auto-detect camera format from the video track's actual aspect ratio.
+    //   ratio > 1.8  → equirectangular stitched 360° (landscape 2:1) — SplitView360
+    //   ratio < 0.7  → dual-fisheye stacked portrait (Insta360 X5 webcam) — StackedSplitView
+    // Skip is360 auto-detection if the user explicitly toggled it before going live.
+    const videoTrack = stream.getVideoTracks()[0];
+    const settings = videoTrack?.getSettings();
+    if (settings?.width && settings?.height) {
+      const ratio = settings.width / settings.height;
+      if (ratio < 0.7) {
+        setIsDualFisheye(true);
+        is360Ref.current = false;
+        setIs360(false);
+      } else if (!is360ManuallySetRef.current) {
+        const autoIs360 = ratio > 1.8;
         is360Ref.current = autoIs360;
         setIs360(autoIs360);
+        setIsDualFisheye(false);
       }
     }
 
@@ -183,6 +194,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       duration,
       activeEventId,
       is360,
+      isDualFisheye,
       startBroadcast,
       stopBroadcast,
       toggleMic,

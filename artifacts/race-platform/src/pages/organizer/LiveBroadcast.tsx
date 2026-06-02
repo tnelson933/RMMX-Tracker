@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useBroadcast } from "@/contexts/BroadcastContext";
+import { StackedSplitView } from "@/components/StackedSplitView";
 
 interface LiveBroadcastProps {
   eventId: number;
@@ -18,6 +19,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     camEnabled,
     duration,
     is360,
+    isDualFisheye,
     startBroadcast,
     stopBroadcast,
     toggleMic,
@@ -162,7 +164,14 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     <div className="space-y-4">
       {/* Camera preview */}
       <div className="relative bg-black rounded-xl overflow-hidden aspect-video w-full max-w-xl">
-        <video ref={previewRef} className="w-full h-full object-cover" playsInline muted />
+        {/* Raw video — kept in DOM as the camera source; hidden when canvas split overlay is active */}
+        <video ref={previewRef} className={isDualFisheye ? "hidden" : "w-full h-full object-cover"} playsInline muted />
+        {/* Canvas split preview for portrait dual-fisheye cameras (Insta360 X5 webcam mode) */}
+        {isDualFisheye && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <StackedSplitView videoRef={previewRef} />
+          </div>
+        )}
 
         {permissionState === "requesting" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-white/60 gap-2 bg-black/80">
