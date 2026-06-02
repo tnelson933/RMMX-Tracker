@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useRoute } from "wouter";
+import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
 import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, getGetEventQueryKey } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
@@ -760,6 +761,9 @@ export default function EventDetail() {
               )}
             </CardContent>
           </Card>
+
+          {/* Embed Widget Card */}
+          <EmbedWidgetCard eventId={eventId} />
 
         </div>
 
