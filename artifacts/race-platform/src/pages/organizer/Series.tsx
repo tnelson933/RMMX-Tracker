@@ -14,6 +14,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { Trophy, Plus, ChevronRight, Medal, X, Calendar, Pencil } from "lucide-react";
+import { EmbedSeriesWidgetCard } from "@/components/organizer/EmbedSeriesWidgetCard";
 
 const createSeriesSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -460,6 +461,10 @@ export default function SeriesManagement() {
                     <p className="text-muted-foreground">Standings appear once events in this series have completed motos with results.</p>
                   </CardContent>
                 </Card>
+              )}
+
+              {selectedSeriesId && (
+                <EmbedSeriesWidgetCard seriesId={selectedSeriesId} />
               )}
             </>
           ) : (

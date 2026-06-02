@@ -34,6 +34,7 @@ import RiderPortal from "@/pages/rider/RiderPortal";
 import RiderHistory from "@/pages/rider/RiderHistory";
 import WatchLive from "@/pages/public/WatchLive";
 import EventWidget from "@/pages/public/EventWidget";
+import SeriesWidget from "@/pages/public/SeriesWidget";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -87,6 +88,9 @@ function Router() {
       </Route>
       <Route path="/watch/:eventId">
         <WatchLive />
+      </Route>
+      <Route path="/widget/series/:seriesId">
+        <SeriesWidget />
       </Route>
       <Route path="/widget/:eventId">
         <EventWidget />
