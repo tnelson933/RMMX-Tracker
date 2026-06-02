@@ -89,17 +89,15 @@ function TodayCard({ event }: { event: UpcomingEventItem }) {
               </span>
               RACE DAY
             </span>
-            <Link
-              href={`/watch/${event.eventId}`}
-              onClick={e => e.stopPropagation()}
-              className={`flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded-full transition-colors ${
-                isLive
-                  ? "bg-white text-red-600 hover:bg-red-50 animate-pulse"
-                  : "bg-white/20 text-white hover:bg-white/30"
-              }`}
-            >
-              <Radio size={12} /> {isLive ? "WATCH LIVE" : "WATCH"}
-            </Link>
+            {isLive && (
+              <Link
+                href={`/watch/${event.eventId}`}
+                onClick={e => e.stopPropagation()}
+                className="flex items-center gap-1.5 bg-white text-red-600 hover:bg-red-50 text-xs font-bold px-2 py-0.5 rounded-full transition-colors"
+              >
+                <Radio size={12} /> WATCH LIVE
+              </Link>
+            )}
           </div>
           <div className="p-4">
             <h3 className="font-heading font-bold text-lg leading-tight mb-3 group-hover:text-primary transition-colors">
