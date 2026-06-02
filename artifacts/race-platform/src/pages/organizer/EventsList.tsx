@@ -11,7 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2 } from "lucide-react";
+import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -102,6 +102,8 @@ export default function EventsList() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [filter, setFilter] = useState("all");
   const [createSeriesId, setCreateSeriesId] = useState<string>("none");
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [createImgState, setCreateImgState] = useState<"idle" | "processing" | "uploading" | "done">("idle");
 
   // Super admin sees all events; club organizer sees only their club's events
   const eventsQuery = isSuperAdmin
@@ -152,44 +154,75 @@ export default function EventsList() {
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
 
-  const onSubmit = (data: z.infer<typeof createEventSchema>) => {
-    createMutation.mutate({
-      data: {
-        clubId: data.clubId,
-        name: data.name,
-        date: data.date,
-        state: data.state,
-        location: data.location,
-        trackName: data.trackName,
-        raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
-        registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
-        registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
-        paymentEnabled: data.paymentEnabled,
-        entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
-      }
-    }, {
-      onSuccess: (newEvent) => {
-        queryClient.invalidateQueries({ queryKey: getListEventsQueryKey({}) });
-        // Link to series if selected
-        if (createSeriesId !== "none") {
-          const targetSeries = seriesList?.find(s => s.id === Number(createSeriesId));
-          if (targetSeries) {
-            const currentIds = (targetSeries.eventIds as number[]) ?? [];
-            updateSeriesMutation.mutate({
-              seriesId: targetSeries.id,
-              data: { eventIds: [...currentIds, newEvent.id] },
-            });
-          }
+  const onSubmit = async (data: z.infer<typeof createEventSchema>) => {
+    let newEvent: Awaited<ReturnType<typeof createMutation.mutateAsync>>;
+    try {
+      newEvent = await createMutation.mutateAsync({
+        data: {
+          clubId: data.clubId,
+          name: data.name,
+          date: data.date,
+          state: data.state,
+          location: data.location,
+          trackName: data.trackName,
+          raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
+          registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
+          registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
+          paymentEnabled: data.paymentEnabled,
+          entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         }
-        setIsCreateOpen(false);
-        setCreateSeriesId("none");
-        form.reset();
-        toast({ title: "Event created successfully" });
-      },
-      onError: (err) => {
-        toast({ title: "Failed to create event", description: err.message, variant: "destructive" });
+      });
+    } catch (err: any) {
+      toast({ title: "Failed to create event", description: err.message, variant: "destructive" });
+      return;
+    }
+
+    // Link to series if selected
+    if (createSeriesId !== "none") {
+      const targetSeries = seriesList?.find(s => s.id === Number(createSeriesId));
+      if (targetSeries) {
+        const currentIds = (targetSeries.eventIds as number[]) ?? [];
+        updateSeriesMutation.mutate({
+          seriesId: targetSeries.id,
+          data: { eventIds: [...currentIds, newEvent.id] },
+        });
       }
-    });
+    }
+
+    // Upload image if one was selected
+    if (pendingImageFile) {
+      try {
+        setCreateImgState("processing");
+        const { removeBackground } = await import("@imgly/background-removal");
+        const cleanBlob = await removeBackground(pendingImageFile);
+        setCreateImgState("uploading");
+        const ext = "png";
+        const uploadRes = await fetch("/api/storage/uploads/request-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: `event-${newEvent.id}-image.${ext}`, contentType: "image/png", folder: "events" }),
+        });
+        const { uploadUrl, objectPath } = await uploadRes.json();
+        await fetch(uploadUrl, { method: "PUT", body: cleanBlob, headers: { "Content-Type": "image/png" } });
+        const imageUrl = `/api/storage${objectPath}`;
+        await fetch(`/api/events/${newEvent.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl }),
+        });
+        setCreateImgState("done");
+      } catch {
+        toast({ title: "Event created, but image upload failed", variant: "destructive" });
+      }
+    }
+
+    queryClient.invalidateQueries({ queryKey: getListEventsQueryKey({}) });
+    setIsCreateOpen(false);
+    setCreateSeriesId("none");
+    setPendingImageFile(null);
+    setCreateImgState("idle");
+    form.reset();
+    toast({ title: "Event created successfully" });
   };
 
   const filteredEvents = events?.filter(e => {
@@ -489,9 +522,39 @@ export default function EventsList() {
                   </div>
                 )}
 
+                {/* Event Image */}
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <ImageIcon size={14} className="text-primary" /> Event Image <span className="text-muted-foreground font-normal">(optional)</span>
+                  </label>
+                  <input
+                    id="create-event-img"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; setPendingImageFile(f); } }}
+                  />
+                  {pendingImageFile ? (
+                    <div className="flex items-center gap-3 p-3 rounded-md border bg-muted/40">
+                      <ImageIcon size={16} className="text-primary shrink-0" />
+                      <span className="text-sm flex-1 truncate">{pendingImageFile.name}</span>
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Sparkles size={11} className="text-primary" /> bg removal on save
+                      </span>
+                      <button type="button" onClick={() => setPendingImageFile(null)} className="text-muted-foreground hover:text-destructive">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <label htmlFor="create-event-img" className="flex items-center justify-center gap-2 p-3 rounded-md border border-dashed text-sm text-muted-foreground hover:text-foreground hover:border-primary cursor-pointer transition-colors">
+                      <Upload size={14} /> Choose image
+                    </label>
+                  )}
+                </div>
+
                 <div className="pt-4 flex justify-end">
-                  <Button type="submit" disabled={createMutation.isPending} className="font-heading uppercase tracking-wider">
-                    {createMutation.isPending ? "Creating..." : "Create Event"}
+                  <Button type="submit" disabled={createMutation.isPending || createImgState === "processing" || createImgState === "uploading"} className="font-heading uppercase tracking-wider">
+                    {createMutation.isPending ? "Creating..." : createImgState === "processing" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Removing background…</> : createImgState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading image…</> : "Create Event"}
                   </Button>
                 </div>
               </form>
