@@ -18,7 +18,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
             <img src={rmLogo} alt="RMMX Tracker" className="h-9 w-9" />
             <span className="flex flex-col leading-none">
               <span className="text-primary font-heading font-bold text-xl uppercase tracking-wider">RMMX</span>
-              <span className="text-primary/70 font-heading font-semibold text-xs uppercase tracking-widest">Tracker</span>
+              <span className="text-primary font-heading font-semibold text-xs uppercase tracking-widest">Tracker</span>
             </span>
           </Link>
 
