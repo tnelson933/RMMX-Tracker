@@ -1,0 +1,40 @@
+The reason you are seeing a stacked layout (where the front lens is on top and the back lens is on the bottom) is that the camera hardware outputs a vertically split feed over USB when it is in 360/Panoramic webcam mode.Because the raw browser video element treats this as a single stacked image, your web software can be programmed to automatically slice that frame in half horizontally, flatten the lenses, and rearrange them side-by-side.Assuming you are building a web application using HTML5, JavaScript, and a <canvas> element to capture the stream from a user's getUserMedia(), you can achieve this by slicing the incoming video buffer.The Programmatic LogicCapture the raw stacked video stream at its native resolution (usually 1440×2880 vertically stretched or 1920×2160 stacked, depending on the firmware's specific output mapping).Read the video frame into an Offscreen Canvas or a 2D canvas context.Slice the image exactly at the 50% height mark.Draw the top half (Front Lens) to the left side of your main display canvas.Draw the bottom half (Back Lens) to the right side of your main display canvas.JavaScript Frontend ImplementationAdd this code directly into your web app's player interface loop to force an automatic side-by-side crop and restitch:javascriptconst video = document.getElementById('webcamVideo'); // Your hidden incoming HTML5 <video> element
+const canvas = document.getElementById('outputCanvas'); // The visible 2D canvas the user sees
+const ctx = canvas.getContext('2d');
+
+function drawSideBySide() {
+    if (video.readyState === video.HAVE_CURRENT_DATA) {
+        const fullWidth = video.videoWidth;
+        const fullHeight = video.videoHeight;
+        
+        // Calculate the midpoint where the two feeds are stacked
+        const halfHeight = fullHeight / 2; 
+        const singleViewWidth = fullWidth; 
+
+        // Set your visible display canvas size to be wide (Side-by-Side)
+        canvas.width = singleViewWidth * 2;
+        canvas.height = halfHeight;
+
+        // 1. Slice TOP half (Front Lens) -> Draw on the LEFT side
+        ctx.drawImage(
+            video, 
+            0, 0, singleViewWidth, halfHeight,       // Source coordinates (Top half)
+            0, 0, singleViewWidth, halfHeight        // Destination coordinates (Left side)
+        );
+
+        // 2. Slice BOTTOM half (Back Lens) -> Draw on the RIGHT side
+        ctx.drawImage(
+            video, 
+            0, halfHeight, singleViewWidth, halfHeight, // Source coordinates (Bottom half)
+            singleViewWidth, 0, singleViewWidth, halfHeight // Destination coordinates (Right side)
+        );
+    }
+    // Continuously loop the execution for every live video frame
+    requestAnimationFrame(drawSideBySide);
+}
+
+// Trigger the loop once the camera stream successfully loads
+video.addEventListener('play', () => {
+    requestAnimationFrame(drawSideBySide);
+});
+Use code with caution.De-warping the Fish-eyeWhile the JavaScript code above will instantly shift the footage from stacked to side-by-side, the lenses will still look like circular fish-eyes.To flatten out the curves programmatically in a browser environment, pass those canvas sections into a light WebGL vertex shader. The shader uses an Equirectangular-to-Perspective formula to stretch the circular edges into a normal, flat 2D perspective view.Are you building this web platform using vanilla JavaScript/HTML5 or a specific frontend framework like React or Vue? I can help you package this layout logic into a reusable component.

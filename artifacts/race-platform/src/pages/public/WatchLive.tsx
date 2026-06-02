@@ -4,6 +4,7 @@ import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, Chec
 import { Button } from "@/components/ui/button";
 import { useListMotos, useListResults } from "@workspace/api-client-react";
 import { SplitView360 } from "@/components/SplitView360";
+import { StackedSplitView } from "@/components/StackedSplitView";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
@@ -513,25 +514,14 @@ export default function WatchLive() {
           {/* 360 split view: front + back lenses side-by-side via canvas */}
           {is360 && <SplitView360 videoRef={videoRef} />}
 
-          {/* Dual fisheye wrapper — rotates stacked circles into side-by-side 2D view */}
-          <div
-            className={isDualFisheye ? "relative overflow-hidden w-full" : (is360 ? "hidden" : "w-full flex items-center justify-center")}
-            style={isDualFisheye && videoNaturalDims.h > 0
-              ? { aspectRatio: `${videoNaturalDims.h} / ${videoNaturalDims.w}` }
-              : undefined}
-          >
+          {/* Stacked dual-fisheye: canvas slices top→left, bottom→right */}
+          {isDualFisheye && <StackedSplitView videoRef={videoRef} />}
+
+          {/* Normal video — hidden when a canvas renderer is active */}
+          <div className={(is360 || isDualFisheye) ? "hidden" : "w-full flex items-center justify-center"}>
             <video
               ref={videoRef}
-              className={isDualFisheye ? "" : (is360 ? "hidden" : "w-full max-h-[80vh] object-contain")}
-              style={isDualFisheye && videoNaturalDims.h > 0 ? {
-                position: "absolute",
-                top: "50%",
-                left: "50%",
-                height: "100%",
-                width: `${(videoNaturalDims.w / videoNaturalDims.h) * 100}%`,
-                transform: "translate(-50%, -50%) rotate(90deg)",
-                maxWidth: "none",
-              } : undefined}
+              className={(is360 || isDualFisheye) ? "hidden" : "w-full max-h-[80vh] object-contain"}
               playsInline
               muted
               onLoadedMetadata={(e) => {
