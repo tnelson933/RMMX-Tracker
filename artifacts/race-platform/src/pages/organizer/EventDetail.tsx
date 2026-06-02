@@ -128,16 +128,19 @@ export default function EventDetail() {
   const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [imgUploadState, setImgUploadState] = useState<"idle" | "processing" | "uploading" | "done" | "error">("idle");
+  const [removeBg, setRemoveBg] = useState(false);
 
   const handleImageUpload = async (file: File) => {
     if (!file || !eventId) return;
     setImgUploadState("processing");
     let blob: Blob = file;
-    try {
-      const { removeBackground } = await import("@imgly/background-removal");
-      blob = await removeBackground(file);
-    } catch {
-      blob = file;
+    if (removeBg) {
+      try {
+        const { removeBackground } = await import("@imgly/background-removal");
+        blob = await removeBackground(file);
+      } catch {
+        blob = file;
+      }
     }
     setImgUploadState("uploading");
     try {
@@ -334,6 +337,10 @@ export default function EventDetail() {
                       </span>
                     </Button>
                   </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-muted-foreground">
+                    <Checkbox checked={removeBg} onCheckedChange={v => setRemoveBg(!!v)} disabled={imgUploadState === "processing" || imgUploadState === "uploading"} />
+                    Remove background
+                  </label>
                   <Button variant="ghost" onClick={handleImageRemove} disabled={imgUploadState === "processing" || imgUploadState === "uploading"} className="text-muted-foreground hover:text-destructive font-heading uppercase tracking-wider">
                     <X size={14} className="mr-1.5" /> Remove
                   </Button>
@@ -352,9 +359,9 @@ export default function EventDetail() {
                     <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
                       Upload a race-specific flyer or photo. It will appear alongside the club logo on the public registration and race info/live standings pages.
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG or WebP · Background auto-removed on upload</p>
+                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG or WebP</p>
                   </div>
-                  <div className="flex justify-center sm:justify-start">
+                  <div className="flex flex-wrap items-center gap-3 justify-center sm:justify-start">
                     <input
                       id="event-img-upload"
                       type="file"
@@ -370,6 +377,10 @@ export default function EventDetail() {
                             : <><Upload size={14} className="mr-2" /> Upload Event Image</>}
                         </span>
                       </Button>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-muted-foreground">
+                      <Checkbox checked={removeBg} onCheckedChange={v => setRemoveBg(!!v)} disabled={imgUploadState === "processing" || imgUploadState === "uploading"} />
+                      Remove background
                     </label>
                   </div>
                   {imgUploadState === "done" && <p className="text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle size={14} /> Saved</p>}

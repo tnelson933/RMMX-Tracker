@@ -4,6 +4,7 @@ import { useGetClubDashboard, useGetClub, useUpdateClub } from "@workspace/api-c
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, Users, CheckCircle, Plus, Tag, Activity, Upload, ImageIcon, Loader2, X, Sparkles } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Link } from "wouter";
 import { format, parseISO } from "date-fns";
 
@@ -23,6 +24,7 @@ export default function Dashboard() {
 
   const [uploadState, setUploadState] = useState<"idle" | "processing" | "uploading" | "done" | "error">("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [removeBg, setRemoveBg] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -34,14 +36,20 @@ export default function Dashboard() {
     let processedBlob: Blob = file;
     let processedName = file.name.replace(/\.[^.]+$/, ".png");
 
-    try {
-      const { removeBackground } = await import("@imgly/background-removal");
-      const result = await removeBackground(file);
-      processedBlob = result;
-      const localPreview = URL.createObjectURL(result);
-      setPreviewUrl(localPreview);
-    } catch {
-      // Background removal failed — fall back to original file
+    if (removeBg) {
+      try {
+        const { removeBackground } = await import("@imgly/background-removal");
+        const result = await removeBackground(file);
+        processedBlob = result;
+        const localPreview = URL.createObjectURL(result);
+        setPreviewUrl(localPreview);
+      } catch {
+        const localPreview = URL.createObjectURL(file);
+        setPreviewUrl(localPreview);
+        processedBlob = file;
+        processedName = file.name;
+      }
+    } else {
       const localPreview = URL.createObjectURL(file);
       setPreviewUrl(localPreview);
       processedBlob = file;
@@ -205,6 +213,15 @@ export default function Dashboard() {
                 </Button>
               </label>
 
+              <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-muted-foreground">
+                <Checkbox
+                  checked={removeBg}
+                  onCheckedChange={v => setRemoveBg(!!v)}
+                  disabled={uploadState === "processing" || uploadState === "uploading"}
+                />
+                Remove background
+              </label>
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -239,7 +256,7 @@ export default function Dashboard() {
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">PNG, JPG, SVG or WebP · Recommended square, at least 200×200px</p>
               </div>
-              <div className="flex items-center gap-3 justify-center sm:justify-start">
+              <div className="flex flex-wrap items-center gap-3 justify-center sm:justify-start">
                 <label htmlFor="logo-upload" className="cursor-pointer">
                   <Button
                     asChild
@@ -256,6 +273,14 @@ export default function Dashboard() {
                       )}
                     </span>
                   </Button>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={removeBg}
+                    onCheckedChange={v => setRemoveBg(!!v)}
+                    disabled={uploadState === "processing" || uploadState === "uploading"}
+                  />
+                  Remove background
                 </label>
                 {uploadState === "error" && (
                   <span className="text-sm text-destructive font-medium">Upload failed — try again</span>

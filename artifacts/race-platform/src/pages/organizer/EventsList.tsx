@@ -104,6 +104,7 @@ export default function EventsList() {
   const [createSeriesId, setCreateSeriesId] = useState<string>("none");
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [createImgState, setCreateImgState] = useState<"idle" | "processing" | "uploading" | "done">("idle");
+  const [removeBgOnCreate, setRemoveBgOnCreate] = useState(false);
 
   // Super admin sees all events; club organizer sees only their club's events
   const eventsQuery = isSuperAdmin
@@ -193,8 +194,11 @@ export default function EventsList() {
     if (pendingImageFile) {
       try {
         setCreateImgState("processing");
-        const { removeBackground } = await import("@imgly/background-removal");
-        const cleanBlob = await removeBackground(pendingImageFile);
+        let cleanBlob: Blob = pendingImageFile;
+        if (removeBgOnCreate) {
+          const { removeBackground } = await import("@imgly/background-removal");
+          cleanBlob = await removeBackground(pendingImageFile);
+        }
         setCreateImgState("uploading");
         const ext = "png";
         const uploadRes = await fetch("/api/storage/uploads/request-url", {
@@ -222,6 +226,7 @@ export default function EventsList() {
     setCreateSeriesId("none");
     setPendingImageFile(null);
     setCreateImgState("idle");
+    setRemoveBgOnCreate(false);
     form.reset();
     toast({ title: "Event created successfully" });
   };
@@ -536,13 +541,14 @@ export default function EventsList() {
                     onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; setPendingImageFile(f); } }}
                   />
                   {pendingImageFile ? (
-                    <div className="flex items-center gap-3 p-3 rounded-md border bg-muted/40">
+                    <div className="flex flex-wrap items-center gap-3 p-3 rounded-md border bg-muted/40">
                       <ImageIcon size={16} className="text-primary shrink-0" />
-                      <span className="text-sm flex-1 truncate">{pendingImageFile.name}</span>
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Sparkles size={11} className="text-primary" /> bg removal on save
-                      </span>
-                      <button type="button" onClick={() => setPendingImageFile(null)} className="text-muted-foreground hover:text-destructive">
+                      <span className="text-sm flex-1 truncate min-w-0">{pendingImageFile.name}</span>
+                      <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-muted-foreground shrink-0">
+                        <Checkbox checked={removeBgOnCreate} onCheckedChange={v => setRemoveBgOnCreate(!!v)} />
+                        Remove background
+                      </label>
+                      <button type="button" onClick={() => setPendingImageFile(null)} className="text-muted-foreground hover:text-destructive shrink-0">
                         <X size={14} />
                       </button>
                     </div>
