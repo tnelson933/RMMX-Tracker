@@ -44,10 +44,8 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const [is360, setIs360] = useState(false);
   const is360Ref = useRef(false);
   is360Ref.current = is360;
-  const [isDualFisheye, setIsDualFisheye] = useState(
-    () => localStorage.getItem("broadcast.dualFisheye") === "true"
-  );
-  const isDualFisheyeRef = useRef(isDualFisheye);
+  const [isDualFisheye, setIsDualFisheye] = useState(false);
+  const isDualFisheyeRef = useRef(false);
   isDualFisheyeRef.current = isDualFisheye;
 
   const liveStreamRef = useRef<MediaStream | null>(null);
@@ -57,9 +55,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   // Tracks whether the user explicitly pressed the format toggles before going live.
   // When true, the manual choice wins over auto-detection in startBroadcast.
   const is360ManuallySetRef = useRef(false);
-  const isDualFisheyeManuallySetRef = useRef(
-    localStorage.getItem("broadcast.dualFisheye") === "true"
-  );
+  const isDualFisheyeManuallySetRef = useRef(false);
 
   const stopBroadcast = useCallback(() => {
     recorderRef.current?.stop();

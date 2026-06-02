@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useBroadcast } from "@/contexts/BroadcastContext";
-import { FisheyeSplitView } from "@/components/FisheyeSplitView";
 
 interface LiveBroadcastProps {
   eventId: number;
@@ -18,14 +17,10 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     micEnabled,
     camEnabled,
     duration,
-    is360,
-    isDualFisheye,
     startBroadcast,
     stopBroadcast,
     toggleMic,
     toggleCam,
-    toggleIs360,
-    toggleIsDualFisheye,
     getLiveStream,
   } = useBroadcast();
 
@@ -36,12 +31,6 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
 
   const previewRef = useRef<HTMLVideoElement>(null);
   const previewStreamRef = useRef<MediaStream | null>(null);
-  // The stream currently shown in the preview area — updated on preview start and go-live.
-  // Passed to FisheyeSplitView so it can create its own internal <video> and never be
-  // blocked by display:none on the organizer's visible <video> element.
-  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
-  // Detected locally from the preview video dimensions — works before AND after go-live.
-  const [previewIsDualFisheye, setPreviewIsDualFisheye] = useState(false);
 
   const isLive = broadcastState === "live";
 
@@ -104,16 +93,12 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
 
   async function startPreview(deviceId: string) {
     stopPreview();
-    setPreviewIsDualFisheye(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        // No height constraint — lets portrait/stacked cameras (e.g. Insta360 X5) keep their
-        // native aspect ratio so dual-fisheye detection works correctly.
         video: { deviceId: { exact: deviceId }, width: { ideal: 1280, max: 1920 } },
         audio: false,
       });
       previewStreamRef.current = stream;
-      setActiveStream(stream);
       if (previewRef.current) {
         previewRef.current.srcObject = stream;
         previewRef.current.muted = true;
@@ -123,7 +108,6 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         previewStreamRef.current = stream;
-        setActiveStream(stream);
         if (previewRef.current) {
           previewRef.current.srcObject = stream;
           previewRef.current.muted = true;
@@ -137,20 +121,16 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     previewStreamRef.current?.getTracks().forEach(t => t.stop());
     previewStreamRef.current = null;
     if (previewRef.current) previewRef.current.srcObject = null;
-    setPreviewIsDualFisheye(false);
   }
 
   const handleGoLive = async () => {
     stopPreview();
     await startBroadcast(eventId, selectedDeviceId);
     const liveStream = getLiveStream();
-    if (liveStream) {
-      setActiveStream(liveStream);
-      if (previewRef.current) {
-        previewRef.current.srcObject = liveStream;
-        previewRef.current.muted = true;
-        previewRef.current.play().catch(() => {});
-      }
+    if (liveStream && previewRef.current) {
+      previewRef.current.srcObject = liveStream;
+      previewRef.current.muted = true;
+      previewRef.current.play().catch(() => {});
     }
   };
 
@@ -176,27 +156,12 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     <div className="space-y-4">
       {/* Camera preview */}
       <div className="relative bg-black rounded-xl overflow-hidden aspect-video w-full max-w-xl">
-        {/* Raw video — shown when fisheye is OFF; kept invisible (not display:none) when
-            the canvas overlay is active so the stream keeps playing for onLoadedMetadata. */}
         <video
           ref={previewRef}
-          className={(previewIsDualFisheye || isDualFisheye) ? "invisible absolute inset-0 w-full h-full" : "w-full h-full object-cover"}
+          className="w-full h-full object-cover"
           playsInline
           muted
-          onLoadedMetadata={(e) => {
-            const v = e.currentTarget;
-            if (v.videoWidth > 0 && v.videoHeight > 0) {
-              setPreviewIsDualFisheye(v.videoWidth / v.videoHeight < 0.7);
-            }
-          }}
         />
-        {/* FisheyeSplitView: stream-based canvas — owns its own internal off-screen <video>
-            element so it is never affected by the visibility of the organizer's preview video. */}
-        {(previewIsDualFisheye || isDualFisheye) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black">
-            <FisheyeSplitView stream={activeStream} />
-          </div>
-        )}
 
         {permissionState === "requesting" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-white/60 gap-2 bg-black/80">
@@ -275,36 +240,9 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
             >
               <Radio size={16} /> Go Live
             </Button>
-            <Button
-              variant={is360 ? "default" : "outline"}
-              size="sm"
-              onClick={toggleIs360}
-              className={`font-heading uppercase text-xs tracking-wider gap-1.5 ${is360 ? "bg-cyan-600 hover:bg-cyan-700 text-white border-cyan-600" : ""}`}
-              title={is360 ? "360° equirectangular mode ON — click to turn off" : "Enable 360° equirectangular split view"}
-            >
-              {is360 ? "360° ON" : "360° OFF"}
-            </Button>
-            <Button
-              variant={isDualFisheye ? "default" : "outline"}
-              size="sm"
-              onClick={toggleIsDualFisheye}
-              className={`font-heading uppercase text-xs tracking-wider gap-1.5 ${isDualFisheye ? "bg-orange-600 hover:bg-orange-700 text-white border-orange-600" : ""}`}
-              title={isDualFisheye ? "Dual Fisheye mode ON (Insta360 X5 stacked) — click to turn off" : "Enable Dual Fisheye mode for stacked portrait cameras (e.g. Insta360 X5)"}
-            >
-              {isDualFisheye ? "Fisheye ON" : "Fisheye OFF"}
-            </Button>
           </>
         ) : (
           <>
-            {is360 && (
-              <span
-                className="flex items-center gap-1.5 text-cyan-400 text-xs font-heading font-bold uppercase tracking-wider bg-cyan-950/60 border border-cyan-500/30 rounded px-2.5 py-1.5"
-                title="360° equirectangular camera detected automatically"
-              >
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                360° AUTO
-              </span>
-            )}
             <Button
               variant="ghost" size="sm"
               onClick={toggleMic}
