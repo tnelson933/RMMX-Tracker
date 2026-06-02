@@ -309,8 +309,12 @@ export default function WatchLive() {
         } else if (jsonMsg.type === "init") {
           const newMime = jsonMsg.mimeType as string;
           mimeTypeRef.current = newMime;
-          setIs360(jsonMsg.is360 === true);
-          if (jsonMsg.isDualFisheye === true) { setIsDualFisheye(true); formatLockedRef.current = true; }
+          // Formats are mutually exclusive — isDualFisheye takes priority if both are somehow set.
+          const sigIs360 = jsonMsg.is360 === true && jsonMsg.isDualFisheye !== true;
+          const sigDualFisheye = jsonMsg.isDualFisheye === true;
+          setIs360(sigIs360);
+          setIsDualFisheye(sigDualFisheye);
+          if (sigIs360 || sigDualFisheye) { formatLockedRef.current = true; }
           // ws.onclose always calls teardownMSE() before reconnecting, so msRef
           // is always null here. Always do a clean FRESH INIT — no REUSE path.
           queueRef.current = [];
@@ -528,6 +532,10 @@ export default function WatchLive() {
               playsInline
               muted
               onLoadedMetadata={(e) => {
+                // If the broadcaster already told us the format via signaling, trust that
+                // over dimension detection. MSE reconnects re-fire this event with potentially
+                // wrong temporary dimensions which would corrupt the locked format.
+                if (formatLockedRef.current) return;
                 const v = e.currentTarget;
                 if (v.videoWidth > 0 && v.videoHeight > 0) {
                   const ratio = v.videoWidth / v.videoHeight;
@@ -540,10 +548,7 @@ export default function WatchLive() {
                     setIs360(false);
                     setIsDualFisheye(true);
                     formatLockedRef.current = true;
-                  } else if (!formatLockedRef.current) {
-                    // Only reset to plain video if we haven't already locked in a 360 format.
-                    // MSE reconnects can fire onLoadedMetadata with temporary/wrong dimensions;
-                    // once a 360 format is confirmed we keep it for the whole stream session.
+                  } else {
                     setIs360(false);
                     setIsDualFisheye(false);
                   }

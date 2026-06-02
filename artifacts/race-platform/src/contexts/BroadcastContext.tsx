@@ -177,12 +177,29 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const toggleIs360 = useCallback(() => {
     if (broadcastState !== "live") {
       is360ManuallySetRef.current = true;
-      setIs360(v => !v);
+      setIs360(v => {
+        const next = !v;
+        if (next) {
+          // Enabling 360° — disable dual fisheye (mutually exclusive)
+          setIsDualFisheye(false);
+          isDualFisheyeRef.current = false;
+        }
+        return next;
+      });
     }
   }, [broadcastState]);
 
   const toggleIsDualFisheye = useCallback(() => {
-    setIsDualFisheye(v => !v);
+    setIsDualFisheye(v => {
+      const next = !v;
+      if (next) {
+        // Enabling dual fisheye — disable 360° mode (mutually exclusive)
+        is360Ref.current = false;
+        is360ManuallySetRef.current = false;
+        setIs360(false);
+      }
+      return next;
+    });
   }, []);
 
   const getLiveStream = useCallback(() => liveStreamRef.current, []);
