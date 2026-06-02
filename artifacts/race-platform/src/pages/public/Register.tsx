@@ -39,6 +39,7 @@ interface EventInfo {
   entryFee: number | null;
   paymentEnabled: boolean;
   clubName: string | null;
+  clubLogoUrl: string | null;
   registrationOpen: string | null;
   registrationClose: string | null;
 }
@@ -379,7 +380,15 @@ export default function Register() {
             <ChevronLeft size={16} /> Back to Home
           </Link>
           <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
+            <div className="flex items-start gap-4">
+              {event.clubLogoUrl && (
+                <img
+                  src={event.clubLogoUrl}
+                  alt={event.clubName || "Club logo"}
+                  className="h-16 w-16 object-contain rounded-md shrink-0 mt-1"
+                />
+              )}
+              <div>
               <p className="text-white/50 text-sm font-bold uppercase tracking-widest mb-1">{event.clubName}</p>
               <h1 className="text-4xl font-heading font-bold uppercase tracking-tight leading-none">{event.name}</h1>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-white/70 text-sm">
@@ -387,6 +396,7 @@ export default function Register() {
                 {event.location && <span className="flex items-center gap-1.5"><MapPin size={14} /> {event.location}, {event.state}</span>}
                 {event.trackName && <span className="flex items-center gap-1.5"><Flag size={14} /> {event.trackName}</span>}
               </div>
+            </div>
             </div>
             {event.entryFee && (
               <div className="bg-primary rounded-md px-4 py-2 text-center shrink-0">

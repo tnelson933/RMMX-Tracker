@@ -159,6 +159,15 @@ export default function EventResults() {
                   </div>
                 )}
               </div>
+              {(event as any).clubLogoUrl && (
+                <div className="mt-4">
+                  <img
+                    src={(event as any).clubLogoUrl}
+                    alt={event.clubName || "Club logo"}
+                    className="h-14 w-auto object-contain opacity-90"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col items-start md:items-end gap-3">

@@ -32,5 +32,7 @@ export interface Event {
   maxRiders?: number | null;
   /** @nullable */
   clubName?: string | null;
+  /** @nullable */
+  clubLogoUrl?: string | null;
   createdAt?: string;
 }

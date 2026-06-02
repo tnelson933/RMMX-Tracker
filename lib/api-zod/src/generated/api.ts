@@ -244,6 +244,7 @@ export const ListEventsResponseItem = zod.object({
   "entryFee": zod.number().nullish(),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
+  "clubLogoUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 export const ListEventsResponse = zod.array(ListEventsResponseItem)
@@ -293,6 +294,7 @@ export const GetEventResponse = zod.object({
   "entryFee": zod.number().nullish(),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
+  "clubLogoUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -337,6 +339,7 @@ export const UpdateEventResponse = zod.object({
   "entryFee": zod.number().nullish(),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
+  "clubLogoUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -906,6 +909,7 @@ export const GetClubDashboardResponse = zod.object({
   "entryFee": zod.number().nullish(),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
+  "clubLogoUrl": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })).optional()
 })
@@ -1037,6 +1041,44 @@ export const GetStripeConnectDashboardLinkResponse = zod.object({
  */
 export const DisconnectStripeConnectResponse = zod.object({
   "ok": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Request a presigned URL for file upload
+ */
+
+
+
+
+
+export const RequestUploadUrlBody = zod.object({
+  "name": zod.string().min(1),
+  "size": zod.number().min(1),
+  "contentType": zod.string().min(1)
+})
+
+
+
+
+
+
+export const RequestUploadUrlResponse = zod.object({
+  "uploadURL": zod.string().url(),
+  "objectPath": zod.string(),
+  "metadata": zod.object({
+  "name": zod.string().min(1),
+  "size": zod.number().min(1),
+  "contentType": zod.string().min(1)
+}).optional()
+})
+
+
+/**
+ * @summary Serve an uploaded object entity
+ */
+export const GetStorageObjectParams = zod.object({
+  "objectPath": zod.coerce.string()
 })
 
 

@@ -16,6 +16,7 @@ import usersRouter from "./users";
 import stripeConnectRouter from "./stripe-connect";
 import riderPortalRouter from "./rider-portal";
 import videoRouter from "./video";
+import storageRouter from "./storage";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(usersRouter);
 router.use(stripeConnectRouter);
 router.use(riderPortalRouter);
 router.use(videoRouter);
+router.use(storageRouter);
 
 export default router;

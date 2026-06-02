@@ -80,6 +80,7 @@ router.get("/events", async (req, res) => {
     maxRiders: eventsTable.maxRiders,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
+    clubLogoUrl: clubsTable.logoUrl,
   }).from(eventsTable).leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id));
 
   const conditions = [];
@@ -153,6 +154,7 @@ router.get("/events/:eventId", async (req, res) => {
     maxRiders: eventsTable.maxRiders,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
+    clubLogoUrl: clubsTable.logoUrl,
   }).from(eventsTable).leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id)).where(eq(eventsTable.id, id));
 
   if (!events[0]) return res.status(404).json({ error: "Not found" });
