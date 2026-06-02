@@ -297,14 +297,14 @@ export default function Home() {
             <img src={rmLogo} alt="Rocky Mountain" className="w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-6 drop-shadow-2xl" />
             <h1 className="text-4xl sm:text-5xl md:text-7xl font-heading font-bold text-white mb-4 sm:mb-6 uppercase tracking-tight leading-tight">
               Precision Timing.<br />
-              <span className="text-primary">Ultimate Performance.</span>
+              <span style={{ color: '#cf152d' }}>Ultimate Performance.</span>
             </h1>
             <p className="text-base sm:text-xl text-sidebar-foreground/80 mb-8 sm:mb-10 max-w-2xl mx-auto px-2">
               The high-stakes race operations platform for club organizers and riders. Live tracking, automated lineups, and instant results.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 px-4 sm:px-0">
               <Link href="/results" className="w-full sm:w-auto">
-                <Button size="lg" className="w-full sm:w-auto h-12 sm:h-14 px-8 text-base sm:text-lg font-heading uppercase tracking-wider">
+                <Button size="lg" className="w-full sm:w-auto h-12 sm:h-14 px-8 text-base sm:text-lg font-heading uppercase tracking-wider" style={{ backgroundColor: '#cf152d', borderColor: '#cf152d' }}>
                   Browse Results
                 </Button>
               </Link>
