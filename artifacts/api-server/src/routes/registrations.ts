@@ -93,6 +93,8 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
     // MyLaps transponder fields
     rentTransponder, myLapsTransponderNumber,
+    // Purchase options
+    selectedPurchaseOptions,
   } = req.body;
 
   if (!raceClass) return res.status(400).json({ error: "raceClass required" });
@@ -134,6 +136,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     paymentStatus: "unpaid",
     transponderRental: wantsRental,
     myLapsTransponderNumber: myLapsTransponderNumber?.trim() || null,
+    selectedPurchaseOptions: Array.isArray(selectedPurchaseOptions) ? selectedPurchaseOptions : [],
   }).returning();
 
   // Only create the check-in record immediately for free events.
@@ -290,6 +293,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     timingTechnology: eventsTable.timingTechnology,
     transponderRentalEnabled: eventsTable.transponderRentalEnabled,
     transponderRentalFee: eventsTable.transponderRentalFee,
+    purchaseOptions: eventsTable.purchaseOptions,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));
@@ -306,7 +310,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -376,6 +380,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     statsEmailOptIn: !!statsEmailOptIn,
     transponderRental: wantsRental,
     myLapsTransponderNumber: myLapsTransponderNumber?.trim() || null,
+    selectedPurchaseOptions: Array.isArray(selectedPurchaseOptions) ? selectedPurchaseOptions : [],
   }).returning();
 
   // Only create the check-in record now if no payment is required.

@@ -50,6 +50,7 @@ export * from './motoType';
 export * from './motoUpdate';
 export * from './organizerUser';
 export * from './publishInput';
+export * from './purchaseOption';
 export * from './raceDaySummary';
 export * from './raceDaySummaryPaymentSummary';
 export * from './raceResult';

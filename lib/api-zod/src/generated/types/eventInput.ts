@@ -7,6 +7,7 @@
  */
 import type { EventInputRaceClassLimits } from './eventInputRaceClassLimits';
 import type { EventInputTimingTechnology } from './eventInputTimingTechnology';
+import type { PurchaseOption } from './purchaseOption';
 
 export interface EventInput {
   clubId: number;
@@ -27,4 +28,5 @@ export interface EventInput {
   timingTechnology?: EventInputTimingTechnology;
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
+  purchaseOptions?: PurchaseOption[];
 }

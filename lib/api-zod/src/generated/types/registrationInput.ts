@@ -5,10 +5,12 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { PurchaseOption } from './purchaseOption';
 
 export interface RegistrationInput {
   riderId: number;
   raceClass: string;
   bibNumber?: string;
   paymentMethod?: string;
+  selectedPurchaseOptions?: PurchaseOption[];
 }

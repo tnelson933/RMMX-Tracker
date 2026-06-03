@@ -270,6 +270,11 @@ export const ListEventsResponseItem = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(listEventsResponseTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
+  "purchaseOptions": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "amount": zod.number()
+})).optional(),
   "createdAt": zod.string().optional()
 })
 export const ListEventsResponse = zod.array(ListEventsResponseItem)
@@ -298,7 +303,12 @@ export const CreateEventBody = zod.object({
   "imageUrl": zod.string().optional(),
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(createEventBodyTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
-  "transponderRentalFee": zod.number().optional()
+  "transponderRentalFee": zod.number().optional(),
+  "purchaseOptions": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "amount": zod.number()
+})).optional()
 })
 
 
@@ -334,6 +344,11 @@ export const GetEventResponse = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getEventResponseTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
+  "purchaseOptions": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "amount": zod.number()
+})).optional(),
   "createdAt": zod.string().optional()
 })
 
@@ -365,7 +380,12 @@ export const UpdateEventBody = zod.object({
   "imageUrl": zod.string().optional(),
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventBodyTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
-  "transponderRentalFee": zod.number().optional()
+  "transponderRentalFee": zod.number().optional(),
+  "purchaseOptions": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "amount": zod.number()
+})).optional()
 })
 
 export const updateEventResponseTimingTechnologyDefault = `rfid`;
@@ -393,6 +413,11 @@ export const UpdateEventResponse = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventResponseTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
+  "purchaseOptions": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "amount": zod.number()
+})).optional(),
   "createdAt": zod.string().optional()
 })
 
@@ -562,6 +587,11 @@ export const ListRegistrationsResponseItem = zod.object({
   "bibNumber": zod.string().nullish(),
   "amaNumber": zod.string().nullish(),
   "bikeBrand": zod.string().nullish(),
+  "selectedPurchaseOptions": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "amount": zod.number()
+})).optional(),
   "createdAt": zod.string().optional()
 })
 export const ListRegistrationsResponse = zod.array(ListRegistrationsResponseItem)
@@ -578,7 +608,12 @@ export const CreateRegistrationBody = zod.object({
   "riderId": zod.number(),
   "raceClass": zod.string(),
   "bibNumber": zod.string().optional(),
-  "paymentMethod": zod.string().optional()
+  "paymentMethod": zod.string().optional(),
+  "selectedPurchaseOptions": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "amount": zod.number()
+})).optional()
 })
 
 
@@ -608,6 +643,11 @@ export const UpdateRegistrationResponse = zod.object({
   "bibNumber": zod.string().nullish(),
   "amaNumber": zod.string().nullish(),
   "bikeBrand": zod.string().nullish(),
+  "selectedPurchaseOptions": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "amount": zod.number()
+})).optional(),
   "createdAt": zod.string().optional()
 })
 
@@ -1000,6 +1040,11 @@ export const GetClubDashboardResponse = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
+  "purchaseOptions": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "amount": zod.number()
+})).optional(),
   "createdAt": zod.string().optional()
 })).optional()
 })

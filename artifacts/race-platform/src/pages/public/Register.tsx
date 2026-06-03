@@ -39,6 +39,7 @@ const registerSchema = z.object({
   statsEmailOptIn: z.boolean().default(false),
   rentTransponder: z.boolean().default(false),
   myLapsTransponderNumber: z.string().optional(),
+  selectedPurchaseOptions: z.array(z.string()).default([]),
 });
 
 type RegisterForm = z.infer<typeof registerSchema>;
@@ -62,6 +63,7 @@ interface EventInfo {
   timingTechnology: string;
   transponderRentalEnabled: boolean;
   transponderRentalFee: number | null;
+  purchaseOptions?: Array<{ id: string; name: string; amount: number }>;
 }
 
 interface SuccessData {
@@ -103,7 +105,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "",
+      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
 
@@ -250,7 +252,10 @@ export default function Register() {
       const res = await fetch(`/api/public/events/${eventId}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data }),
+        body: JSON.stringify({
+          ...data,
+          selectedPurchaseOptions: (event?.purchaseOptions ?? []).filter(o => data.selectedPurchaseOptions.includes(o.id)),
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Registration failed");
@@ -682,6 +687,50 @@ export default function Register() {
                           />
                         </>
                       )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Purchase Options */}
+                {(event.purchaseOptions ?? []).length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2 border-b">
+                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Add-ons</h3>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-3">
+                      {(event.purchaseOptions ?? []).map(opt => (
+                        <FormField
+                          key={opt.id}
+                          control={form.control}
+                          name="selectedPurchaseOptions"
+                          render={({ field }) => (
+                            <FormItem>
+                              <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                                <FormControl>
+                                  <Checkbox
+                                    id={`opt-${opt.id}`}
+                                    checked={field.value.includes(opt.id)}
+                                    onCheckedChange={checked => {
+                                      if (checked) {
+                                        field.onChange([...field.value, opt.id]);
+                                      } else {
+                                        field.onChange(field.value.filter((id: string) => id !== opt.id));
+                                      }
+                                    }}
+                                    className="mt-0.5"
+                                  />
+                                </FormControl>
+                                <div className="space-y-0.5 leading-none flex-1">
+                                  <label htmlFor={`opt-${opt.id}`} className="text-sm font-semibold cursor-pointer flex items-center justify-between">
+                                    <span>{opt.name}</span>
+                                    <span className="text-primary">${Number(opt.amount).toFixed(2)}</span>
+                                  </label>
+                                </div>
+                              </div>
+                            </FormItem>
+                          )}
+                        />
+                      ))}
                     </CardContent>
                   </Card>
                 )}

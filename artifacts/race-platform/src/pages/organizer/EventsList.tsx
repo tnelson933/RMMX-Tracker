@@ -95,6 +95,10 @@ const createEventSchema = z.object({
   entryFee: z.string().optional(),
   transponderRentalEnabled: z.boolean().default(false),
   transponderRentalFee: z.string().optional(),
+  purchaseOptions: z.array(z.object({
+    name: z.string().min(1, "Name required"),
+    amount: z.string().min(1, "Amount required"),
+  })).default([]),
 });
 
 export default function EventsList() {
@@ -156,10 +160,12 @@ export default function EventsList() {
       entryFee: "",
       transponderRentalEnabled: false,
       transponderRentalFee: "",
+      purchaseOptions: [],
     }
   });
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "raceClasses" });
+  const { fields: purchaseOptionFields, append: appendPurchaseOption, remove: removePurchaseOption } = useFieldArray({ control: form.control, name: "purchaseOptions" });
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
   const watchTimingTechnology = form.watch("timingTechnology");
@@ -185,6 +191,7 @@ export default function EventsList() {
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
           transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
           transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
+          purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
         }
       });
     } catch (err: any) {
@@ -468,6 +475,69 @@ export default function EventsList() {
                       )}
                     </div>
                   )}
+
+                  {/* Purchase Options */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-foreground">Purchase Options</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => appendPurchaseOption({ name: "", amount: "" })}
+                      >
+                        <Plus size={13} className="mr-1" /> Add Purchase Option
+                      </Button>
+                    </div>
+                    {purchaseOptionFields.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Add optional items riders can purchase at registration — gate fees, pit passes, etc.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {purchaseOptionFields.map((optField, idx) => (
+                          <div key={optField.id} className="flex gap-2 items-start">
+                            <FormField
+                              control={form.control}
+                              name={`purchaseOptions.${idx}.name`}
+                              render={({ field }) => (
+                                <FormItem className="flex-1">
+                                  <FormControl>
+                                    <Input placeholder="Gate fee, pit pass…" {...field} />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name={`purchaseOptions.${idx}.amount`}
+                              render={({ field }) => (
+                                <FormItem className="w-28">
+                                  <FormControl>
+                                    <div className="relative">
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                                      <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" {...field} />
+                                    </div>
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="mt-0.5 shrink-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => removePurchaseOption(idx)}
+                            >
+                              <X size={14} />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">

@@ -3,6 +3,8 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clubsTable } from "./clubs";
 
+export type PurchaseOption = { id: string; name: string; amount: number };
+
 export const eventsTable = pgTable("events", {
   id: serial("id").primaryKey(),
   clubId: integer("club_id").notNull().references(() => clubsTable.id),
@@ -20,6 +22,7 @@ export const eventsTable = pgTable("events", {
   entryFee: numeric("entry_fee", { precision: 10, scale: 2 }),
   maxRiders: integer("max_riders"),
   raceClassLimits: jsonb("race_class_limits").$type<Record<string, number | null>>().default({}),
+  purchaseOptions: jsonb("purchase_options").$type<PurchaseOption[]>().notNull().default([]),
   imageUrl: text("image_url"),
   timingTechnology: text("timing_technology").notNull().default("rfid"),
   transponderRentalEnabled: boolean("transponder_rental_enabled").notNull().default(false),

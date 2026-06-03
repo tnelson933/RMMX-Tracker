@@ -7,6 +7,7 @@
  */
 import type { EventUpdateRaceClassLimits } from './eventUpdateRaceClassLimits';
 import type { EventUpdateTimingTechnology } from './eventUpdateTimingTechnology';
+import type { PurchaseOption } from './purchaseOption';
 
 export interface EventUpdate {
   name?: string;
@@ -27,4 +28,5 @@ export interface EventUpdate {
   timingTechnology?: EventUpdateTimingTechnology;
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
+  purchaseOptions?: PurchaseOption[];
 }

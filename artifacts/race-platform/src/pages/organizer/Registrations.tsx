@@ -47,6 +47,7 @@ const onSiteRegSchema = z.object({
   bikeBrand: z.string().optional(),
   rentTransponder: z.boolean().default(false),
   myLapsTransponderNumber: z.string().optional(),
+  selectedPurchaseOptions: z.array(z.string()).default([]),
 });
 type OnSiteRegForm = z.infer<typeof onSiteRegSchema>;
 
@@ -122,13 +123,14 @@ export default function Registrations() {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
       raceClass: "", bibNumber: "", bikeBrand: "",
-      rentTransponder: false, myLapsTransponderNumber: "",
+      rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
 
   const isMyLaps = (event as any)?.timingTechnology === "mylaps";
   const transponderRentalEnabled = !!(event as any)?.transponderRentalEnabled;
   const transponderRentalFee: number | null = (event as any)?.transponderRentalFee ?? null;
+  const eventPurchaseOptions = ((event as any)?.purchaseOptions ?? []) as Array<{ id: string; name: string; amount: number }>;
 
   useEffect(() => {
     if (editingBibId !== null) bibInputRef.current?.focus();
@@ -270,6 +272,7 @@ export default function Registrations() {
           bikeBrand: data.bikeBrand || undefined,
           rentTransponder: data.rentTransponder || undefined,
           myLapsTransponderNumber: data.myLapsTransponderNumber || undefined,
+          selectedPurchaseOptions: eventPurchaseOptions.filter(o => data.selectedPurchaseOptions.includes(o.id)),
         }),
       });
       const json = await res.json();
@@ -535,6 +538,45 @@ export default function Registrations() {
                     )} />
                   </>
                 )}
+              </div>
+            )}
+
+            {/* ── Purchase Options ── */}
+            {eventPurchaseOptions.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Add-ons</h3>
+                <div className="space-y-2">
+                  {eventPurchaseOptions.map(opt => (
+                    <FormField
+                      key={opt.id}
+                      control={form.control}
+                      name="selectedPurchaseOptions"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3">
+                            <FormControl>
+                              <Checkbox
+                                id={`onsite-opt-${opt.id}`}
+                                checked={field.value.includes(opt.id)}
+                                onCheckedChange={checked => {
+                                  if (checked) {
+                                    field.onChange([...field.value, opt.id]);
+                                  } else {
+                                    field.onChange(field.value.filter((id: string) => id !== opt.id));
+                                  }
+                                }}
+                              />
+                            </FormControl>
+                            <label htmlFor={`onsite-opt-${opt.id}`} className="text-sm font-semibold cursor-pointer flex-1 flex items-center justify-between">
+                              <span>{opt.name}</span>
+                              <span className="text-primary">${Number(opt.amount).toFixed(2)}</span>
+                            </label>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                </div>
               </div>
             )}
 

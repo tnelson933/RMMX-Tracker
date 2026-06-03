@@ -1,7 +1,8 @@
-import { pgTable, serial, text, integer, numeric, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { eventsTable } from "./events";
+import type { PurchaseOption } from "./events";
 import { ridersTable } from "./riders";
 
 export const registrationsTable = pgTable("registrations", {
@@ -20,6 +21,7 @@ export const registrationsTable = pgTable("registrations", {
   statsEmailOptIn: boolean("stats_email_opt_in").notNull().default(false),
   transponderRental: boolean("transponder_rental").notNull().default(false),
   myLapsTransponderNumber: text("mylaps_transponder_number"),
+  selectedPurchaseOptions: jsonb("selected_purchase_options").$type<PurchaseOption[]>().notNull().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

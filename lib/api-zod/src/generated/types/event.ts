@@ -8,6 +8,7 @@
 import type { EventRaceClassLimits } from './eventRaceClassLimits';
 import type { EventStatus } from './eventStatus';
 import type { EventTimingTechnology } from './eventTimingTechnology';
+import type { PurchaseOption } from './purchaseOption';
 
 export interface Event {
   id: number;
@@ -42,5 +43,6 @@ export interface Event {
   transponderRentalEnabled?: boolean;
   /** @nullable */
   transponderRentalFee?: number | null;
+  purchaseOptions?: PurchaseOption[];
   createdAt?: string;
 }

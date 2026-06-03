@@ -5,6 +5,7 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { PurchaseOption } from './purchaseOption';
 import type { RegistrationPaymentStatus } from './registrationPaymentStatus';
 import type { RegistrationStatus } from './registrationStatus';
 
@@ -24,5 +25,6 @@ export interface Registration {
   amaNumber?: string | null;
   /** @nullable */
   bikeBrand?: string | null;
+  selectedPurchaseOptions?: PurchaseOption[];
   createdAt?: string;
 }

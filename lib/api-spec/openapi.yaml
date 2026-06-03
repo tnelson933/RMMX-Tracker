@@ -1222,6 +1222,17 @@ components:
         createdAt:
           type: string
 
+    PurchaseOption:
+      type: object
+      required: [id, name, amount]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        amount:
+          type: number
+
     Club:
       type: object
       required: [id, name, state]
@@ -1337,6 +1348,10 @@ components:
           type: boolean
         transponderRentalFee:
           type: ["number", "null"]
+        purchaseOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOption'
         createdAt:
           type: string
 
@@ -1386,6 +1401,10 @@ components:
           type: boolean
         transponderRentalFee:
           type: number
+        purchaseOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOption'
 
     EventUpdate:
       type: object
@@ -1432,6 +1451,10 @@ components:
           type: boolean
         transponderRentalFee:
           type: number
+        purchaseOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOption'
 
     Rider:
       type: object
@@ -1606,6 +1629,10 @@ components:
           type: ["string", "null"]
         bikeBrand:
           type: ["string", "null"]
+        selectedPurchaseOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOption'
         createdAt:
           type: string
 
@@ -1621,6 +1648,10 @@ components:
           type: string
         paymentMethod:
           type: string
+        selectedPurchaseOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOption'
 
     RegistrationUpdate:
       type: object

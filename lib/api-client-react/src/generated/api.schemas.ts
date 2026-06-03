@@ -45,6 +45,12 @@ export interface AuthResponse {
   token: string;
 }
 
+export interface PurchaseOption {
+  id: string;
+  name: string;
+  amount: number;
+}
+
 export interface Club {
   id: number;
   name: string;
@@ -137,6 +143,7 @@ export interface Event {
   transponderRentalEnabled?: boolean;
   /** @nullable */
   transponderRentalFee?: number | null;
+  purchaseOptions?: PurchaseOption[];
   createdAt?: string;
 }
 
@@ -169,6 +176,7 @@ export interface EventInput {
   timingTechnology?: EventInputTimingTechnology;
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
+  purchaseOptions?: PurchaseOption[];
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -200,6 +208,7 @@ export interface EventUpdate {
   timingTechnology?: EventUpdateTimingTechnology;
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
+  purchaseOptions?: PurchaseOption[];
 }
 
 export interface Rider {
@@ -354,6 +363,7 @@ export interface Registration {
   amaNumber?: string | null;
   /** @nullable */
   bikeBrand?: string | null;
+  selectedPurchaseOptions?: PurchaseOption[];
   createdAt?: string;
 }
 
@@ -362,6 +372,7 @@ export interface RegistrationInput {
   raceClass: string;
   bibNumber?: string;
   paymentMethod?: string;
+  selectedPurchaseOptions?: PurchaseOption[];
 }
 
 export interface RegistrationUpdate {
