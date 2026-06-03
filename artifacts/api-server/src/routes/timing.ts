@@ -627,6 +627,70 @@ function buildAnnouncementScript(opts: {
   return parts.join(" ");
 }
 
+// POST /timing/announce-moto-start — hype intro when organizer starts a moto
+router.post("/timing/announce-moto-start", async (req, res) => {
+  try {
+    const { motoName, motoType, raceClass, lineup } = req.body as {
+      motoName: string;
+      motoType: string;
+      raceClass: string | null;
+      motoNumber: number | null;
+      lineup: Array<{ bibNumber: string | null; riderName: string | null }>;
+    };
+
+    const typeLabel =
+      motoType === "heat" ? "heat race" :
+      motoType === "main" ? "main event" :
+      motoType === "practice" ? "practice session" :
+      motoType === "lcq" ? "last chance qualifier" :
+      (motoType ?? "race");
+
+    const parts: string[] = [];
+    parts.push("Attention riders and fans!");
+
+    if (raceClass) {
+      parts.push(`Coming up next — it's the ${raceClass} ${typeLabel}!`);
+    } else {
+      parts.push(`Coming up next — it's the ${typeLabel}!`);
+    }
+
+    if (motoName) {
+      parts.push(`This is ${motoName}.`);
+    }
+
+    const validRiders = (lineup ?? []).filter(r => r.riderName);
+    if (validRiders.length > 0) {
+      parts.push("Riders, let's hear it! Taking the gate today:");
+      for (const rider of validRiders) {
+        if (rider.bibNumber) {
+          parts.push(`Number ${rider.bibNumber}, ${rider.riderName}!`);
+        } else {
+          parts.push(`${rider.riderName}!`);
+        }
+      }
+    }
+
+    // Deterministic outro keyed to moto name so it's consistent
+    const outros = [
+      "Riders, fire those engines! The gate is about to drop — let's race!",
+      "All right everyone, it's time! Riders to the gate — the green flag is about to fly!",
+      "Helmets on, engines hot! This moto is about to get underway — let's go racing!",
+      "Get to that gate and make it happen! This one is about to go green — let's race!",
+    ];
+    const hash = (motoName ?? "").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    parts.push(outros[hash % outros.length]);
+
+    const script = parts.join(" ");
+    const audioBuffer = await textToSpeech(script, "onyx", "mp3");
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    return res.send(audioBuffer);
+  } catch (err: any) {
+    req.log.error({ err }, "announce-moto-start TTS error");
+    return res.status(500).json({ error: "Failed to generate announcement" });
+  }
+});
+
 // POST /timing/announce — generate AI voice announcement for current leaderboard
 router.post("/timing/announce", async (req, res) => {
   try {

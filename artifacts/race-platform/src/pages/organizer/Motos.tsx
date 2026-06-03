@@ -3,7 +3,7 @@ import { useRoute, Link } from "wouter";
 import {
   useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto,
-  getListMotosQueryKey,
+  getListMotosQueryKey, Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -274,6 +274,44 @@ export default function Motos() {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           if (status === "in_progress") toast({ title: "🏁 Moto started — RFID timing active" });
           if (status === "completed") toast({ title: "Moto finished" });
+        },
+      }
+    );
+  };
+
+  const handleStartMoto = (moto: Moto) => {
+    updateMutation.mutate(
+      { motoId: moto.id, data: { status: "in_progress" } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          toast({ title: "🏁 Moto started — RFID timing active" });
+
+          // Fire announcer intro — fire and forget
+          const lineup = (moto.lineup ?? []).map(r => ({
+            bibNumber: r.bibNumber ?? null,
+            riderName: r.riderName ?? null,
+          }));
+          fetch("/api/timing/announce-moto-start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              motoName: moto.name,
+              motoType: moto.type,
+              raceClass: moto.raceClass ?? null,
+              motoNumber: moto.motoNumber ?? null,
+              lineup,
+            }),
+          })
+            .then(r => (r.ok ? r.blob() : null))
+            .then(blob => {
+              if (!blob) return;
+              const url = URL.createObjectURL(blob);
+              const audio = new Audio(url);
+              audio.onended = () => URL.revokeObjectURL(url);
+              audio.play().catch(() => {});
+            })
+            .catch(() => {});
         },
       }
     );
@@ -598,7 +636,7 @@ export default function Motos() {
                 {/* Action bar */}
                 <div className="p-3 bg-muted/30 flex gap-2 items-center flex-wrap">
                   {moto.status === "scheduled" && (
-                    <Button size="sm" onClick={() => handleStatusUpdate(moto.id, "in_progress")} className="font-heading uppercase text-xs">
+                    <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs">
                       <Play size={14} className="mr-1" /> Start Moto
                     </Button>
                   )}
