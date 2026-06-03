@@ -153,6 +153,18 @@ export default function Register() {
   }, [eventId]);
 
   const watchedBib = form.watch("bibNumber");
+  const watchedPurchaseOptions = form.watch("selectedPurchaseOptions");
+  const watchedRentTransponder = form.watch("rentTransponder");
+  const selectedPurchasesTotal = (event?.purchaseOptions ?? [])
+    .filter(o => (watchedPurchaseOptions ?? []).includes(o.id))
+    .reduce((sum, o) => sum + Number(o.amount), 0);
+  const rentalTotal = (watchedRentTransponder && event?.transponderRentalEnabled && event?.transponderRentalFee != null)
+    ? Number(event.transponderRentalFee)
+    : 0;
+  const totalDue = event?.paymentEnabled && event?.entryFee
+    ? Math.max(0, event.entryFee + selectedPurchasesTotal + rentalTotal - (appliedComp?.amount ?? 0))
+    : 0;
+
   useEffect(() => {
     if (!event?.noDuplicateBibs) { setBibCheckState("idle"); return; }
     const bib = (watchedBib ?? "").trim();
@@ -1008,21 +1020,31 @@ export default function Register() {
                       </div>
                     )}
                     {compError && <p className="text-xs text-red-500">{compError}</p>}
-                    {appliedComp && event.entryFee && (
-                      <div className="text-xs text-muted-foreground flex justify-between pt-0.5">
-                        <span>Entry fee</span><span>${event.entryFee.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {appliedComp && (
-                      <>
-                        <div className="text-xs text-green-700 flex justify-between">
-                          <span>Comp discount</span><span>−${appliedComp.amount.toFixed(2)}</span>
+                    {(selectedPurchasesTotal > 0 || rentalTotal > 0 || appliedComp) && event.entryFee && (
+                      <div className="border-t pt-2 mt-1 space-y-1.5">
+                        <div className="text-xs text-muted-foreground flex justify-between">
+                          <span>Entry fee</span><span>${event.entryFee.toFixed(2)}</span>
                         </div>
+                        {(event.purchaseOptions ?? []).filter(o => (watchedPurchaseOptions ?? []).includes(o.id)).map(o => (
+                          <div key={o.id} className="text-xs text-muted-foreground flex justify-between">
+                            <span>{o.name}</span><span>${Number(o.amount).toFixed(2)}</span>
+                          </div>
+                        ))}
+                        {rentalTotal > 0 && (
+                          <div className="text-xs text-muted-foreground flex justify-between">
+                            <span>Transponder rental</span><span>${rentalTotal.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {appliedComp && (
+                          <div className="text-xs text-green-700 flex justify-between">
+                            <span>Comp code ({appliedComp.code})</span><span>−${appliedComp.amount.toFixed(2)}</span>
+                          </div>
+                        )}
                         <div className="text-sm font-bold flex justify-between border-t pt-1.5">
                           <span>Total due</span>
-                          <span>{Math.max(0, (event.entryFee ?? 0) - appliedComp.amount) === 0 ? "FREE" : `$${Math.max(0, (event.entryFee ?? 0) - appliedComp.amount).toFixed(2)}`}</span>
+                          <span>{totalDue === 0 ? "FREE" : `$${totalDue.toFixed(2)}`}</span>
                         </div>
-                      </>
+                      </div>
                     )}
                   </div>
                 )}
@@ -1034,8 +1056,8 @@ export default function Register() {
                 >
                   {submitting ? (
                     <><Loader2 size={18} className="mr-2 animate-spin" /> Processing...</>
-                  ) : event.paymentEnabled && event.entryFee && Math.max(0, event.entryFee - (appliedComp?.amount ?? 0)) > 0 ? (
-                    <><CreditCard size={18} className="mr-2" /> Register & Pay ${Math.max(0, event.entryFee - (appliedComp?.amount ?? 0)).toFixed(2)} →</>
+                  ) : event.paymentEnabled && totalDue > 0 ? (
+                    <><CreditCard size={18} className="mr-2" /> Register & Pay ${totalDue.toFixed(2)} →</>
                   ) : (
                     "Complete Registration →"
                   )}

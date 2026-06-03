@@ -75,6 +75,7 @@ interface PendingCard {
   sessionId: string;
   entryFee: number;
   rentalFee: number;
+  purchaseOptionsTotal: number;
 }
 
 interface PaymentDone {
@@ -302,7 +303,10 @@ export default function Registrations() {
       // If event has an entry fee, prompt for payment; otherwise show basic success
       if (eventEntryFee && eventEntryFee > 0) {
         const rentalTotal = (data.rentTransponder && transponderRentalFee) ? transponderRentalFee : 0;
-        setCashAmount((eventEntryFee + rentalTotal).toFixed(2));
+        const purchasesTotal = eventPurchaseOptions
+          .filter(o => data.selectedPurchaseOptions.includes(o.id))
+          .reduce((sum, o) => sum + Number(o.amount), 0);
+        setCashAmount((eventEntryFee + rentalTotal + purchasesTotal).toFixed(2));
         setStep("pay-prompt");
       } else {
         setStep("reg-done");
@@ -332,6 +336,7 @@ export default function Registrations() {
         sessionId: json.sessionId,
         entryFee: json.entryFee,
         rentalFee: json.rentalFee ?? 0,
+        purchaseOptionsTotal: json.purchaseOptionsTotal ?? 0,
       });
       setStep("pay-card");
     } catch (e: any) {
@@ -754,6 +759,7 @@ export default function Registrations() {
               reg={regSuccess}
               entryFee={eventEntryFee}
               rentalFee={(form.getValues("rentTransponder") && transponderRentalFee) ? transponderRentalFee : 0}
+              purchaseOptionsTotal={eventPurchaseOptions.filter(o => form.getValues("selectedPurchaseOptions").includes(o.id)).reduce((s, o) => s + Number(o.amount), 0)}
             />
           )}
           <div className="flex gap-3">
@@ -785,6 +791,7 @@ export default function Registrations() {
               reg={regSuccess}
               entryFee={eventEntryFee}
               rentalFee={(form.getValues("rentTransponder") && transponderRentalFee) ? transponderRentalFee : 0}
+              purchaseOptionsTotal={eventPurchaseOptions.filter(o => form.getValues("selectedPurchaseOptions").includes(o.id)).reduce((s, o) => s + Number(o.amount), 0)}
             />
           )}
 
@@ -811,7 +818,10 @@ export default function Registrations() {
             <h3 className="text-xl font-heading font-bold uppercase">How will the rider pay?</h3>
             {eventEntryFee && (() => {
               const rentalFee = (form.getValues("rentTransponder") && transponderRentalFee) ? transponderRentalFee : 0;
-              const total = eventEntryFee + rentalFee;
+              const selectedOpts = eventPurchaseOptions.filter(o => form.getValues("selectedPurchaseOptions").includes(o.id));
+              const purchasesTotal = selectedOpts.reduce((s, o) => s + Number(o.amount), 0);
+              const total = eventEntryFee + rentalFee + purchasesTotal;
+              const hasExtras = rentalFee > 0 || purchasesTotal > 0;
               return (
                 <div className="mt-2 inline-block text-left bg-muted rounded-lg px-4 py-2.5 space-y-1">
                   <div className="flex justify-between gap-8 text-sm">
@@ -824,7 +834,13 @@ export default function Registrations() {
                       <span className="font-medium">${rentalFee.toFixed(2)}</span>
                     </div>
                   )}
-                  {rentalFee > 0 && (
+                  {selectedOpts.map(o => (
+                    <div key={o.id} className="flex justify-between gap-8 text-sm">
+                      <span className="text-muted-foreground">{o.name}</span>
+                      <span className="font-medium">${Number(o.amount).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  {hasExtras && (
                     <div className="flex justify-between gap-8 text-sm border-t pt-1 mt-0.5">
                       <span className="font-bold">Total</span>
                       <span className="font-bold text-primary">${total.toFixed(2)}</span>
@@ -902,10 +918,16 @@ export default function Registrations() {
             </div>
             {eventEntryFee && (() => {
               const rentalFee = (form.getValues("rentTransponder") && transponderRentalFee) ? transponderRentalFee : 0;
+              const purchasesTotal = eventPurchaseOptions
+                .filter(o => form.getValues("selectedPurchaseOptions").includes(o.id))
+                .reduce((s, o) => s + Number(o.amount), 0);
+              const total = eventEntryFee + rentalFee + purchasesTotal;
               return (
                 <p className="text-xs text-muted-foreground">
                   Entry fee ${eventEntryFee.toFixed(2)}
-                  {rentalFee > 0 ? ` + $${rentalFee.toFixed(2)} transponder rental = $${(eventEntryFee + rentalFee).toFixed(2)} total` : ""}
+                  {rentalFee > 0 ? ` + $${rentalFee.toFixed(2)} transponder rental` : ""}
+                  {purchasesTotal > 0 ? ` + $${purchasesTotal.toFixed(2)} add-ons` : ""}
+                  {(rentalFee > 0 || purchasesTotal > 0) ? ` = $${total.toFixed(2)} total` : ""}
                 </p>
               );
             })()}
@@ -953,9 +975,15 @@ export default function Registrations() {
                 <span className="text-sm font-medium">${pendingCard.rentalFee.toFixed(2)}</span>
               </div>
             )}
+            {pendingCard.purchaseOptionsTotal > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Add-ons</span>
+                <span className="text-sm font-medium">${pendingCard.purchaseOptionsTotal.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between border-t pt-1.5 mt-1">
               <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Total Due</span>
-              <span className="font-heading font-bold text-lg">${(pendingCard.entryFee + pendingCard.rentalFee).toFixed(2)}</span>
+              <span className="font-heading font-bold text-lg">${(pendingCard.entryFee + pendingCard.rentalFee + pendingCard.purchaseOptionsTotal).toFixed(2)}</span>
             </div>
           </div>
 
@@ -1218,9 +1246,11 @@ export default function Registrations() {
 }
 
 // ── Small helper component ────────────────────────────────────────────────────
-function ConfirmationCard({ reg, entryFee, rentalFee }: { reg: { id: number; riderName: string; raceClass: string }; entryFee?: number | null; rentalFee?: number | null }) {
+function ConfirmationCard({ reg, entryFee, rentalFee, purchaseOptionsTotal }: { reg: { id: number; riderName: string; raceClass: string }; entryFee?: number | null; rentalFee?: number | null; purchaseOptionsTotal?: number | null }) {
   const hasRental = rentalFee != null && rentalFee > 0;
-  const total = (entryFee ?? 0) + (hasRental ? (rentalFee ?? 0) : 0);
+  const hasPurchases = purchaseOptionsTotal != null && purchaseOptionsTotal > 0;
+  const total = (entryFee ?? 0) + (hasRental ? (rentalFee ?? 0) : 0) + (hasPurchases ? (purchaseOptionsTotal ?? 0) : 0);
+  const hasExtras = hasRental || hasPurchases;
   return (
     <div className="bg-muted rounded-lg p-4 space-y-2 text-left text-sm">
       <div className="flex justify-between">
@@ -1247,7 +1277,13 @@ function ConfirmationCard({ reg, entryFee, rentalFee }: { reg: { id: number; rid
               <span className="font-heading font-bold">${(rentalFee as number).toFixed(2)}</span>
             </div>
           )}
-          {hasRental && (
+          {hasPurchases && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground font-bold uppercase tracking-widest text-xs">Add-ons</span>
+              <span className="font-heading font-bold">${(purchaseOptionsTotal as number).toFixed(2)}</span>
+            </div>
+          )}
+          {hasExtras && (
             <div className="flex justify-between border-t pt-1.5">
               <span className="text-muted-foreground font-bold uppercase tracking-widest text-xs">Total Due</span>
               <span className="font-heading font-bold text-primary">${total.toFixed(2)}</span>

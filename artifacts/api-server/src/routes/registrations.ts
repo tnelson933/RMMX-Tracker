@@ -243,7 +243,11 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
 
     const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, reg.riderId));
 
-    const lineItems = [
+    const purchaseOptsList = ((reg.selectedPurchaseOptions as Array<{ id: string; name: string; amount: number }>) ?? []);
+    const purchaseOptionsTotal = purchaseOptsList.reduce((sum, o) => sum + Number(o.amount), 0);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lineItems: any[] = [
       {
         price_data: {
           currency: "usd",
@@ -265,6 +269,19 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
       });
     }
 
+    for (const opt of purchaseOptsList) {
+      if (Number(opt.amount) > 0) {
+        lineItems.push({
+          price_data: {
+            currency: "usd",
+            product_data: { name: opt.name },
+            unit_amount: Math.round(Number(opt.amount) * 100),
+          },
+          quantity: 1,
+        });
+      }
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: lineItems,
@@ -277,7 +294,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
       cancel_url: `${appUrl}/events/${eventId}/registrations`,
     });
 
-    return res.json({ checkoutUrl: session.url, sessionId: session.id, entryFee, rentalFee });
+    return res.json({ checkoutUrl: session.url, sessionId: session.id, entryFee, rentalFee, purchaseOptionsTotal });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[charge] Error");
     return res.status(500).json({ error: err?.message ?? "Failed to create checkout session" });
@@ -427,11 +444,15 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     rider = created;
   }
 
-  // Determine if payment is required (accounting for comp discount)
+  // Determine if payment is required (accounting for comp discount and purchase options)
   const wantsRental = !!(rentTransponder && events[0].transponderRentalEnabled && events[0].transponderRentalFee);
   const entryFeeNum = events[0].entryFee ? Number(events[0].entryFee) : 0;
   const rentalFeeNum = wantsRental && events[0].transponderRentalFee ? Number(events[0].transponderRentalFee) : 0;
-  const netFee = Math.max(0, entryFeeNum + rentalFeeNum - compDiscount);
+  const purchaseOptsList = Array.isArray(selectedPurchaseOptions)
+    ? (selectedPurchaseOptions as Array<{ id: string; name: string; amount: number }>)
+    : [];
+  const purchaseOptionsTotal = purchaseOptsList.reduce((sum, o) => sum + Number(o.amount), 0);
+  const netFee = Math.max(0, entryFeeNum + rentalFeeNum + purchaseOptionsTotal - compDiscount);
   const needsPayment = !!events[0].paymentEnabled && netFee > 0;
   const regStatus = needsPayment ? "pending" : "confirmed";
 
@@ -475,19 +496,59 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         const stripe = await getUncachableStripeClient();
         const appUrl = getAppUrl();
 
-        const productName = validatedCompCode
-          ? `${events[0].name} — ${raceClass} Entry (Comp ${validatedCompCode})`
-          : `${events[0].name} — ${raceClass} Entry${rentalFeeNum > 0 ? " + Transponder Rental" : ""}`;
-
+        const discountedEntryFee = Math.max(0, entryFeeNum - compDiscount);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const lineItems: any[] = [{
-          price_data: {
-            currency: "usd",
-            product_data: { name: productName },
-            unit_amount: Math.round(netFee * 100),
-          },
-          quantity: 1,
-        }];
+        const lineItems: any[] = [];
+
+        if (discountedEntryFee > 0) {
+          lineItems.push({
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: validatedCompCode
+                  ? `${events[0].name} — ${raceClass} Entry (Comp ${validatedCompCode})`
+                  : `${events[0].name} — ${raceClass} Entry`,
+              },
+              unit_amount: Math.round(discountedEntryFee * 100),
+            },
+            quantity: 1,
+          });
+        }
+
+        if (rentalFeeNum > 0) {
+          lineItems.push({
+            price_data: {
+              currency: "usd",
+              product_data: { name: "MyLaps Transponder Rental" },
+              unit_amount: Math.round(rentalFeeNum * 100),
+            },
+            quantity: 1,
+          });
+        }
+
+        for (const opt of purchaseOptsList) {
+          if (Number(opt.amount) > 0) {
+            lineItems.push({
+              price_data: {
+                currency: "usd",
+                product_data: { name: opt.name },
+                unit_amount: Math.round(Number(opt.amount) * 100),
+              },
+              quantity: 1,
+            });
+          }
+        }
+
+        if (lineItems.length === 0) {
+          lineItems.push({
+            price_data: {
+              currency: "usd",
+              product_data: { name: `${events[0].name} — ${raceClass} Entry` },
+              unit_amount: 50,
+            },
+            quantity: 1,
+          });
+        }
 
         const session = await stripe.checkout.sessions.create({
           mode: "payment",
@@ -512,6 +573,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             eventName: events[0].name,
             entryFee: netFee,
             rentalFee: rentalFeeNum,
+            purchaseOptionsTotal,
           });
         }
       }
