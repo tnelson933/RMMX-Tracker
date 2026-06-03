@@ -424,6 +424,11 @@ export const ListRidersResponseItem = zod.object({
   "emergencyContact": zod.string().nullish(),
   "emergencyPhone": zod.string().nullish(),
   "rfidNumber": zod.string().nullish(),
+  "bikeManufacturer": zod.string().nullish(),
+  "sponsors": zod.string().nullish(),
+  "amaNumber": zod.string().nullish(),
+  "mylapsTransponderId": zod.string().nullish(),
+  "hometown": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 export const ListRidersResponse = zod.array(ListRidersResponseItem)
@@ -441,7 +446,12 @@ export const CreateRiderBody = zod.object({
   "dateOfBirth": zod.string().optional(),
   "emergencyContact": zod.string().optional(),
   "emergencyPhone": zod.string().optional(),
-  "rfidNumber": zod.string().optional()
+  "rfidNumber": zod.string().optional(),
+  "bikeManufacturer": zod.string().optional(),
+  "sponsors": zod.string().optional(),
+  "amaNumber": zod.string().optional(),
+  "mylapsTransponderId": zod.string().optional(),
+  "hometown": zod.string().optional()
 })
 
 
@@ -463,6 +473,11 @@ export const GetRiderResponse = zod.object({
   "emergencyContact": zod.string().nullish(),
   "emergencyPhone": zod.string().nullish(),
   "rfidNumber": zod.string().nullish(),
+  "bikeManufacturer": zod.string().nullish(),
+  "sponsors": zod.string().nullish(),
+  "amaNumber": zod.string().nullish(),
+  "mylapsTransponderId": zod.string().nullish(),
+  "hometown": zod.string().nullish(),
   "recentResults": zod.array(zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -500,7 +515,12 @@ export const UpdateRiderBody = zod.object({
   "dateOfBirth": zod.string().optional(),
   "emergencyContact": zod.string().optional(),
   "emergencyPhone": zod.string().optional(),
-  "rfidNumber": zod.string().optional()
+  "rfidNumber": zod.string().optional(),
+  "bikeManufacturer": zod.string().optional(),
+  "sponsors": zod.string().optional(),
+  "amaNumber": zod.string().optional(),
+  "mylapsTransponderId": zod.string().optional(),
+  "hometown": zod.string().optional()
 })
 
 export const UpdateRiderResponse = zod.object({
@@ -514,6 +534,11 @@ export const UpdateRiderResponse = zod.object({
   "emergencyContact": zod.string().nullish(),
   "emergencyPhone": zod.string().nullish(),
   "rfidNumber": zod.string().nullish(),
+  "bikeManufacturer": zod.string().nullish(),
+  "sponsors": zod.string().nullish(),
+  "amaNumber": zod.string().nullish(),
+  "mylapsTransponderId": zod.string().nullish(),
+  "hometown": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 

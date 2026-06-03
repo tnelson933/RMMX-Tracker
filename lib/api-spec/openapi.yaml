@@ -1457,6 +1457,16 @@ components:
           type: ["string", "null"]
         rfidNumber:
           type: ["string", "null"]
+        bikeManufacturer:
+          type: ["string", "null"]
+        sponsors:
+          type: ["string", "null"]
+        amaNumber:
+          type: ["string", "null"]
+        mylapsTransponderId:
+          type: ["string", "null"]
+        hometown:
+          type: ["string", "null"]
         createdAt:
           type: string
 
@@ -1483,6 +1493,16 @@ components:
         emergencyPhone:
           type: ["string", "null"]
         rfidNumber:
+          type: ["string", "null"]
+        bikeManufacturer:
+          type: ["string", "null"]
+        sponsors:
+          type: ["string", "null"]
+        amaNumber:
+          type: ["string", "null"]
+        mylapsTransponderId:
+          type: ["string", "null"]
+        hometown:
           type: ["string", "null"]
         recentResults:
           type: array
@@ -1515,6 +1535,16 @@ components:
           type: string
         rfidNumber:
           type: string
+        bikeManufacturer:
+          type: string
+        sponsors:
+          type: string
+        amaNumber:
+          type: string
+        mylapsTransponderId:
+          type: string
+        hometown:
+          type: string
 
     RiderUpdate:
       type: object
@@ -1536,6 +1566,16 @@ components:
         emergencyPhone:
           type: string
         rfidNumber:
+          type: string
+        bikeManufacturer:
+          type: string
+        sponsors:
+          type: string
+        amaNumber:
+          type: string
+        mylapsTransponderId:
+          type: string
+        hometown:
           type: string
 
     Registration:

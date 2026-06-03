@@ -20,9 +20,9 @@ router.get("/riders", async (req, res) => {
 });
 
 router.post("/riders", async (req, res) => {
-  const { firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact, emergencyPhone, rfidNumber } = req.body;
+  const { firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact, emergencyPhone, rfidNumber, bikeManufacturer, sponsors, amaNumber, mylapsTransponderId, hometown } = req.body;
   if (!firstName || !lastName) return res.status(400).json({ error: "firstName and lastName required" });
-  const [rider] = await db.insert(ridersTable).values({ firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact, emergencyPhone, rfidNumber }).returning();
+  const [rider] = await db.insert(ridersTable).values({ firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact, emergencyPhone, rfidNumber, bikeManufacturer, sponsors, amaNumber, mylapsTransponderId, hometown }).returning();
   return res.status(201).json({ ...rider, createdAt: rider.createdAt.toISOString() });
 });
 
@@ -66,7 +66,7 @@ router.get("/riders/:riderId", async (req, res) => {
 
 router.patch("/riders/:riderId", async (req, res) => {
   const id = Number(req.params.riderId);
-  const fields = ["firstName", "lastName", "email", "phone", "bibNumber", "dateOfBirth", "emergencyContact", "emergencyPhone", "rfidNumber"];
+  const fields = ["firstName", "lastName", "email", "phone", "bibNumber", "dateOfBirth", "emergencyContact", "emergencyPhone", "rfidNumber", "bikeManufacturer", "sponsors", "amaNumber", "mylapsTransponderId", "hometown"];
   const updates: Record<string, unknown> = {};
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];

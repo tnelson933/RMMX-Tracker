@@ -25,6 +25,16 @@ export interface RiderDetail {
   emergencyPhone?: string | null;
   /** @nullable */
   rfidNumber?: string | null;
+  /** @nullable */
+  bikeManufacturer?: string | null;
+  /** @nullable */
+  sponsors?: string | null;
+  /** @nullable */
+  amaNumber?: string | null;
+  /** @nullable */
+  mylapsTransponderId?: string | null;
+  /** @nullable */
+  hometown?: string | null;
   recentResults?: RaceResult[];
   totalEvents?: number;
   createdAt?: string;

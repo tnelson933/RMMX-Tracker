@@ -220,6 +220,16 @@ export interface Rider {
   emergencyPhone?: string | null;
   /** @nullable */
   rfidNumber?: string | null;
+  /** @nullable */
+  bikeManufacturer?: string | null;
+  /** @nullable */
+  sponsors?: string | null;
+  /** @nullable */
+  amaNumber?: string | null;
+  /** @nullable */
+  mylapsTransponderId?: string | null;
+  /** @nullable */
+  hometown?: string | null;
   createdAt?: string;
 }
 
@@ -261,6 +271,16 @@ export interface RiderDetail {
   emergencyPhone?: string | null;
   /** @nullable */
   rfidNumber?: string | null;
+  /** @nullable */
+  bikeManufacturer?: string | null;
+  /** @nullable */
+  sponsors?: string | null;
+  /** @nullable */
+  amaNumber?: string | null;
+  /** @nullable */
+  mylapsTransponderId?: string | null;
+  /** @nullable */
+  hometown?: string | null;
   recentResults?: RaceResult[];
   totalEvents?: number;
   createdAt?: string;
@@ -276,6 +296,11 @@ export interface RiderInput {
   emergencyContact?: string;
   emergencyPhone?: string;
   rfidNumber?: string;
+  bikeManufacturer?: string;
+  sponsors?: string;
+  amaNumber?: string;
+  mylapsTransponderId?: string;
+  hometown?: string;
 }
 
 export interface RiderUpdate {
@@ -288,6 +313,11 @@ export interface RiderUpdate {
   emergencyContact?: string;
   emergencyPhone?: string;
   rfidNumber?: string;
+  bikeManufacturer?: string;
+  sponsors?: string;
+  amaNumber?: string;
+  mylapsTransponderId?: string;
+  hometown?: string;
 }
 
 export type RegistrationStatus = typeof RegistrationStatus[keyof typeof RegistrationStatus];

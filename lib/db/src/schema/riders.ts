@@ -13,6 +13,12 @@ export const ridersTable = pgTable("riders", {
   emergencyContact: text("emergency_contact"),
   emergencyPhone: text("emergency_phone"),
   rfidNumber: text("rfid_number"),
+  // Extended rider profile
+  bikeManufacturer: text("bike_manufacturer"),
+  sponsors: text("sponsors"),
+  amaNumber: text("ama_number"),
+  mylapsTransponderId: text("mylaps_transponder_id"),
+  hometown: text("hometown"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

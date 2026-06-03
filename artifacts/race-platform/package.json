@@ -77,6 +77,8 @@
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",
     "@types/three": "^0.184.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "onnxruntime-web": "1.21.0",
     "qrcode.react": "^4.2.0",
     "three": "^0.184.0",

@@ -16,4 +16,9 @@ export interface RiderUpdate {
   emergencyContact?: string;
   emergencyPhone?: string;
   rfidNumber?: string;
+  bikeManufacturer?: string;
+  sponsors?: string;
+  amaNumber?: string;
+  mylapsTransponderId?: string;
+  hometown?: string;
 }
