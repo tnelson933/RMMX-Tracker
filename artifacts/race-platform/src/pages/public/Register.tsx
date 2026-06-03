@@ -63,6 +63,7 @@ interface EventInfo {
   timingTechnology: string;
   transponderRentalEnabled: boolean;
   transponderRentalFee: number | null;
+  noDuplicateBibs: boolean;
   purchaseOptions?: Array<{ id: string; name: string; amount: number }>;
 }
 
@@ -104,6 +105,8 @@ export default function Register() {
   const [appliedComp, setAppliedComp] = useState<{ code: string; amount: number } | null>(null);
   const [compApplying, setCompApplying] = useState(false);
   const [compError, setCompError] = useState<string | null>(null);
+
+  const [bibCheckState, setBibCheckState] = useState<"idle" | "checking" | "taken" | "available">("idle");
 
   const handleApplyComp = async () => {
     const code = compCodeInput.trim().toUpperCase();
@@ -148,6 +151,21 @@ export default function Register() {
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [eventId]);
+
+  const watchedBib = form.watch("bibNumber");
+  useEffect(() => {
+    if (!event?.noDuplicateBibs) { setBibCheckState("idle"); return; }
+    const bib = (watchedBib ?? "").trim();
+    if (!bib) { setBibCheckState("idle"); return; }
+    setBibCheckState("checking");
+    const timer = setTimeout(() => {
+      fetch(`/api/public/events/${eventId}/check-bib?bib=${encodeURIComponent(bib)}`)
+        .then(r => r.json())
+        .then(data => setBibCheckState(data.taken ? "taken" : "available"))
+        .catch(() => setBibCheckState("idle"));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [watchedBib, eventId, event?.noDuplicateBibs]);
 
   // Handle return from Stripe — payment_success=1 or payment_cancelled=1 in URL
   useEffect(() => {
@@ -843,8 +861,20 @@ export default function Register() {
                     </div>
                     <FormField control={form.control} name="bibNumber" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Preferred Bib Number</FormLabel>
-                        <FormControl><Input placeholder="101" {...field} /></FormControl>
+                        <FormLabel>
+                          Preferred Bib Number
+                          {event?.noDuplicateBibs && <span className="text-destructive ml-1">*</span>}
+                        </FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input placeholder="101" {...field} className={bibCheckState === "taken" ? "border-destructive pr-8" : bibCheckState === "available" ? "border-green-500 pr-8" : ""} />
+                            {bibCheckState === "checking" && <Loader2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />}
+                            {bibCheckState === "taken" && <AlertCircle size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-destructive" />}
+                            {bibCheckState === "available" && <CheckCircle2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500" />}
+                          </div>
+                        </FormControl>
+                        {bibCheckState === "taken" && <p className="text-xs text-destructive">Bib #{field.value} is already taken for this event</p>}
+                        {bibCheckState === "available" && <p className="text-xs text-green-600">Bib #{field.value} is available</p>}
                         <FormMessage />
                       </FormItem>
                     )} />
@@ -999,7 +1029,7 @@ export default function Register() {
 
                 <Button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || bibCheckState === "taken" || bibCheckState === "checking"}
                   className="w-full font-heading uppercase tracking-wider text-base h-12"
                 >
                   {submitting ? (

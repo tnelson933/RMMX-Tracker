@@ -270,6 +270,7 @@ export const ListEventsResponseItem = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(listEventsResponseTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
+  "noDuplicateBibs": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -304,6 +305,7 @@ export const CreateEventBody = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(createEventBodyTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().optional(),
+  "noDuplicateBibs": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -344,6 +346,7 @@ export const GetEventResponse = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getEventResponseTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
+  "noDuplicateBibs": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -381,6 +384,7 @@ export const UpdateEventBody = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventBodyTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().optional(),
+  "noDuplicateBibs": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -413,6 +417,7 @@ export const UpdateEventResponse = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventResponseTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
+  "noDuplicateBibs": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -1040,6 +1045,7 @@ export const GetClubDashboardResponse = zod.object({
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
+  "noDuplicateBibs": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),

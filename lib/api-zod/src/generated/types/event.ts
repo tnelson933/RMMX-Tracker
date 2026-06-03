@@ -43,6 +43,7 @@ export interface Event {
   transponderRentalEnabled?: boolean;
   /** @nullable */
   transponderRentalFee?: number | null;
+  noDuplicateBibs?: boolean;
   purchaseOptions?: PurchaseOption[];
   createdAt?: string;
 }

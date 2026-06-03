@@ -99,6 +99,7 @@ const updateEventSchema = z.object({
   registrationClose: z.string().optional(),
   transponderRentalEnabled: z.boolean().default(false),
   transponderRentalFee: z.string().optional(),
+  noDuplicateBibs: z.boolean().default(false),
   purchaseOptions: z.array(z.object({
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
@@ -257,6 +258,7 @@ export default function EventDetail() {
       registrationClose: "",
       transponderRentalEnabled: false,
       transponderRentalFee: "",
+      noDuplicateBibs: false,
       purchaseOptions: [],
     }
   });
@@ -295,6 +297,7 @@ export default function EventDetail() {
       registrationClose: evt.registrationClose ? toLocalDatetimeString(new Date(evt.registrationClose)) : "",
       transponderRentalEnabled: (evt as any).transponderRentalEnabled ?? false,
       transponderRentalFee: (evt as any).transponderRentalFee != null ? String((evt as any).transponderRentalFee) : "",
+      noDuplicateBibs: (evt as any).noDuplicateBibs ?? false,
       purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number }) => ({ name: o.name, amount: String(o.amount) })),
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
@@ -324,6 +327,7 @@ export default function EventDetail() {
         raceClassLimits: classLimits,
         paymentEnabled: data.paymentEnabled,
         requireAma: data.requireAma,
+        noDuplicateBibs: data.noDuplicateBibs,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
@@ -672,6 +676,25 @@ export default function EventDetail() {
                                 />
                               </FormControl>
                               <FormLabel className="cursor-pointer font-normal">Require AMA #</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      {/* No Duplicate Bibs checkbox */}
+                      <div className="flex items-center gap-2">
+                        <FormField
+                          control={form.control}
+                          name="noDuplicateBibs"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Do not allow duplicate bib numbers</FormLabel>
                             </FormItem>
                           )}
                         />

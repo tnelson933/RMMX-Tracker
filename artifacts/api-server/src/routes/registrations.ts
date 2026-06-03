@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable } from "@workspace/db";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, ne } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 
 const router = Router();
@@ -127,6 +127,21 @@ router.post("/events/:eventId/registrations", async (req, res) => {
   const [eventData] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   const needsPayment = !!(eventData?.paymentEnabled && eventData?.entryFee);
   const wantsRental = !!(rentTransponder && eventData?.transponderRentalEnabled && eventData?.transponderRentalFee);
+
+  // Enforce unique bib numbers if the event requires it
+  if (eventData?.noDuplicateBibs && bibNumber) {
+    const bibTaken = await db.select({ id: registrationsTable.id })
+      .from(registrationsTable)
+      .where(and(
+        eq(registrationsTable.eventId, eventId),
+        eq(registrationsTable.bibNumber, String(bibNumber)),
+        ne(registrationsTable.status, "void"),
+      ))
+      .limit(1);
+    if (bibTaken.length > 0) {
+      return res.status(409).json({ error: `Bib #${bibNumber} is already taken for this event` });
+    }
+  }
 
   const [reg] = await db.insert(registrationsTable).values({
     eventId, riderId: resolvedRiderId, raceClass,
@@ -269,6 +284,24 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
   }
 });
 
+// ── Public: check if a bib number is already taken for an event ───────────────
+router.get("/public/events/:eventId/check-bib", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const bib = ((req.query.bib as string) || "").trim();
+  if (!bib) return res.status(400).json({ error: "bib required" });
+
+  const existing = await db.select({ id: registrationsTable.id })
+    .from(registrationsTable)
+    .where(and(
+      eq(registrationsTable.eventId, eventId),
+      eq(registrationsTable.bibNumber, bib),
+      ne(registrationsTable.status, "void"),
+    ))
+    .limit(1);
+
+  return res.json({ taken: existing.length > 0 });
+});
+
 // ── Public: event info for the registration form ─────────────────────────────
 router.get("/public/events/:eventId/register-info", async (req, res) => {
   const eventId = Number(req.params.eventId);
@@ -294,6 +327,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     transponderRentalEnabled: eventsTable.transponderRentalEnabled,
     transponderRentalFee: eventsTable.transponderRentalFee,
     purchaseOptions: eventsTable.purchaseOptions,
+    noDuplicateBibs: eventsTable.noDuplicateBibs,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));
@@ -345,6 +379,21 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.raceClass, raceClass)));
     if ((classCount[0]?.count ?? 0) >= classLimit) {
       return res.status(409).json({ error: `${raceClass} is full (${classLimit} rider limit reached)` });
+    }
+  }
+
+  // Enforce unique bib numbers if the event requires it
+  if (events[0].noDuplicateBibs && bibNumber) {
+    const bibTaken = await db.select({ id: registrationsTable.id })
+      .from(registrationsTable)
+      .where(and(
+        eq(registrationsTable.eventId, eventId),
+        eq(registrationsTable.bibNumber, String(bibNumber)),
+        ne(registrationsTable.status, "void"),
+      ))
+      .limit(1);
+    if (bibTaken.length > 0) {
+      return res.status(409).json({ error: `Bib #${bibNumber} is already taken for this event` });
     }
   }
 

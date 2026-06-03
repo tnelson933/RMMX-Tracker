@@ -28,5 +28,6 @@ export interface EventUpdate {
   timingTechnology?: EventUpdateTimingTechnology;
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
+  noDuplicateBibs?: boolean;
   purchaseOptions?: PurchaseOption[];
 }

@@ -1348,6 +1348,8 @@ components:
           type: boolean
         transponderRentalFee:
           type: ["number", "null"]
+        noDuplicateBibs:
+          type: boolean
         purchaseOptions:
           type: array
           items:
@@ -1401,6 +1403,8 @@ components:
           type: boolean
         transponderRentalFee:
           type: number
+        noDuplicateBibs:
+          type: boolean
         purchaseOptions:
           type: array
           items:
@@ -1451,6 +1455,8 @@ components:
           type: boolean
         transponderRentalFee:
           type: number
+        noDuplicateBibs:
+          type: boolean
         purchaseOptions:
           type: array
           items:

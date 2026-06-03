@@ -108,6 +108,7 @@ export default function Registrations() {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found">("idle");
   const [lookedUpName, setLookedUpName] = useState("");
+  const [bibCheckState, setBibCheckState] = useState<"idle" | "checking" | "taken" | "available">("idle");
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
@@ -150,8 +151,25 @@ export default function Registrations() {
       setPaymentError(null);
       setLookupState("idle");
       setLookedUpName("");
+      setBibCheckState("idle");
     }
   }, [isAddOpen]);
+
+  const noDuplicateBibs = !!(event as any)?.noDuplicateBibs;
+  const watchedBib = form.watch("bibNumber");
+  useEffect(() => {
+    if (!noDuplicateBibs) { setBibCheckState("idle"); return; }
+    const bib = (watchedBib ?? "").trim();
+    if (!bib) { setBibCheckState("idle"); return; }
+    setBibCheckState("checking");
+    const timer = setTimeout(() => {
+      fetch(`/api/public/events/${eventId}/check-bib?bib=${encodeURIComponent(bib)}`)
+        .then(r => r.json())
+        .then(data => setBibCheckState(data.taken ? "taken" : "available"))
+        .catch(() => setBibCheckState("idle"));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [watchedBib, eventId, noDuplicateBibs]);
 
   // ── Email lookup — finds existing rider profile and pre-fills the form ────────
   const lookupByEmail = async (email: string) => {
@@ -617,8 +635,20 @@ export default function Registrations() {
               </div>
               <FormField control={form.control} name="bibNumber" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Preferred Bib #</FormLabel>
-                  <FormControl><Input placeholder="101" {...field} /></FormControl>
+                  <FormLabel>
+                    Preferred Bib #
+                    {noDuplicateBibs && <span className="text-destructive ml-1">*</span>}
+                  </FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Input placeholder="101" {...field} className={bibCheckState === "taken" ? "border-destructive pr-8" : bibCheckState === "available" ? "border-green-500 pr-8" : ""} />
+                      {bibCheckState === "checking" && <Loader2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />}
+                      {bibCheckState === "taken" && <AlertCircle size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-destructive" />}
+                      {bibCheckState === "available" && <Check size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500" />}
+                    </div>
+                  </FormControl>
+                  {bibCheckState === "taken" && <p className="text-xs text-destructive">Bib #{field.value} is already taken for this event</p>}
+                  {bibCheckState === "available" && <p className="text-xs text-green-600">Bib #{field.value} is available</p>}
                   <FormMessage />
                 </FormItem>
               )} />
@@ -676,7 +706,7 @@ export default function Registrations() {
               </div>
             )}
 
-            <Button type="submit" disabled={submitting} className="w-full font-heading uppercase tracking-wider h-11">
+            <Button type="submit" disabled={submitting || bibCheckState === "taken" || bibCheckState === "checking"} className="w-full font-heading uppercase tracking-wider h-11">
               {submitting ? <><Loader2 size={16} className="mr-2 animate-spin" /> Registering...</> : "Complete Registration →"}
             </Button>
           </form>

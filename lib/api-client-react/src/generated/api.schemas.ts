@@ -143,6 +143,7 @@ export interface Event {
   transponderRentalEnabled?: boolean;
   /** @nullable */
   transponderRentalFee?: number | null;
+  noDuplicateBibs?: boolean;
   purchaseOptions?: PurchaseOption[];
   createdAt?: string;
 }
@@ -176,6 +177,7 @@ export interface EventInput {
   timingTechnology?: EventInputTimingTechnology;
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
+  noDuplicateBibs?: boolean;
   purchaseOptions?: PurchaseOption[];
 }
 
@@ -208,6 +210,7 @@ export interface EventUpdate {
   timingTechnology?: EventUpdateTimingTechnology;
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
+  noDuplicateBibs?: boolean;
   purchaseOptions?: PurchaseOption[];
 }
 

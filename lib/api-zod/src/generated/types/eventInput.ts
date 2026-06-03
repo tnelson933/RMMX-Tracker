@@ -28,5 +28,6 @@ export interface EventInput {
   timingTechnology?: EventInputTimingTechnology;
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
+  noDuplicateBibs?: boolean;
   purchaseOptions?: PurchaseOption[];
 }
