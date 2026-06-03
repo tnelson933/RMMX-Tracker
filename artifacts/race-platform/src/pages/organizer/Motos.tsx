@@ -599,54 +599,69 @@ export default function Motos() {
           <div className="space-y-2">
             {[...new Set((motos ?? []).filter(m => m.type === "main").map(m => m.raceClass).filter((c): c is string => !!c))].map(cls => {
               const heats = (motos ?? []).filter(m => m.type === "heat" && m.raceClass === cls);
+              const completedHeats = heats.filter(m => m.status === "completed");
+              const allHeatsComplete = heats.length > 0 && completedHeats.length === heats.length;
               const totalInHeats = heats.reduce((s, h) => s + ((h.lineup as any[])?.length ?? 0), 0);
               const currentVal = topPerHeatByClass[cls] ?? defaultTopPerHeat[cls] ?? 1;
               return (
-                <div key={cls} className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-heading font-semibold text-sm uppercase tracking-wide">{cls}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {heats.length} heat{heats.length !== 1 ? "s" : ""} · {totalInHeats} total riders
+                <div key={cls} className={`rounded-lg border px-4 py-3 ${allHeatsComplete ? "bg-muted/30" : "bg-muted/10 opacity-75"}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-heading font-semibold text-sm uppercase tracking-wide">{cls}</div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                        <span>{completedHeats.length}/{heats.length} heat{heats.length !== 1 ? "s" : ""} complete</span>
+                        <span>·</span>
+                        <span>{totalInHeats} riders</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">Top</span>
-                    <div className="flex items-center border rounded-md overflow-hidden bg-background">
-                      <button
-                        type="button"
-                        className="px-2 py-1.5 text-sm font-bold hover:bg-muted transition-colors disabled:opacity-40"
-                        disabled={currentVal <= 1}
-                        onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: Math.max(1, currentVal - 1) }))}
-                      >−</button>
-                      <input
-                        type="number"
-                        min={1}
-                        max={totalInHeats || 99}
-                        value={currentVal}
-                        onChange={e => {
-                          const v = parseInt(e.target.value, 10);
-                          if (!isNaN(v) && v >= 1) setTopPerHeatByClass(p => ({ ...p, [cls]: v }));
-                        }}
-                        className="w-10 text-center text-sm font-mono font-bold bg-transparent border-x py-1.5 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        type="button"
-                        className="px-2 py-1.5 text-sm font-bold hover:bg-muted transition-colors"
-                        onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: currentVal + 1 }))}
-                      >+</button>
+                    <div className={`flex items-center gap-1.5 shrink-0 ${!allHeatsComplete ? "opacity-40 pointer-events-none" : ""}`}>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">Top</span>
+                      <div className="flex items-center border rounded-md overflow-hidden bg-background">
+                        <button
+                          type="button"
+                          className="px-2 py-1.5 text-sm font-bold hover:bg-muted transition-colors disabled:opacity-40"
+                          disabled={currentVal <= 1}
+                          onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: Math.max(1, currentVal - 1) }))}
+                        >−</button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={totalInHeats || 99}
+                          value={currentVal}
+                          onChange={e => {
+                            const v = parseInt(e.target.value, 10);
+                            if (!isNaN(v) && v >= 1) setTopPerHeatByClass(p => ({ ...p, [cls]: v }));
+                          }}
+                          className="w-10 text-center text-sm font-mono font-bold bg-transparent border-x py-1.5 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="button"
+                          className="px-2 py-1.5 text-sm font-bold hover:bg-muted transition-colors"
+                          onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: currentVal + 1 }))}
+                        >+</button>
+                      </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">per heat</span>
                     </div>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">per heat</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="font-heading uppercase tracking-wider gap-1.5 shrink-0"
+                      disabled={!allHeatsComplete || advanceToMainMutation.isPending}
+                      title={!allHeatsComplete ? `${heats.length - completedHeats.length} heat${heats.length - completedHeats.length !== 1 ? "s" : ""} still need to be completed` : undefined}
+                      onClick={() => handleAdvanceToMain(cls)}
+                    >
+                      <Flag size={13} />
+                      Advance
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="font-heading uppercase tracking-wider gap-1.5 shrink-0"
-                    disabled={advanceToMainMutation.isPending}
-                    onClick={() => handleAdvanceToMain(cls)}
-                  >
-                    <Flag size={13} />
-                    Advance
-                  </Button>
+                  {!allHeatsComplete && (
+                    <div className="mt-2 text-xs text-amber-600 flex items-center gap-1.5">
+                      <span>⏳</span>
+                      <span>
+                        {heats.length - completedHeats.length} heat{heats.length - completedHeats.length !== 1 ? "s" : ""} must be completed before advancing
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
