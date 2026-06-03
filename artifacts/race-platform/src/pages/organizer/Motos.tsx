@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRoute, Link } from "wouter";
 import {
   useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
@@ -167,6 +167,7 @@ export default function Motos() {
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
+  const [topPerHeatByClass, setTopPerHeatByClass] = useState<Record<string, number>>({});
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -271,9 +272,33 @@ export default function Motos() {
     });
   };
 
+  // Auto-seed topPerHeatByClass from motos data: 30% of avg heat lineup size per class
+  const defaultTopPerHeat = useMemo(() => {
+    const result: Record<string, number> = {};
+    const mainClasses = [...new Set((motos ?? []).filter(m => m.type === "main").map(m => m.raceClass).filter((c): c is string => !!c))];
+    for (const cls of mainClasses) {
+      const heats = (motos ?? []).filter(m => m.type === "heat" && m.raceClass === cls);
+      const totalRiders = heats.reduce((sum, h) => sum + ((h.lineup as any[])?.length ?? 0), 0);
+      const avg = heats.length > 0 ? totalRiders / heats.length : 0;
+      result[cls] = Math.max(1, Math.round(avg * 0.3));
+    }
+    return result;
+  }, [motos]);
+
+  useEffect(() => {
+    setTopPerHeatByClass(prev => {
+      const next = { ...prev };
+      for (const [cls, val] of Object.entries(defaultTopPerHeat)) {
+        if (next[cls] === undefined) next[cls] = val;
+      }
+      return next;
+    });
+  }, [defaultTopPerHeat]);
+
   const handleAdvanceToMain = (raceClass: string) => {
+    const topPerHeat = topPerHeatByClass[raceClass] ?? defaultTopPerHeat[raceClass] ?? 3;
     advanceToMainMutation.mutate(
-      { eventId, data: { raceClass, topPerHeat: 5 } },
+      { eventId, data: { raceClass, topPerHeat } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -563,27 +588,68 @@ export default function Motos() {
 
       {/* Advance to Main panel — Supercross format only */}
       {isSupercrossFormat && (motos ?? []).some(m => m.type === "main") && (
-        <div className="border rounded-xl p-5 bg-card space-y-3">
-          <div className="flex items-center gap-2 mb-1">
+        <div className="border rounded-xl p-5 bg-card space-y-4">
+          <div className="flex items-center gap-2">
             <Flag size={16} className="text-primary" />
             <h3 className="font-heading font-bold uppercase tracking-wider text-sm">Advance to Main Event</h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            Take the top 5 finishers from each heat and populate the Main Event lineup. Run heats first, then advance.
+            Select how many top finishers from each heat advance to the Main Event. Auto-set to ~30% of heat size — adjust per class as needed.
           </p>
-          <div className="flex flex-wrap gap-2">
-            {[...new Set((motos ?? []).filter(m => m.type === "main").map(m => m.raceClass).filter((c): c is string => !!c))].map(cls => (
-              <Button
-                key={cls}
-                size="sm"
-                variant="outline"
-                className="font-heading uppercase tracking-wider gap-2"
-                disabled={advanceToMainMutation.isPending}
-                onClick={() => handleAdvanceToMain(cls)}
-              >
-                <Flag size={13} /> Advance {cls}
-              </Button>
-            ))}
+          <div className="space-y-2">
+            {[...new Set((motos ?? []).filter(m => m.type === "main").map(m => m.raceClass).filter((c): c is string => !!c))].map(cls => {
+              const heats = (motos ?? []).filter(m => m.type === "heat" && m.raceClass === cls);
+              const totalInHeats = heats.reduce((s, h) => s + ((h.lineup as any[])?.length ?? 0), 0);
+              const currentVal = topPerHeatByClass[cls] ?? defaultTopPerHeat[cls] ?? 1;
+              return (
+                <div key={cls} className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-heading font-semibold text-sm uppercase tracking-wide">{cls}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {heats.length} heat{heats.length !== 1 ? "s" : ""} · {totalInHeats} total riders
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">Top</span>
+                    <div className="flex items-center border rounded-md overflow-hidden bg-background">
+                      <button
+                        type="button"
+                        className="px-2 py-1.5 text-sm font-bold hover:bg-muted transition-colors disabled:opacity-40"
+                        disabled={currentVal <= 1}
+                        onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: Math.max(1, currentVal - 1) }))}
+                      >−</button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={totalInHeats || 99}
+                        value={currentVal}
+                        onChange={e => {
+                          const v = parseInt(e.target.value, 10);
+                          if (!isNaN(v) && v >= 1) setTopPerHeatByClass(p => ({ ...p, [cls]: v }));
+                        }}
+                        className="w-10 text-center text-sm font-mono font-bold bg-transparent border-x py-1.5 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        type="button"
+                        className="px-2 py-1.5 text-sm font-bold hover:bg-muted transition-colors"
+                        onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: currentVal + 1 }))}
+                      >+</button>
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">per heat</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="font-heading uppercase tracking-wider gap-1.5 shrink-0"
+                    disabled={advanceToMainMutation.isPending}
+                    onClick={() => handleAdvanceToMain(cls)}
+                  >
+                    <Flag size={13} />
+                    Advance
+                  </Button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

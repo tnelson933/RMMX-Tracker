@@ -143,10 +143,19 @@ router.patch("/motos/:motoId", async (req, res) => {
 
   // Auto-advance to main when a heat completes (Supercross format only)
   if (req.body.status === "completed" && moto.type === "heat") {
-    getEventFormat(moto.eventId).then(async ({ isSupercross, topPerHeat }) => {
-      if (isSupercross) {
-        await autoAdvanceToMain(moto.eventId, moto.raceClass, topPerHeat);
-      }
+    getEventFormat(moto.eventId).then(async ({ isSupercross }) => {
+      if (!isSupercross) return;
+      // Calculate topPerHeat dynamically: 30% of the average heat lineup size for this class
+      const classHeats = await db.select().from(motosTable)
+        .where(and(
+          eq(motosTable.eventId, moto.eventId),
+          eq(motosTable.raceClass, moto.raceClass),
+          eq(motosTable.type, "heat"),
+        ));
+      const totalRiders = classHeats.reduce((sum, h) => sum + (Array.isArray(h.lineup) ? h.lineup.length : 0), 0);
+      const avgSize = classHeats.length > 0 ? totalRiders / classHeats.length : 0;
+      const topPerHeat = Math.max(1, Math.round(avgSize * 0.3));
+      await autoAdvanceToMain(moto.eventId, moto.raceClass, topPerHeat);
     }).catch(() => {});
   }
 
