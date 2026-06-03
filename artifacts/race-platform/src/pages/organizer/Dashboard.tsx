@@ -59,20 +59,18 @@ export default function Dashboard() {
     setUploadState("uploading");
 
     try {
-      const urlRes = await fetch("/api/storage/uploads/request-url", {
+      const uploadRes = await fetch("/api/storage/uploads/file", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: processedName, size: processedBlob.size, contentType: "image/png" }),
-      });
-      if (!urlRes.ok) throw new Error("Failed to get upload URL");
-      const { uploadURL, objectPath } = await urlRes.json();
-
-      const putRes = await fetch(uploadURL, {
-        method: "PUT",
-        headers: { "Content-Type": "image/png" },
+        headers: {
+          "Content-Type": "image/png",
+          "x-file-name": processedName,
+          "x-content-type": "image/png",
+        },
+        credentials: "include",
         body: processedBlob,
       });
-      if (!putRes.ok) throw new Error("Upload failed");
+      if (!uploadRes.ok) throw new Error("Failed to upload");
+      const { objectPath } = await uploadRes.json() as { objectPath: string };
 
       const logoUrl = `/api/storage${objectPath}`;
       await updateClub({ clubId, data: { logoUrl } });

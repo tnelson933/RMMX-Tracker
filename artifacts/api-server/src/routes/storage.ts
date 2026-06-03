@@ -1,5 +1,8 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import express, { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
+import fs from "fs/promises";
+import path from "path";
+import { randomUUID } from "crypto";
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
@@ -7,8 +10,76 @@ import {
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { ObjectPermission } from "../lib/objectAcl";
 
+const UPLOADS_DIR = path.join(process.cwd(), ".uploads");
+// Ensure directory exists at module load time
+fs.mkdir(UPLOADS_DIR, { recursive: true }).catch(() => {});
+
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+/**
+ * POST /storage/uploads/file
+ *
+ * Direct binary file upload — accepts image as raw body, saves to local disk,
+ * returns { objectPath } that the client can use to form the final URL.
+ * Use x-file-name header to hint the desired filename/extension.
+ */
+router.post(
+  "/storage/uploads/file",
+  express.raw({ type: ["image/*", "application/octet-stream"], limit: "10mb" }),
+  async (req: Request, res: Response) => {
+    const originalName = (req.headers["x-file-name"] as string) || "upload.png";
+    const contentType = (req.headers["x-content-type"] as string) || "image/png";
+    const ext = path.extname(originalName) || ".png";
+    const filename = `${randomUUID()}${ext}`;
+    const filepath = path.join(UPLOADS_DIR, filename);
+
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      res.status(400).json({ error: "No file data received" });
+      return;
+    }
+
+    try {
+      await fs.writeFile(filepath, req.body);
+      req.log.info({ filename, size: req.body.length, contentType }, "File uploaded");
+      res.json({ objectPath: `/uploads/${filename}` });
+    } catch (error) {
+      req.log.error({ err: error }, "Error saving uploaded file");
+      res.status(500).json({ error: "Failed to save file" });
+    }
+  }
+);
+
+/**
+ * GET /storage/uploads/:filename
+ *
+ * Serve locally-uploaded files (logos, event images, etc.) from disk.
+ */
+router.get("/storage/uploads/:filename", async (req: Request, res: Response) => {
+  const filename = Array.isArray(req.params.filename) ? req.params.filename[0] : req.params.filename;
+  if (filename.includes("..") || filename.includes("/")) {
+    res.status(400).json({ error: "Invalid filename" });
+    return;
+  }
+  const filepath = path.join(UPLOADS_DIR, filename);
+  try {
+    const data = await fs.readFile(filepath);
+    const ext = path.extname(filename).toLowerCase();
+    const contentTypeMap: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+      ".svg": "image/svg+xml",
+    };
+    res.setHeader("Content-Type", contentTypeMap[ext] ?? "application/octet-stream");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.send(data);
+  } catch {
+    res.status(404).json({ error: "File not found" });
+  }
+});
 
 /**
  * POST /storage/uploads/request-url

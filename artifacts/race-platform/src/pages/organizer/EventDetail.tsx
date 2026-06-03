@@ -149,16 +149,18 @@ export default function EventDetail() {
     }
     setImgUploadState("uploading");
     try {
-      const urlRes = await fetch("/api/storage/uploads/request-url", {
+      const uploadRes = await fetch("/api/storage/uploads/file", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "image/png",
+          "x-file-name": `event-${eventId}-image.png`,
+          "x-content-type": "image/png",
+        },
         credentials: "include",
-        body: JSON.stringify({ name: `event-${eventId}-image.png`, size: blob.size, contentType: "image/png" }),
+        body: blob,
       });
-      if (!urlRes.ok) throw new Error("Failed to get upload URL");
-      const { uploadURL, objectPath } = await urlRes.json() as { uploadURL: string; objectPath: string };
-      const putRes = await fetch(uploadURL, { method: "PUT", body: blob, headers: { "Content-Type": "image/png" } });
-      if (!putRes.ok) throw new Error("Upload failed");
+      if (!uploadRes.ok) throw new Error("Upload failed");
+      const { objectPath } = await uploadRes.json() as { objectPath: string };
       await fetch(`/api/events/${eventId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
