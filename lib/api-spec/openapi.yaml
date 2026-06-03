@@ -1927,7 +1927,7 @@ components:
 
     ClubDashboard:
       type: object
-      required: [totalEvents, upcomingEvents, totalRiders, totalRegistrations, recentActivity]
+      required: [totalEvents, upcomingEvents, totalRiders, totalRegistrations, uniqueRegistrations, recentActivity]
       properties:
         totalEvents:
           type: integer
@@ -1937,6 +1937,9 @@ components:
           type: integer
         totalRegistrations:
           type: integer
+        uniqueRegistrations:
+          type: integer
+          description: Count of distinct rider emails that have ever registered for a club event
         checkedInToday:
           type: integer
         recentActivity:

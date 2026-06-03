@@ -945,6 +945,7 @@ export const GetClubDashboardResponse = zod.object({
   "upcomingEvents": zod.number(),
   "totalRiders": zod.number(),
   "totalRegistrations": zod.number(),
+  "uniqueRegistrations": zod.number().describe('Count of distinct rider emails that have ever registered for a club event'),
   "checkedInToday": zod.number().optional(),
   "recentActivity": zod.array(zod.object({
   "type": zod.string(),

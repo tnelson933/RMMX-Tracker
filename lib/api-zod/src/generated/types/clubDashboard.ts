@@ -13,6 +13,8 @@ export interface ClubDashboard {
   upcomingEvents: number;
   totalRiders: number;
   totalRegistrations: number;
+  /** Count of distinct rider emails that have ever registered for a club event */
+  uniqueRegistrations: number;
   checkedInToday?: number;
   recentActivity: ActivityItem[];
   upcomingEventList?: Event[];

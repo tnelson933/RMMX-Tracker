@@ -17,11 +17,19 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
   const eventIdList = clubEvents.map(e => e.id);
 
   let totalRegistrations = 0;
+  let uniqueRegistrations = 0;
   let checkedInToday = 0;
   if (eventIdList.length > 0) {
     const regCount = await db.select({ count: count() }).from(registrationsTable)
       .where(inArray(registrationsTable.eventId, eventIdList));
     totalRegistrations = regCount[0]?.count || 0;
+
+    const [uqRow] = await db.select({
+      count: sql<number>`COUNT(DISTINCT ${ridersTable.email})`,
+    }).from(registrationsTable)
+      .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+      .where(inArray(registrationsTable.eventId, eventIdList));
+    uniqueRegistrations = Number(uqRow?.count || 0);
 
     const checkinCount = await db.select({ count: count() }).from(checkinsTable)
       .where(and(
@@ -111,6 +119,7 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     upcomingEvents: upcomingCount.count,
     totalRiders: ridersCount.count,
     totalRegistrations,
+    uniqueRegistrations,
     checkedInToday,
     recentActivity,
     upcomingEventList: upcomingEvents.map(e => ({

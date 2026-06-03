@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Calendar, Users, CheckCircle, Plus, Tag, Activity,
-  Upload, ImageIcon, Loader2, X, Sparkles, Save, Building2, LayoutDashboard,
+  Upload, ImageIcon, Loader2, X, Sparkles, Save, Building2, LayoutDashboard, Mail,
 } from "lucide-react";
 import { Link } from "wouter";
 import { format, parseISO } from "date-fns";
@@ -183,7 +183,7 @@ export default function Dashboard() {
         {/* ── OVERVIEW TAB ─────────────────────────────────────────────── */}
         <TabsContent value="overview" className="space-y-8 mt-4">
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
             <Card className="border-sidebar-border bg-sidebar text-sidebar-foreground">
               <CardContent className="p-6 flex items-center justify-between">
                 <div>
@@ -214,6 +214,18 @@ export default function Dashboard() {
                 </div>
                 <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
                   <Tag size={24} />
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-6 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Unique Registrants</p>
+                  <h2 className="text-4xl font-heading font-bold">{dashboard?.uniqueRegistrations ?? 0}</h2>
+                  <p className="text-xs text-muted-foreground mt-1">distinct emails</p>
+                </div>
+                <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                  <Mail size={24} />
                 </div>
               </CardContent>
             </Card>
