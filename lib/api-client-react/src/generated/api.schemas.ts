@@ -397,6 +397,12 @@ export interface Checkin {
   registrationBib?: string | null;
   /** @nullable */
   bibNumber?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  myLapsTransponderNumber?: string | null;
   checkedIn: boolean;
   /** @nullable */
   checkedInAt?: string | null;

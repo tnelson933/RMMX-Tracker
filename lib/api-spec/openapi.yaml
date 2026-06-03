@@ -1691,6 +1691,12 @@ components:
           type: ["string", "null"]
         bibNumber:
           type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        myLapsTransponderNumber:
+          type: ["string", "null"]
         checkedIn:
           type: boolean
         checkedInAt:

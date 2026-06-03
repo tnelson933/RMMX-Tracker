@@ -16,8 +16,11 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     riderId: registrationsTable.riderId,
     raceClass: registrationsTable.raceClass,
     bibNumber: registrationsTable.bibNumber,
+    myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
+    email: ridersTable.email,
+    phone: ridersTable.phone,
   }).from(registrationsTable)
     .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
     .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")))
@@ -42,6 +45,9 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       raceClass: r.raceClass,
       registrationBib: r.bibNumber ?? null,
       bibNumber: r.bibNumber ?? c?.bibNumber ?? null,
+      email: r.email ?? null,
+      phone: r.phone ?? null,
+      myLapsTransponderNumber: r.myLapsTransponderNumber ?? null,
       checkedIn: c?.checkedIn ?? false,
       checkedInAt: c?.checkedInAt?.toISOString() ?? null,
       rfidNumber: c?.rfidNumber ?? null,

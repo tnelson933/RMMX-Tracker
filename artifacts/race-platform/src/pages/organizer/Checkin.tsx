@@ -191,8 +191,20 @@ export default function Checkin() {
   const searchFiltered = q
     ? statusFiltered.filter(c => {
         const name = c.riderName.toLowerCase();
-        const bib = c.bibNumber ?? "";
-        return name.includes(q) || bib.includes(q);
+        const bib = (c.bibNumber ?? "").toLowerCase();
+        const email = (c.email ?? "").toLowerCase();
+        const phone = (c.phone ?? "").replace(/\D/g, "");
+        const transponder = (c.myLapsTransponderNumber ?? "").toLowerCase();
+        const rfid = (c.rfidNumber ?? "").toLowerCase();
+        const qDigits = q.replace(/\D/g, "");
+        return (
+          name.includes(q) ||
+          bib.includes(q) ||
+          email.includes(q) ||
+          (qDigits.length >= 3 && phone.includes(qDigits)) ||
+          transponder.includes(q) ||
+          rfid.includes(q)
+        );
       })
     : statusFiltered;
 
@@ -200,13 +212,18 @@ export default function Checkin() {
     ? [...searchFiltered].sort((a, b) => {
         const rank = (c: typeof a) => {
           const name = c.riderName.toLowerCase();
-          const bib = c.bibNumber ?? "";
+          const bib = (c.bibNumber ?? "").toLowerCase();
+          const email = (c.email ?? "").toLowerCase();
+          const transponder = (c.myLapsTransponderNumber ?? "").toLowerCase();
+          const rfid = (c.rfidNumber ?? "").toLowerCase();
           if (name === q) return 0;
           if (bib === q) return 1;
           if (name.startsWith(q)) return 2;
           if (name.split(/\s+/).some(w => w.startsWith(q))) return 3;
           if (name.includes(q)) return 4;
-          return 5;
+          if (bib.includes(q) || rfid.includes(q) || transponder.includes(q)) return 5;
+          if (email.includes(q)) return 6;
+          return 7;
         };
         return rank(a) - rank(b);
       })
