@@ -13,4 +13,9 @@ export interface PointsTableInput {
   scoringMethod: PointsTableInputScoringMethod;
   mainEventOnly: boolean;
   pointsScale: number[];
+  /**
+     * JS expression using position and riders variables
+     * @nullable
+     */
+  scoringFormula?: string | null;
 }

@@ -16,6 +16,11 @@ export interface PointsTable {
   scoringMethod: PointsTableScoringMethod;
   mainEventOnly: boolean;
   pointsScale: number[];
+  /**
+     * JS expression using position and riders variables
+     * @nullable
+     */
+  scoringFormula?: string | null;
   isSystemDefault: boolean;
   createdAt: string;
 }

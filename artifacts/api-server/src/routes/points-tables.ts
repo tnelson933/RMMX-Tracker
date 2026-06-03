@@ -22,6 +22,7 @@ router.get("/points-tables", async (req, res) => {
   return res.json(tables.map(t => ({
     ...t,
     pointsScale: t.pointsScale as number[],
+    scoringFormula: t.scoringFormula ?? null,
     createdAt: t.createdAt.toISOString(),
   })));
 });
@@ -34,7 +35,7 @@ router.post("/points-tables", async (req, res) => {
   const userClubId = user?.clubId;
   if (!userClubId) return res.status(403).json({ error: "No club associated with this account" });
 
-  const { name, description, scoringMethod, mainEventOnly, pointsScale } = req.body;
+  const { name, description, scoringMethod, mainEventOnly, pointsScale, scoringFormula } = req.body;
   if (!name || !scoringMethod || !Array.isArray(pointsScale)) {
     return res.status(400).json({ error: "name, scoringMethod, and pointsScale are required" });
   }
@@ -46,12 +47,14 @@ router.post("/points-tables", async (req, res) => {
     scoringMethod,
     mainEventOnly: !!mainEventOnly,
     pointsScale,
+    scoringFormula: scoringFormula ?? null,
     isSystemDefault: false,
   }).returning();
 
   return res.status(201).json({
     ...table,
     pointsScale: table.pointsScale as number[],
+    scoringFormula: table.scoringFormula ?? null,
     createdAt: table.createdAt.toISOString(),
   });
 });
@@ -65,18 +68,20 @@ router.patch("/points-tables/:tableId", async (req, res) => {
   if (!existing) return res.status(404).json({ error: "Not found" });
   if (existing.isSystemDefault) return res.status(403).json({ error: "System default tables cannot be edited" });
 
-  const { name, description, scoringMethod, mainEventOnly, pointsScale } = req.body;
+  const { name, description, scoringMethod, mainEventOnly, pointsScale, scoringFormula } = req.body;
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
   if (scoringMethod !== undefined) updates.scoringMethod = scoringMethod;
   if (mainEventOnly !== undefined) updates.mainEventOnly = mainEventOnly;
   if (pointsScale !== undefined) updates.pointsScale = pointsScale;
+  if (scoringFormula !== undefined) updates.scoringFormula = scoringFormula ?? null;
 
   const [updated] = await db.update(pointsTablesTable).set(updates as any).where(eq(pointsTablesTable.id, tableId)).returning();
   return res.json({
     ...updated,
     pointsScale: updated.pointsScale as number[],
+    scoringFormula: updated.scoringFormula ?? null,
     createdAt: updated.createdAt.toISOString(),
   });
 });

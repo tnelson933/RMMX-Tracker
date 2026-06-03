@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { createContext, Script } from "vm";
 import { db } from "@workspace/db";
 import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
@@ -6,13 +7,30 @@ import { eq, and } from "drizzle-orm";
 const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
 /**
+ * Safely evaluate a user-defined formula string.
+ * Sandbox only exposes: position (1-based), riders (total starters), Math.
+ * Returns 0 on any error or non-finite result.
+ */
+function evalFormula(formula: string, position: number, riders: number): number {
+  try {
+    const sandbox = createContext({ position, riders, Math });
+    const result = new Script(formula).runInContext(sandbox, { timeout: 50 });
+    if (typeof result !== "number" || !isFinite(result)) return 0;
+    return Math.max(0, Math.round(result));
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Compute points for a single finisher given the event's scoring configuration.
  *
  * scoringMethod values:
- *   "per_rider"       — 1st gets N pts (total starters), 2nd gets N-1, ..., last gets 1.
+ *   "formula"         — evaluate scoringFormula with {position, riders} in scope.
+ *   "per_rider"       — 1st gets N pts (total starters), 2nd gets N-1, …, last gets 1.
  *   "highest_points"  — look up position in pointsScale (first entry = 1st place).
  *   "lowest_positions"— look up position in pointsScale; lower total is better (Olympic).
- *   (fallback)        — use FALLBACK_POINTS array.
+ *   (fallback)        — use hardcoded FALLBACK_POINTS array.
  *
  * mainEventOnly — if true, heats score 0; only moto type "main" scores points.
  */
@@ -23,6 +41,7 @@ function calcPoints(opts: {
   totalStarters: number;
   scoringMethod: string;
   pointsScale: number[];
+  scoringFormula: string | null;
   mainEventOnly: boolean;
   motoType: string;
 }): number {
@@ -30,6 +49,9 @@ function calcPoints(opts: {
   if (opts.mainEventOnly && opts.motoType !== "main") return 0;
 
   switch (opts.scoringMethod) {
+    case "formula":
+      if (!opts.scoringFormula) return 0;
+      return evalFormula(opts.scoringFormula, opts.position, opts.totalStarters);
     case "per_rider":
       return Math.max(0, opts.totalStarters - opts.position + 1);
     case "highest_points":
@@ -111,6 +133,7 @@ router.post("/events/:eventId/results", async (req, res) => {
 
   let scoringMethod = "fallback";
   let pointsScale: number[] = [];
+  let scoringFormula: string | null = null;
   let mainEventOnly = false;
 
   if (event?.scoringTableId) {
@@ -119,6 +142,7 @@ router.post("/events/:eventId/results", async (req, res) => {
     if (table) {
       scoringMethod  = table.scoringMethod;
       pointsScale    = (table.pointsScale as number[]) ?? [];
+      scoringFormula = table.scoringFormula ?? null;
       mainEventOnly  = table.mainEventOnly;
     }
   }
@@ -138,6 +162,7 @@ router.post("/events/:eventId/results", async (req, res) => {
       totalStarters,
       scoringMethod,
       pointsScale,
+      scoringFormula,
       mainEventOnly,
       motoType,
     });

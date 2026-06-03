@@ -755,6 +755,7 @@ export const AiTweakPointsTableInputCurrentTableScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
   per_rider: 'per_rider',
+  formula: 'formula',
 } as const;
 
 export type AiTweakPointsTableInputCurrentTable = {
@@ -763,6 +764,8 @@ export type AiTweakPointsTableInputCurrentTable = {
   scoringMethod: AiTweakPointsTableInputCurrentTableScoringMethod;
   mainEventOnly: boolean;
   pointsScale: number[];
+  /** @nullable */
+  scoringFormula?: string | null;
 };
 
 export interface AiTweakPointsTableInput {
@@ -785,6 +788,7 @@ export const AiSuggestPointsTableOutputScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
   per_rider: 'per_rider',
+  formula: 'formula',
 } as const;
 
 export interface AiSuggestPointsTableOutput {
@@ -795,6 +799,11 @@ export interface AiSuggestPointsTableOutput {
   pointsScale: number[];
   /** Human-readable explanation of the moto structure suggestion */
   motoNotes?: string;
+  /**
+     * JS expression using position and riders variables
+     * @nullable
+     */
+  scoringFormula?: string | null;
 }
 
 export type PointsTableScoringMethod = typeof PointsTableScoringMethod[keyof typeof PointsTableScoringMethod];
@@ -804,6 +813,7 @@ export const PointsTableScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
   per_rider: 'per_rider',
+  formula: 'formula',
 } as const;
 
 export interface PointsTable {
@@ -815,6 +825,11 @@ export interface PointsTable {
   scoringMethod: PointsTableScoringMethod;
   mainEventOnly: boolean;
   pointsScale: number[];
+  /**
+     * JS expression using position and riders variables
+     * @nullable
+     */
+  scoringFormula?: string | null;
   isSystemDefault: boolean;
   createdAt: string;
 }
@@ -826,6 +841,7 @@ export const PointsTableInputScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
   per_rider: 'per_rider',
+  formula: 'formula',
 } as const;
 
 export interface PointsTableInput {
@@ -834,6 +850,11 @@ export interface PointsTableInput {
   scoringMethod: PointsTableInputScoringMethod;
   mainEventOnly: boolean;
   pointsScale: number[];
+  /**
+     * JS expression using position and riders variables
+     * @nullable
+     */
+  scoringFormula?: string | null;
 }
 
 export interface ErrorEnvelope {

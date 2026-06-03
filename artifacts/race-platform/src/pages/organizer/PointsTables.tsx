@@ -38,6 +38,7 @@ import {
   ChevronUp,
   TriangleAlert,
   Users,
+  FunctionSquare,
 } from "lucide-react";
 
 const SUPERCROSS_SCALE = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
@@ -57,16 +58,18 @@ function parseScale(text: string): number[] {
 function getMethodLabel(method: string) {
   if (method === "lowest_positions") return "Lowest Positions";
   if (method === "per_rider") return "Per Rider";
+  if (method === "formula") return "Custom Formula";
   return "Highest Points";
 }
 
 function getMethodIcon(method: string) {
   if (method === "lowest_positions") return TrendingDown;
   if (method === "per_rider") return Users;
+  if (method === "formula") return FunctionSquare;
   return TrendingUp;
 }
 
-type ScoringMethod = "highest_points" | "lowest_positions" | "per_rider";
+type ScoringMethod = "highest_points" | "lowest_positions" | "per_rider" | "formula";
 
 interface FormState {
   name: string;
@@ -74,6 +77,7 @@ interface FormState {
   scoringMethod: ScoringMethod;
   mainEventOnly: boolean;
   scaleText: string;
+  scoringFormula: string;
 }
 
 const defaultForm: FormState = {
@@ -82,6 +86,7 @@ const defaultForm: FormState = {
   scoringMethod: "highest_points",
   mainEventOnly: false,
   scaleText: scaleToText(SUPERCROSS_SCALE),
+  scoringFormula: "",
 };
 
 // ─── Live Preview ───────────────────────────────────────────────────────────
@@ -182,6 +187,7 @@ function AiAssistPanel({
     scoringMethod: ScoringMethod;
     mainEventOnly: boolean;
     pointsScale: number[];
+    scoringFormula?: string | null;
     motoNotes?: string;
   }) => void;
 }) {
@@ -293,6 +299,7 @@ function AiTweakPanel({
     scoringMethod: ScoringMethod;
     mainEventOnly: boolean;
     pointsScale: number[];
+    scoringFormula?: string | null;
   }) => void;
 }) {
   const [instruction, setInstruction] = useState("");
@@ -314,6 +321,7 @@ function AiTweakPanel({
             scoringMethod: currentForm.scoringMethod,
             mainEventOnly: currentForm.mainEventOnly,
             pointsScale: parseScale(currentForm.scaleText),
+            scoringFormula: currentForm.scoringFormula || null,
           },
         },
       });
@@ -395,6 +403,7 @@ function TableFormDialog({
           scoringMethod: editingTable.scoringMethod as ScoringMethod,
           mainEventOnly: editingTable.mainEventOnly,
           scaleText: scaleToText(editingTable.pointsScale as number[]),
+          scoringFormula: (editingTable as any).scoringFormula ?? "",
         }
       : defaultForm
   );
@@ -413,6 +422,7 @@ function TableFormDialog({
     scoringMethod: ScoringMethod;
     mainEventOnly: boolean;
     pointsScale: number[];
+    scoringFormula?: string | null;
   }) {
     setForm({
       name: result.name,
@@ -420,17 +430,21 @@ function TableFormDialog({
       scoringMethod: result.scoringMethod as ScoringMethod,
       mainEventOnly: result.mainEventOnly,
       scaleText: scaleToText(result.pointsScale),
+      scoringFormula: result.scoringFormula ?? "",
     });
     setShowManual(true);
   }
 
   const isPerRider = form.scoringMethod === "per_rider";
+  const isFormula = form.scoringMethod === "formula";
+  const needsScale = !isPerRider && !isFormula;
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
-    const pointsScale = isPerRider ? [] : parseScale(form.scaleText);
+    const pointsScale = needsScale ? parseScale(form.scaleText) : [];
     if (!form.name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return; }
-    if (!isPerRider && pointsScale.length === 0) { toast({ title: "Enter at least one points value", variant: "destructive" }); return; }
+    if (needsScale && pointsScale.length === 0) { toast({ title: "Enter at least one points value", variant: "destructive" }); return; }
+    if (isFormula && !form.scoringFormula.trim()) { toast({ title: "Enter a scoring formula", variant: "destructive" }); return; }
 
     const payload = {
       name: form.name.trim(),
@@ -438,6 +452,7 @@ function TableFormDialog({
       scoringMethod: form.scoringMethod,
       mainEventOnly: form.mainEventOnly,
       pointsScale,
+      scoringFormula: isFormula ? form.scoringFormula.trim() : null,
     };
 
     try {
@@ -489,7 +504,7 @@ function TableFormDialog({
           {(showManual || isEditing) && (
             <div className="space-y-5">
               {/* Validation notice if no scale yet */}
-              {parsedScale.length === 0 && form.scaleText.trim() !== "" && (
+              {needsScale && parsedScale.length === 0 && form.scaleText.trim() !== "" && (
                 <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                   <TriangleAlert size={13} />
                   Points scale looks invalid — use comma-separated numbers, e.g. 25, 22, 20
@@ -544,6 +559,12 @@ function TableFormDialog({
                         <span className="flex items-center gap-2">
                           <Users size={14} />
                           Per Rider (dynamic)
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="formula">
+                        <span className="flex items-center gap-2">
+                          <FunctionSquare size={14} />
+                          Custom Formula
                         </span>
                       </SelectItem>
                     </SelectContent>
@@ -602,6 +623,43 @@ function TableFormDialog({
                     </p>
                   </div>
                 </div>
+              ) : isFormula ? (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="pt-formula">Scoring Formula</Label>
+                    <Input
+                      id="pt-formula"
+                      placeholder="e.g. riders - position + 1"
+                      value={form.scoringFormula}
+                      onChange={(e) => setForm((f) => ({ ...f, scoringFormula: e.target.value }))}
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      A JavaScript expression. Available variables:{" "}
+                      <code className="bg-muted px-1 rounded text-xs">position</code> (1 = winner),{" "}
+                      <code className="bg-muted px-1 rounded text-xs">riders</code> (total starters).
+                      Result is rounded and clamped to ≥ 0.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/30 divide-y text-xs font-mono">
+                    <div className="px-3 py-1.5 text-muted-foreground font-sans font-medium text-[11px] uppercase tracking-wider">Examples</div>
+                    {[
+                      ["riders - position + 1", "Same as Per Rider (26 starters → 1st = 26)"],
+                      ["Math.max(0, 50 - position * 2)", "50 pts for 1st, drops 2 per place"],
+                      ["position <= 3 ? (4 - position) * 10 : 0", "30/20/10 for podium only, 0 elsewhere"],
+                      ["Math.round(riders / position)", "Ratio-based: scales with field size"],
+                    ].map(([expr, desc]) => (
+                      <div
+                        key={expr}
+                        className="flex items-center gap-3 px-3 py-2 hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => setForm((f) => ({ ...f, scoringFormula: expr }))}
+                      >
+                        <span className="text-primary flex-shrink-0">{expr}</span>
+                        <span className="text-muted-foreground font-sans text-[11px] truncate">{desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-2">
                   <Label htmlFor="pt-scale">Points per Position</Label>
@@ -624,8 +682,8 @@ function TableFormDialog({
                 </div>
               )}
 
-              {/* Live preview */}
-              {!isPerRider && parsedScale.length > 0 && (
+              {/* Live preview — only for fixed scale methods */}
+              {needsScale && parsedScale.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">

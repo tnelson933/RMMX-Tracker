@@ -13,4 +13,6 @@ export type AiTweakPointsTableInputCurrentTable = {
   scoringMethod: AiTweakPointsTableInputCurrentTableScoringMethod;
   mainEventOnly: boolean;
   pointsScale: number[];
+  /** @nullable */
+  scoringFormula?: string | null;
 };

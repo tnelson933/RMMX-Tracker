@@ -11,6 +11,7 @@ export const pointsTablesTable = pgTable("points_tables", {
   scoringMethod: text("scoring_method").notNull().default("highest_points"),
   mainEventOnly: boolean("main_event_only").notNull().default(false),
   pointsScale: jsonb("points_scale").$type<number[]>().notNull().default([]),
+  scoringFormula: text("scoring_formula"),
   isSystemDefault: boolean("is_system_default").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

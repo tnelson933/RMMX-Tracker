@@ -15,4 +15,9 @@ export interface AiSuggestPointsTableOutput {
   pointsScale: number[];
   /** Human-readable explanation of the moto structure suggestion */
   motoNotes?: string;
+  /**
+     * JS expression using position and riders variables
+     * @nullable
+     */
+  scoringFormula?: string | null;
 }

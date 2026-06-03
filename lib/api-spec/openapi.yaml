@@ -2476,13 +2476,15 @@ components:
               type: string
             scoringMethod:
               type: string
-              enum: [highest_points, lowest_positions, per_rider]
+              enum: [highest_points, lowest_positions, per_rider, formula]
             mainEventOnly:
               type: boolean
             pointsScale:
               type: array
               items:
                 type: number
+            scoringFormula:
+              type: ["string", "null"]
 
     AiSuggestPointsTableInput:
       type: object
@@ -2505,7 +2507,7 @@ components:
           type: string
         scoringMethod:
           type: string
-          enum: [highest_points, lowest_positions, per_rider]
+          enum: [highest_points, lowest_positions, per_rider, formula]
         mainEventOnly:
           type: boolean
         pointsScale:
@@ -2515,6 +2517,9 @@ components:
         motoNotes:
           type: string
           description: Human-readable explanation of the moto structure suggestion
+        scoringFormula:
+          type: ["string", "null"]
+          description: JS expression using position and riders variables
 
     PointsTable:
       type: object
@@ -2530,13 +2535,16 @@ components:
           type: string
         scoringMethod:
           type: string
-          enum: [highest_points, lowest_positions, per_rider]
+          enum: [highest_points, lowest_positions, per_rider, formula]
         mainEventOnly:
           type: boolean
         pointsScale:
           type: array
           items:
             type: number
+        scoringFormula:
+          type: ["string", "null"]
+          description: JS expression using position and riders variables
         isSystemDefault:
           type: boolean
         createdAt:
@@ -2552,13 +2560,16 @@ components:
           type: string
         scoringMethod:
           type: string
-          enum: [highest_points, lowest_positions, per_rider]
+          enum: [highest_points, lowest_positions, per_rider, formula]
         mainEventOnly:
           type: boolean
         pointsScale:
           type: array
           items:
             type: number
+        scoringFormula:
+          type: ["string", "null"]
+          description: JS expression using position and riders variables
 
     ErrorEnvelope:
       type: object

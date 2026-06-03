@@ -13,4 +13,5 @@ export const PointsTableScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
   per_rider: 'per_rider',
+  formula: 'formula',
 } as const;
