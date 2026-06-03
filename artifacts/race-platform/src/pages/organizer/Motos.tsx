@@ -225,6 +225,27 @@ function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown }: 
   );
 }
 
+function DroppableTrashZone({ visible }: { visible: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "drop-trash" });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`fixed right-6 top-1/2 -translate-y-1/2 z-50 flex flex-col items-center justify-center gap-2 w-20 h-20 rounded-2xl border-2 transition-all duration-150 pointer-events-auto ${
+        visible ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
+      } ${
+        isOver
+          ? "bg-destructive border-destructive text-white shadow-xl shadow-destructive/40 scale-110"
+          : "bg-background border-destructive/40 text-destructive/60 shadow-lg"
+      }`}
+    >
+      <Trash2 size={isOver ? 28 : 22} className="transition-all" />
+      <span className="text-[10px] font-heading font-bold uppercase tracking-wider leading-none">
+        {isOver ? "Drop to Remove" : "Remove"}
+      </span>
+    </div>
+  );
+}
+
 function DroppableMotoLineup({ motoId, children, locked, className }: { motoId: number; children: React.ReactNode; locked?: boolean; className?: string }) {
   const { setNodeRef, isOver } = useDroppable({ id: `drop-${motoId}`, disabled: locked });
   return (
@@ -318,6 +339,32 @@ export default function Motos() {
     if (parts[0] !== "rider") return;
     const sourceMotoId = parseInt(parts[1]);
     const riderId = parseInt(parts[2]);
+
+    // ── Trash drop: remove rider from lineup ──────────────────────────────────
+    if (String(over.id) === "drop-trash") {
+      const sourceMoto = motos?.find(m => m.id === sourceMotoId);
+      if (!sourceMoto || sourceMoto.status === "completed") return;
+      const srcLineup = getLineup(sourceMoto);
+      const riderEntry = srcLineup.find(e => e.riderId === riderId);
+      if (!riderEntry) return;
+      const newLineup = srcLineup
+        .filter(e => e.riderId !== riderId)
+        .map((e, i) => ({ ...e, position: i + 1 }));
+      setLineupDrafts(p => ({ ...p, [sourceMotoId]: newLineup }));
+      updateMutation.mutate(
+        { motoId: sourceMotoId, data: { lineup: newLineup as any } },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+            setLineupDrafts(p => { const n = { ...p }; delete n[sourceMotoId]; return n; });
+            toast({ title: `🗑 ${riderEntry.riderName} removed from lineup` });
+          },
+        }
+      );
+      return;
+    }
+
+    // ── Move between motos ─────────────────────────────────────────────────────
     const targetMotoId = parseInt(String(over.id).replace("drop-", ""));
     if (isNaN(targetMotoId) || sourceMotoId === targetMotoId) return;
     const sourceMoto = motos?.find(m => m.id === sourceMotoId);
@@ -1137,6 +1184,7 @@ export default function Motos() {
             </div>
           )}
         </DragOverlay>
+        <DroppableTrashZone visible={!!activeDrag} />
         </DndContext>
       ) : (
         <Card>
