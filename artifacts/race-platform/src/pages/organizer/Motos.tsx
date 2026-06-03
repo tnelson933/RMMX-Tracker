@@ -234,6 +234,7 @@ export default function Motos() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
+  const [autoStartEnabled, setAutoStartEnabled] = useState(false);
 
   // Drag-and-drop state
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -446,7 +447,27 @@ export default function Motos() {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           if (status === "in_progress") toast({ title: `🏁 Moto started — ${(event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID"} timing active` });
-          if (status === "completed") toast({ title: "Moto finished" });
+          if (status === "completed") {
+            toast({ title: "Moto finished" });
+            if (autoStartEnabled) {
+              const sorted = [...(motos ?? [])].sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+              const finishedIdx = sorted.findIndex(m => m.id === motoId);
+              const next = sorted.slice(finishedIdx + 1).find(m => m.status === "scheduled");
+              if (next) {
+                setTimeout(() => {
+                  updateMutation.mutate(
+                    { motoId: next.id, data: { status: "in_progress" } },
+                    {
+                      onSuccess: () => {
+                        queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+                        toast({ title: `⚡ Auto-started: ${next.name}` });
+                      },
+                    }
+                  );
+                }, 800);
+              }
+            }
+          }
         },
       }
     );
@@ -481,6 +502,23 @@ export default function Motos() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Auto Start Next Moto toggle */}
+          <button
+            onClick={() => setAutoStartEnabled(v => !v)}
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-heading font-bold uppercase tracking-wider transition-all select-none ${
+              autoStartEnabled
+                ? "bg-green-600 border-green-600 text-white shadow-sm shadow-green-500/30"
+                : "bg-background border-border text-muted-foreground hover:border-green-500/50 hover:text-green-600"
+            }`}
+            title="When on, finishing a moto automatically starts the next scheduled moto"
+          >
+            <span className={`relative flex h-2 w-2 shrink-0 ${autoStartEnabled ? "" : "opacity-40"}`}>
+              {autoStartEnabled && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />}
+              <span className={`relative inline-flex h-2 w-2 rounded-full ${autoStartEnabled ? "bg-white" : "bg-muted-foreground"}`} />
+            </span>
+            Auto Start Next
+          </button>
+
           <Button
             variant={showBroadcast ? "default" : "outline"}
             className={`font-heading uppercase tracking-wider gap-2 ${showBroadcast ? "bg-red-600 hover:bg-red-700 text-white border-red-600" : ""}`}
