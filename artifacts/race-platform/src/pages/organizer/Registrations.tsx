@@ -1227,6 +1227,9 @@ export default function Registrations() {
             <form onSubmit={editForm.handleSubmit(handleEditSave)} className="space-y-4 py-2">
               <div className="space-y-2">
                 <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Rider Info</h3>
+                <p className="text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2 border border-dashed">
+                  Name and contact fields update this rider's profile — changes apply to all of their registrations.
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   <FormField control={editForm.control} name="firstName" render={({ field }) => (
                     <FormItem>
