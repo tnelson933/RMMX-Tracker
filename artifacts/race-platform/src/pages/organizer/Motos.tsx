@@ -437,7 +437,7 @@ export default function Motos() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-          if (status === "in_progress") toast({ title: "🏁 Moto started — RFID timing active" });
+          if (status === "in_progress") toast({ title: `🏁 Moto started — ${(event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID"} timing active` });
           if (status === "completed") toast({ title: "Moto finished" });
         },
       }
@@ -450,7 +450,7 @@ export default function Motos() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-          toast({ title: "🏁 Moto started — RFID timing active" });
+          toast({ title: `🏁 Moto started — ${(event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID"} timing active` });
         },
       }
     );
@@ -469,7 +469,7 @@ export default function Motos() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-heading font-bold uppercase tracking-tight">Moto Management</h2>
-          <p className="text-muted-foreground">Manage heats, mains, and RFID timing.</p>
+          <p className="text-muted-foreground">Manage heats, mains, and {(event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID"} timing.</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -692,19 +692,34 @@ export default function Motos() {
         </div>
       )}
 
-      {/* RFID timing info banner */}
-      <div className="bg-primary/5 border border-primary/20 rounded-md px-4 py-3 flex items-start gap-3">
-        <Radio size={18} className="text-primary mt-0.5 shrink-0" />
-        <div className="text-sm">
-          <span className="font-bold text-primary">RFID Timing:</span>{" "}
-          <span className="text-muted-foreground">
-            Start a moto to activate live timing. Readers send tag crossings to{" "}
-            <code className="bg-muted px-1 rounded text-xs font-mono">POST /api/timing/crossing</code> with{" "}
-            <code className="bg-muted px-1 rounded text-xs font-mono">{`{ rfidNumber, motoId }`}</code>.
-            The leaderboard updates in real time via SSE.
-          </span>
+      {/* Timing info banner — content varies by technology */}
+      {(event as any)?.timingTechnology === "mylaps" ? (
+        <div className="bg-blue-500/5 border border-blue-500/20 rounded-md px-4 py-3 flex items-start gap-3">
+          <Zap size={18} className="text-blue-500 mt-0.5 shrink-0" />
+          <div className="text-sm">
+            <span className="font-bold text-blue-600">MyLaps Timing:</span>{" "}
+            <span className="text-muted-foreground">
+              Start a moto to begin receiving transponder data. MyLaps sends lap crossings to{" "}
+              <code className="bg-muted px-1 rounded text-xs font-mono">POST /api/timing/crossing</code> with{" "}
+              <code className="bg-muted px-1 rounded text-xs font-mono">{`{ rfidNumber, motoId }`}</code>.
+              The leaderboard updates in real time via SSE.
+            </span>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-primary/5 border border-primary/20 rounded-md px-4 py-3 flex items-start gap-3">
+          <Radio size={18} className="text-primary mt-0.5 shrink-0" />
+          <div className="text-sm">
+            <span className="font-bold text-primary">RFID Timing:</span>{" "}
+            <span className="text-muted-foreground">
+              Start a moto to activate live timing. Readers send tag crossings to{" "}
+              <code className="bg-muted px-1 rounded text-xs font-mono">POST /api/timing/crossing</code> with{" "}
+              <code className="bg-muted px-1 rounded text-xs font-mono">{`{ rfidNumber, motoId }`}</code>.
+              The leaderboard updates in real time via SSE.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Advance to Main panel — Supercross format only */}
       {isSupercrossFormat && (motos ?? []).some(m => m.type === "main") && (
