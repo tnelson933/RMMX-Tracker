@@ -37,7 +37,9 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
   const [crossings, setCrossings] = useState<RawCrossing[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const { toast } = useToast();
 
   const fetchCrossings = async () => {
     abortRef.current?.abort();
@@ -53,6 +55,24 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
       // ignore abort or network errors
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteCrossing = async (crossingId: number) => {
+    setDeletingId(crossingId);
+    try {
+      const res = await fetch(`/api/timing/crossings/${crossingId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        toast({ title: "Failed to delete crossing", description: body.error ?? "Unknown error", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Crossing deleted", description: "Lap times recalculated." });
+      await fetchCrossings();
+    } catch {
+      toast({ title: "Network error", variant: "destructive" });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -100,6 +120,7 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
                 <TableHead className="text-xs py-1.5 text-center w-14">Lap</TableHead>
                 <TableHead className="text-xs py-1.5 text-center w-20">Lap Time</TableHead>
                 <TableHead className="text-xs py-1.5 text-right pr-3 w-20">Time</TableHead>
+                <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -116,6 +137,16 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
                   </TableCell>
                   <TableCell className="py-1 pr-3 text-right text-xs text-muted-foreground tabular-nums">
                     {format(new Date(c.crossingTime), "h:mm:ss")}
+                  </TableCell>
+                  <TableCell className="py-1 pr-1 text-right">
+                    <button
+                      onClick={() => handleDeleteCrossing(c.id)}
+                      disabled={deletingId === c.id}
+                      className="text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-40 p-0.5 rounded"
+                      title="Delete crossing"
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}

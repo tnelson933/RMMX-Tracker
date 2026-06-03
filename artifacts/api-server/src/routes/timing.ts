@@ -7,6 +7,8 @@ import {
   rfidAssignmentsTable,
   ridersTable,
   checkinsTable,
+  eventsTable,
+  usersTable,
 } from "@workspace/db";
 import { eq, and, asc, isNotNull } from "drizzle-orm";
 import type { Response } from "express";
@@ -366,6 +368,130 @@ router.get("/timing/crossings/:motoId", async (req, res) => {
       lapTime: c.lapTimeMs ? formatLapTime(c.lapTimeMs) : null,
     }))
   );
+});
+
+// DELETE /timing/crossings/:crossingId — remove a phantom/bad crossing and recalculate results
+router.delete("/timing/crossings/:crossingId", async (req, res) => {
+  // ── Auth: must be a logged-in organizer ──────────────────────────────────
+  const session = req.session as any;
+  if (!session?.userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const crossingId = Number(req.params.crossingId);
+  if (!crossingId || isNaN(crossingId)) {
+    return res.status(400).json({ error: "Invalid crossingId" });
+  }
+
+  // Load the crossing to delete
+  const [crossing] = await db
+    .select()
+    .from(lapCrossingsTable)
+    .where(eq(lapCrossingsTable.id, crossingId));
+
+  if (!crossing) {
+    return res.status(404).json({ error: "Crossing not found" });
+  }
+
+  const { motoId, rfidNumber, riderId } = crossing;
+
+  // Load the moto (need startedAt for lap time recalculation)
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
+  if (!moto) return res.status(404).json({ error: "Moto not found" });
+
+  // ── Ownership check: session user must belong to the same club as the event ──
+  const [sessionUser] = await db
+    .select({ clubId: usersTable.clubId, role: usersTable.role })
+    .from(usersTable)
+    .where(eq(usersTable.id, session.userId));
+
+  if (!sessionUser) return res.status(401).json({ error: "Unauthorized" });
+
+  if (sessionUser.role !== "super_admin") {
+    const [event] = await db
+      .select({ clubId: eventsTable.clubId })
+      .from(eventsTable)
+      .where(eq(eventsTable.id, moto.eventId));
+
+    if (!event || event.clubId !== sessionUser.clubId) {
+      return res.status(403).json({ error: "Forbidden: not your event" });
+    }
+  }
+
+  // ── All mutations in a single transaction ────────────────────────────────
+  const newLapTimes: number[] = [];
+
+  await db.transaction(async (tx) => {
+    // Delete the crossing
+    await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.id, crossingId));
+
+    // Reload remaining crossings for this rfid+moto in time order
+    const remaining = await tx
+      .select()
+      .from(lapCrossingsTable)
+      .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.rfidNumber, rfidNumber)))
+      .orderBy(asc(lapCrossingsTable.crossingTime));
+
+    // Renumber crossings and recalculate lap times
+    for (let i = 0; i < remaining.length; i++) {
+      const c = remaining[i];
+      const prevTime = i === 0 ? moto.startedAt! : remaining[i - 1].crossingTime;
+      const lapTimeMs = new Date(c.crossingTime).getTime() - new Date(prevTime).getTime();
+      const lapNumber = i + 1;
+      await tx
+        .update(lapCrossingsTable)
+        .set({ lapNumber, lapTimeMs })
+        .where(eq(lapCrossingsTable.id, c.id));
+      newLapTimes.push(lapTimeMs);
+    }
+
+    // Update race_results for this rider
+    if (riderId) {
+      const existingResults = await tx
+        .select()
+        .from(raceResultsTable)
+        .where(and(eq(raceResultsTable.motoId, motoId), eq(raceResultsTable.riderId, riderId)));
+
+      if (existingResults[0]) {
+        if (newLapTimes.length === 0) {
+          // No laps left — remove the result row entirely
+          await tx.delete(raceResultsTable).where(eq(raceResultsTable.id, existingResults[0].id));
+        } else {
+          const totalMs = newLapTimes.reduce((s, t) => s + t, 0);
+          await tx
+            .update(raceResultsTable)
+            .set({ lapTimes: newLapTimes, totalTime: formatLapTime(totalMs) })
+            .where(eq(raceResultsTable.id, existingResults[0].id));
+        }
+      }
+
+      // Recalculate positions for all riders in moto
+      const allResults = await tx
+        .select()
+        .from(raceResultsTable)
+        .where(eq(raceResultsTable.motoId, motoId));
+
+      const sorted = allResults
+        .map((r) => {
+          const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
+          return { id: r.id, laps: laps.length, totalMs: laps.reduce((s, t) => s + t, 0) };
+        })
+        .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
+
+      for (let i = 0; i < sorted.length; i++) {
+        await tx
+          .update(raceResultsTable)
+          .set({ position: i + 1 })
+          .where(eq(raceResultsTable.id, sorted[i].id));
+      }
+    }
+  });
+
+  // Broadcast updated leaderboard (outside transaction — read-only)
+  const snapshot = await buildLeaderboard(motoId);
+  if (snapshot) sseBroadcast(motoId, snapshot);
+
+  return res.json({ ok: true });
 });
 
 // GET /timing/leaderboard/:motoId — snapshot (polling fallback)
