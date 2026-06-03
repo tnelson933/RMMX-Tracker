@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { rfidAssignmentsTable, ridersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 const router = Router();
 
@@ -46,6 +46,18 @@ router.get("/rfid", async (req, res) => {
 router.post("/rfid", async (req, res) => {
   const { riderId, rfidNumber, eventId } = req.body;
   if (!riderId || !rfidNumber) return res.status(400).json({ error: "riderId and rfidNumber required" });
+
+  // Guard: prevent the same tag number being assigned to multiple riders in the same event.
+  // If that happened the timing lookup (rfidNumber + eventId) would match the wrong rider.
+  if (eventId) {
+    const existing = await db
+      .select({ id: rfidAssignmentsTable.id, riderId: rfidAssignmentsTable.riderId })
+      .from(rfidAssignmentsTable)
+      .where(and(eq(rfidAssignmentsTable.rfidNumber, rfidNumber), eq(rfidAssignmentsTable.eventId, Number(eventId))));
+    if (existing.length > 0 && existing[0].riderId !== Number(riderId)) {
+      return res.status(409).json({ error: `Tag ${rfidNumber} is already assigned to another rider for this event` });
+    }
+  }
 
   const [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId, rfidNumber, eventId }).returning();
 
