@@ -68,6 +68,11 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     createdAt: registrationsTable.createdAt,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
+    email: ridersTable.email,
+    phone: ridersTable.phone,
+    dateOfBirth: ridersTable.dateOfBirth,
+    emergencyContact: ridersTable.emergencyContact,
+    emergencyPhone: ridersTable.emergencyPhone,
   }).from(registrationsTable)
     .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
     .where(eq(registrationsTable.eventId, eventId))
@@ -78,6 +83,13 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     eventId: r.eventId,
     riderId: r.riderId,
     riderName: `${r.firstName} ${r.lastName}`,
+    firstName: r.firstName ?? "",
+    lastName: r.lastName ?? "",
+    email: r.email ?? "",
+    phone: r.phone ?? "",
+    dateOfBirth: r.dateOfBirth ?? "",
+    emergencyContact: r.emergencyContact ?? "",
+    emergencyPhone: r.emergencyPhone ?? "",
     raceClass: r.raceClass,
     status: r.status,
     paymentStatus: r.paymentStatus,

@@ -34,6 +34,19 @@ const BIKE_BRANDS = [
 ] as const;
 
 // ── Form schema ──────────────────────────────────────────────────────────────
+// ── Edit registration schema ──────────────────────────────────────────────────
+const editRegSchema = z.object({
+  firstName: z.string().min(1, "Required"),
+  lastName: z.string().min(1, "Required"),
+  email: z.string().email("Valid email required"),
+  phone: z.string().optional(),
+  dateOfBirth: z.string().optional(),
+  emergencyContact: z.string().optional(),
+  emergencyPhone: z.string().optional(),
+  raceClass: z.string().min(1, "Required"),
+});
+type EditRegForm = z.infer<typeof editRegSchema>;
+
 const onSiteRegSchema = z.object({
   firstName: z.string().min(1, "Required"),
   lastName: z.string().min(1, "Required"),
@@ -129,6 +142,65 @@ export default function Registrations() {
       rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
+
+  // ── Edit dialog state ─────────────────────────────────────────────────────────
+  const [editingReg, setEditingReg] = useState<null | { id: number; riderId: number; firstName: string; lastName: string; email: string; phone: string; dateOfBirth: string; emergencyContact: string; emergencyPhone: string; raceClass: string }>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const editForm = useForm<EditRegForm>({
+    resolver: zodResolver(editRegSchema),
+    defaultValues: { firstName: "", lastName: "", email: "", phone: "", dateOfBirth: "", emergencyContact: "", emergencyPhone: "", raceClass: "" },
+  });
+
+  useEffect(() => {
+    if (editingReg) {
+      editForm.reset({
+        firstName: editingReg.firstName,
+        lastName: editingReg.lastName,
+        email: editingReg.email,
+        phone: editingReg.phone,
+        dateOfBirth: editingReg.dateOfBirth,
+        emergencyContact: editingReg.emergencyContact,
+        emergencyPhone: editingReg.emergencyPhone,
+        raceClass: editingReg.raceClass,
+      });
+    }
+  }, [editingReg]);
+
+  const handleEditSave = async (data: EditRegForm) => {
+    if (!editingReg) return;
+    setEditSaving(true);
+    try {
+      const riderRes = await fetch(`/api/riders/${editingReg.riderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          phone: data.phone || null,
+          dateOfBirth: data.dateOfBirth || null,
+          emergencyContact: data.emergencyContact || null,
+          emergencyPhone: data.emergencyPhone || null,
+        }),
+      });
+      if (!riderRes.ok) { const j = await riderRes.json(); throw new Error(j.error || "Failed to update rider"); }
+      if (data.raceClass !== editingReg.raceClass) {
+        await new Promise<void>((resolve, reject) => {
+          updateMutation.mutate({ registrationId: editingReg.id, data: { raceClass: data.raceClass } }, {
+            onSuccess: () => resolve(),
+            onError: (e) => reject(e),
+          });
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
+      setEditingReg(null);
+      toast({ title: "Registration updated" });
+    } catch (e: any) {
+      toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const isMyLaps = (event as any)?.timingTechnology === "mylaps";
   const transponderRentalEnabled = !!(event as any)?.transponderRentalEnabled;
@@ -1141,6 +1213,105 @@ export default function Registrations() {
         </div>
       </div>
 
+      {/* ── Edit Registration Dialog ─────────────────────────────────────────── */}
+      <Dialog open={!!editingReg} onOpenChange={open => { if (!open) setEditingReg(null); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase text-xl">Edit Registration</DialogTitle>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(handleEditSave)} className="space-y-4 py-2">
+              <div className="space-y-2">
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Rider Info</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField control={editForm.control} name="firstName" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={editForm.control} name="lastName" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <FormField control={editForm.control} name="email" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input type="email" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField control={editForm.control} name="phone" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={editForm.control} name="dateOfBirth" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date of Birth</FormLabel>
+                      <FormControl><Input type="date" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Emergency Contact</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField control={editForm.control} name="emergencyContact" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Name</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={editForm.control} name="emergencyPhone" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Phone</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Race Class</h3>
+                <FormField control={editForm.control} name="raceClass" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Class <span className="text-destructive">*</span></FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="Select race class" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {event?.raceClasses?.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button type="button" variant="outline" className="flex-1 font-heading uppercase" onClick={() => setEditingReg(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={editSaving} className="flex-1 font-heading uppercase">
+                  {editSaving ? <><Loader2 size={16} className="mr-2 animate-spin" />Saving...</> : "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <div className="rounded-md border">
           <Table>
@@ -1168,7 +1339,27 @@ export default function Registrations() {
                   return (
                     <TableRow key={reg.id}>
                       <TableCell className="text-muted-foreground font-mono">{reg.id}</TableCell>
-                      <TableCell className="font-bold">{reg.riderName}</TableCell>
+                      <TableCell>
+                        <button
+                          onClick={() => setEditingReg({
+                            id: reg.id,
+                            riderId: reg.riderId,
+                            firstName: (reg as any).firstName ?? "",
+                            lastName: (reg as any).lastName ?? "",
+                            email: (reg as any).email ?? "",
+                            phone: (reg as any).phone ?? "",
+                            dateOfBirth: (reg as any).dateOfBirth ?? "",
+                            emergencyContact: (reg as any).emergencyContact ?? "",
+                            emergencyPhone: (reg as any).emergencyPhone ?? "",
+                            raceClass: reg.raceClass,
+                          })}
+                          className="group flex items-center gap-1.5 font-bold hover:text-primary transition-colors text-left"
+                          title="Click to edit registration"
+                        >
+                          {reg.riderName}
+                          <Pencil size={12} className="opacity-0 group-hover:opacity-50 transition-opacity shrink-0" />
+                        </button>
+                      </TableCell>
                       <TableCell>
                         <span className="bg-secondary/10 text-secondary px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
                           {reg.raceClass}
