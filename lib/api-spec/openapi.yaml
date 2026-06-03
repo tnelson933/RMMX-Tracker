@@ -1676,6 +1676,9 @@ components:
           type: ["string", "null"]
         hometown:
           type: ["string", "null"]
+        clubIdNumber:
+          type: ["string", "null"]
+          description: Most recent club membership ID from the rider's registrations
         createdAt:
           type: string
 

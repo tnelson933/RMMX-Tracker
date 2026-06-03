@@ -469,6 +469,7 @@ export const ListRidersResponseItem = zod.object({
   "amaNumber": zod.string().nullish(),
   "mylapsTransponderId": zod.string().nullish(),
   "hometown": zod.string().nullish(),
+  "clubIdNumber": zod.string().nullish().describe('Most recent club membership ID from the rider\'s registrations'),
   "createdAt": zod.string().optional()
 })
 export const ListRidersResponse = zod.array(ListRidersResponseItem)
@@ -579,6 +580,7 @@ export const UpdateRiderResponse = zod.object({
   "amaNumber": zod.string().nullish(),
   "mylapsTransponderId": zod.string().nullish(),
   "hometown": zod.string().nullish(),
+  "clubIdNumber": zod.string().nullish().describe('Most recent club membership ID from the rider\'s registrations'),
   "createdAt": zod.string().optional()
 })
 

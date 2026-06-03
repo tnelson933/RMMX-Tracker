@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { ridersTable, raceResultsTable, motosTable, eventsTable } from "@workspace/db";
-import { eq, ilike, or } from "drizzle-orm";
+import { ridersTable, raceResultsTable, motosTable, eventsTable, registrationsTable } from "@workspace/db";
+import { eq, ilike, or, desc, isNotNull } from "drizzle-orm";
 
 const router = Router();
 
@@ -52,9 +52,18 @@ router.get("/riders/:riderId", async (req, res) => {
     .where(eq(raceResultsTable.riderId, id))
     .limit(10);
 
+  // Most recent club ID number from any registration
+  const [latestClubId] = await db
+    .select({ clubIdNumber: registrationsTable.clubIdNumber })
+    .from(registrationsTable)
+    .where(eq(registrationsTable.riderId, id) as any)
+    .orderBy(desc(registrationsTable.createdAt))
+    .limit(1);
+
   return res.json({
     ...rider,
     createdAt: rider.createdAt.toISOString(),
+    clubIdNumber: latestClubId?.clubIdNumber ?? null,
     recentResults: recentResults.map(r => ({
       ...r,
       lapTimes: Array.isArray(r.lapTimes) ? r.lapTimes : [],

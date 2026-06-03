@@ -34,5 +34,10 @@ export interface Rider {
   mylapsTransponderId?: string | null;
   /** @nullable */
   hometown?: string | null;
+  /**
+     * Most recent club membership ID from the rider's registrations
+     * @nullable
+     */
+  clubIdNumber?: string | null;
   createdAt?: string;
 }
