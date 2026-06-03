@@ -25,6 +25,8 @@ export const registrationsTable = pgTable("registrations", {
   selectedPurchaseOptions: jsonb("selected_purchase_options").$type<PurchaseOption[]>().notNull().default([]),
   compCode: text("comp_code"),
   compDiscount: numeric("comp_discount", { precision: 10, scale: 2 }),
+  displayFirstName: text("display_first_name"),
+  displayLastName: text("display_last_name"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

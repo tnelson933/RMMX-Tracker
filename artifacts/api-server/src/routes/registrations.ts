@@ -66,8 +66,10 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     amountPaid: registrationsTable.amountPaid,
     bibNumber: registrationsTable.bibNumber,
     createdAt: registrationsTable.createdAt,
-    firstName: ridersTable.firstName,
-    lastName: ridersTable.lastName,
+    displayFirstName: registrationsTable.displayFirstName,
+    displayLastName: registrationsTable.displayLastName,
+    riderFirstName: ridersTable.firstName,
+    riderLastName: ridersTable.lastName,
     email: ridersTable.email,
     phone: ridersTable.phone,
     dateOfBirth: ridersTable.dateOfBirth,
@@ -78,13 +80,16 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     .where(eq(registrationsTable.eventId, eventId))
     .orderBy(registrationsTable.createdAt);
 
-  return res.json(regs.map(r => ({
+  return res.json(regs.map(r => {
+    const firstName = r.displayFirstName ?? r.riderFirstName ?? "";
+    const lastName = r.displayLastName ?? r.riderLastName ?? "";
+    return {
     id: r.id,
     eventId: r.eventId,
     riderId: r.riderId,
-    riderName: `${r.firstName} ${r.lastName}`,
-    firstName: r.firstName ?? "",
-    lastName: r.lastName ?? "",
+    riderName: `${firstName} ${lastName}`,
+    firstName,
+    lastName,
     email: r.email ?? "",
     phone: r.phone ?? "",
     dateOfBirth: r.dateOfBirth ?? "",
@@ -96,7 +101,8 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     amountPaid: r.amountPaid ? Number(r.amountPaid) : null,
     bibNumber: r.bibNumber,
     createdAt: r.createdAt.toISOString(),
-  })));
+    };
+  }));
 });
 
 router.post("/events/:eventId/registrations", async (req, res) => {
@@ -198,7 +204,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
 
 router.patch("/registrations/:registrationId", async (req, res) => {
   const id = Number(req.params.registrationId);
-  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod } = req.body;
+  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod, displayFirstName, displayLastName } = req.body;
   const updates: Record<string, unknown> = {};
   if (status !== undefined) updates.status = status;
   if (paymentStatus !== undefined) {
@@ -212,6 +218,8 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   if (bibNumber !== undefined) updates.bibNumber = bibNumber;
   if (amountPaid !== undefined) updates.amountPaid = String(amountPaid);
   if (paymentMethod !== undefined) updates.paymentMethod = paymentMethod;
+  if (displayFirstName !== undefined) updates.displayFirstName = displayFirstName;
+  if (displayLastName !== undefined) updates.displayLastName = displayLastName;
 
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();
   if (!reg) return res.status(404).json({ error: "Not found" });
