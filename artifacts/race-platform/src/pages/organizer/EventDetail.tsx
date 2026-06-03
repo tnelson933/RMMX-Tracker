@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRoute } from "wouter";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
 import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, getGetEventQueryKey } from "@workspace/api-client-react";
@@ -15,7 +15,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info, Upload, ImageIcon, X, Loader2, Sparkles } from "lucide-react";
+import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info, Upload, ImageIcon, X, Loader2, Sparkles, Ticket } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 const TIME_OPTIONS: string[] = [];
@@ -139,6 +139,14 @@ export default function EventDetail() {
   const [imgUploadState, setImgUploadState] = useState<"idle" | "processing" | "uploading" | "done" | "error">("idle");
   const [removeBg, setRemoveBg] = useState(false);
 
+  const [compAmount, setCompAmount] = useState("");
+  const [compCount, setCompCount] = useState("1");
+  const [compGenerating, setCompGenerating] = useState(false);
+  const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
+  const [generatedAmount, setGeneratedAmount] = useState(0);
+  const [existingCodes, setExistingCodes] = useState<Array<{ code: string; amount: number; usesCount: number; maxUses: number }>>([]);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
   const handleImageUpload = async (file: File) => {
     if (!file || !eventId) return;
     setImgUploadState("processing");
@@ -188,6 +196,38 @@ export default function EventDetail() {
       body: JSON.stringify({ imageUrl: null }),
     });
     queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
+  };
+
+  const loadExistingCodes = async () => {
+    try {
+      const res = await fetch(`/api/events/${eventId}/comp-codes`, { credentials: "include" });
+      if (res.ok) setExistingCodes(await res.json());
+    } catch {}
+  };
+
+  useEffect(() => { if (eventId) loadExistingCodes(); }, [eventId]);
+
+  const handleGenerateCompCodes = async () => {
+    const amount = parseFloat(compAmount);
+    const count = parseInt(compCount, 10);
+    if (!amount || amount <= 0 || !count || count <= 0) return;
+    setCompGenerating(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/comp-codes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ amount, count }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGeneratedCodes(data.codes);
+        setGeneratedAmount(amount);
+        await loadExistingCodes();
+      }
+    } finally {
+      setCompGenerating(false);
+    }
   };
 
   const registrationUrl = `${window.location.origin}/register/${eventId}`;
@@ -999,6 +1039,108 @@ export default function EventDetail() {
                 <p className="text-xs text-muted-foreground">
                   Set the event status to <strong>Registration Open</strong> to activate the rider registration link.
                 </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Comp Code Generator */}
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-2 pb-3 border-b">
+              <Ticket size={18} className="text-primary" />
+              <CardTitle className="font-heading uppercase text-base">Comp Codes</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-3">
+              <p className="text-xs text-muted-foreground">Generate codes to give riders a complimentary or discounted entry.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">$ Amount</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={compAmount}
+                    onChange={e => setCompAmount(e.target.value)}
+                    placeholder="45.00"
+                    className="h-9 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1"># Codes</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={compCount}
+                    onChange={e => setCompCount(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                </div>
+              </div>
+              <Button
+                onClick={handleGenerateCompCodes}
+                disabled={compGenerating || !compAmount || parseFloat(compAmount) <= 0}
+                className="w-full font-heading uppercase tracking-wider"
+                size="sm"
+              >
+                {compGenerating
+                  ? <><Loader2 size={14} className="mr-2 animate-spin" /> Generating...</>
+                  : <><Plus size={14} className="mr-2" /> Generate Codes</>}
+              </Button>
+
+              {generatedCodes.length > 0 && (
+                <div className="border-t pt-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      New — ${generatedAmount.toFixed(2)} each
+                    </p>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedCodes.join("\n"));
+                        setCopiedCode("__all__");
+                        setTimeout(() => setCopiedCode(null), 2000);
+                      }}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      {copiedCode === "__all__" ? "Copied!" : "Copy all"}
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    {generatedCodes.map(code => (
+                      <div key={code} className="flex items-center justify-between bg-muted rounded px-2.5 py-1.5">
+                        <span className="font-mono text-sm font-bold tracking-widest">{code}</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(code);
+                            setCopiedCode(code);
+                            setTimeout(() => setCopiedCode(null), 2000);
+                          }}
+                          className="text-muted-foreground hover:text-foreground transition-colors ml-2"
+                        >
+                          {copiedCode === code ? <Check size={14} /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {existingCodes.length > 0 && (
+                <div className="border-t pt-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">All Codes</p>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {existingCodes.map(c => (
+                      <div key={c.code} className="flex items-center justify-between text-xs py-1.5 border-b last:border-0">
+                        <span className="font-mono font-bold tracking-widest">{c.code}</span>
+                        <div className="flex items-center gap-3 text-muted-foreground">
+                          <span>${c.amount.toFixed(2)}</span>
+                          <span className={c.usesCount >= c.maxUses ? "text-red-500 font-medium" : "text-green-600 font-medium"}>
+                            {c.usesCount >= c.maxUses ? "Used" : "Available"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>

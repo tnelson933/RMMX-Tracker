@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { compCodesTable } from "@workspace/db/src/schema/comp-codes";
-import { eventsTable } from "@workspace/db/src/schema/events";
+import { compCodesTable, eventsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 

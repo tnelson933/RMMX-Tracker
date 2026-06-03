@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable } from "@workspace/db";
+import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable } from "@workspace/db";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 
@@ -310,7 +310,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -348,6 +348,20 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     }
   }
 
+  // Validate comp code if provided
+  let compDiscount = 0;
+  let validatedCompCode: string | null = null;
+  if (compCode) {
+    const [code] = await db.select().from(compCodesTable).where(
+      and(eq(compCodesTable.eventId, eventId), eq(compCodesTable.code, String(compCode).trim().toUpperCase()))
+    );
+    if (!code || code.usesCount >= code.maxUses) {
+      return res.status(400).json({ error: "Invalid or already-used comp code" });
+    }
+    compDiscount = Number(code.amount);
+    validatedCompCode = code.code;
+  }
+
   // Find or create rider by email
   let rider;
   const existing = await db.select().from(ridersTable).where(eq(ridersTable.email, email));
@@ -364,11 +378,13 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     rider = created;
   }
 
-  // Determine if payment is required
-  const needsPayment = !!events[0].paymentEnabled && events[0].entryFee != null;
-  const regStatus = needsPayment ? "pending" : "confirmed";
-
+  // Determine if payment is required (accounting for comp discount)
   const wantsRental = !!(rentTransponder && events[0].transponderRentalEnabled && events[0].transponderRentalFee);
+  const entryFeeNum = events[0].entryFee ? Number(events[0].entryFee) : 0;
+  const rentalFeeNum = wantsRental && events[0].transponderRentalFee ? Number(events[0].transponderRentalFee) : 0;
+  const netFee = Math.max(0, entryFeeNum + rentalFeeNum - compDiscount);
+  const needsPayment = !!events[0].paymentEnabled && netFee > 0;
+  const regStatus = needsPayment ? "pending" : "confirmed";
 
   const [reg] = await db.insert(registrationsTable).values({
     eventId, riderId: rider.id, raceClass,
@@ -381,7 +397,16 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     transponderRental: wantsRental,
     myLapsTransponderNumber: myLapsTransponderNumber?.trim() || null,
     selectedPurchaseOptions: Array.isArray(selectedPurchaseOptions) ? selectedPurchaseOptions : [],
+    compCode: validatedCompCode,
+    compDiscount: compDiscount > 0 ? String(compDiscount) : null,
   }).returning();
+
+  // Mark comp code as used
+  if (validatedCompCode) {
+    await db.update(compCodesTable)
+      .set({ usesCount: sql`${compCodesTable.usesCount} + 1` })
+      .where(eq(compCodesTable.code, validatedCompCode));
+  }
 
   // Only create the check-in record now if no payment is required.
   // For payment-required registrations, the checkin is created after payment is confirmed.
@@ -394,34 +419,26 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   }
 
   // If payment required, create Stripe Checkout session
-  if (needsPayment && events[0].entryFee) {
+  if (needsPayment) {
     try {
       const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, events[0].clubId));
       if (club?.stripeAccountId) {
         const stripe = await getUncachableStripeClient();
         const appUrl = getAppUrl();
-        const entryFee = Number(events[0].entryFee);
 
-        const rentalFee = wantsRental && events[0].transponderRentalFee ? Number(events[0].transponderRentalFee) : 0;
+        const productName = validatedCompCode
+          ? `${events[0].name} — ${raceClass} Entry (Comp ${validatedCompCode})`
+          : `${events[0].name} — ${raceClass} Entry${rentalFeeNum > 0 ? " + Transponder Rental" : ""}`;
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const lineItems: any[] = [{
           price_data: {
             currency: "usd",
-            product_data: { name: `${events[0].name} — ${raceClass} Entry` },
-            unit_amount: Math.round(entryFee * 100),
+            product_data: { name: productName },
+            unit_amount: Math.round(netFee * 100),
           },
           quantity: 1,
         }];
-        if (rentalFee > 0) {
-          lineItems.push({
-            price_data: {
-              currency: "usd",
-              product_data: { name: "MyLaps Transponder Rental" },
-              unit_amount: Math.round(rentalFee * 100),
-            },
-            quantity: 1,
-          });
-        }
 
         const session = await stripe.checkout.sessions.create({
           mode: "payment",
@@ -444,8 +461,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             riderName: `${rider.firstName} ${rider.lastName}`,
             raceClass,
             eventName: events[0].name,
-            entryFee: entryFee + rentalFee,
-            rentalFee,
+            entryFee: netFee,
+            rentalFee: rentalFeeNum,
           });
         }
       }

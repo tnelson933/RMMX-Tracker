@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail } from "lucide-react";
+import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 const BIKE_BRANDS = [
@@ -99,6 +99,37 @@ export default function Register() {
   const [paymentCancelled, setPaymentCancelled] = useState(false);
   const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found">("idle");
   const [lookedUpName, setLookedUpName] = useState<string>("");
+
+  const [compCodeInput, setCompCodeInput] = useState("");
+  const [appliedComp, setAppliedComp] = useState<{ code: string; amount: number } | null>(null);
+  const [compApplying, setCompApplying] = useState(false);
+  const [compError, setCompError] = useState<string | null>(null);
+
+  const handleApplyComp = async () => {
+    const code = compCodeInput.trim().toUpperCase();
+    if (!code) return;
+    setCompApplying(true);
+    setCompError(null);
+    try {
+      const res = await fetch(`/api/public/events/${eventId}/validate-comp-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.valid) {
+        setCompError(json.error || "Invalid comp code");
+        setAppliedComp(null);
+      } else {
+        setAppliedComp({ code, amount: json.amount });
+        setCompError(null);
+      }
+    } catch {
+      setCompError("Could not validate code. Please try again.");
+    } finally {
+      setCompApplying(false);
+    }
+  };
 
   const form = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
@@ -255,6 +286,7 @@ export default function Register() {
         body: JSON.stringify({
           ...data,
           selectedPurchaseOptions: (event?.purchaseOptions ?? []).filter(o => data.selectedPurchaseOptions.includes(o.id)),
+          compCode: appliedComp?.code ?? null,
         }),
       });
       const json = await res.json();
@@ -903,6 +935,68 @@ export default function Register() {
                   )}
                 />
 
+                {/* Comp Code */}
+                {event.paymentEnabled && event.entryFee && (
+                  <div className="rounded-lg border bg-muted/40 px-4 py-3.5 space-y-2">
+                    <p className="text-sm font-semibold flex items-center gap-1.5">
+                      <Tag size={14} className="text-primary shrink-0" />
+                      Have a comp code?
+                    </p>
+                    {appliedComp ? (
+                      <div className="flex items-center justify-between rounded bg-green-50 border border-green-200 px-3 py-2">
+                        <div className="text-sm text-green-700">
+                          <span className="font-mono font-bold tracking-widest">{appliedComp.code}</span>
+                          <span className="ml-2">— ${appliedComp.amount.toFixed(2)} off</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setAppliedComp(null); setCompCodeInput(""); }}
+                          className="text-green-600 hover:text-green-800 transition-colors ml-2"
+                        >
+                          <XIcon size={16} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Input
+                          value={compCodeInput}
+                          onChange={e => { setCompCodeInput(e.target.value.toUpperCase()); setCompError(null); }}
+                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleApplyComp(); } }}
+                          placeholder="Enter code…"
+                          className="h-9 text-sm font-mono tracking-widest flex-1"
+                          disabled={compApplying}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-9 font-heading uppercase px-4"
+                          onClick={handleApplyComp}
+                          disabled={compApplying || !compCodeInput.trim()}
+                        >
+                          {compApplying ? <Loader2 size={14} className="animate-spin" /> : "Apply"}
+                        </Button>
+                      </div>
+                    )}
+                    {compError && <p className="text-xs text-red-500">{compError}</p>}
+                    {appliedComp && event.entryFee && (
+                      <div className="text-xs text-muted-foreground flex justify-between pt-0.5">
+                        <span>Entry fee</span><span>${event.entryFee.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {appliedComp && (
+                      <>
+                        <div className="text-xs text-green-700 flex justify-between">
+                          <span>Comp discount</span><span>−${appliedComp.amount.toFixed(2)}</span>
+                        </div>
+                        <div className="text-sm font-bold flex justify-between border-t pt-1.5">
+                          <span>Total due</span>
+                          <span>{Math.max(0, (event.entryFee ?? 0) - appliedComp.amount) === 0 ? "FREE" : `$${Math.max(0, (event.entryFee ?? 0) - appliedComp.amount).toFixed(2)}`}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <Button
                   type="submit"
                   disabled={submitting}
@@ -910,8 +1004,8 @@ export default function Register() {
                 >
                   {submitting ? (
                     <><Loader2 size={18} className="mr-2 animate-spin" /> Processing...</>
-                  ) : event.paymentEnabled && event.entryFee ? (
-                    <><CreditCard size={18} className="mr-2" /> Register & Pay ${event.entryFee} →</>
+                  ) : event.paymentEnabled && event.entryFee && Math.max(0, event.entryFee - (appliedComp?.amount ?? 0)) > 0 ? (
+                    <><CreditCard size={18} className="mr-2" /> Register & Pay ${Math.max(0, event.entryFee - (appliedComp?.amount ?? 0)).toFixed(2)} →</>
                   ) : (
                     "Complete Registration →"
                   )}
