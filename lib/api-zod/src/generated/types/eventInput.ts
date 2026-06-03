@@ -29,5 +29,6 @@ export interface EventInput {
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
+  requireClubId?: boolean;
   purchaseOptions?: PurchaseOption[];
 }

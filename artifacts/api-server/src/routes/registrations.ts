@@ -20,6 +20,7 @@ router.get("/public/riders/lookup", async (req, res) => {
 
   const lastRegs = await db.select({
     amaNumber: registrationsTable.amaNumber,
+    clubIdNumber: registrationsTable.clubIdNumber,
     bikeBrand: registrationsTable.bikeBrand,
     bibNumber: registrationsTable.bibNumber,
     sponsors: registrationsTable.sponsors,
@@ -39,6 +40,7 @@ router.get("/public/riders/lookup", async (req, res) => {
     emergencyContact: rider.emergencyContact ?? "",
     emergencyPhone: rider.emergencyPhone ?? "",
     amaNumber: lastReg?.amaNumber ?? "",
+    clubIdNumber: lastReg?.clubIdNumber ?? "",
     bikeBrand: lastReg?.bikeBrand ?? "",
     bibNumber: lastReg?.bibNumber?.toString() ?? "",
     sponsors: lastReg?.sponsors ?? "",
@@ -88,7 +90,7 @@ router.get("/events/:eventId/registrations", async (req, res) => {
 router.post("/events/:eventId/registrations", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const {
-    riderId, raceClass, bibNumber, bikeBrand,
+    riderId, raceClass, bibNumber, bikeBrand, clubIdNumber,
     // Full on-site rider info (alternative to riderId)
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
     // MyLaps transponder fields
@@ -128,6 +130,11 @@ router.post("/events/:eventId/registrations", async (req, res) => {
   const needsPayment = !!(eventData?.paymentEnabled && eventData?.entryFee);
   const wantsRental = !!(rentTransponder && eventData?.transponderRentalEnabled && eventData?.transponderRentalFee);
 
+  // Enforce club ID# if required
+  if (eventData?.requireClubId && !clubIdNumber) {
+    return res.status(400).json({ error: "Club ID # is required for this event" });
+  }
+
   // Enforce unique bib numbers if the event requires it
   if (eventData?.noDuplicateBibs && bibNumber) {
     const bibTaken = await db.select({ id: registrationsTable.id })
@@ -147,6 +154,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     eventId, riderId: resolvedRiderId, raceClass,
     bibNumber: bibNumber || null,
     bikeBrand: bikeBrand || null,
+    clubIdNumber: clubIdNumber || null,
     status: needsPayment ? "pending" : "confirmed",
     paymentStatus: "unpaid",
     transponderRental: wantsRental,
@@ -345,6 +353,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     transponderRentalFee: eventsTable.transponderRentalFee,
     purchaseOptions: eventsTable.purchaseOptions,
     noDuplicateBibs: eventsTable.noDuplicateBibs,
+    requireClubId: eventsTable.requireClubId,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));
@@ -361,7 +370,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -372,6 +381,9 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   if (!events[0]) return res.status(404).json({ error: "Event not found" });
   if (events[0].requireAma && !amaNumber) {
     return res.status(400).json({ error: "AMA # is required for this event" });
+  }
+  if (events[0].requireClubId && !clubIdNumber) {
+    return res.status(400).json({ error: "Club ID # is required for this event" });
   }
   if (events[0].status !== "registration_open") {
     return res.status(409).json({ error: "Registration is not currently open for this event" });
@@ -461,6 +473,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     bibNumber: bibNumber || rider.bibNumber || null,
     status: regStatus, paymentStatus: "unpaid",
     amaNumber: amaNumber || null,
+    clubIdNumber: clubIdNumber || null,
     bikeBrand: req.body.bikeBrand || null,
     sponsors: sponsors || null,
     statsEmailOptIn: !!statsEmailOptIn,

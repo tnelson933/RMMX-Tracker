@@ -1350,6 +1350,8 @@ components:
           type: ["number", "null"]
         noDuplicateBibs:
           type: boolean
+        requireClubId:
+          type: boolean
         purchaseOptions:
           type: array
           items:
@@ -1405,6 +1407,8 @@ components:
           type: number
         noDuplicateBibs:
           type: boolean
+        requireClubId:
+          type: boolean
         purchaseOptions:
           type: array
           items:
@@ -1456,6 +1460,8 @@ components:
         transponderRentalFee:
           type: number
         noDuplicateBibs:
+          type: boolean
+        requireClubId:
           type: boolean
         purchaseOptions:
           type: array
@@ -1632,6 +1638,8 @@ components:
         bibNumber:
           type: ["string", "null"]
         amaNumber:
+          type: ["string", "null"]
+        clubIdNumber:
           type: ["string", "null"]
         bikeBrand:
           type: ["string", "null"]

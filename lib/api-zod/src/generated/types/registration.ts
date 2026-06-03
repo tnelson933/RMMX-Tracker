@@ -24,6 +24,8 @@ export interface Registration {
   /** @nullable */
   amaNumber?: string | null;
   /** @nullable */
+  clubIdNumber?: string | null;
+  /** @nullable */
   bikeBrand?: string | null;
   selectedPurchaseOptions?: PurchaseOption[];
   createdAt?: string;

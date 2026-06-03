@@ -100,6 +100,7 @@ const updateEventSchema = z.object({
   transponderRentalEnabled: z.boolean().default(false),
   transponderRentalFee: z.string().optional(),
   noDuplicateBibs: z.boolean().default(false),
+  requireClubId: z.boolean().default(false),
   purchaseOptions: z.array(z.object({
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
@@ -259,6 +260,7 @@ export default function EventDetail() {
       transponderRentalEnabled: false,
       transponderRentalFee: "",
       noDuplicateBibs: false,
+      requireClubId: false,
       purchaseOptions: [],
     }
   });
@@ -298,6 +300,7 @@ export default function EventDetail() {
       transponderRentalEnabled: (evt as any).transponderRentalEnabled ?? false,
       transponderRentalFee: (evt as any).transponderRentalFee != null ? String((evt as any).transponderRentalFee) : "",
       noDuplicateBibs: (evt as any).noDuplicateBibs ?? false,
+      requireClubId: (evt as any).requireClubId ?? false,
       purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number }) => ({ name: o.name, amount: String(o.amount) })),
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
@@ -328,6 +331,7 @@ export default function EventDetail() {
         paymentEnabled: data.paymentEnabled,
         requireAma: data.requireAma,
         noDuplicateBibs: data.noDuplicateBibs,
+        requireClubId: data.requireClubId,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
@@ -695,6 +699,25 @@ export default function EventDetail() {
                                 />
                               </FormControl>
                               <FormLabel className="cursor-pointer font-normal">Do not allow duplicate bib numbers</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      {/* Require Club ID# checkbox */}
+                      <div className="flex items-center gap-2">
+                        <FormField
+                          control={form.control}
+                          name="requireClubId"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Require club ID #</FormLabel>
                             </FormItem>
                           )}
                         />

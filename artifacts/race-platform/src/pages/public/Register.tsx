@@ -34,6 +34,7 @@ const registerSchema = z.object({
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
   amaNumber: z.string().optional(),
+  clubIdNumber: z.string().optional(),
   bikeBrand: z.string().optional(),
   sponsors: z.string().optional(),
   statsEmailOptIn: z.boolean().default(false),
@@ -56,6 +57,7 @@ interface EventInfo {
   entryFee: number | null;
   paymentEnabled: boolean;
   requireAma: boolean;
+  requireClubId: boolean;
   clubName: string | null;
   clubLogoUrl: string | null;
   registrationOpen: string | null;
@@ -139,7 +141,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
+      raceClass: "", bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
 
@@ -281,6 +283,7 @@ export default function Register() {
         form.setValue("emergencyContact", data.emergencyContact, { shouldDirty: false });
         form.setValue("emergencyPhone", data.emergencyPhone, { shouldDirty: false });
         if (data.amaNumber) form.setValue("amaNumber", data.amaNumber, { shouldDirty: false });
+        if (data.clubIdNumber) form.setValue("clubIdNumber", data.clubIdNumber, { shouldDirty: false });
         if (data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
         if (data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
         if (data.sponsors) form.setValue("sponsors", data.sponsors, { shouldDirty: false });
@@ -896,6 +899,16 @@ export default function Register() {
                           <FormLabel>AMA # <span className="text-destructive">*</span></FormLabel>
                           <FormControl><Input placeholder="123456" {...field} /></FormControl>
                           <p className="text-xs text-muted-foreground">Your AMA membership number is required for this event.</p>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    )}
+                    {event.requireClubId && (
+                      <FormField control={form.control} name="clubIdNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Club ID # <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input placeholder="Club membership number" {...field} /></FormControl>
+                          <p className="text-xs text-muted-foreground">Your club membership ID is required for this event.</p>
                           <FormMessage />
                         </FormItem>
                       )} />

@@ -271,6 +271,7 @@ export const ListEventsResponseItem = zod.object({
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
+  "requireClubId": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -306,6 +307,7 @@ export const CreateEventBody = zod.object({
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().optional(),
   "noDuplicateBibs": zod.boolean().optional(),
+  "requireClubId": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -347,6 +349,7 @@ export const GetEventResponse = zod.object({
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
+  "requireClubId": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -385,6 +388,7 @@ export const UpdateEventBody = zod.object({
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().optional(),
   "noDuplicateBibs": zod.boolean().optional(),
+  "requireClubId": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -418,6 +422,7 @@ export const UpdateEventResponse = zod.object({
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
+  "requireClubId": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -591,6 +596,7 @@ export const ListRegistrationsResponseItem = zod.object({
   "amountPaid": zod.number().nullish(),
   "bibNumber": zod.string().nullish(),
   "amaNumber": zod.string().nullish(),
+  "clubIdNumber": zod.string().nullish(),
   "bikeBrand": zod.string().nullish(),
   "selectedPurchaseOptions": zod.array(zod.object({
   "id": zod.string(),
@@ -647,6 +653,7 @@ export const UpdateRegistrationResponse = zod.object({
   "amountPaid": zod.number().nullish(),
   "bibNumber": zod.string().nullish(),
   "amaNumber": zod.string().nullish(),
+  "clubIdNumber": zod.string().nullish(),
   "bikeBrand": zod.string().nullish(),
   "selectedPurchaseOptions": zod.array(zod.object({
   "id": zod.string(),
@@ -1052,6 +1059,7 @@ export const GetClubDashboardResponse = zod.object({
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
+  "requireClubId": zod.boolean().optional(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),

@@ -144,6 +144,7 @@ export interface Event {
   /** @nullable */
   transponderRentalFee?: number | null;
   noDuplicateBibs?: boolean;
+  requireClubId?: boolean;
   purchaseOptions?: PurchaseOption[];
   createdAt?: string;
 }
@@ -178,6 +179,7 @@ export interface EventInput {
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
+  requireClubId?: boolean;
   purchaseOptions?: PurchaseOption[];
 }
 
@@ -211,6 +213,7 @@ export interface EventUpdate {
   transponderRentalEnabled?: boolean;
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
+  requireClubId?: boolean;
   purchaseOptions?: PurchaseOption[];
 }
 
@@ -364,6 +367,8 @@ export interface Registration {
   bibNumber?: string | null;
   /** @nullable */
   amaNumber?: string | null;
+  /** @nullable */
+  clubIdNumber?: string | null;
   /** @nullable */
   bikeBrand?: string | null;
   selectedPurchaseOptions?: PurchaseOption[];

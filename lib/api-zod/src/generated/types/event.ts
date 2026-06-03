@@ -44,6 +44,7 @@ export interface Event {
   /** @nullable */
   transponderRentalFee?: number | null;
   noDuplicateBibs?: boolean;
+  requireClubId?: boolean;
   purchaseOptions?: PurchaseOption[];
   createdAt?: string;
 }

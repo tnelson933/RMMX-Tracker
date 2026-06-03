@@ -16,6 +16,7 @@ export const registrationsTable = pgTable("registrations", {
   amountPaid: numeric("amount_paid", { precision: 10, scale: 2 }),
   bibNumber: text("bib_number"),
   amaNumber: text("ama_number"),
+  clubIdNumber: text("club_id_number"),
   bikeBrand: text("bike_brand"),
   sponsors: text("sponsors"),
   statsEmailOptIn: boolean("stats_email_opt_in").notNull().default(false),

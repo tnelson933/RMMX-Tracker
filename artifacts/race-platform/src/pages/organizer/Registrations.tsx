@@ -44,6 +44,7 @@ const onSiteRegSchema = z.object({
   emergencyPhone: z.string().optional(),
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
+  clubIdNumber: z.string().optional(),
   bikeBrand: z.string().optional(),
   rentTransponder: z.boolean().default(false),
   myLapsTransponderNumber: z.string().optional(),
@@ -124,7 +125,7 @@ export default function Registrations() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "", bikeBrand: "",
+      raceClass: "", bibNumber: "", clubIdNumber: "", bikeBrand: "",
       rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
@@ -157,6 +158,7 @@ export default function Registrations() {
   }, [isAddOpen]);
 
   const noDuplicateBibs = !!(event as any)?.noDuplicateBibs;
+  const requireClubId = !!(event as any)?.requireClubId;
   const watchedBib = form.watch("bibNumber");
   useEffect(() => {
     if (!noDuplicateBibs) { setBibCheckState("idle"); return; }
@@ -288,6 +290,7 @@ export default function Registrations() {
           emergencyPhone: data.emergencyPhone || undefined,
           raceClass: data.raceClass,
           bibNumber: data.bibNumber || undefined,
+          clubIdNumber: data.clubIdNumber || undefined,
           bikeBrand: data.bikeBrand || undefined,
           rentTransponder: data.rentTransponder || undefined,
           myLapsTransponderNumber: data.myLapsTransponderNumber || undefined,
@@ -657,6 +660,15 @@ export default function Registrations() {
                   <FormMessage />
                 </FormItem>
               )} />
+              {requireClubId && (
+                <FormField control={form.control} name="clubIdNumber" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Club ID # <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input placeholder="Club membership number" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              )}
               <FormField control={form.control} name="bikeBrand" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Bike Manufacturer</FormLabel>

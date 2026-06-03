@@ -28,6 +28,7 @@ export const eventsTable = pgTable("events", {
   transponderRentalEnabled: boolean("transponder_rental_enabled").notNull().default(false),
   transponderRentalFee: numeric("transponder_rental_fee", { precision: 10, scale: 2 }),
   noDuplicateBibs: boolean("no_duplicate_bibs").notNull().default(false),
+  requireClubId: boolean("require_club_id").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
