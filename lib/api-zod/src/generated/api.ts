@@ -272,6 +272,7 @@ export const ListEventsResponseItem = zod.object({
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "scoringTableId": zod.number().nullish(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -308,6 +309,7 @@ export const CreateEventBody = zod.object({
   "transponderRentalFee": zod.number().optional(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "scoringTableId": zod.number().nullish(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -350,6 +352,7 @@ export const GetEventResponse = zod.object({
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "scoringTableId": zod.number().nullish(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -389,6 +392,7 @@ export const UpdateEventBody = zod.object({
   "transponderRentalFee": zod.number().optional(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "scoringTableId": zod.number().nullish(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -423,6 +427,7 @@ export const UpdateEventResponse = zod.object({
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "scoringTableId": zod.number().nullish(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -1015,6 +1020,37 @@ export const RecalculateSeriesPointsParams = zod.object({
 
 
 /**
+ * @summary Advance top heat finishers to the Main Event lineup
+ */
+export const AdvanceToMainParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const AdvanceToMainBody = zod.object({
+  "raceClass": zod.string(),
+  "topPerHeat": zod.number().optional()
+})
+
+export const AdvanceToMainResponse = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "name": zod.string(),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice']),
+  "raceClass": zod.string().optional(),
+  "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
+  "motoNumber": zod.number().optional(),
+  "scheduledTime": zod.string().nullish(),
+  "lineup": zod.array(zod.object({
+  "position": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "bibNumber": zod.string().nullish(),
+  "rfidNumber": zod.string().nullish()
+})).optional()
+})
+
+
+/**
  * @summary List points tables (system defaults + club-specific)
  */
 export const ListPointsTablesResponseItem = zod.object({
@@ -1125,6 +1161,7 @@ export const GetClubDashboardResponse = zod.object({
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "scoringTableId": zod.number().nullish(),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),

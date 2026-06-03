@@ -7,6 +7,7 @@
  */
 
 export * from './activityItem';
+export * from './advanceToMainInput';
 export * from './authResponse';
 export * from './checkin';
 export * from './checkinInput';

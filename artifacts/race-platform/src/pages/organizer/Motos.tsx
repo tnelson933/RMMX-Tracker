@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRoute, Link } from "wouter";
 import {
   useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
-  useGetEvent, useListCheckins, useCreateMoto,
+  useGetEvent, useListCheckins, useCreateMoto, useListPointsTables, useAdvanceToMain,
   getListMotosQueryKey, Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -188,6 +188,11 @@ export default function Motos() {
   const createMotoMutation = useCreateMoto();
   const updateMutation = useUpdateMoto();
   const deleteMutation = useDeleteMoto();
+  const advanceToMainMutation = useAdvanceToMain();
+
+  const { data: pointsTables } = useListPointsTables({ query: {} as any });
+  const eventScoringTable = (pointsTables ?? []).find(t => t.id === (event as any)?.scoringTableId);
+  const isSupercrossFormat = eventScoringTable?.mainEventOnly === true;
 
   // Checked-in riders for the currently selected class in the create dialog
   const classCheckins = (checkins ?? []).filter(c => c.checkedIn && c.raceClass === newMotoClass);
@@ -260,12 +265,27 @@ export default function Motos() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
         setConfirmDeleteId(null);
-        toast({ title: "Heat deleted" });
+        toast({ title: "Moto deleted" });
       },
       onError: (err) => {
         toast({ title: "Failed to delete", description: err.message, variant: "destructive" });
       },
     });
+  };
+
+  const handleAdvanceToMain = (raceClass: string) => {
+    advanceToMainMutation.mutate(
+      { eventId, data: { raceClass, topPerHeat: 5 } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          toast({ title: `✅ Riders advanced to ${raceClass} Main Event` });
+        },
+        onError: (err) => {
+          toast({ title: "Failed to advance riders", description: err.message, variant: "destructive" });
+        },
+      }
+    );
   };
 
   const handleStatusUpdate = (motoId: number, status: string) => {
@@ -505,35 +525,47 @@ export default function Motos() {
             </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle className="font-heading uppercase text-xl">Generate Moto Lineups</DialogTitle>
+              <DialogTitle className="font-heading uppercase text-xl">Generate Lineups</DialogTitle>
             </DialogHeader>
             <div className="space-y-6 py-4">
-              <p className="text-sm text-muted-foreground">
-                Generates motos based on checked-in riders for all classes.
-              </p>
+              {isSupercrossFormat ? (
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-semibold text-foreground">Supercross format:</span> Heat motos and an empty Main Event will be created per class. Use <span className="font-semibold">Advance to Main</span> after heats to populate the Main Event lineup.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Generates Division motos based on checked-in riders for all classes.
+                  </p>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Divisions per Class</label>
+                    <Select value={format} onValueChange={(v: any) => setFormat(v)}>
+                      <SelectTrigger><SelectValue placeholder="Select Format" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="one_moto">1 Division</SelectItem>
+                        <SelectItem value="two_moto">2 Divisions</SelectItem>
+                        <SelectItem value="three_moto">3 Divisions</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Race Format</label>
-                <Select value={format} onValueChange={(v: any) => setFormat(v)}>
-                  <SelectTrigger><SelectValue placeholder="Select Format" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="one_moto">1 Moto Format</SelectItem>
-                    <SelectItem value="two_moto">2 Moto Format</SelectItem>
-                    <SelectItem value="three_moto">3 Moto Format</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Max Riders Per Heat</label>
+                <label className="text-sm font-medium">
+                  {isSupercrossFormat ? "Max Riders per Heat" : "Group Size (optional)"}
+                </label>
                 <Input
                   type="number"
                   min={1}
                   value={ridersPerHeat}
                   onChange={e => setRidersPerHeat(e.target.value)}
-                  placeholder="No limit (all in one heat)"
+                  placeholder="No limit (all in one group)"
                   className="h-9"
                 />
                 <p className="text-xs text-muted-foreground">
-                  If a class exceeds this number, riders are automatically split into separate heats.
+                  {isSupercrossFormat
+                    ? "If a class exceeds this number, additional heats are created automatically."
+                    : "If a class exceeds this number, riders are split into separate groups."}
                 </p>
               </div>
               <Button onClick={handleGenerate} disabled={generateMutation.isPending} className="w-full font-heading uppercase">
@@ -569,6 +601,33 @@ export default function Motos() {
           </span>
         </div>
       </div>
+
+      {/* Advance to Main panel — Supercross format only */}
+      {isSupercrossFormat && (motos ?? []).some(m => m.type === "main") && (
+        <div className="border rounded-xl p-5 bg-card space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Flag size={16} className="text-primary" />
+            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">Advance to Main Event</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Take the top 5 finishers from each heat and populate the Main Event lineup. Run heats first, then advance.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {[...new Set((motos ?? []).filter(m => m.type === "main").map(m => m.raceClass).filter((c): c is string => !!c))].map(cls => (
+              <Button
+                key={cls}
+                size="sm"
+                variant="outline"
+                className="font-heading uppercase tracking-wider gap-2"
+                disabled={advanceToMainMutation.isPending}
+                onClick={() => handleAdvanceToMain(cls)}
+              >
+                <Flag size={13} /> Advance {cls}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -29,6 +29,7 @@ export const eventsTable = pgTable("events", {
   transponderRentalFee: numeric("transponder_rental_fee", { precision: 10, scale: 2 }),
   noDuplicateBibs: boolean("no_duplicate_bibs").notNull().default(false),
   requireClubId: boolean("require_club_id").notNull().default(false),
+  scoringTableId: integer("scoring_table_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -1,10 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { motosTable, checkinsTable, ridersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable } from "@workspace/db";
+import { eq, and, inArray } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
-
-const POINTS_BY_POSITION = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
 const router = Router();
 
@@ -44,7 +42,6 @@ router.patch("/motos/:motoId", async (req, res) => {
   const [moto] = await db.update(motosTable).set(updates as any).where(eq(motosTable.id, id)).returning();
   if (!moto) return res.status(404).json({ error: "Not found" });
 
-  // Broadcast status change to any live SSE viewers
   if (req.body.status !== undefined) {
     buildLeaderboard(id).then(snapshot => {
       if (snapshot) sseBroadcast(id, snapshot);
@@ -72,6 +69,16 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const { raceFormat, classes, ridersPerHeat } = req.body;
   const maxPerHeat: number = ridersPerHeat && ridersPerHeat > 0 ? ridersPerHeat : Infinity;
 
+  // Determine if this is a Supercross-style event (main event only, heats feed into main)
+  let isSupercrossFormat = false;
+  const [event] = await db.select({ scoringTableId: eventsTable.scoringTableId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (event?.scoringTableId) {
+    const [table] = await db.select({ mainEventOnly: pointsTablesTable.mainEventOnly })
+      .from(pointsTablesTable)
+      .where(eq(pointsTablesTable.id, event.scoringTableId));
+    isSupercrossFormat = table?.mainEventOnly ?? false;
+  }
+
   const checkins = await db.select({
     riderId: checkinsTable.riderId,
     raceClass: checkinsTable.raceClass,
@@ -86,24 +93,23 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const motos: typeof motosTable.$inferSelect[] = [];
   let motoNumber = 1;
 
-  const motoCount = raceFormat === "three_moto" ? 3 : raceFormat === "two_moto" ? 2 : 1;
+  const divCount = raceFormat === "three_moto" ? 3 : raceFormat === "two_moto" ? 2 : 1;
 
   for (const cls of (classes || [])) {
     const classRiders = checkins.filter(c => c.raceClass === cls);
     if (classRiders.length === 0) continue;
 
-    // Split riders into heats based on ridersPerHeat cap
-    const heatGroups: typeof classRiders[] = [];
+    // Split riders into groups
+    const groups: typeof classRiders[] = [];
     for (let i = 0; i < classRiders.length; i += maxPerHeat) {
-      heatGroups.push(classRiders.slice(i, i + maxPerHeat));
+      groups.push(classRiders.slice(i, i + maxPerHeat));
     }
-    const multiHeat = heatGroups.length > 1;
+    const multiGroup = groups.length > 1;
 
-    for (let h = 0; h < heatGroups.length; h++) {
-      const heatRiders = heatGroups[h];
-      const heatLabel = multiHeat ? ` Heat ${h + 1}` : "";
-
-      for (let m = 1; m <= motoCount; m++) {
+    if (isSupercrossFormat) {
+      // Supercross: one Heat per group → riders qualify for Main Event
+      for (let h = 0; h < groups.length; h++) {
+        const heatRiders = groups[h];
         const lineup = heatRiders.map((r, i) => ({
           position: i + 1,
           riderId: r.riderId,
@@ -112,12 +118,10 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
           rfidNumber: r.rfidNumber,
         }));
 
-        const motoLabel = motoCount > 1 ? ` Moto ${m}` : "";
-        const name = `${cls}${heatLabel}${motoLabel}`;
-
+        const heatName = multiGroup ? `${cls} Heat ${h + 1}` : `${cls} Heat`;
         const [moto] = await db.insert(motosTable).values({
           eventId,
-          name,
+          name: heatName,
           type: "heat",
           raceClass: cls,
           motoNumber: motoNumber++,
@@ -126,10 +130,153 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         }).returning();
         motos.push(moto);
       }
+
+      // Create empty Main Event moto — populated via advance-to-main
+      const [mainMoto] = await db.insert(motosTable).values({
+        eventId,
+        name: `${cls} Main Event`,
+        type: "main",
+        raceClass: cls,
+        motoNumber: motoNumber++,
+        status: "scheduled",
+        lineup: [],
+      }).returning();
+      motos.push(mainMoto);
+    } else {
+      // AMA / Olympic: Divisions — each rider runs the same division(s)
+      for (let h = 0; h < groups.length; h++) {
+        const groupRiders = groups[h];
+        const groupLabel = multiGroup ? ` Group ${h + 1}` : "";
+
+        for (let d = 1; d <= divCount; d++) {
+          const lineup = groupRiders.map((r, i) => ({
+            position: i + 1,
+            riderId: r.riderId,
+            riderName: `${r.firstName} ${r.lastName}`,
+            bibNumber: r.bibNumber,
+            rfidNumber: r.rfidNumber,
+          }));
+
+          const divLabel = divCount > 1 ? ` Division ${d}` : " Division";
+          const name = `${cls}${groupLabel}${divLabel}`;
+
+          const [moto] = await db.insert(motosTable).values({
+            eventId,
+            name,
+            type: "heat",
+            raceClass: cls,
+            motoNumber: motoNumber++,
+            status: "scheduled",
+            lineup,
+          }).returning();
+          motos.push(moto);
+        }
+      }
     }
   }
 
-  return res.json(motos.map(m => ({ ...m, lineup: Array.isArray(m.lineup) ? m.lineup : [], createdAt: m.createdAt.toISOString() })));
+  return res.json(motos.map(m => ({
+    ...m,
+    lineup: Array.isArray(m.lineup) ? m.lineup : [],
+    createdAt: m.createdAt.toISOString(),
+  })));
+});
+
+// Advance top heat finishers into the Main Event lineup
+router.post("/events/:eventId/advance-to-main", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const { raceClass, topPerHeat = 5 } = req.body;
+  if (!raceClass) return res.status(400).json({ error: "raceClass is required" });
+
+  // Find all heat motos for this class
+  const heatMotos = await db.select().from(motosTable)
+    .where(and(
+      eq(motosTable.eventId, eventId),
+      eq(motosTable.raceClass, raceClass),
+      eq(motosTable.type, "heat"),
+    ));
+
+  if (heatMotos.length === 0) return res.status(404).json({ error: "No heat motos found for this class" });
+
+  // Find the main event moto
+  const [mainMoto] = await db.select().from(motosTable)
+    .where(and(
+      eq(motosTable.eventId, eventId),
+      eq(motosTable.raceClass, raceClass),
+      eq(motosTable.type, "main"),
+    ));
+  if (!mainMoto) return res.status(404).json({ error: "No main event moto found. Generate lineups first." });
+
+  // Load race results for all heats
+  const heatMotoIds = heatMotos.map(m => m.id);
+  const allResults = heatMotoIds.length > 0
+    ? await db.select().from(raceResultsTable)
+        .where(inArray(raceResultsTable.motoId, heatMotoIds))
+    : [];
+
+  const resultsByMoto = new Map<number, typeof allResults>();
+  for (const r of allResults) {
+    if (!resultsByMoto.has(r.motoId)) resultsByMoto.set(r.motoId, []);
+    resultsByMoto.get(r.motoId)!.push(r);
+  }
+
+  type LineupEntry = { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber: string | null };
+  const advancedRiderIds = new Set<number>();
+  const advancedLineup: LineupEntry[] = [];
+
+  for (const heat of heatMotos) {
+    const results = resultsByMoto.get(heat.id) ?? [];
+    const heatLineup = (Array.isArray(heat.lineup) ? heat.lineup : []) as LineupEntry[];
+
+    if (results.length > 0) {
+      // Use recorded race results sorted by finish position
+      const sorted = [...results].filter(r => !r.dnf && !r.dns).sort((a, b) => a.position - b.position);
+      for (const r of sorted.slice(0, topPerHeat)) {
+        if (!advancedRiderIds.has(r.riderId)) {
+          advancedRiderIds.add(r.riderId);
+          const fromLineup = heatLineup.find(l => l.riderId === r.riderId);
+          advancedLineup.push({
+            position: advancedLineup.length + 1,
+            riderId: r.riderId,
+            riderName: fromLineup?.riderName ?? `Rider #${r.riderId}`,
+            bibNumber: r.bibNumber ?? fromLineup?.bibNumber ?? null,
+            rfidNumber: fromLineup?.rfidNumber ?? null,
+          });
+        }
+      }
+    } else {
+      // No results yet — fall back to lineup order
+      const sorted = [...heatLineup].sort((a, b) => a.position - b.position);
+      for (const l of sorted.slice(0, topPerHeat)) {
+        if (!advancedRiderIds.has(l.riderId)) {
+          advancedRiderIds.add(l.riderId);
+          advancedLineup.push({
+            position: advancedLineup.length + 1,
+            riderId: l.riderId,
+            riderName: l.riderName,
+            bibNumber: l.bibNumber ?? null,
+            rfidNumber: l.rfidNumber ?? null,
+          });
+        }
+      }
+    }
+  }
+
+  // Re-number positions sequentially
+  advancedLineup.forEach((r, i) => { r.position = i + 1; });
+
+  const [updated] = await db.update(motosTable)
+    .set({ lineup: advancedLineup })
+    .where(eq(motosTable.id, mainMoto.id))
+    .returning();
+
+  return res.json({
+    ...updated,
+    lineup: Array.isArray(updated.lineup) ? updated.lineup : [],
+    createdAt: updated.createdAt.toISOString(),
+    startedAt: updated.startedAt?.toISOString() ?? null,
+    completedAt: updated.completedAt?.toISOString() ?? null,
+  });
 });
 
 export default router;

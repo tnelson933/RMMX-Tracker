@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, getListEventsQueryKey } from "@workspace/api-client-react";
+import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, useListPointsTables, getListEventsQueryKey } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -92,6 +92,7 @@ const createEventSchema = z.object({
   registrationClose: z.string().optional(),
   paymentEnabled: z.boolean().default(false),
   requireAma: z.boolean().default(false),
+  scoringTableId: z.number().optional(),
   entryFee: z.string().optional(),
   transponderRentalEnabled: z.boolean().default(false),
   transponderRentalFee: z.string().optional(),
@@ -141,6 +142,7 @@ export default function EventsList() {
   const clubSeriesList = seriesList?.filter(s => s.clubId === (sessionClubId ?? 0)) ?? [];
 
   const createMutation = useCreateEvent();
+  const { data: pointsTables } = useListPointsTables({ query: {} as any });
 
   const form = useForm<z.infer<typeof createEventSchema>>({
     resolver: zodResolver(createEventSchema),
@@ -157,6 +159,7 @@ export default function EventsList() {
       registrationClose: "",
       paymentEnabled: false,
       requireAma: false,
+      scoringTableId: undefined,
       entryFee: "",
       transponderRentalEnabled: false,
       transponderRentalFee: "",
@@ -188,6 +191,7 @@ export default function EventsList() {
           registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
           paymentEnabled: data.paymentEnabled,
           requireAma: data.requireAma,
+          scoringTableId: data.scoringTableId ?? null,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
           transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
           transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
@@ -419,6 +423,38 @@ export default function EventsList() {
                       )}
                     />
                   </div>
+
+                  {/* Scoring Format dropdown */}
+                  <FormField
+                    control={form.control}
+                    name="scoringTableId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Scoring Format</FormLabel>
+                        <Select
+                          value={field.value != null ? String(field.value) : "none"}
+                          onValueChange={(v) => field.onChange(v === "none" ? undefined : Number(v))}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select scoring format (optional)" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {(pointsTables ?? []).map(t => (
+                              <SelectItem key={t.id} value={String(t.id)}>
+                                {t.name}{t.isSystemDefault ? " ★" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Supercross formats generate Heats + Main Event. AMA/Olympic generate Divisions.
+                        </p>
+                      </FormItem>
+                    )}
+                  />
 
                   {/* Entry fee input (only when payment enabled) */}
                   {stripeReady && watchPaymentEnabled && (

@@ -30,5 +30,7 @@ export interface EventUpdate {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** @nullable */
+  scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
 }

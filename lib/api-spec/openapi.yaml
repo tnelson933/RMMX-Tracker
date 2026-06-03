@@ -943,6 +943,31 @@ paths:
         "200":
           description: Points recalculated
 
+  /events/{eventId}/advance-to-main:
+    post:
+      operationId: advanceToMain
+      tags: [motos]
+      summary: Advance top heat finishers to the Main Event lineup
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdvanceToMainInput"
+      responses:
+        "200":
+          description: Main event moto with updated lineup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Moto"
+
   # POINTS SCORING TABLES
   /points-tables:
     get:
@@ -1253,6 +1278,15 @@ components:
         name:
           type: string
 
+    AdvanceToMainInput:
+      type: object
+      required: [raceClass]
+      properties:
+        raceClass:
+          type: string
+        topPerHeat:
+          type: integer
+
     LoginInput:
       type: object
       required: [email, password]
@@ -1423,6 +1457,8 @@ components:
           type: boolean
         requireClubId:
           type: boolean
+        scoringTableId:
+          type: ["integer", "null"]
         purchaseOptions:
           type: array
           items:
@@ -1480,6 +1516,8 @@ components:
           type: boolean
         requireClubId:
           type: boolean
+        scoringTableId:
+          type: ["integer", "null"]
         purchaseOptions:
           type: array
           items:
@@ -1534,6 +1572,8 @@ components:
           type: boolean
         requireClubId:
           type: boolean
+        scoringTableId:
+          type: ["integer", "null"]
         purchaseOptions:
           type: array
           items:

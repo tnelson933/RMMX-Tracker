@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRoute } from "wouter";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
-import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, getGetEventQueryKey } from "@workspace/api-client-react";
+import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -101,6 +101,7 @@ const updateEventSchema = z.object({
   transponderRentalFee: z.string().optional(),
   noDuplicateBibs: z.boolean().default(false),
   requireClubId: z.boolean().default(false),
+  scoringTableId: z.number().optional(),
   purchaseOptions: z.array(z.object({
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
@@ -122,6 +123,7 @@ export default function EventDetail() {
   const { data: seriesList } = useListSeries({ query: {} as any });
   const updateMutation = useUpdateEvent();
   const updateSeriesMutation = useUpdateSeries();
+  const { data: pointsTables } = useListPointsTables({ query: {} as any });
 
   const [editSeriesId, setEditSeriesId] = useState<string>("none");
 
@@ -261,6 +263,7 @@ export default function EventDetail() {
       transponderRentalFee: "",
       noDuplicateBibs: false,
       requireClubId: false,
+      scoringTableId: undefined,
       purchaseOptions: [],
     }
   });
@@ -301,6 +304,7 @@ export default function EventDetail() {
       transponderRentalFee: (evt as any).transponderRentalFee != null ? String((evt as any).transponderRentalFee) : "",
       noDuplicateBibs: (evt as any).noDuplicateBibs ?? false,
       requireClubId: (evt as any).requireClubId ?? false,
+      scoringTableId: (evt as any).scoringTableId ?? undefined,
       purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number }) => ({ name: o.name, amount: String(o.amount) })),
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
@@ -332,6 +336,7 @@ export default function EventDetail() {
         requireAma: data.requireAma,
         noDuplicateBibs: data.noDuplicateBibs,
         requireClubId: data.requireClubId,
+        scoringTableId: data.scoringTableId ?? null,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
@@ -722,6 +727,38 @@ export default function EventDetail() {
                           )}
                         />
                       </div>
+
+                      {/* Scoring Format dropdown */}
+                      <FormField
+                        control={form.control}
+                        name="scoringTableId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Scoring Format</FormLabel>
+                            <Select
+                              value={field.value != null ? String(field.value) : "none"}
+                              onValueChange={(v) => field.onChange(v === "none" ? undefined : Number(v))}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select scoring format (optional)" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                {(pointsTables ?? []).map(t => (
+                                  <SelectItem key={t.id} value={String(t.id)}>
+                                    {t.name}{t.isSystemDefault ? " ★" : ""}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              Supercross formats generate Heats + Main Event. AMA/Olympic generate Divisions.
+                            </p>
+                          </FormItem>
+                        )}
+                      />
 
                       {/* Collect Payments toggle */}
                       {!isSuperAdmin && (

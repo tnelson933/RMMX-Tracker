@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdvanceToMainInput,
   AuthResponse,
   Checkin,
   CheckinInput,
@@ -3478,6 +3479,78 @@ export const useRecalculateSeriesPoints = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRecalculateSeriesPointsMutationOptions(options));
+    }
+
+export const getAdvanceToMainUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/advance-to-main`
+}
+
+/**
+ * @summary Advance top heat finishers to the Main Event lineup
+ */
+export const advanceToMain = async (eventId: number,
+    advanceToMainInput: AdvanceToMainInput, options?: RequestInit): Promise<Moto> => {
+
+  return customFetch<Moto>(getAdvanceToMainUrl(eventId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      advanceToMainInput,)
+  }
+);}
+
+
+
+
+export const getAdvanceToMainMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof advanceToMain>>, TError,{eventId: number;data: BodyType<AdvanceToMainInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof advanceToMain>>, TError,{eventId: number;data: BodyType<AdvanceToMainInput>}, TContext> => {
+
+const mutationKey = ['advanceToMain'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof advanceToMain>>, {eventId: number;data: BodyType<AdvanceToMainInput>}> = (props) => {
+          const {eventId,data} = props ?? {};
+
+          return  advanceToMain(eventId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdvanceToMainMutationResult = NonNullable<Awaited<ReturnType<typeof advanceToMain>>>
+    export type AdvanceToMainMutationBody = BodyType<AdvanceToMainInput>
+    export type AdvanceToMainMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Advance top heat finishers to the Main Event lineup
+ */
+export const useAdvanceToMain = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof advanceToMain>>, TError,{eventId: number;data: BodyType<AdvanceToMainInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof advanceToMain>>,
+        TError,
+        {eventId: number;data: BodyType<AdvanceToMainInput>},
+        TContext
+      > => {
+      return useMutation(getAdvanceToMainMutationOptions(options));
     }
 
 export const getListPointsTablesUrl = () => {

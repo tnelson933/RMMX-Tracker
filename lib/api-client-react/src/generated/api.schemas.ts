@@ -13,6 +13,11 @@ export interface UpdateMe {
   name?: string;
 }
 
+export interface AdvanceToMainInput {
+  raceClass: string;
+  topPerHeat?: number;
+}
+
 export interface LoginInput {
   email: string;
   password: string;
@@ -145,6 +150,8 @@ export interface Event {
   transponderRentalFee?: number | null;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** @nullable */
+  scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
   createdAt?: string;
 }
@@ -180,6 +187,8 @@ export interface EventInput {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** @nullable */
+  scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
 }
 
@@ -214,6 +223,8 @@ export interface EventUpdate {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** @nullable */
+  scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
 }
 

@@ -86,6 +86,7 @@ router.get("/events", async (req, res) => {
     transponderRentalEnabled: eventsTable.transponderRentalEnabled,
     transponderRentalFee: eventsTable.transponderRentalFee,
     purchaseOptions: eventsTable.purchaseOptions,
+    scoringTableId: eventsTable.scoringTableId,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -111,7 +112,7 @@ router.get("/events", async (req, res) => {
 });
 
 router.post("/events", async (req, res) => {
-  const { clubId, name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, purchaseOptions } = req.body;
+  const { clubId, name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, purchaseOptions, scoringTableId } = req.body;
   if (!clubId || !name || !date || !state) return res.status(400).json({ error: "clubId, name, date, state required" });
 
   // Determine the correct initial status based on the registration window
@@ -138,6 +139,7 @@ router.post("/events", async (req, res) => {
     transponderRentalEnabled: transponderRentalEnabled || false,
     transponderRentalFee: transponderRentalFee ? String(transponderRentalFee) : null,
     purchaseOptions: purchaseOptions || [],
+    scoringTableId: scoringTableId ?? null,
   }).returning();
 
   return res.status(201).json({
@@ -175,6 +177,7 @@ router.get("/events/:eventId", async (req, res) => {
     transponderRentalEnabled: eventsTable.transponderRentalEnabled,
     transponderRentalFee: eventsTable.transponderRentalFee,
     purchaseOptions: eventsTable.purchaseOptions,
+    scoringTableId: eventsTable.scoringTableId,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -200,7 +203,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const previousStatus = before?.status;
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
