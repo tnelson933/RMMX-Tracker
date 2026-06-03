@@ -16,6 +16,7 @@ import {
   Plus, Search, Check, X, Download, Pencil, Loader2, AlertCircle,
   CheckCircle2, Banknote, CreditCard, ExternalLink, DollarSign, Smartphone,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { QRCodeSVG } from "qrcode.react";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
@@ -44,6 +45,8 @@ const onSiteRegSchema = z.object({
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
   bikeBrand: z.string().optional(),
+  rentTransponder: z.boolean().default(false),
+  myLapsTransponderNumber: z.string().optional(),
 });
 type OnSiteRegForm = z.infer<typeof onSiteRegSchema>;
 
@@ -115,8 +118,13 @@ export default function Registrations() {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
       raceClass: "", bibNumber: "", bikeBrand: "",
+      rentTransponder: false, myLapsTransponderNumber: "",
     },
   });
+
+  const isMyLaps = (event as any)?.timingTechnology === "mylaps";
+  const transponderRentalEnabled = !!(event as any)?.transponderRentalEnabled;
+  const transponderRentalFee: number | null = (event as any)?.transponderRentalFee ?? null;
 
   useEffect(() => {
     if (editingBibId !== null) bibInputRef.current?.focus();
@@ -199,6 +207,16 @@ export default function Registrations() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreate = async (data: OnSiteRegForm) => {
+    if (isMyLaps) {
+      const hasNumber = !!data.myLapsTransponderNumber?.trim();
+      const hasRental = !!data.rentTransponder;
+      if (!hasNumber && !hasRental) {
+        form.setError("myLapsTransponderNumber", {
+          message: "Enter the rider's MyLaps transponder number, or select a rental.",
+        });
+        return;
+      }
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -216,6 +234,8 @@ export default function Registrations() {
           raceClass: data.raceClass,
           bibNumber: data.bibNumber || undefined,
           bikeBrand: data.bikeBrand || undefined,
+          rentTransponder: data.rentTransponder || undefined,
+          myLapsTransponderNumber: data.myLapsTransponderNumber || undefined,
         }),
       });
       const json = await res.json();
@@ -385,6 +405,64 @@ export default function Registrations() {
                 </FormItem>
               )} />
             </div>
+
+            {isMyLaps && (
+              <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/[0.03] p-4">
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">MyLaps Transponder</h3>
+                <FormField control={form.control} name="myLapsTransponderNumber" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Transponder Number</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="e.g. 123456789"
+                        disabled={form.watch("rentTransponder")}
+                        onChange={e => {
+                          field.onChange(e);
+                          if (e.target.value.trim()) form.setValue("rentTransponder", false);
+                        }}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">Number printed on the rider's personal MyLaps transponder.</p>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                {transponderRentalEnabled && transponderRentalFee != null && (
+                  <>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="uppercase tracking-widest font-semibold">or</span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                    <FormField control={form.control} name="rentTransponder" render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                          <FormControl>
+                            <Checkbox
+                              id="rent-transponder-onsite"
+                              checked={field.value}
+                              disabled={!!form.watch("myLapsTransponderNumber")?.trim()}
+                              onCheckedChange={val => {
+                                field.onChange(val);
+                                if (val) form.setValue("myLapsTransponderNumber", "");
+                              }}
+                              className="mt-0.5"
+                            />
+                          </FormControl>
+                          <div className="space-y-0.5 leading-none">
+                            <label htmlFor="rent-transponder-onsite" className="text-sm font-semibold cursor-pointer">
+                              Rent a MyLaps transponder — <span className="text-primary">${Number(transponderRentalFee).toFixed(2)}</span>
+                            </label>
+                            <p className="text-xs text-muted-foreground">Rider doesn't have their own transponder.</p>
+                          </div>
+                        </div>
+                      </FormItem>
+                    )} />
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="space-y-3">
               <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Rider Info</h3>
