@@ -158,6 +158,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       eventDate: eventsTable.date,
       eventState: eventsTable.state,
       eventLocation: eventsTable.location,
+      timingTechnology: eventsTable.timingTechnology,
       motoId: raceResultsTable.motoId,
       motoName: motosTable.name,
       motoNumber: motosTable.motoNumber,
@@ -184,6 +185,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     eventDate: string;
     eventState: string;
     eventLocation: string | null;
+    timingTechnology: string | null;
     raceClass: string;
     motos: Array<{
       motoId: number;
@@ -208,6 +210,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
         eventDate: row.eventDate ?? "",
         eventState: row.eventState ?? "",
         eventLocation: row.eventLocation ?? null,
+        timingTechnology: row.timingTechnology ?? null,
         raceClass: row.raceClass,
         motos: [],
       });

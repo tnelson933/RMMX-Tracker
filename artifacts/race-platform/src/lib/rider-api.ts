@@ -52,6 +52,7 @@ export interface EventHistory {
   eventDate: string;
   eventState: string;
   eventLocation: string | null;
+  timingTechnology: string | null;
   raceClass: string;
   motos: MotoResult[];
   totalPoints: number;

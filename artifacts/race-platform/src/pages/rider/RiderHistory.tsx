@@ -3,7 +3,7 @@ import { useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
   Trophy, Clock, Star, ChevronDown, ChevronUp,
-  Flag, AlertTriangle, Calendar, MapPin, Hash, User
+  Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -112,6 +112,12 @@ function EventCard({ event }: { event: EventHistory }) {
                 </span>
               )}
               <Badge variant="secondary" className="text-xs">{event.raceClass}</Badge>
+              {event.timingTechnology && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Timer size={11} />
+                  {event.timingTechnology === "mylaps" ? "Timed with MyLaps" : "Timed with RFID"}
+                </span>
+              )}
             </div>
           </div>
 

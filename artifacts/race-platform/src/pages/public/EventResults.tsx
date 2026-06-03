@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Calendar, MapPin, Trophy, Flag, ChevronLeft, ChevronRight,
   Clock, Award, Radio, CheckCircle, AlertCircle, Activity,
-  ChevronDown, ChevronUp, Users,
+  ChevronDown, ChevronUp, Users, Timer,
 } from "lucide-react";
 import { format, parseISO, isToday } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -133,6 +133,12 @@ export default function EventResults() {
                 {event.status === "registration_open" && (
                   <Badge variant="outline" className="bg-green-600/50 text-white border-green-400/50 font-heading uppercase tracking-wider px-3 py-1 text-sm">
                     Registration Open
+                  </Badge>
+                )}
+                {event.timingTechnology && (
+                  <Badge variant="outline" className="bg-white/10 text-white/80 border-white/20 font-heading uppercase tracking-wider px-3 py-1 text-sm flex items-center gap-1.5">
+                    <Timer size={13} />
+                    {event.timingTechnology === "mylaps" ? "Timed with MyLaps" : "Timed with RFID"}
                   </Badge>
                 )}
               </div>
