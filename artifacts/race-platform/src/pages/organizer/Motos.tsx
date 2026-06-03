@@ -38,12 +38,40 @@ type RawCrossing = {
 
 const POLL_INTERVAL_MS = 3000;
 
+function playRfidPing(count: number) {
+  try {
+    const ctx = new AudioContext();
+    const pings = Math.min(count, 4);
+    let lastOsc: OscillatorNode | null = null;
+    for (let i = 0; i < pings; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = 1046;
+      const t = ctx.currentTime + i * 0.18;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.35, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.start(t);
+      osc.stop(t + 0.25);
+      lastOsc = osc;
+    }
+    if (lastOsc) lastOsc.onended = () => ctx.close();
+  } catch {
+    // AudioContext may be blocked; ignore
+  }
+}
+
 function LiveCrossingsFeed({ motoId }: { motoId: number }) {
   const [crossings, setCrossings] = useState<RawCrossing[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [flash, setFlash] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const knownIdsRef = useRef<Set<number>>(new Set());
   const { toast } = useToast();
 
   const fetchCrossings = async () => {
@@ -54,7 +82,16 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
       const res = await fetch(`/api/timing/crossings/${motoId}`, { signal: ctrl.signal });
       if (!res.ok) return;
       const data: RawCrossing[] = await res.json();
-      setCrossings(Array.isArray(data) ? [...data].reverse().slice(0, 15) : []);
+      if (Array.isArray(data)) {
+        const newOnes = data.filter((c) => !knownIdsRef.current.has(c.id));
+        if (newOnes.length > 0 && knownIdsRef.current.size > 0) {
+          playRfidPing(newOnes.length);
+          setFlash(true);
+          setTimeout(() => setFlash(false), 600);
+        }
+        data.forEach((c) => knownIdsRef.current.add(c.id));
+        setCrossings([...data].reverse().slice(0, 15));
+      }
       setLastUpdated(new Date());
     } catch {
       // ignore abort or network errors
@@ -94,7 +131,7 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
   }, [motoId]);
 
   return (
-    <div className="border-t">
+    <div className={`border-t transition-all duration-150 ${flash ? "ring-2 ring-primary ring-offset-0" : ""}`}>
       <div className="flex items-center justify-between px-3 py-2 bg-primary/5 border-b">
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-2">
@@ -102,6 +139,11 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
             <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
           </span>
           <span className="text-xs font-bold uppercase tracking-widest text-primary">Live Crossing Feed</span>
+          {flash && (
+            <span className="text-[10px] font-bold uppercase tracking-widest text-primary animate-pulse">
+              ● RFID READ
+            </span>
+          )}
         </div>
         <span className="text-xs text-muted-foreground">
           {lastUpdated ? `Updated ${format(lastUpdated, "h:mm:ss a")}` : "Loading…"}
