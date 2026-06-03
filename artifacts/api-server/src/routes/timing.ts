@@ -646,12 +646,12 @@ router.post("/timing/announce-moto-start", async (req, res) => {
       (motoType ?? "race");
 
     const parts: string[] = [];
-    parts.push("Attention riders and fans!");
+    parts.push("Ladies and gentlemen, your attention please!");
 
     if (raceClass) {
-      parts.push(`Coming up next — it's the ${raceClass} ${typeLabel}!`);
+      parts.push(`Coming up next on track — the ${raceClass} ${typeLabel}!`);
     } else {
-      parts.push(`Coming up next — it's the ${typeLabel}!`);
+      parts.push(`Coming up next on track — the ${typeLabel}!`);
     }
 
     if (motoName) {
@@ -660,10 +660,10 @@ router.post("/timing/announce-moto-start", async (req, res) => {
 
     const validRiders = (lineup ?? []).filter(r => r.riderName);
     if (validRiders.length > 0) {
-      parts.push("Riders, let's hear it! Taking the gate today:");
+      parts.push("Let's meet the riders taking the gate today:");
       for (const rider of validRiders) {
         if (rider.bibNumber) {
-          parts.push(`Number ${rider.bibNumber}, ${rider.riderName}!`);
+          parts.push(`Wearing number ${rider.bibNumber}, ${rider.riderName}!`);
         } else {
           parts.push(`${rider.riderName}!`);
         }
@@ -672,10 +672,10 @@ router.post("/timing/announce-moto-start", async (req, res) => {
 
     // Deterministic outro keyed to moto name so it's consistent
     const outros = [
-      "Riders, fire those engines! The gate is about to drop — let's race!",
-      "All right everyone, it's time! Riders to the gate — the green flag is about to fly!",
-      "Helmets on, engines hot! This moto is about to get underway — let's go racing!",
-      "Get to that gate and make it happen! This one is about to go green — let's race!",
+      "What a lineup! Get on your feet, folks — this one is about to go green!",
+      "Give it up for these riders! The gate drops in moments — it's race time!",
+      "Eyes on that gate, everyone — this moto is about to get underway!",
+      "Hold on to your seats — this race is moments away from going green! Let's go!",
     ];
     const hash = (motoName ?? "").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
     parts.push(outros[hash % outros.length]);
