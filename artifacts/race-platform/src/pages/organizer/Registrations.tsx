@@ -170,24 +170,13 @@ export default function Registrations() {
     if (!editingReg) return;
     setEditSaving(true);
     try {
-      // Save name as registration-level override — only affects this one row
-      const regBody: Record<string, unknown> = {
-        displayFirstName: data.firstName,
-        displayLastName: data.lastName,
-        raceClass: data.raceClass,
-      };
-      const regRes = await fetch(`/api/registrations/${editingReg.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(regBody),
-      });
-      if (!regRes.ok) { const j = await regRes.json(); throw new Error(j.error || "Failed to update registration"); }
-
-      // Contact info lives on the shared rider profile
+      // Update the rider profile — name propagates to check-in, motos, results, etc.
       const riderRes = await fetch(`/api/riders/${editingReg.riderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          firstName: data.firstName,
+          lastName: data.lastName,
           email: data.email,
           phone: data.phone || null,
           dateOfBirth: data.dateOfBirth || null,
@@ -196,6 +185,14 @@ export default function Registrations() {
         }),
       });
       if (!riderRes.ok) { const j = await riderRes.json(); throw new Error(j.error || "Failed to update rider"); }
+
+      // Update race class and clear any stale display-name overrides on this registration
+      const regRes = await fetch(`/api/registrations/${editingReg.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raceClass: data.raceClass, displayFirstName: null, displayLastName: null }),
+      });
+      if (!regRes.ok) { const j = await regRes.json(); throw new Error(j.error || "Failed to update registration"); }
 
       await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
       setEditingReg(null);
@@ -1233,7 +1230,7 @@ export default function Registrations() {
               <div className="space-y-2">
                 <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Rider Info</h3>
                 <p className="text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2 border border-dashed">
-                  Name changes apply to this registration only. Contact info (email, phone, emergency) updates the shared rider profile.
+                  Updating a rider's info here changes their profile — name and contact info will reflect across check-in, results, and all pages for this event.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <FormField control={editForm.control} name="firstName" render={({ field }) => (
