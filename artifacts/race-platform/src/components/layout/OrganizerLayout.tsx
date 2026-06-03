@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   CalendarDays,
   Users,
-  Tag,
   Trophy,
   Building2,
   UserCog,
@@ -61,7 +60,6 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
     { href: "/events", label: "Events", icon: CalendarDays, exact: false },
     { href: "/riders", label: "Riders", icon: Users, exact: false },
     { href: "/series", label: "Series", icon: Trophy, exact: false },
-    { href: "/rfid", label: "RFID Tags", icon: Tag, exact: true },
     { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, exact: false },
     { href: "/payments", label: "Payments", icon: CreditCard, exact: false },
   ];
