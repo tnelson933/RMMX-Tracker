@@ -105,14 +105,27 @@ router.post("/events/:eventId/registrations", async (req, res) => {
 
   if (riderId) {
     resolvedRiderId = Number(riderId);
-  } else if (firstName && lastName && email) {
-    // Find or create rider by email
-    const existing = await db.select().from(ridersTable).where(eq(ridersTable.email, email));
-    if (existing[0]) {
-      resolvedRiderId = existing[0].id;
+  } else if (firstName && lastName) {
+    // Find or create rider — email is optional for on-site registrations
+    if (email) {
+      const existing = await db.select().from(ridersTable).where(eq(ridersTable.email, email));
+      if (existing[0]) {
+        resolvedRiderId = existing[0].id;
+      } else {
+        const [created] = await db.insert(ridersTable).values({
+          firstName, lastName, email,
+          phone: phone || null,
+          dateOfBirth: dateOfBirth || null,
+          emergencyContact: emergencyContact || null,
+          emergencyPhone: emergencyPhone || null,
+          bibNumber: bibNumber || null,
+        }).returning();
+        resolvedRiderId = created.id;
+      }
     } else {
+      // No email — create a new rider record without one
       const [created] = await db.insert(ridersTable).values({
-        firstName, lastName, email,
+        firstName, lastName, email: null,
         phone: phone || null,
         dateOfBirth: dateOfBirth || null,
         emergencyContact: emergencyContact || null,
@@ -122,7 +135,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
       resolvedRiderId = created.id;
     }
   } else {
-    return res.status(400).json({ error: "riderId OR firstName, lastName, and email are required" });
+    return res.status(400).json({ error: "riderId OR firstName and lastName are required" });
   }
 
   // Determine if payment is required — on-site registrations start pending when the event has a fee
