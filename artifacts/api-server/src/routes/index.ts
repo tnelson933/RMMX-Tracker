@@ -19,6 +19,7 @@ import videoRouter from "./video";
 import storageRouter from "./storage";
 import compCodesRouter from "./comp-codes";
 import pointsTablesRouter from "./points-tables";
+import aiRouter from "./ai";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(videoRouter);
 router.use(storageRouter);
 router.use(compCodesRouter);
 router.use(pointsTablesRouter);
+router.use(aiRouter);
 
 export default router;

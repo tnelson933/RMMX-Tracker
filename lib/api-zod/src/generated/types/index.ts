@@ -8,6 +8,9 @@
 
 export * from './activityItem';
 export * from './advanceToMainInput';
+export * from './aiSuggestPointsTableInput';
+export * from './aiSuggestPointsTableOutput';
+export * from './aiSuggestPointsTableOutputScoringMethod';
 export * from './authResponse';
 export * from './checkin';
 export * from './checkinInput';

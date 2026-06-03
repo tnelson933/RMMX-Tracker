@@ -21,6 +21,8 @@ import type {
 
 import type {
   AdvanceToMainInput,
+  AiSuggestPointsTableInput,
+  AiSuggestPointsTableOutput,
   AuthResponse,
   Checkin,
   CheckinInput,
@@ -3551,6 +3553,77 @@ export const useAdvanceToMain = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAdvanceToMainMutationOptions(options));
+    }
+
+export const getAiSuggestPointsTableUrl = () => {
+
+
+
+
+  return `/api/ai/suggest-points-table`
+}
+
+/**
+ * @summary Use AI to generate a points table config from natural language
+ */
+export const aiSuggestPointsTable = async (aiSuggestPointsTableInput: AiSuggestPointsTableInput, options?: RequestInit): Promise<AiSuggestPointsTableOutput> => {
+
+  return customFetch<AiSuggestPointsTableOutput>(getAiSuggestPointsTableUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      aiSuggestPointsTableInput,)
+  }
+);}
+
+
+
+
+export const getAiSuggestPointsTableMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof aiSuggestPointsTable>>, TError,{data: BodyType<AiSuggestPointsTableInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof aiSuggestPointsTable>>, TError,{data: BodyType<AiSuggestPointsTableInput>}, TContext> => {
+
+const mutationKey = ['aiSuggestPointsTable'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof aiSuggestPointsTable>>, {data: BodyType<AiSuggestPointsTableInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  aiSuggestPointsTable(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AiSuggestPointsTableMutationResult = NonNullable<Awaited<ReturnType<typeof aiSuggestPointsTable>>>
+    export type AiSuggestPointsTableMutationBody = BodyType<AiSuggestPointsTableInput>
+    export type AiSuggestPointsTableMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Use AI to generate a points table config from natural language
+ */
+export const useAiSuggestPointsTable = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof aiSuggestPointsTable>>, TError,{data: BodyType<AiSuggestPointsTableInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof aiSuggestPointsTable>>,
+        TError,
+        {data: BodyType<AiSuggestPointsTableInput>},
+        TContext
+      > => {
+      return useMutation(getAiSuggestPointsTableMutationOptions(options));
     }
 
 export const getListPointsTablesUrl = () => {

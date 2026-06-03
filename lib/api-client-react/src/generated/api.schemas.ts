@@ -739,6 +739,31 @@ export interface UploadUrlResponse {
   metadata?: UploadUrlRequest;
 }
 
+export interface AiSuggestPointsTableInput {
+  /** Natural language description of how points should work */
+  scoringDescription: string;
+  /** Natural language description of how motos/heats should be structured */
+  motoDescription?: string;
+}
+
+export type AiSuggestPointsTableOutputScoringMethod = typeof AiSuggestPointsTableOutputScoringMethod[keyof typeof AiSuggestPointsTableOutputScoringMethod];
+
+
+export const AiSuggestPointsTableOutputScoringMethod = {
+  highest_points: 'highest_points',
+  lowest_positions: 'lowest_positions',
+} as const;
+
+export interface AiSuggestPointsTableOutput {
+  name: string;
+  description: string;
+  scoringMethod: AiSuggestPointsTableOutputScoringMethod;
+  mainEventOnly: boolean;
+  pointsScale: number[];
+  /** Human-readable explanation of the moto structure suggestion */
+  motoNotes?: string;
+}
+
 export type PointsTableScoringMethod = typeof PointsTableScoringMethod[keyof typeof PointsTableScoringMethod];
 
 

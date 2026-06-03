@@ -1055,6 +1055,24 @@ export const AdvanceToMainResponse = zod.object({
 
 
 /**
+ * @summary Use AI to generate a points table config from natural language
+ */
+export const AiSuggestPointsTableBody = zod.object({
+  "scoringDescription": zod.string().describe('Natural language description of how points should work'),
+  "motoDescription": zod.string().optional().describe('Natural language description of how motos\/heats should be structured')
+})
+
+export const AiSuggestPointsTableResponse = zod.object({
+  "name": zod.string(),
+  "description": zod.string(),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "mainEventOnly": zod.boolean(),
+  "pointsScale": zod.array(zod.number()),
+  "motoNotes": zod.string().optional().describe('Human-readable explanation of the moto structure suggestion')
+})
+
+
+/**
  * @summary List points tables (system defaults + club-specific)
  */
 export const ListPointsTablesResponseItem = zod.object({

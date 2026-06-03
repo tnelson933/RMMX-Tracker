@@ -969,6 +969,38 @@ paths:
                 $ref: "#/components/schemas/Moto"
 
   # POINTS SCORING TABLES
+  # AI
+  /ai/suggest-points-table:
+    post:
+      operationId: aiSuggestPointsTable
+      tags: [ai]
+      summary: Use AI to generate a points table config from natural language
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiSuggestPointsTableInput"
+      responses:
+        "200":
+          description: AI-generated points table config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiSuggestPointsTableOutput"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: AI error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   /points-tables:
     get:
       operationId: listPointsTables
@@ -2387,6 +2419,38 @@ components:
           type: string
         metadata:
           $ref: '#/components/schemas/UploadUrlRequest'
+    AiSuggestPointsTableInput:
+      type: object
+      required: [scoringDescription]
+      properties:
+        scoringDescription:
+          type: string
+          description: Natural language description of how points should work
+        motoDescription:
+          type: string
+          description: Natural language description of how motos/heats should be structured
+
+    AiSuggestPointsTableOutput:
+      type: object
+      required: [name, description, scoringMethod, mainEventOnly, pointsScale]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        scoringMethod:
+          type: string
+          enum: [highest_points, lowest_positions]
+        mainEventOnly:
+          type: boolean
+        pointsScale:
+          type: array
+          items:
+            type: number
+        motoNotes:
+          type: string
+          description: Human-readable explanation of the moto structure suggestion
+
     PointsTable:
       type: object
       required: [id, name, description, scoringMethod, mainEventOnly, pointsScale, isSystemDefault, createdAt]
