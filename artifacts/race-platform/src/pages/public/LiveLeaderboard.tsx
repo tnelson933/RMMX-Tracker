@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRoute, Link } from "wouter";
-import { Flag, Clock, Wifi, WifiOff, ChevronLeft, Radio } from "lucide-react";
+import { Flag, Clock, Wifi, WifiOff, ChevronLeft, Radio, Volume2, VolumeX } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface LeaderboardEntry {
@@ -56,7 +56,87 @@ export default function LiveLeaderboard() {
   const [data, setData] = useState<LeaderboardData | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [announcerOn, setAnnouncerOn] = useState(true);
+  const [announcerLabel, setAnnouncerLabel] = useState<string | null>(null);
+
   const esRef = useRef<EventSource | null>(null);
+
+  // Track previous leaderboard state for change detection
+  const prevLapsRef = useRef<Map<number, number>>(new Map());
+  const prevPositionsRef = useRef<Map<number, number>>(new Map());
+
+  // Audio queue — never overlap announcements
+  const audioQueueRef = useRef<string[]>([]);
+  const playingRef = useRef(false);
+  const announcerOnRef = useRef(true);
+
+  // Keep ref in sync with state so callbacks always see latest value
+  useEffect(() => {
+    announcerOnRef.current = announcerOn;
+  }, [announcerOn]);
+
+  const drainQueue = useCallback(() => {
+    if (playingRef.current || audioQueueRef.current.length === 0) return;
+    const url = audioQueueRef.current.shift()!;
+    playingRef.current = true;
+    const audio = new Audio(url);
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      playingRef.current = false;
+      drainQueue();
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      playingRef.current = false;
+      drainQueue();
+    };
+    audio.play().catch(() => {
+      playingRef.current = false;
+      drainQueue();
+    });
+  }, []);
+
+  const enqueueAudio = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    audioQueueRef.current.push(url);
+    drainQueue();
+  }, [drainQueue]);
+
+  const triggerAnnouncement = useCallback(async (
+    lapCompleted: number,
+    top5: LeaderboardEntry[],
+    positionChanges: Array<{ riderName: string; from: number; to: number }>,
+    isComplete: boolean
+  ) => {
+    if (!announcerOnRef.current) return;
+    try {
+      setAnnouncerLabel(isComplete ? "Race complete!" : `Lap ${lapCompleted} announced`);
+      const res = await fetch("/api/timing/announce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lapCompleted,
+          top5: top5.slice(0, 5).map(e => ({
+            position: e.position,
+            riderName: e.riderName,
+            laps: e.laps,
+            lastLap: e.lastLap,
+            totalTime: e.totalTime,
+            gap: e.gap,
+            dnf: e.dnf,
+            dns: e.dns,
+          })),
+          positionChanges,
+          isComplete,
+        }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      enqueueAudio(blob);
+    } catch {
+      // Network error — skip silently
+    }
+  }, [enqueueAudio]);
 
   useEffect(() => {
     if (!motoId) return;
@@ -69,9 +149,52 @@ export default function LiveLeaderboard() {
 
       es.onmessage = (e) => {
         try {
-          const payload = JSON.parse(e.data);
-          if (payload.error) { setError(payload.error); return; }
-          setData(payload);
+          const payload = JSON.parse(e.data) as LeaderboardData;
+          if ((payload as any).error) { setError((payload as any).error); return; }
+
+          setData(prev => {
+            // Detect changes vs previous state
+            const prevLaps = prevLapsRef.current;
+            const prevPos = prevPositionsRef.current;
+
+            const top5 = payload.leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
+
+            // Find the max lap just completed by any top-5 rider
+            let maxNewLap = 0;
+            const posChanges: Array<{ riderName: string; from: number; to: number }> = [];
+
+            for (const entry of top5) {
+              const oldLaps = prevLaps.get(entry.riderId) ?? 0;
+              const oldPos = prevPos.get(entry.riderId);
+
+              if (entry.laps > oldLaps && entry.laps > 0) {
+                maxNewLap = Math.max(maxNewLap, entry.laps);
+              }
+
+              if (oldPos !== undefined && oldPos !== entry.position && entry.position <= 5) {
+                posChanges.push({ riderName: entry.riderName, from: oldPos, to: entry.position });
+              }
+            }
+
+            // Update refs for next comparison
+            for (const entry of payload.leaderboard) {
+              prevLaps.set(entry.riderId, entry.laps);
+              prevPos.set(entry.riderId, entry.position);
+            }
+
+            // Fire announcement if a new lap was completed by someone in the top 5
+            const isComplete = payload.status === "completed";
+            const wasInProgress = prev?.status === "in_progress";
+
+            if (maxNewLap > 0) {
+              triggerAnnouncement(maxNewLap, top5, posChanges, isComplete);
+            } else if (isComplete && wasInProgress) {
+              // Race just finished — announce final result even if no new lap
+              triggerAnnouncement(top5[0]?.laps ?? 0, top5, posChanges, true);
+            }
+
+            return payload;
+          });
           setError(null);
         } catch { /* ignore parse errors */ }
       };
@@ -79,7 +202,6 @@ export default function LiveLeaderboard() {
       es.onerror = () => {
         setConnected(false);
         es.close();
-        // Reconnect after 3 seconds
         setTimeout(connect, 3000);
       };
     }
@@ -88,7 +210,7 @@ export default function LiveLeaderboard() {
     return () => {
       esRef.current?.close();
     };
-  }, [motoId]);
+  }, [motoId, triggerAnnouncement]);
 
   const isLive = data?.status === "in_progress";
 
@@ -99,7 +221,8 @@ export default function LiveLeaderboard() {
         <Link href="/" className="flex items-center gap-2 text-white/50 hover:text-white text-sm transition-colors">
           <ChevronLeft size={16} /> Home
         </Link>
-        <div className="flex items-center gap-2 text-sm">
+
+        <div className="flex items-center gap-3 text-sm">
           {connected ? (
             <span className="flex items-center gap-1.5 text-green-400">
               <span className="relative flex h-2 w-2">
@@ -113,6 +236,20 @@ export default function LiveLeaderboard() {
               <WifiOff size={14} /> Reconnecting…
             </span>
           )}
+
+          {/* Announcer toggle */}
+          <button
+            onClick={() => setAnnouncerOn(v => !v)}
+            title={announcerOn ? "Mute announcer" : "Enable announcer"}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
+              announcerOn
+                ? "bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30"
+                : "bg-white/5 text-white/30 border border-white/10 hover:bg-white/10"
+            }`}
+          >
+            {announcerOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
+            {announcerOn ? "Announcer" : "Muted"}
+          </button>
         </div>
       </div>
 
@@ -133,26 +270,50 @@ export default function LiveLeaderboard() {
           <div className="px-4 py-6 text-center border-b border-white/10">
             <div className="text-white/40 text-xs font-bold uppercase tracking-widest mb-1">{data.raceClass}</div>
             <h1 className="text-3xl font-heading font-bold uppercase tracking-tight">{data.motoName}</h1>
-            <div className="mt-3 flex items-center justify-center gap-4">
+            <div className="mt-3 flex items-center justify-center gap-4 flex-wrap">
               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
                 isLive ? "bg-primary text-white" :
                 data.status === "completed" ? "bg-secondary/30 text-secondary border border-secondary/30" :
                 "bg-white/10 text-white/60"
               }`}>
-                {isLive && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span></span>}
+                {isLive && (
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                  </span>
+                )}
                 {data.status.replace("_", " ")}
               </span>
+
               {isLive && data.startedAt && (
                 <span className="text-white/50 text-sm flex items-center gap-1.5">
                   <Clock size={13} />
                   <ElapsedClock startedAt={data.startedAt} />
                 </span>
               )}
-              {data.status === "completed" && data.completedAt && data.startedAt && (
+
+              {data.status === "completed" && (
                 <span className="text-white/50 text-sm flex items-center gap-1.5">
                   <Flag size={13} /> Race finished
                 </span>
               )}
+
+              {/* Subtle announcer status */}
+              <AnimatePresence>
+                {announcerOn && announcerLabel && (
+                  <motion.span
+                    key={announcerLabel}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="text-primary/60 text-xs flex items-center gap-1"
+                  >
+                    <Volume2 size={10} />
+                    {announcerLabel}
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 

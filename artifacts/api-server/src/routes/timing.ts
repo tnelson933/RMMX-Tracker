@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { eq, and, asc, isNotNull } from "drizzle-orm";
 import type { Response } from "express";
+import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 
 const router = Router();
 
@@ -372,6 +373,159 @@ router.get("/timing/leaderboard/:motoId", async (req, res) => {
   const snapshot = await buildLeaderboard(Number(req.params.motoId));
   if (!snapshot) return res.status(404).json({ error: "Moto not found" });
   return res.json(snapshot);
+});
+
+// ── Announcement script builder (pure code — no LLM needed) ───────────────────
+
+interface Top5Entry {
+  position: number;
+  riderName: string;
+  laps: number;
+  lastLap: string | null;
+  totalTime: string | null;
+  gap: string;
+  dnf?: boolean;
+  dns?: boolean;
+}
+
+interface PositionChange {
+  riderName: string;
+  from: number;
+  to: number;
+}
+
+function buildAnnouncementScript(opts: {
+  lapCompleted: number;
+  top5: Top5Entry[];
+  positionChanges: PositionChange[];
+  isComplete: boolean;
+}): string {
+  const { lapCompleted, top5, positionChanges, isComplete } = opts;
+
+  const ORDINALS = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
+  const CARDINALS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+
+  function lapWord(n: number): string {
+    return n < CARDINALS.length ? CARDINALS[n] : String(n);
+  }
+
+  function posWord(n: number): string {
+    return n <= 5 ? ORDINALS[n] : `${n}th`;
+  }
+
+  // Parse "M:SS.cc" gap string → natural English
+  function gapToSpeech(gap: string): string | null {
+    if (!gap || gap === "Leader" || gap === "—") return null;
+    const lapMatch = gap.match(/^\+(\d+)\s+laps?/);
+    if (lapMatch) {
+      const n = parseInt(lapMatch[1]);
+      return `${lapWord(n)} lap${n !== 1 ? "s" : ""} back`;
+    }
+    const timeMatch = gap.match(/^\+(\d+):(\d+)\.(\d+)/);
+    if (!timeMatch) return null;
+    const mins = parseInt(timeMatch[1]);
+    const secs = parseInt(timeMatch[2]);
+    const cents = parseInt(timeMatch[3]);
+    if (mins === 0) {
+      const tenths = Math.round(cents / 10);
+      return tenths > 0 ? `${secs} point ${tenths} seconds back` : `${secs} seconds back`;
+    }
+    const tenths = Math.round(cents / 10);
+    const secStr = tenths > 0 ? `${secs} point ${tenths} seconds` : `${secs} seconds`;
+    return `${mins} minute${mins > 1 ? "s" : ""} and ${secStr} back`;
+  }
+
+  // Format total time "M:SS.cc" → natural speech
+  function totalToSpeech(t: string | null): string | null {
+    if (!t) return null;
+    const m = t.match(/^(\d+):(\d+)\.(\d+)/);
+    if (!m) return null;
+    const mins = parseInt(m[1]);
+    const secs = parseInt(m[2]);
+    const cents = parseInt(m[3]);
+    const tenths = Math.round(cents / 10);
+    const secStr = tenths > 0 ? `${secs} point ${tenths}` : String(secs);
+    if (mins === 0) return `${secStr} seconds`;
+    return `${mins} minute${mins > 1 ? "s" : ""} and ${secStr} seconds`;
+  }
+
+  const parts: string[] = [];
+
+  if (isComplete) {
+    parts.push("Checkered flag!");
+    const winner = top5[0];
+    if (winner) {
+      const timeStr = totalToSpeech(winner.totalTime);
+      parts.push(
+        `${winner.riderName} takes the win${timeStr ? ` in ${timeStr}` : ""}!`
+      );
+    }
+    if (top5[1]) parts.push(`${top5[1].riderName} crosses in second.`);
+    if (top5[2]) parts.push(`${top5[2].riderName} rounds out the podium.`);
+    if (top5[3]) parts.push(`${top5[3].riderName} finishes fourth.`);
+  } else {
+    // Lead with position changes first — most dramatic
+    for (const change of positionChanges) {
+      if (change.to < change.from) {
+        parts.push(`${change.riderName} makes a move — up to ${posWord(change.to)}!`);
+      }
+    }
+
+    // Lap callout
+    const lapStr = lapCompleted < CARDINALS.length ? CARDINALS[lapCompleted] : String(lapCompleted);
+    parts.push(`Lap ${lapStr} is complete.`);
+
+    // Leader
+    const leader = top5[0];
+    if (leader) {
+      const timeStr = totalToSpeech(leader.totalTime);
+      parts.push(
+        `${leader.riderName} leads${timeStr ? `, ${timeStr} on the clock` : ""}.`
+      );
+    }
+
+    // P2–P5
+    for (let i = 1; i < Math.min(top5.length, 5); i++) {
+      const r = top5[i];
+      if (r.dnf || r.dns) continue;
+      const gapStr = gapToSpeech(r.gap);
+      if (gapStr) {
+        parts.push(`${r.riderName} running ${posWord(r.position)}, ${gapStr}.`);
+      } else {
+        parts.push(`${r.riderName} in ${posWord(r.position)}.`);
+      }
+    }
+  }
+
+  return parts.join(" ");
+}
+
+// POST /timing/announce — generate AI voice announcement for current leaderboard
+router.post("/timing/announce", async (req, res) => {
+  try {
+    const { lapCompleted, top5, positionChanges = [], isComplete = false } = req.body as {
+      lapCompleted: number;
+      top5: Top5Entry[];
+      positionChanges: PositionChange[];
+      isComplete: boolean;
+    };
+
+    if (!Array.isArray(top5) || top5.length === 0) {
+      return res.status(400).json({ error: "top5 array is required" });
+    }
+
+    const script = buildAnnouncementScript({ lapCompleted, top5, positionChanges, isComplete });
+
+    const audioBuffer = await textToSpeech(script, "onyx", "mp3");
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    return res.send(audioBuffer);
+  } catch (err: any) {
+    req.log.error({ err }, "announce TTS error");
+    return res.status(500).json({ error: "Failed to generate announcement" });
+  }
 });
 
 export default router;
