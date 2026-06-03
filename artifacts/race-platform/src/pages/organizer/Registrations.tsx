@@ -256,14 +256,18 @@ export default function Registrations() {
       const res = await fetch(`/api/public/riders/lookup?email=${encodeURIComponent(trimmed)}`);
       const data = await res.json();
       if (data.found) {
-        form.setValue("firstName", data.firstName || "", { shouldDirty: false });
-        form.setValue("lastName", data.lastName || "", { shouldDirty: false });
-        form.setValue("phone", data.phone || "", { shouldDirty: false });
-        form.setValue("dateOfBirth", data.dateOfBirth || "", { shouldDirty: false });
-        form.setValue("emergencyContact", data.emergencyContact || "", { shouldDirty: false });
-        form.setValue("emergencyPhone", data.emergencyPhone || "", { shouldDirty: false });
-        if (data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
-        if (data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
+        // Only overwrite fields the user hasn't already typed into themselves.
+        // shouldDirty:false means auto-populate doesn't mark the field dirty,
+        // so if dirtyFields[field] is true the user has typed something — leave it alone.
+        const dirty = form.formState.dirtyFields;
+        if (!dirty.firstName) form.setValue("firstName", data.firstName || "", { shouldDirty: false });
+        if (!dirty.lastName) form.setValue("lastName", data.lastName || "", { shouldDirty: false });
+        if (!dirty.phone) form.setValue("phone", data.phone || "", { shouldDirty: false });
+        if (!dirty.dateOfBirth) form.setValue("dateOfBirth", data.dateOfBirth || "", { shouldDirty: false });
+        if (!dirty.emergencyContact) form.setValue("emergencyContact", data.emergencyContact || "", { shouldDirty: false });
+        if (!dirty.emergencyPhone) form.setValue("emergencyPhone", data.emergencyPhone || "", { shouldDirty: false });
+        if (!dirty.bibNumber && data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
+        if (!dirty.bikeBrand && data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
         setLookedUpName(`${data.firstName} ${data.lastName}`);
         setLookupState("found");
       } else {
