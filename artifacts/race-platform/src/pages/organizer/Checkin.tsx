@@ -9,8 +9,8 @@ import { Search, CheckCircle, Tag, X } from "lucide-react";
 import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrationsQueryKey, getListRidersQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
-function RfidInput({ riderId, eventId, onDone, isMylaps }: { riderId: number; eventId: number; onDone: () => void; isMylaps?: boolean }) {
-  const [value, setValue] = useState("");
+function RfidInput({ riderId, eventId, onDone, isMylaps, currentTag }: { riderId: number; eventId: number; onDone: () => void; isMylaps?: boolean; currentTag?: string }) {
+  const [value, setValue] = useState(currentTag ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -396,9 +396,13 @@ export default function Checkin() {
                       <div className="flex items-center gap-2 text-xs md:text-sm font-medium mb-3">
                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{checkin.raceClass}</span>
                         {checkin.rfidLinked ? (
-                          <span className="flex items-center gap-1 text-sidebar-primary/80">
+                          <button
+                            onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
+                            className="flex items-center gap-1 text-sidebar-primary/80 hover:text-primary transition-colors underline-offset-2 hover:underline"
+                            title={isMylaps ? "Click to change transponder" : "Click to change RFID tag"}
+                          >
                             <Tag size={14} /> {isMylaps ? "Transponder Linked" : "RFID Linked"}
-                          </span>
+                          </button>
                         ) : (
                           <button
                             onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
@@ -410,13 +414,14 @@ export default function Checkin() {
                         )}
                       </div>
 
-                      {/* Inline RFID assignment */}
-                      {rfidInputOpenId === checkin.riderId && !checkin.rfidLinked && (
+                      {/* Inline RFID assignment — available whether or not one is already linked */}
+                      {rfidInputOpenId === checkin.riderId && (
                         <RfidInput
                           riderId={checkin.riderId}
                           eventId={eventId}
                           onDone={() => setRfidInputOpenId(null)}
                           isMylaps={isMylaps}
+                          currentTag={checkin.rfidNumber ?? undefined}
                         />
                       )}
                     </div>

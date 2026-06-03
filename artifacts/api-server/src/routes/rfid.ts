@@ -59,7 +59,25 @@ router.post("/rfid", async (req, res) => {
     }
   }
 
-  const [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId, rfidNumber, eventId }).returning();
+  // Upsert: if this rider already has an assignment for this event, replace it
+  let assignment;
+  if (eventId) {
+    const existing = await db
+      .select({ id: rfidAssignmentsTable.id })
+      .from(rfidAssignmentsTable)
+      .where(and(eq(rfidAssignmentsTable.riderId, Number(riderId)), eq(rfidAssignmentsTable.eventId, Number(eventId))))
+      .limit(1);
+    if (existing.length > 0) {
+      [assignment] = await db.update(rfidAssignmentsTable)
+        .set({ rfidNumber })
+        .where(eq(rfidAssignmentsTable.id, existing[0].id))
+        .returning();
+    } else {
+      [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId, rfidNumber, eventId }).returning();
+    }
+  } else {
+    [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId, rfidNumber, eventId }).returning();
+  }
 
   // Also update rider's primary rfid
   await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, riderId));
