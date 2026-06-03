@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap, GripVertical, Maximize2 } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap, GripVertical, Maximize2, Timer } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -167,7 +167,10 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
 
 type LineupEntry = { riderId: number; riderName: string; position: number; bibNumber?: string | null; rfidNumber?: string | null };
 
-function DraggableRiderRow({ entry, motoId, locked }: { entry: LineupEntry; motoId: number; locked?: boolean }) {
+function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown }: {
+  entry: LineupEntry; motoId: number; locked?: boolean;
+  onRecordLap?: () => void; lapCooldown?: boolean;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `rider-${motoId}-${entry.riderId}`,
     disabled: locked,
@@ -201,6 +204,23 @@ function DraggableRiderRow({ entry, motoId, locked }: { entry: LineupEntry; moto
           <span className="text-muted-foreground text-xs">—</span>
         )}
       </TableCell>
+      {onRecordLap !== undefined && (
+        <TableCell className="pr-2 text-right">
+          <button
+            onClick={onRecordLap}
+            disabled={lapCooldown}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-heading font-bold uppercase tracking-wide transition-all border ${
+              lapCooldown
+                ? "bg-green-100 border-green-300 text-green-600 opacity-60 cursor-not-allowed"
+                : "bg-background border-border text-muted-foreground hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50"
+            }`}
+            title="Record manual lap crossing for this rider"
+          >
+            <Timer size={11} />
+            {lapCooldown ? "Recorded" : "Lap"}
+          </button>
+        </TableCell>
+      )}
     </TableRow>
   );
 }
@@ -235,6 +255,7 @@ export default function Motos() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
+  const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
 
   // Drag-and-drop state
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -491,6 +512,37 @@ export default function Motos() {
     setCopiedId(motoId);
     setTimeout(() => setCopiedId(null), 2000);
     toast({ title: "Live timing link copied" });
+  };
+
+  const handleManualLap = async (riderId: number, motoId: number) => {
+    const key = `${motoId}-${riderId}`;
+    setManualLapCooldown(prev => new Set(prev).add(key));
+    try {
+      const res = await fetch("/api/timing/manual-crossing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ riderId, motoId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "Failed to record lap", description: data.error ?? "Unknown error", variant: "destructive" });
+      } else {
+        toast({
+          title: `⏱ Lap ${data.lapNumber} recorded`,
+          description: data.lapTime ? `Lap time: ${data.lapTime}` : "Timestamp captured",
+        });
+      }
+    } catch {
+      toast({ title: "Network error", variant: "destructive" });
+    } finally {
+      setTimeout(() => {
+        setManualLapCooldown(prev => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }, 4000);
+    }
   };
 
   return (
@@ -912,16 +964,21 @@ export default function Motos() {
                           <TableHead className="text-xs">Rider</TableHead>
                           <TableHead className="w-16 text-center text-xs">Bib</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                          {moto.status === "in_progress" && <TableHead className="w-24" />}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {getLineup(moto).length > 0 ? (
                           getLineup(moto).map((entry) => (
-                            <DraggableRiderRow key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"} />
+                            <DraggableRiderRow
+                              key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
+                              onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
+                              lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
+                            />
                           ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={4} className="text-center py-4 text-muted-foreground text-sm">
+                            <TableCell colSpan={moto.status === "in_progress" ? 5 : 4} className="text-center py-4 text-muted-foreground text-sm">
                               No lineup generated
                             </TableCell>
                           </TableRow>
@@ -938,29 +995,49 @@ export default function Motos() {
                           <TableHead className="text-xs">Rider</TableHead>
                           <TableHead className="w-16 text-center text-xs">Bib</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                          {moto.status === "in_progress" && <TableHead className="w-24" />}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {moto.lineup && moto.lineup.length > 0 ? (
-                          (moto.lineup as LineupEntry[]).map((entry) => (
-                            <TableRow key={entry.riderId} className="h-8">
-                              <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                              <TableCell className="font-medium">{entry.riderName}</TableCell>
-                              <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
-                              <TableCell className="text-center">
-                                {entry.rfidNumber ? (
-                                  <span className="inline-flex items-center gap-1 text-green-600">
-                                    <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-muted-foreground text-xs">—</span>
+                          (moto.lineup as LineupEntry[]).map((entry) => {
+                            const cooldown = manualLapCooldown.has(`${moto.id}-${entry.riderId}`);
+                            return (
+                              <TableRow key={entry.riderId} className="h-8">
+                                <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
+                                <TableCell className="font-medium">{entry.riderName}</TableCell>
+                                <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
+                                <TableCell className="text-center">
+                                  {entry.rfidNumber ? (
+                                    <span className="inline-flex items-center gap-1 text-green-600">
+                                      <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">—</span>
+                                  )}
+                                </TableCell>
+                                {moto.status === "in_progress" && (
+                                  <TableCell className="pr-2 text-right">
+                                    <button
+                                      onClick={() => handleManualLap(entry.riderId, moto.id)}
+                                      disabled={cooldown}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-heading font-bold uppercase tracking-wide transition-all border ${
+                                        cooldown
+                                          ? "bg-green-100 border-green-300 text-green-600 opacity-60 cursor-not-allowed"
+                                          : "bg-background border-border text-muted-foreground hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50"
+                                      }`}
+                                    >
+                                      <Timer size={11} />
+                                      {cooldown ? "Recorded" : "Lap"}
+                                    </button>
+                                  </TableCell>
                                 )}
-                              </TableCell>
-                            </TableRow>
-                          ))
+                              </TableRow>
+                            );
+                          })
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={4} className="text-center py-4 text-muted-foreground text-sm">
+                            <TableCell colSpan={moto.status === "in_progress" ? 5 : 4} className="text-center py-4 text-muted-foreground text-sm">
                               No lineup generated
                             </TableCell>
                           </TableRow>
@@ -1095,16 +1172,21 @@ export default function Motos() {
                           <TableHead className="text-xs">Rider</TableHead>
                           <TableHead className="w-16 text-center text-xs">Bib</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                          {moto.status === "in_progress" && <TableHead className="w-28 text-xs text-right pr-3">Manual Lap</TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {getLineup(moto).length > 0 ? (
                           getLineup(moto).map((entry) => (
-                            <DraggableRiderRow key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"} />
+                            <DraggableRiderRow
+                              key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
+                              onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
+                              lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
+                            />
                           ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={4} className="text-center py-6 text-muted-foreground text-sm">No lineup generated</TableCell>
+                            <TableCell colSpan={moto.status === "in_progress" ? 5 : 4} className="text-center py-6 text-muted-foreground text-sm">No lineup generated</TableCell>
                           </TableRow>
                         )}
                       </TableBody>
@@ -1119,29 +1201,49 @@ export default function Motos() {
                           <TableHead className="text-xs">Rider</TableHead>
                           <TableHead className="w-16 text-center text-xs">Bib</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                          {moto.status === "in_progress" && <TableHead className="w-28 text-xs text-right pr-3">Manual Lap</TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {moto.lineup && moto.lineup.length > 0 ? (
-                          (moto.lineup as LineupEntry[]).map((entry) => (
-                            <TableRow key={entry.riderId} className="h-9">
-                              <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                              <TableCell className="font-medium">{entry.riderName}</TableCell>
-                              <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
-                              <TableCell className="text-center">
-                                {entry.rfidNumber ? (
-                                  <span className="inline-flex items-center gap-1 text-green-600">
-                                    <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-muted-foreground text-xs">—</span>
+                          (moto.lineup as LineupEntry[]).map((entry) => {
+                            const cooldown = manualLapCooldown.has(`${moto.id}-${entry.riderId}`);
+                            return (
+                              <TableRow key={entry.riderId} className="h-9">
+                                <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
+                                <TableCell className="font-medium">{entry.riderName}</TableCell>
+                                <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
+                                <TableCell className="text-center">
+                                  {entry.rfidNumber ? (
+                                    <span className="inline-flex items-center gap-1 text-green-600">
+                                      <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">—</span>
+                                  )}
+                                </TableCell>
+                                {moto.status === "in_progress" && (
+                                  <TableCell className="pr-3 text-right">
+                                    <button
+                                      onClick={() => handleManualLap(entry.riderId, moto.id)}
+                                      disabled={cooldown}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-heading font-bold uppercase tracking-wide transition-all border ${
+                                        cooldown
+                                          ? "bg-green-100 border-green-300 text-green-600 opacity-60 cursor-not-allowed"
+                                          : "bg-background border-border text-muted-foreground hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50"
+                                      }`}
+                                    >
+                                      <Timer size={11} />
+                                      {cooldown ? "Recorded" : "Record Lap"}
+                                    </button>
+                                  </TableCell>
                                 )}
-                              </TableCell>
-                            </TableRow>
-                          ))
+                              </TableRow>
+                            );
+                          })
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={4} className="text-center py-6 text-muted-foreground text-sm">No lineup generated</TableCell>
+                            <TableCell colSpan={moto.status === "in_progress" ? 5 : 4} className="text-center py-6 text-muted-foreground text-sm">No lineup generated</TableCell>
                           </TableRow>
                         )}
                       </TableBody>

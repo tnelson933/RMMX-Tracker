@@ -155,8 +155,10 @@ async function processCrossing(opts: {
   crossingTime: Date;
   readerId?: string;
   antennaId?: number;
+  bypassDebounce?: boolean;
+  overrideRiderId?: number | null;
 }) {
-  const { rfidNumber, motoId, crossingTime, readerId, antennaId } = opts;
+  const { rfidNumber, motoId, crossingTime, readerId, antennaId, bypassDebounce, overrideRiderId } = opts;
 
   // 1. Load moto
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
@@ -164,13 +166,15 @@ async function processCrossing(opts: {
   if (moto.status !== "in_progress") throw new Error("Moto is not in progress");
   if (!moto.startedAt) throw new Error("Moto has no start time");
 
-  // 2. Resolve rider from RFID assignment for this event
-  const assignments = await db
-    .select({ riderId: rfidAssignmentsTable.riderId })
-    .from(rfidAssignmentsTable)
-    .where(and(eq(rfidAssignmentsTable.rfidNumber, rfidNumber), eq(rfidAssignmentsTable.eventId, moto.eventId)));
-
-  const riderId = assignments[0]?.riderId ?? null;
+  // 2. Resolve rider — use override if provided (manual crossing), else look up from RFID assignment
+  let riderId: number | null = overrideRiderId !== undefined ? overrideRiderId : null;
+  if (riderId === null && overrideRiderId === undefined) {
+    const assignments = await db
+      .select({ riderId: rfidAssignmentsTable.riderId })
+      .from(rfidAssignmentsTable)
+      .where(and(eq(rfidAssignmentsTable.rfidNumber, rfidNumber), eq(rfidAssignmentsTable.eventId, moto.eventId)));
+    riderId = assignments[0]?.riderId ?? null;
+  }
 
   // 3. Previous crossings for this tag+moto
   const prevCrossings = await db
@@ -180,10 +184,8 @@ async function processCrossing(opts: {
     .orderBy(asc(lapCrossingsTable.crossingTime));
 
   // ── Debounce: reject burst reads from the same antenna pass ─────────────────
-  // A real RFID gantry fires 50+ reads in 0.2 s for one physical crossing.
-  // Use the hardware crossingTime (not server clock) to measure the gap so
-  // clock skew on the scoring laptop never inflates or deflates the window.
-  if (prevCrossings.length > 0) {
+  // Skipped for manual crossings (organizer is intentionally pressing a button).
+  if (!bypassDebounce && prevCrossings.length > 0) {
     const lastCrossing = prevCrossings[prevCrossings.length - 1];
     const gapMs = crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime();
     if (gapMs < DEBOUNCE_MS) {
@@ -298,6 +300,62 @@ router.post("/timing/crossing", async (req, res) => {
       crossingId: result.crossing!.id,
       lapNumber: result.lapNumber,
       lapTime: formatLapTime(result.lapTimeMs!),
+      lapTimeMs: result.lapTimeMs,
+    });
+  } catch (err: any) {
+    return res.status(409).json({ error: err.message });
+  }
+});
+
+// POST /timing/manual-crossing — record a lap for a rider by riderId (no RFID required)
+router.post("/timing/manual-crossing", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const { riderId, motoId } = req.body;
+  if (!riderId || !motoId) return res.status(400).json({ error: "riderId and motoId are required" });
+
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, Number(motoId)));
+  if (!moto) return res.status(404).json({ error: "Moto not found" });
+
+  const [sessionUser] = await db
+    .select({ clubId: usersTable.clubId, role: usersTable.role })
+    .from(usersTable)
+    .where(eq(usersTable.id, session.userId));
+  if (!sessionUser) return res.status(401).json({ error: "Unauthorized" });
+
+  if (sessionUser.role !== "super_admin") {
+    const [event] = await db
+      .select({ clubId: eventsTable.clubId })
+      .from(eventsTable)
+      .where(eq(eventsTable.id, moto.eventId));
+    if (!event || event.clubId !== sessionUser.clubId) {
+      return res.status(403).json({ error: "Forbidden: not your event" });
+    }
+  }
+
+  // Use the rider's assigned RFID if available, so manual and hardware crossings share one sequence
+  const assignments = await db
+    .select({ rfidNumber: rfidAssignmentsTable.rfidNumber })
+    .from(rfidAssignmentsTable)
+    .where(and(eq(rfidAssignmentsTable.riderId, Number(riderId)), eq(rfidAssignmentsTable.eventId, moto.eventId)));
+
+  const rfidNumber = assignments[0]?.rfidNumber ?? `MANUAL-${riderId}`;
+
+  try {
+    const result = await processCrossing({
+      rfidNumber,
+      motoId: Number(motoId),
+      crossingTime: new Date(),
+      readerId: "MANUAL",
+      bypassDebounce: true,
+      overrideRiderId: Number(riderId),
+    });
+    return res.json({
+      ok: true,
+      crossingId: result.crossing?.id ?? null,
+      lapNumber: result.lapNumber,
+      lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null,
       lapTimeMs: result.lapTimeMs,
     });
   } catch (err: any) {
