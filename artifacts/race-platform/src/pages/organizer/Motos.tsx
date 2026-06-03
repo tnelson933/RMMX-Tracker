@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRoute, Link } from "wouter";
 import {
   useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
@@ -15,9 +15,117 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { LiveBroadcast } from "./LiveBroadcast";
+import { format } from "date-fns";
+
+type RawCrossing = {
+  id: number;
+  rfidNumber: string;
+  riderName: string | null;
+  lapNumber: number;
+  lapTime: string | null;
+  lapTimeMs: number | null;
+  crossingTime: string;
+  readerId: string | null;
+};
+
+const POLL_INTERVAL_MS = 3000;
+
+function LiveCrossingsFeed({ motoId }: { motoId: number }) {
+  const [crossings, setCrossings] = useState<RawCrossing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const fetchCrossings = async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      const res = await fetch(`/api/timing/crossings/${motoId}`, { signal: ctrl.signal });
+      if (!res.ok) return;
+      const data: RawCrossing[] = await res.json();
+      setCrossings(Array.isArray(data) ? [...data].reverse().slice(0, 15) : []);
+      setLastUpdated(new Date());
+    } catch {
+      // ignore abort or network errors
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    setCrossings([]);
+    fetchCrossings();
+    const timer = setInterval(fetchCrossings, POLL_INTERVAL_MS);
+    return () => {
+      clearInterval(timer);
+      abortRef.current?.abort();
+    };
+  }, [motoId]);
+
+  return (
+    <div className="border-t">
+      <div className="flex items-center justify-between px-3 py-2 bg-primary/5 border-b">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+          </span>
+          <span className="text-xs font-bold uppercase tracking-widest text-primary">Live Crossing Feed</span>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {lastUpdated ? `Updated ${format(lastUpdated, "h:mm:ss a")}` : "Loading…"}
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="px-3 py-4 text-center text-xs text-muted-foreground animate-pulse">
+          Fetching crossings…
+        </div>
+      ) : crossings.length === 0 ? (
+        <div className="px-3 py-4 text-center text-xs text-muted-foreground flex flex-col items-center gap-1.5">
+          <Zap size={16} className="text-muted-foreground/40" />
+          No crossings yet — waiting for riders
+        </div>
+      ) : (
+        <div className="max-h-44 overflow-y-auto">
+          <Table>
+            <TableHeader className="bg-muted/40 sticky top-0">
+              <TableRow>
+                <TableHead className="text-xs py-1.5 px-3">Rider</TableHead>
+                <TableHead className="text-xs py-1.5 text-center w-14">Lap</TableHead>
+                <TableHead className="text-xs py-1.5 text-center w-20">Lap Time</TableHead>
+                <TableHead className="text-xs py-1.5 text-right pr-3 w-20">Time</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {crossings.map((c, idx) => (
+                <TableRow key={c.id} className={`h-7 ${idx === 0 ? "bg-primary/5" : ""}`}>
+                  <TableCell className="py-1 px-3 text-xs font-medium">
+                    {c.riderName ?? (
+                      <span className="text-muted-foreground font-mono">{c.rfidNumber}</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-1 text-center text-xs font-heading font-bold">{c.lapNumber}</TableCell>
+                  <TableCell className="py-1 text-center text-xs font-mono">
+                    {c.lapTime ?? <span className="text-muted-foreground">—</span>}
+                  </TableCell>
+                  <TableCell className="py-1 pr-3 text-right text-xs text-muted-foreground tabular-nums">
+                    {format(new Date(c.crossingTime), "h:mm:ss")}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Motos() {
   const [match, params] = useRoute("/events/:eventId/motos");
@@ -450,6 +558,11 @@ export default function Motos() {
                     </TableBody>
                   </Table>
                 </div>
+
+                {/* Live crossing feed — shown only while moto is in progress */}
+                {moto.status === "in_progress" && (
+                  <LiveCrossingsFeed motoId={moto.id} />
+                )}
 
                 {/* Action bar */}
                 <div className="p-3 bg-muted/30 flex gap-2 items-center flex-wrap">
