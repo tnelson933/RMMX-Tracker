@@ -248,6 +248,9 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
     imageUrl: eventsTable.imageUrl,
+    timingTechnology: eventsTable.timingTechnology,
+    transponderRentalEnabled: eventsTable.transponderRentalEnabled,
+    transponderRentalFee: eventsTable.transponderRentalFee,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));
@@ -257,13 +260,14 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
   return res.json({
     ...e,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
+    transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
   });
 });
 
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors, rentTransponder } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -332,6 +336,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   const needsPayment = !!events[0].paymentEnabled && events[0].entryFee != null;
   const regStatus = needsPayment ? "pending" : "confirmed";
 
+  const wantsRental = !!(rentTransponder && events[0].transponderRentalEnabled && events[0].transponderRentalFee);
+
   const [reg] = await db.insert(registrationsTable).values({
     eventId, riderId: rider.id, raceClass,
     bibNumber: bibNumber || rider.bibNumber || null,
@@ -340,6 +346,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     bikeBrand: req.body.bikeBrand || null,
     sponsors: sponsors || null,
     statsEmailOptIn: !!statsEmailOptIn,
+    transponderRental: wantsRental,
   }).returning();
 
   // Only create the check-in record now if no payment is required.
@@ -361,29 +368,36 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         const appUrl = getAppUrl();
         const entryFee = Number(events[0].entryFee);
 
-        const session = await stripe.checkout.sessions.create({
-          mode: "payment",
-          line_items: [{
+        const rentalFee = wantsRental && events[0].transponderRentalFee ? Number(events[0].transponderRentalFee) : 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const lineItems: any[] = [{
+          price_data: {
+            currency: "usd",
+            product_data: { name: `${events[0].name} — ${raceClass} Entry` },
+            unit_amount: Math.round(entryFee * 100),
+          },
+          quantity: 1,
+        }];
+        if (rentalFee > 0) {
+          lineItems.push({
             price_data: {
               currency: "usd",
-              product_data: {
-                name: `${events[0].name} — ${raceClass} Entry`,
-              },
-              unit_amount: Math.round(entryFee * 100),
+              product_data: { name: "MyLaps Transponder Rental" },
+              unit_amount: Math.round(rentalFee * 100),
             },
             quantity: 1,
-          }],
+          });
+        }
+
+        const session = await stripe.checkout.sessions.create({
+          mode: "payment",
+          line_items: lineItems,
           payment_intent_data: {
-            transfer_data: {
-              destination: club.stripeAccountId,
-            },
+            transfer_data: { destination: club.stripeAccountId },
           },
           success_url: `${appUrl}/register/${eventId}?reg_id=${reg.id}&session_id={CHECKOUT_SESSION_ID}&payment_success=1`,
           cancel_url: `${appUrl}/register/${eventId}?payment_cancelled=1`,
-          metadata: {
-            registrationId: String(reg.id),
-            eventId: String(eventId),
-          },
+          metadata: { registrationId: String(reg.id), eventId: String(eventId) },
           customer_email: email,
         });
 
@@ -396,7 +410,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             riderName: `${rider.firstName} ${rider.lastName}`,
             raceClass,
             eventName: events[0].name,
-            entryFee,
+            entryFee: entryFee + rentalFee,
+            rentalFee,
           });
         }
       }

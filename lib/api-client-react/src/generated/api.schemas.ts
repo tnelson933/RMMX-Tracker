@@ -130,6 +130,9 @@ export interface Event {
   /** @nullable */
   imageUrl?: string | null;
   timingTechnology?: EventTimingTechnology;
+  transponderRentalEnabled?: boolean;
+  /** @nullable */
+  transponderRentalFee?: number | null;
   createdAt?: string;
 }
 
@@ -160,6 +163,8 @@ export interface EventInput {
   maxRiders?: number;
   imageUrl?: string;
   timingTechnology?: EventInputTimingTechnology;
+  transponderRentalEnabled?: boolean;
+  transponderRentalFee?: number;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -189,6 +194,8 @@ export interface EventUpdate {
   maxRiders?: number;
   imageUrl?: string;
   timingTechnology?: EventUpdateTimingTechnology;
+  transponderRentalEnabled?: boolean;
+  transponderRentalFee?: number;
 }
 
 export interface Rider {

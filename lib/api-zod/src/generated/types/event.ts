@@ -39,5 +39,8 @@ export interface Event {
   /** @nullable */
   imageUrl?: string | null;
   timingTechnology?: EventTimingTechnology;
+  transponderRentalEnabled?: boolean;
+  /** @nullable */
+  transponderRentalFee?: number | null;
   createdAt?: string;
 }

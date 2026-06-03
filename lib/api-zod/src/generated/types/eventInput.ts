@@ -25,4 +25,6 @@ export interface EventInput {
   maxRiders?: number;
   imageUrl?: string;
   timingTechnology?: EventInputTimingTechnology;
+  transponderRentalEnabled?: boolean;
+  transponderRentalFee?: number;
 }

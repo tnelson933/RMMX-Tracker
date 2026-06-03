@@ -97,6 +97,8 @@ const updateEventSchema = z.object({
   entryFee: z.string().optional(),
   registrationOpen: z.string().optional(),
   registrationClose: z.string().optional(),
+  transponderRentalEnabled: z.boolean().default(false),
+  transponderRentalFee: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof updateEventSchema>;
@@ -207,10 +209,14 @@ export default function EventDetail() {
       entryFee: "",
       registrationOpen: "",
       registrationClose: "",
+      transponderRentalEnabled: false,
+      transponderRentalFee: "",
     }
   });
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
+  const watchTimingTechnology = form.watch("timingTechnology");
+  const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -239,6 +245,8 @@ export default function EventDetail() {
       entryFee: evt.entryFee != null ? String(evt.entryFee) : "",
       registrationOpen: evt.registrationOpen ? toLocalDatetimeString(new Date(evt.registrationOpen)) : "",
       registrationClose: evt.registrationClose ? toLocalDatetimeString(new Date(evt.registrationClose)) : "",
+      transponderRentalEnabled: (evt as any).transponderRentalEnabled ?? false,
+      transponderRentalFee: (evt as any).transponderRentalFee != null ? String((evt as any).transponderRentalFee) : "",
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
     setEditSeriesId(currentSeries ? String(currentSeries.id) : "none");
@@ -270,6 +278,8 @@ export default function EventDetail() {
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
+        transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
+        transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
       }
     }, {
       onSuccess: () => {
@@ -681,6 +691,39 @@ export default function EventDetail() {
                       />
                     </div>
 
+                    {/* Transponder rental — only shown for MyLaps events with payments */}
+                    {stripeReady && watchPaymentEnabled && watchTimingTechnology === "mylaps" && (
+                      <div className="space-y-2 pl-0.5">
+                        <FormField
+                          control={form.control}
+                          name="transponderRentalEnabled"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Offer transponder rentals to riders</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                        {watchTransponderRentalEnabled && (
+                          <FormField
+                            control={form.control}
+                            name="transponderRentalFee"
+                            render={({ field }) => (
+                              <FormItem className="ml-6">
+                                <FormLabel>Rental Fee per Transponder ($)</FormLabel>
+                                <FormControl>
+                                  <Input type="number" min="0" step="0.01" placeholder="15.00" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
+                      </div>
+                    )}
+
                     <div className="border-t pt-4">
                       <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5"><Clock size={12} /> Registration Window</p>
                       <div className="grid grid-cols-2 gap-4">
@@ -779,6 +822,16 @@ export default function EventDetail() {
                         }
                       </div>
                     </div>
+                    {(event as any).transponderRentalEnabled && (
+                      <div>
+                        <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Transponder Rental</div>
+                        <div className="font-heading font-bold text-xl flex items-center gap-1">
+                          <span className="text-primary"><DollarSign size={18} className="inline -mt-0.5" /></span>
+                          {(event as any).transponderRentalFee != null ? Number((event as any).transponderRentalFee).toFixed(2) : "—"}
+                          <span className="text-xs font-normal text-muted-foreground ml-1">/ rider</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-y-6 pt-2">

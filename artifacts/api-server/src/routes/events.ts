@@ -80,6 +80,8 @@ router.get("/events", async (req, res) => {
     maxRiders: eventsTable.maxRiders,
     imageUrl: eventsTable.imageUrl,
     timingTechnology: eventsTable.timingTechnology,
+    transponderRentalEnabled: eventsTable.transponderRentalEnabled,
+    transponderRentalFee: eventsTable.transponderRentalFee,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -99,12 +101,13 @@ router.get("/events", async (req, res) => {
     ...e,
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
+    transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
     createdAt: e.createdAt.toISOString(),
   })));
 });
 
 router.post("/events", async (req, res) => {
-  const { clubId, name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology } = req.body;
+  const { clubId, name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee } = req.body;
   if (!clubId || !name || !date || !state) return res.status(400).json({ error: "clubId, name, date, state required" });
 
   // Determine the correct initial status based on the registration window
@@ -128,11 +131,14 @@ router.post("/events", async (req, res) => {
     entryFee: entryFee ? String(entryFee) : null,
     maxRiders,
     timingTechnology: timingTechnology || "rfid",
+    transponderRentalEnabled: transponderRentalEnabled || false,
+    transponderRentalFee: transponderRentalFee ? String(transponderRentalFee) : null,
   }).returning();
 
   return res.status(201).json({
     ...event,
     entryFee: event.entryFee ? Number(event.entryFee) : null,
+    transponderRentalFee: event.transponderRentalFee ? Number(event.transponderRentalFee) : null,
     createdAt: event.createdAt.toISOString(),
     clubName: null,
   });
@@ -158,6 +164,8 @@ router.get("/events/:eventId", async (req, res) => {
     maxRiders: eventsTable.maxRiders,
     imageUrl: eventsTable.imageUrl,
     timingTechnology: eventsTable.timingTechnology,
+    transponderRentalEnabled: eventsTable.transponderRentalEnabled,
+    transponderRentalFee: eventsTable.transponderRentalFee,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -170,6 +178,7 @@ router.get("/events/:eventId", async (req, res) => {
     ...e,
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
+    transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
     createdAt: e.createdAt.toISOString(),
   });
 });
@@ -182,11 +191,12 @@ router.patch("/events/:eventId", async (req, res) => {
   const previousStatus = before?.status;
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "maxRiders", "imageUrl", "timingTechnology"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
   if (req.body.entryFee !== undefined) updates.entryFee = req.body.entryFee ? String(req.body.entryFee) : null;
+  if (req.body.transponderRentalFee !== undefined) updates.transponderRentalFee = req.body.transponderRentalFee ? String(req.body.transponderRentalFee) : null;
 
   const [event] = await db.update(eventsTable).set(updates as any).where(eq(eventsTable.id, id)).returning();
   if (!event) return res.status(404).json({ error: "Not found" });

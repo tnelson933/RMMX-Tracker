@@ -37,6 +37,7 @@ const registerSchema = z.object({
   bikeBrand: z.string().optional(),
   sponsors: z.string().optional(),
   statsEmailOptIn: z.boolean().default(false),
+  rentTransponder: z.boolean().default(false),
 });
 
 type RegisterForm = z.infer<typeof registerSchema>;
@@ -57,6 +58,9 @@ interface EventInfo {
   clubLogoUrl: string | null;
   registrationOpen: string | null;
   registrationClose: string | null;
+  timingTechnology: string;
+  transponderRentalEnabled: boolean;
+  transponderRentalFee: number | null;
 }
 
 interface SuccessData {
@@ -98,7 +102,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false,
+      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false,
     },
   });
 
@@ -234,7 +238,7 @@ export default function Register() {
       const res = await fetch(`/api/public/events/${eventId}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, statsEmailOptIn: data.statsEmailOptIn }),
+        body: JSON.stringify({ ...data }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Registration failed");
@@ -360,6 +364,12 @@ export default function Register() {
                 <div className="flex justify-between">
                   <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Event</span>
                   <span className="font-medium text-right text-sm">{pendingPayment.eventName}</span>
+                </div>
+              )}
+              {(pendingPayment as any).rentalFee > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Transponder Rental</span>
+                  <span className="font-medium">${((pendingPayment as any).rentalFee as number).toFixed(2)}</span>
                 </div>
               )}
               {pendingPayment.entryFee > 0 && (
@@ -587,6 +597,43 @@ export default function Register() {
                     />
                   </CardContent>
                 </Card>
+
+                {event.transponderRentalEnabled && event.timingTechnology === "mylaps" && event.transponderRentalFee != null && (
+                  <Card className="border-primary/30 bg-primary/[0.03]">
+                    <CardHeader className="pb-2 border-b">
+                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">MyLaps Transponder</h3>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <FormField
+                        control={form.control}
+                        name="rentTransponder"
+                        render={({ field }) => (
+                          <FormItem>
+                            <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                              <FormControl>
+                                <Checkbox
+                                  id="rent-transponder"
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                  className="mt-0.5"
+                                />
+                              </FormControl>
+                              <div className="space-y-0.5 leading-none">
+                                <label htmlFor="rent-transponder" className="text-sm font-semibold cursor-pointer">
+                                  Rent a MyLaps transponder — <span className="text-primary">${Number(event.transponderRentalFee).toFixed(2)}</span>
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                  Don't have your own MyLaps transponder? Add a rental to your registration. The transponder will be ready for you at the gate.
+                                </p>
+                              </div>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
 
                 <Card>
                   <CardHeader className="pb-2 border-b">

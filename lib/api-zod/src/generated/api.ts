@@ -250,6 +250,8 @@ export const ListEventsResponseItem = zod.object({
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(listEventsResponseTimingTechnologyDefault),
+  "transponderRentalEnabled": zod.boolean().optional(),
+  "transponderRentalFee": zod.number().nullish(),
   "createdAt": zod.string().optional()
 })
 export const ListEventsResponse = zod.array(ListEventsResponseItem)
@@ -276,7 +278,9 @@ export const CreateEventBody = zod.object({
   "entryFee": zod.number().optional(),
   "maxRiders": zod.number().optional(),
   "imageUrl": zod.string().optional(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(createEventBodyTimingTechnologyDefault)
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(createEventBodyTimingTechnologyDefault),
+  "transponderRentalEnabled": zod.boolean().optional(),
+  "transponderRentalFee": zod.number().optional()
 })
 
 
@@ -310,6 +314,8 @@ export const GetEventResponse = zod.object({
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getEventResponseTimingTechnologyDefault),
+  "transponderRentalEnabled": zod.boolean().optional(),
+  "transponderRentalFee": zod.number().nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -339,7 +345,9 @@ export const UpdateEventBody = zod.object({
   "entryFee": zod.number().optional(),
   "maxRiders": zod.number().optional(),
   "imageUrl": zod.string().optional(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventBodyTimingTechnologyDefault)
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventBodyTimingTechnologyDefault),
+  "transponderRentalEnabled": zod.boolean().optional(),
+  "transponderRentalFee": zod.number().optional()
 })
 
 export const updateEventResponseTimingTechnologyDefault = `rfid`;
@@ -365,6 +373,8 @@ export const UpdateEventResponse = zod.object({
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventResponseTimingTechnologyDefault),
+  "transponderRentalEnabled": zod.boolean().optional(),
+  "transponderRentalFee": zod.number().nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -944,6 +954,8 @@ export const GetClubDashboardResponse = zod.object({
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
   "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault),
+  "transponderRentalEnabled": zod.boolean().optional(),
+  "transponderRentalFee": zod.number().nullish(),
   "createdAt": zod.string().optional()
 })).optional()
 })

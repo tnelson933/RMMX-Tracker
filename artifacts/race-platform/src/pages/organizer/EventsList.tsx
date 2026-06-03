@@ -93,6 +93,8 @@ const createEventSchema = z.object({
   paymentEnabled: z.boolean().default(false),
   requireAma: z.boolean().default(false),
   entryFee: z.string().optional(),
+  transponderRentalEnabled: z.boolean().default(false),
+  transponderRentalFee: z.string().optional(),
 });
 
 export default function EventsList() {
@@ -152,12 +154,16 @@ export default function EventsList() {
       paymentEnabled: false,
       requireAma: false,
       entryFee: "",
+      transponderRentalEnabled: false,
+      transponderRentalFee: "",
     }
   });
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "raceClasses" });
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
+  const watchTimingTechnology = form.watch("timingTechnology");
+  const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
 
   const onSubmit = async (data: z.infer<typeof createEventSchema>) => {
     let newEvent: Awaited<ReturnType<typeof createMutation.mutateAsync>>;
@@ -177,6 +183,8 @@ export default function EventsList() {
           paymentEnabled: data.paymentEnabled,
           requireAma: data.requireAma,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
+          transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
+          transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
         }
       });
     } catch (err: any) {
@@ -426,6 +434,39 @@ export default function EventsList() {
                         </FormItem>
                       )}
                     />
+                  )}
+
+                  {/* Transponder rental (MyLaps + payment only) */}
+                  {stripeReady && watchPaymentEnabled && watchTimingTechnology === "mylaps" && (
+                    <div className="space-y-2 pl-0.5">
+                      <FormField
+                        control={form.control}
+                        name="transponderRentalEnabled"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-2 space-y-0">
+                            <FormControl>
+                              <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                            <FormLabel className="cursor-pointer font-normal">Offer transponder rentals to riders</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                      {watchTransponderRentalEnabled && (
+                        <FormField
+                          control={form.control}
+                          name="transponderRentalFee"
+                          render={({ field }) => (
+                            <FormItem className="ml-6">
+                              <FormLabel>Rental Fee per Transponder ($)</FormLabel>
+                              <FormControl>
+                                <Input type="number" min="0" step="0.01" placeholder="15.00" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                    </div>
                   )}
                 </div>
 

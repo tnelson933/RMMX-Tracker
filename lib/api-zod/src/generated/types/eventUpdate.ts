@@ -25,4 +25,6 @@ export interface EventUpdate {
   maxRiders?: number;
   imageUrl?: string;
   timingTechnology?: EventUpdateTimingTechnology;
+  transponderRentalEnabled?: boolean;
+  transponderRentalFee?: number;
 }

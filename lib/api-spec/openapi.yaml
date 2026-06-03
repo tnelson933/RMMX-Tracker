@@ -1308,6 +1308,10 @@ components:
           type: string
           enum: [rfid, mylaps]
           default: rfid
+        transponderRentalEnabled:
+          type: boolean
+        transponderRentalFee:
+          type: ["number", "null"]
         createdAt:
           type: string
 
@@ -1353,6 +1357,10 @@ components:
           type: string
           enum: [rfid, mylaps]
           default: rfid
+        transponderRentalEnabled:
+          type: boolean
+        transponderRentalFee:
+          type: number
 
     EventUpdate:
       type: object
@@ -1395,6 +1403,10 @@ components:
           type: string
           enum: [rfid, mylaps]
           default: rfid
+        transponderRentalEnabled:
+          type: boolean
+        transponderRentalFee:
+          type: number
 
     Rider:
       type: object
