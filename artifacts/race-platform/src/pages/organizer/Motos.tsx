@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap, GripVertical, Maximize2, Timer } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap, GripVertical, Maximize2, Timer, Search } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -335,6 +335,7 @@ export default function Motos() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
+  const [poolSearch, setPoolSearch] = useState("");
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
   const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
   const [bibInputs, setBibInputs] = useState<Record<number, string>>({});
@@ -1058,31 +1059,54 @@ export default function Motos() {
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">Drag to trash to remove from check-in</p>
           </div>
+          {/* Search */}
+          <div className="relative">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              value={poolSearch}
+              onChange={e => setPoolSearch(e.target.value)}
+              placeholder="Name or bib…"
+              className="h-8 pl-7 text-xs"
+            />
+          </div>
           {(() => {
+            const q = poolSearch.trim().toLowerCase();
             const byClass: Record<string, Array<{ riderId: number; riderName: string | null; bibNumber: string | null; raceClass: string | null }>> = {};
             for (const c of (checkins ?? [])) {
               if (!c.checkedIn) continue;
+              if (q) {
+                const name = (c.riderName ?? "").toLowerCase();
+                const bib  = (c.bibNumber ?? "").toLowerCase();
+                if (!name.includes(q) && !bib.includes(q)) continue;
+              }
               const cls = c.raceClass ?? "Unknown";
               if (!byClass[cls]) byClass[cls] = [];
               byClass[cls].push(c as any);
             }
             const classes = Object.entries(byClass).sort(([a], [b]) => a.localeCompare(b));
             if (!classes.length) return (
-              <Card><CardContent className="p-4 text-center text-xs text-muted-foreground">No checked-in riders</CardContent></Card>
+              <Card><CardContent className="p-4 text-center text-xs text-muted-foreground">
+                {q ? "No riders match your search" : "No checked-in riders"}
+              </CardContent></Card>
             );
-            return classes.map(([cls, riders]) => (
-              <Card key={cls} className="overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
-                  <span className="font-heading font-bold text-xs uppercase tracking-wider truncate mr-2">{cls}</span>
-                  <Badge variant="secondary" className="text-xs h-5 shrink-0">{riders.length}</Badge>
-                </div>
-                <div className="divide-y max-h-52 overflow-y-auto">
-                  {riders.map(r => (
-                    <DraggablePoolRider key={r.riderId} riderId={r.riderId} riderName={r.riderName ?? "Rider"} bibNumber={r.bibNumber} />
-                  ))}
-                </div>
-              </Card>
-            ));
+            return classes.map(([cls, riders]) => {
+              const sorted = [...riders].sort((a, b) =>
+                (a.riderName ?? "").localeCompare(b.riderName ?? "")
+              );
+              return (
+                <Card key={cls} className="overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
+                    <span className="font-heading font-bold text-xs uppercase tracking-wider truncate mr-2">{cls}</span>
+                    <Badge variant="secondary" className="text-xs h-5 shrink-0">{sorted.length}</Badge>
+                  </div>
+                  <div className="divide-y max-h-52 overflow-y-auto">
+                    {sorted.map(r => (
+                      <DraggablePoolRider key={r.riderId} riderId={r.riderId} riderName={r.riderName ?? "Rider"} bibNumber={r.bibNumber} />
+                    ))}
+                  </div>
+                </Card>
+              );
+            });
           })()}
         </div>
 
