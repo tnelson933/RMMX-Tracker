@@ -115,6 +115,11 @@ export const EventTimingTechnology = {
   mylaps: 'mylaps',
 } as const;
 
+/**
+ * Minimum lap time in milliseconds per race class
+ */
+export type EventMinLapTimes = {[key: string]: number};
+
 export interface Event {
   id: number;
   clubId: number;
@@ -153,6 +158,8 @@ export interface Event {
   /** @nullable */
   scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
+  /** Minimum lap time in milliseconds per race class */
+  minLapTimes?: EventMinLapTimes;
   createdAt?: string;
 }
 
@@ -165,6 +172,11 @@ export const EventInputTimingTechnology = {
   rfid: 'rfid',
   mylaps: 'mylaps',
 } as const;
+
+/**
+ * Minimum lap time in milliseconds per race class
+ */
+export type EventInputMinLapTimes = {[key: string]: number};
 
 export interface EventInput {
   clubId: number;
@@ -190,6 +202,8 @@ export interface EventInput {
   /** @nullable */
   scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
+  /** Minimum lap time in milliseconds per race class */
+  minLapTimes?: EventInputMinLapTimes;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -201,6 +215,11 @@ export const EventUpdateTimingTechnology = {
   rfid: 'rfid',
   mylaps: 'mylaps',
 } as const;
+
+/**
+ * Minimum lap time in milliseconds per race class
+ */
+export type EventUpdateMinLapTimes = {[key: string]: number};
 
 export interface EventUpdate {
   name?: string;
@@ -226,6 +245,8 @@ export interface EventUpdate {
   /** @nullable */
   scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
+  /** Minimum lap time in milliseconds per race class */
+  minLapTimes?: EventUpdateMinLapTimes;
 }
 
 export interface Rider {

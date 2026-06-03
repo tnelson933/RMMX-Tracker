@@ -278,6 +278,7 @@ export const ListEventsResponseItem = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
+  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
   "createdAt": zod.string().optional()
 })
 export const ListEventsResponse = zod.array(ListEventsResponseItem)
@@ -314,7 +315,8 @@ export const CreateEventBody = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number()
-})).optional()
+})).optional(),
+  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class')
 })
 
 
@@ -358,6 +360,7 @@ export const GetEventResponse = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
+  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
   "createdAt": zod.string().optional()
 })
 
@@ -397,7 +400,8 @@ export const UpdateEventBody = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number()
-})).optional()
+})).optional(),
+  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class')
 })
 
 export const updateEventResponseTimingTechnologyDefault = `rfid`;
@@ -433,6 +437,7 @@ export const UpdateEventResponse = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
+  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
   "createdAt": zod.string().optional()
 })
 
@@ -1228,6 +1233,7 @@ export const GetClubDashboardResponse = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
+  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
   "createdAt": zod.string().optional()
 })).optional()
 })

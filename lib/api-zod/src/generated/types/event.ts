@@ -5,6 +5,7 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { EventMinLapTimes } from './eventMinLapTimes';
 import type { EventRaceClassLimits } from './eventRaceClassLimits';
 import type { EventStatus } from './eventStatus';
 import type { EventTimingTechnology } from './eventTimingTechnology';
@@ -48,5 +49,7 @@ export interface Event {
   /** @nullable */
   scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
+  /** Minimum lap time in milliseconds per race class */
+  minLapTimes?: EventMinLapTimes;
   createdAt?: string;
 }

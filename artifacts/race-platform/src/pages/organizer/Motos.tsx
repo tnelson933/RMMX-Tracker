@@ -3,6 +3,7 @@ import { useRoute, Link } from "wouter";
 import {
   useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables, useAdvanceToMain,
+  useUpdateEvent,
   getListMotosQueryKey, getListCheckinsQueryKey, Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -64,7 +65,7 @@ function playRfidPing(count: number) {
   }
 }
 
-function LiveCrossingsFeed({ motoId }: { motoId: number }) {
+function LiveCrossingsFeed({ motoId, minLapTimeMs }: { motoId: number; minLapTimeMs?: number | null }) {
   const [crossings, setCrossings] = useState<RawCrossing[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -172,32 +173,47 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {crossings.map((c, idx) => (
-                <TableRow key={c.id} className={`h-7 ${idx === 0 ? "bg-primary/5" : ""}`}>
-                  <TableCell className="py-1 px-3 text-xs font-medium">
-                    {c.riderName ?? (
-                      <span className="text-muted-foreground font-mono">{c.rfidNumber}</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="py-1 text-center text-xs font-heading font-bold">{c.lapNumber}</TableCell>
-                  <TableCell className="py-1 text-center text-xs font-mono">
-                    {c.lapTime ?? <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="py-1 pr-3 text-right text-xs text-muted-foreground tabular-nums">
-                    {format(new Date(c.crossingTime), "h:mm:ss")}
-                  </TableCell>
-                  <TableCell className="py-1 pr-1 text-right">
-                    <button
-                      onClick={() => handleDeleteCrossing(c.id)}
-                      disabled={deletingId === c.id}
-                      className="text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-40 p-0.5 rounded"
-                      title="Delete crossing"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {crossings.map((c, idx) => {
+                const isFlagged = minLapTimeMs != null && c.lapTimeMs != null && c.lapTimeMs < minLapTimeMs;
+                return (
+                  <TableRow
+                    key={c.id}
+                    className={`h-7 ${
+                      isFlagged
+                        ? "bg-red-500/10 border-l-2 border-l-red-500"
+                        : idx === 0
+                        ? "bg-primary/5"
+                        : ""
+                    }`}
+                  >
+                    <TableCell className={`py-1 px-3 text-xs font-medium ${isFlagged ? "text-red-600 dark:text-red-400" : ""}`}>
+                      {c.riderName ?? (
+                        <span className="text-muted-foreground font-mono">{c.rfidNumber}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className={`py-1 text-center text-xs font-heading font-bold ${isFlagged ? "text-red-600 dark:text-red-400" : ""}`}>{c.lapNumber}</TableCell>
+                    <TableCell className={`py-1 text-center text-xs font-mono ${isFlagged ? "text-red-600 dark:text-red-400" : ""}`}>
+                      {c.lapTime ?? <span className="text-muted-foreground">—</span>}
+                      {isFlagged && (
+                        <span className="ml-1 text-[10px] font-bold uppercase text-red-500" title="Below minimum lap time">⚠</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-1 pr-3 text-right text-xs text-muted-foreground tabular-nums">
+                      {format(new Date(c.crossingTime), "h:mm:ss")}
+                    </TableCell>
+                    <TableCell className="py-1 pr-1 text-right">
+                      <button
+                        onClick={() => handleDeleteCrossing(c.id)}
+                        disabled={deletingId === c.id}
+                        className="text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-40 p-0.5 rounded"
+                        title="Delete crossing"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -433,6 +449,39 @@ function DroppableMotoLineup({ motoId, children, locked, className }: { motoId: 
   );
 }
 
+// ── Min lap time helpers ─────────────────────────────────────────────────────
+
+function parseMinLapTime(str: string): number | null {
+  const s = str.trim();
+  if (!s) return null;
+  const colonIdx = s.indexOf(":");
+  if (colonIdx >= 0) {
+    const m = parseInt(s.slice(0, colonIdx), 10);
+    const sec = parseFloat(s.slice(colonIdx + 1));
+    if (isNaN(m) || isNaN(sec) || sec < 0 || sec >= 60) return null;
+    const ms = (m * 60 + sec) * 1000;
+    return ms > 0 ? ms : null;
+  }
+  const sec = parseFloat(s);
+  if (isNaN(sec) || sec <= 0) return null;
+  return sec * 1000;
+}
+
+function formatMinLapTime(ms: number): string {
+  const totalSec = ms / 1000;
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m > 0) {
+    const sInt = Math.floor(s);
+    const frac = Math.round((s - sInt) * 10);
+    const sStr = frac > 0
+      ? `${sInt.toString().padStart(2, "0")}.${frac}`
+      : sInt.toString().padStart(2, "0");
+    return `${m}:${sStr}`;
+  }
+  return s === Math.floor(s) ? String(Math.floor(s)) : s.toFixed(1);
+}
+
 // ── Main component ──────────────────────────────────────────────────────────
 
 export default function Motos() {
@@ -467,6 +516,10 @@ export default function Motos() {
   const [newMotoLapCount, setNewMotoLapCount] = useState("");
   const [selectedRiderIds, setSelectedRiderIds] = useState<Set<number>>(new Set());
 
+  // Min lap times per class
+  const [minLapInputs, setMinLapInputs] = useState<Record<string, string>>({});
+  const [minLapSavedClass, setMinLapSavedClass] = useState<string | null>(null);
+
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: motos, isLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
   const { data: checkins } = useListCheckins(eventId, { query: { enabled: !!eventId } as any });
@@ -476,6 +529,49 @@ export default function Motos() {
   const updateMutation = useUpdateMoto();
   const deleteMutation = useDeleteMoto();
   const advanceToMainMutation = useAdvanceToMain();
+  const updateEventMutation = useUpdateEvent();
+
+  // Seed min-lap inputs from saved event data (once loaded)
+  useEffect(() => {
+    const saved = (event as any)?.minLapTimes as Record<string, number> | undefined;
+    if (!saved) return;
+    setMinLapInputs(prev => {
+      const next: Record<string, string> = { ...prev };
+      for (const [cls, ms] of Object.entries(saved)) {
+        if (!(cls in prev)) next[cls] = formatMinLapTime(ms);
+      }
+      return next;
+    });
+  }, [event]);
+
+  const handleMinLapBlur = (cls: string) => {
+    const raw = minLapInputs[cls] ?? "";
+    const ms = parseMinLapTime(raw);
+    const saved = (event as any)?.minLapTimes as Record<string, number> | undefined;
+    // Format the displayed value
+    if (ms != null) {
+      setMinLapInputs(prev => ({ ...prev, [cls]: formatMinLapTime(ms) }));
+    }
+    // Save only if changed
+    const prevMs = saved?.[cls] ?? null;
+    if (ms === prevMs) return;
+    const newMinLapTimes = { ...(saved ?? {}) };
+    if (ms != null) {
+      newMinLapTimes[cls] = ms;
+    } else {
+      delete newMinLapTimes[cls];
+    }
+    updateEventMutation.mutate(
+      { eventId, data: { minLapTimes: newMinLapTimes } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ["getEvent", eventId] as any });
+          setMinLapSavedClass(cls);
+          setTimeout(() => setMinLapSavedClass(null), 2000);
+        },
+      }
+    );
+  };
 
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const eventScoringTable = (pointsTables ?? []).find(t => t.id === (event as any)?.scoringTableId);
@@ -1056,6 +1152,53 @@ export default function Motos() {
         </div>
       </div>
 
+      {/* Minimum Lap Times panel */}
+      {((event as any)?.raceClasses as string[] | undefined)?.length ? (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-3 border-b bg-muted/30">
+            <Timer size={15} className="text-muted-foreground" />
+            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">Minimum Lap Times</h3>
+            <span className="text-xs text-muted-foreground font-normal ml-1">— Crossings below this will be flagged in red</span>
+          </div>
+          <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {((event as any)?.raceClasses as string[]).map(cls => {
+              const saved = ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[cls];
+              const isSaved = minLapSavedClass === cls;
+              return (
+                <div key={cls} className="space-y-1.5">
+                  <label className="text-xs font-medium text-foreground truncate block" title={cls}>{cls}</label>
+                  <div className="relative">
+                    <Input
+                      value={minLapInputs[cls] ?? ""}
+                      onChange={e => setMinLapInputs(prev => ({ ...prev, [cls]: e.target.value }))}
+                      onBlur={() => handleMinLapBlur(cls)}
+                      onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                      placeholder={saved ? formatMinLapTime(saved) : "e.g. 1:30"}
+                      className="h-8 text-xs font-mono pr-8"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                      {isSaved ? (
+                        <Check size={12} className="text-green-500" />
+                      ) : (minLapInputs[cls] ?? "").trim() === "" && !saved ? null : (
+                        <span className="text-[10px] text-muted-foreground">m:ss</span>
+                      )}
+                    </div>
+                  </div>
+                  {saved && (
+                    <div className="text-[10px] text-muted-foreground">
+                      Saved: {formatMinLapTime(saved)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="px-5 pb-3 text-[11px] text-muted-foreground">
+            Enter as <span className="font-mono bg-muted px-1 rounded">m:ss</span> (e.g. <span className="font-mono bg-muted px-1 rounded">1:30</span>) or seconds (e.g. <span className="font-mono bg-muted px-1 rounded">90</span>). Leave blank to disable for that class. Saves on Enter or focus-out.
+          </div>
+        </div>
+      ) : null}
+
       {/* Live Video Feed panel */}
       {showBroadcast && (
         <div className="border rounded-xl p-5 bg-card space-y-3">
@@ -1396,7 +1539,10 @@ export default function Motos() {
 
                 {/* Live crossing feed — shown only while moto is in progress */}
                 {moto.status === "in_progress" && (
-                  <LiveCrossingsFeed motoId={moto.id} />
+                  <LiveCrossingsFeed
+                    motoId={moto.id}
+                    minLapTimeMs={moto.raceClass ? ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[moto.raceClass] ?? null : null}
+                  />
                 )}
 
                 {/* Action bar */}
@@ -1629,7 +1775,10 @@ export default function Motos() {
 
                 {/* Live crossing feed */}
                 {moto.status === "in_progress" && (
-                  <LiveCrossingsFeed motoId={moto.id} />
+                  <LiveCrossingsFeed
+                    motoId={moto.id}
+                    minLapTimeMs={moto.raceClass ? ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[moto.raceClass] ?? null : null}
+                  />
                 )}
               </div>
 
