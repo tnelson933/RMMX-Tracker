@@ -759,6 +759,14 @@ export default function EventDetail() {
                       <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Track</div>
                       <div className="font-medium flex items-center gap-2"><Flag size={16} className="text-primary"/> {event.trackName || "TBA"}</div>
                     </div>
+                    <div>
+                      <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Timing Technology</div>
+                      <div className="font-medium">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-muted text-muted-foreground border border-border">
+                          {((event as any).timingTechnology ?? "rfid") === "mylaps" ? "MyLaps" : "RFID"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-y-6 pt-2">

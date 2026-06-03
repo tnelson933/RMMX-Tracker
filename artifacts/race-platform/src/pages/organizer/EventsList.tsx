@@ -662,11 +662,16 @@ export default function EventsList() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-2">
+                        {(event as any).timingTechnology && (
+                          <span className="bg-muted text-muted-foreground border border-border px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
+                            {(event as any).timingTechnology === "mylaps" ? "MyLaps" : "RFID"}
+                          </span>
+                        )}
                         <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
                           {event.status.replace(/_/g, ' ')}
                         </span>
-                        <ChevronRight className="text-muted-foreground" />
+                        <ChevronRight className="text-muted-foreground ml-4" />
                       </div>
                     </div>
                   </CardContent>
