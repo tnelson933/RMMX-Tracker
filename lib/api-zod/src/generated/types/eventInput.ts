@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EventInputRaceClassLimits } from './eventInputRaceClassLimits';
+import type { EventInputTimingTechnology } from './eventInputTimingTechnology';
 
 export interface EventInput {
   clubId: number;
@@ -23,4 +24,5 @@ export interface EventInput {
   entryFee?: number;
   maxRiders?: number;
   imageUrl?: string;
+  timingTechnology?: EventInputTimingTechnology;
 }

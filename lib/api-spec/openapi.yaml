@@ -1304,6 +1304,10 @@ components:
           type: ["string", "null"]
         imageUrl:
           type: ["string", "null"]
+        timingTechnology:
+          type: string
+          enum: [rfid, mylaps]
+          default: rfid
         createdAt:
           type: string
 
@@ -1345,6 +1349,9 @@ components:
           type: integer
         imageUrl:
           type: string
+        timingTechnology:
+          type: string
+          enum: [rfid, mylaps]
 
     EventUpdate:
       type: object
@@ -1383,6 +1390,9 @@ components:
           type: integer
         imageUrl:
           type: string
+        timingTechnology:
+          type: string
+          enum: [rfid, mylaps]
 
     Rider:
       type: object

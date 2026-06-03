@@ -82,6 +82,7 @@ const createEventSchema = z.object({
   state: z.string().min(1, "State is required"),
   location: z.string().optional(),
   trackName: z.string().optional(),
+  timingTechnology: z.enum(["rfid", "mylaps"]).default("rfid"),
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
@@ -143,6 +144,7 @@ export default function EventsList() {
       state: "",
       location: "",
       trackName: "",
+      timingTechnology: "rfid",
       raceClasses: [],
       clubId: sessionClubId ?? undefined,
       registrationOpen: "",
@@ -168,6 +170,7 @@ export default function EventsList() {
           state: data.state,
           location: data.location,
           trackName: data.trackName,
+          timingTechnology: data.timingTechnology,
           raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
           registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
           registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
@@ -458,6 +461,40 @@ export default function EventsList() {
                     <FormItem>
                       <FormLabel>Track Name</FormLabel>
                       <FormControl><Input placeholder="Thunder Valley MX" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Timing Technology */}
+                <FormField
+                  control={form.control}
+                  name="timingTechnology"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Timing Technology</FormLabel>
+                      <FormControl>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { value: "rfid", label: "RFID Stickers", desc: "Passive RFID tags" },
+                            { value: "mylaps", label: "MyLaps Transponders", desc: "AMB / MyLaps units" },
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => field.onChange(opt.value)}
+                              className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
+                                field.value === opt.value
+                                  ? "border-primary bg-primary/5 text-foreground"
+                                  : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
+                              }`}
+                            >
+                              <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                              <span className="text-xs mt-0.5">{opt.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

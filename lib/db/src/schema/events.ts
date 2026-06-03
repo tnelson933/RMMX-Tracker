@@ -21,6 +21,7 @@ export const eventsTable = pgTable("events", {
   maxRiders: integer("max_riders"),
   raceClassLimits: jsonb("race_class_limits").$type<Record<string, number | null>>().default({}),
   imageUrl: text("image_url"),
+  timingTechnology: text("timing_technology").notNull().default("rfid"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

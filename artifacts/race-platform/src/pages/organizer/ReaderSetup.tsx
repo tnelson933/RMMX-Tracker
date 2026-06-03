@@ -56,6 +56,9 @@ export default function ReaderSetup() {
   const eventId = parseInt(selectedEventId) || 0;
   const { data: motos } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
 
+  const selectedEventTech = ((events?.find(e => e.id.toString() === selectedEventId) as any)?.timingTechnology ?? "rfid") as "rfid" | "mylaps";
+  const isMylaps = selectedEventTech === "mylaps";
+
   const copyUrl = () => {
     navigator.clipboard.writeText(ENDPOINT);
     setCopiedUrl(true);
@@ -455,7 +458,7 @@ export default function ReaderSetup() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">RFID Tag Number</label>
+              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{isMylaps ? "MyLaps Transponder Number" : "RFID Tag Number"}</label>
               <Input
                 value={testRfid}
                 onChange={e => setTestRfid(e.target.value)}
@@ -519,7 +522,7 @@ export default function ReaderSetup() {
                   <thead>
                     <tr className="border-b text-left text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       <th className="pb-2 pr-4">Time</th>
-                      <th className="pb-2 pr-4">RFID Tag</th>
+                      <th className="pb-2 pr-4">{isMylaps ? "Transponder #" : "RFID Tag"}</th>
                       <th className="pb-2 pr-4">Rider</th>
                       <th className="pb-2 pr-4">Lap #</th>
                       <th className="pb-2 pr-4">Lap Time</th>

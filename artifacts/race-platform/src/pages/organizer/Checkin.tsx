@@ -9,7 +9,7 @@ import { Search, CheckCircle, Tag, X } from "lucide-react";
 import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrationsQueryKey, getListRidersQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
-function RfidInput({ riderId, eventId, onDone }: { riderId: number; eventId: number; onDone: () => void }) {
+function RfidInput({ riderId, eventId, onDone, isMylaps }: { riderId: number; eventId: number; onDone: () => void; isMylaps?: boolean }) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -26,11 +26,11 @@ function RfidInput({ riderId, eventId, onDone }: { riderId: number; eventId: num
         queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
         queryClient.invalidateQueries({ queryKey: getGetRaceDaySummaryQueryKey(eventId) });
         queryClient.invalidateQueries({ queryKey: getListRidersQueryKey() });
-        toast({ title: "RFID tag assigned" });
+        toast({ title: isMylaps ? "Transponder assigned" : "RFID tag assigned" });
         onDone();
       },
       onError: (err) => {
-        toast({ title: "Failed to assign RFID", description: err.message, variant: "destructive" });
+        toast({ title: isMylaps ? "Failed to assign transponder" : "Failed to assign RFID", description: err.message, variant: "destructive" });
       }
     });
   };
@@ -43,7 +43,7 @@ function RfidInput({ riderId, eventId, onDone }: { riderId: number; eventId: num
         value={value}
         onChange={e => setValue(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") onDone(); }}
-        placeholder="Scan or type RFID tag…"
+        placeholder={isMylaps ? "Enter transponder number…" : "Scan or type RFID tag…"}
         className="h-9 text-sm font-mono flex-1"
         disabled={assignMutation.isPending}
       />
@@ -116,6 +116,7 @@ export default function Checkin() {
   };
 
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
+  const isMylaps = ((event as any)?.timingTechnology ?? "rfid") === "mylaps";
   const { data: checkins, isLoading: checkinsLoading } = useListCheckins(eventId, {
     query: { enabled: !!eventId, refetchInterval: 30000 } as any
   });
@@ -230,7 +231,7 @@ export default function Checkin() {
             <div className="text-xl md:text-2xl font-heading font-bold text-secondary">{summary?.checkedIn || 0} / {summary?.totalRegistered || 0}</div>
           </div>
           <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
-            <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">RFID Linked</div>
+            <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">{isMylaps ? "Transponder" : "RFID Linked"}</div>
             <div className="text-xl md:text-2xl font-heading font-bold text-white">{summary?.rfidLinked || 0}</div>
           </div>
         </div>
@@ -260,7 +261,7 @@ export default function Checkin() {
               { key: "all", label: "All" },
               { key: "not_checked_in", label: "Pending" },
               { key: "checked_in", label: "Done" },
-              { key: "no_rfid", label: "No RFID" },
+              { key: "no_rfid", label: isMylaps ? "No Transponder" : "No RFID" },
             ].map(({ key, label }) => (
               <Button
                 key={key}
@@ -379,15 +380,15 @@ export default function Checkin() {
                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{checkin.raceClass}</span>
                         {checkin.rfidLinked ? (
                           <span className="flex items-center gap-1 text-sidebar-primary/80">
-                            <Tag size={14} /> RFID Linked
+                            <Tag size={14} /> {isMylaps ? "Transponder Linked" : "RFID Linked"}
                           </span>
                         ) : (
                           <button
                             onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
                             className="flex items-center gap-1 text-amber-600 hover:text-amber-700 transition-colors underline-offset-2 hover:underline"
-                            title="Click to assign RFID tag"
+                            title={isMylaps ? "Click to assign transponder" : "Click to assign RFID tag"}
                           >
-                            <Tag size={14} /> No RFID — Assign
+                            <Tag size={14} /> {isMylaps ? "No Transponder — Assign" : "No RFID — Assign"}
                           </button>
                         )}
                       </div>
@@ -398,6 +399,7 @@ export default function Checkin() {
                           riderId={checkin.riderId}
                           eventId={eventId}
                           onDone={() => setRfidInputOpenId(null)}
+                          isMylaps={isMylaps}
                         />
                       )}
                     </div>

@@ -92,6 +92,14 @@ export const EventStatus = {
   completed: 'completed',
 } as const;
 
+export type EventTimingTechnology = typeof EventTimingTechnology[keyof typeof EventTimingTechnology];
+
+
+export const EventTimingTechnology = {
+  rfid: 'rfid',
+  mylaps: 'mylaps',
+} as const;
+
 export interface Event {
   id: number;
   clubId: number;
@@ -121,10 +129,19 @@ export interface Event {
   clubLogoUrl?: string | null;
   /** @nullable */
   imageUrl?: string | null;
+  timingTechnology?: EventTimingTechnology;
   createdAt?: string;
 }
 
 export type EventInputRaceClassLimits = {[key: string]: number | null};
+
+export type EventInputTimingTechnology = typeof EventInputTimingTechnology[keyof typeof EventInputTimingTechnology];
+
+
+export const EventInputTimingTechnology = {
+  rfid: 'rfid',
+  mylaps: 'mylaps',
+} as const;
 
 export interface EventInput {
   clubId: number;
@@ -142,9 +159,18 @@ export interface EventInput {
   entryFee?: number;
   maxRiders?: number;
   imageUrl?: string;
+  timingTechnology?: EventInputTimingTechnology;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
+
+export type EventUpdateTimingTechnology = typeof EventUpdateTimingTechnology[keyof typeof EventUpdateTimingTechnology];
+
+
+export const EventUpdateTimingTechnology = {
+  rfid: 'rfid',
+  mylaps: 'mylaps',
+} as const;
 
 export interface EventUpdate {
   name?: string;
@@ -162,6 +188,7 @@ export interface EventUpdate {
   entryFee?: number;
   maxRiders?: number;
   imageUrl?: string;
+  timingTechnology?: EventUpdateTimingTechnology;
 }
 
 export interface Rider {

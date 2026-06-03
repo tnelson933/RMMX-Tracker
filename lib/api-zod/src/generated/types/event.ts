@@ -7,6 +7,7 @@
  */
 import type { EventRaceClassLimits } from './eventRaceClassLimits';
 import type { EventStatus } from './eventStatus';
+import type { EventTimingTechnology } from './eventTimingTechnology';
 
 export interface Event {
   id: number;
@@ -37,5 +38,6 @@ export interface Event {
   clubLogoUrl?: string | null;
   /** @nullable */
   imageUrl?: string | null;
+  timingTechnology?: EventTimingTechnology;
   createdAt?: string;
 }

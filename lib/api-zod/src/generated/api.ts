@@ -227,6 +227,8 @@ export const ListEventsQueryParams = zod.object({
   "status": zod.coerce.string().optional()
 })
 
+export const listEventsResponseTimingTechnologyDefault = `rfid`;
+
 export const ListEventsResponseItem = zod.object({
   "id": zod.number(),
   "clubId": zod.number(),
@@ -247,6 +249,7 @@ export const ListEventsResponseItem = zod.object({
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(listEventsResponseTimingTechnologyDefault),
   "createdAt": zod.string().optional()
 })
 export const ListEventsResponse = zod.array(ListEventsResponseItem)
@@ -270,7 +273,8 @@ export const CreateEventBody = zod.object({
   "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().optional(),
   "maxRiders": zod.number().optional(),
-  "imageUrl": zod.string().optional()
+  "imageUrl": zod.string().optional(),
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).optional()
 })
 
 
@@ -280,6 +284,8 @@ export const CreateEventBody = zod.object({
 export const GetEventParams = zod.object({
   "eventId": zod.coerce.number()
 })
+
+export const getEventResponseTimingTechnologyDefault = `rfid`;
 
 export const GetEventResponse = zod.object({
   "id": zod.number(),
@@ -301,6 +307,7 @@ export const GetEventResponse = zod.object({
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getEventResponseTimingTechnologyDefault),
   "createdAt": zod.string().optional()
 })
 
@@ -327,8 +334,11 @@ export const UpdateEventBody = zod.object({
   "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().optional(),
   "maxRiders": zod.number().optional(),
-  "imageUrl": zod.string().optional()
+  "imageUrl": zod.string().optional(),
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).optional()
 })
+
+export const updateEventResponseTimingTechnologyDefault = `rfid`;
 
 export const UpdateEventResponse = zod.object({
   "id": zod.number(),
@@ -350,6 +360,7 @@ export const UpdateEventResponse = zod.object({
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventResponseTimingTechnologyDefault),
   "createdAt": zod.string().optional()
 })
 
@@ -895,6 +906,8 @@ export const GetClubDashboardParams = zod.object({
   "clubId": zod.coerce.number()
 })
 
+export const getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault = `rfid`;
+
 export const GetClubDashboardResponse = zod.object({
   "totalEvents": zod.number(),
   "upcomingEvents": zod.number(),
@@ -926,6 +939,7 @@ export const GetClubDashboardResponse = zod.object({
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault),
   "createdAt": zod.string().optional()
 })).optional()
 })

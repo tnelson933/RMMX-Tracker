@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EventUpdateRaceClassLimits } from './eventUpdateRaceClassLimits';
+import type { EventUpdateTimingTechnology } from './eventUpdateTimingTechnology';
 
 export interface EventUpdate {
   name?: string;
@@ -23,4 +24,5 @@ export interface EventUpdate {
   entryFee?: number;
   maxRiders?: number;
   imageUrl?: string;
+  timingTechnology?: EventUpdateTimingTechnology;
 }
