@@ -105,6 +105,8 @@ export default function Registrations() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found">("idle");
+  const [lookedUpName, setLookedUpName] = useState("");
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
@@ -144,8 +146,38 @@ export default function Registrations() {
       setSubmitting(false);
       setSubmitError(null);
       setPaymentError(null);
+      setLookupState("idle");
+      setLookedUpName("");
     }
   }, [isAddOpen]);
+
+  // ── Email lookup — finds existing rider profile and pre-fills the form ────────
+  const lookupByEmail = async (email: string) => {
+    const trimmed = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
+    setLookupState("loading");
+    setLookedUpName("");
+    try {
+      const res = await fetch(`/api/public/riders/lookup?email=${encodeURIComponent(trimmed)}`);
+      const data = await res.json();
+      if (data.found) {
+        form.setValue("firstName", data.firstName || "", { shouldDirty: false });
+        form.setValue("lastName", data.lastName || "", { shouldDirty: false });
+        form.setValue("phone", data.phone || "", { shouldDirty: false });
+        form.setValue("dateOfBirth", data.dateOfBirth || "", { shouldDirty: false });
+        form.setValue("emergencyContact", data.emergencyContact || "", { shouldDirty: false });
+        form.setValue("emergencyPhone", data.emergencyPhone || "", { shouldDirty: false });
+        if (data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
+        if (data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
+        setLookedUpName(`${data.firstName} ${data.lastName}`);
+        setLookupState("found");
+      } else {
+        setLookupState("not_found");
+      }
+    } catch {
+      setLookupState("not_found");
+    }
+  };
 
   // Auto-poll card payment every 4s while on card step
   useEffect(() => {
@@ -392,6 +424,43 @@ export default function Registrations() {
       return (
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleCreate)} className="space-y-5 py-2">
+
+            {/* ── Email first — triggers rider lookup ── */}
+            <div className="space-y-2">
+              <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Rider Lookup</h3>
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      placeholder="rider@example.com"
+                      {...field}
+                      onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              {lookupState === "loading" && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 size={14} className="animate-spin" />
+                  Looking up rider profile...
+                </div>
+              )}
+              {lookupState === "found" && (
+                <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm">
+                  <CheckCircle2 size={16} className="shrink-0 text-green-600" />
+                  <span>Found <strong>{lookedUpName}</strong> — details pre-filled. Review and update anything that's changed.</span>
+                </div>
+              )}
+              {lookupState === "not_found" && (
+                <p className="text-xs text-muted-foreground">No existing profile found — fill in the rider's details below and we'll create one.</p>
+              )}
+            </div>
+
+            {/* ── Race class ── */}
             <div className="space-y-2">
               <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Race Class</h3>
               <FormField control={form.control} name="raceClass" render={({ field }) => (
@@ -410,6 +479,7 @@ export default function Registrations() {
               )} />
             </div>
 
+            {/* ── MyLaps transponder (conditional) ── */}
             {isMyLaps && (
               <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/[0.03] p-4">
                 <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">MyLaps Transponder</h3>
@@ -468,6 +538,7 @@ export default function Registrations() {
               </div>
             )}
 
+            {/* ── Rider info ── */}
             <div className="space-y-3">
               <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Rider Info</h3>
               <div className="grid grid-cols-2 gap-3">
@@ -486,13 +557,6 @@ export default function Registrations() {
                   </FormItem>
                 )} />
               </div>
-              <FormField control={form.control} name="email" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
-                  <FormControl><Input type="email" placeholder="rider@example.com" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
               <div className="grid grid-cols-2 gap-3">
                 <FormField control={form.control} name="phone" render={({ field }) => (
                   <FormItem>
@@ -543,6 +607,7 @@ export default function Registrations() {
               )} />
             </div>
 
+            {/* ── Emergency contact ── */}
             <div className="space-y-3">
               <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Emergency Contact</h3>
               <div className="grid grid-cols-2 gap-3">
