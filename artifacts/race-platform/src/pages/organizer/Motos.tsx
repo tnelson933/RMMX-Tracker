@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap, Volume2, VolumeX } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { LiveBroadcast } from "./LiveBroadcast";
 import { format } from "date-fns";
@@ -167,8 +167,6 @@ export default function Motos() {
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
-  const [announcerMuted, setAnnouncerMuted] = useState(false);
-  const announcerMutedRef = useRef(false);
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -301,8 +299,6 @@ export default function Motos() {
     );
   };
 
-  useEffect(() => { announcerMutedRef.current = announcerMuted; }, [announcerMuted]);
-
   const handleStartMoto = (moto: Moto) => {
     updateMutation.mutate(
       { motoId: moto.id, data: { status: "in_progress" } },
@@ -310,33 +306,6 @@ export default function Motos() {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           toast({ title: "🏁 Moto started — RFID timing active" });
-
-          // Fire announcer intro — skip if muted
-          if (announcerMutedRef.current) return;
-          const lineup = (moto.lineup ?? []).map(r => ({
-            bibNumber: r.bibNumber ?? null,
-            riderName: r.riderName ?? null,
-          }));
-          fetch("/api/timing/announce-moto-start", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              motoName: moto.name,
-              motoType: moto.type,
-              raceClass: moto.raceClass ?? null,
-              motoNumber: moto.motoNumber ?? null,
-              lineup,
-            }),
-          })
-            .then(r => (r.ok ? r.blob() : null))
-            .then(blob => {
-              if (!blob) return;
-              const url = URL.createObjectURL(blob);
-              const audio = new Audio(url);
-              audio.onended = () => URL.revokeObjectURL(url);
-              audio.play().catch(() => {});
-            })
-            .catch(() => {});
         },
       }
     );
@@ -359,16 +328,6 @@ export default function Motos() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className={`font-heading uppercase tracking-wider gap-1.5 text-xs ${announcerMuted ? "text-muted-foreground" : ""}`}
-            onClick={() => setAnnouncerMuted(v => !v)}
-            title={announcerMuted ? "Enable moto-start announcer" : "Mute moto-start announcer"}
-          >
-            {announcerMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-            {announcerMuted ? "Announcer Off" : "Announcer On"}
-          </Button>
           <Button
             variant={showBroadcast ? "default" : "outline"}
             className={`font-heading uppercase tracking-wider gap-2 ${showBroadcast ? "bg-red-600 hover:bg-red-700 text-white border-red-600" : ""}`}

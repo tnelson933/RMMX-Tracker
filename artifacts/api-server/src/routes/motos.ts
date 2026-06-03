@@ -194,9 +194,16 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     const classRiders = checkins.filter(c => c.raceClass === cls);
     if (classRiders.length === 0) continue;
 
+    // Distribute riders as evenly as possible across groups
     const groups: typeof classRiders[] = [];
-    for (let i = 0; i < classRiders.length; i += maxPerHeat) {
-      groups.push(classRiders.slice(i, i + maxPerHeat));
+    const numGroups = maxPerHeat === Infinity ? 1 : Math.ceil(classRiders.length / maxPerHeat);
+    const baseSize = Math.floor(classRiders.length / numGroups);
+    const extras = classRiders.length % numGroups; // first `extras` groups get baseSize+1
+    let offset = 0;
+    for (let g = 0; g < numGroups; g++) {
+      const size = baseSize + (g < extras ? 1 : 0);
+      groups.push(classRiders.slice(offset, offset + size));
+      offset += size;
     }
     const multiGroup = groups.length > 1;
 
