@@ -1540,13 +1540,13 @@ export default function Motos() {
                   </div>
                 )}
 
-                {/* First place finish countdown */}
-                {moto.status === "in_progress" && (
+                {/* First place finish countdown — hidden when expanded dialog is open (dialog has its own instance) */}
+                {moto.status === "in_progress" && expandedMotoId !== moto.id && (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
                 )}
 
-                {/* Live crossing feed — shown only while moto is in progress */}
-                {moto.status === "in_progress" && (
+                {/* Live crossing feed — hidden when expanded dialog is open to prevent double pings */}
+                {moto.status === "in_progress" && expandedMotoId !== moto.id && (
                   <LiveCrossingsFeed
                     motoId={moto.id}
                     minLapTimeMs={moto.raceClass ? ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[moto.raceClass] ?? null : null}
