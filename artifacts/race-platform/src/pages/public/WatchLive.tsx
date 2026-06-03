@@ -14,6 +14,18 @@ function getWsUrl(eventId: number): string {
   return `${proto}//${host}/api/video/watch/${eventId}`;
 }
 
+interface LeaderboardEntry {
+  position: number;
+  riderId: number;
+  riderName: string;
+  bibNumber: string | null;
+  laps: number;
+  lastLap: string | null;
+  gap: string;
+  dnf: boolean;
+  dns: boolean;
+}
+
 export default function WatchLive() {
   const [, params] = useRoute("/watch/:eventId");
   const eventId = parseInt(params?.eventId ?? "0", 10);
@@ -26,6 +38,9 @@ export default function WatchLive() {
   const [videoNaturalDims, setVideoNaturalDims] = useState({ w: 0, h: 0 });
   const [needsTap, setNeedsTap] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [announcerOn, setAnnouncerOn] = useState(true);
+  const [announcerLabel, setAnnouncerLabel] = useState<string | null>(null);
+  const [sseLeaderboard, setSseLeaderboard] = useState<LeaderboardEntry[] | null>(null);
   const audioUnlockedRef = useRef(false);
   // Once a 360 format is confirmed, lock it so MSE reconnects can't reset the detection.
   const formatLockedRef = useRef(false);
@@ -45,6 +60,16 @@ export default function WatchLive() {
   const lastErrRef = useRef("");
   // Rolling event log — last 5 events; gives a chronological trace instead of just the final state
   const eventLogRef = useRef<string[]>([]);
+
+  // Announcer refs
+  const announcerOnRef = useRef(true);
+  const audioQueueRef = useRef<string[]>([]);
+  const annPlayingRef = useRef(false);
+  const prevLapsRef = useRef<Map<number, number>>(new Map());
+  const prevPositionsRef = useRef<Map<number, number>>(new Map());
+  const esRef = useRef<EventSource | null>(null);
+  const activeMotoIdRef = useRef<number | null>(null);
+  const prevSseStatusRef = useRef<string | null>(null);
 
   // Live moto + results — poll every 15 s; no burst on window focus
   const { data: motos } = useListMotos(eventId, {
@@ -84,6 +109,113 @@ export default function WatchLive() {
     console.debug("[WatchLive]", msg);
   };
 
+  // Keep announcerOnRef in sync with state so SSE callbacks see the latest value
+  useEffect(() => { announcerOnRef.current = announcerOn; }, [announcerOn]);
+
+  // ── Announcer audio queue ─────────────────────────────────────────────────
+  const drainQueue = useCallback(() => {
+    if (annPlayingRef.current || audioQueueRef.current.length === 0) return;
+    const url = audioQueueRef.current.shift()!;
+    annPlayingRef.current = true;
+    const audio = new Audio(url);
+    audio.onended = () => { URL.revokeObjectURL(url); annPlayingRef.current = false; drainQueue(); };
+    audio.onerror = () => { URL.revokeObjectURL(url); annPlayingRef.current = false; drainQueue(); };
+    audio.play().catch(() => { annPlayingRef.current = false; drainQueue(); });
+  }, []);
+
+  const enqueueAudio = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    audioQueueRef.current.push(url);
+    drainQueue();
+  }, [drainQueue]);
+
+  const triggerAnnouncement = useCallback(async (
+    lapCompleted: number,
+    top5: LeaderboardEntry[],
+    positionChanges: Array<{ riderName: string; from: number; to: number }>,
+    isComplete: boolean
+  ) => {
+    if (!announcerOnRef.current) return;
+    try {
+      setAnnouncerLabel(isComplete ? "Race complete!" : `Lap ${lapCompleted} announced`);
+      const res = await fetch("/api/timing/announce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lapCompleted,
+          top5: top5.slice(0, 5).map(e => ({
+            position: e.position, riderName: e.riderName, laps: e.laps,
+            lastLap: e.lastLap, gap: e.gap, dnf: e.dnf, dns: e.dns,
+          })),
+          positionChanges,
+          isComplete,
+        }),
+      });
+      if (!res.ok) return;
+      enqueueAudio(await res.blob());
+    } catch { /* skip silently */ }
+  }, [enqueueAudio]);
+
+  // ── SSE: real-time timing data + announcer ────────────────────────────────
+  useEffect(() => {
+    const motoId = activeMoto?.status === "in_progress" ? activeMoto.id : null;
+    if (!motoId) {
+      esRef.current?.close();
+      esRef.current = null;
+      activeMotoIdRef.current = null;
+      prevSseStatusRef.current = null;
+      setSseLeaderboard(null);
+      return;
+    }
+    if (activeMotoIdRef.current === motoId) return; // already connected
+
+    esRef.current?.close();
+    activeMotoIdRef.current = motoId;
+    prevLapsRef.current = new Map();
+    prevPositionsRef.current = new Map();
+    prevSseStatusRef.current = null;
+
+    const es = new EventSource(`/api/timing/live/${motoId}`);
+    esRef.current = es;
+
+    es.onmessage = (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        if (payload.error) return;
+
+        const top5 = (payload.leaderboard as LeaderboardEntry[]).filter(r => !r.dnf && !r.dns).slice(0, 5);
+        let maxNewLap = 0;
+        const posChanges: Array<{ riderName: string; from: number; to: number }> = [];
+
+        for (const entry of top5) {
+          const oldLaps = prevLapsRef.current.get(entry.riderId) ?? 0;
+          const oldPos = prevPositionsRef.current.get(entry.riderId);
+          if (entry.laps > oldLaps && entry.laps > 0) maxNewLap = Math.max(maxNewLap, entry.laps);
+          if (oldPos !== undefined && oldPos !== entry.position && entry.position <= 5) {
+            posChanges.push({ riderName: entry.riderName, from: oldPos, to: entry.position });
+          }
+        }
+        for (const entry of payload.leaderboard as LeaderboardEntry[]) {
+          prevLapsRef.current.set(entry.riderId, entry.laps);
+          prevPositionsRef.current.set(entry.riderId, entry.position);
+        }
+
+        const isComplete = payload.status === "completed";
+        const wasInProgress = prevSseStatusRef.current === "in_progress";
+        prevSseStatusRef.current = payload.status;
+
+        if (maxNewLap > 0) triggerAnnouncement(maxNewLap, top5, posChanges, isComplete);
+        else if (isComplete && wasInProgress) triggerAnnouncement(top5[0]?.laps ?? 0, top5, posChanges, true);
+
+        setSseLeaderboard(payload.leaderboard as LeaderboardEntry[]);
+      } catch { /* ignore parse errors */ }
+    };
+
+    return () => {
+      es.close();
+      if (esRef.current === es) { esRef.current = null; activeMotoIdRef.current = null; }
+    };
+  }, [activeMoto?.id, activeMoto?.status, triggerAnnouncement]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -419,6 +551,19 @@ export default function WatchLive() {
           {(viewerState === "connecting" || viewerState === "buffering") && (
             <span className="text-yellow-400 text-xs font-bold uppercase animate-pulse">Connecting…</span>
           )}
+          {/* AI Announcer toggle — always visible */}
+          <button
+            onClick={() => setAnnouncerOn(v => !v)}
+            title={announcerOn ? "Mute AI announcer" : "Enable AI announcer"}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
+              announcerOn
+                ? "bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30"
+                : "bg-white/5 text-white/30 border border-white/10 hover:bg-white/10"
+            }`}
+          >
+            {announcerOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
+            {announcerOn ? "Announcer" : "Muted"}
+          </button>
         </div>
         <a href={resultsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-white/50 hover:text-white text-xs transition-colors">
           Results <ExternalLink size={12} />
@@ -462,16 +607,57 @@ export default function WatchLive() {
                 </div>
               </div>
 
+              {/* Announcer status */}
+              {announcerOn && announcerLabel && (
+                <div className="px-3 py-1 border-b border-white/5 shrink-0 flex items-center gap-1 text-primary/60 text-[10px]">
+                  <Volume2 size={9} />
+                  {announcerLabel}
+                </div>
+              )}
+
               {/* Column headers */}
-              <div className="flex items-center px-3 py-1 text-white/20 text-[10px] uppercase tracking-wider border-b border-white/5 shrink-0">
-                <span className="w-5 text-right mr-2.5 shrink-0">#</span>
-                <span className="flex-1">Rider</span>
-                <span className="text-[10px] shrink-0">Bib</span>
-              </div>
+              {sseLeaderboard && activeMoto.status === "in_progress" ? (
+                <div className="flex items-center px-3 py-1 text-white/20 text-[10px] uppercase tracking-wider border-b border-white/5 shrink-0">
+                  <span className="w-5 text-right mr-2.5 shrink-0">#</span>
+                  <span className="flex-1">Rider</span>
+                  <span className="text-right shrink-0 w-8">Laps</span>
+                  <span className="text-right shrink-0 w-12 ml-1">Last</span>
+                </div>
+              ) : (
+                <div className="flex items-center px-3 py-1 text-white/20 text-[10px] uppercase tracking-wider border-b border-white/5 shrink-0">
+                  <span className="w-5 text-right mr-2.5 shrink-0">#</span>
+                  <span className="flex-1">Rider</span>
+                  <span className="text-[10px] shrink-0">Bib</span>
+                </div>
+              )}
 
               {/* Rider rows */}
               <div className="flex-1 overflow-y-auto">
-                {liveRiders.length === 0 ? (
+                {sseLeaderboard && activeMoto.status === "in_progress" ? (
+                  sseLeaderboard.length === 0 ? (
+                    <div className="px-3 py-10 text-white/20 text-xs text-center">Waiting for first crossing…</div>
+                  ) : (
+                    sseLeaderboard.map((entry) => (
+                      <div
+                        key={entry.riderId}
+                        className={`flex items-center gap-2.5 px-3 py-2 border-b border-white/5 ${entry.position === 1 ? "bg-white/5" : ""} ${entry.dnf || entry.dns ? "opacity-40" : ""}`}
+                      >
+                        <span className={`text-xs font-bold w-5 text-right shrink-0 ${
+                          entry.dnf || entry.dns ? "text-white/20" :
+                          entry.position === 1 ? "text-yellow-400" :
+                          entry.position === 2 ? "text-white/50" :
+                          entry.position === 3 ? "text-orange-600/70" :
+                          "text-white/25"
+                        }`}>
+                          {entry.dnf ? "D" : entry.dns ? "—" : entry.position}
+                        </span>
+                        <span className="text-white/90 text-xs flex-1 truncate">{entry.riderName}</span>
+                        <span className="text-white/40 text-[10px] font-mono text-right w-8 shrink-0">{entry.laps}</span>
+                        <span className="text-white/20 text-[10px] font-mono text-right w-12 ml-1 shrink-0 tabular-nums">{entry.lastLap ?? "—"}</span>
+                      </div>
+                    ))
+                  )
+                ) : liveRiders.length === 0 ? (
                   <div className="px-3 py-10 text-white/20 text-xs text-center">No lineup yet</div>
                 ) : (
                   liveRiders.map((rider, idx) => (
@@ -503,7 +689,7 @@ export default function WatchLive() {
               </div>
 
               <div className="px-3 py-1.5 border-t border-white/5 text-white/15 text-[10px] text-center shrink-0">
-                ↻ updates every 15s
+                {sseLeaderboard && activeMoto.status === "in_progress" ? "● live timing" : "↻ updates every 15s"}
               </div>
             </>
           ) : (
