@@ -17,6 +17,11 @@ export interface Moto {
   raceClass?: string;
   status: MotoStatus;
   motoNumber?: number;
+  /**
+     * Number of laps in this moto
+     * @nullable
+     */
+  lapCount?: number | null;
   /** @nullable */
   scheduledTime?: string | null;
   lineup?: LineupEntry[];

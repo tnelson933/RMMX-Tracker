@@ -206,6 +206,121 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
   );
 }
 
+// ── First Place Countdown ────────────────────────────────────────────────────
+
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return "any moment";
+  const totalSec = Math.ceil(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m > 0 ? `${m}m ${s.toString().padStart(2, "0")}s` : `${s}s`;
+}
+
+function FirstPlaceCountdown({ motoId, lapCount }: { motoId: number; lapCount?: number | null }) {
+  const [allCrossings, setAllCrossings] = useState<RawCrossing[]>([]);
+  const [now, setNow] = useState(Date.now());
+
+  // Poll crossings every 3s
+  useEffect(() => {
+    let cancelled = false;
+    const fetch_ = async () => {
+      try {
+        const res = await fetch(`/api/timing/crossings/${motoId}`);
+        if (!res.ok || cancelled) return;
+        const data: RawCrossing[] = await res.json();
+        if (Array.isArray(data)) setAllCrossings(data);
+      } catch { /* ignore */ }
+    };
+    fetch_();
+    const poll = setInterval(fetch_, 3000);
+    return () => { cancelled = true; clearInterval(poll); };
+  }, [motoId]);
+
+  // Tick countdown every second
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (allCrossings.length === 0) return null;
+
+  // Find the leader: rider with highest lapNumber, tie-broken by most-recent crossingTime
+  const byRider = new Map<string, RawCrossing[]>();
+  for (const c of allCrossings) {
+    const key = c.riderName ?? c.rfidNumber;
+    if (!byRider.has(key)) byRider.set(key, []);
+    byRider.get(key)!.push(c);
+  }
+
+  let leaderName = "";
+  let leaderMaxLap = 0;
+  let leaderLastCrossing: RawCrossing | null = null;
+  let leaderLapTimes: number[] = [];
+
+  for (const [name, crossings] of byRider) {
+    const maxLap = Math.max(...crossings.map(c => c.lapNumber));
+    const latest = crossings.filter(c => c.lapNumber === maxLap).sort(
+      (a, b) => new Date(b.crossingTime).getTime() - new Date(a.crossingTime).getTime()
+    )[0];
+    if (
+      maxLap > leaderMaxLap ||
+      (maxLap === leaderMaxLap && leaderLastCrossing &&
+        new Date(latest.crossingTime) > new Date(leaderLastCrossing.crossingTime))
+    ) {
+      leaderMaxLap = maxLap;
+      leaderName = name;
+      leaderLastCrossing = latest;
+      leaderLapTimes = crossings.map(c => c.lapTimeMs).filter((v): v is number => v != null && v > 0);
+    }
+  }
+
+  if (!leaderLastCrossing || leaderLapTimes.length < 2) return null;
+
+  const avgLapMs = leaderLapTimes.reduce((a, b) => a + b, 0) / leaderLapTimes.length;
+  const lastCrossingMs = new Date(leaderLastCrossing.crossingTime).getTime();
+
+  // If lapCount known: project to finish; otherwise project to next crossing
+  const remainingLaps = lapCount != null ? lapCount - leaderMaxLap : 1;
+  const projectedMs = lastCrossingMs + remainingLaps * avgLapMs;
+  const msUntil = projectedMs - now;
+  const isOverdue = msUntil < 0;
+  const isFinish = lapCount != null;
+
+  return (
+    <div className={`border-t flex items-center gap-3 px-4 py-2.5 transition-all ${
+      isOverdue
+        ? "bg-orange-500/10 border-orange-500/30"
+        : msUntil < 30000
+        ? "bg-primary/10 animate-pulse"
+        : "bg-amber-500/5"
+    }`}>
+      <div className={`shrink-0 ${isOverdue ? "text-orange-500" : msUntil < 30000 ? "text-primary" : "text-amber-500"}`}>
+        <Flag size={15} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-none mb-0.5">
+          {isFinish ? "1st Place Finish Expected" : "1st Place Next Crossing"}
+        </div>
+        <div className="text-xs font-medium truncate text-foreground">
+          {leaderName}
+          {lapCount != null && (
+            <span className="ml-1.5 text-muted-foreground font-normal">
+              · Lap {leaderMaxLap} of {lapCount}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className={`shrink-0 text-right font-heading font-bold tabular-nums ${
+        isOverdue ? "text-orange-500" : msUntil < 30000 ? "text-primary text-base" : "text-amber-600 text-sm"
+      }`}>
+        {isOverdue
+          ? `${formatCountdown(Math.abs(msUntil))} ago`
+          : formatCountdown(msUntil)}
+      </div>
+    </div>
+  );
+}
+
 // ── Drag-and-drop sub-components ───────────────────────────────────────────
 
 type LineupEntry = { riderId: number; riderName: string; position: number; bibNumber?: string | null; rfidNumber?: string | null };
@@ -349,6 +464,7 @@ export default function Motos() {
   const [newMotoName, setNewMotoName] = useState("");
   const [newMotoType, setNewMotoType] = useState<"heat" | "lcq" | "main" | "practice">("heat");
   const [newMotoClass, setNewMotoClass] = useState("");
+  const [newMotoLapCount, setNewMotoLapCount] = useState("");
   const [selectedRiderIds, setSelectedRiderIds] = useState<Set<number>>(new Set());
 
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
@@ -492,6 +608,7 @@ export default function Motos() {
     setNewMotoName("");
     setNewMotoType("heat");
     setNewMotoClass("");
+    setNewMotoLapCount("");
     setSelectedRiderIds(new Set());
   };
 
@@ -508,8 +625,9 @@ export default function Motos() {
         rfidNumber: c.rfidNumber || null,
       }));
 
+    const lapCountNum = newMotoLapCount.trim() ? parseInt(newMotoLapCount.trim(), 10) : undefined;
     createMotoMutation.mutate(
-      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: newMotoClass, motoNumber: nextMotoNumber, lineup: lineup as any } },
+      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: newMotoClass, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -777,6 +895,19 @@ export default function Motos() {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+
+                {/* Lap count */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Number of Laps <span className="text-muted-foreground font-normal text-xs">(optional — enables finish countdown)</span></label>
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 5"
+                    value={newMotoLapCount}
+                    onChange={e => setNewMotoLapCount(e.target.value)}
+                    className="h-9 w-28"
+                  />
                 </div>
 
                 {/* Rider picker */}
@@ -1258,6 +1389,11 @@ export default function Motos() {
                   </div>
                 )}
 
+                {/* First place finish countdown */}
+                {moto.status === "in_progress" && (
+                  <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
+                )}
+
                 {/* Live crossing feed — shown only while moto is in progress */}
                 {moto.status === "in_progress" && (
                   <LiveCrossingsFeed motoId={moto.id} />
@@ -1484,6 +1620,11 @@ export default function Motos() {
                       </TableBody>
                     </Table>
                   </div>
+                )}
+
+                {/* First place finish countdown */}
+                {moto.status === "in_progress" && (
+                  <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
                 )}
 
                 {/* Live crossing feed */}

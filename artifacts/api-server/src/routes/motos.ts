@@ -111,11 +111,12 @@ router.get("/events/:eventId/motos", async (req, res) => {
 
 router.post("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { name, type, raceClass, motoNumber, scheduledTime, lineup } = req.body;
+  const { name, type, raceClass, motoNumber, scheduledTime, lineup, lapCount } = req.body;
   if (!name || !type || !raceClass || motoNumber === undefined) return res.status(400).json({ error: "name, type, raceClass, motoNumber required" });
 
   const [moto] = await db.insert(motosTable).values({
     eventId, name, type, raceClass, motoNumber, scheduledTime, lineup: lineup || [], status: "scheduled",
+    lapCount: lapCount ? Number(lapCount) : null,
   }).returning();
 
   return res.status(201).json({ ...moto, lineup: Array.isArray(moto.lineup) ? moto.lineup : [], createdAt: moto.createdAt.toISOString() });
@@ -131,6 +132,7 @@ router.patch("/motos/:motoId", async (req, res) => {
   }
   if (req.body.lineup !== undefined) updates.lineup = req.body.lineup;
   if (req.body.scheduledTime !== undefined) updates.scheduledTime = req.body.scheduledTime;
+  if (req.body.lapCount !== undefined) updates.lapCount = req.body.lapCount !== null ? Number(req.body.lapCount) : null;
 
   const [moto] = await db.update(motosTable).set(updates as any).where(eq(motosTable.id, id)).returning();
   if (!moto) return res.status(404).json({ error: "Not found" });

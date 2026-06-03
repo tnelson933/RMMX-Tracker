@@ -10,4 +10,6 @@ export interface MotoUpdate {
   status?: string;
   lineup?: number[];
   scheduledTime?: string;
+  /** @nullable */
+  lapCount?: number | null;
 }

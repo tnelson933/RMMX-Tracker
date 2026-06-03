@@ -492,6 +492,11 @@ export interface Moto {
   raceClass?: string;
   status: MotoStatus;
   motoNumber?: number;
+  /**
+     * Number of laps in this moto
+     * @nullable
+     */
+  lapCount?: number | null;
   /** @nullable */
   scheduledTime?: string | null;
   lineup?: LineupEntry[];
@@ -512,6 +517,8 @@ export interface MotoInput {
   type: MotoInputType;
   raceClass: string;
   motoNumber: number;
+  /** Number of laps in this moto */
+  lapCount?: number;
   scheduledTime?: string;
   lineup?: number[];
 }
@@ -520,6 +527,8 @@ export interface MotoUpdate {
   status?: string;
   lineup?: number[];
   scheduledTime?: string;
+  /** @nullable */
+  lapCount?: number | null;
 }
 
 export type LineupGenerateInputRaceFormat = typeof LineupGenerateInputRaceFormat[keyof typeof LineupGenerateInputRaceFormat];

@@ -1950,6 +1950,9 @@ components:
           enum: [scheduled, in_progress, completed, cancelled]
         motoNumber:
           type: integer
+        lapCount:
+          type: ["integer", "null"]
+          description: Number of laps in this moto
         scheduledTime:
           type: ["string", "null"]
         lineup:
@@ -1970,6 +1973,9 @@ components:
           type: string
         motoNumber:
           type: integer
+        lapCount:
+          type: integer
+          description: Number of laps in this moto
         scheduledTime:
           type: string
         lineup:
@@ -1988,6 +1994,8 @@ components:
             type: integer
         scheduledTime:
           type: string
+        lapCount:
+          type: ["integer", "null"]
 
     LineupEntry:
       type: object

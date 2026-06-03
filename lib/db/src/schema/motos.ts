@@ -13,6 +13,7 @@ export const motosTable = pgTable("motos", {
   motoNumber: integer("moto_number").notNull(),
   scheduledTime: text("scheduled_time"),
   lineup: jsonb("lineup").notNull().default([]),
+  lapCount: integer("lap_count"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),

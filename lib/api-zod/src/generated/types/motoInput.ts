@@ -12,6 +12,8 @@ export interface MotoInput {
   type: MotoInputType;
   raceClass: string;
   motoNumber: number;
+  /** Number of laps in this moto */
+  lapCount?: number;
   scheduledTime?: string;
   lineup?: number[];
 }

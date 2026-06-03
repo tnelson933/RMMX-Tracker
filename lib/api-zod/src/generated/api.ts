@@ -773,6 +773,7 @@ export const ListMotosResponseItem = zod.object({
   "raceClass": zod.string().optional(),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
+  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -797,6 +798,7 @@ export const CreateMotoBody = zod.object({
   "type": zod.enum(['heat', 'lcq', 'main', 'practice']),
   "raceClass": zod.string(),
   "motoNumber": zod.number(),
+  "lapCount": zod.number().optional().describe('Number of laps in this moto'),
   "scheduledTime": zod.string().optional(),
   "lineup": zod.array(zod.number()).optional()
 })
@@ -812,7 +814,8 @@ export const UpdateMotoParams = zod.object({
 export const UpdateMotoBody = zod.object({
   "status": zod.string().optional(),
   "lineup": zod.array(zod.number()).optional(),
-  "scheduledTime": zod.string().optional()
+  "scheduledTime": zod.string().optional(),
+  "lapCount": zod.number().nullish()
 })
 
 export const UpdateMotoResponse = zod.object({
@@ -823,6 +826,7 @@ export const UpdateMotoResponse = zod.object({
   "raceClass": zod.string().optional(),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
+  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -863,6 +867,7 @@ export const GenerateLineupsResponseItem = zod.object({
   "raceClass": zod.string().optional(),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
+  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -1045,6 +1050,7 @@ export const AdvanceToMainResponse = zod.object({
   "raceClass": zod.string().optional(),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
+  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
