@@ -309,40 +309,40 @@ router.post("/timing/crossing", async (req, res) => {
 
 // POST /timing/manual-crossing — record a lap for a rider by riderId (no RFID required)
 router.post("/timing/manual-crossing", async (req, res) => {
-  const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
-
-  const { riderId, motoId } = req.body;
-  if (!riderId || !motoId) return res.status(400).json({ error: "riderId and motoId are required" });
-
-  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, Number(motoId)));
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
-
-  const [sessionUser] = await db
-    .select({ clubId: usersTable.clubId, role: usersTable.role })
-    .from(usersTable)
-    .where(eq(usersTable.id, session.userId));
-  if (!sessionUser) return res.status(401).json({ error: "Unauthorized" });
-
-  if (sessionUser.role !== "super_admin") {
-    const [event] = await db
-      .select({ clubId: eventsTable.clubId })
-      .from(eventsTable)
-      .where(eq(eventsTable.id, moto.eventId));
-    if (!event || event.clubId !== sessionUser.clubId) {
-      return res.status(403).json({ error: "Forbidden: not your event" });
-    }
-  }
-
-  // Use the rider's assigned RFID if available, so manual and hardware crossings share one sequence
-  const assignments = await db
-    .select({ rfidNumber: rfidAssignmentsTable.rfidNumber })
-    .from(rfidAssignmentsTable)
-    .where(and(eq(rfidAssignmentsTable.riderId, Number(riderId)), eq(rfidAssignmentsTable.eventId, moto.eventId)));
-
-  const rfidNumber = assignments[0]?.rfidNumber ?? `MANUAL-${riderId}`;
-
   try {
+    const session = req.session as any;
+    if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { riderId, motoId } = req.body;
+    if (!riderId || !motoId) return res.status(400).json({ error: "riderId and motoId are required" });
+
+    const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, Number(motoId)));
+    if (!moto) return res.status(404).json({ error: `Moto ${motoId} not found` });
+
+    const [sessionUser] = await db
+      .select({ clubId: usersTable.clubId, role: usersTable.role })
+      .from(usersTable)
+      .where(eq(usersTable.id, session.userId));
+    if (!sessionUser) return res.status(401).json({ error: "Unauthorized" });
+
+    if (sessionUser.role !== "super_admin") {
+      const [event] = await db
+        .select({ clubId: eventsTable.clubId })
+        .from(eventsTable)
+        .where(eq(eventsTable.id, moto.eventId));
+      if (!event || event.clubId !== sessionUser.clubId) {
+        return res.status(403).json({ error: "Forbidden: not your event" });
+      }
+    }
+
+    // Use the rider's assigned RFID if available, so manual and hardware crossings share one sequence
+    const assignments = await db
+      .select({ rfidNumber: rfidAssignmentsTable.rfidNumber })
+      .from(rfidAssignmentsTable)
+      .where(and(eq(rfidAssignmentsTable.riderId, Number(riderId)), eq(rfidAssignmentsTable.eventId, moto.eventId)));
+
+    const rfidNumber = assignments[0]?.rfidNumber ?? `MANUAL-${riderId}`;
+
     const result = await processCrossing({
       rfidNumber,
       motoId: Number(motoId),
@@ -359,7 +359,8 @@ router.post("/timing/manual-crossing", async (req, res) => {
       lapTimeMs: result.lapTimeMs,
     });
   } catch (err: any) {
-    return res.status(409).json({ error: err.message });
+    const status = typeof err.status === "number" ? err.status : 500;
+    return res.status(status).json({ error: err.message ?? "Internal server error" });
   }
 });
 

@@ -74,8 +74,9 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
       }
       toast({ title: "Crossing deleted", description: "Lap times recalculated." });
       await fetchCrossings();
-    } catch {
-      toast({ title: "Network error", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not reach server";
+      toast({ title: "Failed to delete crossing", description: msg, variant: "destructive" });
     } finally {
       setDeletingId(null);
     }
@@ -580,8 +581,9 @@ export default function Motos() {
           description: data.lapTime ? `Lap time: ${data.lapTime}` : "Timestamp captured",
         });
       }
-    } catch {
-      toast({ title: "Network error", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not reach server";
+      toast({ title: "Failed to record lap", description: msg, variant: "destructive" });
     } finally {
       setTimeout(() => {
         setManualLapCooldown(prev => {
