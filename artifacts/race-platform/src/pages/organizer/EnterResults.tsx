@@ -115,13 +115,15 @@ export default function EnterResults() {
   }).sort((a, b) => b.total - a.total || a.totalTimeSeconds - b.totalTimeSeconds);
 
   // Assign positions — ties broken by time; only identical points + time share a rank
-  const standingsWithPos = overallStandings.map((row, idx, arr) => {
+  const standingsWithPos: Array<(typeof overallStandings)[number] & { overallPos: number; totalTimeDisplay: string }> = [];
+  for (let idx = 0; idx < overallStandings.length; idx++) {
+    const row = overallStandings[idx];
     let overallPos = idx + 1;
-    if (idx > 0 && row.total === arr[idx - 1].total && row.totalTimeSeconds === arr[idx - 1].totalTimeSeconds) {
+    if (idx > 0 && row.total === overallStandings[idx - 1].total && row.totalTimeSeconds === overallStandings[idx - 1].totalTimeSeconds) {
       overallPos = standingsWithPos[idx - 1].overallPos;
     }
-    return { ...row, overallPos, totalTimeDisplay: formatSeconds(row.totalTimeSeconds) };
-  });
+    standingsWithPos.push({ ...row, overallPos, totalTimeDisplay: formatSeconds(row.totalTimeSeconds) });
+  }
 
   const handleUpdateField = (riderId: number, field: string, value: any) => {
     setResultsData(prev => ({
