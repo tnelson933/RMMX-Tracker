@@ -89,6 +89,8 @@ export default function Register() {
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [paymentCancelled, setPaymentCancelled] = useState(false);
+  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found">("idle");
+  const [lookedUpName, setLookedUpName] = useState<string>("");
 
   const form = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
@@ -192,6 +194,35 @@ export default function Register() {
     }, 4000);
     return () => clearInterval(id);
   }, [pendingPayment?.sessionId, pendingPayment?.registrationId, !!success]);
+
+  const lookupByEmail = async (email: string) => {
+    const trimmed = email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmed)) return;
+    setLookupState("loading");
+    setLookedUpName("");
+    try {
+      const res = await fetch(`/api/public/riders/lookup?email=${encodeURIComponent(trimmed)}`);
+      const data = await res.json();
+      if (data.found) {
+        form.setValue("firstName", data.firstName, { shouldDirty: false });
+        form.setValue("lastName", data.lastName, { shouldDirty: false });
+        form.setValue("phone", data.phone, { shouldDirty: false });
+        form.setValue("dateOfBirth", data.dateOfBirth, { shouldDirty: false });
+        form.setValue("emergencyContact", data.emergencyContact, { shouldDirty: false });
+        form.setValue("emergencyPhone", data.emergencyPhone, { shouldDirty: false });
+        if (data.amaNumber) form.setValue("amaNumber", data.amaNumber, { shouldDirty: false });
+        if (data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
+        if (data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
+        setLookedUpName(`${data.firstName} ${data.lastName}`);
+        setLookupState("found");
+      } else {
+        setLookupState("not_found");
+      }
+    } catch {
+      setLookupState("not_found");
+    }
+  };
 
   const onSubmit = async (data: RegisterForm) => {
     setSubmitting(true);
@@ -487,6 +518,44 @@ export default function Register() {
 
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                {/* Email — first question, drives rider lookup */}
+                <Card>
+                  <CardHeader className="pb-2 border-b">
+                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Your Email</h3>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-3">
+                    <FormField control={form.control} name="email" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email Address <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                          <Input
+                            type="email"
+                            placeholder="rider@example.com"
+                            {...field}
+                            onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    {lookupState === "loading" && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 size={14} className="animate-spin" />
+                        Looking up your rider profile...
+                      </div>
+                    )}
+                    {lookupState === "found" && (
+                      <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm">
+                        <CheckCircle2 size={16} className="shrink-0 text-green-600" />
+                        <span>Welcome back, <strong>{lookedUpName}</strong>! Your info has been pre-filled — review and update anything that's changed.</span>
+                      </div>
+                    )}
+                    {lookupState === "not_found" && (
+                      <p className="text-xs text-muted-foreground">No existing profile found — fill in your details below and we'll create one for you.</p>
+                    )}
+                  </CardContent>
+                </Card>
+
                 <Card>
                   <CardHeader className="pb-2 border-b">
                     <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Race Class</h3>
@@ -575,13 +644,6 @@ export default function Register() {
                         </FormItem>
                       )} />
                     </div>
-                    <FormField control={form.control} name="email" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input type="email" placeholder="rider@example.com" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
                     <div className="grid grid-cols-2 gap-4">
                       <FormField control={form.control} name="phone" render={({ field }) => (
                         <FormItem>

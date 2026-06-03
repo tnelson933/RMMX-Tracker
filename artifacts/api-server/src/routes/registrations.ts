@@ -1,10 +1,47 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 
 const router = Router();
+
+router.get("/public/riders/lookup", async (req, res) => {
+  const email = ((req.query.email as string) || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  const riders = await db.select().from(ridersTable)
+    .where(sql`lower(${ridersTable.email}) = ${email}`)
+    .limit(1);
+
+  if (!riders.length) return res.json({ found: false });
+
+  const rider = riders[0];
+
+  const lastRegs = await db.select({
+    amaNumber: registrationsTable.amaNumber,
+    bikeBrand: registrationsTable.bikeBrand,
+    bibNumber: registrationsTable.bibNumber,
+  }).from(registrationsTable)
+    .where(eq(registrationsTable.riderId, rider.id))
+    .orderBy(desc(registrationsTable.createdAt))
+    .limit(1);
+
+  const lastReg = lastRegs[0] ?? null;
+
+  return res.json({
+    found: true,
+    firstName: rider.firstName ?? "",
+    lastName: rider.lastName ?? "",
+    phone: rider.phone ?? "",
+    dateOfBirth: rider.dateOfBirth ?? "",
+    emergencyContact: rider.emergencyContact ?? "",
+    emergencyPhone: rider.emergencyPhone ?? "",
+    amaNumber: lastReg?.amaNumber ?? "",
+    bikeBrand: lastReg?.bikeBrand ?? "",
+    bibNumber: lastReg?.bibNumber?.toString() ?? "",
+  });
+});
 
 function getAppUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL;
