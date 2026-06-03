@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable } from "@workspace/db";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, asc } from "drizzle-orm";
 
 const router = Router();
 
@@ -28,11 +28,17 @@ router.get("/events/:eventId/checkins", async (req, res) => {
 
   if (regs.length === 0) return res.json([]);
 
-  // Fetch all existing checkin rows for the event in one query
+  // Fetch all existing checkin rows for the event in one query.
+  // Order by id ascending so that if duplicates exist, the first (canonical) row
+  // ends up in the map — later entries for the same riderId are ignored.
   const checkinRows = await db.select().from(checkinsTable)
-    .where(eq(checkinsTable.eventId, eventId));
+    .where(eq(checkinsTable.eventId, eventId))
+    .orderBy(asc(checkinsTable.id));
 
-  const checkinByRider = new Map(checkinRows.map(c => [c.riderId, c]));
+  const checkinByRider = new Map<number, typeof checkinRows[0]>();
+  for (const c of checkinRows) {
+    if (!checkinByRider.has(c.riderId)) checkinByRider.set(c.riderId, c);
+  }
 
   return res.json(regs.map(r => {
     const c = checkinByRider.get(r.riderId);
@@ -68,7 +74,9 @@ router.post("/events/:eventId/checkins", async (req, res) => {
   const regBib = regs[0]?.bibNumber ?? null;
 
   const existing = await db.select().from(checkinsTable)
-    .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.riderId, riderId)));
+    .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.riderId, riderId)))
+    .orderBy(asc(checkinsTable.id))
+    .limit(1);
 
   let checkin;
   if (existing[0]) {
