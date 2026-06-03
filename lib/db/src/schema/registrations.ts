@@ -22,6 +22,8 @@ export const registrationsTable = pgTable("registrations", {
   transponderRental: boolean("transponder_rental").notNull().default(false),
   myLapsTransponderNumber: text("mylaps_transponder_number"),
   selectedPurchaseOptions: jsonb("selected_purchase_options").$type<PurchaseOption[]>().notNull().default([]),
+  compCode: text("comp_code"),
+  compDiscount: numeric("comp_discount", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
