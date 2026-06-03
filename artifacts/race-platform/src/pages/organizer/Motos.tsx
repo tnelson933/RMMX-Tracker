@@ -1099,7 +1099,7 @@ export default function Motos() {
                     <span className="font-heading font-bold text-xs uppercase tracking-wider truncate mr-2">{cls}</span>
                     <Badge variant="secondary" className="text-xs h-5 shrink-0">{sorted.length}</Badge>
                   </div>
-                  <div className="divide-y max-h-52 overflow-y-auto">
+                  <div className="divide-y max-h-80 overflow-y-auto">
                     {sorted.map(r => (
                       <DraggablePoolRider key={r.riderId} riderId={r.riderId} riderName={r.riderName ?? "Rider"} bibNumber={r.bibNumber} />
                     ))}
