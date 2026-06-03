@@ -256,6 +256,7 @@ export default function Motos() {
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
   const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
+  const [bibInputs, setBibInputs] = useState<Record<number, string>>({});
 
   // Drag-and-drop state
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -543,6 +544,18 @@ export default function Motos() {
         });
       }, 4000);
     }
+  };
+
+  const handleBibEntry = (motoId: number, lineup: LineupEntry[]) => {
+    const raw = (bibInputs[motoId] ?? "").trim().replace(/^#/, "");
+    if (!raw) return;
+    const entry = lineup.find(e => e.bibNumber && e.bibNumber.replace(/^#/, "") === raw);
+    if (!entry) {
+      toast({ title: `Bib #${raw} not found in this lineup`, variant: "destructive" });
+      return;
+    }
+    setBibInputs(prev => ({ ...prev, [motoId]: "" }));
+    handleManualLap(entry.riderId, motoId);
   };
 
   return (
@@ -1070,6 +1083,25 @@ export default function Motos() {
                     </Button>
                   )}
 
+                  {moto.status === "in_progress" && (
+                    <form
+                      className="flex items-center gap-1"
+                      onSubmit={e => { e.preventDefault(); handleBibEntry(moto.id, getLineup(moto)); }}
+                    >
+                      <div className="relative">
+                        <Timer size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Bib #"
+                          value={bibInputs[moto.id] ?? ""}
+                          onChange={e => setBibInputs(prev => ({ ...prev, [moto.id]: e.target.value }))}
+                          className="h-7 w-20 pl-6 pr-2 rounded border border-border bg-background text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/60"
+                        />
+                      </div>
+                    </form>
+                  )}
+
                   <div className="ml-auto flex gap-1.5">
                     {/* Live timing link — always available */}
                     <a href={`/live/${moto.id}`} target="_blank" rel="noopener noreferrer">
@@ -1274,6 +1306,26 @@ export default function Motos() {
                     <RefreshCw size={14} className="mr-1" /> Reopen
                   </Button>
                 )}
+
+                {moto.status === "in_progress" && (
+                  <form
+                    className="flex items-center gap-1.5"
+                    onSubmit={e => { e.preventDefault(); handleBibEntry(moto.id, getLineup(moto)); }}
+                  >
+                    <div className="relative">
+                      <Timer size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Bib # + Enter"
+                        value={bibInputs[moto.id] ?? ""}
+                        onChange={e => setBibInputs(prev => ({ ...prev, [moto.id]: e.target.value }))}
+                        className="h-8 w-36 pl-7 pr-2 rounded border border-border bg-background text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50"
+                      />
+                    </div>
+                  </form>
+                )}
+
                 <div className="ml-auto flex gap-1.5">
                   <a href={`/live/${moto.id}`} target="_blank" rel="noopener noreferrer">
                     <Button size="sm" variant="ghost" className={`font-heading uppercase text-xs gap-1 ${moto.status === "in_progress" ? "text-primary" : "text-muted-foreground"}`}>
