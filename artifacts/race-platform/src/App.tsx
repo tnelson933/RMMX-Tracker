@@ -25,6 +25,7 @@ import RiderDetail from "@/pages/organizer/RiderDetail";
 import RfidManagement from "@/pages/organizer/RfidManagement";
 import ReaderSetup from "@/pages/organizer/ReaderSetup";
 import Series from "@/pages/organizer/Series";
+import PointsTables from "@/pages/organizer/PointsTables";
 import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
 import UsersAdmin from "@/pages/organizer/UsersAdmin";
 import SetPassword from "@/pages/public/SetPassword";
@@ -129,6 +130,9 @@ function Router() {
       </Route>
       <Route path="/series">
         <ProtectedRoute><Series /></ProtectedRoute>
+      </Route>
+      <Route path="/points-tables">
+        <ProtectedRoute><PointsTables /></ProtectedRoute>
       </Route>
       <Route path="/admin/clubs">
         <ProtectedRoute><ClubsAdmin /></ProtectedRoute>

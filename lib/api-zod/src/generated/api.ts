@@ -1015,6 +1015,71 @@ export const RecalculateSeriesPointsParams = zod.object({
 
 
 /**
+ * @summary List points tables (system defaults + club-specific)
+ */
+export const ListPointsTablesResponseItem = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number().nullish(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "mainEventOnly": zod.boolean(),
+  "pointsScale": zod.array(zod.number()),
+  "isSystemDefault": zod.boolean(),
+  "createdAt": zod.string()
+})
+export const ListPointsTablesResponse = zod.array(ListPointsTablesResponseItem)
+
+
+/**
+ * @summary Create a custom points table
+ */
+export const CreatePointsTableBody = zod.object({
+  "name": zod.string(),
+  "description": zod.string().optional(),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "mainEventOnly": zod.boolean(),
+  "pointsScale": zod.array(zod.number())
+})
+
+
+/**
+ * @summary Update a custom points table
+ */
+export const UpdatePointsTableParams = zod.object({
+  "tableId": zod.coerce.number()
+})
+
+export const UpdatePointsTableBody = zod.object({
+  "name": zod.string(),
+  "description": zod.string().optional(),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "mainEventOnly": zod.boolean(),
+  "pointsScale": zod.array(zod.number())
+})
+
+export const UpdatePointsTableResponse = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number().nullish(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "mainEventOnly": zod.boolean(),
+  "pointsScale": zod.array(zod.number()),
+  "isSystemDefault": zod.boolean(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a custom points table
+ */
+export const DeletePointsTableParams = zod.object({
+  "tableId": zod.coerce.number()
+})
+
+
+/**
  * @summary Club dashboard summary — upcoming events, recent check-ins, total riders
  */
 export const GetClubDashboardParams = zod.object({

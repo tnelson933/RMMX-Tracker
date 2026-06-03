@@ -725,6 +725,43 @@ export interface UploadUrlResponse {
   metadata?: UploadUrlRequest;
 }
 
+export type PointsTableScoringMethod = typeof PointsTableScoringMethod[keyof typeof PointsTableScoringMethod];
+
+
+export const PointsTableScoringMethod = {
+  highest_points: 'highest_points',
+  lowest_positions: 'lowest_positions',
+} as const;
+
+export interface PointsTable {
+  id: number;
+  /** @nullable */
+  clubId?: number | null;
+  name: string;
+  description: string;
+  scoringMethod: PointsTableScoringMethod;
+  mainEventOnly: boolean;
+  pointsScale: number[];
+  isSystemDefault: boolean;
+  createdAt: string;
+}
+
+export type PointsTableInputScoringMethod = typeof PointsTableInputScoringMethod[keyof typeof PointsTableInputScoringMethod];
+
+
+export const PointsTableInputScoringMethod = {
+  highest_points: 'highest_points',
+  lowest_positions: 'lowest_positions',
+} as const;
+
+export interface PointsTableInput {
+  name: string;
+  description?: string;
+  scoringMethod: PointsTableInputScoringMethod;
+  mainEventOnly: boolean;
+  pointsScale: number[];
+}
+
 export interface ErrorEnvelope {
   error: string;
 }

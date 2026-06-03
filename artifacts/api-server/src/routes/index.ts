@@ -18,6 +18,7 @@ import riderPortalRouter from "./rider-portal";
 import videoRouter from "./video";
 import storageRouter from "./storage";
 import compCodesRouter from "./comp-codes";
+import pointsTablesRouter from "./points-tables";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(riderPortalRouter);
 router.use(videoRouter);
 router.use(storageRouter);
 router.use(compCodesRouter);
+router.use(pointsTablesRouter);
 
 export default router;

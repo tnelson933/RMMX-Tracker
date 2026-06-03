@@ -943,6 +943,77 @@ paths:
         "200":
           description: Points recalculated
 
+  # POINTS SCORING TABLES
+  /points-tables:
+    get:
+      operationId: listPointsTables
+      tags: [pointsTables]
+      summary: List points tables (system defaults + club-specific)
+      responses:
+        "200":
+          description: Points tables list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PointsTable"
+    post:
+      operationId: createPointsTable
+      tags: [pointsTables]
+      summary: Create a custom points table
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointsTableInput"
+      responses:
+        "201":
+          description: Points table created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointsTable"
+
+  /points-tables/{tableId}:
+    patch:
+      operationId: updatePointsTable
+      tags: [pointsTables]
+      summary: Update a custom points table
+      parameters:
+        - name: tableId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PointsTableInput"
+      responses:
+        "200":
+          description: Points table updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointsTable"
+    delete:
+      operationId: deletePointsTable
+      tags: [pointsTables]
+      summary: Delete a custom points table
+      parameters:
+        - name: tableId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
   # DASHBOARD / WOW ENDPOINTS
   /dashboard/club/{clubId}:
     get:
@@ -2267,6 +2338,50 @@ components:
           type: string
         metadata:
           $ref: '#/components/schemas/UploadUrlRequest'
+    PointsTable:
+      type: object
+      required: [id, name, description, scoringMethod, mainEventOnly, pointsScale, isSystemDefault, createdAt]
+      properties:
+        id:
+          type: integer
+        clubId:
+          type: ["integer", "null"]
+        name:
+          type: string
+        description:
+          type: string
+        scoringMethod:
+          type: string
+          enum: [highest_points, lowest_positions]
+        mainEventOnly:
+          type: boolean
+        pointsScale:
+          type: array
+          items:
+            type: number
+        isSystemDefault:
+          type: boolean
+        createdAt:
+          type: string
+
+    PointsTableInput:
+      type: object
+      required: [name, scoringMethod, mainEventOnly, pointsScale]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        scoringMethod:
+          type: string
+          enum: [highest_points, lowest_positions]
+        mainEventOnly:
+          type: boolean
+        pointsScale:
+          type: array
+          items:
+            type: number
+
     ErrorEnvelope:
       type: object
       required: [error]

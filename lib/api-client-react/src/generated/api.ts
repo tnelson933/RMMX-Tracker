@@ -48,6 +48,8 @@ import type {
   MotoInput,
   MotoUpdate,
   OrganizerUser,
+  PointsTable,
+  PointsTableInput,
   PublishInput,
   RaceDaySummary,
   RaceResult,
@@ -3476,6 +3478,296 @@ export const useRecalculateSeriesPoints = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRecalculateSeriesPointsMutationOptions(options));
+    }
+
+export const getListPointsTablesUrl = () => {
+
+
+
+
+  return `/api/points-tables`
+}
+
+/**
+ * @summary List points tables (system defaults + club-specific)
+ */
+export const listPointsTables = async ( options?: RequestInit): Promise<PointsTable[]> => {
+
+  return customFetch<PointsTable[]>(getListPointsTablesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPointsTablesQueryKey = () => {
+    return [
+    `/api/points-tables`
+    ] as const;
+    }
+
+
+export const getListPointsTablesQueryOptions = <TData = Awaited<ReturnType<typeof listPointsTables>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPointsTables>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPointsTablesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPointsTables>>> = ({ signal }) => listPointsTables({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPointsTables>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPointsTablesQueryResult = NonNullable<Awaited<ReturnType<typeof listPointsTables>>>
+export type ListPointsTablesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List points tables (system defaults + club-specific)
+ */
+
+export function useListPointsTables<TData = Awaited<ReturnType<typeof listPointsTables>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPointsTables>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPointsTablesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreatePointsTableUrl = () => {
+
+
+
+
+  return `/api/points-tables`
+}
+
+/**
+ * @summary Create a custom points table
+ */
+export const createPointsTable = async (pointsTableInput: PointsTableInput, options?: RequestInit): Promise<PointsTable> => {
+
+  return customFetch<PointsTable>(getCreatePointsTableUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      pointsTableInput,)
+  }
+);}
+
+
+
+
+export const getCreatePointsTableMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPointsTable>>, TError,{data: BodyType<PointsTableInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPointsTable>>, TError,{data: BodyType<PointsTableInput>}, TContext> => {
+
+const mutationKey = ['createPointsTable'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPointsTable>>, {data: BodyType<PointsTableInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createPointsTable(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePointsTableMutationResult = NonNullable<Awaited<ReturnType<typeof createPointsTable>>>
+    export type CreatePointsTableMutationBody = BodyType<PointsTableInput>
+    export type CreatePointsTableMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a custom points table
+ */
+export const useCreatePointsTable = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPointsTable>>, TError,{data: BodyType<PointsTableInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPointsTable>>,
+        TError,
+        {data: BodyType<PointsTableInput>},
+        TContext
+      > => {
+      return useMutation(getCreatePointsTableMutationOptions(options));
+    }
+
+export const getUpdatePointsTableUrl = (tableId: number,) => {
+
+
+
+
+  return `/api/points-tables/${tableId}`
+}
+
+/**
+ * @summary Update a custom points table
+ */
+export const updatePointsTable = async (tableId: number,
+    pointsTableInput: PointsTableInput, options?: RequestInit): Promise<PointsTable> => {
+
+  return customFetch<PointsTable>(getUpdatePointsTableUrl(tableId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      pointsTableInput,)
+  }
+);}
+
+
+
+
+export const getUpdatePointsTableMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePointsTable>>, TError,{tableId: number;data: BodyType<PointsTableInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePointsTable>>, TError,{tableId: number;data: BodyType<PointsTableInput>}, TContext> => {
+
+const mutationKey = ['updatePointsTable'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePointsTable>>, {tableId: number;data: BodyType<PointsTableInput>}> = (props) => {
+          const {tableId,data} = props ?? {};
+
+          return  updatePointsTable(tableId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePointsTableMutationResult = NonNullable<Awaited<ReturnType<typeof updatePointsTable>>>
+    export type UpdatePointsTableMutationBody = BodyType<PointsTableInput>
+    export type UpdatePointsTableMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a custom points table
+ */
+export const useUpdatePointsTable = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePointsTable>>, TError,{tableId: number;data: BodyType<PointsTableInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePointsTable>>,
+        TError,
+        {tableId: number;data: BodyType<PointsTableInput>},
+        TContext
+      > => {
+      return useMutation(getUpdatePointsTableMutationOptions(options));
+    }
+
+export const getDeletePointsTableUrl = (tableId: number,) => {
+
+
+
+
+  return `/api/points-tables/${tableId}`
+}
+
+/**
+ * @summary Delete a custom points table
+ */
+export const deletePointsTable = async (tableId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeletePointsTableUrl(tableId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeletePointsTableMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePointsTable>>, TError,{tableId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePointsTable>>, TError,{tableId: number}, TContext> => {
+
+const mutationKey = ['deletePointsTable'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePointsTable>>, {tableId: number}> = (props) => {
+          const {tableId} = props ?? {};
+
+          return  deletePointsTable(tableId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePointsTableMutationResult = NonNullable<Awaited<ReturnType<typeof deletePointsTable>>>
+
+    export type DeletePointsTableMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a custom points table
+ */
+export const useDeletePointsTable = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePointsTable>>, TError,{tableId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePointsTable>>,
+        TError,
+        {tableId: number},
+        TContext
+      > => {
+      return useMutation(getDeletePointsTableMutationOptions(options));
     }
 
 export const getGetClubDashboardUrl = (clubId: number,) => {
