@@ -16,6 +16,7 @@ export const registrationsTable = pgTable("registrations", {
   bibNumber: text("bib_number"),
   amaNumber: text("ama_number"),
   bikeBrand: text("bike_brand"),
+  sponsors: text("sponsors"),
   statsEmailOptIn: boolean("stats_email_opt_in").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

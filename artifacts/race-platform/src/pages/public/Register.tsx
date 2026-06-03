@@ -35,6 +35,7 @@ const registerSchema = z.object({
   bibNumber: z.string().optional(),
   amaNumber: z.string().optional(),
   bikeBrand: z.string().optional(),
+  sponsors: z.string().optional(),
   statsEmailOptIn: z.boolean().default(false),
 });
 
@@ -97,7 +98,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", statsEmailOptIn: false,
+      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false,
     },
   });
 
@@ -214,6 +215,7 @@ export default function Register() {
         if (data.amaNumber) form.setValue("amaNumber", data.amaNumber, { shouldDirty: false });
         if (data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
         if (data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
+        if (data.sponsors) form.setValue("sponsors", data.sponsors, { shouldDirty: false });
         setLookedUpName(`${data.firstName} ${data.lastName}`);
         setLookupState("found");
       } else {
@@ -677,6 +679,24 @@ export default function Register() {
                         </FormItem>
                       )} />
                     )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2 border-b">
+                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Sponsors</h3>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <FormField control={form.control} name="sponsors" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Sponsors <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                        <FormControl>
+                          <Input placeholder="KTM, FMF, Alpinestars" {...field} />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground mt-1">Separate multiple sponsors with a comma.</p>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
                   </CardContent>
                 </Card>
 

@@ -22,6 +22,7 @@ router.get("/public/riders/lookup", async (req, res) => {
     amaNumber: registrationsTable.amaNumber,
     bikeBrand: registrationsTable.bikeBrand,
     bibNumber: registrationsTable.bibNumber,
+    sponsors: registrationsTable.sponsors,
   }).from(registrationsTable)
     .where(eq(registrationsTable.riderId, rider.id))
     .orderBy(desc(registrationsTable.createdAt))
@@ -40,6 +41,7 @@ router.get("/public/riders/lookup", async (req, res) => {
     amaNumber: lastReg?.amaNumber ?? "",
     bikeBrand: lastReg?.bikeBrand ?? "",
     bibNumber: lastReg?.bibNumber?.toString() ?? "",
+    sponsors: lastReg?.sponsors ?? "",
   });
 });
 
@@ -261,7 +263,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -336,6 +338,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     status: regStatus, paymentStatus: "unpaid",
     amaNumber: amaNumber || null,
     bikeBrand: req.body.bikeBrand || null,
+    sponsors: sponsors || null,
     statsEmailOptIn: !!statsEmailOptIn,
   }).returning();
 
