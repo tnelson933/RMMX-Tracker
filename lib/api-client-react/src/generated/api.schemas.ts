@@ -557,6 +557,7 @@ export interface Series {
   season: number;
   classes?: string[];
   pointsSystem?: string;
+  scoringTableId?: number | null;
   eventIds?: number[];
   createdAt?: string;
 }
@@ -567,6 +568,7 @@ export interface SeriesInput {
   season: number;
   classes?: string[];
   pointsSystem?: string;
+  scoringTableId?: number | null;
   eventIds?: number[];
 }
 
@@ -574,6 +576,7 @@ export interface SeriesUpdateInput {
   name?: string;
   season?: number;
   classes?: string[];
+  scoringTableId?: number | null;
   eventIds?: number[];
 }
 

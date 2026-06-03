@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useListSeries, useCreateSeries, useUpdateSeries, useGetSeriesLeaderboard, getListSeriesQueryKey } from "@workspace/api-client-react";
+import { useListSeries, useCreateSeries, useUpdateSeries, useGetSeriesLeaderboard, useListPointsTables, getListSeriesQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
@@ -19,6 +20,7 @@ import { EmbedSeriesWidgetCard } from "@/components/organizer/EmbedSeriesWidgetC
 const createSeriesSchema = z.object({
   name: z.string().min(1, "Name is required"),
   season: z.coerce.number().min(2000),
+  scoringTableId: z.number().optional(),
 });
 
 export default function SeriesManagement() {
@@ -41,6 +43,7 @@ export default function SeriesManagement() {
   const { data: leaderboard, isLoading: leaderboardLoading } = useGetSeriesLeaderboard(selectedSeriesId || 0, {
     query: { enabled: !!selectedSeriesId } as any
   });
+  const { data: pointsTables } = useListPointsTables({ query: {} as any });
 
   // Set default series selection
   if (seriesList?.length && !selectedSeriesId) {
@@ -55,9 +58,9 @@ export default function SeriesManagement() {
     defaultValues: { name: "", season: new Date().getFullYear() },
   });
 
-  const openEditDialog = (series: { id: number; name: string; season: number; classes: string[] }) => {
+  const openEditDialog = (series: { id: number; name: string; season: number; classes: string[]; scoringTableId?: number | null }) => {
     setEditingSeriesId(series.id);
-    editForm.reset({ name: series.name, season: series.season });
+    editForm.reset({ name: series.name, season: series.season, scoringTableId: series.scoringTableId ?? undefined });
     setEditClassList(series.classes as string[]);
     setEditClassInput("");
     setIsEditOpen(true);
@@ -67,7 +70,7 @@ export default function SeriesManagement() {
     if (!editingSeriesId) return;
     updateMutation.mutate({
       seriesId: editingSeriesId,
-      data: { name: data.name, season: data.season, classes: editClassList },
+      data: { name: data.name, season: data.season, classes: editClassList, scoringTableId: data.scoringTableId ?? null },
     }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListSeriesQueryKey() });
@@ -107,6 +110,7 @@ export default function SeriesManagement() {
         name: data.name,
         season: data.season,
         classes: classList,
+        scoringTableId: data.scoringTableId ?? null,
       }
     }, {
       onSuccess: () => {
@@ -186,6 +190,32 @@ export default function SeriesManagement() {
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={form.control}
+                  name="scoringTableId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Scoring Format</FormLabel>
+                      <Select
+                        value={field.value != null ? String(field.value) : "none"}
+                        onValueChange={v => field.onChange(v === "none" ? undefined : Number(v))}
+                      >
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select format..." /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No format set</SelectItem>
+                          {(pointsTables ?? []).map(t => (
+                            <SelectItem key={t.id} value={String(t.id)}>
+                              {t.isSystemDefault ? "★ " : ""}{t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Classes</label>
                   <div className="flex gap-2">
@@ -248,6 +278,32 @@ export default function SeriesManagement() {
                     <FormItem>
                       <FormLabel>Season (Year)</FormLabel>
                       <FormControl><Input type="number" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editForm.control}
+                  name="scoringTableId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Scoring Format</FormLabel>
+                      <Select
+                        value={field.value != null ? String(field.value) : "none"}
+                        onValueChange={v => field.onChange(v === "none" ? undefined : Number(v))}
+                      >
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select format..." /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No format set</SelectItem>
+                          {(pointsTables ?? []).map(t => (
+                            <SelectItem key={t.id} value={String(t.id)}>
+                              {t.isSystemDefault ? "★ " : ""}{t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -320,11 +376,18 @@ export default function SeriesManagement() {
                 <CardContent className="p-4 flex items-center justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="font-heading font-bold text-lg uppercase truncate">{series.name}</div>
-                    <div className="text-sm text-muted-foreground">Season {series.season}</div>
+                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground flex-wrap">
+                      <span>Season {series.season}</span>
+                      {(series as any).scoringTableId && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                          {(pointsTables ?? []).find(t => t.id === (series as any).scoringTableId)?.name ?? "Custom"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 ml-2 shrink-0">
                     <button
-                      onClick={e => { e.stopPropagation(); openEditDialog({ id: series.id, name: series.name, season: series.season, classes: series.classes as string[] }); }}
+                      onClick={e => { e.stopPropagation(); openEditDialog({ id: series.id, name: series.name, season: series.season, classes: series.classes as string[], scoringTableId: (series as any).scoringTableId }); }}
                       className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                       title="Edit series"
                     >

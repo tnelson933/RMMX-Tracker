@@ -644,7 +644,16 @@ export default function Motos() {
                   </div>
                   <div>
                     <CardTitle className="font-heading uppercase text-lg text-white leading-tight">{moto.name}</CardTitle>
-                    <div className="text-xs text-sidebar-foreground/70 uppercase tracking-widest">{moto.raceClass}</div>
+                    <div className="flex items-center gap-2 text-xs text-sidebar-foreground/70 uppercase tracking-widest">
+                      <span>{moto.raceClass}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider border ${
+                        moto.type === "main"
+                          ? "bg-primary/30 text-primary border-primary/40"
+                          : "bg-white/10 text-sidebar-foreground/80 border-white/20"
+                      }`}>
+                        {moto.type === "main" ? "Main Event" : isSupercrossFormat ? "Heat" : "Division"}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -768,10 +777,10 @@ export default function Motos() {
       <Dialog open={confirmDeleteId !== null} onOpenChange={open => { if (!open) setConfirmDeleteId(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-heading uppercase text-xl">Delete Heat?</DialogTitle>
+            <DialogTitle className="font-heading uppercase text-xl">Delete Moto?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground py-2">
-            This will permanently remove the heat and its lineup. This cannot be undone.
+            This will permanently remove the moto and its lineup. This cannot be undone.
           </p>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
@@ -781,7 +790,7 @@ export default function Motos() {
               onClick={() => confirmDeleteId !== null && handleDelete(confirmDeleteId)}
               className="font-heading uppercase tracking-wider"
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete Heat"}
+              {deleteMutation.isPending ? "Deleting..." : "Delete Moto"}
             </Button>
           </DialogFooter>
         </DialogContent>

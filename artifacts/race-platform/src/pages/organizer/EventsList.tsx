@@ -173,6 +173,10 @@ export default function EventsList() {
   const watchPaymentEnabled = form.watch("paymentEnabled");
   const watchTimingTechnology = form.watch("timingTechnology");
   const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
+  const watchScoringTableId = form.watch("scoringTableId");
+  const filteredSeriesList = clubSeriesList.filter(s =>
+    !s.scoringTableId || !watchScoringTableId || s.scoringTableId === watchScoringTableId
+  );
 
   const onSubmit = async (data: z.infer<typeof createEventSchema>) => {
     let newEvent: Awaited<ReturnType<typeof createMutation.mutateAsync>>;
@@ -717,7 +721,7 @@ export default function EventsList() {
                   </div>
                 </div>
 
-                {clubSeriesList.length > 0 && (
+                {filteredSeriesList.length > 0 && (
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Series</label>
                     <Select value={createSeriesId} onValueChange={setCreateSeriesId}>
@@ -726,11 +730,14 @@ export default function EventsList() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">None</SelectItem>
-                        {clubSeriesList.map(s => (
+                        {filteredSeriesList.map(s => (
                           <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.season})</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {clubSeriesList.length > filteredSeriesList.length && (
+                      <p className="text-xs text-muted-foreground">Only series with a matching scoring format are shown.</p>
+                    )}
                   </div>
                 )}
 

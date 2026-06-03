@@ -2042,6 +2042,9 @@ components:
             type: string
         pointsSystem:
           type: string
+        scoringTableId:
+          type: integer
+          nullable: true
         eventIds:
           type: array
           items:
@@ -2065,6 +2068,9 @@ components:
             type: string
         pointsSystem:
           type: string
+        scoringTableId:
+          type: integer
+          nullable: true
         eventIds:
           type: array
           items:
@@ -2081,6 +2087,9 @@ components:
           type: array
           items:
             type: string
+        scoringTableId:
+          type: integer
+          nullable: true
         eventIds:
           type: array
           items:

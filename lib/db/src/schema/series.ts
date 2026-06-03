@@ -2,6 +2,7 @@ import { pgTable, serial, integer, text, jsonb, timestamp } from "drizzle-orm/pg
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clubsTable } from "./clubs";
+import { pointsTablesTable } from "./points-tables";
 
 export const seriesTable = pgTable("series", {
   id: serial("id").primaryKey(),
@@ -10,6 +11,7 @@ export const seriesTable = pgTable("series", {
   season: integer("season").notNull(),
   classes: text("classes").array().notNull().default([]),
   pointsSystem: text("points_system").notNull().default("standard"),
+  scoringTableId: integer("scoring_table_id").references(() => pointsTablesTable.id),
   eventIds: integer("event_ids").array().notNull().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

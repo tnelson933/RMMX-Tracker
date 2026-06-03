@@ -12,5 +12,6 @@ export interface SeriesInput {
   season: number;
   classes?: string[];
   pointsSystem?: string;
+  scoringTableId?: number | null;
   eventIds?: number[];
 }

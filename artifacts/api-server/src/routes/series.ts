@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable, registrationsTable } from "@workspace/db";
+import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable, registrationsTable, pointsTablesTable } from "@workspace/db";
 import { eq, inArray, and } from "drizzle-orm";
 
 const router = Router();
@@ -11,20 +11,50 @@ router.get("/series", async (req, res) => {
 });
 
 router.post("/series", async (req, res) => {
-  const { name, clubId, season, classes, pointsSystem, eventIds } = req.body;
+  const { name, clubId, season, classes, pointsSystem, scoringTableId, eventIds } = req.body;
   if (!name || !clubId || !season) return res.status(400).json({ error: "name, clubId, season required" });
-  const [series] = await db.insert(seriesTable).values({ name, clubId, season, classes: classes || [], pointsSystem: pointsSystem || "standard", eventIds: eventIds || [] }).returning();
+  const [series] = await db.insert(seriesTable).values({
+    name,
+    clubId,
+    season,
+    classes: classes || [],
+    pointsSystem: pointsSystem || "standard",
+    scoringTableId: scoringTableId ?? null,
+    eventIds: eventIds || [],
+  }).returning();
   return res.status(201).json({ ...series, createdAt: series.createdAt.toISOString() });
 });
 
 router.patch("/series/:seriesId", async (req, res) => {
   const seriesId = Number(req.params.seriesId);
-  const { name, season, classes, eventIds } = req.body;
+  const { name, season, classes, scoringTableId, eventIds } = req.body;
+
+  // Validate events match scoring format when eventIds is being updated
+  if (eventIds !== undefined && eventIds.length > 0) {
+    const [series] = await db.select({ scoringTableId: seriesTable.scoringTableId })
+      .from(seriesTable).where(eq(seriesTable.id, seriesId));
+    const tableId = scoringTableId !== undefined ? (scoringTableId ?? null) : series?.scoringTableId;
+
+    if (tableId) {
+      const events = await db.select({ id: eventsTable.id, scoringTableId: eventsTable.scoringTableId })
+        .from(eventsTable).where(inArray(eventsTable.id, eventIds));
+      const mismatched = events.filter(e => e.scoringTableId !== tableId);
+      if (mismatched.length > 0) {
+        const mismatchedIds = mismatched.map(e => e.id).join(", ");
+        return res.status(400).json({
+          error: `Events ${mismatchedIds} use a different scoring format than this series. All events in a series must use the same scoring format.`,
+        });
+      }
+    }
+  }
+
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;
   if (season !== undefined) updates.season = season;
   if (classes !== undefined) updates.classes = classes;
+  if (scoringTableId !== undefined) updates.scoringTableId = scoringTableId ?? null;
   if (eventIds !== undefined) updates.eventIds = eventIds;
+
   const [updated] = await db.update(seriesTable).set(updates as any).where(eq(seriesTable.id, seriesId)).returning();
   if (!updated) return res.status(404).json({ error: "Not found" });
   return res.json({ ...updated, createdAt: updated.createdAt.toISOString() });
@@ -38,14 +68,12 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
   const eventIds = series.eventIds as number[];
   if (eventIds.length === 0) return res.json([]);
 
-  // Load event names
   const events = await db.select({ id: eventsTable.id, name: eventsTable.name })
     .from(eventsTable)
     .where(inArray(eventsTable.id, eventIds));
   const eventNameMap: Record<number, string> = {};
   events.forEach(e => { eventNameMap[e.id] = e.name; });
 
-  // Load all completed motos across all series events
   const allMotos = await db.select()
     .from(motosTable)
     .where(and(inArray(motosTable.eventId, eventIds), eq(motosTable.status, "completed")));
@@ -54,7 +82,6 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
 
   const motoIds = allMotos.map(m => m.id);
 
-  // Load all results for those motos
   const allResults = await db.select({
     motoId: raceResultsTable.motoId,
     riderId: raceResultsTable.riderId,
@@ -70,7 +97,6 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
     .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
     .where(inArray(raceResultsTable.motoId, motoIds));
 
-  // Build: raceClass → eventId → array of { moto, results[] }
   type MotoEntry = { moto: typeof allMotos[0]; results: typeof allResults };
   const classByEvent: Record<string, Record<number, MotoEntry[]>> = {};
 
@@ -93,7 +119,6 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
   }> = [];
 
   for (const [raceClass, eventMap] of Object.entries(classByEvent)) {
-    // Collect all unique riders who appear in any moto for this class
     const riderNames: Record<number, string> = {};
     for (const motoEntries of Object.values(eventMap)) {
       for (const { results } of motoEntries) {
@@ -111,12 +136,10 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
       let eventsEntered = 0;
       const eventBreakdowns: typeof standings[0]["events"] = [];
 
-      // Iterate in series event order
       for (const eventId of eventIds) {
         const motoEntries = eventMap[eventId];
-        if (!motoEntries || motoEntries.length === 0) continue; // no motos in this class for this event
+        if (!motoEntries || motoEntries.length === 0) continue;
 
-        // Sort motos by motoNumber so columns are consistent
         const sortedMotos = [...motoEntries].sort((a, b) => (a.moto.motoNumber ?? 0) - (b.moto.motoNumber ?? 0));
 
         let eventScore = 0;
@@ -127,12 +150,10 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
           const result = results.find(r => r.riderId === riderId);
           if (result) {
             attended = true;
-            // DNF/DNS = 0 points; otherwise use stored points
             const pts = (result.dnf || result.dns) ? 0 : (result.points ?? 0);
             eventScore += pts;
             motoPositions.push(pts);
           } else {
-            // Missed moto = 0 points
             motoPositions.push(0);
           }
         }
@@ -149,7 +170,7 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
       }
 
       classRows.push({
-        position: 0, // assigned below
+        position: 0,
         riderId,
         riderName: riderNames[riderId],
         raceClass,
@@ -159,7 +180,6 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
       });
     }
 
-    // Sort descending by totalScore (highest points wins), assign positions with tie handling
     classRows.sort((a, b) => b.totalScore - a.totalScore);
     classRows.forEach((row, idx) => {
       if (idx > 0 && row.totalScore === classRows[idx - 1].totalScore) {
@@ -175,7 +195,6 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
   return res.json(standings);
 });
 
-// Keep recalculate endpoint (no-op now — standings are computed live)
 router.post("/series/:seriesId/recalculate", async (req, res) => {
   return res.json({ ok: true });
 });
@@ -303,7 +322,6 @@ router.get("/public/series/:seriesId/standings", async (req, res) => {
     standings.push(...classRows);
   }
 
-  // Attach AMA# and bike brand from registrations
   const allRiderIds = [...new Set(standings.map(s => s.riderId))];
   if (allRiderIds.length > 0) {
     const regs = await db.select({

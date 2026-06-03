@@ -10,5 +10,6 @@ export interface SeriesUpdateInput {
   name?: string;
   season?: number;
   classes?: string[];
+  scoringTableId?: number | null;
   eventIds?: number[];
 }

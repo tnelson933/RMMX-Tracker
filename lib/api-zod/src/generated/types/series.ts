@@ -13,6 +13,7 @@ export interface Series {
   season: number;
   classes?: string[];
   pointsSystem?: string;
+  scoringTableId?: number | null;
   eventIds?: number[];
   createdAt?: string;
 }

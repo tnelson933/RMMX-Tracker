@@ -279,6 +279,10 @@ export default function EventDetail() {
   const { fields: purchaseOptionFields, append: appendPurchaseOption, remove: removePurchaseOption } = useFieldArray({ control: form.control, name: "purchaseOptions" });
 
   const clubSeriesList = (seriesList ?? []).filter(s => s.clubId === event?.clubId);
+  const watchScoringTableId = form.watch("scoringTableId");
+  const filteredSeriesList = clubSeriesList.filter(s =>
+    !s.scoringTableId || !watchScoringTableId || s.scoringTableId === watchScoringTableId
+  );
 
   const resetFormFromEvent = (evt: typeof event) => {
     if (!evt) return;
@@ -952,7 +956,7 @@ export default function EventDetail() {
                       </div>
                     </div>
 
-                    {clubSeriesList.length > 0 && (
+                    {filteredSeriesList.length > 0 && (
                       <div className="border-t pt-4 space-y-1.5">
                         <label className="text-sm font-medium">Series</label>
                         <Select value={editSeriesId} onValueChange={setEditSeriesId}>
@@ -961,11 +965,14 @@ export default function EventDetail() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">None</SelectItem>
-                            {clubSeriesList.map(s => (
+                            {filteredSeriesList.map(s => (
                               <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.season})</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
+                        {clubSeriesList.length > filteredSeriesList.length && (
+                          <p className="text-xs text-muted-foreground">Only series with a matching scoring format are shown.</p>
+                        )}
                       </div>
                     )}
 

@@ -941,6 +941,7 @@ export const ListSeriesResponseItem = zod.object({
   "season": zod.number(),
   "classes": zod.array(zod.string()).optional(),
   "pointsSystem": zod.string().optional(),
+  "scoringTableId": zod.number().nullish(),
   "eventIds": zod.array(zod.number()).optional(),
   "createdAt": zod.string().optional()
 })
@@ -956,6 +957,7 @@ export const CreateSeriesBody = zod.object({
   "season": zod.number(),
   "classes": zod.array(zod.string()).optional(),
   "pointsSystem": zod.string().optional(),
+  "scoringTableId": zod.number().nullish(),
   "eventIds": zod.array(zod.number()).optional()
 })
 
@@ -971,6 +973,7 @@ export const UpdateSeriesBody = zod.object({
   "name": zod.string().optional(),
   "season": zod.number().optional(),
   "classes": zod.array(zod.string()).optional(),
+  "scoringTableId": zod.number().nullish(),
   "eventIds": zod.array(zod.number()).optional()
 })
 
@@ -981,6 +984,7 @@ export const UpdateSeriesResponse = zod.object({
   "season": zod.number(),
   "classes": zod.array(zod.string()).optional(),
   "pointsSystem": zod.string().optional(),
+  "scoringTableId": zod.number().nullish(),
   "eventIds": zod.array(zod.number()).optional(),
   "createdAt": zod.string().optional()
 })
