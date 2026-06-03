@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle, ClipboardList, FlaskConical, Download, WifiOff, ShieldCheck, Terminal, FileDown, Info } from "lucide-react";
+import { Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle, ClipboardList, FlaskConical, Download, WifiOff, ShieldCheck, Terminal, FileDown, Info, Timer, ChevronRight, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -42,6 +42,10 @@ export default function ReaderSetup() {
   const { toast } = useToast();
   const [copiedUrl, setCopiedUrl] = useState(false);
 
+  // Technology picker — organizer must choose before seeing instructions
+  const [tech, setTech] = useState<"none" | "rfid" | "mylaps">("none");
+  const isMylaps = tech === "mylaps";
+
   const [selectedEventId, setSelectedEventId] = useState("");
   const [selectedMotoId, setSelectedMotoId] = useState("");
   const [testRfid, setTestRfid] = useState("");
@@ -62,9 +66,6 @@ export default function ReaderSetup() {
   const { data: motos } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
   const ambrcEventIdNum = parseInt(ambrcEventId) || 0;
   const { data: ambrcMotos } = useListMotos(ambrcEventIdNum, { query: { enabled: !!ambrcEventIdNum } as any });
-
-  const selectedEventTech = ((events?.find(e => e.id.toString() === selectedEventId) as any)?.timingTechnology ?? "rfid") as "rfid" | "mylaps";
-  const isMylaps = selectedEventTech === "mylaps";
 
   const selectedAmbrcMotoName = ambrcMotos?.find(m => m.id.toString() === ambrcMotoId)?.name ?? null;
   const ambrcBodyTemplate = ambrcMotoId
@@ -192,17 +193,123 @@ export default function ReaderSetup() {
     toast({ title: "Config downloaded", description: `ambrc-config-moto-${ambrcMotoId}.json` });
   };
 
+  // ── Technology picker landing screen ─────────────────────────────────────────
+  if (tech === "none") {
+    return (
+      <div className="p-8 max-w-3xl mx-auto">
+        <div className="mb-10">
+          <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
+            <Wifi className="text-primary" size={32} /> Reader Setup
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Select the timing technology you are using. You'll see step-by-step setup instructions and configuration tools for that system only.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* RFID card */}
+          <button
+            onClick={() => setTech("rfid")}
+            className="group text-left rounded-xl border-2 border-border hover:border-primary bg-card hover:bg-primary/5 p-6 transition-all duration-150 space-y-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <div className="flex items-start justify-between">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                <Wifi size={24} className="text-primary" />
+              </div>
+              <ChevronRight size={20} className="text-muted-foreground group-hover:text-primary transition-colors mt-1" />
+            </div>
+
+            <div>
+              <h2 className="text-xl font-heading font-bold uppercase tracking-tight">RFID / UHF Readers</h2>
+              <p className="text-sm text-muted-foreground mt-1.5">
+                Fixed-mount UHF RFID readers with passive tags mounted on bikes or gear.
+              </p>
+            </div>
+
+            <ul className="space-y-1.5 text-xs text-muted-foreground">
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Impinj Speedway, Alien ALR-9900, Zebra FX Series</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Passive UHF tags — no battery, low cost per rider</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> HTTP POST output, direct or via local bridge</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Offline-safe Python bridge included</li>
+            </ul>
+
+            <div className="pt-1">
+              <span className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-heading font-bold uppercase tracking-wider px-4 py-2 rounded-lg group-hover:bg-primary/90 transition-colors">
+                Select RFID <ChevronRight size={13} />
+              </span>
+            </div>
+          </button>
+
+          {/* MyLaps card */}
+          <button
+            onClick={() => setTech("mylaps")}
+            className="group text-left rounded-xl border-2 border-border hover:border-primary bg-card hover:bg-primary/5 p-6 transition-all duration-150 space-y-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <div className="flex items-start justify-between">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                <Timer size={24} className="text-primary" />
+              </div>
+              <ChevronRight size={20} className="text-muted-foreground group-hover:text-primary transition-colors mt-1" />
+            </div>
+
+            <div>
+              <h2 className="text-xl font-heading font-bold uppercase tracking-tight">MyLaps / AMB Transponders</h2>
+              <p className="text-sm text-muted-foreground mt-1.5">
+                Active transponders carried by riders, read by AMB / MyLaps loop decoders.
+              </p>
+            </div>
+
+            <ul className="space-y-1.5 text-xs text-muted-foreground">
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> AMB TranX, AMB RC4, MyLaps X2, P3 Flex</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Works with AMBrc ≥ 5 and Orbits 4 software</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Numeric transponder IDs, industry-standard protocol</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> AMBrc config generator + downloadable setup file</li>
+            </ul>
+
+            <div className="pt-1">
+              <span className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-heading font-bold uppercase tracking-wider px-4 py-2 rounded-lg group-hover:bg-primary/90 transition-colors">
+                Select MyLaps <ChevronRight size={13} />
+              </span>
+            </div>
+          </button>
+        </div>
+
+        <p className="text-xs text-muted-foreground text-center mt-8">
+          Not sure? Check the timing technology set on your event — it's shown on the event creation form.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8">
       <div>
-        <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
-          <Wifi className="text-primary" size={32} /> Reader Setup
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          {isMylaps
-            ? "Configure your MyLaps / AMB decoder to push lap crossings to this platform."
-            : "Configure your RFID hardware to push lap crossings to this platform."}
-        </p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
+              {isMylaps ? <Timer className="text-primary" size={32} /> : <Wifi className="text-primary" size={32} />}
+              Reader Setup
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              {isMylaps
+                ? "Configure your MyLaps / AMB decoder to push lap crossings to this platform."
+                : "Configure your RFID hardware to push lap crossings to this platform."}
+            </p>
+          </div>
+          <button
+            onClick={() => setTech("none")}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mt-1 shrink-0"
+          >
+            <ArrowLeft size={15} />
+            <span>
+              Change technology
+              <span className={`ml-2 inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${isMylaps ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300" : "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300"}`}>
+                {isMylaps ? <Timer size={10} /> : <Wifi size={10} />}
+                {isMylaps ? "MyLaps" : "RFID"}
+              </span>
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Setup Guide */}
