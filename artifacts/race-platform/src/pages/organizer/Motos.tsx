@@ -210,9 +210,9 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
 
 type LineupEntry = { riderId: number; riderName: string; position: number; bibNumber?: string | null; rfidNumber?: string | null };
 
-function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown }: {
+function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, rowNum }: {
   entry: LineupEntry; motoId: number; locked?: boolean;
-  onRecordLap?: () => void; lapCooldown?: boolean;
+  onRecordLap?: () => void; lapCooldown?: boolean; rowNum?: number;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `rider-${motoId}-${entry.riderId}`,
@@ -220,6 +220,7 @@ function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown }: 
   });
   return (
     <TableRow ref={setNodeRef} className={`h-8 select-none ${isDragging ? "opacity-25" : ""}`}>
+      <TableCell className="w-6 text-center text-xs text-muted-foreground font-mono select-none">{rowNum ?? ""}</TableCell>
       <TableCell className="w-8 text-center">
         {locked ? (
           <span className="inline-flex items-center justify-center text-muted-foreground/30" title="Moto is completed — lineup locked">
@@ -1062,6 +1063,7 @@ export default function Motos() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
+                          <TableHead className="w-6 text-center text-xs text-muted-foreground">#</TableHead>
                           <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
                             <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
@@ -1073,11 +1075,12 @@ export default function Motos() {
                       </TableHeader>
                       <TableBody>
                         {getLineup(moto).length > 0 ? (
-                          getLineup(moto).map((entry) => (
+                          getLineup(moto).map((entry, idx) => (
                             <DraggableRiderRow
                               key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
                               onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
                               lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
+                              rowNum={idx + 1}
                             />
                           ))
                         ) : (
@@ -1290,6 +1293,7 @@ export default function Motos() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
+                          <TableHead className="w-6 text-center text-xs text-muted-foreground">#</TableHead>
                           <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
                             <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
@@ -1301,11 +1305,12 @@ export default function Motos() {
                       </TableHeader>
                       <TableBody>
                         {getLineup(moto).length > 0 ? (
-                          getLineup(moto).map((entry) => (
+                          getLineup(moto).map((entry, idx) => (
                             <DraggableRiderRow
                               key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
                               onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
                               lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
+                              rowNum={idx + 1}
                             />
                           ))
                         ) : (
