@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle, ClipboardList, FlaskConical, Download, WifiOff, ShieldCheck, Terminal } from "lucide-react";
+import { Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle, ClipboardList, FlaskConical, Download, WifiOff, ShieldCheck, Terminal, FileDown, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -52,12 +52,33 @@ export default function ReaderSetup() {
   const [crossings, setCrossings] = useState<Crossing[]>([]);
   const [crossingsLoading, setCrossingsLoading] = useState(false);
 
+  const [ambrcEventId, setAmbrcEventId] = useState("");
+  const [ambrcMotoId, setAmbrcMotoId] = useState("");
+  const [ambrcReaderId, setAmbrcReaderId] = useState("finish-line-1");
+  const [copiedAmbrcBody, setCopiedAmbrcBody] = useState(false);
+
   const { data: events } = useListEvents({}, { query: {} as any });
   const eventId = parseInt(selectedEventId) || 0;
   const { data: motos } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
+  const ambrcEventIdNum = parseInt(ambrcEventId) || 0;
+  const { data: ambrcMotos } = useListMotos(ambrcEventIdNum, { query: { enabled: !!ambrcEventIdNum } as any });
 
   const selectedEventTech = ((events?.find(e => e.id.toString() === selectedEventId) as any)?.timingTechnology ?? "rfid") as "rfid" | "mylaps";
   const isMylaps = selectedEventTech === "mylaps";
+
+  const selectedAmbrcMotoName = ambrcMotos?.find(m => m.id.toString() === ambrcMotoId)?.name ?? null;
+  const ambrcBodyTemplate = ambrcMotoId
+    ? JSON.stringify(
+        {
+          rfidNumber: "%TRANSPONDER%",
+          motoId: parseInt(ambrcMotoId),
+          crossingTime: "%PASSTIME_ISO%",
+          readerId: ambrcReaderId || "finish-line-1",
+        },
+        null,
+        2
+      )
+    : null;
 
   const copyUrl = () => {
     navigator.clipboard.writeText(ENDPOINT);
@@ -115,6 +136,60 @@ export default function ReaderSetup() {
     } finally {
       setTestLoading(false);
     }
+  };
+
+  const copyAmbrcBody = () => {
+    if (!ambrcBodyTemplate) return;
+    navigator.clipboard.writeText(ambrcBodyTemplate);
+    setCopiedAmbrcBody(true);
+    setTimeout(() => setCopiedAmbrcBody(false), 2000);
+  };
+
+  const downloadAmbrcConfig = () => {
+    if (!ambrcMotoId) return;
+    const motoLabel = selectedAmbrcMotoName ? `${selectedAmbrcMotoName} (ID: ${ambrcMotoId})` : `ID: ${ambrcMotoId}`;
+    const config = {
+      _readme: [
+        "AMBrc HTTP Output Configuration — Rocky Mountain Race Platform",
+        `Generated: ${new Date().toISOString()}`,
+        "",
+        "HOW TO USE IN AMBrc:",
+        "  1. Open AMBrc → Settings → Passings Output → HTTP Output",
+        "  2. Enable HTTP output / check 'Send passings via HTTP'",
+        "  3. Set URL to the value in 'endpoint' below",
+        "  4. Set Method to POST",
+        "  5. Add header  Content-Type: application/json",
+        "  6. Copy the JSON from 'bodyTemplate' into the Body / Template field",
+        "  7. Verify variable names match your AMBrc version (see 'variableNotes')",
+        "",
+        `Moto: ${motoLabel}`,
+        "Update 'motoId' in the body template before each heat.",
+      ],
+      endpoint: ENDPOINT,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      bodyTemplate: {
+        rfidNumber: "%TRANSPONDER%",
+        motoId: parseInt(ambrcMotoId),
+        crossingTime: "%PASSTIME_ISO%",
+        readerId: ambrcReaderId || "finish-line-1",
+      },
+      variableNotes: {
+        "%TRANSPONDER%": "Transponder / passing code — AMBrc built-in variable for the transponder ID",
+        "%PASSTIME_ISO%": "ISO 8601 hardware timestamp from the decoder — use the decoder's clock, not the PC clock",
+        motoId: `Pre-filled with moto ${motoLabel} — update this number before each heat`,
+      },
+    };
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ambrc-config-moto-${ambrcMotoId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Config downloaded", description: `ambrc-config-moto-${ambrcMotoId}.json` });
   };
 
   return (
@@ -382,6 +457,125 @@ export default function ReaderSetup() {
 
         </CardContent>
       </Card>
+
+      {/* AMBrc Config Generator — MyLaps only */}
+      {isMylaps && (
+        <Card>
+          <CardHeader className="pb-3 border-b">
+            <div className="flex items-center gap-2">
+              <FileDown size={18} className="text-primary shrink-0" />
+              <CardTitle className="font-heading uppercase tracking-wider text-base">AMBrc Output Configuration</CardTitle>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              Select the event and moto you want to configure. The generator produces a pre-filled JSON body template and a downloadable reference file you can open on your scoring computer while setting up AMBrc's HTTP output.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-5 space-y-5">
+
+            {/* Selectors */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
+                <Select
+                  value={ambrcEventId}
+                  onValueChange={v => { setAmbrcEventId(v); setAmbrcMotoId(""); }}
+                >
+                  <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
+                  <SelectContent>
+                    {events?.filter((e: any) => e.timingTechnology === "mylaps").map(e => (
+                      <SelectItem key={e.id} value={e.id.toString()}>
+                        {e.name} <span className="text-muted-foreground ml-1">({e.status})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Moto</label>
+                <Select value={ambrcMotoId} onValueChange={setAmbrcMotoId} disabled={!ambrcEventId}>
+                  <SelectTrigger className="h-11"><SelectValue placeholder="Select moto..." /></SelectTrigger>
+                  <SelectContent>
+                    {ambrcMotos?.map(m => (
+                      <SelectItem key={m.id} value={m.id.toString()}>
+                        <span className="flex items-center gap-2">
+                          {m.name}
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">{m.id}</Badge>
+                        </span>
+                      </SelectItem>
+                    ))}
+                    {ambrcMotos?.length === 0 && <SelectItem value="__none" disabled>No motos for this event</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reader / Loop ID</label>
+                <Input
+                  value={ambrcReaderId}
+                  onChange={e => setAmbrcReaderId(e.target.value)}
+                  placeholder="e.g. finish-line-1"
+                  className="font-mono h-11"
+                />
+              </div>
+            </div>
+
+            {/* Generated output */}
+            {ambrcMotoId ? (
+              <div className="space-y-4">
+
+                {/* Endpoint row */}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Endpoint URL (paste into AMBrc → HTTP URL field)</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 font-mono text-xs bg-muted px-3 py-2.5 rounded border overflow-x-auto">{ENDPOINT}</code>
+                    <Button variant="outline" size="sm" onClick={copyUrl} className="shrink-0 gap-1.5">
+                      {copiedUrl ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Body template */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">JSON Body Template (paste into AMBrc → Body / Template field)</p>
+                    <Button variant="outline" size="sm" onClick={copyAmbrcBody} className="gap-1.5">
+                      {copiedAmbrcBody ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+                    </Button>
+                  </div>
+                  <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">
+                    {ambrcBodyTemplate}
+                  </pre>
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/40 rounded-md px-3 py-2 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
+                    <Info size={13} className="shrink-0 mt-0.5" />
+                    <span>
+                      <span className="font-bold">%TRANSPONDER%</span> and <span className="font-bold">%PASSTIME_ISO%</span> are AMBrc template variables. Variable names may differ slightly by AMBrc version — check your software's variable list if these aren't recognised.
+                      {selectedAmbrcMotoName && (
+                        <> The <span className="font-bold">motoId</span> is pre-filled for <span className="font-bold">{selectedAmbrcMotoName}</span> (ID&nbsp;{ambrcMotoId}) — update it before each heat.</>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Download button */}
+                <div className="flex items-center gap-3 pt-1">
+                  <Button onClick={downloadAmbrcConfig} className="font-heading uppercase tracking-wider h-11 px-6 gap-2">
+                    <FileDown size={16} /> Download Config File
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Saves <code className="font-mono">ambrc-config-moto-{ambrcMotoId}.json</code> — a human-readable reference with the URL, headers, body template, and setup instructions you can open on your scoring computer.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded border border-dashed bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+                Select an event and moto above to generate the pre-filled configuration.
+              </div>
+            )}
+
+          </CardContent>
+        </Card>
+      )}
 
       {/* Local Bridge — offline-safe option (RFID only) */}
       {!isMylaps && (
