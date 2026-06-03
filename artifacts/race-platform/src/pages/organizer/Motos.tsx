@@ -167,21 +167,28 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
 
 type LineupEntry = { riderId: number; riderName: string; position: number; bibNumber?: string | null; rfidNumber?: string | null };
 
-function DraggableRiderRow({ entry, motoId }: { entry: LineupEntry; motoId: number }) {
+function DraggableRiderRow({ entry, motoId, locked }: { entry: LineupEntry; motoId: number; locked?: boolean }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `rider-${motoId}-${entry.riderId}`,
+    disabled: locked,
   });
   return (
     <TableRow ref={setNodeRef} className={`h-8 select-none ${isDragging ? "opacity-25" : ""}`}>
       <TableCell className="w-8 text-center">
-        <span
-          {...listeners}
-          {...attributes}
-          className="cursor-grab active:cursor-grabbing inline-flex items-center justify-center text-muted-foreground hover:text-foreground touch-none"
-          title="Drag to move rider to another heat"
-        >
-          <GripVertical size={14} />
-        </span>
+        {locked ? (
+          <span className="inline-flex items-center justify-center text-muted-foreground/30" title="Moto is completed — lineup locked">
+            <GripVertical size={14} />
+          </span>
+        ) : (
+          <span
+            {...listeners}
+            {...attributes}
+            className="cursor-grab active:cursor-grabbing inline-flex items-center justify-center text-muted-foreground hover:text-foreground touch-none"
+            title="Drag to move rider to another heat"
+          >
+            <GripVertical size={14} />
+          </span>
+        )}
       </TableCell>
       <TableCell className="font-medium">{entry.riderName}</TableCell>
       <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
@@ -198,13 +205,12 @@ function DraggableRiderRow({ entry, motoId }: { entry: LineupEntry; motoId: numb
   );
 }
 
-function DroppableMotoLineup({ motoId, children, isOver }: { motoId: number; children: React.ReactNode; isOver?: boolean }) {
-  const { setNodeRef, isOver: dndIsOver } = useDroppable({ id: `drop-${motoId}` });
-  const over = isOver ?? dndIsOver;
+function DroppableMotoLineup({ motoId, children, locked }: { motoId: number; children: React.ReactNode; locked?: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `drop-${motoId}`, disabled: locked });
   return (
     <div
       ref={setNodeRef}
-      className={`flex-1 overflow-y-auto max-h-52 border-b transition-colors ${over ? "bg-primary/5 ring-2 ring-inset ring-primary/30" : ""}`}
+      className={`flex-1 overflow-y-auto max-h-52 border-b transition-colors ${isOver && !locked ? "bg-primary/5 ring-2 ring-inset ring-primary/30" : ""}`}
     >
       {children}
     </div>
@@ -292,10 +298,11 @@ export default function Motos() {
     if (isNaN(targetMotoId) || sourceMotoId === targetMotoId) return;
     const sourceMoto = motos?.find(m => m.id === sourceMotoId);
     const targetMoto = motos?.find(m => m.id === targetMotoId);
-    // Only allow moves within the same race class, and only between heat motos
+    // Only allow moves within the same race class, between incomplete heat motos
     if (!sourceMoto || !targetMoto) return;
     if (sourceMoto.raceClass !== targetMoto.raceClass) return;
     if (sourceMoto.type !== "heat" || targetMoto.type !== "heat") return;
+    if (sourceMoto.status === "completed" || targetMoto.status === "completed") return;
     const srcLineup = getLineup(sourceMoto);
     const riderEntry = srcLineup.find(e => e.riderId === riderId);
     if (!riderEntry) return;
@@ -849,12 +856,12 @@ export default function Motos() {
               <CardContent className="p-0 flex-1 flex flex-col">
                 {/* Lineup table */}
                 {moto.type === "heat" ? (
-                  <DroppableMotoLineup motoId={moto.id}>
+                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"}>
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
-                          <TableHead className="w-8 text-center text-xs" title="Drag to move rider">
-                            <GripVertical size={12} className="mx-auto text-muted-foreground" />
+                          <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
+                            <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
                           <TableHead className="text-xs">Rider</TableHead>
                           <TableHead className="w-16 text-center text-xs">Bib</TableHead>
@@ -864,7 +871,7 @@ export default function Motos() {
                       <TableBody>
                         {getLineup(moto).length > 0 ? (
                           getLineup(moto).map((entry) => (
-                            <DraggableRiderRow key={entry.riderId} entry={entry} motoId={moto.id} />
+                            <DraggableRiderRow key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"} />
                           ))
                         ) : (
                           <TableRow>
