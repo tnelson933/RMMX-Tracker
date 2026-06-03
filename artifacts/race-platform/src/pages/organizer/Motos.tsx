@@ -614,7 +614,7 @@ export default function Motos() {
                         <span>{totalInHeats} riders</span>
                       </div>
                     </div>
-                    <div className={`flex items-center gap-1.5 shrink-0 ${!allHeatsComplete ? "opacity-40 pointer-events-none" : ""}`}>
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <span className="text-xs text-muted-foreground whitespace-nowrap">Top</span>
                       <div className="flex items-center border rounded-md overflow-hidden bg-background">
                         <button
