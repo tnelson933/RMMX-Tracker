@@ -677,7 +677,13 @@ export default function Registrations() {
               Spot is <strong>not confirmed</strong> until payment is collected. You can collect payment from the registrations list.
             </p>
           </div>
-          {regSuccess && <ConfirmationCard reg={regSuccess} entryFee={eventEntryFee} />}
+          {regSuccess && (
+            <ConfirmationCard
+              reg={regSuccess}
+              entryFee={eventEntryFee}
+              rentalFee={(form.getValues("rentTransponder") && transponderRentalFee) ? transponderRentalFee : 0}
+            />
+          )}
           <div className="flex gap-3">
             <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => { form.reset(); setStep("form"); setRegSuccess(null); }}>
               Register Another
@@ -702,7 +708,13 @@ export default function Registrations() {
             </p>
           </div>
 
-          {regSuccess && <ConfirmationCard reg={regSuccess} entryFee={eventEntryFee} />}
+          {regSuccess && (
+            <ConfirmationCard
+              reg={regSuccess}
+              entryFee={eventEntryFee}
+              rentalFee={(form.getValues("rentTransponder") && transponderRentalFee) ? transponderRentalFee : 0}
+            />
+          )}
 
           <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
             <p className="font-medium text-center">Collect payment now?</p>
@@ -725,9 +737,30 @@ export default function Registrations() {
         <div className="py-6 space-y-6">
           <div className="text-center">
             <h3 className="text-xl font-heading font-bold uppercase">How will the rider pay?</h3>
-            {eventEntryFee && (
-              <p className="text-muted-foreground mt-1">Entry fee: <strong>${eventEntryFee.toFixed(2)}</strong></p>
-            )}
+            {eventEntryFee && (() => {
+              const rentalFee = (form.getValues("rentTransponder") && transponderRentalFee) ? transponderRentalFee : 0;
+              const total = eventEntryFee + rentalFee;
+              return (
+                <div className="mt-2 inline-block text-left bg-muted rounded-lg px-4 py-2.5 space-y-1">
+                  <div className="flex justify-between gap-8 text-sm">
+                    <span className="text-muted-foreground">Entry fee</span>
+                    <span className="font-medium">${eventEntryFee.toFixed(2)}</span>
+                  </div>
+                  {rentalFee > 0 && (
+                    <div className="flex justify-between gap-8 text-sm">
+                      <span className="text-muted-foreground">Transponder rental</span>
+                      <span className="font-medium">${rentalFee.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {rentalFee > 0 && (
+                    <div className="flex justify-between gap-8 text-sm border-t pt-1 mt-0.5">
+                      <span className="font-bold">Total</span>
+                      <span className="font-bold text-primary">${total.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -795,14 +828,15 @@ export default function Registrations() {
                 autoFocus
               />
             </div>
-            {eventEntryFee && (
-              <p className="text-xs text-muted-foreground">
-                Entry fee ${eventEntryFee.toFixed(2)}
-                {parseFloat(cashAmount) > eventEntryFee && transponderRentalFee
-                  ? ` + $${transponderRentalFee.toFixed(2)} transponder rental`
-                  : ""}
-              </p>
-            )}
+            {eventEntryFee && (() => {
+              const rentalFee = (form.getValues("rentTransponder") && transponderRentalFee) ? transponderRentalFee : 0;
+              return (
+                <p className="text-xs text-muted-foreground">
+                  Entry fee ${eventEntryFee.toFixed(2)}
+                  {rentalFee > 0 ? ` + $${rentalFee.toFixed(2)} transponder rental = $${(eventEntryFee + rentalFee).toFixed(2)} total` : ""}
+                </p>
+              );
+            })()}
           </div>
 
           {paymentError && (
@@ -1112,7 +1146,9 @@ export default function Registrations() {
 }
 
 // ── Small helper component ────────────────────────────────────────────────────
-function ConfirmationCard({ reg, entryFee }: { reg: { id: number; riderName: string; raceClass: string }; entryFee?: number | null }) {
+function ConfirmationCard({ reg, entryFee, rentalFee }: { reg: { id: number; riderName: string; raceClass: string }; entryFee?: number | null; rentalFee?: number | null }) {
+  const hasRental = rentalFee != null && rentalFee > 0;
+  const total = (entryFee ?? 0) + (hasRental ? (rentalFee ?? 0) : 0);
   return (
     <div className="bg-muted rounded-lg p-4 space-y-2 text-left text-sm">
       <div className="flex justify-between">
@@ -1128,9 +1164,23 @@ function ConfirmationCard({ reg, entryFee }: { reg: { id: number; riderName: str
         <span className="font-mono">REG-{reg.id.toString().padStart(5, "0")}</span>
       </div>
       {entryFee != null && entryFee > 0 && (
-        <div className="flex justify-between border-t pt-2 mt-1">
-          <span className="text-muted-foreground font-bold uppercase tracking-widest text-xs">Entry Fee</span>
-          <span className="font-heading font-bold">${entryFee.toFixed(2)}</span>
+        <div className="border-t pt-2 mt-1 space-y-1.5">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground font-bold uppercase tracking-widest text-xs">Entry Fee</span>
+            <span className="font-heading font-bold">${entryFee.toFixed(2)}</span>
+          </div>
+          {hasRental && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground font-bold uppercase tracking-widest text-xs">Transponder Rental</span>
+              <span className="font-heading font-bold">${(rentalFee as number).toFixed(2)}</span>
+            </div>
+          )}
+          {hasRental && (
+            <div className="flex justify-between border-t pt-1.5">
+              <span className="text-muted-foreground font-bold uppercase tracking-widest text-xs">Total Due</span>
+              <span className="font-heading font-bold text-primary">${total.toFixed(2)}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
