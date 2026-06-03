@@ -38,6 +38,7 @@ const registerSchema = z.object({
   sponsors: z.string().optional(),
   statsEmailOptIn: z.boolean().default(false),
   rentTransponder: z.boolean().default(false),
+  myLapsTransponderNumber: z.string().optional(),
 });
 
 type RegisterForm = z.infer<typeof registerSchema>;
@@ -102,7 +103,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false,
+      raceClass: "", bibNumber: "", amaNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "",
     },
   });
 
@@ -231,6 +232,17 @@ export default function Register() {
   };
 
   const onSubmit = async (data: RegisterForm) => {
+    // MyLaps events require either a transponder number or a rental
+    if (event?.timingTechnology === "mylaps") {
+      const hasNumber = !!data.myLapsTransponderNumber?.trim();
+      const hasRental = !!data.rentTransponder;
+      if (!hasNumber && !hasRental) {
+        form.setError("myLapsTransponderNumber", {
+          message: "Enter your MyLaps transponder number, or select a rental below.",
+        });
+        return;
+      }
+    }
     setSubmitting(true);
     setSubmitError(null);
     setPaymentCancelled(false);
@@ -598,39 +610,78 @@ export default function Register() {
                   </CardContent>
                 </Card>
 
-                {event.transponderRentalEnabled && event.timingTechnology === "mylaps" && event.transponderRentalFee != null && (
+                {event.timingTechnology === "mylaps" && (
                   <Card className="border-primary/30 bg-primary/[0.03]">
                     <CardHeader className="pb-2 border-b">
                       <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">MyLaps Transponder</h3>
                     </CardHeader>
-                    <CardContent className="p-6">
+                    <CardContent className="p-6 space-y-4">
+                      {/* Own transponder number */}
                       <FormField
                         control={form.control}
-                        name="rentTransponder"
+                        name="myLapsTransponderNumber"
                         render={({ field }) => (
                           <FormItem>
-                            <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
-                              <FormControl>
-                                <Checkbox
-                                  id="rent-transponder"
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                  className="mt-0.5"
-                                />
-                              </FormControl>
-                              <div className="space-y-0.5 leading-none">
-                                <label htmlFor="rent-transponder" className="text-sm font-semibold cursor-pointer">
-                                  Rent a MyLaps transponder — <span className="text-primary">${Number(event.transponderRentalFee).toFixed(2)}</span>
-                                </label>
-                                <p className="text-xs text-muted-foreground">
-                                  Don't have your own MyLaps transponder? Add a rental to your registration. The transponder will be ready for you at the gate.
-                                </p>
-                              </div>
-                            </div>
+                            <FormLabel>My Transponder Number</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="e.g. 123456789"
+                                disabled={form.watch("rentTransponder")}
+                                onChange={e => {
+                                  field.onChange(e);
+                                  if (e.target.value.trim()) {
+                                    form.setValue("rentTransponder", false);
+                                  }
+                                }}
+                              />
+                            </FormControl>
+                            <p className="text-xs text-muted-foreground">Enter the number printed on your personal MyLaps transponder.</p>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
+
+                      {/* Rental option — only when the event offers it */}
+                      {event.transponderRentalEnabled && event.transponderRentalFee != null && (
+                        <>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <div className="h-px flex-1 bg-border" />
+                            <span className="uppercase tracking-widest font-semibold">or</span>
+                            <div className="h-px flex-1 bg-border" />
+                          </div>
+                          <FormField
+                            control={form.control}
+                            name="rentTransponder"
+                            render={({ field }) => (
+                              <FormItem>
+                                <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                                  <FormControl>
+                                    <Checkbox
+                                      id="rent-transponder"
+                                      checked={field.value}
+                                      disabled={!!form.watch("myLapsTransponderNumber")?.trim()}
+                                      onCheckedChange={val => {
+                                        field.onChange(val);
+                                        if (val) form.setValue("myLapsTransponderNumber", "");
+                                      }}
+                                      className="mt-0.5"
+                                    />
+                                  </FormControl>
+                                  <div className="space-y-0.5 leading-none">
+                                    <label htmlFor="rent-transponder" className="text-sm font-semibold cursor-pointer">
+                                      Rent a MyLaps transponder — <span className="text-primary">${Number(event.transponderRentalFee).toFixed(2)}</span>
+                                    </label>
+                                    <p className="text-xs text-muted-foreground">
+                                      Don't have your own? Add a rental — the transponder will be ready for you at the gate.
+                                    </p>
+                                  </div>
+                                </div>
+                              </FormItem>
+                            )}
+                          />
+                        </>
+                      )}
                     </CardContent>
                   </Card>
                 )}

@@ -267,7 +267,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors, rentTransponder } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -347,6 +347,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     sponsors: sponsors || null,
     statsEmailOptIn: !!statsEmailOptIn,
     transponderRental: wantsRental,
+    myLapsTransponderNumber: myLapsTransponderNumber?.trim() || null,
   }).returning();
 
   // Only create the check-in record now if no payment is required.
