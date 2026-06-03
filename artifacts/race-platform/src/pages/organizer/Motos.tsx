@@ -281,7 +281,7 @@ function FirstPlaceCountdown({ motoId, lapCount, variant = "banner" }: { motoId:
     if (
       maxLap > leaderMaxLap ||
       (maxLap === leaderMaxLap && leaderLastCrossing &&
-        new Date(latest.crossingTime) > new Date(leaderLastCrossing.crossingTime))
+        new Date(latest.crossingTime) < new Date(leaderLastCrossing.crossingTime))
     ) {
       leaderMaxLap = maxLap;
       leaderName = name;
