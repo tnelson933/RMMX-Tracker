@@ -176,6 +176,191 @@ function PointsPreview({ scale, method }: { scale: number[]; method: ScoringMeth
   );
 }
 
+// ─── AI Result Explanation ───────────────────────────────────────────────────
+
+const EXAMPLE_RIDERS = ["Jake Miller", "Tyler Cruz", "Marcus Reed", "Devon White", "Brett Hayes", "Jaxon Cole", "Chase Webb", "Colton Reese", "Austin Parks", "Lane Burke"];
+
+function getPoints(method: ScoringMethod, scale: number[], formula: string, position: number, totalRiders: number): number {
+  if (method === "per_rider") return Math.max(0, totalRiders - position + 1);
+  if (method === "lowest_positions") return position;
+  if (method === "formula") {
+    try {
+      // eslint-disable-next-line no-new-func
+      return Math.max(0, Math.round(new Function("position", "riders", `return ${formula}`)(position, totalRiders)));
+    } catch { return 0; }
+  }
+  return scale[position - 1] ?? 0;
+}
+
+function AiResultExplanation({ form }: { form: FormState }) {
+  const method = form.scoringMethod;
+  const scale = parseScale(form.scaleText);
+  const isLowest = method === "lowest_positions";
+  const isPerRider = method === "per_rider";
+  const isFormula = method === "formula";
+
+  // Generate example race with 10 riders
+  const raceRiders = EXAMPLE_RIDERS.slice(0, 10);
+  const racePts = raceRiders.map((_, i) => getPoints(method, scale, form.scoringFormula, i + 1, raceRiders.length));
+
+  // Simulate 3 rounds with shuffled positions for championship example
+  const shuffleFor = (round: number) => {
+    // Deterministic shuffle based on round number
+    return raceRiders.map((_, i) => {
+      const order = [
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [1, 0, 3, 2, 5, 4, 7, 6, 9, 8],
+        [2, 3, 0, 1, 6, 7, 4, 5, 8, 9],
+      ][round];
+      return order[i];
+    });
+  };
+  const rounds = [0, 1, 2].map(r => {
+    const positionOf = shuffleFor(r);
+    return raceRiders.map((_, i) => {
+      const pos = positionOf.indexOf(i) + 1;
+      return getPoints(method, scale, form.scoringFormula, pos, raceRiders.length);
+    });
+  });
+  const totals = raceRiders.map((_, i) => rounds.reduce((s, r) => s + r[i], 0));
+  const champOrder = [...raceRiders.map((name, i) => ({ name, pts: totals[i] }))]
+    .sort((a, b) => isLowest ? a.pts - b.pts : b.pts - a.pts)
+    .slice(0, 5);
+
+  const scoringLabel = isLowest ? "Score (lower wins)" : isPerRider ? "Points (dynamic)" : isFormula ? "Points (formula)" : "Points";
+
+  return (
+    <div className="rounded-xl border bg-muted/20 overflow-hidden space-y-0">
+      {/* Header */}
+      <div className="px-4 py-3 bg-muted/40 border-b flex items-center gap-2">
+        <Info size={14} className="text-primary shrink-0" />
+        <span className="text-xs font-heading font-bold uppercase tracking-widest text-foreground">
+          How This Scoring Works — With Examples
+        </span>
+      </div>
+
+      {/* Description */}
+      {form.description && (
+        <div className="px-4 py-3 text-sm text-muted-foreground border-b leading-relaxed">
+          {form.description}
+        </div>
+      )}
+
+      {/* Method callout */}
+      <div className="px-4 py-3 border-b">
+        {isLowest && (
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p><span className="font-semibold text-foreground">Olympic / Lowest Position:</span> Like golf — every finish earns a score equal to the position number. Add them up across all races. The rider with the <em>lowest</em> total wins the championship.</p>
+            <p className="text-muted-foreground/70">Finishing 1st earns 1 point. Finishing 10th earns 10. Lower is better.</p>
+          </div>
+        )}
+        {isPerRider && (
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p><span className="font-semibold text-foreground">Per Rider (Dynamic):</span> Points scale with field size. In a 10-rider race: 1st = 10 pts, 2nd = 9 pts … 10th = 1 pt. In a 20-rider race: 1st = 20 pts, 2nd = 19 pts … 20th = 1 pt.</p>
+            <p className="text-muted-foreground/70">This keeps racing competitive regardless of turnout — a win is always worth exactly as many points as riders that entered.</p>
+          </div>
+        )}
+        {isFormula && form.scoringFormula && (
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p><span className="font-semibold text-foreground">Custom Formula:</span> <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-xs text-primary">{form.scoringFormula}</code></p>
+            <p className="text-muted-foreground/70">Calculated at race time using the actual finish position and field size. The formula above is evaluated for each rider to determine their points.</p>
+          </div>
+        )}
+        {!isLowest && !isPerRider && !isFormula && scale.length > 0 && (
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p><span className="font-semibold text-foreground">Fixed Scale:</span> Each finishing position earns a predetermined number of points regardless of field size. {scale[0]} points for 1st, {scale[1] ?? "—"} for 2nd, {scale[2] ?? "—"} for 3rd, and so on.</p>
+            {scale.length < 10 && <p className="text-amber-600">⚠ Only {scale.length} positions are scored — riders finishing outside the top {scale.length} earn <strong>0 points</strong>.</p>}
+          </div>
+        )}
+        {form.mainEventOnly && (
+          <p className="text-xs text-primary mt-2 flex items-center gap-1.5 font-medium">
+            <Zap size={11} />
+            Main Event Only — heats and LCQs don't affect championship standings. Only the Main Event finish counts.
+          </p>
+        )}
+      </div>
+
+      {/* Race Day Example */}
+      <div className="px-4 pt-3 pb-2 border-b">
+        <div className="text-[10px] font-heading font-bold uppercase tracking-widest text-muted-foreground mb-2">
+          Race Day Example — {raceRiders.length} Riders
+        </div>
+        <div className="rounded-lg border overflow-hidden text-xs">
+          <div className="grid grid-cols-3 bg-muted/40 px-3 py-1.5 font-heading uppercase tracking-wider text-[10px] text-muted-foreground">
+            <span>Position</span>
+            <span>Rider</span>
+            <span className="text-right">{scoringLabel}</span>
+          </div>
+          {raceRiders.slice(0, 8).map((name, i) => {
+            const pts = racePts[i];
+            const isScoredZero = pts === 0 && i > 0;
+            return (
+              <div key={name} className={`grid grid-cols-3 px-3 py-1.5 border-t items-center ${i === 0 ? "bg-primary/5" : ""}`}>
+                <span className={`font-medium ${i === 0 ? "text-primary" : "text-muted-foreground"}`}>
+                  {i === 0 ? "🥇 1st" : i === 1 ? "🥈 2nd" : i === 2 ? "🥉 3rd" : `${i + 1}th`}
+                </span>
+                <span className={i === 0 ? "font-semibold" : ""}>{name}</span>
+                <span className={`text-right font-mono font-bold tabular-nums ${i === 0 ? "text-primary" : isScoredZero ? "text-muted-foreground/40" : ""}`}>
+                  {isLowest ? pts : pts > 0 ? `+${pts}` : "—"}
+                </span>
+              </div>
+            );
+          })}
+          {raceRiders.length > 8 && (
+            <div className="grid grid-cols-3 px-3 py-1.5 border-t bg-muted/20 text-muted-foreground/60">
+              <span className="col-span-2 text-[11px]">…{raceRiders.length - 8} more riders</span>
+              <span className="text-right font-mono text-[11px]">
+                {racePts[8] > 0 ? (isLowest ? racePts[8] : `+${racePts[8]}`) : "—"}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Championship Simulation */}
+      <div className="px-4 pt-3 pb-4">
+        <div className="text-[10px] font-heading font-bold uppercase tracking-widest text-muted-foreground mb-2">
+          After 3 Rounds — Championship Standings (Top 5)
+        </div>
+        <div className="rounded-lg border overflow-hidden text-xs">
+          <div className={`grid bg-muted/40 px-3 py-1.5 font-heading uppercase tracking-wider text-[10px] text-muted-foreground`}
+            style={{ gridTemplateColumns: "1fr 2fr 1fr 1fr 1fr 1.2fr" }}>
+            <span>Pos</span>
+            <span>Rider</span>
+            <span className="text-center">Rd 1</span>
+            <span className="text-center">Rd 2</span>
+            <span className="text-center">Rd 3</span>
+            <span className="text-right">Total</span>
+          </div>
+          {champOrder.map(({ name, pts }, rank) => {
+            const riderIdx = EXAMPLE_RIDERS.indexOf(name);
+            return (
+              <div
+                key={name}
+                className={`grid px-3 py-1.5 border-t items-center ${rank === 0 ? "bg-primary/5 font-semibold" : ""}`}
+                style={{ gridTemplateColumns: "1fr 2fr 1fr 1fr 1fr 1.2fr" }}
+              >
+                <span className={`font-mono ${rank === 0 ? "text-primary" : "text-muted-foreground"}`}>{rank + 1}</span>
+                <span className="truncate pr-1">{name}</span>
+                {rounds.map((round, ri) => (
+                  <span key={ri} className="text-center font-mono text-muted-foreground">{round[riderIdx]}</span>
+                ))}
+                <span className={`text-right font-mono font-bold tabular-nums ${rank === 0 ? "text-primary" : ""}`}>{pts}</span>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
+          {isLowest
+            ? "Lower total score is better. Consistent top finishes beat a single win with bad rounds."
+            : "Championship leader is the rider with the most points accumulated across all rounds."}
+          {form.mainEventOnly && " Only Main Event results count — heat finishes are excluded from these totals."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── AI Assist Panel ─────────────────────────────────────────────────────────
 
 function AiAssistPanel({
@@ -408,6 +593,7 @@ function TableFormDialog({
       : defaultForm
   );
   const [showManual, setShowManual] = useState(!!editingTable);
+  const [aiUsed, setAiUsed] = useState(false);
 
   const createMutation = useCreatePointsTable();
   const updateMutation = useUpdatePointsTable();
@@ -432,7 +618,9 @@ function TableFormDialog({
       scaleText: scaleToText(result.pointsScale),
       scoringFormula: result.scoringFormula ?? "",
     });
-    setShowManual(true);
+    setAiUsed(true);
+    // In create mode, keep manual fields hidden so the explanation panel shows
+    if (isEditing) setShowManual(true);
   }
 
   const isPerRider = form.scoringMethod === "per_rider";
@@ -499,6 +687,11 @@ function TableFormDialog({
               </span>
               {showManual ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
+          )}
+
+          {/* AI explanation — shown after AI runs when manual fields are hidden */}
+          {aiUsed && !showManual && !isEditing && (
+            <AiResultExplanation form={form} />
           )}
 
           {(showManual || isEditing) && (
