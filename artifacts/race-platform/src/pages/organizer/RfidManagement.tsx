@@ -27,16 +27,20 @@ export default function RfidManagement() {
   const assignMutation = useAssignRfid();
 
   const selectedEvent = events?.find(e => e.id.toString() === filterEventId);
+  const hasEventFilter = filterEventId !== "all";
   const tech = ((selectedEvent as any)?.timingTechnology ?? "rfid") as "rfid" | "mylaps";
-  const isMylaps = tech === "mylaps";
+  const isMylaps = hasEventFilter && tech === "mylaps";
+  const isRfid = hasEventFilter && tech === "rfid";
 
-  const transponderLabel = isMylaps ? "MyLaps Transponder #" : "RFID Tag #";
-  const assignLabel = isMylaps ? "Assign Transponder" : "Assign Tag";
-  const assignDialogTitle = isMylaps ? "Assign MyLaps Transponder" : "Assign RFID Tag";
-  const scanLabel = isMylaps ? "Enter Transponder Number" : "Scan or Enter Tag Number";
-  const placeholder = isMylaps ? "e.g. 12345" : "e.g. 1A2B3C4D";
-  const emptyLabel = isMylaps ? "No transponders assigned yet" : "No RFID tags assigned yet";
-  const successLabel = isMylaps ? "Transponder assigned successfully" : "RFID tag assigned successfully";
+  const transponderLabel = isMylaps ? "MyLaps Transponder #" : isRfid ? "RFID Tag #" : "Transponder #";
+  const assignLabel = isMylaps ? "Assign Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
+  const assignDialogTitle = isMylaps ? "Assign MyLaps Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
+  const scanLabel = isMylaps ? "Enter Transponder Number" : isRfid ? "Scan or Enter Tag Number" : "Enter Tag / Transponder Number";
+  const placeholder = isMylaps ? "e.g. 12345" : isRfid ? "e.g. 1A2B3C4D" : "e.g. 1A2B3C4D or 12345";
+  const emptyLabel = isMylaps ? "No transponders assigned yet" : isRfid ? "No RFID tags assigned yet" : "No transponders assigned yet";
+  const successLabel = isMylaps ? "Transponder assigned successfully" : isRfid ? "RFID tag assigned successfully" : "Transponder assigned successfully";
+  const pageTitle = isMylaps ? "MyLaps Transponder Management" : isRfid ? "RFID Management" : "Transponder Management";
+  const pageDesc = isMylaps ? "Track and assign MyLaps transponder numbers to riders." : isRfid ? "Track and assign RFID tags to riders." : "Track and assign timing transponders to riders.";
 
   const handleAssign = () => {
     if (!riderIdStr || !rfidInput) return;
@@ -74,9 +78,9 @@ export default function RfidManagement() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
-            <Tag className="text-primary" size={32} /> {isMylaps ? "MyLaps Transponder Management" : "RFID Management"}
+            <Tag className="text-primary" size={32} /> {pageTitle}
           </h1>
-          <p className="text-muted-foreground mt-1">{isMylaps ? "Track and assign MyLaps transponder numbers to riders." : "Track and assign RFID tags to riders."}</p>
+          <p className="text-muted-foreground mt-1">{pageDesc}</p>
         </div>
         
         <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>
