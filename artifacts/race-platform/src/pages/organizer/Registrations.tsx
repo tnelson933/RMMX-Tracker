@@ -37,7 +37,7 @@ const BIKE_BRANDS = [
 const onSiteRegSchema = z.object({
   firstName: z.string().min(1, "Required"),
   lastName: z.string().min(1, "Required"),
-  email: z.union([z.string().email("Must be a valid email"), z.literal("")]).optional(),
+  email: z.string().email("Valid email required"),
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
   emergencyContact: z.string().optional(),
@@ -283,7 +283,7 @@ export default function Registrations() {
         body: JSON.stringify({
           firstName: data.firstName,
           lastName: data.lastName,
-          email: data.email?.trim() || undefined,
+          email: data.email,
           phone: data.phone || undefined,
           dateOfBirth: data.dateOfBirth || undefined,
           emergencyContact: data.emergencyContact || undefined,
@@ -459,13 +459,13 @@ export default function Registrations() {
               <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Rider Lookup</h3>
               <FormField control={form.control} name="email" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email <span className="text-muted-foreground text-xs font-normal">(optional — used to look up existing rider)</span></FormLabel>
+                  <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
                     <Input
                       type="email"
                       placeholder="rider@example.com"
                       {...field}
-                      onBlur={e => { field.onBlur(); if (e.target.value.trim()) lookupByEmail(e.target.value); }}
+                      onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
                     />
                   </FormControl>
                   <FormMessage />
