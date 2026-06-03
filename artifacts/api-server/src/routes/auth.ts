@@ -164,4 +164,34 @@ router.post("/auth/complete-setup", async (req, res) => {
   return res.json({ ok: true });
 });
 
+// PATCH /auth/me — update own profile (name)
+router.patch("/auth/me", async (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+  const { name } = req.body;
+  if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+    return res.status(400).json({ error: "name must be a non-empty string" });
+  }
+
+  const updates: Record<string, string> = {};
+  if (name !== undefined) updates.name = name.trim();
+
+  const [updated] = await db
+    .update(usersTable)
+    .set(updates)
+    .where(eq(usersTable.id, userId))
+    .returning();
+
+  return res.json({
+    id: updated.id,
+    email: updated.email,
+    name: updated.name,
+    role: updated.role,
+    clubId: updated.clubId,
+    tourCompleted: updated.tourCompleted,
+    createdAt: updated.createdAt.toISOString(),
+  });
+});
+
 export default router;

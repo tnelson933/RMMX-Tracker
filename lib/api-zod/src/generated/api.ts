@@ -54,6 +54,24 @@ export const GetMeResponse = zod.object({
 
 
 /**
+ * @summary Update current user's own profile (name)
+ */
+export const UpdateMeBody = zod.object({
+  "name": zod.string().optional()
+})
+
+export const UpdateMeResponse = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "role": zod.enum(['super_admin', 'club_organizer', 'staff', 'public']),
+  "clubId": zod.number().nullish(),
+  "tourCompleted": zod.boolean(),
+  "createdAt": zod.string().optional()
+})
+
+
+/**
  * @summary Send account setup or password reset email
  */
 export const RequestAccountSetupBody = zod.object({

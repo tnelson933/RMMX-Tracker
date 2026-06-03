@@ -96,6 +96,25 @@ paths:
                 $ref: "#/components/schemas/User"
         "401":
           description: Not authenticated
+    patch:
+      operationId: updateMe
+      tags: [auth]
+      summary: Update current user's own profile (name)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMe"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
 
   /auth/request-setup:
     post:
@@ -1156,6 +1175,12 @@ components:
           type: string
       required:
         - status
+
+    UpdateMe:
+      type: object
+      properties:
+        name:
+          type: string
 
     LoginInput:
       type: object

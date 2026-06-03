@@ -79,6 +79,7 @@ export * from './stripeConnectDashboardLink';
 export * from './stripeConnectStartResult';
 export * from './stripeConnectStatus';
 export * from './upcomingEventItem';
+export * from './updateMe';
 export * from './uploadUrlRequest';
 export * from './uploadUrlResponse';
 export * from './user';

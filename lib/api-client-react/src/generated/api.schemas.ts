@@ -9,6 +9,10 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface UpdateMe {
+  name?: string;
+}
+
 export interface LoginInput {
   email: string;
   password: string;
