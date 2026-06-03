@@ -196,21 +196,37 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
     const stripe = await getUncachableStripeClient();
     const appUrl = getAppUrl();
     const entryFee = Number(event.entryFee);
+    const rentalFee = (reg.transponderRental && event.transponderRentalEnabled && event.transponderRentalFee)
+      ? Number(event.transponderRentalFee)
+      : 0;
 
     const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, reg.riderId));
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      line_items: [{
+    const lineItems = [
+      {
         price_data: {
           currency: "usd",
-          product_data: {
-            name: `${event.name} — ${reg.raceClass} Entry`,
-          },
+          product_data: { name: `${event.name} — ${reg.raceClass} Entry` },
           unit_amount: Math.round(entryFee * 100),
         },
         quantity: 1,
-      }],
+      },
+    ];
+
+    if (rentalFee > 0) {
+      lineItems.push({
+        price_data: {
+          currency: "usd",
+          product_data: { name: "MyLaps Transponder Rental" },
+          unit_amount: Math.round(rentalFee * 100),
+        },
+        quantity: 1,
+      });
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: lineItems,
       customer_email: rider?.email ?? undefined,
       payment_intent_data: {
         transfer_data: { destination: club.stripeAccountId },
@@ -220,7 +236,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
       cancel_url: `${appUrl}/events/${eventId}/registrations`,
     });
 
-    return res.json({ checkoutUrl: session.url, sessionId: session.id, entryFee });
+    return res.json({ checkoutUrl: session.url, sessionId: session.id, entryFee, rentalFee });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[charge] Error");
     return res.status(500).json({ error: err?.message ?? "Failed to create checkout session" });

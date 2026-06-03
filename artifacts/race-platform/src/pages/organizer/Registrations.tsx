@@ -72,6 +72,7 @@ interface PendingCard {
   checkoutUrl: string;
   sessionId: string;
   entryFee: number;
+  rentalFee: number;
 }
 
 interface PaymentDone {
@@ -246,7 +247,8 @@ export default function Registrations() {
 
       // If event has an entry fee, prompt for payment; otherwise show basic success
       if (eventEntryFee && eventEntryFee > 0) {
-        setCashAmount(String(eventEntryFee));
+        const rentalTotal = (data.rentTransponder && transponderRentalFee) ? transponderRentalFee : 0;
+        setCashAmount((eventEntryFee + rentalTotal).toFixed(2));
         setStep("pay-prompt");
       } else {
         setStep("reg-done");
@@ -275,6 +277,7 @@ export default function Registrations() {
         checkoutUrl: json.checkoutUrl,
         sessionId: json.sessionId,
         entryFee: json.entryFee,
+        rentalFee: json.rentalFee ?? 0,
       });
       setStep("pay-card");
     } catch (e: any) {
@@ -701,7 +704,12 @@ export default function Registrations() {
               />
             </div>
             {eventEntryFee && (
-              <p className="text-xs text-muted-foreground">Entry fee is ${eventEntryFee.toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground">
+                Entry fee ${eventEntryFee.toFixed(2)}
+                {parseFloat(cashAmount) > eventEntryFee && transponderRentalFee
+                  ? ` + $${transponderRentalFee.toFixed(2)} transponder rental`
+                  : ""}
+              </p>
             )}
           </div>
 
@@ -736,9 +744,21 @@ export default function Registrations() {
           </div>
 
           {/* Amount due */}
-          <div className="flex items-center justify-between bg-muted rounded-lg px-4 py-3">
-            <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Amount Due</span>
-            <span className="font-heading font-bold text-lg">${pendingCard.entryFee.toFixed(2)}</span>
+          <div className="bg-muted rounded-lg px-4 py-3 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Entry Fee</span>
+              <span className="text-sm font-medium">${pendingCard.entryFee.toFixed(2)}</span>
+            </div>
+            {pendingCard.rentalFee > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Transponder Rental</span>
+                <span className="text-sm font-medium">${pendingCard.rentalFee.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between border-t pt-1.5 mt-1">
+              <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Total Due</span>
+              <span className="font-heading font-bold text-lg">${(pendingCard.entryFee + pendingCard.rentalFee).toFixed(2)}</span>
+            </div>
           </div>
 
           {/* QR code */}
