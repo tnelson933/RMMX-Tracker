@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap, GripVertical } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap, GripVertical, Maximize2 } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -233,6 +233,7 @@ export default function Motos() {
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
 
   // Drag-and-drop state
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -839,7 +840,7 @@ export default function Motos() {
                     </div>
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="flex items-center gap-2">
                   <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
                     moto.status === "in_progress" ? "bg-primary/20 text-primary border-primary/30 animate-pulse" :
                     moto.status === "completed" ? "bg-secondary/20 text-secondary border-secondary/30" :
@@ -850,6 +851,13 @@ export default function Motos() {
                     )}
                     {moto.status.replace("_", " ")}
                   </span>
+                  <button
+                    onClick={() => setExpandedMotoId(moto.id)}
+                    className="text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors p-1 rounded hover:bg-white/10"
+                    title="Expand view"
+                  >
+                    <Maximize2 size={14} />
+                  </button>
                 </div>
               </CardHeader>
 
@@ -995,6 +1003,152 @@ export default function Motos() {
           </CardContent>
         </Card>
       )}
+
+      {/* Expanded moto dialog */}
+      {(() => {
+        const moto = expandedMotoId !== null ? (motos ?? []).find(m => m.id === expandedMotoId) : null;
+        if (!moto) return null;
+        return (
+          <Dialog open={true} onOpenChange={open => { if (!open) setExpandedMotoId(null); }}>
+            <DialogContent className="max-w-3xl w-full p-0 overflow-hidden gap-0 max-h-[90vh] flex flex-col">
+              {/* Header */}
+              <div className="bg-sidebar text-sidebar-foreground px-5 py-4 border-b flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="bg-sidebar-accent text-white w-10 h-10 rounded-full flex items-center justify-center font-heading font-bold text-xl">
+                    {moto.motoNumber}
+                  </div>
+                  <div>
+                    <div className="font-heading uppercase text-xl font-bold text-white leading-tight">{moto.name}</div>
+                    <div className="flex items-center gap-2 text-xs text-sidebar-foreground/70 uppercase tracking-widest mt-0.5">
+                      <span>{moto.raceClass}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider border ${
+                        moto.type === "main"
+                          ? "bg-primary/30 text-primary border-primary/40"
+                          : "bg-white/10 text-sidebar-foreground/80 border-white/20"
+                      }`}>
+                        {moto.type === "main" ? "Main Event" : isSupercrossFormat ? "Heat" : "Division"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
+                  moto.status === "in_progress" ? "bg-primary/20 text-primary border-primary/30 animate-pulse" :
+                  moto.status === "completed" ? "bg-secondary/20 text-secondary border-secondary/30" :
+                  "bg-sidebar-accent text-sidebar-foreground/80 border-transparent"
+                }`}>
+                  {moto.status === "in_progress" && (
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full mr-1 animate-ping" />
+                  )}
+                  {moto.status.replace("_", " ")}
+                </span>
+              </div>
+
+              {/* Scrollable body */}
+              <div className="flex-1 overflow-y-auto">
+                {/* Lineup table */}
+                {moto.type === "heat" ? (
+                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"}>
+                    <Table>
+                      <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                        <TableRow>
+                          <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
+                            <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
+                          </TableHead>
+                          <TableHead className="text-xs">Rider</TableHead>
+                          <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                          <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {getLineup(moto).length > 0 ? (
+                          getLineup(moto).map((entry) => (
+                            <DraggableRiderRow key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"} />
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-6 text-muted-foreground text-sm">No lineup generated</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </DroppableMotoLineup>
+                ) : (
+                  <div className="border-b">
+                    <Table>
+                      <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                        <TableRow>
+                          <TableHead className="w-12 text-center text-xs">Gate</TableHead>
+                          <TableHead className="text-xs">Rider</TableHead>
+                          <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                          <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {moto.lineup && moto.lineup.length > 0 ? (
+                          (moto.lineup as LineupEntry[]).map((entry) => (
+                            <TableRow key={entry.riderId} className="h-9">
+                              <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
+                              <TableCell className="font-medium">{entry.riderName}</TableCell>
+                              <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
+                              <TableCell className="text-center">
+                                {entry.rfidNumber ? (
+                                  <span className="inline-flex items-center gap-1 text-green-600">
+                                    <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-6 text-muted-foreground text-sm">No lineup generated</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {/* Live crossing feed */}
+                {moto.status === "in_progress" && (
+                  <LiveCrossingsFeed motoId={moto.id} />
+                )}
+              </div>
+
+              {/* Action bar */}
+              <div className="p-3 bg-muted/30 border-t flex gap-2 items-center flex-wrap shrink-0">
+                {moto.status === "scheduled" && (
+                  <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs">
+                    <Play size={14} className="mr-1" /> Start Moto
+                  </Button>
+                )}
+                {moto.status === "in_progress" && (
+                  <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs" onClick={() => handleStatusUpdate(moto.id, "completed")}>
+                    <CheckCircle size={14} className="mr-1" /> Finish Moto
+                  </Button>
+                )}
+                {moto.status === "completed" && (
+                  <Button size="sm" variant="ghost" className="text-muted-foreground font-heading uppercase text-xs" onClick={() => handleStatusUpdate(moto.id, "in_progress")}>
+                    <RefreshCw size={14} className="mr-1" /> Reopen
+                  </Button>
+                )}
+                <div className="ml-auto flex gap-1.5">
+                  <a href={`/live/${moto.id}`} target="_blank" rel="noopener noreferrer">
+                    <Button size="sm" variant="ghost" className={`font-heading uppercase text-xs gap-1 ${moto.status === "in_progress" ? "text-primary" : "text-muted-foreground"}`}>
+                      <Radio size={13} /> Live <ExternalLink size={11} />
+                    </Button>
+                  </a>
+                  <Button size="sm" variant="ghost" className="text-muted-foreground px-2" onClick={() => copyLiveLink(moto.id)}>
+                    {copiedId === moto.id ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {/* Delete confirmation dialog */}
       <Dialog open={confirmDeleteId !== null} onOpenChange={open => { if (!open) setConfirmDeleteId(null); }}>
