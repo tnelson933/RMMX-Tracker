@@ -121,16 +121,6 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     return res.status(400).json({ error: "riderId OR firstName, lastName, and email are required" });
   }
 
-  // Prevent duplicate registrations in the same class
-  const dupes = await db.select().from(registrationsTable).where(and(
-    eq(registrationsTable.eventId, eventId),
-    eq(registrationsTable.riderId, resolvedRiderId),
-    eq(registrationsTable.raceClass, raceClass),
-  ));
-  if (dupes[0]) {
-    return res.status(409).json({ error: "This rider is already registered for that class at this event" });
-  }
-
   // Determine if payment is required — on-site registrations start pending when the event has a fee
   const [eventData] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   const needsPayment = !!(eventData?.paymentEnabled && eventData?.entryFee);
@@ -368,17 +358,6 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       bibNumber: bibNumber || null,
     }).returning();
     rider = created;
-  }
-
-  // Prevent duplicate registration
-  const dupes = await db.select().from(registrationsTable)
-    .where(and(
-      eq(registrationsTable.eventId, eventId),
-      eq(registrationsTable.riderId, rider.id),
-      eq(registrationsTable.raceClass, raceClass),
-    ));
-  if (dupes[0]) {
-    return res.status(409).json({ error: "You are already registered for this class at this event" });
   }
 
   // Determine if payment is required
