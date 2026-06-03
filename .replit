@@ -34,3 +34,8 @@ externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+STRIPE_PUBLISHABLE_KEY = "pk_test_51Tc3peDFpQsORJJyohzdcDeg4ouh3hIdyxyweycQs3NtHlPI27yHtwaCTPDa90QyficBo7w1HVvfZd90nxtydonX00jtbRZkXj"
