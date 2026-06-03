@@ -232,7 +232,7 @@ function formatCountdown(ms: number): string {
   return m > 0 ? `${m}m ${s.toString().padStart(2, "0")}s` : `${s}s`;
 }
 
-function FirstPlaceCountdown({ motoId, lapCount }: { motoId: number; lapCount?: number | null }) {
+function FirstPlaceCountdown({ motoId, lapCount, variant = "banner" }: { motoId: number; lapCount?: number | null; variant?: "banner" | "inline" }) {
   const [allCrossings, setAllCrossings] = useState<RawCrossing[]>([]);
   const [now, setNow] = useState(Date.now());
 
@@ -301,6 +301,23 @@ function FirstPlaceCountdown({ motoId, lapCount }: { motoId: number; lapCount?: 
   const msUntil = projectedMs - now;
   const isOverdue = msUntil < 0;
   const isFinish = lapCount != null;
+  const timeStr = isOverdue ? `${formatCountdown(Math.abs(msUntil))} ago` : formatCountdown(msUntil);
+
+  if (variant === "inline") {
+    return (
+      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium shrink-0 transition-all ${
+        isOverdue
+          ? "bg-orange-500/10 border-orange-500/30 text-orange-600"
+          : msUntil < 30000
+          ? "bg-primary/10 border-primary/30 text-primary animate-pulse"
+          : "bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-400"
+      }`}>
+        <Flag size={11} className="shrink-0" />
+        <span className="truncate max-w-[90px]">{leaderName.split(" ")[0]}</span>
+        <span className="font-mono font-bold tabular-nums shrink-0">{timeStr}</span>
+      </div>
+    );
+  }
 
   return (
     <div className={`border-t flex items-center gap-3 px-4 py-2.5 transition-all ${
@@ -317,21 +334,12 @@ function FirstPlaceCountdown({ motoId, lapCount }: { motoId: number; lapCount?: 
         <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-none mb-0.5">
           {isFinish ? "1st Place Finish Expected" : "1st Place Next Crossing"}
         </div>
-        <div className="text-xs font-medium truncate text-foreground">
-          {leaderName}
-          {lapCount != null && (
-            <span className="ml-1.5 text-muted-foreground font-normal">
-              · Lap {leaderMaxLap} of {lapCount}
-            </span>
-          )}
-        </div>
+        <div className="text-xs font-medium truncate text-foreground">{leaderName}</div>
       </div>
       <div className={`shrink-0 text-right font-heading font-bold tabular-nums ${
         isOverdue ? "text-orange-500" : msUntil < 30000 ? "text-primary text-base" : "text-amber-600 text-sm"
       }`}>
-        {isOverdue
-          ? `${formatCountdown(Math.abs(msUntil))} ago`
-          : formatCountdown(msUntil)}
+        {timeStr}
       </div>
     </div>
   );
@@ -1582,6 +1590,10 @@ export default function Motos() {
                     </form>
                   )}
 
+                  {moto.status === "in_progress" && (
+                    <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />
+                  )}
+
                   <div className="ml-auto flex gap-1.5">
                     {/* Live timing link — always available */}
                     <a href={`/live/${moto.id}`} target="_blank" rel="noopener noreferrer">
@@ -1817,6 +1829,10 @@ export default function Motos() {
                       />
                     </div>
                   </form>
+                )}
+
+                {moto.status === "in_progress" && (
+                  <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />
                 )}
 
                 <div className="ml-auto flex gap-1.5">
