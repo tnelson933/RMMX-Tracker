@@ -15,7 +15,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap, GripVertical } from "lucide-react";
+import {
+  DndContext, DragOverlay, useDraggable, useDroppable,
+  PointerSensor, useSensor, useSensors,
+  type DragEndEvent, type DragStartEvent,
+} from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { LiveBroadcast } from "./LiveBroadcast";
 import { format } from "date-fns";
@@ -158,6 +163,56 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
   );
 }
 
+// ── Drag-and-drop sub-components ───────────────────────────────────────────
+
+type LineupEntry = { riderId: number; riderName: string; position: number; bibNumber?: string | null; rfidNumber?: string | null };
+
+function DraggableRiderRow({ entry, motoId }: { entry: LineupEntry; motoId: number }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `rider-${motoId}-${entry.riderId}`,
+  });
+  return (
+    <TableRow ref={setNodeRef} className={`h-8 select-none ${isDragging ? "opacity-25" : ""}`}>
+      <TableCell className="w-8 text-center">
+        <span
+          {...listeners}
+          {...attributes}
+          className="cursor-grab active:cursor-grabbing inline-flex items-center justify-center text-muted-foreground hover:text-foreground touch-none"
+          title="Drag to move rider to another heat"
+        >
+          <GripVertical size={14} />
+        </span>
+      </TableCell>
+      <TableCell className="font-medium">{entry.riderName}</TableCell>
+      <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
+      <TableCell className="text-center">
+        {entry.rfidNumber ? (
+          <span className="inline-flex items-center gap-1 text-green-600">
+            <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs">—</span>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function DroppableMotoLineup({ motoId, children, isOver }: { motoId: number; children: React.ReactNode; isOver?: boolean }) {
+  const { setNodeRef, isOver: dndIsOver } = useDroppable({ id: `drop-${motoId}` });
+  const over = isOver ?? dndIsOver;
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex-1 overflow-y-auto max-h-52 border-b transition-colors ${over ? "bg-primary/5 ring-2 ring-inset ring-primary/30" : ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ── Main component ──────────────────────────────────────────────────────────
+
 export default function Motos() {
   const [match, params] = useRoute("/events/:eventId/motos");
   const eventId = parseInt(params?.eventId || "0");
@@ -172,6 +227,11 @@ export default function Motos() {
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+  // Drag-and-drop state
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const [lineupDrafts, setLineupDrafts] = useState<Record<number, LineupEntry[]>>({});
+  const [activeDrag, setActiveDrag] = useState<{ riderName: string; bibNumber?: string | null } | null>(null);
 
   // Manual create moto state
   const [newMotoName, setNewMotoName] = useState("");
@@ -203,6 +263,66 @@ export default function Motos() {
       if (next.has(riderId)) next.delete(riderId); else next.add(riderId);
       return next;
     });
+  };
+
+  // Return the live lineup for a moto, preferring any optimistic draft
+  const getLineup = (moto: { id: number; lineup?: unknown }): LineupEntry[] =>
+    lineupDrafts[moto.id] ?? (Array.isArray(moto.lineup) ? (moto.lineup as LineupEntry[]) : []);
+
+  const handleRiderDragStart = (event: DragStartEvent) => {
+    const parts = String(event.active.id).split("-");
+    if (parts[0] !== "rider") return;
+    const motoId = parseInt(parts[1]);
+    const riderId = parseInt(parts[2]);
+    const moto = motos?.find(m => m.id === motoId);
+    if (!moto) return;
+    const entry = getLineup(moto).find(e => e.riderId === riderId);
+    setActiveDrag(entry ? { riderName: entry.riderName, bibNumber: entry.bibNumber } : null);
+  };
+
+  const handleRiderDragEnd = (event: DragEndEvent) => {
+    setActiveDrag(null);
+    const { active, over } = event;
+    if (!over) return;
+    const parts = String(active.id).split("-");
+    if (parts[0] !== "rider") return;
+    const sourceMotoId = parseInt(parts[1]);
+    const riderId = parseInt(parts[2]);
+    const targetMotoId = parseInt(String(over.id).replace("drop-", ""));
+    if (isNaN(targetMotoId) || sourceMotoId === targetMotoId) return;
+    const sourceMoto = motos?.find(m => m.id === sourceMotoId);
+    const targetMoto = motos?.find(m => m.id === targetMotoId);
+    // Only allow moves within the same race class, and only between heat motos
+    if (!sourceMoto || !targetMoto) return;
+    if (sourceMoto.raceClass !== targetMoto.raceClass) return;
+    if (sourceMoto.type !== "heat" || targetMoto.type !== "heat") return;
+    const srcLineup = getLineup(sourceMoto);
+    const riderEntry = srcLineup.find(e => e.riderId === riderId);
+    if (!riderEntry) return;
+    const newSrc = srcLineup
+      .filter(e => e.riderId !== riderId)
+      .map((e, i) => ({ ...e, position: i + 1 }));
+    const tgtLineup = getLineup(targetMoto);
+    const newTgt = [...tgtLineup, { ...riderEntry, position: tgtLineup.length + 1 }];
+    // Optimistic update
+    setLineupDrafts(p => ({ ...p, [sourceMotoId]: newSrc, [targetMotoId]: newTgt }));
+    // Persist both motos, then clear drafts and refresh
+    updateMutation.mutate({ motoId: sourceMotoId, data: { lineup: newSrc as any } });
+    updateMutation.mutate(
+      { motoId: targetMotoId, data: { lineup: newTgt as any } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+          setLineupDrafts(p => {
+            const n = { ...p };
+            delete n[sourceMotoId];
+            delete n[targetMotoId];
+            return n;
+          });
+          toast({ title: `✅ ${riderEntry.riderName} moved to ${targetMoto.name}` });
+        },
+      }
+    );
   };
 
   const resetCreateDialog = () => {
@@ -674,6 +794,7 @@ export default function Motos() {
           {[...Array(4)].map((_, i) => <Card key={i} className="h-64 animate-pulse" />)}
         </div>
       ) : motos?.length ? (
+        <DndContext sensors={sensors} onDragStart={handleRiderDragStart} onDragEnd={handleRiderDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {motos.sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
             <Card key={moto.id} className="flex flex-col h-full border-sidebar-border overflow-hidden">
@@ -712,44 +833,74 @@ export default function Motos() {
 
               <CardContent className="p-0 flex-1 flex flex-col">
                 {/* Lineup table */}
-                <div className="flex-1 overflow-y-auto max-h-52 border-b">
-                  <Table>
-                    <TableHeader className="bg-muted/50 sticky top-0">
-                      <TableRow>
-                        <TableHead className="w-12 text-center text-xs">Gate</TableHead>
-                        <TableHead className="text-xs">Rider</TableHead>
-                        <TableHead className="w-16 text-center text-xs">Bib</TableHead>
-                        <TableHead className="w-20 text-center text-xs">RFID</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {moto.lineup && moto.lineup.length > 0 ? (
-                        moto.lineup.map((entry) => (
-                          <TableRow key={entry.riderId} className="h-8">
-                            <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                            <TableCell className="font-medium">{entry.riderName}</TableCell>
-                            <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
-                            <TableCell className="text-center">
-                              {entry.rfidNumber ? (
-                                <span className="inline-flex items-center gap-1 text-green-600">
-                                  <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground text-xs">—</span>
-                              )}
+                {moto.type === "heat" ? (
+                  <DroppableMotoLineup motoId={moto.id}>
+                    <Table>
+                      <TableHeader className="bg-muted/50 sticky top-0">
+                        <TableRow>
+                          <TableHead className="w-8 text-center text-xs" title="Drag to move rider">
+                            <GripVertical size={12} className="mx-auto text-muted-foreground" />
+                          </TableHead>
+                          <TableHead className="text-xs">Rider</TableHead>
+                          <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                          <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {getLineup(moto).length > 0 ? (
+                          getLineup(moto).map((entry) => (
+                            <DraggableRiderRow key={entry.riderId} entry={entry} motoId={moto.id} />
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-4 text-muted-foreground text-sm">
+                              No lineup generated
                             </TableCell>
                           </TableRow>
-                        ))
-                      ) : (
+                        )}
+                      </TableBody>
+                    </Table>
+                  </DroppableMotoLineup>
+                ) : (
+                  <div className="flex-1 overflow-y-auto max-h-52 border-b">
+                    <Table>
+                      <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-4 text-muted-foreground text-sm">
-                            No lineup generated
-                          </TableCell>
+                          <TableHead className="w-12 text-center text-xs">Gate</TableHead>
+                          <TableHead className="text-xs">Rider</TableHead>
+                          <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                          <TableHead className="w-20 text-center text-xs">RFID</TableHead>
                         </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {moto.lineup && moto.lineup.length > 0 ? (
+                          (moto.lineup as LineupEntry[]).map((entry) => (
+                            <TableRow key={entry.riderId} className="h-8">
+                              <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
+                              <TableCell className="font-medium">{entry.riderName}</TableCell>
+                              <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
+                              <TableCell className="text-center">
+                                {entry.rfidNumber ? (
+                                  <span className="inline-flex items-center gap-1 text-green-600">
+                                    <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-4 text-muted-foreground text-sm">
+                              No lineup generated
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
 
                 {/* Live crossing feed — shown only while moto is in progress */}
                 {moto.status === "in_progress" && (
@@ -800,6 +951,16 @@ export default function Motos() {
             </Card>
           ))}
         </div>
+        <DragOverlay dropAnimation={null}>
+          {activeDrag && (
+            <div className="flex items-center gap-2 bg-card border border-primary/40 shadow-lg rounded-md px-3 py-2 text-sm font-medium pointer-events-none">
+              <GripVertical size={14} className="text-muted-foreground shrink-0" />
+              <span>{activeDrag.riderName}</span>
+              {activeDrag.bibNumber && <span className="font-mono text-xs text-muted-foreground">#{activeDrag.bibNumber}</span>}
+            </div>
+          )}
+        </DragOverlay>
+        </DndContext>
       ) : (
         <Card>
           <CardContent className="p-16 text-center">
