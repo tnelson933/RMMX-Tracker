@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rfidAssignmentsTable, ridersTable } from "@workspace/db";
+import { rfidAssignmentsTable, ridersTable, checkinsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 const router = Router();
@@ -63,6 +63,16 @@ router.post("/rfid", async (req, res) => {
 
   // Also update rider's primary rfid
   await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, riderId));
+
+  // Update the checkin row so the check-in page reflects rfidLinked immediately
+  if (eventId) {
+    await db.update(checkinsTable)
+      .set({ rfidNumber, rfidLinked: true })
+      .where(and(
+        eq(checkinsTable.eventId, Number(eventId)),
+        eq(checkinsTable.riderId, Number(riderId)),
+      ));
+  }
 
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   const rider = riders[0];
