@@ -15,7 +15,7 @@ import {
   Flag, Clock, Activity, AlertCircle, CheckCircle,
 } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
-import { format, parseISO, isToday, isFuture, isPast } from "date-fns";
+import { format, parseISO } from "date-fns";
 
 type Tab = "today" | "upcoming" | "past";
 
@@ -247,11 +247,13 @@ export default function Home() {
     limit: 100,
   } as any);
 
-  const todayEvents = upcomingAll?.filter(e => isToday(new Date(e.date)) || e.status === "race_day") ?? [];
-  const futureEvents = upcomingAll?.filter(e => {
-    const d = new Date(e.date);
-    return isFuture(d) && !isToday(d) && e.status !== "race_day";
-  }) ?? [];
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const todayEvents = upcomingAll?.filter(e =>
+    e.date.substring(0, 10) === todayStr || e.status === "race_day"
+  ) ?? [];
+  const futureEvents = upcomingAll?.filter(e =>
+    e.date.substring(0, 10) > todayStr && e.status !== "race_day"
+  ) ?? [];
 
   const todayStates = [...new Set(todayEvents.map(e => e.state))].sort();
   const futureStates = [...new Set(futureEvents.map(e => e.state))].sort();
