@@ -52,13 +52,14 @@ type OnSiteRegForm = z.infer<typeof onSiteRegSchema>;
 
 // ── Dialog step state ────────────────────────────────────────────────────────
 type Step =
-  | "form"        // registration input form
-  | "pay-prompt"  // "collect payment?" prompt
-  | "pay-method"  // cash or card choice
-  | "pay-cash"    // cash amount entry
-  | "pay-card"    // stripe checkout (pending/polling)
-  | "pay-done"    // payment recorded
-  | "reg-done"    // registration confirmed, payment skipped
+  | "form"          // registration input form
+  | "pay-prompt"    // "collect payment?" prompt
+  | "pay-method"    // cash or card choice
+  | "pay-cash"      // cash amount entry
+  | "pay-card"      // stripe checkout (pending/polling)
+  | "pay-done"      // payment recorded — registration confirmed
+  | "reg-done"      // registration confirmed, free event (no payment needed)
+  | "pending-done"  // registration saved as pending — payment not yet collected
   ;
 
 interface RegSuccess {
@@ -598,28 +599,54 @@ export default function Registrations() {
       );
     }
 
+    // ── Registration saved as pending, payment not yet collected ──────────
+    if (step === "pending-done") {
+      return (
+        <div className="py-6 space-y-6 text-center">
+          <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
+            <CreditCard size={32} className="text-amber-600" />
+          </div>
+          <div>
+            <h3 className="text-xl font-heading font-bold uppercase">Registration Pending</h3>
+            <p className="text-muted-foreground mt-1">
+              Spot is <strong>not confirmed</strong> until payment is collected. You can collect payment from the registrations list.
+            </p>
+          </div>
+          {regSuccess && <ConfirmationCard reg={regSuccess} entryFee={eventEntryFee} />}
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => { form.reset(); setStep("form"); setRegSuccess(null); }}>
+              Register Another
+            </Button>
+            <Button className="flex-1 font-heading uppercase" onClick={() => setIsAddOpen(false)}>Done</Button>
+          </div>
+        </div>
+      );
+    }
+
     // ── Payment prompt ────────────────────────────────────────────────────
     if (step === "pay-prompt") {
       return (
         <div className="py-6 space-y-6">
           <div className="text-center space-y-2">
-            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
-              <CheckCircle2 size={32} className="text-green-600" />
+            <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
+              <CreditCard size={32} className="text-amber-600" />
             </div>
-            <h3 className="text-xl font-heading font-bold uppercase">Registered!</h3>
-            <p className="text-muted-foreground">Rider confirmed and added to check-in.</p>
+            <h3 className="text-xl font-heading font-bold uppercase">Payment Required</h3>
+            <p className="text-muted-foreground">
+              Rider is registered but <strong>not yet confirmed</strong>. Collect payment to secure their spot.
+            </p>
           </div>
 
           {regSuccess && <ConfirmationCard reg={regSuccess} entryFee={eventEntryFee} />}
 
           <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
-            <p className="font-medium text-center">Collect payment for this registration?</p>
+            <p className="font-medium text-center">Collect payment now?</p>
             <div className="flex gap-3">
               <Button className="flex-1 font-heading uppercase" onClick={() => setStep("pay-method")}>
                 Yes, Collect Payment
               </Button>
-              <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => setStep("reg-done")}>
-                Skip — Pay Later
+              <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => setStep("pending-done")}>
+                Save as Pending
               </Button>
             </div>
           </div>
@@ -888,11 +915,12 @@ export default function Registrations() {
               <DialogHeader>
                 <DialogTitle className="font-heading uppercase text-xl">
                   {step === "form" ? "On-Site Registration" :
-                   step === "pay-prompt" ? "Registration Complete" :
+                   step === "pay-prompt" ? "Collect Payment" :
                    step === "pay-method" ? "Collect Payment" :
                    step === "pay-cash" ? "Cash Payment" :
                    step === "pay-card" ? "Card Payment" :
-                   step === "pay-done" ? "All Done!" :
+                   step === "pay-done" ? "Registration Confirmed!" :
+                   step === "pending-done" ? "Registration Pending" :
                    "Registration Complete"}
                 </DialogTitle>
               </DialogHeader>

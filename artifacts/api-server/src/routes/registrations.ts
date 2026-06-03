@@ -91,6 +91,8 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     riderId, raceClass, bibNumber, bikeBrand,
     // Full on-site rider info (alternative to riderId)
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
+    // MyLaps transponder fields
+    rentTransponder, myLapsTransponderNumber,
   } = req.body;
 
   if (!raceClass) return res.status(400).json({ error: "raceClass required" });
@@ -129,18 +131,30 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     return res.status(409).json({ error: "This rider is already registered for that class at this event" });
   }
 
+  // Determine if payment is required — on-site registrations start pending when the event has a fee
+  const [eventData] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+  const needsPayment = !!(eventData?.paymentEnabled && eventData?.entryFee);
+  const wantsRental = !!(rentTransponder && eventData?.transponderRentalEnabled && eventData?.transponderRentalFee);
+
   const [reg] = await db.insert(registrationsTable).values({
     eventId, riderId: resolvedRiderId, raceClass,
     bibNumber: bibNumber || null,
     bikeBrand: bikeBrand || null,
-    status: "confirmed", paymentStatus: "unpaid",
+    status: needsPayment ? "pending" : "confirmed",
+    paymentStatus: "unpaid",
+    transponderRental: wantsRental,
+    myLapsTransponderNumber: myLapsTransponderNumber?.trim() || null,
   }).returning();
 
-  await db.insert(checkinsTable).values({
-    eventId, riderId: resolvedRiderId, raceClass,
-    bibNumber: bibNumber || null,
-    checkedIn: false, rfidLinked: false,
-  }).onConflictDoNothing();
+  // Only create the check-in record immediately for free events.
+  // For paid events, check-in is created when payment is confirmed.
+  if (!needsPayment) {
+    await db.insert(checkinsTable).values({
+      eventId, riderId: resolvedRiderId, raceClass,
+      bibNumber: bibNumber || null,
+      checkedIn: false, rfidLinked: false,
+    }).onConflictDoNothing();
+  }
 
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, resolvedRiderId));
   const rider = riders[0];
@@ -148,6 +162,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
   return res.status(201).json({
     ...reg,
     riderName: rider ? `${rider.firstName} ${rider.lastName}` : "",
+    requiresPayment: needsPayment,
     amountPaid: null,
     createdAt: reg.createdAt.toISOString(),
   });
@@ -158,7 +173,13 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod } = req.body;
   const updates: Record<string, unknown> = {};
   if (status !== undefined) updates.status = status;
-  if (paymentStatus !== undefined) updates.paymentStatus = paymentStatus;
+  if (paymentStatus !== undefined) {
+    updates.paymentStatus = paymentStatus;
+    // Recording cash payment — auto-confirm the registration
+    if (paymentStatus === "paid" && status === undefined) {
+      updates.status = "confirmed";
+    }
+  }
   if (raceClass !== undefined) updates.raceClass = raceClass;
   if (bibNumber !== undefined) updates.bibNumber = bibNumber;
   if (amountPaid !== undefined) updates.amountPaid = String(amountPaid);
@@ -166,6 +187,18 @@ router.patch("/registrations/:registrationId", async (req, res) => {
 
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();
   if (!reg) return res.status(404).json({ error: "Not found" });
+
+  // Create check-in record if payment just confirmed the registration
+  if (paymentStatus === "paid" && reg.status === "confirmed") {
+    await db.insert(checkinsTable).values({
+      eventId: reg.eventId,
+      riderId: reg.riderId,
+      raceClass: reg.raceClass,
+      bibNumber: reg.bibNumber,
+      checkedIn: false,
+      rfidLinked: false,
+    }).onConflictDoNothing();
+  }
 
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, reg.riderId));
   const rider = riders[0];
