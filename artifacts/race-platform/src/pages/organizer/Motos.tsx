@@ -3,7 +3,7 @@ import { useRoute, Link } from "wouter";
 import {
   useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables, useAdvanceToMain,
-  getListMotosQueryKey, Moto,
+  getListMotosQueryKey, getListCheckinsQueryKey, Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -210,6 +210,22 @@ function LiveCrossingsFeed({ motoId }: { motoId: number }) {
 
 type LineupEntry = { riderId: number; riderName: string; position: number; bibNumber?: string | null; rfidNumber?: string | null };
 
+function DraggablePoolRider({ riderId, riderName, bibNumber }: { riderId: number; riderName: string; bibNumber?: string | null }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `pool-${riderId}` });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`flex items-center gap-2 px-3 py-1.5 cursor-grab active:cursor-grabbing select-none hover:bg-muted/60 transition-opacity touch-none ${isDragging ? "opacity-20" : ""}`}
+    >
+      <GripVertical size={12} className="text-muted-foreground/50 shrink-0" />
+      {bibNumber && <span className="font-mono text-xs text-muted-foreground w-9 shrink-0">#{bibNumber}</span>}
+      <span className="text-sm truncate">{riderName}</span>
+    </div>
+  );
+}
+
 function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, rowNum }: {
   entry: LineupEntry; motoId: number; locked?: boolean;
   onRecordLap?: () => void; lapCooldown?: boolean; rowNum?: number;
@@ -366,6 +382,12 @@ export default function Motos() {
 
   const handleRiderDragStart = (event: DragStartEvent) => {
     const parts = String(event.active.id).split("-");
+    if (parts[0] === "pool") {
+      const riderId = parseInt(parts[1]);
+      const c = (checkins ?? []).find(c => c.riderId === riderId);
+      setActiveDrag(c ? { riderName: c.riderName ?? "Rider", bibNumber: c.bibNumber } : null);
+      return;
+    }
     if (parts[0] !== "rider") return;
     const motoId = parseInt(parts[1]);
     const riderId = parseInt(parts[2]);
@@ -380,6 +402,24 @@ export default function Motos() {
     const { active, over } = event;
     if (!over) return;
     const parts = String(active.id).split("-");
+
+    // ── Pool rider → trash: un-check from event ──────────────────────────────
+    if (parts[0] === "pool" && String(over.id) === "drop-trash") {
+      const riderId = parseInt(parts[1]);
+      const c = (checkins ?? []).find(c => c.riderId === riderId);
+      fetch(`/api/events/${eventId}/checkins`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ riderId, checkedIn: false }),
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) as any });
+        toast({ title: `🗑 ${c?.riderName ?? "Rider"} removed from check-in` });
+      }).catch(() => {
+        toast({ title: "Failed to remove rider", variant: "destructive" });
+      });
+      return;
+    }
+
     if (parts[0] !== "rider") return;
     const sourceMotoId = parseInt(parts[1]);
     const riderId = parseInt(parts[2]);
@@ -1007,12 +1047,52 @@ export default function Motos() {
         </div>
       )}
 
-      {isLoading ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {[...Array(4)].map((_, i) => <Card key={i} className="h-64 animate-pulse" />)}
+      <DndContext sensors={sensors} onDragStart={handleRiderDragStart} onDragEnd={handleRiderDragEnd}>
+      <div className="flex gap-5 items-start">
+
+        {/* ── Left: Rider Pool ─────────────────────────────────────────── */}
+        <div className="w-60 shrink-0 space-y-3 sticky top-4">
+          <div>
+            <h3 className="font-heading font-bold uppercase tracking-wider text-sm flex items-center gap-1.5">
+              <Users size={13} /> Rider Pool
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Drag to trash to remove from check-in</p>
+          </div>
+          {(() => {
+            const byClass: Record<string, Array<{ riderId: number; riderName: string | null; bibNumber: string | null; raceClass: string | null }>> = {};
+            for (const c of (checkins ?? [])) {
+              if (!c.checkedIn) continue;
+              const cls = c.raceClass ?? "Unknown";
+              if (!byClass[cls]) byClass[cls] = [];
+              byClass[cls].push(c as any);
+            }
+            const classes = Object.entries(byClass).sort(([a], [b]) => a.localeCompare(b));
+            if (!classes.length) return (
+              <Card><CardContent className="p-4 text-center text-xs text-muted-foreground">No checked-in riders</CardContent></Card>
+            );
+            return classes.map(([cls, riders]) => (
+              <Card key={cls} className="overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
+                  <span className="font-heading font-bold text-xs uppercase tracking-wider truncate mr-2">{cls}</span>
+                  <Badge variant="secondary" className="text-xs h-5 shrink-0">{riders.length}</Badge>
+                </div>
+                <div className="divide-y max-h-52 overflow-y-auto">
+                  {riders.map(r => (
+                    <DraggablePoolRider key={r.riderId} riderId={r.riderId} riderName={r.riderName ?? "Rider"} bibNumber={r.bibNumber} />
+                  ))}
+                </div>
+              </Card>
+            ));
+          })()}
         </div>
-      ) : motos?.length ? (
-        <DndContext sensors={sensors} onDragStart={handleRiderDragStart} onDragEnd={handleRiderDragEnd}>
+
+        {/* ── Right: motos grid / loading / empty state ─────────────── */}
+        <div className="flex-1 min-w-0">
+        {isLoading ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[...Array(4)].map((_, i) => <Card key={i} className="h-64 animate-pulse" />)}
+          </div>
+        ) : motos?.length ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {motos.sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
             <Card key={moto.id} className="flex flex-col h-full border-sidebar-border overflow-hidden">
@@ -1222,29 +1302,31 @@ export default function Motos() {
             </Card>
           ))}
         </div>
-        <DragOverlay dropAnimation={null}>
-          {activeDrag && (
-            <div className="flex items-center gap-2 bg-card border border-primary/40 shadow-lg rounded-md px-3 py-2 text-sm font-medium pointer-events-none">
-              <GripVertical size={14} className="text-muted-foreground shrink-0" />
-              <span>{activeDrag.riderName}</span>
-              {activeDrag.bibNumber && <span className="font-mono text-xs text-muted-foreground">#{activeDrag.bibNumber}</span>}
-            </div>
-          )}
-        </DragOverlay>
-        <DroppableTrashZone visible={!!activeDrag} />
-        </DndContext>
-      ) : (
-        <Card>
-          <CardContent className="p-16 text-center">
-            <Flag className="mx-auto text-muted-foreground opacity-20 mb-4" size={48} />
-            <h3 className="text-xl font-heading font-bold mb-2">No Motos Generated</h3>
-            <p className="text-muted-foreground mb-6">Generate lineups to create heats and main events for this race.</p>
-            <Button onClick={() => setIsGenerateOpen(true)} className="font-heading uppercase tracking-wider">
-              Generate Lineups
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+        ) : (
+          <Card>
+            <CardContent className="p-16 text-center">
+              <Flag className="mx-auto text-muted-foreground opacity-20 mb-4" size={48} />
+              <h3 className="text-xl font-heading font-bold mb-2">No Motos Generated</h3>
+              <p className="text-muted-foreground mb-6">Generate lineups to create heats and main events for this race.</p>
+              <Button onClick={() => setIsGenerateOpen(true)} className="font-heading uppercase tracking-wider">
+                Generate Lineups
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+        </div>{/* right column */}
+      </div>{/* flex row */}
+      <DragOverlay dropAnimation={null}>
+        {activeDrag && (
+          <div className="flex items-center gap-2 bg-card border border-primary/40 shadow-lg rounded-md px-3 py-2 text-sm font-medium pointer-events-none">
+            <GripVertical size={14} className="text-muted-foreground shrink-0" />
+            <span>{activeDrag.riderName}</span>
+            {activeDrag.bibNumber && <span className="font-mono text-xs text-muted-foreground">#{activeDrag.bibNumber}</span>}
+          </div>
+        )}
+      </DragOverlay>
+      <DroppableTrashZone visible={!!activeDrag} />
+      </DndContext>
 
       {/* Expanded moto dialog */}
       {(() => {
