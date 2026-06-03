@@ -205,12 +205,12 @@ function DraggableRiderRow({ entry, motoId, locked }: { entry: LineupEntry; moto
   );
 }
 
-function DroppableMotoLineup({ motoId, children, locked }: { motoId: number; children: React.ReactNode; locked?: boolean }) {
+function DroppableMotoLineup({ motoId, children, locked, className }: { motoId: number; children: React.ReactNode; locked?: boolean; className?: string }) {
   const { setNodeRef, isOver } = useDroppable({ id: `drop-${motoId}`, disabled: locked });
   return (
     <div
       ref={setNodeRef}
-      className={`flex-1 overflow-y-auto max-h-52 border-b transition-colors ${isOver && !locked ? "bg-primary/5 ring-2 ring-inset ring-primary/30" : ""}`}
+      className={`border-b transition-colors ${isOver && !locked ? "bg-primary/5 ring-2 ring-inset ring-primary/30" : ""} ${className ?? "flex-1 overflow-y-auto max-h-52"}`}
     >
       {children}
     </div>
@@ -1082,10 +1082,10 @@ export default function Motos() {
               </div>
 
               {/* Scrollable body */}
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto min-h-0">
                 {/* Lineup table */}
                 {moto.type === "heat" ? (
-                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"}>
+                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} className="flex-1">
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
@@ -1111,7 +1111,7 @@ export default function Motos() {
                     </Table>
                   </DroppableMotoLineup>
                 ) : (
-                  <div className="border-b">
+                  <div className="flex-1 border-b">
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
