@@ -1048,7 +1048,7 @@ export default function Motos() {
         if (!moto) return null;
         return (
           <Dialog open={true} onOpenChange={open => { if (!open) setExpandedMotoId(null); }}>
-            <DialogContent className="max-w-3xl w-full p-0 overflow-hidden gap-0 max-h-[90vh] flex flex-col">
+            <DialogContent className="max-w-3xl w-full p-0 overflow-hidden gap-0 h-[95vh] flex flex-col">
               {/* Header */}
               <div className="bg-sidebar text-sidebar-foreground px-5 py-4 border-b flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
