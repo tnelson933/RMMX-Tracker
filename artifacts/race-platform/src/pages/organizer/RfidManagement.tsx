@@ -74,9 +74,9 @@ export default function RfidManagement() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
-            <Tag className="text-primary" size={32} /> Transponder Management
+            <Tag className="text-primary" size={32} /> {isMylaps ? "MyLaps Transponder Management" : "RFID Management"}
           </h1>
-          <p className="text-muted-foreground mt-1">Track and assign timing transponders to riders.</p>
+          <p className="text-muted-foreground mt-1">{isMylaps ? "Track and assign MyLaps transponder numbers to riders." : "Track and assign RFID tags to riders."}</p>
         </div>
         
         <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>
@@ -118,7 +118,7 @@ export default function RfidManagement() {
                 disabled={assignMutation.isPending || !riderIdStr || !rfidInput} 
                 className="w-full h-12 font-heading uppercase text-lg tracking-wider mt-2"
               >
-                {assignMutation.isPending ? "Assigning..." : "Link Transponder"}
+                {assignMutation.isPending ? "Assigning..." : isMylaps ? "Link Transponder" : "Link RFID Tag"}
               </Button>
             </div>
           </DialogContent>

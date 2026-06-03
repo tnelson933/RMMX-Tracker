@@ -258,6 +258,8 @@ export const ListEventsResponse = zod.array(ListEventsResponseItem)
 /**
  * @summary Create a race event
  */
+export const createEventBodyTimingTechnologyDefault = `rfid`;
+
 export const CreateEventBody = zod.object({
   "clubId": zod.number(),
   "name": zod.string(),
@@ -274,7 +276,7 @@ export const CreateEventBody = zod.object({
   "entryFee": zod.number().optional(),
   "maxRiders": zod.number().optional(),
   "imageUrl": zod.string().optional(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).optional()
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(createEventBodyTimingTechnologyDefault)
 })
 
 
@@ -319,6 +321,8 @@ export const UpdateEventParams = zod.object({
   "eventId": zod.coerce.number()
 })
 
+export const updateEventBodyTimingTechnologyDefault = `rfid`;
+
 export const UpdateEventBody = zod.object({
   "name": zod.string().optional(),
   "date": zod.string().optional(),
@@ -335,7 +339,7 @@ export const UpdateEventBody = zod.object({
   "entryFee": zod.number().optional(),
   "maxRiders": zod.number().optional(),
   "imageUrl": zod.string().optional(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).optional()
+  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventBodyTimingTechnologyDefault)
 })
 
 export const updateEventResponseTimingTechnologyDefault = `rfid`;

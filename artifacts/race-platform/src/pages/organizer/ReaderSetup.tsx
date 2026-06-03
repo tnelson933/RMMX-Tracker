@@ -124,7 +124,9 @@ export default function ReaderSetup() {
           <Wifi className="text-primary" size={32} /> Reader Setup
         </h1>
         <p className="text-muted-foreground mt-1">
-          Configure your RFID hardware to push lap crossings to this platform.
+          {isMylaps
+            ? "Configure your MyLaps / AMB decoder to push lap crossings to this platform."
+            : "Configure your RFID hardware to push lap crossings to this platform."}
         </p>
       </div>
 
@@ -133,136 +135,256 @@ export default function ReaderSetup() {
         <CardHeader className="pb-3 border-b">
           <CardTitle className="font-heading uppercase tracking-wider text-base">Setup Guide</CardTitle>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Any RFID reader that can send an HTTP POST request over the network is compatible. Follow these steps to go from unboxed hardware to live lap times.
+            {isMylaps
+              ? "Compatible with AMBrc and Orbits 4 software connected to any AMB / MyLaps decoder. Follow these steps to go from unboxed hardware to live lap times."
+              : "Any RFID reader that can send an HTTP POST request over the network is compatible. Follow these steps to go from unboxed hardware to live lap times."}
           </p>
         </CardHeader>
         <CardContent className="pt-5 space-y-0 divide-y">
 
-          {/* Step 1 */}
-          <div className="flex gap-4 py-5 first:pt-0">
-            <div className="flex-shrink-0 flex items-start gap-3 w-7">
-              <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">1</div>
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <div className="flex items-center gap-2">
-                <Globe size={15} className="text-primary shrink-0" />
-                <p className="font-semibold text-sm">Connect the reader to your scoring computer</p>
+          {isMylaps ? (
+            <>
+              {/* MyLaps Step 1 */}
+              <div className="flex gap-4 py-5 first:pt-0">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">1</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Globe size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Connect the decoder to your network</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Power on your AMB / MyLaps decoder and connect it to your race-day router using an Ethernet cable. The decoder needs a valid IP address and must be able to reach the API endpoint URL. Note the decoder's IP address — you'll need it when configuring AMBrc or Orbits 4.
+                  </p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
+                    <span className="font-bold text-foreground">Tip:</span> Assign a static IP to the decoder via your router's DHCP reservation feature. This prevents the address from changing between race days.
+                  </div>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Readers can connect to your scoring laptop over the network <span className="font-semibold text-foreground">or</span> via USB — choose whichever your hardware supports:
-              </p>
-              <ul className="text-sm text-muted-foreground space-y-2 mt-1 ml-1">
-                <li className="flex gap-2">
-                  <span className="font-semibold text-foreground shrink-0">Network (Ethernet / Wi-Fi)</span>
-                  <span>— Plug the reader into your race-day router or connect it to the same Wi-Fi as your laptop. The reader needs a valid IP address and must be able to reach the API endpoint URL. Verify connectivity with a ping before race day.</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-semibold text-foreground shrink-0">USB</span>
-                  <span>— Connect the reader via USB and install any manufacturer drivers. Most USB readers expose a serial (COM) port or present as a virtual network adapter. Use the reader's companion software or a bridge utility (e.g. a serial-to-HTTP forwarder) to forward tag reads as HTTP POST requests to the endpoint below.</span>
-                </li>
-              </ul>
-              <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                <span className="font-bold text-foreground">Tip:</span> If running on a private field network with no internet, host this platform on a local laptop and point the reader at <code className="font-mono">http://&lt;laptop-local-ip&gt;/api/timing/crossing</code> instead of the public URL.
-              </div>
-            </div>
-          </div>
 
-          {/* Step 2 */}
-          <div className="flex gap-4 py-5">
-            <div className="flex-shrink-0">
-              <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">2</div>
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <div className="flex items-center gap-2">
-                <Tag size={15} className="text-primary shrink-0" />
-                <p className="font-semibold text-sm">Assign RFID tags to riders</p>
+              {/* MyLaps Step 2 */}
+              <div className="flex gap-4 py-5">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">2</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Tag size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Assign transponder numbers to riders</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Before race day, use the <span className="font-semibold text-foreground">Transponder Management</span> page in the sidebar to link each rider's MyLaps transponder number to their profile. The transponder number is the 4-8 digit numeric ID printed on or programmed into each unit (e.g. <code className="font-mono bg-muted px-1 rounded">12345</code>). This is how the system maps a raw decoder read to a named rider and their lap history.
+                  </p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
+                    <span className="font-bold text-foreground">Note:</span> Crossings from unregistered transponders are still recorded but show as "Unknown." You can link transponders at any time and past crossings will update automatically.
+                  </div>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Before race day, go to <span className="font-semibold text-foreground">Riders</span> in the sidebar and open each rider's profile. Enter the transponder number printed on their tag (e.g. <code className="font-mono bg-muted px-1 rounded">1A2B3C4D</code>) in the RFID Tag field. This is how the system maps a raw tag read to a named rider and their lap history.
-              </p>
-              <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                <span className="font-bold text-foreground">Note:</span> Crossings from unassigned tags are still recorded but will show as "Unknown" in the lap feed. You can assign tags at any time and past crossings will update automatically.
-              </div>
-            </div>
-          </div>
 
-          {/* Step 3 */}
-          <div className="flex gap-4 py-5">
-            <div className="flex-shrink-0">
-              <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">3</div>
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <div className="flex items-center gap-2">
-                <ClipboardList size={15} className="text-primary shrink-0" />
-                <p className="font-semibold text-sm">Create your event and motos</p>
+              {/* MyLaps Step 3 */}
+              <div className="flex gap-4 py-5">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">3</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <ClipboardList size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Create your event and motos</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    In the <span className="font-semibold text-foreground">Events</span> section, create the race event (selecting <span className="font-semibold text-foreground">MyLaps Transponders</span> as the timing technology) and open it. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. Each moto gets a unique <code className="font-mono bg-muted px-1 rounded">motoId</code> that you'll reference when configuring output.
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                In the <span className="font-semibold text-foreground">Events</span> section, create the race event and open it. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. Each moto gets a unique <code className="font-mono bg-muted px-1 rounded">motoId</code> — this is the ID your reader sends with every crossing so the system knows which race is currently running.
-              </p>
-            </div>
-          </div>
 
-          {/* Step 4 */}
-          <div className="flex gap-4 py-5">
-            <div className="flex-shrink-0">
-              <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">4</div>
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <div className="flex items-center gap-2">
-                <Settings size={15} className="text-primary shrink-0" />
-                <p className="font-semibold text-sm">Configure the reader's HTTP output</p>
+              {/* MyLaps Step 4 */}
+              <div className="flex gap-4 py-5">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">4</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Settings size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Configure AMBrc or Orbits 4 HTTP output</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Open your scoring software (AMBrc or Orbits 4) and navigate to <span className="font-semibold text-foreground">Output → HTTP / Webhook</span>. Set the output URL to the endpoint shown in the <span className="font-semibold text-foreground">API Endpoint</span> section below, set the method to <span className="font-semibold text-foreground">POST</span>, and configure the JSON body to include at minimum:
+                  </p>
+                  <ul className="text-sm text-muted-foreground space-y-1 mt-1 ml-4 list-disc">
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code> — the transponder number reported by the decoder</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">motoId</code> — the ID of the active moto (update this before each heat)</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">crossingTime</code> — ISO 8601 timestamp from the decoder's clock (optional; server time used if omitted)</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">readerId</code> — a label for this loop, e.g. <code className="font-mono bg-muted px-1 rounded text-xs">"finish-line-1"</code> (optional, for diagnostics)</li>
+                  </ul>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
+                    <span className="font-bold text-foreground">Compatible decoders:</span> AMB TranX, AMB RC4, AMB MX, MyLaps X2, P3 Flex (with AMBrc ≥ 5 or Orbits 4). Older decoders using the binary AMB protocol may require a protocol bridge script.
+                  </div>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                In your reader's configuration software, set the output type to <span className="font-semibold text-foreground">HTTP POST</span> and enter the endpoint URL shown in the <span className="font-semibold text-foreground">API Endpoint</span> section below. Set the Content-Type header to <code className="font-mono bg-muted px-1 rounded">application/json</code> and configure the JSON body to include at minimum:
-              </p>
-              <ul className="text-sm text-muted-foreground space-y-1 mt-1 ml-4 list-disc">
-                <li><code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code> — the tag ID reported by the reader</li>
-                <li><code className="font-mono bg-muted px-1 rounded text-xs">motoId</code> — the ID of the active moto (update this before each heat)</li>
-                <li><code className="font-mono bg-muted px-1 rounded text-xs">crossingTime</code> — ISO 8601 timestamp from the reader's clock (optional; server time used if omitted)</li>
-                <li><code className="font-mono bg-muted px-1 rounded text-xs">readerId</code> — a name for this reader, e.g. <code className="font-mono bg-muted px-1 rounded text-xs">"finish-line-1"</code> (optional, for diagnostics)</li>
-              </ul>
-              <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                <span className="font-bold text-foreground">Common readers:</span> Impinj Speedway, Alien ALR-9900, Zebra FX Series, and any reader with a configurable TCP/HTTP webhook output. For Arduino or Raspberry Pi builds, use any HTTP client library to POST to the endpoint.
-              </div>
-            </div>
-          </div>
 
-          {/* Step 5 */}
-          <div className="flex gap-4 py-5">
-            <div className="flex-shrink-0">
-              <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">5</div>
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <div className="flex items-center gap-2">
-                <PlayCircle size={15} className="text-primary shrink-0" />
-                <p className="font-semibold text-sm">Start the moto before each heat</p>
+              {/* MyLaps Step 5 */}
+              <div className="flex gap-4 py-5">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">5</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <PlayCircle size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Start the moto before each heat</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto status to <span className="font-semibold text-foreground">In Progress</span> immediately before the gate drops. The platform only accepts crossings while the moto is in progress — any crossing sent before the moto starts or after it ends is rejected with a <code className="font-mono bg-muted px-1 rounded text-xs">409</code> response. End the moto when the heat finishes.
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto status to <span className="font-semibold text-foreground">In Progress</span> immediately before the gate drops. The platform only accepts crossings while the moto is in progress — any crossing sent before the moto starts or after it ends is rejected with a <code className="font-mono bg-muted px-1 rounded text-xs">409</code> response. End the moto when the heat finishes to stop recording.
-              </p>
-            </div>
-          </div>
 
-          {/* Step 6 */}
-          <div className="flex gap-4 py-5 last:pb-0">
-            <div className="flex-shrink-0">
-              <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">6</div>
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <div className="flex items-center gap-2">
-                <FlaskConical size={15} className="text-primary shrink-0" />
-                <p className="font-semibold text-sm">Test the connection</p>
+              {/* MyLaps Step 6 */}
+              <div className="flex gap-4 py-5 last:pb-0">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">6</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <FlaskConical size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Test the connection</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Use the <span className="font-semibold text-foreground">Test Connection</span> tool below to fire a simulated crossing before you go live. Select an in-progress moto, enter a known transponder number, and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" response confirms the endpoint is reachable and the moto is active.
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Use the <span className="font-semibold text-foreground">Test Connection</span> tool below to fire a simulated crossing before you go live. Select an in-progress moto, enter a known RFID tag number, and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" response confirms the endpoint is reachable and the moto is active. You should also see the crossing appear in the <span className="font-semibold text-foreground">Recent Crossings</span> table below.
-              </p>
-            </div>
-          </div>
+            </>
+          ) : (
+            <>
+              {/* RFID Step 1 */}
+              <div className="flex gap-4 py-5 first:pt-0">
+                <div className="flex-shrink-0 flex items-start gap-3 w-7">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">1</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Globe size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Connect the reader to your scoring computer</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Readers can connect to your scoring laptop over the network <span className="font-semibold text-foreground">or</span> via USB — choose whichever your hardware supports:
+                  </p>
+                  <ul className="text-sm text-muted-foreground space-y-2 mt-1 ml-1">
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-foreground shrink-0">Network (Ethernet / Wi-Fi)</span>
+                      <span>— Plug the reader into your race-day router or connect it to the same Wi-Fi as your laptop. The reader needs a valid IP address and must be able to reach the API endpoint URL. Verify connectivity with a ping before race day.</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="font-semibold text-foreground shrink-0">USB</span>
+                      <span>— Connect the reader via USB and install any manufacturer drivers. Most USB readers expose a serial (COM) port or present as a virtual network adapter. Use the reader's companion software or a bridge utility (e.g. a serial-to-HTTP forwarder) to forward tag reads as HTTP POST requests to the endpoint below.</span>
+                    </li>
+                  </ul>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
+                    <span className="font-bold text-foreground">Tip:</span> If running on a private field network with no internet, host this platform on a local laptop and point the reader at <code className="font-mono">http://&lt;laptop-local-ip&gt;/api/timing/crossing</code> instead of the public URL.
+                  </div>
+                </div>
+              </div>
+
+              {/* RFID Step 2 */}
+              <div className="flex gap-4 py-5">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">2</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Tag size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Assign RFID tags to riders</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Before race day, go to <span className="font-semibold text-foreground">Riders</span> in the sidebar and open each rider's profile. Enter the transponder number printed on their tag (e.g. <code className="font-mono bg-muted px-1 rounded">1A2B3C4D</code>) in the RFID Tag field. This is how the system maps a raw tag read to a named rider and their lap history.
+                  </p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
+                    <span className="font-bold text-foreground">Note:</span> Crossings from unassigned tags are still recorded but will show as "Unknown" in the lap feed. You can assign tags at any time and past crossings will update automatically.
+                  </div>
+                </div>
+              </div>
+
+              {/* RFID Step 3 */}
+              <div className="flex gap-4 py-5">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">3</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <ClipboardList size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Create your event and motos</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    In the <span className="font-semibold text-foreground">Events</span> section, create the race event and open it. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. Each moto gets a unique <code className="font-mono bg-muted px-1 rounded">motoId</code> — this is the ID your reader sends with every crossing so the system knows which race is currently running.
+                  </p>
+                </div>
+              </div>
+
+              {/* RFID Step 4 */}
+              <div className="flex gap-4 py-5">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">4</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Settings size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Configure the reader's HTTP output</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    In your reader's configuration software, set the output type to <span className="font-semibold text-foreground">HTTP POST</span> and enter the endpoint URL shown in the <span className="font-semibold text-foreground">API Endpoint</span> section below. Set the Content-Type header to <code className="font-mono bg-muted px-1 rounded">application/json</code> and configure the JSON body to include at minimum:
+                  </p>
+                  <ul className="text-sm text-muted-foreground space-y-1 mt-1 ml-4 list-disc">
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code> — the tag ID reported by the reader</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">motoId</code> — the ID of the active moto (update this before each heat)</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">crossingTime</code> — ISO 8601 timestamp from the reader's clock (optional; server time used if omitted)</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">readerId</code> — a name for this reader, e.g. <code className="font-mono bg-muted px-1 rounded text-xs">"finish-line-1"</code> (optional, for diagnostics)</li>
+                  </ul>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
+                    <span className="font-bold text-foreground">Common readers:</span> Impinj Speedway, Alien ALR-9900, Zebra FX Series, and any reader with a configurable TCP/HTTP webhook output. For Arduino or Raspberry Pi builds, use any HTTP client library to POST to the endpoint.
+                  </div>
+                </div>
+              </div>
+
+              {/* RFID Step 5 */}
+              <div className="flex gap-4 py-5">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">5</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <PlayCircle size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Start the moto before each heat</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto status to <span className="font-semibold text-foreground">In Progress</span> immediately before the gate drops. The platform only accepts crossings while the moto is in progress — any crossing sent before the moto starts or after it ends is rejected with a <code className="font-mono bg-muted px-1 rounded text-xs">409</code> response. End the moto when the heat finishes to stop recording.
+                  </p>
+                </div>
+              </div>
+
+              {/* RFID Step 6 */}
+              <div className="flex gap-4 py-5 last:pb-0">
+                <div className="flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">6</div>
+                </div>
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <FlaskConical size={15} className="text-primary shrink-0" />
+                    <p className="font-semibold text-sm">Test the connection</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Use the <span className="font-semibold text-foreground">Test Connection</span> tool below to fire a simulated crossing before you go live. Select an in-progress moto, enter a known RFID tag number, and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" response confirms the endpoint is reachable and the moto is active. You should also see the crossing appear in the <span className="font-semibold text-foreground">Recent Crossings</span> table below.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
 
         </CardContent>
       </Card>
 
-      {/* Local Bridge — offline-safe option */}
+      {/* Local Bridge — offline-safe option (RFID only) */}
+      {!isMylaps && (
       <Card className="border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20">
         <CardHeader className="pb-3 border-b border-amber-200 dark:border-amber-800/40">
           <div className="flex items-center gap-2">
@@ -359,6 +481,7 @@ export default function ReaderSetup() {
 
         </CardContent>
       </Card>
+      )}
 
       {/* Endpoint reference */}
       <Card>
