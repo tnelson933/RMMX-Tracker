@@ -1067,7 +1067,7 @@ export const AiSuggestPointsTableBody = zod.object({
 export const AiSuggestPointsTableResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
-  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions', 'per_rider']),
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number()),
   "motoNotes": zod.string().optional().describe('Human-readable explanation of the moto structure suggestion')
@@ -1082,7 +1082,7 @@ export const AiTweakPointsTableBody = zod.object({
   "currentTable": zod.object({
   "name": zod.string(),
   "description": zod.string(),
-  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions', 'per_rider']),
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number())
 })
@@ -1091,7 +1091,7 @@ export const AiTweakPointsTableBody = zod.object({
 export const AiTweakPointsTableResponse = zod.object({
   "name": zod.string(),
   "description": zod.string(),
-  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions', 'per_rider']),
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number()),
   "motoNotes": zod.string().optional().describe('Human-readable explanation of the moto structure suggestion')
@@ -1106,7 +1106,7 @@ export const ListPointsTablesResponseItem = zod.object({
   "clubId": zod.number().nullish(),
   "name": zod.string(),
   "description": zod.string(),
-  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions', 'per_rider']),
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number()),
   "isSystemDefault": zod.boolean(),
@@ -1121,7 +1121,7 @@ export const ListPointsTablesResponse = zod.array(ListPointsTablesResponseItem)
 export const CreatePointsTableBody = zod.object({
   "name": zod.string(),
   "description": zod.string().optional(),
-  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions', 'per_rider']),
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number())
 })
@@ -1137,7 +1137,7 @@ export const UpdatePointsTableParams = zod.object({
 export const UpdatePointsTableBody = zod.object({
   "name": zod.string(),
   "description": zod.string().optional(),
-  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions', 'per_rider']),
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number())
 })
@@ -1147,7 +1147,7 @@ export const UpdatePointsTableResponse = zod.object({
   "clubId": zod.number().nullish(),
   "name": zod.string(),
   "description": zod.string(),
-  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions', 'per_rider']),
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number()),
   "isSystemDefault": zod.boolean(),

@@ -754,6 +754,7 @@ export type AiTweakPointsTableInputCurrentTableScoringMethod = typeof AiTweakPoi
 export const AiTweakPointsTableInputCurrentTableScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
+  per_rider: 'per_rider',
 } as const;
 
 export type AiTweakPointsTableInputCurrentTable = {
@@ -783,6 +784,7 @@ export type AiSuggestPointsTableOutputScoringMethod = typeof AiSuggestPointsTabl
 export const AiSuggestPointsTableOutputScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
+  per_rider: 'per_rider',
 } as const;
 
 export interface AiSuggestPointsTableOutput {
@@ -801,6 +803,7 @@ export type PointsTableScoringMethod = typeof PointsTableScoringMethod[keyof typ
 export const PointsTableScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
+  per_rider: 'per_rider',
 } as const;
 
 export interface PointsTable {
@@ -822,6 +825,7 @@ export type PointsTableInputScoringMethod = typeof PointsTableInputScoringMethod
 export const PointsTableInputScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
+  per_rider: 'per_rider',
 } as const;
 
 export interface PointsTableInput {

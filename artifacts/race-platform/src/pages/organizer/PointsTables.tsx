@@ -37,6 +37,7 @@ import {
   ChevronDown,
   ChevronUp,
   TriangleAlert,
+  Users,
 } from "lucide-react";
 
 const SUPERCROSS_SCALE = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
@@ -54,17 +55,23 @@ function parseScale(text: string): number[] {
 }
 
 function getMethodLabel(method: string) {
-  return method === "lowest_positions" ? "Lowest Positions" : "Highest Points";
+  if (method === "lowest_positions") return "Lowest Positions";
+  if (method === "per_rider") return "Per Rider";
+  return "Highest Points";
 }
 
 function getMethodIcon(method: string) {
-  return method === "lowest_positions" ? TrendingDown : TrendingUp;
+  if (method === "lowest_positions") return TrendingDown;
+  if (method === "per_rider") return Users;
+  return TrendingUp;
 }
+
+type ScoringMethod = "highest_points" | "lowest_positions" | "per_rider";
 
 interface FormState {
   name: string;
   description: string;
-  scoringMethod: "highest_points" | "lowest_positions";
+  scoringMethod: ScoringMethod;
   mainEventOnly: boolean;
   scaleText: string;
 }
@@ -79,7 +86,7 @@ const defaultForm: FormState = {
 
 // ─── Live Preview ───────────────────────────────────────────────────────────
 
-function PointsPreview({ scale, method }: { scale: number[]; method: "highest_points" | "lowest_positions" }) {
+function PointsPreview({ scale, method }: { scale: number[]; method: ScoringMethod }) {
   if (scale.length === 0) return null;
   const maxVal = method === "highest_points" ? Math.max(...scale) : Math.min(...scale);
   const isHighest = method === "highest_points";
@@ -172,7 +179,7 @@ function AiAssistPanel({
   onApply: (result: {
     name: string;
     description: string;
-    scoringMethod: "highest_points" | "lowest_positions";
+    scoringMethod: ScoringMethod;
     mainEventOnly: boolean;
     pointsScale: number[];
     motoNotes?: string;
@@ -283,7 +290,7 @@ function AiTweakPanel({
   onApply: (result: {
     name: string;
     description: string;
-    scoringMethod: "highest_points" | "lowest_positions";
+    scoringMethod: ScoringMethod;
     mainEventOnly: boolean;
     pointsScale: number[];
   }) => void;
@@ -385,7 +392,7 @@ function TableFormDialog({
       ? {
           name: editingTable.name,
           description: editingTable.description,
-          scoringMethod: editingTable.scoringMethod as "highest_points" | "lowest_positions",
+          scoringMethod: editingTable.scoringMethod as ScoringMethod,
           mainEventOnly: editingTable.mainEventOnly,
           scaleText: scaleToText(editingTable.pointsScale as number[]),
         }
@@ -403,25 +410,27 @@ function TableFormDialog({
   function applyAiResult(result: {
     name: string;
     description: string;
-    scoringMethod: "highest_points" | "lowest_positions";
+    scoringMethod: ScoringMethod;
     mainEventOnly: boolean;
     pointsScale: number[];
   }) {
     setForm({
       name: result.name,
       description: result.description,
-      scoringMethod: result.scoringMethod,
+      scoringMethod: result.scoringMethod as ScoringMethod,
       mainEventOnly: result.mainEventOnly,
       scaleText: scaleToText(result.pointsScale),
     });
     setShowManual(true);
   }
 
+  const isPerRider = form.scoringMethod === "per_rider";
+
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
-    const pointsScale = parseScale(form.scaleText);
+    const pointsScale = isPerRider ? [] : parseScale(form.scaleText);
     if (!form.name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return; }
-    if (pointsScale.length === 0) { toast({ title: "Enter at least one points value", variant: "destructive" }); return; }
+    if (!isPerRider && pointsScale.length === 0) { toast({ title: "Enter at least one points value", variant: "destructive" }); return; }
 
     const payload = {
       name: form.name.trim(),
@@ -513,7 +522,7 @@ function TableFormDialog({
                   <Label>Scoring Method</Label>
                   <Select
                     value={form.scoringMethod}
-                    onValueChange={(v) => setForm((f) => ({ ...f, scoringMethod: v as "highest_points" | "lowest_positions" }))}
+                    onValueChange={(v) => setForm((f) => ({ ...f, scoringMethod: v as ScoringMethod }))}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -529,6 +538,12 @@ function TableFormDialog({
                         <span className="flex items-center gap-2">
                           <TrendingDown size={14} />
                           Lowest Positions wins
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="per_rider">
+                        <span className="flex items-center gap-2">
+                          <Users size={14} />
+                          Per Rider (dynamic)
                         </span>
                       </SelectItem>
                     </SelectContent>
@@ -575,28 +590,42 @@ function TableFormDialog({
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="pt-scale">Points per Position</Label>
-                <Textarea
-                  id="pt-scale"
-                  placeholder="25, 22, 20, 18, 16, ..."
-                  rows={2}
-                  value={form.scaleText}
-                  onChange={(e) => setForm((f) => ({ ...f, scaleText: e.target.value }))}
-                  className="font-mono text-sm"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Comma-separated. First value = 1st place.
-                  {parsedScale.length > 0 && (
-                    <span className="ml-1 text-primary font-medium">
-                      {parsedScale.length} positions scored.
-                    </span>
-                  )}
-                </p>
-              </div>
+              {isPerRider ? (
+                <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                  <Users size={15} className="text-primary mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Dynamic — no fixed scale needed</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Points are calculated at the time results are saved: 1st place receives <strong>N</strong> points
+                      (where N = number of riders who started), 2nd gets N−1, last place gets 1.
+                      With 26 starters: 1st = 26 pts, 2nd = 25 pts, … 26th = 1 pt.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="pt-scale">Points per Position</Label>
+                  <Textarea
+                    id="pt-scale"
+                    placeholder="25, 22, 20, 18, 16, ..."
+                    rows={2}
+                    value={form.scaleText}
+                    onChange={(e) => setForm((f) => ({ ...f, scaleText: e.target.value }))}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Comma-separated. First value = 1st place.
+                    {parsedScale.length > 0 && (
+                      <span className="ml-1 text-primary font-medium">
+                        {parsedScale.length} positions scored.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
 
               {/* Live preview */}
-              {parsedScale.length > 0 && (
+              {!isPerRider && parsedScale.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">

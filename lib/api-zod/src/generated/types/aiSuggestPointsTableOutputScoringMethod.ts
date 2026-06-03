@@ -12,4 +12,5 @@ export type AiSuggestPointsTableOutputScoringMethod = typeof AiSuggestPointsTabl
 export const AiSuggestPointsTableOutputScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
+  per_rider: 'per_rider',
 } as const;

@@ -1,9 +1,45 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable } from "@workspace/db";
+import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
-const POINTS_BY_POSITION = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+/**
+ * Compute points for a single finisher given the event's scoring configuration.
+ *
+ * scoringMethod values:
+ *   "per_rider"       — 1st gets N pts (total starters), 2nd gets N-1, ..., last gets 1.
+ *   "highest_points"  — look up position in pointsScale (first entry = 1st place).
+ *   "lowest_positions"— look up position in pointsScale; lower total is better (Olympic).
+ *   (fallback)        — use FALLBACK_POINTS array.
+ *
+ * mainEventOnly — if true, heats score 0; only moto type "main" scores points.
+ */
+function calcPoints(opts: {
+  position: number;
+  dnf: boolean;
+  dns: boolean;
+  totalStarters: number;
+  scoringMethod: string;
+  pointsScale: number[];
+  mainEventOnly: boolean;
+  motoType: string;
+}): number {
+  if (opts.dnf || opts.dns) return 0;
+  if (opts.mainEventOnly && opts.motoType !== "main") return 0;
+
+  switch (opts.scoringMethod) {
+    case "per_rider":
+      return Math.max(0, opts.totalStarters - opts.position + 1);
+    case "highest_points":
+      return opts.pointsScale[opts.position - 1] ?? 0;
+    case "lowest_positions":
+      return opts.pointsScale[opts.position - 1] ?? opts.position;
+    default:
+      return FALLBACK_POINTS[opts.position - 1] ?? 0;
+  }
+}
 
 const router = Router();
 
@@ -63,21 +99,54 @@ router.post("/events/:eventId/results", async (req, res) => {
   const { motoId, results: riderResults } = req.body;
   if (!motoId || !Array.isArray(riderResults)) return res.status(400).json({ error: "motoId and results[] required" });
 
-  const moto = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
-  if (!moto[0]) return res.status(404).json({ error: "Moto not found" });
-  const raceClass = moto[0].raceClass;
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
+  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  const raceClass = moto.raceClass;
+  const motoType: string = (moto as any).type ?? "heat";
 
-  // Delete existing results for this moto
+  // ── Resolve scoring table for this event ─────────────────────────────────
+  const [event] = await db.select({ scoringTableId: eventsTable.scoringTableId })
+    .from(eventsTable)
+    .where(eq(eventsTable.id, eventId));
+
+  let scoringMethod = "fallback";
+  let pointsScale: number[] = [];
+  let mainEventOnly = false;
+
+  if (event?.scoringTableId) {
+    const [table] = await db.select().from(pointsTablesTable)
+      .where(eq(pointsTablesTable.id, event.scoringTableId));
+    if (table) {
+      scoringMethod  = table.scoringMethod;
+      pointsScale    = (table.pointsScale as number[]) ?? [];
+      mainEventOnly  = table.mainEventOnly;
+    }
+  }
+
+  // Total starters = riders who are NOT dns (did not start)
+  const totalStarters = riderResults.filter((r: any) => !r.dns).length;
+
+  // ── Delete existing results for this moto then re-insert ─────────────────
   await db.delete(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
 
   const inserted = [];
   for (const r of riderResults) {
-    const points = r.dnf || r.dns ? 0 : (POINTS_BY_POSITION[r.position - 1] || 0);
+    const points = calcPoints({
+      position:      r.position,
+      dnf:           !!r.dnf,
+      dns:           !!r.dns,
+      totalStarters,
+      scoringMethod,
+      pointsScale,
+      mainEventOnly,
+      motoType,
+    });
+
     const [result] = await db.insert(raceResultsTable).values({
       eventId, motoId, riderId: r.riderId, raceClass,
-      position: r.position,
+      position:  r.position,
       totalTime: r.totalTime || null,
-      lapTimes: r.lapTimes || [],
+      lapTimes:  r.lapTimes || [],
       points,
       dnf: r.dnf || false,
       dns: r.dns || false,
@@ -92,7 +161,7 @@ router.post("/events/:eventId/results", async (req, res) => {
     id: r.id,
     eventId: r.eventId,
     motoId: r.motoId,
-    motoName: moto[0].name,
+    motoName: moto.name,
     riderId: r.riderId,
     riderName: "",
     raceClass: r.raceClass,

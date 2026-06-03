@@ -2476,7 +2476,7 @@ components:
               type: string
             scoringMethod:
               type: string
-              enum: [highest_points, lowest_positions]
+              enum: [highest_points, lowest_positions, per_rider]
             mainEventOnly:
               type: boolean
             pointsScale:
@@ -2505,7 +2505,7 @@ components:
           type: string
         scoringMethod:
           type: string
-          enum: [highest_points, lowest_positions]
+          enum: [highest_points, lowest_positions, per_rider]
         mainEventOnly:
           type: boolean
         pointsScale:
@@ -2530,7 +2530,7 @@ components:
           type: string
         scoringMethod:
           type: string
-          enum: [highest_points, lowest_positions]
+          enum: [highest_points, lowest_positions, per_rider]
         mainEventOnly:
           type: boolean
         pointsScale:
@@ -2552,7 +2552,7 @@ components:
           type: string
         scoringMethod:
           type: string
-          enum: [highest_points, lowest_positions]
+          enum: [highest_points, lowest_positions, per_rider]
         mainEventOnly:
           type: boolean
         pointsScale:

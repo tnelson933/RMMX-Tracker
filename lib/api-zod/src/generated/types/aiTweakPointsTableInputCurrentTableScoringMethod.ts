@@ -12,4 +12,5 @@ export type AiTweakPointsTableInputCurrentTableScoringMethod = typeof AiTweakPoi
 export const AiTweakPointsTableInputCurrentTableScoringMethod = {
   highest_points: 'highest_points',
   lowest_positions: 'lowest_positions',
+  per_rider: 'per_rider',
 } as const;
