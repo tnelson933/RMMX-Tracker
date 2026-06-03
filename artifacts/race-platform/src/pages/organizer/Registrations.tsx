@@ -170,27 +170,57 @@ export default function Registrations() {
     if (!editingReg) return;
     setEditSaving(true);
     try {
-      // Update the rider profile — name propagates to check-in, motos, results, etc.
-      const riderRes = await fetch(`/api/riders/${editingReg.riderId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
-          phone: data.phone || null,
-          dateOfBirth: data.dateOfBirth || null,
-          emergencyContact: data.emergencyContact || null,
-          emergencyPhone: data.emergencyPhone || null,
-        }),
-      });
-      if (!riderRes.ok) { const j = await riderRes.json(); throw new Error(j.error || "Failed to update rider"); }
+      const nameChanged =
+        data.firstName.trim().toLowerCase() !== editingReg.firstName.trim().toLowerCase() ||
+        data.lastName.trim().toLowerCase() !== editingReg.lastName.trim().toLowerCase();
 
-      // Update race class and clear any stale display-name overrides on this registration
+      let targetRiderId = editingReg.riderId;
+
+      if (nameChanged) {
+        // Create a new rider profile for the new name so other registrations
+        // sharing this rider (e.g. a parent who also registered a child) are not affected.
+        const newRiderRes = await fetch(`/api/riders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            firstName: data.firstName,
+            lastName: data.lastName,
+            email: data.email,
+            phone: data.phone || null,
+            dateOfBirth: data.dateOfBirth || null,
+            emergencyContact: data.emergencyContact || null,
+            emergencyPhone: data.emergencyPhone || null,
+          }),
+        });
+        if (!newRiderRes.ok) { const j = await newRiderRes.json(); throw new Error(j.error || "Failed to create rider"); }
+        const newRider = await newRiderRes.json();
+        targetRiderId = newRider.id;
+      } else {
+        // Name unchanged — just update contact info on the existing rider profile
+        const riderRes = await fetch(`/api/riders/${editingReg.riderId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: data.email,
+            phone: data.phone || null,
+            dateOfBirth: data.dateOfBirth || null,
+            emergencyContact: data.emergencyContact || null,
+            emergencyPhone: data.emergencyPhone || null,
+          }),
+        });
+        if (!riderRes.ok) { const j = await riderRes.json(); throw new Error(j.error || "Failed to update rider"); }
+      }
+
+      // Update the registration: new riderId (if name changed) + race class + clear display overrides
       const regRes = await fetch(`/api/registrations/${editingReg.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ raceClass: data.raceClass, displayFirstName: null, displayLastName: null }),
+        body: JSON.stringify({
+          riderId: nameChanged ? targetRiderId : undefined,
+          raceClass: data.raceClass,
+          displayFirstName: null,
+          displayLastName: null,
+        }),
       });
       if (!regRes.ok) { const j = await regRes.json(); throw new Error(j.error || "Failed to update registration"); }
 

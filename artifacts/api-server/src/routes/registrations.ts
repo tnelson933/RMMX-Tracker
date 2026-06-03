@@ -204,7 +204,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
 
 router.patch("/registrations/:registrationId", async (req, res) => {
   const id = Number(req.params.registrationId);
-  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod, displayFirstName, displayLastName } = req.body;
+  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod, displayFirstName, displayLastName, riderId: newRiderId } = req.body;
   const updates: Record<string, unknown> = {};
   if (status !== undefined) updates.status = status;
   if (paymentStatus !== undefined) {
@@ -220,9 +220,17 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   if (paymentMethod !== undefined) updates.paymentMethod = paymentMethod;
   if (displayFirstName !== undefined) updates.displayFirstName = displayFirstName;
   if (displayLastName !== undefined) updates.displayLastName = displayLastName;
+  if (newRiderId !== undefined) updates.riderId = newRiderId;
 
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();
   if (!reg) return res.status(404).json({ error: "Not found" });
+
+  // If riderId changed, re-point the matching checkin row to the new rider too
+  if (newRiderId !== undefined) {
+    await db.update(checkinsTable)
+      .set({ riderId: reg.riderId })
+      .where(and(eq(checkinsTable.eventId, reg.eventId), eq(checkinsTable.riderId, newRiderId)));
+  }
 
   // Create check-in record if payment just confirmed the registration
   if (paymentStatus === "paid" && reg.status === "confirmed") {
