@@ -92,6 +92,8 @@ const createEventSchema = z.object({
   registrationClose: z.string().optional(),
   paymentEnabled: z.boolean().default(false),
   requireAma: z.boolean().default(false),
+  requireClubId: z.boolean().default(false),
+  noDuplicateBibs: z.boolean().default(false),
   scoringTableId: z.number().optional(),
   entryFee: z.string().optional(),
   transponderRentalEnabled: z.boolean().default(false),
@@ -159,6 +161,8 @@ export default function EventsList() {
       registrationClose: "",
       paymentEnabled: false,
       requireAma: false,
+      requireClubId: false,
+      noDuplicateBibs: false,
       scoringTableId: undefined,
       entryFee: "",
       transponderRentalEnabled: false,
@@ -195,6 +199,8 @@ export default function EventsList() {
           registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
           paymentEnabled: data.paymentEnabled,
           requireAma: data.requireAma,
+          requireClubId: data.requireClubId,
+          noDuplicateBibs: data.noDuplicateBibs,
           scoringTableId: data.scoringTableId ?? null,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
           transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
@@ -409,8 +415,8 @@ export default function EventsList() {
                     </div>
                   )}
 
-                  {/* Require AMA# checkbox */}
-                  <div className="flex items-center gap-2 pt-1">
+                  {/* Registration requirement checkboxes */}
+                  <div className="space-y-2 pt-1">
                     <FormField
                       control={form.control}
                       name="requireAma"
@@ -423,6 +429,36 @@ export default function EventsList() {
                             />
                           </FormControl>
                           <FormLabel className="cursor-pointer font-normal">Require AMA #</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="requireClubId"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                          <FormLabel className="cursor-pointer font-normal">Require Club ID #</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="noDuplicateBibs"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                          <FormLabel className="cursor-pointer font-normal">Do not allow duplicate bib numbers</FormLabel>
                         </FormItem>
                       )}
                     />
