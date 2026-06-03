@@ -2250,6 +2250,12 @@ components:
           type: integer
         notCheckedIn:
           type: integer
+        uniqueRegistrants:
+          type: integer
+          description: Count of distinct riders registered (a rider in multiple classes counts once)
+        uniqueCheckedIn:
+          type: integer
+          description: Count of distinct riders who checked in (a rider in multiple classes counts once)
         rfidLinked:
           type: integer
         motosScheduled:

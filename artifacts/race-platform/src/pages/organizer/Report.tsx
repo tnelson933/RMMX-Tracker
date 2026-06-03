@@ -44,13 +44,62 @@ export default function Report() {
         <p className="text-sm mt-1">Generated: {format(new Date(), 'PPpp')}</p>
       </div>
 
+      {/* ── Unique rider tiles ────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="border-primary/30 bg-primary/5 print:border-black print:shadow-none print:bg-transparent">
+          <CardContent className="p-6 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-primary uppercase tracking-widest mb-1">Unique Registrants</p>
+              <h2 className="text-5xl font-heading font-bold">{(summary as any)?.uniqueRegistrants ?? summary?.totalRegistered ?? 0}</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                {summary?.totalRegistered || 0} total entries
+                {(summary?.totalRegistered || 0) > ((summary as any)?.uniqueRegistrants ?? 0)
+                  ? ` · ${(summary?.totalRegistered || 0) - ((summary as any)?.uniqueRegistrants ?? 0)} multi-class`
+                  : ""}
+              </p>
+            </div>
+            <Users className="text-primary/20 print:hidden" size={40} />
+          </CardContent>
+        </Card>
+
+        <Card className="border-secondary/30 bg-secondary/5 print:border-black print:shadow-none print:bg-transparent">
+          <CardContent className="p-6 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-secondary uppercase tracking-widest mb-1">Unique Checked In</p>
+              <h2 className="text-5xl font-heading font-bold text-secondary">{(summary as any)?.uniqueCheckedIn ?? summary?.checkedIn ?? 0}</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                {(summary as any)?.uniqueRegistrants ?? summary?.totalRegistered ?? 0} unique registered&ensp;·&ensp;
+                <span className="font-semibold">
+                  {(summary as any)?.uniqueRegistrants
+                    ? Math.round(((summary as any).uniqueCheckedIn / (summary as any).uniqueRegistrants) * 100)
+                    : summary?.totalRegistered
+                      ? Math.round(((summary?.checkedIn ?? 0) / summary.totalRegistered) * 100)
+                      : 0}% attendance
+                </span>
+              </p>
+            </div>
+            <div className="text-right print:hidden">
+              <div className="text-2xl font-heading font-bold text-secondary">
+                {(summary as any)?.uniqueRegistrants
+                  ? Math.round(((summary as any).uniqueCheckedIn / (summary as any).uniqueRegistrants) * 100)
+                  : summary?.totalRegistered
+                    ? Math.round(((summary?.checkedIn ?? 0) / summary.totalRegistered) * 100)
+                    : 0}%
+              </div>
+              <div className="text-xs text-muted-foreground">showed up</div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* ── Attendance stat cards ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="print:border-black print:shadow-none">
           <CardContent className="p-6 flex items-center justify-between">
             <div>
-              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Registrations</p>
+              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Total Entries</p>
               <h2 className="text-4xl font-heading font-bold">{summary?.totalRegistered || 0}</h2>
+              <p className="text-xs text-muted-foreground mt-1">across all classes</p>
             </div>
             <Users className="text-muted-foreground/30 print:hidden" size={32} />
           </CardContent>
@@ -61,6 +110,7 @@ export default function Report() {
             <div>
               <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Checked In</p>
               <h2 className="text-4xl font-heading font-bold text-secondary">{summary?.checkedIn || 0}</h2>
+              <p className="text-xs text-muted-foreground mt-1">total entries checked in</p>
             </div>
             <div className="text-sm font-bold text-secondary bg-secondary/10 px-2 py-1 rounded print:hidden">
               {summary?.totalRegistered ? Math.round((summary.checkedIn / summary.totalRegistered) * 100) : 0}%
@@ -92,8 +142,9 @@ export default function Report() {
             <div>
               <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">No Shows</p>
               <h2 className="text-4xl font-heading font-bold text-destructive">
-                {Math.max(0, (summary?.totalRegistered || 0) - (summary?.checkedIn || 0))}
+                {Math.max(0, ((summary as any)?.uniqueRegistrants ?? summary?.totalRegistered ?? 0) - ((summary as any)?.uniqueCheckedIn ?? summary?.checkedIn ?? 0))}
               </h2>
+              <p className="text-xs text-muted-foreground mt-1">unique riders absent</p>
             </div>
           </CardContent>
         </Card>

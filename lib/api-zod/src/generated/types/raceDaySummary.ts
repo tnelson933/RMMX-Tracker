@@ -14,6 +14,10 @@ export interface RaceDaySummary {
   totalRegistered: number;
   checkedIn: number;
   notCheckedIn: number;
+  /** Count of distinct riders registered (a rider in multiple classes counts once) */
+  uniqueRegistrants?: number;
+  /** Count of distinct riders who checked in (a rider in multiple classes counts once) */
+  uniqueCheckedIn?: number;
   rfidLinked: number;
   motosScheduled: number;
   motosCompleted: number;

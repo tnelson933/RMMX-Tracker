@@ -1231,6 +1231,8 @@ export const GetRaceDaySummaryResponse = zod.object({
   "totalRegistered": zod.number(),
   "checkedIn": zod.number(),
   "notCheckedIn": zod.number(),
+  "uniqueRegistrants": zod.number().optional().describe('Count of distinct riders registered (a rider in multiple classes counts once)'),
+  "uniqueCheckedIn": zod.number().optional().describe('Count of distinct riders who checked in (a rider in multiple classes counts once)'),
   "rfidLinked": zod.number(),
   "motosScheduled": zod.number(),
   "motosCompleted": zod.number(),

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable } from "@workspace/db";
-import { eq, and, count, sql, inArray, desc } from "drizzle-orm";
+import { eq, and, count, countDistinct, sql, inArray, desc } from "drizzle-orm";
 
 const router = Router();
 
@@ -139,6 +139,8 @@ router.get("/events/:eventId/raceday-summary", async (req, res) => {
   const [regCount] = await db.select({ count: count() }).from(registrationsTable).where(eq(registrationsTable.eventId, eventId));
   const [checkedInCount] = await db.select({ count: count() }).from(checkinsTable).where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.checkedIn, true)));
   const [rfidCount] = await db.select({ count: count() }).from(checkinsTable).where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.rfidLinked, true)));
+  const [uniqueRegCount] = await db.select({ count: countDistinct(registrationsTable.riderId) }).from(registrationsTable).where(eq(registrationsTable.eventId, eventId));
+  const [uniqueCheckinCount] = await db.select({ count: countDistinct(checkinsTable.riderId) }).from(checkinsTable).where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.checkedIn, true)));
   const [motosTotal] = await db.select({ count: count() }).from(motosTable).where(eq(motosTable.eventId, eventId));
   const [motosCompleted] = await db.select({ count: count() }).from(motosTable).where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed")));
 
@@ -183,6 +185,8 @@ router.get("/events/:eventId/raceday-summary", async (req, res) => {
     totalRegistered: total,
     checkedIn,
     notCheckedIn: total - checkedIn,
+    uniqueRegistrants: uniqueRegCount.count,
+    uniqueCheckedIn: uniqueCheckinCount.count,
     rfidLinked: rfidCount.count,
     motosScheduled: motosTotal.count,
     motosCompleted: motosCompleted.count,
