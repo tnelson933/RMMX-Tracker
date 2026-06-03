@@ -1073,6 +1073,30 @@ export const AiSuggestPointsTableResponse = zod.object({
 
 
 /**
+ * @summary Use AI to apply natural-language edits to an existing points table config
+ */
+export const AiTweakPointsTableBody = zod.object({
+  "instruction": zod.string().describe('Natural language instruction describing the change to make'),
+  "currentTable": zod.object({
+  "name": zod.string(),
+  "description": zod.string(),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "mainEventOnly": zod.boolean(),
+  "pointsScale": zod.array(zod.number())
+})
+})
+
+export const AiTweakPointsTableResponse = zod.object({
+  "name": zod.string(),
+  "description": zod.string(),
+  "scoringMethod": zod.enum(['highest_points', 'lowest_positions']),
+  "mainEventOnly": zod.boolean(),
+  "pointsScale": zod.array(zod.number()),
+  "motoNotes": zod.string().optional().describe('Human-readable explanation of the moto structure suggestion')
+})
+
+
+/**
  * @summary List points tables (system defaults + club-specific)
  */
 export const ListPointsTablesResponseItem = zod.object({

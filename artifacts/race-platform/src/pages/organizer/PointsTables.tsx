@@ -6,6 +6,7 @@ import {
   useUpdatePointsTable,
   useDeletePointsTable,
   useAiSuggestPointsTable,
+  useAiTweakPointsTable,
   getListPointsTablesQueryKey,
 } from "@workspace/api-client-react";
 import type { PointsTable } from "@workspace/api-client-react";
@@ -272,6 +273,99 @@ function AiAssistPanel({
   );
 }
 
+// ─── AI Tweak Panel (edit mode) ───────────────────────────────────────────────
+
+function AiTweakPanel({
+  currentForm,
+  onApply,
+}: {
+  currentForm: FormState;
+  onApply: (result: {
+    name: string;
+    description: string;
+    scoringMethod: "highest_points" | "lowest_positions";
+    mainEventOnly: boolean;
+    pointsScale: number[];
+  }) => void;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const tweakMutation = useAiTweakPointsTable();
+  const { toast } = useToast();
+
+  async function handleTweak() {
+    if (!instruction.trim()) {
+      toast({ title: "Describe the change you want to make", variant: "destructive" });
+      return;
+    }
+    try {
+      const result = await tweakMutation.mutateAsync({
+        data: {
+          instruction: instruction.trim(),
+          currentTable: {
+            name: currentForm.name,
+            description: currentForm.description,
+            scoringMethod: currentForm.scoringMethod,
+            mainEventOnly: currentForm.mainEventOnly,
+            pointsScale: parseScale(currentForm.scaleText),
+          },
+        },
+      });
+      onApply(result);
+      setInstruction("");
+      toast({ title: "Table updated by AI ✓", description: "Review the changes below before saving." });
+    } catch {
+      toast({ title: "AI couldn't apply that change", description: "Try rephrasing.", variant: "destructive" });
+    }
+  }
+
+  return (
+    <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Sparkles size={16} className="text-primary" />
+        <span className="text-sm font-heading font-bold uppercase tracking-wider text-primary">
+          AI Edits
+        </span>
+        <span className="ml-auto text-[10px] font-heading uppercase tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+          Describe a change
+        </span>
+      </div>
+
+      <div className="space-y-1.5">
+        <Textarea
+          placeholder='e.g. "Give 1st place 30 points instead of 25" or "Add 5 more positions at the bottom, each 1 point less" or "Switch to lowest positions scoring"'
+          rows={3}
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleTweak();
+          }}
+          className="text-sm resize-none bg-background"
+        />
+        <p className="text-[11px] text-muted-foreground">Tip: Press ⌘/Ctrl+Enter to apply</p>
+      </div>
+
+      <Button
+        type="button"
+        className="w-full gap-2"
+        onClick={handleTweak}
+        disabled={tweakMutation.isPending || !instruction.trim()}
+      >
+        {tweakMutation.isPending ? (
+          <>
+            <span className="animate-spin">✦</span>
+            Applying…
+          </>
+        ) : (
+          <>
+            <Sparkles size={14} />
+            Apply with AI
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
+
 // ─── Form Dialog ─────────────────────────────────────────────────────────────
 
 function TableFormDialog({
@@ -360,9 +454,12 @@ function TableFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5 pt-1">
-          {/* AI panel — only on create */}
+          {/* AI panel — create: full generator; edit: tweak box */}
           {!isEditing && (
             <AiAssistPanel onApply={applyAiResult} />
+          )}
+          {isEditing && (
+            <AiTweakPanel currentForm={form} onApply={applyAiResult} />
           )}
 
           {/* Toggle manual fields */}

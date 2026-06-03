@@ -1001,6 +1001,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
+  /ai/tweak-points-table:
+    post:
+      operationId: aiTweakPointsTable
+      tags: [ai]
+      summary: Use AI to apply natural-language edits to an existing points table config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiTweakPointsTableInput"
+      responses:
+        "200":
+          description: Updated points table config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiSuggestPointsTableOutput"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: AI error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   /points-tables:
     get:
       operationId: listPointsTables
@@ -2419,6 +2450,31 @@ components:
           type: string
         metadata:
           $ref: '#/components/schemas/UploadUrlRequest'
+    AiTweakPointsTableInput:
+      type: object
+      required: [instruction, currentTable]
+      properties:
+        instruction:
+          type: string
+          description: Natural language instruction describing the change to make
+        currentTable:
+          type: object
+          required: [name, description, scoringMethod, mainEventOnly, pointsScale]
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            scoringMethod:
+              type: string
+              enum: [highest_points, lowest_positions]
+            mainEventOnly:
+              type: boolean
+            pointsScale:
+              type: array
+              items:
+                type: number
+
     AiSuggestPointsTableInput:
       type: object
       required: [scoringDescription]

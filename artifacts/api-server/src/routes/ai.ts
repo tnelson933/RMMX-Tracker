@@ -119,4 +119,129 @@ router.post("/ai/suggest-points-table", async (req, res) => {
   }
 });
 
+const TWEAK_SYSTEM_PROMPT = `You are an expert motorsport race administrator. The user has an existing points scoring table and wants to make specific changes to it.
+
+You will receive the current table configuration and a natural language instruction describing what to change.
+
+Apply ONLY the requested changes. Keep everything else the same unless the change logically requires updating other fields.
+
+Return a single JSON object with exactly these fields:
+{
+  "name": "table name (update only if the change warrants it)",
+  "description": "updated description reflecting the change",
+  "scoringMethod": "highest_points" or "lowest_positions",
+  "mainEventOnly": true or false,
+  "pointsScale": [array of numbers, one per position],
+  "motoNotes": null
+}
+
+Rules:
+- scoringMethod "highest_points": winner gets most points, pointsScale[0] is highest (1st place)
+- scoringMethod "lowest_positions": lower total is better, pointsScale[0] = 1
+- Always return valid JSON only. No markdown, no explanation outside the JSON.`;
+
+router.post("/ai/tweak-points-table", async (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  if (!ANTHROPIC_BASE_URL || !ANTHROPIC_API_KEY) {
+    res.status(500).json({ error: "AI integration not configured" });
+    return;
+  }
+
+  const { instruction, currentTable } = req.body as {
+    instruction?: string;
+    currentTable?: {
+      name: string;
+      description: string;
+      scoringMethod: string;
+      mainEventOnly: boolean;
+      pointsScale: number[];
+    };
+  };
+
+  if (!instruction?.trim()) {
+    res.status(400).json({ error: "instruction is required" });
+    return;
+  }
+  if (!currentTable || !Array.isArray(currentTable.pointsScale)) {
+    res.status(400).json({ error: "currentTable is required" });
+    return;
+  }
+
+  const userMessage = [
+    `Current table:`,
+    `  Name: ${currentTable.name}`,
+    `  Description: ${currentTable.description}`,
+    `  Scoring method: ${currentTable.scoringMethod}`,
+    `  Main event only: ${currentTable.mainEventOnly}`,
+    `  Points scale: ${currentTable.pointsScale.join(", ")}`,
+    ``,
+    `Change requested: ${instruction.trim()}`,
+  ].join("\n");
+
+  try {
+    const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5",
+        max_tokens: 1024,
+        system: TWEAK_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      req.log.error({ err }, "Anthropic API error");
+      res.status(500).json({ error: "AI request failed" });
+      return;
+    }
+
+    const data = (await response.json()) as {
+      content: Array<{ type: string; text: string }>;
+    };
+
+    const rawText = data.content.find((b) => b.type === "text")?.text ?? "";
+    const text = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+
+    let parsed: {
+      name: string;
+      description: string;
+      scoringMethod: "highest_points" | "lowest_positions";
+      mainEventOnly: boolean;
+      pointsScale: number[];
+      motoNotes?: string | null;
+    };
+
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      req.log.error({ text }, "Failed to parse AI JSON response");
+      res.status(500).json({ error: "AI returned an unreadable response. Try rephrasing your instruction." });
+      return;
+    }
+
+    if (
+      !parsed.name ||
+      !parsed.scoringMethod ||
+      !Array.isArray(parsed.pointsScale) ||
+      parsed.pointsScale.length === 0
+    ) {
+      res.status(500).json({ error: "AI response was incomplete. Try adding more detail." });
+      return;
+    }
+
+    res.json(parsed);
+  } catch (err) {
+    req.log.error({ err }, "AI tweak-points-table error");
+    res.status(500).json({ error: "AI request failed. Please try again." });
+  }
+});
+
 export default router;

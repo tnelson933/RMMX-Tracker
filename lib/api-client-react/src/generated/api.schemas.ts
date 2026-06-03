@@ -739,6 +739,28 @@ export interface UploadUrlResponse {
   metadata?: UploadUrlRequest;
 }
 
+export type AiTweakPointsTableInputCurrentTableScoringMethod = typeof AiTweakPointsTableInputCurrentTableScoringMethod[keyof typeof AiTweakPointsTableInputCurrentTableScoringMethod];
+
+
+export const AiTweakPointsTableInputCurrentTableScoringMethod = {
+  highest_points: 'highest_points',
+  lowest_positions: 'lowest_positions',
+} as const;
+
+export type AiTweakPointsTableInputCurrentTable = {
+  name: string;
+  description: string;
+  scoringMethod: AiTweakPointsTableInputCurrentTableScoringMethod;
+  mainEventOnly: boolean;
+  pointsScale: number[];
+};
+
+export interface AiTweakPointsTableInput {
+  /** Natural language instruction describing the change to make */
+  instruction: string;
+  currentTable: AiTweakPointsTableInputCurrentTable;
+}
+
 export interface AiSuggestPointsTableInput {
   /** Natural language description of how points should work */
   scoringDescription: string;

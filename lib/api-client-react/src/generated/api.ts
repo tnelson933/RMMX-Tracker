@@ -23,6 +23,7 @@ import type {
   AdvanceToMainInput,
   AiSuggestPointsTableInput,
   AiSuggestPointsTableOutput,
+  AiTweakPointsTableInput,
   AuthResponse,
   Checkin,
   CheckinInput,
@@ -3624,6 +3625,77 @@ export const useAiSuggestPointsTable = <TError = ErrorType<ErrorEnvelope>,
         TContext
       > => {
       return useMutation(getAiSuggestPointsTableMutationOptions(options));
+    }
+
+export const getAiTweakPointsTableUrl = () => {
+
+
+
+
+  return `/api/ai/tweak-points-table`
+}
+
+/**
+ * @summary Use AI to apply natural-language edits to an existing points table config
+ */
+export const aiTweakPointsTable = async (aiTweakPointsTableInput: AiTweakPointsTableInput, options?: RequestInit): Promise<AiSuggestPointsTableOutput> => {
+
+  return customFetch<AiSuggestPointsTableOutput>(getAiTweakPointsTableUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      aiTweakPointsTableInput,)
+  }
+);}
+
+
+
+
+export const getAiTweakPointsTableMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof aiTweakPointsTable>>, TError,{data: BodyType<AiTweakPointsTableInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof aiTweakPointsTable>>, TError,{data: BodyType<AiTweakPointsTableInput>}, TContext> => {
+
+const mutationKey = ['aiTweakPointsTable'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof aiTweakPointsTable>>, {data: BodyType<AiTweakPointsTableInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  aiTweakPointsTable(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AiTweakPointsTableMutationResult = NonNullable<Awaited<ReturnType<typeof aiTweakPointsTable>>>
+    export type AiTweakPointsTableMutationBody = BodyType<AiTweakPointsTableInput>
+    export type AiTweakPointsTableMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Use AI to apply natural-language edits to an existing points table config
+ */
+export const useAiTweakPointsTable = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof aiTweakPointsTable>>, TError,{data: BodyType<AiTweakPointsTableInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof aiTweakPointsTable>>,
+        TError,
+        {data: BodyType<AiTweakPointsTableInput>},
+        TContext
+      > => {
+      return useMutation(getAiTweakPointsTableMutationOptions(options));
     }
 
 export const getListPointsTablesUrl = () => {
