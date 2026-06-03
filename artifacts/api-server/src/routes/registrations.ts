@@ -222,14 +222,25 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   if (displayLastName !== undefined) updates.displayLastName = displayLastName;
   if (newRiderId !== undefined) updates.riderId = newRiderId;
 
+  // Snapshot the current riderId BEFORE updating so we can re-point the checkin row
+  const [before] = await db.select({ riderId: registrationsTable.riderId, eventId: registrationsTable.eventId })
+    .from(registrationsTable).where(eq(registrationsTable.id, id));
+  const oldRiderId = before?.riderId;
+
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();
   if (!reg) return res.status(404).json({ error: "Not found" });
 
-  // If riderId changed, re-point the matching checkin row to the new rider too
-  if (newRiderId !== undefined) {
-    await db.update(checkinsTable)
-      .set({ riderId: reg.riderId })
-      .where(and(eq(checkinsTable.eventId, reg.eventId), eq(checkinsTable.riderId, newRiderId)));
+  // If riderId changed, re-point exactly one checkin row for this rider+event to the new rider
+  if (newRiderId !== undefined && oldRiderId && oldRiderId !== newRiderId) {
+    const [checkinToMove] = await db.select({ id: checkinsTable.id })
+      .from(checkinsTable)
+      .where(and(eq(checkinsTable.eventId, reg.eventId), eq(checkinsTable.riderId, oldRiderId)))
+      .limit(1);
+    if (checkinToMove) {
+      await db.update(checkinsTable)
+        .set({ riderId: newRiderId })
+        .where(eq(checkinsTable.id, checkinToMove.id));
+    }
   }
 
   // Create check-in record if payment just confirmed the registration
