@@ -83,15 +83,6 @@ export default function Report() {
         <Card className="print:border-black print:shadow-none">
           <CardContent className="p-6 flex items-center justify-between">
             <div>
-              <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">RFID Linked</p>
-              <h2 className="text-4xl font-heading font-bold text-primary">{summary?.rfidLinked || 0}</h2>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="print:border-black print:shadow-none">
-          <CardContent className="p-6 flex items-center justify-between">
-            <div>
               <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Total Entries</p>
               <h2 className="text-4xl font-heading font-bold">{summary?.totalRegistered || 0}</h2>
             </div>
