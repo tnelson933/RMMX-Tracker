@@ -34,7 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Building2, Mail, Phone, Globe, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Mail, Phone, Globe, MapPin, Hash, Search, X as XIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const US_STATES = [
@@ -71,6 +71,7 @@ export default function ClubsAdmin() {
   const [editingClub, setEditingClub] = useState<Club | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Club | null>(null);
+  const [idSearch, setIdSearch] = useState("");
 
   const form = useForm<ClubFormValues>({
     resolver: zodResolver(clubSchema),
@@ -152,6 +153,10 @@ export default function ClubsAdmin() {
 
   const isBusy = createMutation.isPending || updateMutation.isPending;
 
+  const filteredClubs = idSearch.trim()
+    ? clubs.filter(c => String(c.id) === idSearch.trim())
+    : clubs;
+
   return (
     <div className="p-8 max-w-5xl mx-auto">
       {/* Header */}
@@ -171,6 +176,39 @@ export default function ClubsAdmin() {
         </Button>
       </div>
 
+      {/* Club ID lookup */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 max-w-xs">
+          <div className="relative flex-1">
+            <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="number"
+              min={1}
+              placeholder="Lookup by Club ID…"
+              value={idSearch}
+              onChange={e => setIdSearch(e.target.value)}
+              className="pl-8 font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
+          {idSearch && (
+            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => setIdSearch("")}>
+              <XIcon size={14} />
+            </Button>
+          )}
+        </div>
+        {idSearch && filteredClubs.length === 0 && !isLoading && (
+          <p className="text-sm text-muted-foreground mt-2 flex items-center gap-1.5">
+            <Search size={13} />
+            No club found with ID <span className="font-mono font-bold">#{idSearch}</span>
+          </p>
+        )}
+        {idSearch && filteredClubs.length > 0 && (
+          <p className="text-sm text-muted-foreground mt-2">
+            Showing club <span className="font-mono font-bold">#{idSearch}</span>
+          </p>
+        )}
+      </div>
+
       {/* Club list */}
       {isLoading ? (
         <div className="text-muted-foreground text-center py-16 animate-pulse font-heading uppercase tracking-widest">
@@ -184,17 +222,21 @@ export default function ClubsAdmin() {
         </div>
       ) : (
         <div className="grid gap-4">
-          {clubs.map((club) => (
+          {filteredClubs.map((club) => (
             <div
               key={club.id}
               className="bg-card border border-border rounded-sm p-5 flex items-start justify-between gap-4 hover:border-primary/30 transition-colors"
             >
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 mb-2">
+                <div className="flex items-center gap-3 mb-2 flex-wrap">
                   <h2 className="text-lg font-heading font-bold uppercase tracking-tight">{club.name}</h2>
                   <Badge variant="outline" className="font-mono text-xs flex items-center gap-1">
                     <MapPin size={10} />
                     {club.state}
+                  </Badge>
+                  <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1 bg-muted text-muted-foreground">
+                    <Hash size={10} />
+                    Club ID: {club.id}
                   </Badge>
                 </div>
                 {club.description && (
