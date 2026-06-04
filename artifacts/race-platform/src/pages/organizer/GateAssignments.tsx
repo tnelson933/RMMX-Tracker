@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Save, Plus, Trash2, ChevronDown, ChevronRight, RefreshCw, Info, AlertTriangle, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ function ConfigPanel({ config, isCollapsed, onToggleCollapse, onChange, onDelete
   const dupes = hasDuplicates(config.gatePriorities);
   const invalid = hasInvalid(config.gatePriorities, config.gateCount);
   const hasError = dupes || invalid;
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   function handleNameChange(name: string) {
     onChange({ ...config, name });
@@ -90,12 +91,20 @@ function ConfigPanel({ config, isCollapsed, onToggleCollapse, onChange, onDelete
         </button>
         <div className="flex-1 flex items-center gap-1 min-w-0" onClick={e => e.stopPropagation()}>
           <Input
+            ref={nameInputRef}
             value={config.name}
             onChange={e => handleNameChange(e.target.value)}
             placeholder="Track name…"
             className="flex-1 h-8 text-sm font-heading font-bold uppercase tracking-wide border-0 bg-transparent shadow-none focus-visible:ring-1 px-1"
           />
-          <Pencil size={12} className="shrink-0 text-muted-foreground/50" />
+          <button
+            type="button"
+            title="Edit name"
+            onClick={() => { nameInputRef.current?.focus(); nameInputRef.current?.select(); }}
+            className="shrink-0 text-muted-foreground/50 hover:text-foreground transition-colors p-0.5 rounded"
+          >
+            <Pencil size={12} />
+          </button>
         </div>
         {hasError && (
           <AlertTriangle size={16} className="text-amber-500 shrink-0" />
