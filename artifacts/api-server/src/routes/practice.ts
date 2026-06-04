@@ -93,6 +93,142 @@ function broadcast(sessionId: number, payload: object) {
   }
 }
 
+// ── Shared crossing processor ─────────────────────────────────────────────────
+async function processPracticeCrossing(
+  session: typeof practiceSessionsTable.$inferSelect,
+  rfidNumber: string,
+  crossingTime: Date,
+) {
+  const sessionId = session.id;
+
+  const [lastCrossing] = await db.select().from(practiceCrossingsTable)
+    .where(and(
+      eq(practiceCrossingsTable.sessionId, sessionId),
+      eq(practiceCrossingsTable.rfidNumber, rfidNumber),
+    ))
+    .orderBy(desc(practiceCrossingsTable.crossingTime))
+    .limit(1);
+
+  if (lastCrossing) {
+    const elapsed = crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime();
+    if (elapsed < session.debounceMs) {
+      return { skipped: true, reason: "debounce" as const };
+    }
+  }
+
+  // Rider lookup: rfidAssignments for events belonging to this club
+  let riderId: number | null = null;
+  let riderName: string | null = null;
+  let bibNumber: string | null = null;
+
+  const [assignment] = await db.select({
+    riderId: rfidAssignmentsTable.riderId,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+    bibNumber: ridersTable.bibNumber,
+  }).from(rfidAssignmentsTable)
+    .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
+    .leftJoin(eventsTable, eq(rfidAssignmentsTable.eventId, eventsTable.id))
+    .where(and(
+      eq(rfidAssignmentsTable.rfidNumber, rfidNumber),
+      eq(eventsTable.clubId, session.clubId),
+    ))
+    .limit(1);
+
+  if (assignment?.riderId) {
+    riderId = assignment.riderId;
+    riderName = `${assignment.firstName ?? ""} ${assignment.lastName ?? ""}`.trim() || null;
+    bibNumber = assignment.bibNumber ?? null;
+  }
+
+  // Fallback: permanent rfidNumber on rider profile
+  if (!riderId) {
+    const [directRider] = await db.select().from(ridersTable)
+      .where(eq(ridersTable.rfidNumber, rfidNumber))
+      .limit(1);
+    if (directRider) {
+      riderId = directRider.id;
+      riderName = `${directRider.firstName} ${directRider.lastName}`.trim();
+      bibNumber = directRider.bibNumber ?? null;
+    }
+  }
+
+  const lapNumber = (lastCrossing?.lapNumber ?? 0) + 1;
+  const lapTimeMs = lastCrossing
+    ? crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime()
+    : null;
+
+  const [crossing] = await db.insert(practiceCrossingsTable).values({
+    sessionId,
+    rfidNumber,
+    riderId,
+    riderName,
+    bibNumber,
+    crossingTime,
+    lapNumber,
+    lapTimeMs,
+  }).returning();
+
+  const allCrossings = await db.select().from(practiceCrossingsTable)
+    .where(eq(practiceCrossingsTable.sessionId, sessionId))
+    .orderBy(asc(practiceCrossingsTable.crossingTime));
+  broadcast(sessionId, { session: toJson(session), riders: buildLiveBoard(allCrossings) });
+
+  return { crossing };
+}
+
+// POST /practice/active/crossing?clubId=N — stable endpoint for bridge / MyLaps
+// No session ID needed — server finds the active session for the club automatically.
+// Accepts both RFID bridge format ({ rfidNumber }) and MyLaps format ({ transponder, passingTime }).
+router.post("/practice/active/crossing", async (req, res) => {
+  const clubId = Number(req.query.clubId);
+  if (!clubId || isNaN(clubId)) {
+    return res.status(400).json({ error: "clubId query param is required" });
+  }
+
+  // Accept both RFID bridge format and MyLaps/AMBrc format
+  const body = req.body as any;
+  const rfidNumber: string | undefined =
+    body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
+  if (!rfidNumber) {
+    return res.status(400).json({ error: "rfidNumber (or transponder) is required" });
+  }
+
+  // Accept hardware timestamp in any common field name
+  const rawTime: string | undefined =
+    body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
+  const crossingTime = rawTime ? new Date(rawTime) : new Date();
+  if (isNaN(crossingTime.getTime())) {
+    return res.status(400).json({ error: "Invalid crossingTime — must be ISO 8601" });
+  }
+
+  // Find the active session for this club
+  const [session] = await db.select().from(practiceSessionsTable)
+    .where(and(
+      eq(practiceSessionsTable.clubId, clubId),
+      eq(practiceSessionsTable.status, "active"),
+    ))
+    .limit(1);
+
+  if (!session) {
+    return res.status(409).json({
+      error: "No active practice session for this club",
+      hint: "Start a practice session in the Race Platform organizer portal first.",
+    });
+  }
+
+  const result = await processPracticeCrossing(session, String(rfidNumber), crossingTime);
+  if ("skipped" in result) {
+    return res.status(200).json({ skipped: true, reason: result.reason });
+  }
+
+  return res.status(201).json({
+    ...result.crossing,
+    crossingTime: result.crossing!.crossingTime.toISOString(),
+    createdAt: result.crossing!.createdAt.toISOString(),
+  });
+});
+
 // GET /practice — list sessions for organizer's club
 router.get("/practice", async (req, res) => {
   const userId = (req.session as any).userId;
@@ -195,95 +331,31 @@ router.get("/practice/:id/crossings", async (req, res) => {
   })));
 });
 
-// POST /practice/:id/crossing — record a crossing from reader / bridge
+// POST /practice/:id/crossing — record a crossing by explicit session ID
 router.post("/practice/:id/crossing", async (req, res) => {
   const sessionId = Number(req.params.id);
-  const { rfidNumber, crossingTime: rawTime } = req.body;
+  const body = req.body as any;
+  const rfidNumber: string | undefined =
+    body?.rfidNumber ?? body?.transponder ?? body?.transponderId;
   if (!rfidNumber) return res.status(400).json({ error: "rfidNumber required" });
 
   const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, sessionId));
   if (!session) return res.status(404).json({ error: "Session not found" });
   if (session.status !== "active") return res.status(409).json({ error: "Session not active" });
 
+  const rawTime: string | undefined =
+    body?.crossingTime ?? body?.passingTime ?? body?.timestamp;
   const crossingTime = rawTime ? new Date(rawTime) : new Date();
 
-  const [lastCrossing] = await db.select().from(practiceCrossingsTable)
-    .where(and(
-      eq(practiceCrossingsTable.sessionId, sessionId),
-      eq(practiceCrossingsTable.rfidNumber, rfidNumber),
-    ))
-    .orderBy(desc(practiceCrossingsTable.crossingTime))
-    .limit(1);
-
-  if (lastCrossing) {
-    const elapsed = crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime();
-    if (elapsed < session.debounceMs) {
-      return res.status(200).json({ skipped: true, reason: "debounce" });
-    }
+  const result = await processPracticeCrossing(session, String(rfidNumber), crossingTime);
+  if ("skipped" in result) {
+    return res.status(200).json({ skipped: true, reason: result.reason });
   }
-
-  // Rider lookup: rfidAssignments for events belonging to this club
-  let riderId: number | null = null;
-  let riderName: string | null = null;
-  let bibNumber: string | null = null;
-
-  const [assignment] = await db.select({
-    riderId: rfidAssignmentsTable.riderId,
-    firstName: ridersTable.firstName,
-    lastName: ridersTable.lastName,
-    bibNumber: ridersTable.bibNumber,
-  }).from(rfidAssignmentsTable)
-    .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
-    .leftJoin(eventsTable, eq(rfidAssignmentsTable.eventId, eventsTable.id))
-    .where(and(
-      eq(rfidAssignmentsTable.rfidNumber, rfidNumber),
-      eq(eventsTable.clubId, session.clubId),
-    ))
-    .limit(1);
-
-  if (assignment?.riderId) {
-    riderId = assignment.riderId;
-    riderName = `${assignment.firstName ?? ""} ${assignment.lastName ?? ""}`.trim() || null;
-    bibNumber = assignment.bibNumber ?? null;
-  }
-
-  // Fallback: permanent rfidNumber on rider profile
-  if (!riderId) {
-    const [directRider] = await db.select().from(ridersTable)
-      .where(eq(ridersTable.rfidNumber, rfidNumber))
-      .limit(1);
-    if (directRider) {
-      riderId = directRider.id;
-      riderName = `${directRider.firstName} ${directRider.lastName}`.trim();
-      bibNumber = directRider.bibNumber ?? null;
-    }
-  }
-
-  const lapNumber = (lastCrossing?.lapNumber ?? 0) + 1;
-  const lapTimeMs = lastCrossing
-    ? crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime()
-    : null;
-
-  const [crossing] = await db.insert(practiceCrossingsTable).values({
-    sessionId,
-    rfidNumber,
-    riderId,
-    riderName,
-    bibNumber,
-    crossingTime,
-    lapNumber,
-    lapTimeMs,
-  }).returning();
-
-  const allCrossings = await db.select().from(practiceCrossingsTable)
-    .where(eq(practiceCrossingsTable.sessionId, sessionId))
-    .orderBy(asc(practiceCrossingsTable.crossingTime));
-  broadcast(sessionId, { session: toJson(session), riders: buildLiveBoard(allCrossings) });
 
   return res.status(201).json({
-    ...crossing,
-    crossingTime: crossing.crossingTime.toISOString(),
-    createdAt: crossing.createdAt.toISOString(),
+    ...result.crossing,
+    crossingTime: result.crossing!.crossingTime.toISOString(),
+    createdAt: result.crossing!.createdAt.toISOString(),
   });
 });
 

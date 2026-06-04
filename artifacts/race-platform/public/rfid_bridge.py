@@ -234,7 +234,9 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     api_url: str = ""
     local_port: int = 5555
     reader_mode: str = "generic"    # "generic" | "impinj-r700" | "zebra-fx7500"
-    event_id: str = ""              # required for native reader modes
+    bridge_mode: str = "race"       # "race" | "practice"
+    event_id: str = ""              # required for native reader modes in race mode
+    club_id: str = ""               # required for practice mode
     db: sqlite3.Connection = None   # type: ignore
     db_lock: threading.Lock = threading.Lock()
     rmonitor_server: "RMonitorServer | None" = None  # set by main() if --rmonitor is on
@@ -272,18 +274,31 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         if payload is None:
             return  # _read_json already replied with 400
 
-        if not payload.get("rfidNumber") or not payload.get("motoId"):
-            self._reply(400, {"error": "rfidNumber and motoId are required"})
-            return
-
         # Ensure crossingTime is set — prefer reader's hardware timestamp
         if not payload.get("crossingTime"):
             payload["crossingTime"] = _now()
 
-        cloud_path = "/api/timing/crossing"
-        self._forward_or_cache(payload, cloud_path,
-                               log_tag=str(payload.get("rfidNumber")),
-                               log_extra=f"moto={payload.get('motoId')}")
+        if self.bridge_mode == "practice":
+            rfid = payload.get("rfidNumber") or payload.get("transponder")
+            if not rfid:
+                self._reply(400, {"error": "rfidNumber is required"})
+                return
+            practice_payload = {
+                "rfidNumber": rfid,
+                "crossingTime": payload["crossingTime"],
+            }
+            cloud_path = f"/api/practice/active/crossing?clubId={self.club_id}"
+            self._forward_or_cache(practice_payload, cloud_path,
+                                   log_tag=str(rfid),
+                                   log_extra=f"club={self.club_id} [practice]")
+        else:
+            if not payload.get("rfidNumber") or not payload.get("motoId"):
+                self._reply(400, {"error": "rfidNumber and motoId are required"})
+                return
+            cloud_path = "/api/timing/crossing"
+            self._forward_or_cache(payload, cloud_path,
+                                   log_tag=str(payload.get("rfidNumber")),
+                                   log_extra=f"moto={payload.get('motoId')}")
 
     # ── Native reader handler (Impinj R700 / Zebra FX7500) ─────────────────
     def _handle_native(self, reader: str):
@@ -291,6 +306,39 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         if payload is None:
             return
 
+        # In practice mode: extract individual tags and send each to the active
+        # practice session endpoint.  The hardware timestamp is preserved per-tag.
+        if self.bridge_mode == "practice":
+            if reader == "impinj-r700":
+                tags = [e.get("tagInventoryEvent", {})
+                        for e in payload.get("events", [])
+                        if e.get("type") == "tagInventoryEvent"]
+                for tag in tags:
+                    rfid = (tag.get("epcHex") or "").upper()
+                    if not rfid:
+                        continue
+                    ts = tag.get("firstSeenTime") or _now()
+                    practice_payload = {"rfidNumber": rfid, "crossingTime": ts}
+                    cloud_path = f"/api/practice/active/crossing?clubId={self.club_id}"
+                    self._forward_or_cache(practice_payload, cloud_path,
+                                           log_tag=rfid,
+                                           log_extra=f"club={self.club_id} [practice]")
+            else:  # zebra-fx7500
+                tags = payload.get("data", {}).get("tags", payload.get("tags", []))
+                for tag in tags:
+                    rfid = ((tag.get("idHex") or tag.get("epc")) or "").upper()
+                    if not rfid:
+                        continue
+                    ts = tag.get("firstSeenTimestamp") or _now()
+                    practice_payload = {"rfidNumber": rfid, "crossingTime": ts}
+                    cloud_path = f"/api/practice/active/crossing?clubId={self.club_id}"
+                    self._forward_or_cache(practice_payload, cloud_path,
+                                           log_tag=rfid,
+                                           log_extra=f"club={self.club_id} [practice]")
+            self._reply(200, {"ok": True, "mode": "practice"})
+            return
+
+        # Race mode: forward the full native payload to the timing endpoint
         if reader == "impinj-r700":
             cloud_path = f"/api/timing/impinj-crossing?eventId={self.event_id}"
             tag_count = len([e for e in payload.get("events", [])
@@ -359,8 +407,16 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             "zebra-fx7500": "Zebra FX7500",
         }
         reader_label = reader_labels.get(self.reader_mode, self.reader_mode)
+        mode_label = "Practice" if self.bridge_mode == "practice" else "Race"
 
-        if self.reader_mode == "impinj-r700":
+        if self.bridge_mode == "practice":
+            if self.reader_mode == "impinj-r700":
+                local_endpoint = f"http://localhost:{self.local_port}/timing/impinj-crossing?eventId=OPTIONAL"
+            elif self.reader_mode == "zebra-fx7500":
+                local_endpoint = f"http://localhost:{self.local_port}/timing/zebra-crossing?eventId=OPTIONAL"
+            else:
+                local_endpoint = f"http://localhost:{self.local_port}/timing/crossing"
+        elif self.reader_mode == "impinj-r700":
             local_endpoint = f"http://localhost:{self.local_port}/timing/impinj-crossing?eventId={self.event_id}"
         elif self.reader_mode == "zebra-fx7500":
             local_endpoint = f"http://localhost:{self.local_port}/timing/zebra-crossing?eventId={self.event_id}"
@@ -421,8 +477,10 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     <div class="row"><span>Sent to cloud</span> <span class="val" style="color:#22c55e">{sent}</span></div>
     <div class="row"><span>Total recorded</span> <span class="val">{total}</span></div>
     <div class="row"><span>Cloud API</span> <span class="val" style="color:#818cf8">{self.api_url}</span></div>
+    <div class="row"><span>Bridge mode</span> <span class="reader-badge" style="background:#1a3a1f;color:#86efac;border-color:#16a34a">{mode_label}</span></div>
     <div class="row"><span>Reader mode</span> <span class="reader-badge">{reader_label}</span></div>
-    {f'<div class="row"><span>Event ID</span> <span class="val">{self.event_id}</span></div>' if self.event_id else ''}
+    {f'<div class="row"><span>Club ID</span> <span class="val">{self.club_id}</span></div>' if self.bridge_mode == "practice" else ''}
+    {f'<div class="row"><span>Event ID</span> <span class="val">{self.event_id}</span></div>' if self.event_id and self.bridge_mode != "practice" else ''}
   </div>
   <div class="card">
     <h2>Reader Endpoint</h2>
@@ -637,6 +695,20 @@ def main():
         help="Event ID — required for impinj-r700 and zebra-fx7500 reader modes; also required for --rmonitor",
     )
     parser.add_argument(
+        "--mode",
+        default=os.getenv("RMMX_MODE", "race"),
+        choices=["race", "practice"],
+        metavar="MODE",
+        help="Bridge mode: 'race' (default) routes crossings to race moto timing; "
+             "'practice' routes crossings to the active practice session for --club-id.",
+    )
+    parser.add_argument(
+        "--club-id",
+        default=os.getenv("RMMX_CLUB_ID", ""),
+        metavar="N",
+        help="Club ID — required when --mode practice. Find yours in the organizer portal URL.",
+    )
+    parser.add_argument(
         "--rmonitor",
         type=int,
         default=int(os.getenv("RMMX_RMONITOR", "0")),
@@ -655,9 +727,22 @@ def main():
         print()
         sys.exit(1)
 
-    if args.reader in ("impinj-r700", "zebra-fx7500") and not args.event_id:
+    if args.mode == "practice" and not args.club_id:
         print()
-        print(f"ERROR: --event-id is required when using --reader {args.reader}")
+        print("ERROR: --club-id is required when using --mode practice")
+        print()
+        print("Find your Club ID in the organizer portal URL (e.g. /organizer/clubs/3 → club ID is 3).")
+        print()
+        print("Example:")
+        print("  python rfid_bridge.py --api-url https://your-app.replit.app \\")
+        print("                        --mode practice \\")
+        print("                        --club-id 1")
+        print()
+        sys.exit(1)
+
+    if args.mode == "race" and args.reader in ("impinj-r700", "zebra-fx7500") and not args.event_id:
+        print()
+        print(f"ERROR: --event-id is required when using --reader {args.reader} in race mode")
         print()
         print(f"Example:")
         print(f"  python rfid_bridge.py --api-url https://your-app.replit.app \\")
@@ -694,8 +779,12 @@ def main():
     log.info("  RMMX Local RFID Bridge")
     log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     log.info("  Cloud API  : %s", args.api_url)
+    log.info("  Bridge mode: %s", args.mode.upper())
     log.info("  Reader mode: %s", reader_labels.get(args.reader, args.reader))
-    if args.event_id:
+    if args.mode == "practice":
+        log.info("  Club ID    : %s", args.club_id)
+        log.info("  → Crossings route to active practice session for club %s", args.club_id)
+    elif args.event_id:
         log.info("  Event ID   : %s", args.event_id)
     log.info("  Local port : %d", args.port)
     log.info("  Cache file : %s", args.db)
@@ -730,7 +819,9 @@ def main():
     BridgeHandler.api_url = args.api_url
     BridgeHandler.local_port = args.port
     BridgeHandler.reader_mode = args.reader
+    BridgeHandler.bridge_mode = args.mode
     BridgeHandler.event_id = args.event_id
+    BridgeHandler.club_id = args.club_id
     BridgeHandler.db = db
     BridgeHandler.db_lock = db_lock
 
