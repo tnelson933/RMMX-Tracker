@@ -9,7 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RiderLayout } from "@/components/layout/RiderLayout";
-import { riderApi, type RiderHistoryResponse, type EventHistory, type MotoResult } from "@/lib/rider-api";
+import {
+  riderApi,
+  type RiderHistoryResponse,
+  type EventHistory,
+  type MotoResult,
+  type RiderPracticeResponse,
+  type PracticeSessionHistory,
+} from "@/lib/rider-api";
 
 function positionBadge(pos: number) {
   if (pos === 1) return "bg-yellow-400/20 text-yellow-600 border-yellow-400/40";
@@ -17,6 +24,17 @@ function positionBadge(pos: number) {
   if (pos === 3) return "bg-amber-500/20 text-amber-700 border-amber-400/40";
   return "bg-muted text-muted-foreground border-border";
 }
+
+function formatMs(ms: number | null | undefined): string {
+  if (!ms || ms <= 0) return "—";
+  const totalSec = Math.floor(ms / 1000);
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  const dec = Math.floor((ms % 1000) / 10);
+  return `${mins}:${String(secs).padStart(2, "0")}.${String(dec).padStart(2, "0")}`;
+}
+
+// ─── Race history components ────────────────────────────────────────────────
 
 function MotoRow({ moto }: { moto: MotoResult }) {
   const [lapOpen, setLapOpen] = useState(false);
@@ -150,9 +168,107 @@ function EventCard({ event }: { event: EventHistory }) {
   );
 }
 
+// ─── Practice history components ─────────────────────────────────────────────
+
+function PracticeSessionCard({ session }: { session: PracticeSessionHistory }) {
+  const [open, setOpen] = useState(false);
+  const lapsWithTime = session.laps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
+
+  return (
+    <Card>
+      <CardHeader
+        className="cursor-pointer select-none py-4"
+        onClick={() => setOpen(v => !v)}
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <Timer size={15} className="text-primary shrink-0" />
+              <CardTitle className="font-heading font-bold text-base uppercase tracking-tight truncate">
+                {session.sessionName}
+              </CardTitle>
+            </div>
+            <div className="flex items-center gap-3 mt-1 flex-wrap">
+              {session.startedAt && (
+                <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                  <Calendar size={13} />
+                  {new Date(session.startedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                </span>
+              )}
+              {session.startedAt && (
+                <span className="text-xs text-muted-foreground">
+                  {new Date(session.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-5 flex-shrink-0">
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground mb-0.5">Laps</div>
+              <div className="font-heading font-bold text-xl">{session.lapCount}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground mb-0.5">Best Lap</div>
+              <div className="font-mono font-bold text-primary text-sm">
+                {formatMs(session.bestLapMs)}
+              </div>
+            </div>
+            {open ? <ChevronUp size={16} className="text-muted-foreground" /> : <ChevronDown size={16} className="text-muted-foreground" />}
+          </div>
+        </div>
+      </CardHeader>
+
+      {open && lapsWithTime.length > 0 && (
+        <CardContent className="pt-0">
+          <div className="border-t pt-3">
+            <div className="text-xs text-muted-foreground mb-3 font-heading uppercase tracking-wider">
+              Lap Times
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {lapsWithTime.map((lap) => {
+                const isBest = lap.lapTimeMs === session.bestLapMs;
+                return (
+                  <div
+                    key={lap.lapNumber}
+                    className={`rounded px-2 py-2 text-center border ${
+                      isBest
+                        ? "bg-primary/10 border-primary/30"
+                        : "bg-muted border-transparent"
+                    }`}
+                  >
+                    <div className="text-xs text-muted-foreground">Lap {lap.lapNumber}</div>
+                    <div className={`font-mono text-xs font-bold mt-0.5 ${isBest ? "text-primary" : ""}`}>
+                      {formatMs(lap.lapTimeMs)}
+                    </div>
+                    {isBest && (
+                      <div className="text-xs text-primary font-bold mt-0.5">Best</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </CardContent>
+      )}
+
+      {open && lapsWithTime.length === 0 && (
+        <CardContent className="pt-0">
+          <div className="border-t pt-3 text-center text-sm text-muted-foreground py-4">
+            No timed laps recorded in this session
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function RiderHistory() {
   const [, params] = useRoute("/rider/portal/:riderId");
   const riderId = parseInt(params?.riderId ?? "0", 10);
+  const [activeTab, setActiveTab] = useState<"races" | "practice">("races");
 
   const { data, isLoading, error } = useQuery<RiderHistoryResponse>({
     queryKey: ["rider-history", riderId],
@@ -160,13 +276,24 @@ export default function RiderHistory() {
     enabled: !!riderId,
   } as any);
 
+  const { data: practiceData, isLoading: practiceLoading } = useQuery<RiderPracticeResponse>({
+    queryKey: ["rider-practice", riderId],
+    queryFn: () => riderApi.practice(riderId),
+    enabled: !!riderId,
+  } as any);
+
   const rider = data?.rider;
   const history = data?.history ?? [];
+  const practiceSessions = practiceData?.sessions ?? [];
 
   const totalPoints = history.reduce((s, e) => s + e.totalPoints, 0);
   const eventsRaced = history.length;
   const allFinishes = history.flatMap((e) => e.motos).filter((m) => !m.dnf && !m.dns);
   const bestPosition = allFinishes.length > 0 ? Math.min(...allFinishes.map((m) => m.position)) : null;
+
+  const totalPracticeLaps = practiceSessions.reduce((s, sess) => s + sess.lapCount, 0);
+  const allPracticeTimes = practiceSessions.flatMap(s => s.laps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0).map(l => l.lapTimeMs!));
+  const overallBestPracticeMs = allPracticeTimes.length > 0 ? Math.min(...allPracticeTimes) : null;
 
   return (
     <RiderLayout showBack backTo="/rider/portal" backLabel="My Profiles">
@@ -240,26 +367,124 @@ export default function RiderHistory() {
             </Card>
           </div>
 
-          {/* Race history */}
-          <div>
-            <h2 className="font-heading font-bold text-lg uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Flag size={16} className="text-primary" /> Race History
-            </h2>
-            {history.length === 0 ? (
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <Flag size={40} className="mx-auto text-muted-foreground/30 mb-3" />
-                  <p className="text-muted-foreground text-sm">No race results yet</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {history.map((event) => (
-                  <EventCard key={event.eventId} event={event} />
-                ))}
-              </div>
-            )}
+          {/* Tab switcher */}
+          <div className="flex gap-1 border-b border-border">
+            <button
+              onClick={() => setActiveTab("races")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px ${
+                activeTab === "races"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Flag size={14} />
+              Race History
+              {eventsRaced > 0 && (
+                <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
+                  activeTab === "races" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                }`}>
+                  {eventsRaced}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("practice")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px ${
+                activeTab === "practice"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Timer size={14} />
+              Practice
+              {practiceSessions.length > 0 && (
+                <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
+                  activeTab === "practice" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                }`}>
+                  {practiceSessions.length}
+                </span>
+              )}
+            </button>
           </div>
+
+          {/* Race History tab */}
+          {activeTab === "races" && (
+            <div>
+              {history.length === 0 ? (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Flag size={40} className="mx-auto text-muted-foreground/30 mb-3" />
+                    <p className="text-muted-foreground text-sm">No race results yet</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {history.map((event) => (
+                    <EventCard key={event.eventId} event={event} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Practice tab */}
+          {activeTab === "practice" && (
+            <div>
+              {practiceLoading ? (
+                <div className="space-y-3">
+                  {[1, 2].map(i => (
+                    <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />
+                  ))}
+                </div>
+              ) : practiceSessions.length === 0 ? (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Timer size={40} className="mx-auto text-muted-foreground/30 mb-3" />
+                    <p className="text-muted-foreground text-sm">No practice sessions recorded yet</p>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      Practice lap times appear here when your RFID tag is captured during an open practice session.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {/* Practice summary bar */}
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <Card>
+                      <CardContent className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
+                          <Timer size={11} /> Sessions
+                        </div>
+                        <div className="font-heading font-bold text-3xl">{practiceSessions.length}</div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
+                          <Flag size={11} /> Total Laps
+                        </div>
+                        <div className="font-heading font-bold text-3xl">{totalPracticeLaps}</div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
+                          <Clock size={11} /> Best Lap
+                        </div>
+                        <div className="font-heading font-bold text-xl text-primary font-mono">
+                          {formatMs(overallBestPracticeMs)}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {practiceSessions.map((session) => (
+                    <PracticeSessionCard key={session.sessionId} session={session} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : null}
     </RiderLayout>

@@ -7,8 +7,10 @@ import {
   raceResultsTable,
   motosTable,
   eventsTable,
+  practiceCrossingsTable,
+  practiceSessionsTable,
 } from "@workspace/db";
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, desc, asc, or } from "drizzle-orm";
 
 const router = Router();
 
@@ -240,6 +242,90 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
   });
 
   return res.json({ rider, history });
+});
+
+// GET /rider/profiles/:riderId/practice — practice session history for a rider
+router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  // Find crossings by riderId. Also check by rfidNumber on the rider profile as a fallback.
+  const conditions = [eq(practiceCrossingsTable.riderId, riderId)];
+  if (rider.rfidNumber) {
+    conditions.push(eq(practiceCrossingsTable.rfidNumber, rider.rfidNumber));
+  }
+
+  const crossings = await db.select({
+    id: practiceCrossingsTable.id,
+    sessionId: practiceCrossingsTable.sessionId,
+    rfidNumber: practiceCrossingsTable.rfidNumber,
+    lapNumber: practiceCrossingsTable.lapNumber,
+    lapTimeMs: practiceCrossingsTable.lapTimeMs,
+    crossingTime: practiceCrossingsTable.crossingTime,
+    sessionName: practiceSessionsTable.name,
+    sessionStatus: practiceSessionsTable.status,
+    sessionStartedAt: practiceSessionsTable.startedAt,
+    sessionEndedAt: practiceSessionsTable.endedAt,
+  })
+    .from(practiceCrossingsTable)
+    .leftJoin(practiceSessionsTable, eq(practiceCrossingsTable.sessionId, practiceSessionsTable.id))
+    .where(or(...conditions))
+    .orderBy(asc(practiceCrossingsTable.sessionId), asc(practiceCrossingsTable.crossingTime));
+
+  // Group by session
+  const sessionMap = new Map<number, {
+    sessionId: number;
+    sessionName: string;
+    startedAt: string | null;
+    endedAt: string | null;
+    laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
+  }>();
+
+  for (const c of crossings) {
+    if (!sessionMap.has(c.sessionId)) {
+      sessionMap.set(c.sessionId, {
+        sessionId: c.sessionId,
+        sessionName: c.sessionName ?? `Session ${c.sessionId}`,
+        startedAt: c.sessionStartedAt?.toISOString() ?? null,
+        endedAt: c.sessionEndedAt?.toISOString() ?? null,
+        laps: [],
+      });
+    }
+    sessionMap.get(c.sessionId)!.laps.push({
+      lapNumber: c.lapNumber,
+      lapTimeMs: c.lapTimeMs,
+      crossingTime: c.crossingTime.toISOString(),
+    });
+  }
+
+  const sessions = Array.from(sessionMap.values())
+    .sort((a, b) => {
+      // Most recent session first
+      const aTime = a.startedAt ?? "";
+      const bTime = b.startedAt ?? "";
+      return bTime.localeCompare(aTime);
+    })
+    .map(s => {
+      const lapTimes = s.laps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
+      const bestLapMs = lapTimes.length > 0 ? Math.min(...lapTimes.map(l => l.lapTimeMs!)) : null;
+      return {
+        ...s,
+        lapCount: s.laps.length,
+        bestLapMs,
+      };
+    });
+
+  return res.json({ rider: { id: rider.id, firstName: rider.firstName, lastName: rider.lastName }, sessions });
 });
 
 export default router;

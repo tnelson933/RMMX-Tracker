@@ -71,6 +71,31 @@ export interface RiderHistoryResponse {
   history: EventHistory[];
 }
 
+export interface PracticeLap {
+  lapNumber: number;
+  lapTimeMs: number | null;
+  crossingTime: string;
+}
+
+export interface PracticeSessionHistory {
+  sessionId: number;
+  sessionName: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  lapCount: number;
+  bestLapMs: number | null;
+  laps: PracticeLap[];
+}
+
+export interface RiderPracticeResponse {
+  rider: {
+    id: number;
+    firstName: string;
+    lastName: string;
+  };
+  sessions: PracticeSessionHistory[];
+}
+
 export const riderApi = {
   register: (email: string, password: string): Promise<RiderAccount> =>
     apiFetch("/rider/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }),
@@ -89,4 +114,7 @@ export const riderApi = {
 
   history: (riderId: number): Promise<RiderHistoryResponse> =>
     apiFetch(`/rider/profiles/${riderId}/history`),
+
+  practice: (riderId: number): Promise<RiderPracticeResponse> =>
+    apiFetch(`/rider/profiles/${riderId}/practice`),
 };
