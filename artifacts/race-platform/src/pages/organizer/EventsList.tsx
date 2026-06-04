@@ -269,11 +269,12 @@ export default function EventsList() {
     toast({ title: "Event created successfully" });
   };
 
+  const todayStr = format(new Date(), "yyyy-MM-dd");
   const filteredEvents = events?.filter(e => {
     if (filter === "all") return true;
     if (filter === "draft") return e.status === "draft";
     if (filter === "registration_open") return e.status === "registration_open";
-    if (filter === "race_day") return e.status === "race_day";
+    if (filter === "race_day") return e.status === "race_day" || e.date.substring(0, 10) === todayStr;
     if (filter === "completed") return e.status === "completed";
     return true;
   }) || [];
@@ -876,9 +877,19 @@ export default function EventsList() {
                             {(event as any).timingTechnology === "mylaps" ? "MyLaps" : "RFID"}
                           </span>
                         )}
-                        <span className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                          {event.status.replace(/_/g, ' ')}
-                        </span>
+                        {(() => {
+                          const isToday = event.date.substring(0, 10) === todayStr;
+                          const showRaceDay = isToday && event.status !== "completed" && event.status !== "draft";
+                          return (
+                            <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider ${
+                              showRaceDay
+                                ? "bg-red-600 text-white border border-red-500"
+                                : "bg-primary/10 text-primary border border-primary/20"
+                            }`}>
+                              {showRaceDay ? "Race Day" : event.status.replace(/_/g, ' ')}
+                            </span>
+                          );
+                        })()}
                         <ChevronRight className="text-muted-foreground ml-4" />
                       </div>
                     </div>

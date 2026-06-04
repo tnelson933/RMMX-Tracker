@@ -390,7 +390,10 @@ interface UpcomingEvent {
   dist?: number | null;
 }
 
-function statusLabel(s: string) {
+function statusLabel(s: string, date?: string | null) {
+  const todayStr = new Date().toLocaleDateString("en-CA");
+  const isToday = !!date && date.substring(0, 10) === todayStr;
+  if (isToday && s !== "completed" && s !== "draft") return { label: "Race Day", cls: "bg-primary/15 text-primary border-primary/40" };
   if (s === "registration_open") return { label: "Registration Open", cls: "bg-green-500/15 text-green-700 border-green-400/40" };
   if (s === "race_day") return { label: "Race Day", cls: "bg-primary/15 text-primary border-primary/40" };
   return { label: s.replace(/_/g, " "), cls: "bg-muted text-muted-foreground border-border" };
@@ -398,7 +401,7 @@ function statusLabel(s: string) {
 
 function NearbyEventCard({ event }: { event: UpcomingEvent }) {
   const [, navigate] = useLocation();
-  const { label, cls } = statusLabel(event.status);
+  const { label, cls } = statusLabel(event.status, event.date);
   const canRegister = event.status === "registration_open";
 
   return (
@@ -767,7 +770,11 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
 const STATUS_DISPLAY_ORDER: Record<string, number> = { in_progress: 0, scheduled: 1, completed: 2, cancelled: 3 };
 
 function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
-  const isRaceDay = event.status === "race_day";
+  const todayStr = new Date().toLocaleDateString("en-CA");
+  const isRaceDay = event.status === "race_day" || (
+    event.status !== "completed" && event.status !== "draft" &&
+    !!event.eventDate && event.eventDate.substring(0, 10) === todayStr
+  );
   const hasLiveMotos = event.motos.some(m => m.status === "in_progress");
   const myMotos = event.motos.filter(m => m.isAnyFamilyMemberInMoto);
   const [collapsed, setCollapsed] = useState(false);
@@ -938,9 +945,18 @@ export default function RiderHistory() {
   const history = data?.history ?? [];
   const practiceSessions = practiceData?.sessions ?? [];
 
-  // Split schedule events: today = race_day only; upcoming = everything else (registration_open, etc.)
-  const todayEvents = (scheduleData?.events ?? []).filter(e => e.status === "race_day");
-  const upcomingEvents = (scheduleData?.events ?? []).filter(e => e.status !== "race_day" && e.status !== "completed");
+  // Split schedule events: today = race_day status OR date is today; upcoming = everything else
+  const _todayStr = new Date().toLocaleDateString("en-CA");
+  const todayEvents = (scheduleData?.events ?? []).filter(e =>
+    e.status === "race_day" || (
+      e.status !== "completed" && e.status !== "draft" &&
+      !!e.eventDate && e.eventDate.substring(0, 10) === _todayStr
+    )
+  );
+  const upcomingEvents = (scheduleData?.events ?? []).filter(e =>
+    e.status !== "race_day" && e.status !== "completed" &&
+    (!e.eventDate || e.eventDate.substring(0, 10) !== _todayStr)
+  );
 
   // Auto-switch tab based on what the rider has scheduled
   const didAutoTab = useRef(false);

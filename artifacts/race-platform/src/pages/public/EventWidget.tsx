@@ -91,7 +91,10 @@ export default function EventWidget() {
   const [expanded, setExpanded] = useState<number | null>(null);
 
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
-  const isLive = event?.status === "race_day";
+  const isLive = event?.status === "race_day" || (
+    event?.status !== "completed" && event?.status !== "draft" &&
+    !!event?.date && event.date.substring(0, 10) === new Date().toLocaleDateString("en-CA")
+  );
 
   const { data: results } = useListResults(eventId, {
     query: { enabled: !!eventId, refetchInterval: isLive ? 30_000 : false } as any,
@@ -184,8 +187,10 @@ export default function EventWidget() {
     );
   }
 
-  const statusLabel = event.status === "race_day" ? "LIVE" : event.status === "completed" ? "Final Results" : event.status.replace(/_/g, " ");
-  const statusColor = event.status === "race_day" ? "#dc2626" : event.status === "completed" ? "#16a34a" : "#6b7280";
+  const isEventToday = !!event.date && event.date.substring(0, 10) === new Date().toLocaleDateString("en-CA");
+  const isRaceDayStatus = event.status === "race_day" || (isEventToday && event.status !== "completed" && event.status !== "draft");
+  const statusLabel = isRaceDayStatus ? "LIVE" : event.status === "completed" ? "Final Results" : event.status.replace(/_/g, " ");
+  const statusColor = isRaceDayStatus ? "#dc2626" : event.status === "completed" ? "#16a34a" : "#6b7280";
 
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: "#ffffff", minHeight: "100vh", color: "#0f172a" }}>
