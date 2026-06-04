@@ -1,9 +1,7 @@
 import { useState } from "react";
-import { useListEvents, useListMotos } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
   Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle,
@@ -11,7 +9,6 @@ import {
   Info, Timer, ChevronRight, ArrowLeft, Cpu, Zap, Radio, Anchor,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
 
 const BASE_URL = window.location.origin;
@@ -25,16 +22,6 @@ const READER_LABEL: Record<Exclude<RfidReader, "none">, string> = {
   "impinj-r700": "Impinj R700",
   "zebra-fx7500": "Zebra FX7500",
   "generic": "Generic / Other",
-};
-
-type Crossing = {
-  id: number;
-  rfidNumber: string;
-  riderName: string | null;
-  lapNumber: number;
-  lapTime: string | null;
-  crossingTime: string;
-  readerId: string | null;
 };
 
 // ── Payload examples ──────────────────────────────────────────────────────────
@@ -93,18 +80,6 @@ export default function ReaderSetup() {
   const isMylaps = tech === "mylaps";
   const isNativeReader = rfidReader === "impinj-r700" || rfidReader === "zebra-fx7500";
 
-  // ── Native reader event selection (for URL generation) ────────────────────
-  const [rfidEventId, setRfidEventId] = useState("");
-
-  // Computed endpoint URLs
-  const nativeEndpointBase = rfidReader === "impinj-r700"
-    ? `${BASE_URL}/api/timing/impinj-crossing`
-    : `${BASE_URL}/api/timing/zebra-crossing`;
-  const nativeEndpoint = rfidEventId
-    ? `${nativeEndpointBase}?eventId=${rfidEventId}`
-    : `${nativeEndpointBase}?eventId=YOUR_EVENT_ID`;
-  const activeEndpoint = isNativeReader ? nativeEndpoint : GENERIC_ENDPOINT;
-
   // ── Copy states ────────────────────────────────────────────────────────────
   const [copiedFacility, setCopiedFacility] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
@@ -113,40 +88,25 @@ export default function ReaderSetup() {
   const [copiedRmonitor, setCopiedRmonitor] = useState(false);
 
   // ── Generic / test state ───────────────────────────────────────────────────
-  const [selectedEventId, setSelectedEventId] = useState("");
-  const [selectedMotoId, setSelectedMotoId] = useState("");
   const [testRfid, setTestRfid] = useState("");
   const [testReaderId, setTestReaderId] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; body: string } | null>(null);
   const [testLoading, setTestLoading] = useState(false);
 
   // ── Native reader test state ───────────────────────────────────────────────
-  const [nativeTestEventId, setNativeTestEventId] = useState("");
   const [nativeTestEpc, setNativeTestEpc] = useState("");
   const [nativeTestResult, setNativeTestResult] = useState<{ ok: boolean; body: string } | null>(null);
   const [nativeTestLoading, setNativeTestLoading] = useState(false);
 
-  // ── Recent crossings ───────────────────────────────────────────────────────
-  const [crossings, setCrossings] = useState<Crossing[]>([]);
-  const [crossingsLoading, setCrossingsLoading] = useState(false);
-
   // ── AMBrc / MyLaps native state ────────────────────────────────────────────
-  const [ambrcEventId, setAmbrcEventId] = useState("");
   const [ambrcReaderId, setAmbrcReaderId] = useState("finish-line-1");
-  // MyLaps native test
-  const [mylapsTestEventId, setMylapsTestEventId] = useState("");
   const [mylapsTestTransponder, setMylapsTestTransponder] = useState("");
   const [mylapsTestResult, setMylapsTestResult] = useState<{ ok: boolean; body: string } | null>(null);
   const [mylapsTestLoading, setMylapsTestLoading] = useState(false);
 
-  // ── Data hooks ────────────────────────────────────────────────────────────
-  const { data: events } = useListEvents({}, { query: {} as any });
-  const eventId = parseInt(selectedEventId) || 0;
-  const { data: motos } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
-
   // ── Helpers ────────────────────────────────────────────────────────────────
   const copyUrl = () => {
-    navigator.clipboard.writeText(activeEndpoint);
+    navigator.clipboard.writeText(facilityEndpoint);
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
   };
@@ -160,35 +120,15 @@ export default function ReaderSetup() {
     setTimeout(() => setCopiedPayload(false), 2000);
   };
 
-  const loadCrossings = async (motoId: string) => {
-    if (!motoId) return;
-    setCrossingsLoading(true);
-    try {
-      const res = await fetch(`/api/timing/crossings/${motoId}`);
-      const data = await res.json();
-      setCrossings(Array.isArray(data) ? data.slice(-20).reverse() : []);
-    } catch {
-      setCrossings([]);
-    } finally {
-      setCrossingsLoading(false);
-    }
-  };
-
-  const handleMotoChange = (motoId: string) => {
-    setSelectedMotoId(motoId);
-    setTestResult(null);
-    loadCrossings(motoId);
-  };
-
-  // Generic test crossing
+  // Generic test crossing — fires at the facility endpoint, moto auto-discovered
   const sendTest = async () => {
-    if (!testRfid || !selectedMotoId) return;
+    if (!testRfid) return;
     setTestLoading(true);
     setTestResult(null);
     try {
-      const body: Record<string, unknown> = { rfidNumber: testRfid, motoId: parseInt(selectedMotoId) };
+      const body: Record<string, unknown> = { rfidNumber: testRfid };
       if (testReaderId) body.readerId = testReaderId;
-      const res = await fetch("/api/timing/crossing", {
+      const res = await fetch(facilityEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -196,8 +136,7 @@ export default function ReaderSetup() {
       const data = await res.json();
       setTestResult({ ok: res.ok, body: JSON.stringify(data, null, 2) });
       if (res.ok) {
-        toast({ title: "Test crossing accepted", description: `Lap ${data.lapNumber} — ${data.lapTime}` });
-        loadCrossings(selectedMotoId);
+        toast({ title: "Test crossing accepted", description: `Moto ${data.motoId} — Lap ${data.lapNumber ?? "?"}` });
       } else {
         toast({ title: "Crossing rejected", description: data.error, variant: "destructive" });
       }
@@ -209,19 +148,18 @@ export default function ReaderSetup() {
     }
   };
 
-  // MyLaps native test crossing
+  // MyLaps native test crossing — fires at the facility endpoint
   const sendMylapsNativeTest = async () => {
-    if (!mylapsTestTransponder || !mylapsTestEventId) return;
+    if (!mylapsTestTransponder) return;
     setMylapsTestLoading(true);
     setMylapsTestResult(null);
     try {
-      const endpoint = `/api/timing/mylaps-crossing?eventId=${mylapsTestEventId}`;
       const body = {
         transponder: mylapsTestTransponder,
         passingTime: new Date().toISOString(),
         loopId: "finish-line-1",
       };
-      const res = await fetch(endpoint, {
+      const res = await fetch(facilityEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -245,18 +183,16 @@ export default function ReaderSetup() {
     }
   };
 
-  // Native reader test crossing (Impinj or Zebra format)
+  // Native reader test crossing (Impinj or Zebra format) — fires at the facility endpoint
   const sendNativeTest = async () => {
-    if (!nativeTestEpc || !nativeTestEventId) return;
+    if (!nativeTestEpc) return;
     setNativeTestLoading(true);
     setNativeTestResult(null);
     try {
-      let endpoint: string;
       let body: object;
       const now = new Date().toISOString();
 
       if (rfidReader === "impinj-r700") {
-        endpoint = `/api/timing/impinj-crossing?eventId=${nativeTestEventId}`;
         body = {
           events: [{
             type: "tagInventoryEvent",
@@ -270,7 +206,6 @@ export default function ReaderSetup() {
           }],
         };
       } else {
-        endpoint = `/api/timing/zebra-crossing?eventId=${nativeTestEventId}`;
         body = {
           data: {
             type: "RFID",
@@ -287,7 +222,7 @@ export default function ReaderSetup() {
         };
       }
 
-      const res = await fetch(endpoint, {
+      const res = await fetch(facilityEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -299,7 +234,7 @@ export default function ReaderSetup() {
         if (processed?.debounced) {
           toast({ title: "Debounced (duplicate burst)", description: "Tag was read too recently — this is normal." });
         } else {
-          toast({ title: "Test crossing accepted", description: `Moto ${data.motoId} — Lap ${processed?.lapNumber ?? "?"}`});
+          toast({ title: "Test crossing accepted", description: `Moto ${data.motoId} — Lap ${processed?.lapNumber ?? "?"}` });
         }
       } else {
         toast({ title: "Crossing rejected", description: data.error, variant: "destructive" });
@@ -312,21 +247,16 @@ export default function ReaderSetup() {
     }
   };
 
-  // AMBrc helpers — native endpoint, no motoId
-  const nativeAmbrcBodyTemplate = ambrcEventId
-    ? `{\n  "transponder": "%TRANSPONDER%",\n  "passingTime": "%PASSTIME_ISO%"${ambrcReaderId ? `,\n  "loopId": "${ambrcReaderId}"` : ""}\n}`
-    : null;
+  // AMBrc body template — always available, no event selection needed
+  const ambrcBodyTemplate = `{\n  "transponder": "%TRANSPONDER%",\n  "passingTime": "%PASSTIME_ISO%"${ambrcReaderId ? `,\n  "loopId": "${ambrcReaderId}"` : ""}\n}`;
 
   const copyAmbrcBody = () => {
-    if (!nativeAmbrcBodyTemplate) return;
-    navigator.clipboard.writeText(nativeAmbrcBodyTemplate);
+    navigator.clipboard.writeText(ambrcBodyTemplate);
     setCopiedAmbrcBody(true);
     setTimeout(() => setCopiedAmbrcBody(false), 2000);
   };
 
   const downloadAmbrcConfig = () => {
-    if (!ambrcEventId) return;
-    const nativeEndpoint = `${MYLAPS_NATIVE_ENDPOINT_BASE}?eventId=${ambrcEventId}`;
     const config = {
       _readme: [
         "AMBrc HTTP Output Configuration — Rocky Mountain Race Platform",
@@ -335,17 +265,17 @@ export default function ReaderSetup() {
         "HOW TO USE IN AMBrc:",
         "  1. Open AMBrc → Settings → Passings Output → HTTP Output",
         "  2. Enable HTTP output / check 'Send passings via HTTP'",
-        "  3. Set URL to the value in 'nativeEndpoint' below",
+        "  3. Set URL to the value in 'facilityEndpoint' below",
         "  4. Set Method to POST",
         "  5. Add header  Content-Type: application/json",
         "  6. Copy the JSON from 'bodyTemplate' into the Body / Template field",
-        "  7. Save — you never need to change the URL or template between heats",
+        "  7. Save — you never need to change the URL or template between events or heats",
         "",
-        "IMPORTANT: This uses the native /api/timing/mylaps-crossing endpoint.",
-        "The platform auto-discovers whichever moto is In Progress for this event.",
-        "No motoId in the payload — it is resolved server-side from the eventId in the URL.",
+        "IMPORTANT: This uses the facility endpoint (/api/timing/active/crossing?clubId=N).",
+        "The platform auto-discovers whichever moto is In Progress for your club.",
+        "No eventId or motoId needed — the server resolves the active moto automatically.",
       ],
-      nativeEndpoint,
+      facilityEndpoint,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       bodyTemplate: {
@@ -356,17 +286,16 @@ export default function ReaderSetup() {
       variableNotes: {
         "%TRANSPONDER%": "Transponder number / passing code — AMBrc built-in variable",
         "%PASSTIME_ISO%": "ISO 8601 hardware timestamp from the decoder's clock",
-        eventId: `Embedded in the URL — routes to event ID ${ambrcEventId}`,
       },
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ambrc-config-event-${ambrcEventId}.json`;
+    a.download = "ambrc-config.json";
     a.click();
     URL.revokeObjectURL(url);
-    toast({ title: "Config downloaded", description: `ambrc-config-event-${ambrcEventId}.json` });
+    toast({ title: "Config downloaded", description: "ambrc-config.json" });
   };
 
   // ── Step number helper ──────────────────────────────────────────────────────
@@ -905,7 +834,7 @@ export default function ReaderSetup() {
                 <Step n={3} />
                 <div className="space-y-1.5 min-w-0">
                   <div className="flex items-center gap-2"><ClipboardList size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Create your event and motos</p></div>
-                  <p className="text-sm text-muted-foreground">In <span className="font-semibold text-foreground">Events</span>, create the race event. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. Each moto has a unique <code className="font-mono bg-muted px-1 rounded">motoId</code> — you'll include this in every crossing payload so the platform knows which race is running.</p>
+                  <p className="text-sm text-muted-foreground">In <span className="font-semibold text-foreground">Events</span>, create the race event. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. The facility endpoint auto-routes to whichever moto is currently In Progress — no moto ID needed in your payload.</p>
                 </div>
               </div>
               <div className="flex gap-4 py-5">
@@ -915,7 +844,6 @@ export default function ReaderSetup() {
                   <p className="text-sm text-muted-foreground">In your reader's configuration software, set output type to <span className="font-semibold text-foreground">HTTP POST</span>. Set Content-Type to <code className="font-mono bg-muted px-1 rounded">application/json</code> and configure the JSON body to include at minimum:</p>
                   <ul className="text-sm text-muted-foreground space-y-1 mt-1 ml-4 list-disc">
                     <li><code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code> — tag ID reported by the reader</li>
-                    <li><code className="font-mono bg-muted px-1 rounded text-xs">motoId</code> — ID of the active moto (update before each heat)</li>
                     <li><code className="font-mono bg-muted px-1 rounded text-xs">crossingTime</code> — ISO 8601 timestamp (optional; server time used if omitted)</li>
                     <li><code className="font-mono bg-muted px-1 rounded text-xs">readerId</code> — e.g. <code className="font-mono bg-muted px-1 rounded text-xs">"finish-line-1"</code> (optional, for diagnostics)</li>
                   </ul>
@@ -933,7 +861,7 @@ export default function ReaderSetup() {
                 <Step n={6} />
                 <div className="space-y-1.5 min-w-0">
                   <div className="flex items-center gap-2"><FlaskConical size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Test the connection</p></div>
-                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Test Connection</span> tool below. Select an in-progress moto, enter a known tag number, and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" response confirms everything is wired up correctly.</p>
+                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Test Connection</span> tool below. Enter a known tag number and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" response confirms everything is wired up correctly (a moto must be In Progress to accept the crossing).</p>
                 </div>
               </div>
             </>
@@ -950,69 +878,51 @@ export default function ReaderSetup() {
               <CardTitle className="font-heading uppercase tracking-wider text-base">AMBrc Output Configuration</CardTitle>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Select your event to generate a native endpoint URL and minimal body template. With the native endpoint you set AMBrc once — no motoId updates between heats.
+              Set AMBrc once — the facility endpoint auto-routes to whichever moto is In Progress for your club. No event ID or moto ID needed.
             </p>
           </CardHeader>
           <CardContent className="pt-5 space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
-                <Select value={ambrcEventId} onValueChange={v => { setAmbrcEventId(v); }}>
-                  <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
-                  <SelectContent>
-                    {events?.filter((e: any) => e.timingTechnology === "mylaps").map(e => (
-                      <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">(ID: {e.id})</span></SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            <div className="space-y-1.5 max-w-xs">
+              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Loop / Reader ID (optional)</label>
+              <Input value={ambrcReaderId} onChange={e => setAmbrcReaderId(e.target.value)} placeholder="e.g. finish-line-1" className="font-mono h-11" />
+            </div>
+
+            {/* Facility endpoint */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Endpoint URL</p>
+                <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700 text-[10px] font-bold uppercase tracking-wider">Set Once</Badge>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Loop / Reader ID (optional)</label>
-                <Input value={ambrcReaderId} onChange={e => setAmbrcReaderId(e.target.value)} placeholder="e.g. finish-line-1" className="font-mono h-11" />
+              <div className="flex items-center gap-2">
+                <code className="flex-1 font-mono text-xs bg-muted px-3 py-2.5 rounded border overflow-x-auto">
+                  {facilityEndpoint}
+                </code>
+                <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(facilityEndpoint); toast({ title: "Copied!" }); }} className="shrink-0 gap-1.5"><Copy size={13} /> Copy</Button>
+              </div>
+              <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800/40 rounded-md px-3 py-2 text-xs text-green-800 dark:text-green-300 flex gap-2">
+                <Zap size={12} className="shrink-0 mt-0.5 text-green-600 dark:text-green-400" />
+                <span>Set this URL in AMBrc once — it works for every event and heat. The server finds whichever moto is In Progress for your club automatically.</span>
               </div>
             </div>
-            {ambrcEventId ? (
-              <div className="space-y-4">
-                {/* Native endpoint */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Native Endpoint URL</p>
-                    <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700 text-[10px] font-bold uppercase tracking-wider">Recommended</Badge>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 font-mono text-xs bg-muted px-3 py-2.5 rounded border overflow-x-auto">
-                      {MYLAPS_NATIVE_ENDPOINT_BASE}?eventId={ambrcEventId}
-                    </code>
-                    <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(`${MYLAPS_NATIVE_ENDPOINT_BASE}?eventId=${ambrcEventId}`); toast({ title: "Copied!" }); }} className="shrink-0 gap-1.5"><Copy size={13} /> Copy</Button>
-                  </div>
-                  <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800/40 rounded-md px-3 py-2 text-xs text-green-800 dark:text-green-300 flex gap-2">
-                    <Zap size={12} className="shrink-0 mt-0.5 text-green-600 dark:text-green-400" />
-                    <span>Set this URL in AMBrc once. The platform auto-detects whichever moto is In Progress — you never update it between heats.</span>
-                  </div>
-                </div>
 
-                {/* Native body template */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">JSON Body Template (native)</p>
-                    <Button variant="outline" size="sm" onClick={copyAmbrcBody} className="gap-1.5">{copiedAmbrcBody ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}</Button>
-                  </div>
-                  <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">{`{\n  "transponder": "%TRANSPONDER%",\n  "passingTime": "%PASSTIME_ISO%"${ambrcReaderId ? `,\n  "loopId": "${ambrcReaderId}"` : ""}\n}`}</pre>
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/40 rounded-md px-3 py-2 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
-                    <Info size={13} className="shrink-0 mt-0.5" />
-                    <span><span className="font-bold">%TRANSPONDER%</span> and <span className="font-bold">%PASSTIME_ISO%</span> are AMBrc built-in template variables. No <code className="font-mono">motoId</code> needed — the endpoint URL handles that via <code className="font-mono">?eventId={ambrcEventId}</code>.</span>
-                  </div>
-                </div>
-
-                {/* Download */}
-                <div className="flex items-center gap-3 pt-1">
-                  <Button onClick={downloadAmbrcConfig} className="font-heading uppercase tracking-wider h-11 px-6 gap-2"><FileDown size={16} /> Download Config Reference</Button>
-                  <p className="text-xs text-muted-foreground">Saves a JSON reference file — open it on your scoring computer while configuring AMBrc.</p>
-                </div>
+            {/* Body template */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">JSON Body Template</p>
+                <Button variant="outline" size="sm" onClick={copyAmbrcBody} className="gap-1.5">{copiedAmbrcBody ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}</Button>
               </div>
-            ) : (
-              <div className="rounded border border-dashed bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">Select a MyLaps event above to generate the endpoint URL and body template.</div>
-            )}
+              <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">{ambrcBodyTemplate}</pre>
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/40 rounded-md px-3 py-2 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
+                <Info size={13} className="shrink-0 mt-0.5" />
+                <span><span className="font-bold">%TRANSPONDER%</span> and <span className="font-bold">%PASSTIME_ISO%</span> are AMBrc built-in template variables. No <code className="font-mono">motoId</code> or <code className="font-mono">eventId</code> needed — the facility endpoint handles routing automatically.</span>
+              </div>
+            </div>
+
+            {/* Download */}
+            <div className="flex items-center gap-3 pt-1">
+              <Button onClick={downloadAmbrcConfig} className="font-heading uppercase tracking-wider h-11 px-6 gap-2"><FileDown size={16} /> Download Config Reference</Button>
+              <p className="text-xs text-muted-foreground">Saves a JSON reference file — open it on your scoring computer while configuring AMBrc.</p>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1066,17 +976,17 @@ export default function ReaderSetup() {
                     <p className="text-muted-foreground text-xs mt-0.5">Open a terminal in the folder where you saved the script and run:</p>
                     {rfidReader === "impinj-r700" && (
                       <pre className="mt-1.5 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">
-{`python rfid_bridge.py --api-url ${BASE_URL} --reader impinj-r700 --event-id YOUR_EVENT_ID`}
+{`python rfid_bridge.py --api-url ${BASE_URL} --reader impinj-r700 --club-id ${user?.clubId ?? "YOUR_CLUB_ID"}`}
                       </pre>
                     )}
                     {rfidReader === "zebra-fx7500" && (
                       <pre className="mt-1.5 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">
-{`python rfid_bridge.py --api-url ${BASE_URL} --reader zebra-fx7500 --event-id YOUR_EVENT_ID`}
+{`python rfid_bridge.py --api-url ${BASE_URL} --reader zebra-fx7500 --club-id ${user?.clubId ?? "YOUR_CLUB_ID"}`}
                       </pre>
                     )}
                     {rfidReader === "generic" && (
                       <pre className="mt-1.5 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">
-{`python rfid_bridge.py --api-url ${BASE_URL}`}
+{`python rfid_bridge.py --api-url ${BASE_URL} --club-id ${user?.clubId ?? "YOUR_CLUB_ID"}`}
                       </pre>
                     )}
                     <p className="text-muted-foreground text-xs mt-1.5">Status page appears at <code className="font-mono bg-muted px-1 rounded">http://localhost:5555</code> showing live sync counts.</p>
@@ -1088,15 +998,7 @@ export default function ReaderSetup() {
                   <div>
                     <p className="font-medium">Point your reader at the bridge instead of the cloud</p>
                     <p className="text-muted-foreground text-xs mt-0.5">In your reader's HTTP output config, use this local address instead:</p>
-                    {rfidReader === "impinj-r700" && (
-                      <pre className="mt-1 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">http://localhost:5555/timing/impinj-crossing?eventId=YOUR_EVENT_ID</pre>
-                    )}
-                    {rfidReader === "zebra-fx7500" && (
-                      <pre className="mt-1 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">http://localhost:5555/timing/zebra-crossing?eventId=YOUR_EVENT_ID</pre>
-                    )}
-                    {rfidReader === "generic" && (
-                      <pre className="mt-1 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">http://localhost:5555/timing/crossing</pre>
-                    )}
+                    <pre className="mt-1 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">{`http://localhost:5555/timing/active/crossing?clubId=${user?.clubId ?? "YOUR_CLUB_ID"}`}</pre>
                     <p className="text-muted-foreground text-xs mt-1.5">That's it. The bridge accepts the same format your reader already sends and forwards it to the cloud.</p>
                   </div>
                 </div>
@@ -1111,7 +1013,7 @@ export default function ReaderSetup() {
                 <p><span className="text-foreground">--port 5555</span>   &nbsp;Local port (default 5555)</p>
                 <p><span className="text-foreground">--retry 10</span>  &nbsp;Seconds between retry attempts when offline (default 10)</p>
                 <p><span className="text-foreground">--db path</span>   &nbsp;SQLite cache file location</p>
-                {isNativeReader && <p><span className="text-foreground">--event-id N</span>&nbsp;Event ID embedded in the cloud endpoint URL (required for native readers)</p>}
+                <p><span className="text-foreground">--club-id N</span>&nbsp;Your club ID — required so the bridge forwards to the correct facility endpoint</p>
               </div>
             </div>
           </CardContent>
@@ -1122,43 +1024,21 @@ export default function ReaderSetup() {
       <Card>
         <CardHeader className="pb-3 border-b">
           <CardTitle className="font-heading uppercase tracking-wider text-base">
-            {isNativeReader ? `Native Endpoint — ${readerLabel}` : "API Endpoint"}
+            {isNativeReader ? `Endpoint — ${readerLabel}` : "API Endpoint"}
           </CardTitle>
-          {isNativeReader && (
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Select your event below to generate the exact URL to paste into your reader's configuration.
-            </p>
-          )}
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {isNativeReader
+              ? `The facility endpoint accepts the ${readerLabel}'s native payload format directly — paste it into your reader's HTTP output config and never change it.`
+              : "Point your reader at this URL. The platform automatically routes crossings to whichever moto is currently In Progress for your club."}
+          </p>
         </CardHeader>
         <CardContent className="pt-5 space-y-5">
-
-          {/* Event picker for native readers */}
-          {isNativeReader && (
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Your Event</label>
-              <Select value={rfidEventId} onValueChange={setRfidEventId}>
-                <SelectTrigger className="h-11 max-w-sm"><SelectValue placeholder="Select event to generate URL..." /></SelectTrigger>
-                <SelectContent>
-                  {events?.map(e => (
-                    <SelectItem key={e.id} value={e.id.toString()}>
-                      {e.name} <span className="text-muted-foreground ml-1">(ID: {e.id})</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {!rfidEventId && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                  <Info size={11} /> Select your event to get the final URL with the correct event ID.
-                </p>
-              )}
-            </div>
-          )}
 
           {/* Endpoint URL row */}
           <div className="flex items-center gap-3">
             <Badge className="font-mono font-bold px-3 py-1 bg-primary text-primary-foreground text-sm shrink-0">POST</Badge>
-            <code className={`flex-1 font-mono text-sm bg-muted px-3 py-2 rounded border overflow-x-auto ${!rfidEventId && isNativeReader ? "text-muted-foreground" : ""}`}>
-              {activeEndpoint}
+            <code className="flex-1 font-mono text-sm bg-muted px-3 py-2 rounded border overflow-x-auto">
+              {facilityEndpoint}
             </code>
             <Button variant="outline" size="sm" onClick={copyUrl} className="shrink-0 gap-2">
               {copiedUrl ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
@@ -1190,20 +1070,18 @@ export default function ReaderSetup() {
               <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">
                 {isNativeReader
                   ? `{\n  "ok": true,\n  "processed": 1,\n  "motoId": 12,\n  "results": [\n    {\n      "rfidNumber": "300833B2DDD9014000000003",\n      "crossingId": 4501,\n      "lapNumber": 3,\n      "lapTimeMs": 112340\n    }\n  ]\n}`
-                  : `{\n  "ok": true,\n  "crossingId": 4501,\n  "lapNumber": 3,\n  "lapTime": "1:52.34",\n  "lapTimeMs": 112340\n}`}
+                  : `{\n  "ok": true,\n  "motoId": 12,\n  "crossingId": 4501,\n  "lapNumber": 3,\n  "lapTime": "1:52.34",\n  "lapTimeMs": 112340\n}`}
               </pre>
             </div>
           </div>
 
-          {isNativeReader && (
-            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-700/40 rounded-md px-4 py-3 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
-              <Info size={13} className="shrink-0 mt-0.5" />
-              <div>
-                <span className="font-semibold">Moto auto-discovery:</span>{" "}
-                The <code className="font-mono">?eventId=N</code> in the URL tells the platform which event to score. It automatically finds whichever moto has status <code className="font-mono">in_progress</code> — so you set the URL once and never change it between heats. A <code className="font-mono">409</code> response means no moto is currently in progress for that event.
-              </div>
+          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-700/40 rounded-md px-4 py-3 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
+            <Info size={13} className="shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold">Moto auto-discovery:</span>{" "}
+              The <code className="font-mono">?clubId=N</code> in the URL tells the platform which club's timing to score. It automatically finds whichever moto has status <code className="font-mono">in_progress</code> — so you configure the URL once and never touch it again between events or heats. A <code className="font-mono">409</code> response means no moto is currently in progress.
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 
@@ -1227,34 +1105,20 @@ export default function ReaderSetup() {
           {isMylaps ? (
             /* MyLaps native test tool */
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
-                  <Select value={mylapsTestEventId} onValueChange={setMylapsTestEventId}>
-                    <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
-                    <SelectContent>
-                      {events?.filter((e: any) => e.timingTechnology === "mylaps").map(e => (
-                        <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">({e.status})</span></SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">Must have a moto set to In Progress.</p>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Transponder Number</label>
-                  <Input
-                    value={mylapsTestTransponder}
-                    onChange={e => setMylapsTestTransponder(e.target.value)}
-                    placeholder="e.g. 12345"
-                    className="font-mono h-11"
-                  />
-                  <p className="text-xs text-muted-foreground">The numeric ID on the rider's MyLaps transponder.</p>
-                </div>
+              <div className="space-y-1.5 max-w-xs">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Transponder Number</label>
+                <Input
+                  value={mylapsTestTransponder}
+                  onChange={e => setMylapsTestTransponder(e.target.value)}
+                  placeholder="e.g. 12345"
+                  className="font-mono h-11"
+                />
+                <p className="text-xs text-muted-foreground">The numeric ID on the rider's MyLaps transponder. A moto must be In Progress to accept the crossing.</p>
               </div>
 
               <Button
                 onClick={sendMylapsNativeTest}
-                disabled={mylapsTestLoading || !mylapsTestEventId || !mylapsTestTransponder}
+                disabled={mylapsTestLoading || !mylapsTestTransponder}
                 className="font-heading uppercase tracking-wider h-11 px-6 gap-2"
               >
                 {mylapsTestLoading ? <><RefreshCw size={16} className="animate-spin" /> Sending…</> : <><Send size={16} /> Send Test Crossing</>}
@@ -1275,36 +1139,22 @@ export default function ReaderSetup() {
           ) : isNativeReader ? (
             /* Native RFID reader test tool (Impinj / Zebra) */
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
-                  <Select value={nativeTestEventId} onValueChange={setNativeTestEventId}>
-                    <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
-                    <SelectContent>
-                      {events?.map(e => (
-                        <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">({e.status})</span></SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">Must have a moto with status In Progress.</p>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    Tag EPC ({rfidReader === "impinj-r700" ? "epcHex" : "idHex"})
-                  </label>
-                  <Input
-                    value={nativeTestEpc}
-                    onChange={e => setNativeTestEpc(e.target.value.toUpperCase())}
-                    placeholder={rfidReader === "impinj-r700" ? "300833B2DDD9014000000003" : "E2003411B802011820000D4E"}
-                    className="font-mono h-11 uppercase"
-                  />
-                  <p className="text-xs text-muted-foreground">Enter the EPC of a tag assigned to a rider to verify end-to-end.</p>
-                </div>
+              <div className="space-y-1.5 max-w-xs">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Tag EPC ({rfidReader === "impinj-r700" ? "epcHex" : "idHex"})
+                </label>
+                <Input
+                  value={nativeTestEpc}
+                  onChange={e => setNativeTestEpc(e.target.value.toUpperCase())}
+                  placeholder={rfidReader === "impinj-r700" ? "300833B2DDD9014000000003" : "E2003411B802011820000D4E"}
+                  className="font-mono h-11 uppercase"
+                />
+                <p className="text-xs text-muted-foreground">Enter the EPC of a tag assigned to a rider. A moto must be In Progress to accept the crossing.</p>
               </div>
 
               <Button
                 onClick={sendNativeTest}
-                disabled={nativeTestLoading || !nativeTestEventId || !nativeTestEpc}
+                disabled={nativeTestLoading || !nativeTestEpc}
                 className="font-heading uppercase tracking-wider h-11 px-6 gap-2"
               >
                 {nativeTestLoading ? <><RefreshCw size={16} className="animate-spin" /> Sending…</> : <><Send size={16} /> Send Test Crossing</>}
@@ -1325,49 +1175,21 @@ export default function ReaderSetup() {
           ) : (
             /* Generic reader test tool */
             <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
-                  <Select value={selectedEventId} onValueChange={v => { setSelectedEventId(v); setSelectedMotoId(""); setCrossings([]); }}>
-                    <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
-                    <SelectContent>
-                      {events?.map(e => (
-                        <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">({e.status})</span></SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Moto</label>
-                  <Select value={selectedMotoId} onValueChange={handleMotoChange} disabled={!selectedEventId}>
-                    <SelectTrigger className="h-11"><SelectValue placeholder="Select moto..." /></SelectTrigger>
-                    <SelectContent>
-                      {motos?.map(m => (
-                        <SelectItem key={m.id} value={m.id.toString()}>
-                          <span className="flex items-center gap-2">{m.name}<Badge variant={m.status === "in_progress" ? "default" : "secondary"} className="text-[10px] px-1.5 py-0">{m.status}</Badge></span>
-                        </SelectItem>
-                      ))}
-                      {motos?.length === 0 && <SelectItem value="__none" disabled>No motos for this event</SelectItem>}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">RFID Tag Number</label>
                   <Input value={testRfid} onChange={e => setTestRfid(e.target.value)} placeholder="e.g. 1A2B3C4D" className="font-mono h-11" />
+                  <p className="text-xs text-muted-foreground">A moto must be In Progress to accept the crossing.</p>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="space-y-1.5 flex-1 max-w-xs">
+                <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reader ID (optional)</label>
                   <Input value={testReaderId} onChange={e => setTestReaderId(e.target.value)} placeholder="finish-line-1" className="font-mono h-11" />
                 </div>
-                <div className="pt-6">
-                  <Button onClick={sendTest} disabled={testLoading || !testRfid || !selectedMotoId} className="font-heading uppercase tracking-wider h-11 px-6 gap-2">
-                    {testLoading ? <><RefreshCw size={16} className="animate-spin" /> Sending…</> : <><Send size={16} /> Send Test Crossing</>}
-                  </Button>
-                </div>
               </div>
+
+              <Button onClick={sendTest} disabled={testLoading || !testRfid} className="font-heading uppercase tracking-wider h-11 px-6 gap-2">
+                {testLoading ? <><RefreshCw size={16} className="animate-spin" /> Sending…</> : <><Send size={16} /> Send Test Crossing</>}
+              </Button>
 
               {testResult && (
                 <div className={`rounded-lg border p-4 space-y-2 ${testResult.ok ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-destructive/5 border-destructive/30"}`}>
@@ -1388,11 +1210,11 @@ export default function ReaderSetup() {
 
       {/* ── RMonitor Live Output — scoreboard / announcer TCP feed ─────────── */}
       {(() => {
-        const evId = rfidEventId || nativeTestEventId || ambrcEventId || selectedEventId;
+        const clubId = user?.clubId;
         const bridgeCmd = [
           "python rfid_bridge.py",
           `  --api-url ${BASE_URL}`,
-          evId ? `  --event-id ${evId}` : "  --event-id YOUR_EVENT_ID",
+          clubId ? `  --club-id ${clubId}` : "  --club-id YOUR_CLUB_ID",
           "  --rmonitor 50000",
         ].join(" \\\n");
         const copyRmon = () => {
@@ -1430,7 +1252,6 @@ export default function ReaderSetup() {
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Bridge Command
-                  {!evId && <span className="ml-2 text-amber-500 normal-case font-normal">— select an event above to fill in the event ID</span>}
                 </label>
                 <div className="flex items-stretch gap-2">
                   <pre className="flex-1 font-mono text-xs bg-background border rounded-md p-3 overflow-x-auto leading-relaxed text-foreground whitespace-pre">{bridgeCmd}</pre>
@@ -1482,57 +1303,6 @@ export default function ReaderSetup() {
         );
       })()}
 
-      {/* Recent Crossings — for moto-based review */}
-      {(selectedMotoId || crossings.length > 0) && !isNativeReader && (
-        <Card>
-          <CardHeader className="pb-3 border-b">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Circle size={18} className="text-primary shrink-0" />
-                <CardTitle className="font-heading uppercase tracking-wider text-base">Recent Crossings</CardTitle>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => loadCrossings(selectedMotoId)} disabled={crossingsLoading || !selectedMotoId} className="gap-1.5 text-xs">
-                <RefreshCw size={13} className={crossingsLoading ? "animate-spin" : ""} /> Refresh
-              </Button>
-            </div>
-            <p className="text-sm text-muted-foreground mt-0.5">Last 20 crossings for the selected moto. Updates after each test crossing.</p>
-          </CardHeader>
-          <CardContent className="pt-4">
-            {crossings.length === 0 ? (
-              <div className="text-center text-sm text-muted-foreground py-8">
-                {crossingsLoading ? "Loading…" : selectedMotoId ? "No crossings recorded yet for this moto." : "Select a moto above to view crossings."}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      <th className="text-left py-2 pr-4">Time</th>
-                      <th className="text-left py-2 pr-4">Tag</th>
-                      <th className="text-left py-2 pr-4">Rider</th>
-                      <th className="text-right py-2 pr-4">Lap #</th>
-                      <th className="text-right py-2">Lap Time</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {crossings.map(c => (
-                      <tr key={c.id} className="hover:bg-muted/40 transition-colors">
-                        <td className="py-2 pr-4 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                          {format(new Date(c.crossingTime), "HH:mm:ss.SSS")}
-                        </td>
-                        <td className="py-2 pr-4 font-mono text-xs">{c.rfidNumber}</td>
-                        <td className="py-2 pr-4 text-xs">{c.riderName ?? <span className="text-muted-foreground">Unknown</span>}</td>
-                        <td className="py-2 pr-4 text-right text-xs font-mono">{c.lapNumber}</td>
-                        <td className="py-2 text-right font-mono text-xs font-semibold">{c.lapTime ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
