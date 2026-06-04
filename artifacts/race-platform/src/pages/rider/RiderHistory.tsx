@@ -782,7 +782,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
 
   // "Now Up" = rider's first upcoming moto in run order; "Up Next" = their second
   const myScheduled = event.motos
-    .filter(m => m.isAnyFamilyMemberInMoto && m.status === "scheduled")
+    .filter(m => m.isAnyFamilyMemberInMoto && !["completed", "cancelled", "in_progress"].includes(m.status))
     .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
   const nowUpMotoId = myScheduled[0]?.motoId ?? null;
   const upNextMotoId = myScheduled[1]?.motoId ?? null;
