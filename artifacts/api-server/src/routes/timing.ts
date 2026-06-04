@@ -406,6 +406,119 @@ async function getActiveMotoForEvent(eventId: number) {
   return rows[0] ?? null;
 }
 
+// ── Helper: find the in-progress moto across ALL events for a club ─────────────
+// Used by the stable "facility endpoint" so hardware never needs reconfiguring.
+async function getActiveMotoForClub(clubId: number) {
+  const rows = await db
+    .select({ moto: motosTable })
+    .from(motosTable)
+    .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
+    .where(and(eq(eventsTable.clubId, clubId), eq(motosTable.status, "in_progress")));
+  return rows[0]?.moto ?? null;
+}
+
+// POST /timing/active/crossing?clubId=N — stable "facility" endpoint
+// ─────────────────────────────────────────────────────────────────────────────
+// Configure your hardware ONCE with this URL + your club ID, then never touch
+// it again.  The server automatically routes each crossing to whichever moto is
+// currently in_progress for any of your club's events.
+//
+// Accepts ALL hardware payload formats:
+//   • Generic / bridge:  { rfidNumber, crossingTime? }
+//   • AMBrc / MyLaps:    { transponder, passingTime? }
+//   • Impinj R700:       { events: [{ type:"tagInventoryEvent", tagInventoryEvent:{epcHex,firstSeenTime} }] }
+//   • Zebra FX7500:      { data: { tags: [{idHex, firstSeenTimestamp}] } } or { tags:[...] }
+router.post("/timing/active/crossing", async (req, res) => {
+  const clubId = Number(req.query.clubId);
+  if (!clubId || isNaN(clubId)) {
+    return res.status(400).json({ error: "clubId query param is required" });
+  }
+
+  const body = req.body as any;
+
+  // ── Impinj R700 native IoT Connector format ─────────────────────────────────
+  if (Array.isArray(body?.events)) {
+    const tagEvents = (body.events as any[])
+      .filter((e: any) => e?.type === "tagInventoryEvent" && e?.tagInventoryEvent?.epcHex)
+      .map((e: any) => e.tagInventoryEvent as { epcHex: string; antennaPort?: number; firstSeenTime?: string });
+
+    if (tagEvents.length === 0) {
+      return res.json({ ok: true, processed: 0, note: "No tagInventoryEvent entries in payload" });
+    }
+    const moto = await getActiveMotoForClub(clubId);
+    if (!moto) {
+      return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+    }
+    const results: unknown[] = [];
+    for (const tag of tagEvents) {
+      const rfidNumber = tag.epcHex.toUpperCase();
+      const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
+      if (isNaN(crossingTime.getTime())) { results.push({ rfidNumber, error: "Invalid firstSeenTime" }); continue; }
+      try {
+        const r = await processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "impinj-r700", antennaId: tag.antennaPort });
+        results.push(r.debounced ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
+      } catch (err: any) { results.push({ rfidNumber, error: err.message }); }
+    }
+    return res.json({ ok: true, processed: tagEvents.length, motoId: moto.id, results });
+  }
+
+  // ── Zebra FX7500 format ─────────────────────────────────────────────────────
+  const zebraTags: any[] = Array.isArray(body?.data?.tags) ? body.data.tags
+    : Array.isArray(body?.tags) ? body.tags : [];
+  if (zebraTags.length > 0) {
+    const moto = await getActiveMotoForClub(clubId);
+    if (!moto) {
+      return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+    }
+    const results: unknown[] = [];
+    for (const tag of zebraTags) {
+      const rfidNumber = ((tag.idHex || tag.epc) as string | undefined ?? "").toUpperCase();
+      if (!rfidNumber) { results.push({ error: "Tag missing idHex/epc field" }); continue; }
+      const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
+      try {
+        const r = await processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "zebra-fx7500", antennaId: tag.antennaPort });
+        results.push(r.debounced ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
+      } catch (err: any) { results.push({ rfidNumber, error: err.message }); }
+    }
+    return res.json({ ok: true, processed: zebraTags.length, motoId: moto.id, results });
+  }
+
+  // ── Generic / AMBrc / MyLaps format ────────────────────────────────────────
+  const rfidNumber: string | undefined =
+    body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
+  if (!rfidNumber) {
+    return res.status(400).json({
+      error: "Cannot extract tag/transponder ID — expected rfidNumber, transponder, transponderId, Impinj events[], or Zebra tags[]",
+    });
+  }
+  const rawTime: string | undefined =
+    body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
+  const crossingTime = rawTime ? new Date(rawTime) : new Date();
+  if (isNaN(crossingTime.getTime())) {
+    return res.status(400).json({ error: "Invalid crossing time — must be ISO 8601" });
+  }
+
+  const moto = await getActiveMotoForClub(clubId);
+  if (!moto) {
+    return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+  }
+  const readerId: string = body?.loopId ?? body?.readerId ?? body?.readername ?? "rfid";
+
+  try {
+    const result = await processCrossing({ rfidNumber: String(rfidNumber), motoId: moto.id, crossingTime, readerId });
+    if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });
+    return res.json({
+      ok: true, motoId: moto.id,
+      crossingId: result.crossing?.id,
+      lapNumber: result.lapNumber,
+      lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null,
+      lapTimeMs: result.lapTimeMs,
+    });
+  } catch (err: any) {
+    return res.status(409).json({ error: err.message });
+  }
+});
+
 // POST /timing/impinj-crossing?eventId=N — Impinj R700 native IoT Connector format
 // Body: { events: [{ type: "tagInventoryEvent", tagInventoryEvent: { epcHex, antennaPort, firstSeenTime } }] }
 router.post("/timing/impinj-crossing", async (req, res) => {

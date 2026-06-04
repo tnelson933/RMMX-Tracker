@@ -8,14 +8,16 @@ import { Badge } from "@/components/ui/badge";
 import {
   Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle,
   ClipboardList, FlaskConical, Download, WifiOff, ShieldCheck, Terminal, FileDown,
-  Info, Timer, ChevronRight, ArrowLeft, Cpu, Zap, Radio,
+  Info, Timer, ChevronRight, ArrowLeft, Cpu, Zap, Radio, Anchor,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { useAuth } from "@/contexts/AuthContext";
 
 const BASE_URL = window.location.origin;
 const GENERIC_ENDPOINT = `${BASE_URL}/api/timing/crossing`;
 const MYLAPS_NATIVE_ENDPOINT_BASE = `${BASE_URL}/api/timing/mylaps-crossing`;
+const FACILITY_ENDPOINT_BASE = `${BASE_URL}/api/timing/active/crossing`;
 
 type RfidReader = "none" | "impinj-r700" | "zebra-fx7500" | "generic";
 
@@ -78,6 +80,12 @@ const GENERIC_PAYLOAD = `{
 
 export default function ReaderSetup() {
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  // Facility (club-level) endpoint — set once, works for every future event
+  const facilityEndpoint = user?.clubId
+    ? `${FACILITY_ENDPOINT_BASE}?clubId=${user.clubId}`
+    : `${FACILITY_ENDPOINT_BASE}?clubId=YOUR_CLUB_ID`;
 
   // ── Technology + reader selection ──────────────────────────────────────────
   const [tech, setTech] = useState<"none" | "rfid" | "mylaps">("none");
@@ -98,6 +106,7 @@ export default function ReaderSetup() {
   const activeEndpoint = isNativeReader ? nativeEndpoint : GENERIC_ENDPOINT;
 
   // ── Copy states ────────────────────────────────────────────────────────────
+  const [copiedFacility, setCopiedFacility] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedPayload, setCopiedPayload] = useState(false);
   const [copiedAmbrcBody, setCopiedAmbrcBody] = useState(false);
@@ -381,6 +390,74 @@ export default function ReaderSetup() {
             Select the timing technology you are using — the setup instructions will adapt to your hardware.
           </p>
         </div>
+
+        {/* ── Facility Endpoint — set once, never touch again ─────────────────── */}
+        <div className="mb-8 rounded-xl border-2 border-primary/40 bg-primary/5 p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center flex-shrink-0">
+              <Anchor size={20} className="text-primary" />
+            </div>
+            <div>
+              <h2 className="text-lg font-heading font-bold uppercase tracking-tight">Facility Endpoint — Set Once</h2>
+              <p className="text-sm text-muted-foreground">
+                Point your hardware at this URL one time. The platform automatically routes every crossing to whichever moto is currently running — no reconfiguring between events.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Your permanent crossing URL</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-xs bg-background border border-border rounded-lg px-3 py-2.5 font-mono truncate text-primary">
+                POST {facilityEndpoint}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(facilityEndpoint);
+                  setCopiedFacility(true);
+                  setTimeout(() => setCopiedFacility(false), 2000);
+                }}
+                className="flex-shrink-0 flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2.5 text-xs font-medium hover:bg-muted transition-colors"
+              >
+                {copiedFacility ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+                {copiedFacility ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="flex items-start gap-2 bg-background rounded-lg border border-border p-3">
+              <Check size={13} className="text-green-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">All hardware formats</p>
+                <p className="text-muted-foreground mt-0.5">Generic, Impinj, Zebra, AMBrc / MyLaps — one URL handles them all</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 bg-background rounded-lg border border-border p-3">
+              <Check size={13} className="text-green-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">Auto-routes to active moto</p>
+                <p className="text-muted-foreground mt-0.5">Heats, LCQs, mains — server finds whatever is in progress</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 bg-background rounded-lg border border-border p-3">
+              <Check size={13} className="text-green-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">Move tracks freely</p>
+                <p className="text-muted-foreground mt-0.5">If you change facilities, the URL stays the same — only the hardware moves</p>
+              </div>
+            </div>
+          </div>
+
+          {user?.clubId && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Info size={12} />
+              Your club ID is <span className="font-mono font-bold text-foreground">{user.clubId}</span> — this is already embedded in the URL above.
+            </p>
+          )}
+        </div>
+
+        <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">Choose your hardware type for detailed setup instructions</p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* RFID card */}
