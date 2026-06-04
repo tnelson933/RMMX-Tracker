@@ -1806,6 +1806,17 @@ export default function Motos() {
             </div>
           ))}
           {classFilter === "schedule" && <DroppableMotoSlot id="moto-slot-end" active={!!activeMotoCardDrag} />}
+
+          {/* Add New Race button */}
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="group w-full mt-4 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border py-8 text-muted-foreground transition-all duration-150 hover:border-green-500 hover:bg-green-500/10 hover:text-green-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-current transition-all duration-150 group-hover:bg-green-500 group-hover:border-green-500 group-hover:text-white">
+              <Plus size={28} strokeWidth={2.5} />
+            </span>
+            <span className="text-sm font-bold uppercase tracking-widest">Add New Race</span>
+          </button>
         </div>
         ) : (
           <Card>
