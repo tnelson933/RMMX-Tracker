@@ -108,11 +108,12 @@ router.post("/ai/suggest-points-table", async (req, res) => {
       return;
     }
 
+    const needsScale = parsed.scoringMethod === "highest_points" || parsed.scoringMethod === "lowest_positions";
     if (
       !parsed.name ||
       !parsed.scoringMethod ||
       !Array.isArray(parsed.pointsScale) ||
-      parsed.pointsScale.length === 0
+      (needsScale && parsed.pointsScale.length === 0)
     ) {
       res.status(500).json({ error: "AI response was incomplete. Try adding more detail to your description." });
       return;
@@ -233,11 +234,12 @@ router.post("/ai/tweak-points-table", async (req, res) => {
       return;
     }
 
+    const needsScale2 = parsed.scoringMethod === "highest_points" || parsed.scoringMethod === "lowest_positions";
     if (
       !parsed.name ||
       !parsed.scoringMethod ||
       !Array.isArray(parsed.pointsScale) ||
-      parsed.pointsScale.length === 0
+      (needsScale2 && parsed.pointsScale.length === 0)
     ) {
       res.status(500).json({ error: "AI response was incomplete. Try adding more detail." });
       return;
