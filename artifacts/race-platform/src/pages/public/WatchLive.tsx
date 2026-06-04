@@ -129,6 +129,26 @@ export default function WatchLive() {
     drainQueue();
   }, [drainQueue]);
 
+  // ── Per-rider lap ping (Web Speech API — zero latency, no network call) ──────
+  // Fires instantly for every rider that completes a lap. Short and sharp so
+  // nothing piles up in a queue.  Works for manual entries and RFID crossings.
+  const triggerLapPing = useCallback((riderName: string, lapNumber: number) => {
+    if (!announcerOnRef.current) return;
+    if (!window.speechSynthesis) return;
+    const firstName = riderName.split(" ")[0];
+    const CARDINALS = ["zero","one","two","three","four","five","six","seven","eight",
+      "nine","ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen",
+      "seventeen","eighteen","nineteen","twenty"];
+    const lapWord = lapNumber < CARDINALS.length ? CARDINALS[lapNumber] : String(lapNumber);
+    const text = `${firstName}, lap ${lapWord}`;
+    setAnnouncerLabel(text);
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.15;
+    utter.volume = 1.0;
+    window.speechSynthesis.speak(utter);
+  }, []);
+
+  // ── Full AI TTS announcement (OpenAI voice — used for race-complete only) ────
   const triggerAnnouncement = useCallback(async (
     lapCompleted: number,
     top5: LeaderboardEntry[],
@@ -183,31 +203,39 @@ export default function WatchLive() {
         const payload = JSON.parse(evt.data);
         if (payload.error) return;
 
-        const top5 = (payload.leaderboard as LeaderboardEntry[]).filter(r => !r.dnf && !r.dns).slice(0, 5);
-        let maxNewLap = 0;
-        const posChanges: Array<{ riderName: string; from: number; to: number }> = [];
+        const leaderboard = payload.leaderboard as LeaderboardEntry[];
+        const isComplete = payload.status === "completed";
+        const wasInProgress = prevSseStatusRef.current === "in_progress";
 
-        for (const entry of top5) {
-          const oldLaps = prevLapsRef.current.get(entry.riderId) ?? 0;
-          const oldPos = prevPositionsRef.current.get(entry.riderId);
-          if (entry.laps > oldLaps && entry.laps > 0) maxNewLap = Math.max(maxNewLap, entry.laps);
-          if (oldPos !== undefined && oldPos !== entry.position && entry.position <= 5) {
-            posChanges.push({ riderName: entry.riderName, from: oldPos, to: entry.position });
+        // Skip announcements on the very first SSE message (initial snapshot) —
+        // prevLapsRef is empty so every rider would look like a new crossing.
+        const isFirstMessage = prevLapsRef.current.size === 0;
+
+        if (!isFirstMessage) {
+          // Check EVERY rider for a new lap — not just the top 5.
+          // Each new lap fires an immediate Web Speech ping so nothing piles up.
+          for (const entry of leaderboard) {
+            if (entry.dnf || entry.dns) continue;
+            const oldLaps = prevLapsRef.current.get(entry.riderId) ?? 0;
+            if (entry.laps > oldLaps) {
+              triggerLapPing(entry.riderName, entry.laps);
+            }
+          }
+
+          // Race complete — cancel queued speech pings and play the full AI TTS recap.
+          if (isComplete && wasInProgress) {
+            window.speechSynthesis?.cancel();
+            const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
+            triggerAnnouncement(top5[0]?.laps ?? 0, top5, [], true);
           }
         }
-        for (const entry of payload.leaderboard as LeaderboardEntry[]) {
+
+        for (const entry of leaderboard) {
           prevLapsRef.current.set(entry.riderId, entry.laps);
           prevPositionsRef.current.set(entry.riderId, entry.position);
         }
-
-        const isComplete = payload.status === "completed";
-        const wasInProgress = prevSseStatusRef.current === "in_progress";
         prevSseStatusRef.current = payload.status;
-
-        if (maxNewLap > 0) triggerAnnouncement(maxNewLap, top5, posChanges, isComplete);
-        else if (isComplete && wasInProgress) triggerAnnouncement(top5[0]?.laps ?? 0, top5, posChanges, true);
-
-        setSseLeaderboard(payload.leaderboard as LeaderboardEntry[]);
+        setSseLeaderboard(leaderboard);
       } catch { /* ignore parse errors */ }
     };
 
@@ -215,12 +243,16 @@ export default function WatchLive() {
       es.close();
       if (esRef.current === es) { esRef.current = null; activeMotoIdRef.current = null; }
     };
-  }, [activeMoto?.id, activeMoto?.status, triggerAnnouncement]);
+  }, [activeMoto?.id, activeMoto?.status, triggerLapPing, triggerAnnouncement]);
 
   useEffect(() => {
     if (!eventId) return;
     connect();
-    return () => cleanup();
+    return () => {
+      cleanup();
+      // Cancel any pending speech when leaving the page
+      window.speechSynthesis?.cancel();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
