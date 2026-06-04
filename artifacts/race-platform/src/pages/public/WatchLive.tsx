@@ -412,6 +412,17 @@ export default function WatchLive() {
     wsRef.current = ws;
     ws.binaryType = "arraybuffer";
 
+    // Send a hello immediately on open so the Replit proxy sees client→server
+    // data at t≈0. Without this, the first client→server frame (a pong reply)
+    // doesn't arrive until ~1.65 s after connect — right at the proxy's ~2 s
+    // per-direction idle timeout — causing the connection to drop before the
+    // first heartbeat exchange completes.
+    ws.onopen = () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "hello" }));
+      }
+    };
+
     ws.onmessage = (e) => {
       // The Replit proxy converts text WebSocket frames into binary frames.
       // Detect JSON messages by checking for the '{' magic byte (0x7b) so we

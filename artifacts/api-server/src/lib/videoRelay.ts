@@ -176,24 +176,36 @@ function handleViewer(ws: WebSocket, eventId: number) {
   logger.info({ eventId, viewers: state.viewers.size }, "Viewer connected");
 
   // Application-level heartbeat to keep the Replit proxy from closing idle
-  // connections. The proxy has a ~2-second application-data idle timeout; a
-  // protocol-level ws.ping() does NOT count as application data, so we send a
-  // small JSON heartbeat frame every 1.5 s instead. When a live stream is
-  // active the incoming video chunks already reset the proxy's idle timer, so
-  // the heartbeat only matters in the "offline" waiting state. We start it
-  // after the initial message is sent and clear it on disconnect.
+  // connections. The proxy has a ~2-second per-direction idle timeout on
+  // application data; protocol-level ws.ping() does NOT count.
+  //
+  // The viewer client sends a {"type":"hello"} immediately on ws.onopen to
+  // establish the client→server direction right away. Then, each time it
+  // receives a heartbeat it replies with {"type":"pong"}, maintaining both
+  // directions continuously. We send the first heartbeat 500 ms after the
+  // initial message (not 1500 ms) so the client can pong back well before the
+  // 2-second proxy deadline. Subsequent heartbeats fire every 1000 ms.
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  let firstHeartbeatTimer: ReturnType<typeof setTimeout> | null = null;
 
   const startHeartbeat = () => {
-    if (heartbeatInterval) return;
-    heartbeatInterval = setInterval(() => {
+    if (heartbeatInterval || firstHeartbeatTimer) return;
+    // First beat sooner — gives client time to pong before the 2-second proxy timeout
+    firstHeartbeatTimer = setTimeout(() => {
+      firstHeartbeatTimer = null;
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "heartbeat" }));
       }
-    }, 1_500);
+      heartbeatInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "heartbeat" }));
+        }
+      }, 1_000);
+    }, 500);
   };
 
   const stopHeartbeat = () => {
+    if (firstHeartbeatTimer) { clearTimeout(firstHeartbeatTimer); firstHeartbeatTimer = null; }
     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
   };
 
@@ -243,7 +255,7 @@ function handleViewer(ws: WebSocket, eventId: number) {
     if (chunk.length > 0 && chunk[0] === 0x7b) {
       try {
         const msg = JSON.parse(chunk.toString("utf8")) as Record<string, unknown>;
-        if (msg.type === "pong") return; // client keep-alive reply — no action needed
+        if (msg.type === "pong" || msg.type === "hello") return; // client keep-alive — no action needed
       } catch { /* ignore */ }
     }
   });
