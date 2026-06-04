@@ -5,28 +5,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle, ClipboardList, FlaskConical, Download, WifiOff, ShieldCheck, Terminal, FileDown, Info, Timer, ChevronRight, ArrowLeft } from "lucide-react";
+import {
+  Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle,
+  ClipboardList, FlaskConical, Download, WifiOff, ShieldCheck, Terminal, FileDown,
+  Info, Timer, ChevronRight, ArrowLeft, Cpu, Zap,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
 const BASE_URL = window.location.origin;
-const ENDPOINT = `${BASE_URL}/api/timing/crossing`;
+const GENERIC_ENDPOINT = `${BASE_URL}/api/timing/crossing`;
 
-const PAYLOAD_EXAMPLE = `{
-  "rfidNumber": "1A2B3C4D",
-  "motoId": 12,
-  "crossingTime": "2026-05-27T14:32:01.123456Z",
-  "readerId": "finish-line-1",
-  "antennaId": 1
-}`;
+type RfidReader = "none" | "impinj-r700" | "zebra-fx7500" | "generic";
 
-const RESPONSE_EXAMPLE = `{
-  "ok": true,
-  "crossingId": 4501,
-  "lapNumber": 3,
-  "lapTime": "1:52.34",
-  "lapTimeMs": 112340
-}`;
+const READER_LABEL: Record<Exclude<RfidReader, "none">, string> = {
+  "impinj-r700": "Impinj R700",
+  "zebra-fx7500": "Zebra FX7500",
+  "generic": "Generic / Other",
+};
 
 type Crossing = {
   id: number;
@@ -38,14 +34,74 @@ type Crossing = {
   readerId: string | null;
 };
 
+// ── Payload examples ──────────────────────────────────────────────────────────
+const IMPINJ_PAYLOAD = `{
+  "events": [
+    {
+      "type": "tagInventoryEvent",
+      "tagInventoryEvent": {
+        "epcHex": "300833B2DDD9014000000003",
+        "antennaPort": 1,
+        "peakRssiCdbm": -5325,
+        "firstSeenTime": "2026-05-27T14:32:01.000000Z",
+        "lastSeenTime": "2026-05-27T14:32:01.000000Z"
+      }
+    }
+  ]
+}`;
+
+const ZEBRA_PAYLOAD = `{
+  "data": {
+    "type": "RFID",
+    "id": "FX7500_0A1B2C",
+    "timestamp": "2026-05-27T14:32:01.000Z",
+    "tags": [
+      {
+        "idHex": "E2003411B802011820000D4E",
+        "antennaPort": 1,
+        "peakRssi": -54.0,
+        "firstSeenTimestamp": "2026-05-27T14:32:01.000Z",
+        "seenCount": 1
+      }
+    ]
+  }
+}`;
+
+const GENERIC_PAYLOAD = `{
+  "rfidNumber": "1A2B3C4D",
+  "motoId": 12,
+  "crossingTime": "2026-05-27T14:32:01.123456Z",
+  "readerId": "finish-line-1",
+  "antennaId": 1
+}`;
+
 export default function ReaderSetup() {
   const { toast } = useToast();
-  const [copiedUrl, setCopiedUrl] = useState(false);
 
-  // Technology picker — organizer must choose before seeing instructions
+  // ── Technology + reader selection ──────────────────────────────────────────
   const [tech, setTech] = useState<"none" | "rfid" | "mylaps">("none");
+  const [rfidReader, setRfidReader] = useState<RfidReader>("none");
   const isMylaps = tech === "mylaps";
+  const isNativeReader = rfidReader === "impinj-r700" || rfidReader === "zebra-fx7500";
 
+  // ── Native reader event selection (for URL generation) ────────────────────
+  const [rfidEventId, setRfidEventId] = useState("");
+
+  // Computed endpoint URLs
+  const nativeEndpointBase = rfidReader === "impinj-r700"
+    ? `${BASE_URL}/api/timing/impinj-crossing`
+    : `${BASE_URL}/api/timing/zebra-crossing`;
+  const nativeEndpoint = rfidEventId
+    ? `${nativeEndpointBase}?eventId=${rfidEventId}`
+    : `${nativeEndpointBase}?eventId=YOUR_EVENT_ID`;
+  const activeEndpoint = isNativeReader ? nativeEndpoint : GENERIC_ENDPOINT;
+
+  // ── Copy states ────────────────────────────────────────────────────────────
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedPayload, setCopiedPayload] = useState(false);
+  const [copiedAmbrcBody, setCopiedAmbrcBody] = useState(false);
+
+  // ── Generic / test state ───────────────────────────────────────────────────
   const [selectedEventId, setSelectedEventId] = useState("");
   const [selectedMotoId, setSelectedMotoId] = useState("");
   const [testRfid, setTestRfid] = useState("");
@@ -53,38 +109,42 @@ export default function ReaderSetup() {
   const [testResult, setTestResult] = useState<{ ok: boolean; body: string } | null>(null);
   const [testLoading, setTestLoading] = useState(false);
 
+  // ── Native reader test state ───────────────────────────────────────────────
+  const [nativeTestEventId, setNativeTestEventId] = useState("");
+  const [nativeTestEpc, setNativeTestEpc] = useState("");
+  const [nativeTestResult, setNativeTestResult] = useState<{ ok: boolean; body: string } | null>(null);
+  const [nativeTestLoading, setNativeTestLoading] = useState(false);
+
+  // ── Recent crossings ───────────────────────────────────────────────────────
   const [crossings, setCrossings] = useState<Crossing[]>([]);
   const [crossingsLoading, setCrossingsLoading] = useState(false);
 
+  // ── AMBrc state (MyLaps only) ──────────────────────────────────────────────
   const [ambrcEventId, setAmbrcEventId] = useState("");
   const [ambrcMotoId, setAmbrcMotoId] = useState("");
   const [ambrcReaderId, setAmbrcReaderId] = useState("finish-line-1");
-  const [copiedAmbrcBody, setCopiedAmbrcBody] = useState(false);
 
+  // ── Data hooks ────────────────────────────────────────────────────────────
   const { data: events } = useListEvents({}, { query: {} as any });
   const eventId = parseInt(selectedEventId) || 0;
   const { data: motos } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
   const ambrcEventIdNum = parseInt(ambrcEventId) || 0;
   const { data: ambrcMotos } = useListMotos(ambrcEventIdNum, { query: { enabled: !!ambrcEventIdNum } as any });
 
-  const selectedAmbrcMotoName = ambrcMotos?.find(m => m.id.toString() === ambrcMotoId)?.name ?? null;
-  const ambrcBodyTemplate = ambrcMotoId
-    ? JSON.stringify(
-        {
-          rfidNumber: "%TRANSPONDER%",
-          motoId: parseInt(ambrcMotoId),
-          crossingTime: "%PASSTIME_ISO%",
-          readerId: ambrcReaderId || "finish-line-1",
-        },
-        null,
-        2
-      )
-    : null;
-
+  // ── Helpers ────────────────────────────────────────────────────────────────
   const copyUrl = () => {
-    navigator.clipboard.writeText(ENDPOINT);
+    navigator.clipboard.writeText(activeEndpoint);
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
+  };
+
+  const copyPayloadExample = () => {
+    const payload = rfidReader === "impinj-r700" ? IMPINJ_PAYLOAD
+      : rfidReader === "zebra-fx7500" ? ZEBRA_PAYLOAD
+      : GENERIC_PAYLOAD;
+    navigator.clipboard.writeText(payload);
+    setCopiedPayload(true);
+    setTimeout(() => setCopiedPayload(false), 2000);
   };
 
   const loadCrossings = async (motoId: string) => {
@@ -107,17 +167,14 @@ export default function ReaderSetup() {
     loadCrossings(motoId);
   };
 
+  // Generic test crossing
   const sendTest = async () => {
     if (!testRfid || !selectedMotoId) return;
     setTestLoading(true);
     setTestResult(null);
     try {
-      const body: Record<string, unknown> = {
-        rfidNumber: testRfid,
-        motoId: parseInt(selectedMotoId),
-      };
+      const body: Record<string, unknown> = { rfidNumber: testRfid, motoId: parseInt(selectedMotoId) };
       if (testReaderId) body.readerId = testReaderId;
-
       const res = await fetch("/api/timing/crossing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,6 +195,84 @@ export default function ReaderSetup() {
       setTestLoading(false);
     }
   };
+
+  // Native reader test crossing (Impinj or Zebra format)
+  const sendNativeTest = async () => {
+    if (!nativeTestEpc || !nativeTestEventId) return;
+    setNativeTestLoading(true);
+    setNativeTestResult(null);
+    try {
+      let endpoint: string;
+      let body: object;
+      const now = new Date().toISOString();
+
+      if (rfidReader === "impinj-r700") {
+        endpoint = `/api/timing/impinj-crossing?eventId=${nativeTestEventId}`;
+        body = {
+          events: [{
+            type: "tagInventoryEvent",
+            tagInventoryEvent: {
+              epcHex: nativeTestEpc,
+              antennaPort: 1,
+              peakRssiCdbm: -5325,
+              firstSeenTime: now,
+              lastSeenTime: now,
+            },
+          }],
+        };
+      } else {
+        endpoint = `/api/timing/zebra-crossing?eventId=${nativeTestEventId}`;
+        body = {
+          data: {
+            type: "RFID",
+            id: "TEST_READER",
+            timestamp: now,
+            tags: [{
+              idHex: nativeTestEpc,
+              antennaPort: 1,
+              peakRssi: -54.0,
+              firstSeenTimestamp: now,
+              seenCount: 1,
+            }],
+          },
+        };
+      }
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      setNativeTestResult({ ok: res.ok, body: JSON.stringify(data, null, 2) });
+      if (res.ok) {
+        const processed = data.results?.[0];
+        if (processed?.debounced) {
+          toast({ title: "Debounced (duplicate burst)", description: "Tag was read too recently — this is normal." });
+        } else {
+          toast({ title: "Test crossing accepted", description: `Moto ${data.motoId} — Lap ${processed?.lapNumber ?? "?"}`});
+        }
+      } else {
+        toast({ title: "Crossing rejected", description: data.error, variant: "destructive" });
+      }
+    } catch (err: any) {
+      setNativeTestResult({ ok: false, body: err.message });
+      toast({ title: "Request failed", description: err.message, variant: "destructive" });
+    } finally {
+      setNativeTestLoading(false);
+    }
+  };
+
+  // AMBrc helpers
+  const selectedAmbrcMotoName = ambrcMotos?.find(m => m.id.toString() === ambrcMotoId)?.name ?? null;
+  const ambrcBodyTemplate = ambrcMotoId
+    ? JSON.stringify({
+        rfidNumber: "%TRANSPONDER%",
+        motoId: parseInt(ambrcMotoId),
+        crossingTime: "%PASSTIME_ISO%",
+        readerId: ambrcReaderId || "finish-line-1",
+      }, null, 2)
+    : null;
 
   const copyAmbrcBody = () => {
     if (!ambrcBodyTemplate) return;
@@ -166,11 +301,9 @@ export default function ReaderSetup() {
         `Moto: ${motoLabel}`,
         "Update 'motoId' in the body template before each heat.",
       ],
-      endpoint: ENDPOINT,
+      endpoint: GENERIC_ENDPOINT,
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       bodyTemplate: {
         rfidNumber: "%TRANSPONDER%",
         motoId: parseInt(ambrcMotoId),
@@ -178,9 +311,9 @@ export default function ReaderSetup() {
         readerId: ambrcReaderId || "finish-line-1",
       },
       variableNotes: {
-        "%TRANSPONDER%": "Transponder / passing code — AMBrc built-in variable for the transponder ID",
-        "%PASSTIME_ISO%": "ISO 8601 hardware timestamp from the decoder — use the decoder's clock, not the PC clock",
-        motoId: `Pre-filled with moto ${motoLabel} — update this number before each heat`,
+        "%TRANSPONDER%": "Transponder / passing code — AMBrc built-in variable",
+        "%PASSTIME_ISO%": "ISO 8601 hardware timestamp from the decoder's clock",
+        motoId: `Pre-filled with moto ${motoLabel} — update before each heat`,
       },
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
@@ -193,7 +326,16 @@ export default function ReaderSetup() {
     toast({ title: "Config downloaded", description: `ambrc-config-moto-${ambrcMotoId}.json` });
   };
 
-  // ── Technology picker landing screen ─────────────────────────────────────────
+  // ── Step number helper ──────────────────────────────────────────────────────
+  const Step = ({ n }: { n: number }) => (
+    <div className="flex-shrink-0">
+      <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">{n}</div>
+    </div>
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // Screen 1 — Technology picker
+  // ══════════════════════════════════════════════════════════════════════════════
   if (tech === "none") {
     return (
       <div className="p-8 max-w-3xl mx-auto">
@@ -202,7 +344,7 @@ export default function ReaderSetup() {
             <Wifi className="text-primary" size={32} /> Reader Setup
           </h1>
           <p className="text-muted-foreground mt-1">
-            Select the timing technology you are using. You'll see step-by-step setup instructions and configuration tools for that system only.
+            Select the timing technology you are using — the setup instructions will adapt to your hardware.
           </p>
         </div>
 
@@ -218,21 +360,18 @@ export default function ReaderSetup() {
               </div>
               <ChevronRight size={20} className="text-muted-foreground group-hover:text-primary transition-colors mt-1" />
             </div>
-
             <div>
               <h2 className="text-xl font-heading font-bold uppercase tracking-tight">RFID / UHF Readers</h2>
               <p className="text-sm text-muted-foreground mt-1.5">
-                Fixed-mount UHF RFID readers with passive tags mounted on bikes or gear.
+                Fixed-mount UHF readers with passive sticker tags on helmets or bikes.
               </p>
             </div>
-
             <ul className="space-y-1.5 text-xs text-muted-foreground">
-              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Impinj Speedway, Alien ALR-9900, Zebra FX Series</li>
-              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Passive UHF tags — no battery, low cost per rider</li>
-              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> HTTP POST output, direct or via local bridge</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Impinj R700 — native IoT Connector support</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Zebra FX7500 — native IoT Connector support</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Generic HTTP POST readers — any brand</li>
               <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Offline-safe Python bridge included</li>
             </ul>
-
             <div className="pt-1">
               <span className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-heading font-bold uppercase tracking-wider px-4 py-2 rounded-lg group-hover:bg-primary/90 transition-colors">
                 Select RFID <ChevronRight size={13} />
@@ -251,21 +390,18 @@ export default function ReaderSetup() {
               </div>
               <ChevronRight size={20} className="text-muted-foreground group-hover:text-primary transition-colors mt-1" />
             </div>
-
             <div>
               <h2 className="text-xl font-heading font-bold uppercase tracking-tight">MyLaps / AMB Transponders</h2>
               <p className="text-sm text-muted-foreground mt-1.5">
                 Active transponders carried by riders, read by AMB / MyLaps loop decoders.
               </p>
             </div>
-
             <ul className="space-y-1.5 text-xs text-muted-foreground">
               <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> AMB TranX, AMB RC4, MyLaps X2, P3 Flex</li>
-              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Works with AMBrc ≥ 5 and Orbits 4 software</li>
-              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Numeric transponder IDs, industry-standard protocol</li>
-              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> AMBrc config generator + downloadable setup file</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Works with AMBrc ≥ 5 and Orbits 4</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> Numeric transponder IDs, standard protocol</li>
+              <li className="flex items-center gap-2"><Check size={12} className="text-primary shrink-0" /> AMBrc config generator + downloadable file</li>
             </ul>
-
             <div className="pt-1">
               <span className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-heading font-bold uppercase tracking-wider px-4 py-2 rounded-lg group-hover:bg-primary/90 transition-colors">
                 Select MyLaps <ChevronRight size={13} />
@@ -275,14 +411,120 @@ export default function ReaderSetup() {
         </div>
 
         <p className="text-xs text-muted-foreground text-center mt-8">
-          Not sure? Check the timing technology set on your event — it's shown on the event creation form.
+          Not sure? Check the timing technology set on your event — it's shown in the event creation form.
         </p>
       </div>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // Screen 2 — RFID reader model sub-picker
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (tech === "rfid" && rfidReader === "none") {
+    return (
+      <div className="p-8 max-w-3xl mx-auto">
+        <div className="mb-8">
+          <button
+            onClick={() => setTech("none")}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+          >
+            <ArrowLeft size={15} /> Back to technology selection
+          </button>
+          <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
+            <Wifi className="text-primary" size={32} /> Select Your Reader
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Pick your specific reader model — the setup instructions, endpoint format, and configuration steps will adapt to match it exactly.
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          {/* Impinj R700 */}
+          <button
+            onClick={() => setRfidReader("impinj-r700")}
+            className="group w-full text-left rounded-xl border-2 border-border hover:border-primary bg-card hover:bg-primary/5 p-5 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors shrink-0">
+                <Zap size={22} className="text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-lg font-heading font-bold uppercase tracking-tight">Impinj R700</h2>
+                  <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700 text-[10px] font-bold uppercase tracking-wider">Recommended</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Industry-leading UHF reader with native IoT Connector webhook support. Auto-discovers your active moto — no manual motoId needed.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Uses endpoint: <code className="font-mono bg-muted px-1 rounded">/api/timing/impinj-crossing?eventId=N</code>
+                </p>
+              </div>
+              <ChevronRight size={20} className="text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            </div>
+          </button>
+
+          {/* Zebra FX7500 */}
+          <button
+            onClick={() => setRfidReader("zebra-fx7500")}
+            className="group w-full text-left rounded-xl border-2 border-border hover:border-primary bg-card hover:bg-primary/5 p-5 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors shrink-0">
+                <Cpu size={22} className="text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-lg font-heading font-bold uppercase tracking-tight">Zebra FX7500</h2>
+                  <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider">Budget Pick</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Enterprise-grade fixed reader with Zebra IoT Connector. Native format support — auto-discovers active moto by eventId.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Uses endpoint: <code className="font-mono bg-muted px-1 rounded">/api/timing/zebra-crossing?eventId=N</code>
+                </p>
+              </div>
+              <ChevronRight size={20} className="text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            </div>
+          </button>
+
+          {/* Generic */}
+          <button
+            onClick={() => setRfidReader("generic")}
+            className="group w-full text-left rounded-xl border-2 border-border hover:border-primary bg-card hover:bg-primary/5 p-5 transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors shrink-0">
+                <Wifi size={22} className="text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-heading font-bold uppercase tracking-tight">Generic / Other</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Any UHF reader with HTTP POST output. Sends our standard JSON format — you include <code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code> + <code className="font-mono bg-muted px-1 rounded text-xs">motoId</code> in every request.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Compatible with: Alien ALR-9900, Speedway Revolution, Arduino/Pi builds, custom firmware
+                </p>
+              </div>
+              <ChevronRight size={20} className="text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            </div>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // Screen 3 — Setup instructions (RFID or MyLaps)
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  const readerLabel = !isMylaps && rfidReader !== "none" ? READER_LABEL[rfidReader as Exclude<RfidReader, "none">] : null;
+
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8">
+
+      {/* Header */}
       <div>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
@@ -293,23 +535,53 @@ export default function ReaderSetup() {
             <p className="text-muted-foreground mt-1">
               {isMylaps
                 ? "Configure your MyLaps / AMB decoder to push lap crossings to this platform."
-                : "Configure your RFID hardware to push lap crossings to this platform."}
+                : isNativeReader
+                ? `Configure your ${readerLabel} to push lap crossings in its native format — no custom payload mapping needed.`
+                : "Configure your RFID reader to push lap crossings using our standard JSON format."}
             </p>
           </div>
-          <button
-            onClick={() => setTech("none")}
-            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mt-1 shrink-0"
-          >
-            <ArrowLeft size={15} />
-            <span>
-              Change technology
-              <span className={`ml-2 inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${isMylaps ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300" : "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300"}`}>
-                {isMylaps ? <Timer size={10} /> : <Wifi size={10} />}
-                {isMylaps ? "MyLaps" : "RFID"}
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            {!isMylaps && rfidReader !== "none" && (
+              <button
+                onClick={() => setRfidReader("none")}
+                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              >
+                <ArrowLeft size={14} />
+                <span>
+                  Change reader
+                  <span className="ml-2 inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    {readerLabel}
+                  </span>
+                </span>
+              </button>
+            )}
+            <button
+              onClick={() => { setTech("none"); setRfidReader("none"); }}
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            >
+              <ArrowLeft size={15} />
+              <span>
+                Change technology
+                <span className={`ml-2 inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${isMylaps ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300" : "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300"}`}>
+                  {isMylaps ? <Timer size={10} /> : <Wifi size={10} />}
+                  {isMylaps ? "MyLaps" : "RFID"}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </div>
         </div>
+
+        {/* Native reader info banner */}
+        {isNativeReader && (
+          <div className="mt-4 flex items-start gap-2 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800/40 rounded-lg px-4 py-3 text-sm text-green-800 dark:text-green-300">
+            <Zap size={16} className="shrink-0 mt-0.5 text-green-600 dark:text-green-400" />
+            <div>
+              <span className="font-semibold">Native format mode.</span>{" "}
+              The {readerLabel} sends its own JSON format — you don't need to configure a custom payload template.
+              Just enter your event ID in the URL and the platform automatically finds whichever moto is in progress.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Setup Guide */}
@@ -318,250 +590,231 @@ export default function ReaderSetup() {
           <CardTitle className="font-heading uppercase tracking-wider text-base">Setup Guide</CardTitle>
           <p className="text-sm text-muted-foreground mt-0.5">
             {isMylaps
-              ? "Compatible with AMBrc and Orbits 4 software connected to any AMB / MyLaps decoder. Follow these steps to go from unboxed hardware to live lap times."
-              : "Any RFID reader that can send an HTTP POST request over the network is compatible. Follow these steps to go from unboxed hardware to live lap times."}
+              ? "Compatible with AMBrc and Orbits 4 software connected to any AMB / MyLaps decoder."
+              : isNativeReader
+              ? `Step-by-step guide for the ${readerLabel}. From unboxed hardware to live lap times.`
+              : "Any RFID reader that can send HTTP POST requests over the network is compatible."}
           </p>
         </CardHeader>
         <CardContent className="pt-5 space-y-0 divide-y">
 
           {isMylaps ? (
             <>
-              {/* MyLaps Step 1 */}
+              {/* MyLaps steps (unchanged) */}
               <div className="flex gap-4 py-5 first:pt-0">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">1</div>
-                </div>
+                <Step n={1} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Globe size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Connect the decoder to your network</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Power on your AMB / MyLaps decoder and connect it to your race-day router using an Ethernet cable. The decoder needs a valid IP address and must be able to reach the API endpoint URL. Note the decoder's IP address — you'll need it when configuring AMBrc or Orbits 4.
-                  </p>
-                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                    <span className="font-bold text-foreground">Tip:</span> Assign a static IP to the decoder via your router's DHCP reservation feature. This prevents the address from changing between race days.
-                  </div>
+                  <div className="flex items-center gap-2"><Globe size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Connect the decoder to your network</p></div>
+                  <p className="text-sm text-muted-foreground">Power on your AMB / MyLaps decoder and connect it via Ethernet to your race-day router. The decoder needs a valid IP address and must be able to reach the API endpoint URL. Note the decoder's IP address for AMBrc / Orbits 4 configuration.</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Tip:</span> Assign a static IP to the decoder via your router's DHCP reservation feature.</div>
                 </div>
               </div>
-
-              {/* MyLaps Step 2 */}
               <div className="flex gap-4 py-5">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">2</div>
-                </div>
+                <Step n={2} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Tag size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Assign transponder numbers to riders</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Before race day, use the <span className="font-semibold text-foreground">Transponder Management</span> page in the sidebar to link each rider's MyLaps transponder number to their profile. The transponder number is the 4-8 digit numeric ID printed on or programmed into each unit (e.g. <code className="font-mono bg-muted px-1 rounded">12345</code>). This is how the system maps a raw decoder read to a named rider and their lap history.
-                  </p>
-                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                    <span className="font-bold text-foreground">Note:</span> Crossings from unregistered transponders are still recorded but show as "Unknown." You can link transponders at any time and past crossings will update automatically.
-                  </div>
+                  <div className="flex items-center gap-2"><Tag size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Assign transponder numbers to riders</p></div>
+                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Transponder Management</span> page in the sidebar to link each rider's MyLaps transponder number to their profile. The number is the 4-8 digit numeric ID printed on or programmed into each unit.</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Note:</span> Crossings from unregistered transponders are still recorded as "Unknown." You can link them at any time and past crossings will update automatically.</div>
                 </div>
               </div>
-
-              {/* MyLaps Step 3 */}
               <div className="flex gap-4 py-5">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">3</div>
-                </div>
+                <Step n={3} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Create your event and motos</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    In the <span className="font-semibold text-foreground">Events</span> section, create the race event (selecting <span className="font-semibold text-foreground">MyLaps Transponders</span> as the timing technology) and open it. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. Each moto gets a unique <code className="font-mono bg-muted px-1 rounded">motoId</code> that you'll reference when configuring output.
-                  </p>
+                  <div className="flex items-center gap-2"><ClipboardList size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Create your event and motos</p></div>
+                  <p className="text-sm text-muted-foreground">In <span className="font-semibold text-foreground">Events</span>, create the race event (selecting <span className="font-semibold text-foreground">MyLaps Transponders</span> as the timing technology). On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. Each moto gets a unique <code className="font-mono bg-muted px-1 rounded">motoId</code> you'll reference when configuring output.</p>
                 </div>
               </div>
-
-              {/* MyLaps Step 4 */}
               <div className="flex gap-4 py-5">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">4</div>
-                </div>
+                <Step n={4} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Settings size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Configure AMBrc or Orbits 4 HTTP output</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Open your scoring software (AMBrc or Orbits 4) and navigate to <span className="font-semibold text-foreground">Output → HTTP / Webhook</span>. Set the output URL to the endpoint shown in the <span className="font-semibold text-foreground">API Endpoint</span> section below, set the method to <span className="font-semibold text-foreground">POST</span>, and configure the JSON body to include at minimum:
-                  </p>
-                  <ul className="text-sm text-muted-foreground space-y-1 mt-1 ml-4 list-disc">
-                    <li><code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code> — the transponder number reported by the decoder</li>
-                    <li><code className="font-mono bg-muted px-1 rounded text-xs">motoId</code> — the ID of the active moto (update this before each heat)</li>
-                    <li><code className="font-mono bg-muted px-1 rounded text-xs">crossingTime</code> — ISO 8601 timestamp from the decoder's clock (optional; server time used if omitted)</li>
-                    <li><code className="font-mono bg-muted px-1 rounded text-xs">readerId</code> — a label for this loop, e.g. <code className="font-mono bg-muted px-1 rounded text-xs">"finish-line-1"</code> (optional, for diagnostics)</li>
-                  </ul>
-                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                    <span className="font-bold text-foreground">Compatible decoders:</span> AMB TranX, AMB RC4, AMB MX, MyLaps X2, P3 Flex (with AMBrc ≥ 5 or Orbits 4). Older decoders using the binary AMB protocol may require a protocol bridge script.
-                  </div>
+                  <div className="flex items-center gap-2"><Settings size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Configure AMBrc or Orbits 4 HTTP output</p></div>
+                  <p className="text-sm text-muted-foreground">Navigate to <span className="font-semibold text-foreground">Output → HTTP / Webhook</span>. Set URL to the endpoint below, method to <span className="font-semibold text-foreground">POST</span>, and configure the JSON body to include: <code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code>, <code className="font-mono bg-muted px-1 rounded text-xs">motoId</code>, <code className="font-mono bg-muted px-1 rounded text-xs">crossingTime</code> (ISO 8601), and optionally <code className="font-mono bg-muted px-1 rounded text-xs">readerId</code>.</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Compatible decoders:</span> AMB TranX, AMB RC4, AMB MX, MyLaps X2, P3 Flex (AMBrc ≥ 5 or Orbits 4).</div>
                 </div>
               </div>
-
-              {/* MyLaps Step 5 */}
               <div className="flex gap-4 py-5">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">5</div>
-                </div>
+                <Step n={5} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <PlayCircle size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Start the moto before each heat</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto status to <span className="font-semibold text-foreground">In Progress</span> immediately before the gate drops. The platform only accepts crossings while the moto is in progress — any crossing sent before the moto starts or after it ends is rejected with a <code className="font-mono bg-muted px-1 rounded text-xs">409</code> response. End the moto when the heat finishes.
-                  </p>
+                  <div className="flex items-center gap-2"><PlayCircle size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Start the moto before each heat</p></div>
+                  <p className="text-sm text-muted-foreground">On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto to <span className="font-semibold text-foreground">In Progress</span> immediately before the gate drops. The platform only accepts crossings while the moto is in progress — crossings sent before or after are rejected with a <code className="font-mono bg-muted px-1 rounded text-xs">409</code>.</p>
                 </div>
               </div>
-
-              {/* MyLaps Step 6 */}
               <div className="flex gap-4 py-5 last:pb-0">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">6</div>
-                </div>
+                <Step n={6} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <FlaskConical size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Test the connection</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Use the <span className="font-semibold text-foreground">Test Connection</span> tool below to fire a simulated crossing before you go live. Select an in-progress moto, enter a known transponder number, and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" response confirms the endpoint is reachable and the moto is active.
-                  </p>
+                  <div className="flex items-center gap-2"><FlaskConical size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Test the connection</p></div>
+                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Test Connection</span> tool below to fire a simulated crossing before you go live. A green "Accepted" response confirms the endpoint is reachable and the moto is active.</p>
+                </div>
+              </div>
+            </>
+          ) : rfidReader === "impinj-r700" ? (
+            <>
+              <div className="flex gap-4 py-5 first:pt-0">
+                <Step n={1} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><Globe size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Connect the R700 to your race-day network</p></div>
+                  <p className="text-sm text-muted-foreground">Plug the R700 into your race-day router via Ethernet. Power it on — the reader broadcasts a setup Wi-Fi network (<code className="font-mono bg-muted px-1 rounded">ImpinjSetup-XXXXXX</code>) by default until you configure it. Connect your laptop to that network to reach the reader's web interface.</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Default address:</span> <code className="font-mono">http://192.168.1.1</code> on the setup network, or use the IP assigned by your router once connected via Ethernet. Impinj IoT Connector UI is on port 80.</div>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5">
+                <Step n={2} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><Tag size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Assign RFID tags to riders</p></div>
+                  <p className="text-sm text-muted-foreground">Go to <span className="font-semibold text-foreground">Riders</span> in the sidebar and open each rider's profile. Enter the EPC printed on their tag (e.g. <code className="font-mono bg-muted px-1 rounded">300833B2DDD9014000000003</code>) in the RFID field. The R700 reports the tag's EPC hex string — that's the identifier you're linking here.</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Tip:</span> Scan each tag through the R700's test mode (in the IoT Connector UI → Tags tab) to see the exact EPC string before race day — copy/paste it into the rider profile to avoid typos.</div>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5">
+                <Step n={3} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><ClipboardList size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Create your event in this platform</p></div>
+                  <p className="text-sm text-muted-foreground">In <span className="font-semibold text-foreground">Events</span>, create your race event (set timing technology to <span className="font-semibold text-foreground">RFID</span>). Note the event ID — you'll embed it in the endpoint URL in the next step. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat.</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Key difference vs. generic readers:</span> The R700 sends one endpoint URL for the whole event. The platform automatically scores crossings against whichever moto is currently In Progress — you never need to update the URL between heats.</div>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5">
+                <Step n={4} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><Settings size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Configure the Impinj IoT Connector for HTTP output</p></div>
+                  <p className="text-sm text-muted-foreground">In the R700's web interface (IoT Connector UI):</p>
+                  <ol className="text-sm text-muted-foreground space-y-1.5 mt-2 ml-1 list-decimal list-inside">
+                    <li>Go to <span className="font-semibold text-foreground">Operation → [Reader Name] → Profiles</span> and ensure an inventory profile is active.</li>
+                    <li>Go to <span className="font-semibold text-foreground">Operation → [Reader Name] → Event Output</span>.</li>
+                    <li>Set <span className="font-semibold text-foreground">Delivery Mode</span> to <span className="font-semibold text-foreground">HTTP POST</span>.</li>
+                    <li>Paste the endpoint URL from the section below into the <span className="font-semibold text-foreground">HTTP Destination</span> field.</li>
+                    <li>Set <span className="font-semibold text-foreground">Format</span> to <span className="font-semibold text-foreground">JSON</span>.</li>
+                    <li>Leave auth headers blank (the platform validates by <code className="font-mono bg-muted px-1 rounded text-xs">eventId</code>).</li>
+                    <li>Click <span className="font-semibold text-foreground">Save & Apply</span>.</li>
+                  </ol>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Antenna setup:</span> Set antenna power to 30 dBm for outdoor finish arch. Mount antennas facing down from the crossbar at roughly 2 m height, one per side. Test reads at race speed before the event.</div>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5">
+                <Step n={5} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><PlayCircle size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Start each moto before the gate drops</p></div>
+                  <p className="text-sm text-muted-foreground">On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto to <span className="font-semibold text-foreground">In Progress</span> immediately before the start. The platform only accepts crossings while a moto is in progress — crossings received when no moto is active return a <code className="font-mono bg-muted px-1 rounded text-xs">409</code>. End each moto when the heat finishes.</p>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5 last:pb-0">
+                <Step n={6} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><FlaskConical size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Test with a live tag read or the simulator below</p></div>
+                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Test Connection</span> section below to send a simulated Impinj-format crossing. Select your event, enter a tag EPC, and click <span className="font-semibold text-foreground">Send Test</span>. A successful response confirms the endpoint is reachable and the platform is scoring correctly.</p>
+                </div>
+              </div>
+            </>
+          ) : rfidReader === "zebra-fx7500" ? (
+            <>
+              <div className="flex gap-4 py-5 first:pt-0">
+                <Step n={1} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><Globe size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Connect the FX7500 to your network</p></div>
+                  <p className="text-sm text-muted-foreground">Plug the FX7500 into your race-day router via Ethernet. The reader gets a DHCP address — check your router's client list or use the Zebra IP Discovery Utility to find it. Access the web UI at <code className="font-mono bg-muted px-1 rounded">http://reader-ip</code> (default login: <code className="font-mono bg-muted px-1 rounded">admin / change</code>).</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Tip:</span> Assign the reader a static IP (via DHCP reservation) so the address stays consistent across race days.</div>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5">
+                <Step n={2} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><Tag size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Assign RFID tags to riders</p></div>
+                  <p className="text-sm text-muted-foreground">Go to <span className="font-semibold text-foreground">Riders</span> in the sidebar and enter each rider's tag EPC (the <code className="font-mono bg-muted px-1 rounded">idHex</code> value the FX7500 reports, e.g. <code className="font-mono bg-muted px-1 rounded">E2003411B802011820000D4E</code>). Use the FX7500's inventory test in its web UI to pre-scan tags and confirm the exact EPC string.</p>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5">
+                <Step n={3} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><ClipboardList size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Create your event in this platform</p></div>
+                  <p className="text-sm text-muted-foreground">In <span className="font-semibold text-foreground">Events</span>, create your race event with timing technology set to <span className="font-semibold text-foreground">RFID</span>. Note the event ID — you'll embed it in the endpoint URL. Add motos on the <span className="font-semibold text-foreground">Motos</span> tab. The FX7500 endpoint URL stays the same for the whole event — the platform auto-detects the active moto.</p>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5">
+                <Step n={4} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><Settings size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Configure the Zebra IoT Connector</p></div>
+                  <p className="text-sm text-muted-foreground">In the FX7500 web interface:</p>
+                  <ol className="text-sm text-muted-foreground space-y-1.5 mt-2 ml-1 list-decimal list-inside">
+                    <li>Go to <span className="font-semibold text-foreground">Settings → IoT Connector</span> (install the Zebra IoT Connector application if not already present).</li>
+                    <li>Under <span className="font-semibold text-foreground">HTTP Push Client</span>, set <span className="font-semibold text-foreground">Server URL</span> to the endpoint shown below.</li>
+                    <li>Set <span className="font-semibold text-foreground">HTTP Method</span> to <span className="font-semibold text-foreground">POST</span>.</li>
+                    <li>Set <span className="font-semibold text-foreground">Content-Type</span> header to <code className="font-mono bg-muted px-1 rounded text-xs">application/json</code>.</li>
+                    <li>Enable <span className="font-semibold text-foreground">Send tag reports</span> and set the report interval to match your desired update frequency (1–2 seconds recommended).</li>
+                    <li>Save and start the IoT Connector application.</li>
+                  </ol>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Antenna power:</span> Set to 27–30 dBm for an outdoor finish arch. Mount antennas at approximately 2 m height, positioned to read tags on helmets as riders pass beneath.</div>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5">
+                <Step n={5} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><PlayCircle size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Start each moto before the gate drops</p></div>
+                  <p className="text-sm text-muted-foreground">On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto to <span className="font-semibold text-foreground">In Progress</span> immediately before the start. Crossings received when no moto is active return <code className="font-mono bg-muted px-1 rounded text-xs">409</code>. End each moto when the heat finishes.</p>
+                </div>
+              </div>
+              <div className="flex gap-4 py-5 last:pb-0">
+                <Step n={6} />
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex items-center gap-2"><FlaskConical size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Test with the simulator below</p></div>
+                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Test Connection</span> section below to send a simulated Zebra-format crossing. Select your event, enter a tag EPC, and click <span className="font-semibold text-foreground">Send Test</span>. A successful response confirms the pipeline is working end-to-end.</p>
                 </div>
               </div>
             </>
           ) : (
+            /* Generic RFID steps */
             <>
-              {/* RFID Step 1 */}
               <div className="flex gap-4 py-5 first:pt-0">
-                <div className="flex-shrink-0 flex items-start gap-3 w-7">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">1</div>
-                </div>
+                <Step n={1} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Globe size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Connect the reader to your scoring computer</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Readers can connect to your scoring laptop over the network <span className="font-semibold text-foreground">or</span> via USB — choose whichever your hardware supports:
-                  </p>
-                  <ul className="text-sm text-muted-foreground space-y-2 mt-1 ml-1">
-                    <li className="flex gap-2">
-                      <span className="font-semibold text-foreground shrink-0">Network (Ethernet / Wi-Fi)</span>
-                      <span>— Plug the reader into your race-day router or connect it to the same Wi-Fi as your laptop. The reader needs a valid IP address and must be able to reach the API endpoint URL. Verify connectivity with a ping before race day.</span>
-                    </li>
-                    <li className="flex gap-2">
-                      <span className="font-semibold text-foreground shrink-0">USB</span>
-                      <span>— Connect the reader via USB and install any manufacturer drivers. Most USB readers expose a serial (COM) port or present as a virtual network adapter. Use the reader's companion software or a bridge utility (e.g. a serial-to-HTTP forwarder) to forward tag reads as HTTP POST requests to the endpoint below.</span>
-                    </li>
-                  </ul>
-                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                    <span className="font-bold text-foreground">Tip:</span> If running on a private field network with no internet, host this platform on a local laptop and point the reader at <code className="font-mono">http://&lt;laptop-local-ip&gt;/api/timing/crossing</code> instead of the public URL.
-                  </div>
+                  <div className="flex items-center gap-2"><Globe size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Connect the reader to your scoring computer</p></div>
+                  <p className="text-sm text-muted-foreground">Readers can connect over Ethernet / Wi-Fi or via USB. For network readers: plug into your race-day router and confirm the reader has a valid IP. For USB readers: install manufacturer drivers and use a serial-to-HTTP bridge to forward tag reads as POST requests.</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Offline option:</span> On a private field network, host the platform locally and point the reader at <code className="font-mono">http://&lt;laptop-ip&gt;/api/timing/crossing</code>.</div>
                 </div>
               </div>
-
-              {/* RFID Step 2 */}
               <div className="flex gap-4 py-5">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">2</div>
-                </div>
+                <Step n={2} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Tag size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Assign RFID tags to riders</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Before race day, go to <span className="font-semibold text-foreground">Riders</span> in the sidebar and open each rider's profile. Enter the transponder number printed on their tag (e.g. <code className="font-mono bg-muted px-1 rounded">1A2B3C4D</code>) in the RFID Tag field. This is how the system maps a raw tag read to a named rider and their lap history.
-                  </p>
-                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                    <span className="font-bold text-foreground">Note:</span> Crossings from unassigned tags are still recorded but will show as "Unknown" in the lap feed. You can assign tags at any time and past crossings will update automatically.
-                  </div>
+                  <div className="flex items-center gap-2"><Tag size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Assign RFID tags to riders</p></div>
+                  <p className="text-sm text-muted-foreground">Go to <span className="font-semibold text-foreground">Riders</span> in the sidebar and enter each rider's tag ID (e.g. <code className="font-mono bg-muted px-1 rounded">1A2B3C4D</code>) in the RFID Tag field. Crossings from unassigned tags are still recorded as "Unknown" and can be linked at any time.</p>
                 </div>
               </div>
-
-              {/* RFID Step 3 */}
               <div className="flex gap-4 py-5">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">3</div>
-                </div>
+                <Step n={3} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Create your event and motos</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    In the <span className="font-semibold text-foreground">Events</span> section, create the race event and open it. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. Each moto gets a unique <code className="font-mono bg-muted px-1 rounded">motoId</code> — this is the ID your reader sends with every crossing so the system knows which race is currently running.
-                  </p>
+                  <div className="flex items-center gap-2"><ClipboardList size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Create your event and motos</p></div>
+                  <p className="text-sm text-muted-foreground">In <span className="font-semibold text-foreground">Events</span>, create the race event. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. Each moto has a unique <code className="font-mono bg-muted px-1 rounded">motoId</code> — you'll include this in every crossing payload so the platform knows which race is running.</p>
                 </div>
               </div>
-
-              {/* RFID Step 4 */}
               <div className="flex gap-4 py-5">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">4</div>
-                </div>
+                <Step n={4} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Settings size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Configure the reader's HTTP output</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    In your reader's configuration software, set the output type to <span className="font-semibold text-foreground">HTTP POST</span> and enter the endpoint URL shown in the <span className="font-semibold text-foreground">API Endpoint</span> section below. Set the Content-Type header to <code className="font-mono bg-muted px-1 rounded">application/json</code> and configure the JSON body to include at minimum:
-                  </p>
+                  <div className="flex items-center gap-2"><Settings size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Configure the reader's HTTP output</p></div>
+                  <p className="text-sm text-muted-foreground">In your reader's configuration software, set output type to <span className="font-semibold text-foreground">HTTP POST</span>. Set Content-Type to <code className="font-mono bg-muted px-1 rounded">application/json</code> and configure the JSON body to include at minimum:</p>
                   <ul className="text-sm text-muted-foreground space-y-1 mt-1 ml-4 list-disc">
-                    <li><code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code> — the tag ID reported by the reader</li>
-                    <li><code className="font-mono bg-muted px-1 rounded text-xs">motoId</code> — the ID of the active moto (update this before each heat)</li>
-                    <li><code className="font-mono bg-muted px-1 rounded text-xs">crossingTime</code> — ISO 8601 timestamp from the reader's clock (optional; server time used if omitted)</li>
-                    <li><code className="font-mono bg-muted px-1 rounded text-xs">readerId</code> — a name for this reader, e.g. <code className="font-mono bg-muted px-1 rounded text-xs">"finish-line-1"</code> (optional, for diagnostics)</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code> — tag ID reported by the reader</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">motoId</code> — ID of the active moto (update before each heat)</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">crossingTime</code> — ISO 8601 timestamp (optional; server time used if omitted)</li>
+                    <li><code className="font-mono bg-muted px-1 rounded text-xs">readerId</code> — e.g. <code className="font-mono bg-muted px-1 rounded text-xs">"finish-line-1"</code> (optional, for diagnostics)</li>
                   </ul>
-                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2">
-                    <span className="font-bold text-foreground">Common readers:</span> Impinj Speedway, Alien ALR-9900, Zebra FX Series, and any reader with a configurable TCP/HTTP webhook output. For Arduino or Raspberry Pi builds, use any HTTP client library to POST to the endpoint.
-                  </div>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Common readers:</span> Alien ALR-9900, Impinj Speedway Revolution (legacy), Zebra FX Series (generic mode), Arduino / Raspberry Pi builds.</div>
                 </div>
               </div>
-
-              {/* RFID Step 5 */}
               <div className="flex gap-4 py-5">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">5</div>
-                </div>
+                <Step n={5} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <PlayCircle size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Start the moto before each heat</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto status to <span className="font-semibold text-foreground">In Progress</span> immediately before the gate drops. The platform only accepts crossings while the moto is in progress — any crossing sent before the moto starts or after it ends is rejected with a <code className="font-mono bg-muted px-1 rounded text-xs">409</code> response. End the moto when the heat finishes to stop recording.
-                  </p>
+                  <div className="flex items-center gap-2"><PlayCircle size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Start the moto before each heat</p></div>
+                  <p className="text-sm text-muted-foreground">On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto to <span className="font-semibold text-foreground">In Progress</span> before the gate drops. Crossings are only accepted while in progress — crossings sent outside that window are rejected with <code className="font-mono bg-muted px-1 rounded text-xs">409</code>.</p>
                 </div>
               </div>
-
-              {/* RFID Step 6 */}
               <div className="flex gap-4 py-5 last:pb-0">
-                <div className="flex-shrink-0">
-                  <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-heading font-bold">6</div>
-                </div>
+                <Step n={6} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <FlaskConical size={15} className="text-primary shrink-0" />
-                    <p className="font-semibold text-sm">Test the connection</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Use the <span className="font-semibold text-foreground">Test Connection</span> tool below to fire a simulated crossing before you go live. Select an in-progress moto, enter a known RFID tag number, and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" response confirms the endpoint is reachable and the moto is active. You should also see the crossing appear in the <span className="font-semibold text-foreground">Recent Crossings</span> table below.
-                  </p>
+                  <div className="flex items-center gap-2"><FlaskConical size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Test the connection</p></div>
+                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Test Connection</span> tool below. Select an in-progress moto, enter a known tag number, and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" response confirms everything is wired up correctly.</p>
                 </div>
               </div>
             </>
           )}
-
         </CardContent>
       </Card>
 
@@ -574,30 +827,22 @@ export default function ReaderSetup() {
               <CardTitle className="font-heading uppercase tracking-wider text-base">AMBrc Output Configuration</CardTitle>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Select the event and moto you want to configure. The generator produces a pre-filled JSON body template and a downloadable reference file you can open on your scoring computer while setting up AMBrc's HTTP output.
+              Select the event and moto you want to configure. The generator produces a pre-filled JSON body template and a downloadable reference file.
             </p>
           </CardHeader>
           <CardContent className="pt-5 space-y-5">
-
-            {/* Selectors */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
-                <Select
-                  value={ambrcEventId}
-                  onValueChange={v => { setAmbrcEventId(v); setAmbrcMotoId(""); }}
-                >
+                <Select value={ambrcEventId} onValueChange={v => { setAmbrcEventId(v); setAmbrcMotoId(""); }}>
                   <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
                   <SelectContent>
                     {events?.filter((e: any) => e.timingTechnology === "mylaps").map(e => (
-                      <SelectItem key={e.id} value={e.id.toString()}>
-                        {e.name} <span className="text-muted-foreground ml-1">({e.status})</span>
-                      </SelectItem>
+                      <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">({e.status})</span></SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Moto</label>
                 <Select value={ambrcMotoId} onValueChange={setAmbrcMotoId} disabled={!ambrcEventId}>
@@ -605,387 +850,411 @@ export default function ReaderSetup() {
                   <SelectContent>
                     {ambrcMotos?.map(m => (
                       <SelectItem key={m.id} value={m.id.toString()}>
-                        <span className="flex items-center gap-2">
-                          {m.name}
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">{m.id}</Badge>
-                        </span>
+                        <span className="flex items-center gap-2">{m.name}<Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">{m.id}</Badge></span>
                       </SelectItem>
                     ))}
                     {ambrcMotos?.length === 0 && <SelectItem value="__none" disabled>No motos for this event</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reader / Loop ID</label>
-                <Input
-                  value={ambrcReaderId}
-                  onChange={e => setAmbrcReaderId(e.target.value)}
-                  placeholder="e.g. finish-line-1"
-                  className="font-mono h-11"
-                />
+                <Input value={ambrcReaderId} onChange={e => setAmbrcReaderId(e.target.value)} placeholder="e.g. finish-line-1" className="font-mono h-11" />
               </div>
             </div>
-
-            {/* Generated output */}
             {ambrcMotoId ? (
               <div className="space-y-4">
-
-                {/* Endpoint row */}
                 <div className="space-y-1.5">
-                  <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Endpoint URL (paste into AMBrc → HTTP URL field)</p>
+                  <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Endpoint URL</p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 font-mono text-xs bg-muted px-3 py-2.5 rounded border overflow-x-auto">{ENDPOINT}</code>
-                    <Button variant="outline" size="sm" onClick={copyUrl} className="shrink-0 gap-1.5">
-                      {copiedUrl ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
-                    </Button>
+                    <code className="flex-1 font-mono text-xs bg-muted px-3 py-2.5 rounded border overflow-x-auto">{GENERIC_ENDPOINT}</code>
+                    <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(GENERIC_ENDPOINT); }} className="shrink-0 gap-1.5"><Copy size={13} /> Copy</Button>
                   </div>
                 </div>
-
-                {/* Body template */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">JSON Body Template (paste into AMBrc → Body / Template field)</p>
-                    <Button variant="outline" size="sm" onClick={copyAmbrcBody} className="gap-1.5">
-                      {copiedAmbrcBody ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
-                    </Button>
+                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">JSON Body Template</p>
+                    <Button variant="outline" size="sm" onClick={copyAmbrcBody} className="gap-1.5">{copiedAmbrcBody ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}</Button>
                   </div>
-                  <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">
-                    {ambrcBodyTemplate}
-                  </pre>
+                  <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">{ambrcBodyTemplate}</pre>
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/40 rounded-md px-3 py-2 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
                     <Info size={13} className="shrink-0 mt-0.5" />
-                    <span>
-                      <span className="font-bold">%TRANSPONDER%</span> and <span className="font-bold">%PASSTIME_ISO%</span> are AMBrc template variables. Variable names may differ slightly by AMBrc version — check your software's variable list if these aren't recognised.
-                      {selectedAmbrcMotoName && (
-                        <> The <span className="font-bold">motoId</span> is pre-filled for <span className="font-bold">{selectedAmbrcMotoName}</span> (ID&nbsp;{ambrcMotoId}) — update it before each heat.</>
-                      )}
-                    </span>
+                    <span><span className="font-bold">%TRANSPONDER%</span> and <span className="font-bold">%PASSTIME_ISO%</span> are AMBrc template variables.{selectedAmbrcMotoName && (<> The <span className="font-bold">motoId</span> is pre-filled for <span className="font-bold">{selectedAmbrcMotoName}</span> (ID&nbsp;{ambrcMotoId}) — update it before each heat.</>)}</span>
                   </div>
                 </div>
-
-                {/* Download button */}
                 <div className="flex items-center gap-3 pt-1">
-                  <Button onClick={downloadAmbrcConfig} className="font-heading uppercase tracking-wider h-11 px-6 gap-2">
-                    <FileDown size={16} /> Download Config File
-                  </Button>
-                  <p className="text-xs text-muted-foreground">
-                    Saves <code className="font-mono">ambrc-config-moto-{ambrcMotoId}.json</code> — a human-readable reference with the URL, headers, body template, and setup instructions you can open on your scoring computer.
-                  </p>
+                  <Button onClick={downloadAmbrcConfig} className="font-heading uppercase tracking-wider h-11 px-6 gap-2"><FileDown size={16} /> Download Config File</Button>
+                  <p className="text-xs text-muted-foreground">Saves <code className="font-mono">ambrc-config-moto-{ambrcMotoId}.json</code> — open it on your scoring computer while setting up AMBrc.</p>
                 </div>
               </div>
             ) : (
-              <div className="rounded border border-dashed bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
-                Select an event and moto above to generate the pre-filled configuration.
-              </div>
+              <div className="rounded border border-dashed bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">Select an event and moto above to generate the pre-filled configuration.</div>
             )}
-
           </CardContent>
         </Card>
       )}
 
-      {/* Local Bridge — offline-safe option (RFID only) */}
+      {/* Local Bridge — RFID only */}
       {!isMylaps && (
-      <Card className="border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20">
-        <CardHeader className="pb-3 border-b border-amber-200 dark:border-amber-800/40">
-          <div className="flex items-center gap-2">
-            <WifiOff size={18} className="text-amber-600 dark:text-amber-400 shrink-0" />
-            <CardTitle className="font-heading uppercase tracking-wider text-base">Poor Track Internet? Use the Local Bridge</CardTitle>
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            Cell signal at outdoor venues is unreliable. The <strong>Local RFID Bridge</strong> is a free Python script
-            you run on your scoring laptop. It caches every lap locally and automatically replays them —
-            with their original hardware timestamps — the moment your connection is restored. No laps are ever lost.
-          </p>
+        <Card className="border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20">
+          <CardHeader className="pb-3 border-b border-amber-200 dark:border-amber-800/40">
+            <div className="flex items-center gap-2">
+              <WifiOff size={18} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              <CardTitle className="font-heading uppercase tracking-wider text-base">Poor Track Internet? Use the Local Bridge</CardTitle>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              Cell signal at outdoor venues is unreliable. The <strong>Local RFID Bridge</strong> is a free Python script you run on your scoring laptop. It caches every lap locally and automatically replays them — with original hardware timestamps — the moment connectivity is restored.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-5 space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="flex flex-col gap-1.5 bg-background rounded-lg border p-3">
+                <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground"><ShieldCheck size={13} className="text-green-500" /> When online</div>
+                <p className="text-muted-foreground text-xs">Tag reads forwarded to the cloud instantly. Zero latency change vs. direct reader → cloud.</p>
+              </div>
+              <div className="flex flex-col gap-1.5 bg-background rounded-lg border p-3">
+                <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground"><WifiOff size={13} className="text-amber-500" /> When offline</div>
+                <p className="text-muted-foreground text-xs">Crossings queued in a local SQLite file. Reader gets instant 200 OK so it keeps firing.</p>
+              </div>
+              <div className="flex flex-col gap-1.5 bg-background rounded-lg border p-3">
+                <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground"><Wifi size={13} className="text-blue-500" /> On reconnect</div>
+                <p className="text-muted-foreground text-xs">Bridge replays the cache in chronological order using the reader's original timestamps.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Setup (3 steps)</p>
+              <div className="space-y-2 text-sm">
+                <div className="flex gap-3 items-start">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">1</span>
+                  <div>
+                    <p className="font-medium">Install Python 3.8+ and download the bridge script</p>
+                    <p className="text-muted-foreground text-xs mt-0.5">Python is free at <code className="font-mono bg-muted px-1 rounded">python.org</code>. No extra packages needed — standard library only.</p>
+                    <a href="/rfid_bridge.py" download="rfid_bridge.py" className="inline-flex items-center gap-1.5 mt-2 bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-heading uppercase tracking-wider px-3 py-1.5 rounded-md transition-colors">
+                      <Download size={13} /> Download rfid_bridge.py
+                    </a>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">2</span>
+                  <div>
+                    <p className="font-medium">Run the bridge on your scoring laptop</p>
+                    <p className="text-muted-foreground text-xs mt-0.5">Open a terminal in the folder where you saved the script and run:</p>
+                    {rfidReader === "impinj-r700" && (
+                      <pre className="mt-1.5 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">
+{`python rfid_bridge.py --api-url ${BASE_URL} --reader impinj-r700 --event-id YOUR_EVENT_ID`}
+                      </pre>
+                    )}
+                    {rfidReader === "zebra-fx7500" && (
+                      <pre className="mt-1.5 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">
+{`python rfid_bridge.py --api-url ${BASE_URL} --reader zebra-fx7500 --event-id YOUR_EVENT_ID`}
+                      </pre>
+                    )}
+                    {rfidReader === "generic" && (
+                      <pre className="mt-1.5 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">
+{`python rfid_bridge.py --api-url ${BASE_URL}`}
+                      </pre>
+                    )}
+                    <p className="text-muted-foreground text-xs mt-1.5">Status page appears at <code className="font-mono bg-muted px-1 rounded">http://localhost:5555</code> showing live sync counts.</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">3</span>
+                  <div>
+                    <p className="font-medium">Point your reader at the bridge instead of the cloud</p>
+                    <p className="text-muted-foreground text-xs mt-0.5">In your reader's HTTP output config, use this local address instead:</p>
+                    {rfidReader === "impinj-r700" && (
+                      <pre className="mt-1 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">http://localhost:5555/timing/impinj-crossing?eventId=YOUR_EVENT_ID</pre>
+                    )}
+                    {rfidReader === "zebra-fx7500" && (
+                      <pre className="mt-1 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">http://localhost:5555/timing/zebra-crossing?eventId=YOUR_EVENT_ID</pre>
+                    )}
+                    {rfidReader === "generic" && (
+                      <pre className="mt-1 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">http://localhost:5555/timing/crossing</pre>
+                    )}
+                    <p className="text-muted-foreground text-xs mt-1.5">That's it. The bridge accepts the same format your reader already sends and forwards it to the cloud.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-background rounded-lg border p-3 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">
+                <Terminal size={12} /> Optional flags
+              </div>
+              <div className="font-mono text-xs space-y-1 text-muted-foreground">
+                <p><span className="text-foreground">--port 5555</span>   &nbsp;Local port (default 5555)</p>
+                <p><span className="text-foreground">--retry 10</span>  &nbsp;Seconds between retry attempts when offline (default 10)</p>
+                <p><span className="text-foreground">--db path</span>   &nbsp;SQLite cache file location</p>
+                {isNativeReader && <p><span className="text-foreground">--event-id N</span>&nbsp;Event ID embedded in the cloud endpoint URL (required for native readers)</p>}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* API Endpoint */}
+      <Card>
+        <CardHeader className="pb-3 border-b">
+          <CardTitle className="font-heading uppercase tracking-wider text-base">
+            {isNativeReader ? `Native Endpoint — ${readerLabel}` : "API Endpoint"}
+          </CardTitle>
+          {isNativeReader && (
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Select your event below to generate the exact URL to paste into your reader's configuration.
+            </p>
+          )}
         </CardHeader>
         <CardContent className="pt-5 space-y-5">
 
-          {/* How it works */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div className="flex flex-col gap-1.5 bg-background rounded-lg border p-3">
-              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                <ShieldCheck size={13} className="text-green-500" /> When online
-              </div>
-              <p className="text-muted-foreground text-xs">Tag reads forwarded to the cloud instantly. Zero latency change vs. direct reader → cloud.</p>
+          {/* Event picker for native readers */}
+          {isNativeReader && (
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Your Event</label>
+              <Select value={rfidEventId} onValueChange={setRfidEventId}>
+                <SelectTrigger className="h-11 max-w-sm"><SelectValue placeholder="Select event to generate URL..." /></SelectTrigger>
+                <SelectContent>
+                  {events?.map(e => (
+                    <SelectItem key={e.id} value={e.id.toString()}>
+                      {e.name} <span className="text-muted-foreground ml-1">(ID: {e.id})</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!rfidEventId && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <Info size={11} /> Select your event to get the final URL with the correct event ID.
+                </p>
+              )}
             </div>
-            <div className="flex flex-col gap-1.5 bg-background rounded-lg border p-3">
-              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                <WifiOff size={13} className="text-amber-500" /> When offline
-              </div>
-              <p className="text-muted-foreground text-xs">Crossings queued in a local SQLite file on the laptop. Reader gets an instant 200 OK so it keeps firing.</p>
-            </div>
-            <div className="flex flex-col gap-1.5 bg-background rounded-lg border p-3">
-              <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                <Wifi size={13} className="text-blue-500" /> On reconnect
-              </div>
-              <p className="text-muted-foreground text-xs">Bridge auto-replays the cache in chronological order using the reader's original hardware timestamps.</p>
-            </div>
-          </div>
+          )}
 
-          {/* Setup steps */}
-          <div className="space-y-3">
-            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Setup (3 steps)</p>
-
-            <div className="space-y-2 text-sm">
-              <div className="flex gap-3 items-start">
-                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">1</span>
-                <div>
-                  <p className="font-medium">Install Python 3.8+ and download the bridge script</p>
-                  <p className="text-muted-foreground text-xs mt-0.5">Python is free at <code className="font-mono bg-muted px-1 rounded">python.org</code>. No extra packages needed — the script uses only the standard library.</p>
-                  <a
-                    href="/rfid_bridge.py"
-                    download="rfid_bridge.py"
-                    className="inline-flex items-center gap-1.5 mt-2 bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-heading uppercase tracking-wider px-3 py-1.5 rounded-md transition-colors"
-                  >
-                    <Download size={13} /> Download rfid_bridge.py
-                  </a>
-                </div>
-              </div>
-
-              <div className="flex gap-3 items-start">
-                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">2</span>
-                <div>
-                  <p className="font-medium">Run the bridge on your scoring laptop</p>
-                  <p className="text-muted-foreground text-xs mt-0.5">Open a terminal (Command Prompt on Windows) in the folder where you saved the script and run:</p>
-                  <pre className="mt-1.5 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">
-{`python rfid_bridge.py --api-url ${BASE_URL}`}
-                  </pre>
-                  <p className="text-muted-foreground text-xs mt-1.5">A status page appears at <code className="font-mono bg-muted px-1 rounded">http://localhost:5555</code> showing live sync counts.</p>
-                </div>
-              </div>
-
-              <div className="flex gap-3 items-start">
-                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">3</span>
-                <div>
-                  <p className="font-medium">Point your reader at the bridge instead of the cloud</p>
-                  <p className="text-muted-foreground text-xs mt-0.5">In your reader's HTTP output config, change the endpoint from:</p>
-                  <pre className="mt-1 bg-muted font-mono text-xs px-3 py-2 rounded border overflow-x-auto text-muted-foreground line-through">{ENDPOINT}</pre>
-                  <p className="text-muted-foreground text-xs mt-1">to:</p>
-                  <pre className="mt-1 bg-gray-900 text-green-400 font-mono text-xs px-3 py-2 rounded border border-gray-700 overflow-x-auto">http://localhost:5555/timing/crossing</pre>
-                  <p className="text-muted-foreground text-xs mt-1.5">That's it. The bridge accepts the same JSON payload your reader already sends.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Optional flags */}
-          <div className="bg-background rounded-lg border p-3 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">
-              <Terminal size={12} /> Optional flags
-            </div>
-            <div className="font-mono text-xs space-y-1 text-muted-foreground">
-              <p><span className="text-foreground">--port 5555</span>   &nbsp;Local port (default 5555)</p>
-              <p><span className="text-foreground">--retry 10</span>  &nbsp;Seconds between retry attempts when offline (default 10)</p>
-              <p><span className="text-foreground">--db path</span>   &nbsp;SQLite cache file location (default: rfid_bridge_cache.sqlite3)</p>
-            </div>
-          </div>
-
-        </CardContent>
-      </Card>
-      )}
-
-      {/* Endpoint reference */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="font-heading uppercase tracking-wider text-base">API Endpoint</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
+          {/* Endpoint URL row */}
           <div className="flex items-center gap-3">
-            <Badge className="font-mono font-bold px-3 py-1 bg-primary text-primary-foreground text-sm">POST</Badge>
-            <code className="flex-1 font-mono text-sm bg-muted px-3 py-2 rounded border overflow-x-auto">
-              {ENDPOINT}
+            <Badge className="font-mono font-bold px-3 py-1 bg-primary text-primary-foreground text-sm shrink-0">POST</Badge>
+            <code className={`flex-1 font-mono text-sm bg-muted px-3 py-2 rounded border overflow-x-auto ${!rfidEventId && isNativeReader ? "text-muted-foreground" : ""}`}>
+              {activeEndpoint}
             </code>
             <Button variant="outline" size="sm" onClick={copyUrl} className="shrink-0 gap-2">
               {copiedUrl ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
             </Button>
           </div>
 
+          {/* Payload examples */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Request Body</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  {isNativeReader ? "Native payload format (sent by reader)" : "Request body"}
+                </p>
+                <Button variant="ghost" size="sm" onClick={copyPayloadExample} className="gap-1.5 h-7 text-xs">
+                  {copiedPayload ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+                </Button>
+              </div>
               <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">
-                {PAYLOAD_EXAMPLE}
+                {rfidReader === "impinj-r700" ? IMPINJ_PAYLOAD : rfidReader === "zebra-fx7500" ? ZEBRA_PAYLOAD : GENERIC_PAYLOAD}
               </pre>
-              <div className="text-xs text-muted-foreground space-y-1.5">
-                {isMylaps ? (
-                  <>
-                    <p><span className="font-bold text-foreground">rfidNumber</span> — transponder number reported by the decoder (required)</p>
-                    <p><span className="font-bold text-foreground">motoId</span> — active moto ID (required)</p>
-                    <p>
-                      <span className="font-bold text-foreground">crossingTime</span> — ISO 8601 timestamp from the decoder hardware at the moment of detection.
-                      {" "}<span className="font-semibold text-amber-600 dark:text-amber-400">Use the decoder's hardware timestamp</span> — do not use the PC system clock. AMBrc and Orbits 4 expose this as <code className="font-mono">PassingTime</code> in their output format.
-                    </p>
-                    <p><span className="font-bold text-foreground">readerId</span> — loop identifier, e.g. <code className="font-mono">"finish-loop-1"</code> (optional, for diagnostics)</p>
-                  </>
-                ) : (
-                  <>
-                    <p><span className="font-bold text-foreground">rfidNumber</span> — EPC tag ID reported by the reader (required)</p>
-                    <p><span className="font-bold text-foreground">motoId</span> — active moto ID (required)</p>
-                    <p>
-                      <span className="font-bold text-foreground">crossingTime</span> — ISO 8601 timestamp assigned by the reader hardware at the moment of RF detection.
-                      {" "}<span className="font-semibold text-amber-600 dark:text-amber-400">Map from the reader's <code className="font-mono">FirstSeenTimestampUTC</code> field</span> — do not use the PC system clock. The reader timestamps the tag read at the hardware level (microsecond precision) before any network latency is introduced.
-                    </p>
-                    <p><span className="font-bold text-foreground">readerId</span> — device identifier, e.g. <code className="font-mono">"finish-line-1"</code> (optional, for diagnostics)</p>
-                    <p><span className="font-bold text-foreground">antennaId</span> — integer port number (1–4) of the antenna that detected the tag (optional). Useful for multi-antenna gantry setups to identify dead zones.</p>
-                  </>
-                )}
-              </div>
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-md px-3 py-2 text-xs text-amber-800 dark:text-amber-300 mt-2">
-                {isMylaps
-                  ? <><span className="font-bold">Debounce:</span> The server automatically ignores duplicate crossings of the same transponder within a 30-second window. Multiple loop reads for a single pass are deduplicated automatically.</>
-                  : <><span className="font-bold">Burst debounce:</span> The server automatically ignores duplicate reads of the same tag within a 30-second window. A single antenna pass that generates 50 raw reads will be recorded as exactly one lap crossing — no configuration needed.</>}
-              </div>
+              {isNativeReader && (
+                <p className="text-xs text-muted-foreground">
+                  This is the exact format the {readerLabel} sends. You don't need to configure a custom body template — the platform parses it natively.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
-              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Success Response (200)</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Success response</p>
               <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">
-                {RESPONSE_EXAMPLE}
+                {isNativeReader
+                  ? `{\n  "ok": true,\n  "processed": 1,\n  "motoId": 12,\n  "results": [\n    {\n      "rfidNumber": "300833B2DDD9014000000003",\n      "crossingId": 4501,\n      "lapNumber": 3,\n      "lapTimeMs": 112340\n    }\n  ]\n}`
+                  : `{\n  "ok": true,\n  "crossingId": 4501,\n  "lapNumber": 3,\n  "lapTime": "1:52.34",\n  "lapTimeMs": 112340\n}`}
               </pre>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p><span className="font-bold text-foreground">409</span> — moto not in progress, or invalid moto</p>
-                <p><span className="font-bold text-foreground">400</span> — missing {isMylaps ? "transponder number" : "rfidNumber"} or motoId</p>
-                <p>Set header: <span className="font-mono font-bold text-foreground">Content-Type: application/json</span></p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Test connection */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="font-heading uppercase tracking-wider text-base">Test Connection</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <p className="text-sm text-muted-foreground">
-            Select an active moto and fire a test crossing to verify your reader can reach the server.
-            The moto must be <span className="font-bold text-foreground">In Progress</span> for crossings to be accepted.
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
-              <Select value={selectedEventId} onValueChange={v => { setSelectedEventId(v); setSelectedMotoId(""); setTestResult(null); setCrossings([]); }}>
-                <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
-                <SelectContent>
-                  {events?.map(e => (
-                    <SelectItem key={e.id} value={e.id.toString()}>
-                      {e.name} <span className="text-muted-foreground ml-1">({e.status})</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Moto</label>
-              <Select value={selectedMotoId} onValueChange={handleMotoChange} disabled={!selectedEventId}>
-                <SelectTrigger className="h-11"><SelectValue placeholder="Select moto..." /></SelectTrigger>
-                <SelectContent>
-                  {motos?.map(m => (
-                    <SelectItem key={m.id} value={m.id.toString()}>
-                      <span className="flex items-center gap-2">
-                        {m.name}
-                        <Badge variant={m.status === "in_progress" ? "default" : "secondary"} className="text-[10px] px-1.5 py-0 font-mono">
-                          {m.status}
-                        </Badge>
-                      </span>
-                    </SelectItem>
-                  ))}
-                  {motos?.length === 0 && <SelectItem value="__none" disabled>No motos for this event</SelectItem>}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{isMylaps ? "MyLaps Transponder Number" : "RFID Tag Number"}</label>
-              <Input
-                value={testRfid}
-                onChange={e => setTestRfid(e.target.value)}
-                placeholder="e.g. 1A2B3C4D"
-                className="font-mono h-11"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reader ID (optional)</label>
-              <Input
-                value={testReaderId}
-                onChange={e => setTestReaderId(e.target.value)}
-                placeholder="e.g. finish-line-1"
-                className="font-mono h-11"
-              />
             </div>
           </div>
 
-          <Button
-            onClick={sendTest}
-            disabled={testLoading || !testRfid || !selectedMotoId}
-            className="font-heading uppercase tracking-wider h-11 px-6 gap-2"
-          >
-            {testLoading ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />}
-            {testLoading ? "Sending..." : "Send Test Crossing"}
-          </Button>
-
-          {testResult && (
-            <div className={`rounded border p-4 space-y-1 ${testResult.ok ? "border-secondary/40 bg-secondary/5" : "border-destructive/40 bg-destructive/5"}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <Circle size={10} className={`fill-current ${testResult.ok ? "text-secondary" : "text-destructive"}`} />
-                <span className={`text-xs font-bold uppercase tracking-widest ${testResult.ok ? "text-secondary" : "text-destructive"}`}>
-                  {testResult.ok ? "Accepted" : "Rejected"}
-                </span>
+          {isNativeReader && (
+            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-700/40 rounded-md px-4 py-3 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
+              <Info size={13} className="shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold">Moto auto-discovery:</span>{" "}
+                The <code className="font-mono">?eventId=N</code> in the URL tells the platform which event to score. It automatically finds whichever moto has status <code className="font-mono">in_progress</code> — so you set the URL once and never change it between heats. A <code className="font-mono">409</code> response means no moto is currently in progress for that event.
               </div>
-              <pre className="font-mono text-xs whitespace-pre-wrap">{testResult.body}</pre>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Recent crossings */}
-      {selectedMotoId && (
+      {/* Test Connection */}
+      <Card>
+        <CardHeader className="pb-3 border-b">
+          <div className="flex items-center gap-2">
+            <FlaskConical size={18} className="text-primary shrink-0" />
+            <CardTitle className="font-heading uppercase tracking-wider text-base">Test Connection</CardTitle>
+          </div>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {isNativeReader
+              ? `Fire a simulated ${readerLabel} crossing to verify the endpoint is reachable and your moto is in progress.`
+              : "Fire a simulated crossing to verify your endpoint is reachable and the moto is accepting crossings."}
+          </p>
+        </CardHeader>
+        <CardContent className="pt-5 space-y-5">
+
+          {isNativeReader ? (
+            /* Native reader test tool */
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
+                  <Select value={nativeTestEventId} onValueChange={setNativeTestEventId}>
+                    <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
+                    <SelectContent>
+                      {events?.map(e => (
+                        <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">({e.status})</span></SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Must have a moto with status In Progress.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    Tag EPC ({rfidReader === "impinj-r700" ? "epcHex" : "idHex"})
+                  </label>
+                  <Input
+                    value={nativeTestEpc}
+                    onChange={e => setNativeTestEpc(e.target.value.toUpperCase())}
+                    placeholder={rfidReader === "impinj-r700" ? "300833B2DDD9014000000003" : "E2003411B802011820000D4E"}
+                    className="font-mono h-11 uppercase"
+                  />
+                  <p className="text-xs text-muted-foreground">Enter the EPC of a tag assigned to a rider to verify end-to-end.</p>
+                </div>
+              </div>
+
+              <Button
+                onClick={sendNativeTest}
+                disabled={nativeTestLoading || !nativeTestEventId || !nativeTestEpc}
+                className="font-heading uppercase tracking-wider h-11 px-6 gap-2"
+              >
+                {nativeTestLoading ? <><RefreshCw size={16} className="animate-spin" /> Sending…</> : <><Send size={16} /> Send Test Crossing</>}
+              </Button>
+
+              {nativeTestResult && (
+                <div className={`rounded-lg border p-4 space-y-2 ${nativeTestResult.ok ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-destructive/5 border-destructive/30"}`}>
+                  <div className="flex items-center gap-2">
+                    <Circle size={10} className={nativeTestResult.ok ? "fill-green-500 text-green-500" : "fill-destructive text-destructive"} />
+                    <span className={`text-sm font-semibold ${nativeTestResult.ok ? "text-green-700 dark:text-green-400" : "text-destructive"}`}>
+                      {nativeTestResult.ok ? "Accepted" : "Rejected"}
+                    </span>
+                  </div>
+                  <pre className="font-mono text-xs bg-background/60 p-3 rounded border overflow-x-auto whitespace-pre leading-relaxed">{nativeTestResult.body}</pre>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Generic / MyLaps test tool (existing) */
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
+                  <Select value={selectedEventId} onValueChange={v => { setSelectedEventId(v); setSelectedMotoId(""); setCrossings([]); }}>
+                    <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
+                    <SelectContent>
+                      {events?.map(e => (
+                        <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">({e.status})</span></SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Moto</label>
+                  <Select value={selectedMotoId} onValueChange={handleMotoChange} disabled={!selectedEventId}>
+                    <SelectTrigger className="h-11"><SelectValue placeholder="Select moto..." /></SelectTrigger>
+                    <SelectContent>
+                      {motos?.map(m => (
+                        <SelectItem key={m.id} value={m.id.toString()}>
+                          <span className="flex items-center gap-2">{m.name}<Badge variant={m.status === "in_progress" ? "default" : "secondary"} className="text-[10px] px-1.5 py-0">{m.status}</Badge></span>
+                        </SelectItem>
+                      ))}
+                      {motos?.length === 0 && <SelectItem value="__none" disabled>No motos for this event</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{isMylaps ? "Transponder Number" : "RFID Tag Number"}</label>
+                  <Input value={testRfid} onChange={e => setTestRfid(e.target.value)} placeholder={isMylaps ? "e.g. 12345" : "e.g. 1A2B3C4D"} className="font-mono h-11" />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="space-y-1.5 flex-1 max-w-xs">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reader ID (optional)</label>
+                  <Input value={testReaderId} onChange={e => setTestReaderId(e.target.value)} placeholder="finish-line-1" className="font-mono h-11" />
+                </div>
+                <div className="pt-6">
+                  <Button onClick={sendTest} disabled={testLoading || !testRfid || !selectedMotoId} className="font-heading uppercase tracking-wider h-11 px-6 gap-2">
+                    {testLoading ? <><RefreshCw size={16} className="animate-spin" /> Sending…</> : <><Send size={16} /> Send Test Crossing</>}
+                  </Button>
+                </div>
+              </div>
+
+              {testResult && (
+                <div className={`rounded-lg border p-4 space-y-2 ${testResult.ok ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-destructive/5 border-destructive/30"}`}>
+                  <div className="flex items-center gap-2">
+                    <Circle size={10} className={testResult.ok ? "fill-green-500 text-green-500" : "fill-destructive text-destructive"} />
+                    <span className={`text-sm font-semibold ${testResult.ok ? "text-green-700 dark:text-green-400" : "text-destructive"}`}>
+                      {testResult.ok ? "Accepted" : "Rejected"}
+                    </span>
+                  </div>
+                  <pre className="font-mono text-xs bg-background/60 p-3 rounded border overflow-x-auto whitespace-pre leading-relaxed">{testResult.body}</pre>
+                </div>
+              )}
+            </>
+          )}
+
+        </CardContent>
+      </Card>
+
+      {/* Recent Crossings — for moto-based review */}
+      {(selectedMotoId || crossings.length > 0) && !isNativeReader && (
         <Card>
-          <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <CardTitle className="font-heading uppercase tracking-wider text-base">Recent Crossings — Moto {selectedMotoId}</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => loadCrossings(selectedMotoId)} disabled={crossingsLoading} className="gap-1.5">
-              <RefreshCw size={14} className={crossingsLoading ? "animate-spin" : ""} />
-              Refresh
-            </Button>
+          <CardHeader className="pb-3 border-b">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Circle size={18} className="text-primary shrink-0" />
+                <CardTitle className="font-heading uppercase tracking-wider text-base">Recent Crossings</CardTitle>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => loadCrossings(selectedMotoId)} disabled={crossingsLoading || !selectedMotoId} className="gap-1.5 text-xs">
+                <RefreshCw size={13} className={crossingsLoading ? "animate-spin" : ""} /> Refresh
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground mt-0.5">Last 20 crossings for the selected moto. Updates after each test crossing.</p>
           </CardHeader>
-          <CardContent>
-            {crossingsLoading ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Loading crossings...</p>
-            ) : crossings.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No crossings recorded for this moto yet.</p>
+          <CardContent className="pt-4">
+            {crossings.length === 0 ? (
+              <div className="text-center text-sm text-muted-foreground py-8">
+                {crossingsLoading ? "Loading…" : selectedMotoId ? "No crossings recorded yet for this moto." : "Select a moto above to view crossings."}
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      <th className="pb-2 pr-4">Time</th>
-                      <th className="pb-2 pr-4">{isMylaps ? "Transponder #" : "RFID Tag"}</th>
-                      <th className="pb-2 pr-4">Rider</th>
-                      <th className="pb-2 pr-4">Lap #</th>
-                      <th className="pb-2 pr-4">Lap Time</th>
-                      <th className="pb-2">Reader</th>
+                    <tr className="border-b text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="text-left py-2 pr-4">Time</th>
+                      <th className="text-left py-2 pr-4">Tag</th>
+                      <th className="text-left py-2 pr-4">Rider</th>
+                      <th className="text-right py-2 pr-4">Lap #</th>
+                      <th className="text-right py-2">Lap Time</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y">
                     {crossings.map(c => (
-                      <tr key={c.id} className="border-b last:border-0 hover:bg-muted/40 transition-colors">
+                      <tr key={c.id} className="hover:bg-muted/40 transition-colors">
                         <td className="py-2 pr-4 font-mono text-xs text-muted-foreground whitespace-nowrap">
                           {format(new Date(c.crossingTime), "HH:mm:ss.SSS")}
                         </td>
-                        <td className="py-2 pr-4">
-                          <span className="font-mono font-bold bg-muted px-1.5 py-0.5 rounded text-xs border">{c.rfidNumber}</span>
-                        </td>
-                        <td className="py-2 pr-4 font-medium">
-                          {c.riderName ?? <span className="text-muted-foreground italic text-xs">Unknown</span>}
-                        </td>
-                        <td className="py-2 pr-4">
-                          <Badge variant="outline" className="font-mono font-bold text-xs">L{c.lapNumber}</Badge>
-                        </td>
-                        <td className="py-2 pr-4 font-mono font-bold text-primary">{c.lapTime ?? "—"}</td>
-                        <td className="py-2 text-xs text-muted-foreground font-mono">{c.readerId ?? "—"}</td>
+                        <td className="py-2 pr-4 font-mono text-xs">{c.rfidNumber}</td>
+                        <td className="py-2 pr-4 text-xs">{c.riderName ?? <span className="text-muted-foreground">Unknown</span>}</td>
+                        <td className="py-2 pr-4 text-right text-xs font-mono">{c.lapNumber}</td>
+                        <td className="py-2 text-right font-mono text-xs font-semibold">{c.lapTime ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>

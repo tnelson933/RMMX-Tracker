@@ -15,7 +15,7 @@ this bridge running locally on your laptop. The bridge:
 Your lap times are never lost — even if you lose internet for the entire race.
 
 ────────────────────────────────────────────────────────────────────────────────
-QUICK START
+QUICK START — Generic / custom readers
 ────────────────────────────────────────────────────────────────────────────────
 
 1. Install Python 3.8+ from https://www.python.org/downloads/
@@ -32,15 +32,47 @@ QUICK START
 
 4. Verify at http://localhost:5555 — the status page shows pending/sent counts.
 
-Optional flags:
+────────────────────────────────────────────────────────────────────────────────
+QUICK START — Impinj R700 (native IoT Connector format)
+────────────────────────────────────────────────────────────────────────────────
+
+       python rfid_bridge.py --api-url https://your-app.replit.app \
+                             --reader impinj-r700 \
+                             --event-id 12
+
+   Point the R700's IoT Connector HTTP destination to:
+       http://localhost:5555/timing/impinj-crossing?eventId=12
+
+────────────────────────────────────────────────────────────────────────────────
+QUICK START — Zebra FX7500 (native IoT Connector format)
+────────────────────────────────────────────────────────────────────────────────
+
+       python rfid_bridge.py --api-url https://your-app.replit.app \
+                             --reader zebra-fx7500 \
+                             --event-id 12
+
+   Point the FX7500's IoT Connector HTTP destination to:
+       http://localhost:5555/timing/zebra-crossing?eventId=12
+
+────────────────────────────────────────────────────────────────────────────────
+Optional flags (all readers):
   --port   5555           Local port (default 5555)
   --db     cache.sqlite3  Local cache file path
   --retry  10             Seconds between offline retry attempts
+
+Native reader flags:
+  --reader  impinj-r700 | zebra-fx7500 | generic
+              Reader mode (default: generic)
+  --event-id N
+              Event ID for native reader endpoints (required for
+              impinj-r700 and zebra-fx7500 modes)
 
 Environment variables (alternative to flags):
   RMMX_API_URL   Cloud API base URL
   RMMX_PORT      Local port
   RMMX_DB        Cache file path
+  RMMX_READER    Reader mode
+  RMMX_EVENT_ID  Event ID for native reader mode
 ────────────────────────────────────────────────────────────────────────────────
 """
 
@@ -75,11 +107,17 @@ def init_db(path: str) -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS crossings (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             payload      TEXT    NOT NULL,      -- original JSON from reader
+            cloud_path   TEXT    NOT NULL DEFAULT '/api/timing/crossing',
             received_at  TEXT    NOT NULL,      -- UTC ISO-8601 when bridge got it
             sent_at      TEXT,                  -- UTC ISO-8601 when cloud confirmed
             attempts     INTEGER NOT NULL DEFAULT 0
         )
     """)
+    # Add cloud_path column if upgrading from an older schema that doesn't have it
+    try:
+        conn.execute("ALTER TABLE crossings ADD COLUMN cloud_path TEXT NOT NULL DEFAULT '/api/timing/crossing'")
+    except Exception:
+        pass  # column already exists
     conn.commit()
     return conn
 
@@ -89,14 +127,14 @@ def count_pending(db: sqlite3.Connection) -> int:
 
 
 # ── Cloud forwarding ────────────────────────────────────────────────────────────
-def forward_to_cloud(api_url: str, payload: dict, timeout: int = 8) -> bool:
+def forward_to_cloud(api_url: str, cloud_path: str, payload: dict, timeout: int = 8) -> bool:
     """
     POST a crossing payload to the cloud API.
     Returns True if the cloud accepted it (or permanently rejected it — 400/409
     means it will never succeed, so we mark it done anyway).
     Returns False if the network is unreachable or the server errored (5xx).
     """
-    url = f"{api_url.rstrip('/')}/api/timing/crossing"
+    url = f"{api_url.rstrip('/')}{cloud_path}"
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
         url,
@@ -109,7 +147,7 @@ def forward_to_cloud(api_url: str, payload: dict, timeout: int = 8) -> bool:
             return True
     except urllib.error.HTTPError as e:
         if e.code in (400, 409):
-            # Permanent rejection (bad payload or moto ended) — don't retry
+            # Permanent rejection (bad payload or no active moto) — don't retry
             log.warning("Cloud rejected crossing with HTTP %d — marking done (no retry)", e.code)
             return True
         log.debug("Cloud HTTP %d — will retry later", e.code)
@@ -126,7 +164,7 @@ def retry_loop(api_url: str, db: sqlite3.Connection, db_lock: threading.Lock,
     while not stop.wait(interval):
         with db_lock:
             rows = db.execute(
-                "SELECT id, payload FROM crossings WHERE sent_at IS NULL ORDER BY id LIMIT 100"
+                "SELECT id, payload, cloud_path FROM crossings WHERE sent_at IS NULL ORDER BY id LIMIT 100"
             ).fetchall()
 
         if not rows:
@@ -134,26 +172,23 @@ def retry_loop(api_url: str, db: sqlite3.Connection, db_lock: threading.Lock,
 
         log.info("Retrying %d cached crossing(s)…", len(rows))
         flushed = 0
-        for row_id, payload_json in rows:
+        for row_id, payload_json, cloud_path in rows:
             try:
                 payload = json.loads(payload_json)
             except json.JSONDecodeError:
                 log.error("Corrupt cache row id=%d — skipping", row_id)
                 with db_lock:
-                    db.execute("UPDATE crossings SET sent_at=? WHERE id=?",
-                               (_now(), row_id))
+                    db.execute("UPDATE crossings SET sent_at=? WHERE id=?", (_now(), row_id))
                     db.commit()
                 continue
 
-            if forward_to_cloud(api_url, payload):
+            if forward_to_cloud(api_url, cloud_path, payload):
                 with db_lock:
                     db.execute("UPDATE crossings SET sent_at=?, attempts=attempts+1 WHERE id=?",
                                (_now(), row_id))
                     db.commit()
-                log.info("  ✓ Flushed cached crossing id=%-4d  tag=%s  t=%s",
-                         row_id,
-                         payload.get("rfidNumber", "?"),
-                         str(payload.get("crossingTime", ""))[:19])
+                log.info("  ✓ Flushed cached crossing id=%-4d  t=%s", row_id,
+                         str(payload.get("crossingTime") or payload.get("timestamp", ""))[:19])
                 flushed += 1
             else:
                 with db_lock:
@@ -173,6 +208,8 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     # Injected by main() before server starts
     api_url: str = ""
     local_port: int = 5555
+    reader_mode: str = "generic"    # "generic" | "impinj-r700" | "zebra-fx7500"
+    event_id: str = ""              # required for native reader modes
     db: sqlite3.Connection = None   # type: ignore
     db_lock: threading.Lock = threading.Lock()
 
@@ -186,20 +223,28 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._reply(404, {"error": "not found"})
 
-    # ── POST /timing/crossing ───────────────────────────────────────────────
+    # ── POST — dispatch by path ─────────────────────────────────────────────
     def do_POST(self):
-        if self.path.rstrip("/") != "/timing/crossing":
-            self._reply(404, {"error": "unknown endpoint"})
-            return
+        path = self.path.split("?")[0].rstrip("/")
 
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length)
+        if path == "/timing/crossing" and self.reader_mode == "generic":
+            self._handle_generic()
+        elif path == "/timing/impinj-crossing" and self.reader_mode == "impinj-r700":
+            self._handle_native("impinj-r700")
+        elif path == "/timing/zebra-crossing" and self.reader_mode == "zebra-fx7500":
+            self._handle_native("zebra-fx7500")
+        else:
+            self._reply(404, {
+                "error": "unknown endpoint",
+                "hint": f"This bridge is running in '{self.reader_mode}' mode. "
+                        f"Check the reader mode and endpoint path.",
+            })
 
-        try:
-            payload = json.loads(body)
-        except json.JSONDecodeError:
-            self._reply(400, {"error": "invalid JSON"})
-            return
+    # ── Generic reader handler ──────────────────────────────────────────────
+    def _handle_generic(self):
+        payload = self._read_json()
+        if payload is None:
+            return  # _read_json already replied with 400
 
         if not payload.get("rfidNumber") or not payload.get("motoId"):
             self._reply(400, {"error": "rfidNumber and motoId are required"})
@@ -209,28 +254,60 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         if not payload.get("crossingTime"):
             payload["crossingTime"] = _now()
 
+        cloud_path = "/api/timing/crossing"
+        self._forward_or_cache(payload, cloud_path,
+                               log_tag=str(payload.get("rfidNumber")),
+                               log_extra=f"moto={payload.get('motoId')}")
+
+    # ── Native reader handler (Impinj R700 / Zebra FX7500) ─────────────────
+    def _handle_native(self, reader: str):
+        payload = self._read_json()
+        if payload is None:
+            return
+
+        if reader == "impinj-r700":
+            cloud_path = f"/api/timing/impinj-crossing?eventId={self.event_id}"
+            tag_count = len([e for e in payload.get("events", [])
+                             if e.get("type") == "tagInventoryEvent"])
+            log_tag = f"[{tag_count} tag(s)]"
+        else:  # zebra-fx7500
+            cloud_path = f"/api/timing/zebra-crossing?eventId={self.event_id}"
+            tags = payload.get("data", {}).get("tags", payload.get("tags", []))
+            log_tag = f"[{len(tags)} tag(s)]"
+
+        self._forward_or_cache(payload, cloud_path,
+                               log_tag=log_tag,
+                               log_extra=f"event={self.event_id}")
+
+    # ── Forward or cache ─────────────────────────────────────────────────────
+    def _forward_or_cache(self, payload: dict, cloud_path: str,
+                          log_tag: str, log_extra: str):
         received_at = _now()
 
-        # Try live forward first
-        if forward_to_cloud(self.api_url, payload):
-            log.info("→ LIVE   tag=%-14s  moto=%-4s  t=%s",
-                     payload.get("rfidNumber"), payload.get("motoId"),
-                     str(payload.get("crossingTime", ""))[:19])
+        if forward_to_cloud(self.api_url, cloud_path, payload):
+            log.info("→ LIVE   tag=%-20s  %s", log_tag, log_extra)
             self._reply(200, {"ok": True, "via": "live"})
-
         else:
-            # Cache locally and acknowledge to reader so it doesn't retry
             with self.db_lock:
                 self.db.execute(
-                    "INSERT INTO crossings (payload, received_at) VALUES (?, ?)",
-                    (json.dumps(payload), received_at),
+                    "INSERT INTO crossings (payload, cloud_path, received_at) VALUES (?, ?, ?)",
+                    (json.dumps(payload), cloud_path, received_at),
                 )
                 self.db.commit()
                 pending = count_pending(self.db)
 
-            log.warning("✗ CACHED tag=%-14s  moto=%-4s  [%d pending]",
-                        payload.get("rfidNumber"), payload.get("motoId"), pending)
+            log.warning("✗ CACHED tag=%-20s  %s  [%d pending]", log_tag, log_extra, pending)
             self._reply(200, {"ok": True, "via": "cache", "pending": pending})
+
+    # ── JSON body reader ─────────────────────────────────────────────────────
+    def _read_json(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            self._reply(400, {"error": "invalid JSON"})
+            return None
 
     # ── Helpers ─────────────────────────────────────────────────────────────
     def _reply(self, code: int, body: dict):
@@ -247,8 +324,22 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             pending = count_pending(self.db)
         sent = total - pending
 
-        color   = "#f59e0b" if pending else "#22c55e"
-        status  = f"{pending} PENDING" if pending else "All synced ✓"
+        color  = "#f59e0b" if pending else "#22c55e"
+        status = f"{pending} PENDING" if pending else "All synced ✓"
+
+        reader_labels = {
+            "generic":      "Generic / Custom",
+            "impinj-r700":  "Impinj R700",
+            "zebra-fx7500": "Zebra FX7500",
+        }
+        reader_label = reader_labels.get(self.reader_mode, self.reader_mode)
+
+        if self.reader_mode == "impinj-r700":
+            local_endpoint = f"http://localhost:{self.local_port}/timing/impinj-crossing?eventId={self.event_id}"
+        elif self.reader_mode == "zebra-fx7500":
+            local_endpoint = f"http://localhost:{self.local_port}/timing/zebra-crossing?eventId={self.event_id}"
+        else:
+            local_endpoint = f"http://localhost:{self.local_port}/timing/crossing"
 
         html = f"""<!doctype html>
 <html lang="en">
@@ -263,18 +354,21 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             justify-content: center; min-height: 100vh; gap: 1.5rem; padding: 2rem; }}
     h1 {{ color: #ef4444; font-size: 2rem; letter-spacing: 0.1em; }}
     .card {{ background: #1a1a1a; border: 1px solid #333; border-radius: 0.75rem;
-             padding: 1.5rem 2rem; min-width: 340px; }}
+             padding: 1.5rem 2rem; min-width: 380px; }}
     .card h2 {{ font-size: 0.75rem; text-transform: uppercase;
                 letter-spacing: 0.15em; color: #666; margin-bottom: 1rem; }}
-    .row {{ display: flex; justify-content: space-between;
-            padding: 0.4rem 0; border-bottom: 1px solid #222; }}
+    .row {{ display: flex; justify-content: space-between; gap: 1rem;
+            padding: 0.4rem 0; border-bottom: 1px solid #222; flex-wrap: wrap; }}
     .row:last-child {{ border: none; }}
-    .val {{ font-weight: bold; }}
+    .val {{ font-weight: bold; text-align: right; }}
     .status {{ font-size: 1.5rem; font-weight: bold; color: {color}; }}
     code {{ background: #111; border: 1px solid #333; border-radius: 4px;
             padding: 0.5rem 1rem; display: block; margin-top: 0.5rem;
-            font-size: 0.85rem; color: #a3e635; }}
+            font-size: 0.85rem; color: #a3e635; word-break: break-all; }}
     .dim {{ color: #555; font-size: 0.8rem; text-align: center; }}
+    .reader-badge {{ background: #1e3a5f; color: #93c5fd; border: 1px solid #2563eb;
+                     border-radius: 4px; padding: 0.15rem 0.5rem;
+                     font-size: 0.75rem; font-weight: bold; }}
   </style>
 </head>
 <body>
@@ -286,11 +380,13 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     <div class="row"><span>Sent to cloud</span> <span class="val" style="color:#22c55e">{sent}</span></div>
     <div class="row"><span>Total recorded</span> <span class="val">{total}</span></div>
     <div class="row"><span>Cloud API</span> <span class="val" style="color:#818cf8">{self.api_url}</span></div>
+    <div class="row"><span>Reader mode</span> <span class="reader-badge">{reader_label}</span></div>
+    {f'<div class="row"><span>Event ID</span> <span class="val">{self.event_id}</span></div>' if self.event_id else ''}
   </div>
   <div class="card">
     <h2>Reader Endpoint</h2>
-    <p style="color:#aaa;font-size:0.85rem">Point your RFID reader&apos;s HTTP output to:</p>
-    <code>http://localhost:{self.local_port}/timing/crossing</code>
+    <p style="color:#aaa;font-size:0.85rem">Point your {reader_label}&apos;s HTTP output to:</p>
+    <code>{local_endpoint}</code>
   </div>
   <p class="dim">Page refreshes every 5 seconds</p>
 </body>
@@ -336,6 +432,19 @@ def main():
         metavar="SECS",
         help="Seconds between retry attempts when offline (default 10)",
     )
+    parser.add_argument(
+        "--reader",
+        default=os.getenv("RMMX_READER", "generic"),
+        choices=["generic", "impinj-r700", "zebra-fx7500"],
+        metavar="MODEL",
+        help="Reader mode: generic (default), impinj-r700, or zebra-fx7500",
+    )
+    parser.add_argument(
+        "--event-id",
+        default=os.getenv("RMMX_EVENT_ID", ""),
+        metavar="N",
+        help="Event ID — required for impinj-r700 and zebra-fx7500 reader modes",
+    )
     args = parser.parse_args()
 
     if not args.api_url:
@@ -347,15 +456,42 @@ def main():
         print()
         sys.exit(1)
 
+    if args.reader in ("impinj-r700", "zebra-fx7500") and not args.event_id:
+        print()
+        print(f"ERROR: --event-id is required when using --reader {args.reader}")
+        print()
+        print(f"Example:")
+        print(f"  python rfid_bridge.py --api-url https://your-app.replit.app \\")
+        print(f"                        --reader {args.reader} \\")
+        print(f"                        --event-id 12")
+        print()
+        sys.exit(1)
+
+    reader_labels = {
+        "generic":      "Generic / Custom",
+        "impinj-r700":  "Impinj R700",
+        "zebra-fx7500": "Zebra FX7500",
+    }
+
+    if args.reader == "impinj-r700":
+        local_endpoint = f"http://localhost:{args.port}/timing/impinj-crossing?eventId={args.event_id}"
+    elif args.reader == "zebra-fx7500":
+        local_endpoint = f"http://localhost:{args.port}/timing/zebra-crossing?eventId={args.event_id}"
+    else:
+        local_endpoint = f"http://localhost:{args.port}/timing/crossing"
+
     log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     log.info("  RMMX Local RFID Bridge")
     log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     log.info("  Cloud API  : %s", args.api_url)
+    log.info("  Reader mode: %s", reader_labels.get(args.reader, args.reader))
+    if args.event_id:
+        log.info("  Event ID   : %s", args.event_id)
     log.info("  Local port : %d", args.port)
     log.info("  Cache file : %s", args.db)
     log.info("  Retry every: %ds", args.retry)
     log.info("")
-    log.info("  Reader endpoint → http://localhost:%d/timing/crossing", args.port)
+    log.info("  Reader endpoint → %s", local_endpoint)
     log.info("  Status page     → http://localhost:%d", args.port)
     log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -379,6 +515,8 @@ def main():
 
     BridgeHandler.api_url = args.api_url
     BridgeHandler.local_port = args.port
+    BridgeHandler.reader_mode = args.reader
+    BridgeHandler.event_id = args.event_id
     BridgeHandler.db = db
     BridgeHandler.db_lock = db_lock
 

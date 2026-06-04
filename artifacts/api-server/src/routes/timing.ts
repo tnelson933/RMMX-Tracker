@@ -307,6 +307,126 @@ router.post("/timing/crossing", async (req, res) => {
   }
 });
 
+// ── Helper: find the single in-progress moto for an event ─────────────────────
+async function getActiveMotoForEvent(eventId: number) {
+  const rows = await db
+    .select()
+    .from(motosTable)
+    .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "in_progress")));
+  return rows[0] ?? null;
+}
+
+// POST /timing/impinj-crossing?eventId=N — Impinj R700 native IoT Connector format
+// Body: { events: [{ type: "tagInventoryEvent", tagInventoryEvent: { epcHex, antennaPort, firstSeenTime } }] }
+router.post("/timing/impinj-crossing", async (req, res) => {
+  const eventId = Number(req.query.eventId);
+  if (!eventId || isNaN(eventId)) {
+    return res.status(400).json({ error: "eventId query param is required" });
+  }
+
+  const body = req.body as { events?: unknown[] };
+  const events = Array.isArray(body.events) ? body.events : [];
+
+  const tagEvents = events
+    .filter((e: any) => e?.type === "tagInventoryEvent" && e?.tagInventoryEvent?.epcHex)
+    .map((e: any) => e.tagInventoryEvent as { epcHex: string; antennaPort?: number; firstSeenTime?: string });
+
+  if (tagEvents.length === 0) {
+    return res.json({ ok: true, processed: 0, note: "No tagInventoryEvent entries in payload" });
+  }
+
+  const moto = await getActiveMotoForEvent(eventId);
+  if (!moto) {
+    return res.status(409).json({ error: "No moto currently in progress for this event" });
+  }
+
+  const results: unknown[] = [];
+  for (const tag of tagEvents) {
+    const rfidNumber = tag.epcHex.toUpperCase();
+    const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
+    if (isNaN(crossingTime.getTime())) {
+      results.push({ rfidNumber, error: "Invalid firstSeenTime" });
+      continue;
+    }
+    try {
+      const result = await processCrossing({
+        rfidNumber,
+        motoId: moto.id,
+        crossingTime,
+        readerId: "impinj-r700",
+        antennaId: tag.antennaPort,
+      });
+      if (result.debounced) {
+        results.push({ rfidNumber, debounced: true });
+      } else {
+        results.push({ rfidNumber, crossingId: result.crossing?.id, lapNumber: result.lapNumber, lapTimeMs: result.lapTimeMs });
+      }
+    } catch (err: any) {
+      results.push({ rfidNumber, error: err.message });
+    }
+  }
+
+  return res.json({ ok: true, processed: tagEvents.length, motoId: moto.id, results });
+});
+
+// POST /timing/zebra-crossing?eventId=N — Zebra FX7500 IoT Connector format
+// Body: { data: { type: "RFID", tags: [{ idHex, antennaPort, firstSeenTimestamp }] } }
+//   or: { tags: [...] } (some firmware versions omit the data wrapper)
+router.post("/timing/zebra-crossing", async (req, res) => {
+  const eventId = Number(req.query.eventId);
+  if (!eventId || isNaN(eventId)) {
+    return res.status(400).json({ error: "eventId query param is required" });
+  }
+
+  const body = req.body as any;
+  const tags: any[] = Array.isArray(body?.data?.tags)
+    ? body.data.tags
+    : Array.isArray(body?.tags)
+    ? body.tags
+    : [];
+
+  if (tags.length === 0) {
+    return res.json({ ok: true, processed: 0, note: "No tags in payload" });
+  }
+
+  const moto = await getActiveMotoForEvent(eventId);
+  if (!moto) {
+    return res.status(409).json({ error: "No moto currently in progress for this event" });
+  }
+
+  const results: unknown[] = [];
+  for (const tag of tags) {
+    const rfidNumber = ((tag.idHex || tag.epc) as string | undefined ?? "").toUpperCase();
+    if (!rfidNumber) {
+      results.push({ error: "Tag missing idHex/epc field" });
+      continue;
+    }
+    const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
+    if (isNaN(crossingTime.getTime())) {
+      results.push({ rfidNumber, error: "Invalid firstSeenTimestamp" });
+      continue;
+    }
+    try {
+      const result = await processCrossing({
+        rfidNumber,
+        motoId: moto.id,
+        crossingTime,
+        readerId: "zebra-fx7500",
+        antennaId: tag.antennaPort,
+      });
+      if (result.debounced) {
+        results.push({ rfidNumber, debounced: true });
+      } else {
+        results.push({ rfidNumber, crossingId: result.crossing?.id, lapNumber: result.lapNumber, lapTimeMs: result.lapTimeMs });
+      }
+    } catch (err: any) {
+      results.push({ rfidNumber, error: err.message });
+    }
+  }
+
+  return res.json({ ok: true, processed: tags.length, motoId: moto.id, results });
+});
+
 // POST /timing/manual-crossing — record a lap for a rider by riderId (no RFID required)
 router.post("/timing/manual-crossing", async (req, res) => {
   try {
