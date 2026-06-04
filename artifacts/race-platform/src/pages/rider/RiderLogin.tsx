@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Mountain, Mail, Lock, UserPlus, LogIn, AlertCircle } from "lucide-react";
@@ -8,10 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { riderApi } from "@/lib/rider-api";
+import { useRiderAuth } from "@/contexts/RiderAuthContext";
 
 export default function RiderLogin() {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
+  const { isAuthenticated } = useRiderAuth();
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -19,14 +21,22 @@ export default function RiderLogin() {
   const [regPassword, setRegPassword] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
 
+  // Navigate once the auth context confirms the session is live.
+  // This avoids the race condition where navigate() fires before
+  // RiderAuthProvider re-renders with the new session data, which
+  // caused RiderProtectedRoute to briefly see isAuthenticated=false
+  // and redirect back to the login page (making the user log in twice).
+  useEffect(() => {
+    if (isAuthenticated) navigate("/rider/portal");
+  }, [isAuthenticated, navigate]);
+
   const loginMutation = useMutation({
     mutationFn: () => riderApi.login(loginEmail, loginPassword),
-    onSuccess: (data) => {
-      // Set auth data directly from login response so RiderProtectedRoute
-      // immediately sees isAuthenticated=true when navigate() fires.
-      // (removeQueries caused a flash: isLoading=false + isAuthenticated=false → redirect)
-      queryClient.setQueryData(["rider-auth-me"], data);
-      navigate("/rider/portal");
+    onSuccess: () => {
+      // Refetch /rider/auth/me so RiderAuthContext gets the confirmed session
+      // data from the server. The useEffect above will navigate once
+      // isAuthenticated flips to true.
+      queryClient.invalidateQueries({ queryKey: ["rider-auth-me"] });
     },
   });
 
@@ -35,9 +45,8 @@ export default function RiderLogin() {
       if (regPassword !== regConfirm) throw new Error("Passwords do not match");
       return riderApi.register(regEmail, regPassword);
     },
-    onSuccess: (data) => {
-      queryClient.setQueryData(["rider-auth-me"], data);
-      navigate("/rider/portal");
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["rider-auth-me"] });
     },
   });
 
