@@ -55,6 +55,8 @@ const onSiteRegSchema = z.object({
   dateOfBirth: z.string().optional(),
   emergencyContact: z.string().optional(),
   emergencyPhone: z.string().optional(),
+  hometown: z.string().optional(),
+  homeState: z.string().optional(),
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
   clubIdNumber: z.string().optional(),
@@ -138,6 +140,7 @@ export default function Registrations() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
+      hometown: "", homeState: "",
       raceClass: "", bibNumber: "", clubIdNumber: "", bikeBrand: "",
       rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
@@ -298,6 +301,8 @@ export default function Registrations() {
         if (!dirty.dateOfBirth) form.setValue("dateOfBirth", data.dateOfBirth || "", { shouldDirty: false });
         if (!dirty.emergencyContact) form.setValue("emergencyContact", data.emergencyContact || "", { shouldDirty: false });
         if (!dirty.emergencyPhone) form.setValue("emergencyPhone", data.emergencyPhone || "", { shouldDirty: false });
+        if (!dirty.hometown && data.hometown) form.setValue("hometown", data.hometown, { shouldDirty: false });
+        if (!dirty.homeState && data.homeState) form.setValue("homeState", data.homeState, { shouldDirty: false });
         if (!dirty.bibNumber && data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
         if (!dirty.bikeBrand && data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
         setLookedUpName(`${data.firstName} ${data.lastName}`);
@@ -396,6 +401,8 @@ export default function Registrations() {
           dateOfBirth: data.dateOfBirth || undefined,
           emergencyContact: data.emergencyContact || undefined,
           emergencyPhone: data.emergencyPhone || undefined,
+          hometown: data.hometown || undefined,
+          homeState: data.homeState || undefined,
           raceClass: data.raceClass,
           bibNumber: data.bibNumber || undefined,
           clubIdNumber: data.clubIdNumber || undefined,
@@ -799,6 +806,24 @@ export default function Registrations() {
                       );
                     })}
                   </div>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+
+            {/* ── Hometown ── */}
+            <div className="grid grid-cols-2 gap-3">
+              <FormField control={form.control} name="hometown" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Hometown</FormLabel>
+                  <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="homeState" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>State</FormLabel>
+                  <FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

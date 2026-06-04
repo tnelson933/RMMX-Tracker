@@ -252,4 +252,96 @@ router.post("/events/:eventId/results/publish", async (req, res) => {
   return res.json({ ok: true, published });
 });
 
+// ── AMA Export CSV ─────────────────────────────────────────────────────────────
+router.get("/events/:eventId/ama-export", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const eventId = Number(req.params.eventId);
+
+  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  if ((event as any).clubId !== session.clubId && session.role !== "super_admin") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const motos = await db.select().from(motosTable)
+    .where(eq(motosTable.eventId, eventId))
+    .orderBy(motosTable.id);
+
+  const results = await db.select({
+    riderId: raceResultsTable.riderId,
+    motoId: raceResultsTable.motoId,
+    position: raceResultsTable.position,
+    raceClass: motosTable.raceClass,
+    motoNumber: motosTable.motoNumber,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+    hometown: ridersTable.hometown,
+    amaNumber: registrationsTable.amaNumber,
+    bibNumber: raceResultsTable.bibNumber,
+  }).from(raceResultsTable)
+    .innerJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
+    .innerJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
+    .leftJoin(registrationsTable, and(
+      eq(registrationsTable.riderId, raceResultsTable.riderId),
+      eq(registrationsTable.eventId, eventId),
+    ))
+    .where(eq(motosTable.eventId, eventId));
+
+  // Also get homeState from riders (stored as separate column)
+  const riderIds = [...new Set(results.map(r => r.riderId))];
+  const riderRows = riderIds.length > 0
+    ? await db.select({ id: ridersTable.id }).from(ridersTable).where(eq(ridersTable.id, riderIds[0]))
+    : [];
+
+  // Collect homeState via raw column access
+  const riderHomeStateMap = new Map<number, string>();
+  if (riderIds.length > 0) {
+    const { sql: sqlTag } = await import("drizzle-orm");
+    const homeStateRows = await db.execute(
+      sqlTag`SELECT id, home_state FROM riders WHERE id = ANY(${riderIds})`
+    );
+    for (const row of homeStateRows.rows as Array<{ id: number; home_state: string | null }>) {
+      riderHomeStateMap.set(Number(row.id), row.home_state ?? "");
+    }
+  }
+
+  const amaEventId = (event as any).amaEventId ?? "";
+  const eventDate = event.date ? String(event.date).substring(0, 10) : "";
+  const trackName = event.trackName ?? event.name;
+
+  const escCsv = (v: unknown): string => {
+    const s = String(v ?? "");
+    if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+
+  const header = ["AMA Event ID", "Event Name", "Event Date", "Track Name", "Class", "Moto", "AMA #", "Bib #", "First Name", "Last Name", "Hometown", "State", "Overall Position"].join(",");
+
+  const rows: string[] = [header];
+  for (const r of results) {
+    rows.push([
+      escCsv(amaEventId),
+      escCsv(event.name),
+      escCsv(eventDate),
+      escCsv(trackName),
+      escCsv(r.raceClass),
+      escCsv(r.motoNumber),
+      escCsv(r.amaNumber ?? ""),
+      escCsv(r.bibNumber ?? ""),
+      escCsv(r.firstName ?? ""),
+      escCsv(r.lastName ?? ""),
+      escCsv(r.hometown ?? ""),
+      escCsv(riderHomeStateMap.get(r.riderId) ?? ""),
+      escCsv(r.position ?? ""),
+    ].join(","));
+  }
+
+  const filename = `ama-export-event-${eventId}.csv`;
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  return res.send(rows.join("\n"));
+});
+
 export default router;

@@ -106,6 +106,7 @@ const updateEventSchema = z.object({
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
   })).default([]),
+  amaEventId: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof updateEventSchema>;
@@ -265,6 +266,7 @@ export default function EventDetail() {
       requireClubId: false,
       scoringTableId: undefined,
       purchaseOptions: [],
+      amaEventId: "",
     }
   });
 
@@ -310,6 +312,7 @@ export default function EventDetail() {
       requireClubId: (evt as any).requireClubId ?? false,
       scoringTableId: (evt as any).scoringTableId ?? undefined,
       purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number }) => ({ name: o.name, amount: String(o.amount) })),
+      amaEventId: (evt as any).amaEventId ?? "",
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
     setEditSeriesId(currentSeries ? String(currentSeries.id) : "none");
@@ -347,7 +350,8 @@ export default function EventDetail() {
         transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
         transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
         purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
-      }
+        amaEventId: data.amaEventId || undefined,
+      } as any
     }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
@@ -760,6 +764,21 @@ export default function EventDetail() {
                             <p className="text-xs text-muted-foreground">
                               Supercross formats generate Heats + Main Event. AMA/Olympic generate Divisions.
                             </p>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="amaEventId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>AMA Event ID</FormLabel>
+                            <FormControl>
+                              <Input placeholder="e.g. 12345" {...field} />
+                            </FormControl>
+                            <p className="text-xs text-muted-foreground">Optional — used for AMA report export.</p>
+                            <FormMessage />
                           </FormItem>
                         )}
                       />

@@ -39,6 +39,8 @@ router.get("/public/riders/lookup", async (req, res) => {
     dateOfBirth: rider.dateOfBirth ?? "",
     emergencyContact: rider.emergencyContact ?? "",
     emergencyPhone: rider.emergencyPhone ?? "",
+    hometown: rider.hometown ?? "",
+    homeState: (rider as any).homeState ?? "",
     amaNumber: lastReg?.amaNumber ?? "",
     clubIdNumber: lastReg?.clubIdNumber ?? "",
     bikeBrand: lastReg?.bikeBrand ?? "",
@@ -409,7 +411,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, hometown, homeState, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -491,7 +493,9 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       emergencyContact: emergencyContact || null,
       emergencyPhone: emergencyPhone || null,
       bibNumber: bibNumber || null,
-    }).returning();
+      hometown: hometown || null,
+      homeState: homeState || null,
+    } as any).returning();
     rider = created;
   }
 

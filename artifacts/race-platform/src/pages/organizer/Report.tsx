@@ -3,7 +3,7 @@ import { useGetEventReport, useGetRaceDaySummary } from "@workspace/api-client-r
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Printer, FileText, Users, Flag, Banknote, CreditCard, DollarSign } from "lucide-react";
+import { Printer, FileText, Users, Flag, Banknote, CreditCard, DollarSign, Download } from "lucide-react";
 import { format } from "date-fns";
 
 export default function Report() {
@@ -32,9 +32,19 @@ export default function Report() {
           </h2>
           <p className="text-muted-foreground mt-1">Summary statistics and post-race reporting.</p>
         </div>
-        <Button variant="outline" onClick={() => window.print()} className="font-heading uppercase tracking-wider">
-          <Printer size={16} className="mr-2" /> Print Report
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => {
+            const a = document.createElement("a");
+            a.href = `/api/events/${eventId}/ama-export`;
+            a.download = `ama-export-event-${eventId}.csv`;
+            a.click();
+          }} className="font-heading uppercase tracking-wider">
+            <Download size={16} className="mr-2" /> Export AMA Report
+          </Button>
+          <Button variant="outline" onClick={() => window.print()} className="font-heading uppercase tracking-wider">
+            <Printer size={16} className="mr-2" /> Print Report
+          </Button>
+        </div>
       </div>
 
       {/* Print header */}

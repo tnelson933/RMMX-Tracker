@@ -31,6 +31,8 @@ const registerSchema = z.object({
   dateOfBirth: z.string().optional(),
   emergencyContact: z.string().optional(),
   emergencyPhone: z.string().optional(),
+  hometown: z.string().optional(),
+  homeState: z.string().optional(),
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
   amaNumber: z.string().optional(),
@@ -141,6 +143,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
+      hometown: "", homeState: "",
       raceClass: "", bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
@@ -282,6 +285,8 @@ export default function Register() {
         form.setValue("dateOfBirth", data.dateOfBirth, { shouldDirty: false });
         form.setValue("emergencyContact", data.emergencyContact, { shouldDirty: false });
         form.setValue("emergencyPhone", data.emergencyPhone, { shouldDirty: false });
+        if (data.hometown) form.setValue("hometown", data.hometown, { shouldDirty: false });
+        if (data.homeState) form.setValue("homeState", data.homeState, { shouldDirty: false });
         if (data.amaNumber) form.setValue("amaNumber", data.amaNumber, { shouldDirty: false });
         if (data.clubIdNumber) form.setValue("clubIdNumber", data.clubIdNumber, { shouldDirty: false });
         if (data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
@@ -870,6 +875,22 @@ export default function Register() {
                         <FormItem>
                           <FormLabel>Date of Birth</FormLabel>
                           <FormControl><Input type="date" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField control={form.control} name="hometown" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Hometown</FormLabel>
+                          <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="homeState" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>State</FormLabel>
+                          <FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />

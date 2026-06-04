@@ -19,6 +19,7 @@ export const ridersTable = pgTable("riders", {
   amaNumber: text("ama_number"),
   mylapsTransponderId: text("mylaps_transponder_id"),
   hometown: text("hometown"),
+  homeState: text("home_state"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -102,6 +102,7 @@ const createEventSchema = z.object({
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
   })).default([]),
+  amaEventId: z.string().optional(),
 });
 
 export default function EventsList() {
@@ -168,6 +169,7 @@ export default function EventsList() {
       transponderRentalEnabled: false,
       transponderRentalFee: "",
       purchaseOptions: [],
+      amaEventId: "",
     }
   });
 
@@ -206,8 +208,9 @@ export default function EventsList() {
           transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
           transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
           purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
-        }
-      });
+          amaEventId: data.amaEventId || undefined,
+        },
+      } as any);
     } catch (err: any) {
       toast({ title: "Failed to create event", description: err.message, variant: "destructive" });
       return;
@@ -492,6 +495,21 @@ export default function EventsList() {
                         <p className="text-xs text-muted-foreground">
                           Supercross formats generate Heats + Main Event. AMA/Olympic generate Divisions.
                         </p>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="amaEventId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>AMA Event ID</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g. 12345" {...field} />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">Optional — used for AMA report export.</p>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />

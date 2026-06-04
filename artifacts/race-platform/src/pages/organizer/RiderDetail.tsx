@@ -266,7 +266,7 @@ export default function RiderDetail() {
                       <InfoRow label="Default Bib #" value={rider.bibNumber} />
                       <InfoRow label="AMA #" value={r.amaNumber} />
                       <InfoRow label="MyLaps Transponder #" value={r.mylapsTransponderId} />
-                      <InfoRow label="Club ID #" value={rider.clubIdNumber} />
+                      <InfoRow label="Club ID #" value={(rider as any).clubIdNumber} />
                     </div>
                     {r.sponsors && (
                       <div className="mt-5">
@@ -404,11 +404,11 @@ export default function RiderDetail() {
           )}
 
           {/* Club ID quick view */}
-          {rider.clubIdNumber && (
+          {(rider as any).clubIdNumber && (
             <Card>
               <CardContent className="p-5 space-y-1">
                 <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Club ID #</div>
-                <div className="font-mono text-lg font-bold">{rider.clubIdNumber}</div>
+                <div className="font-mono text-lg font-bold">{(rider as any).clubIdNumber}</div>
               </CardContent>
             </Card>
           )}

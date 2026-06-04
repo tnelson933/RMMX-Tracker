@@ -31,6 +31,7 @@ export const eventsTable = pgTable("events", {
   requireClubId: boolean("require_club_id").notNull().default(false),
   scoringTableId: integer("scoring_table_id"),
   minLapTimes: jsonb("min_lap_times").$type<Record<string, number>>().default({}),
+  amaEventId: text("ama_event_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
