@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRoute, Link } from "wouter";
-import { Flag, Clock, Wifi, WifiOff, ChevronLeft, Radio, Volume2, VolumeX } from "lucide-react";
+import { Flag, Clock, Wifi, WifiOff, ChevronLeft, Radio } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface LeaderboardEntry {
@@ -56,87 +56,11 @@ export default function LiveLeaderboard() {
   const [data, setData] = useState<LeaderboardData | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [announcerOn, setAnnouncerOn] = useState(true);
-  const [announcerLabel, setAnnouncerLabel] = useState<string | null>(null);
-
   const esRef = useRef<EventSource | null>(null);
 
   // Track previous leaderboard state for change detection
   const prevLapsRef = useRef<Map<number, number>>(new Map());
   const prevPositionsRef = useRef<Map<number, number>>(new Map());
-
-  // Audio queue — never overlap announcements
-  const audioQueueRef = useRef<string[]>([]);
-  const playingRef = useRef(false);
-  const announcerOnRef = useRef(true);
-
-  // Keep ref in sync with state so callbacks always see latest value
-  useEffect(() => {
-    announcerOnRef.current = announcerOn;
-  }, [announcerOn]);
-
-  const drainQueue = useCallback(() => {
-    if (playingRef.current || audioQueueRef.current.length === 0) return;
-    const url = audioQueueRef.current.shift()!;
-    playingRef.current = true;
-    const audio = new Audio(url);
-    audio.onended = () => {
-      URL.revokeObjectURL(url);
-      playingRef.current = false;
-      drainQueue();
-    };
-    audio.onerror = () => {
-      URL.revokeObjectURL(url);
-      playingRef.current = false;
-      drainQueue();
-    };
-    audio.play().catch(() => {
-      playingRef.current = false;
-      drainQueue();
-    });
-  }, []);
-
-  const enqueueAudio = useCallback((blob: Blob) => {
-    const url = URL.createObjectURL(blob);
-    audioQueueRef.current.push(url);
-    drainQueue();
-  }, [drainQueue]);
-
-  const triggerAnnouncement = useCallback(async (
-    lapCompleted: number,
-    top5: LeaderboardEntry[],
-    positionChanges: Array<{ riderName: string; from: number; to: number }>,
-    isComplete: boolean
-  ) => {
-    if (!announcerOnRef.current) return;
-    try {
-      setAnnouncerLabel(isComplete ? "Race complete!" : `Lap ${lapCompleted} announced`);
-      const res = await fetch("/api/timing/announce", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lapCompleted,
-          top5: top5.slice(0, 5).map(e => ({
-            position: e.position,
-            riderName: e.riderName,
-            laps: e.laps,
-            lastLap: e.lastLap,
-            totalTime: e.totalTime,
-            gap: e.gap,
-            dnf: e.dnf,
-            dns: e.dns,
-          })),
-          positionChanges,
-          isComplete,
-        }),
-      });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      enqueueAudio(blob);
-    } catch {
-      // Network error — skip silently
-    }
-  }, [enqueueAudio]);
 
   useEffect(() => {
     if (!motoId) return;
@@ -182,17 +106,6 @@ export default function LiveLeaderboard() {
               prevPos.set(entry.riderId, entry.position);
             }
 
-            // Fire announcement if a new lap was completed by someone in the top 5
-            const isComplete = payload.status === "completed";
-            const wasInProgress = prev?.status === "in_progress";
-
-            if (maxNewLap > 0) {
-              triggerAnnouncement(maxNewLap, top5, posChanges, isComplete);
-            } else if (isComplete && wasInProgress) {
-              // Race just finished — announce final result even if no new lap
-              triggerAnnouncement(top5[0]?.laps ?? 0, top5, posChanges, true);
-            }
-
             return payload;
           });
           setError(null);
@@ -210,7 +123,7 @@ export default function LiveLeaderboard() {
     return () => {
       esRef.current?.close();
     };
-  }, [motoId, triggerAnnouncement]);
+  }, [motoId]);
 
   const isLive = data?.status === "in_progress";
 
@@ -237,19 +150,6 @@ export default function LiveLeaderboard() {
             </span>
           )}
 
-          {/* Announcer toggle */}
-          <button
-            onClick={() => setAnnouncerOn(v => !v)}
-            title={announcerOn ? "Mute announcer" : "Enable announcer"}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
-              announcerOn
-                ? "bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30"
-                : "bg-white/5 text-white/30 border border-white/10 hover:bg-white/10"
-            }`}
-          >
-            {announcerOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
-            {announcerOn ? "Announcer" : "Muted"}
-          </button>
         </div>
       </div>
 
@@ -298,22 +198,6 @@ export default function LiveLeaderboard() {
                 </span>
               )}
 
-              {/* Subtle announcer status */}
-              <AnimatePresence>
-                {announcerOn && announcerLabel && (
-                  <motion.span
-                    key={announcerLabel}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="text-primary/60 text-xs flex items-center gap-1"
-                  >
-                    <Volume2 size={10} />
-                    {announcerLabel}
-                  </motion.span>
-                )}
-              </AnimatePresence>
             </div>
           </div>
 

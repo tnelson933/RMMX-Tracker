@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import {
   useGetEvent, useListResults, useListMotos, RaceResult, Moto,
@@ -10,16 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Calendar, MapPin, Trophy, Flag, ChevronLeft, ChevronRight,
   Clock, Award, Radio, CheckCircle, AlertCircle, Activity,
-  ChevronDown, ChevronUp, Users, Timer, Volume2, VolumeX,
+  ChevronDown, ChevronUp, Users, Timer,
 } from "lucide-react";
 import { format, parseISO, isToday } from "date-fns";
 import { Button } from "@/components/ui/button";
-
-type SseEntry = {
-  position: number; riderId: number; riderName: string;
-  laps: number; lastLap: string | null; totalTime: string | null;
-  gap: string; dnf: boolean; dns: boolean;
-};
 
 export default function EventResults() {
   const params = useParams();
@@ -48,19 +42,6 @@ export default function EventResults() {
 
   const [activeClass, setActiveClass] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [announcerOn, setAnnouncerOn] = useState(true);
-  const [announcerLabel, setAnnouncerLabel] = useState<string | null>(null);
-
-  const announcerOnRef = useRef(true);
-  const audioQueueRef = useRef<string[]>([]);
-  const annPlayingRef = useRef(false);
-  const prevLapsRef = useRef<Map<number, number>>(new Map());
-  const prevPositionsRef = useRef<Map<number, number>>(new Map());
-  const esRef = useRef<EventSource | null>(null);
-  const activeMotoIdRef = useRef<number | null>(null);
-  const prevSseStatusRef = useRef<string | null>(null);
-
-  useEffect(() => { announcerOnRef.current = announcerOn; }, [announcerOn]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -74,107 +55,7 @@ export default function EventResults() {
     return () => clearInterval(id);
   }, [eventId]);
 
-  const drainQueue = useCallback(() => {
-    if (annPlayingRef.current || audioQueueRef.current.length === 0) return;
-    const url = audioQueueRef.current.shift()!;
-    annPlayingRef.current = true;
-    const audio = new Audio(url);
-    audio.onended = () => { URL.revokeObjectURL(url); annPlayingRef.current = false; drainQueue(); };
-    audio.onerror = () => { URL.revokeObjectURL(url); annPlayingRef.current = false; drainQueue(); };
-    audio.play().catch(() => { annPlayingRef.current = false; drainQueue(); });
-  }, []);
-
-  const enqueueAudio = useCallback((blob: Blob) => {
-    const url = URL.createObjectURL(blob);
-    audioQueueRef.current.push(url);
-    drainQueue();
-  }, [drainQueue]);
-
-  const triggerAnnouncement = useCallback(async (
-    lapCompleted: number,
-    top5: SseEntry[],
-    positionChanges: Array<{ riderName: string; from: number; to: number }>,
-    isComplete: boolean
-  ) => {
-    if (!announcerOnRef.current) return;
-    try {
-      setAnnouncerLabel(isComplete ? "Race complete!" : `Lap ${lapCompleted} announced`);
-      const res = await fetch("/api/timing/announce", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lapCompleted,
-          top5: top5.slice(0, 5).map(e => ({
-            position: e.position, riderName: e.riderName, laps: e.laps,
-            lastLap: e.lastLap, totalTime: e.totalTime, gap: e.gap, dnf: e.dnf, dns: e.dns,
-          })),
-          positionChanges,
-          isComplete,
-        }),
-      });
-      if (!res.ok) return;
-      enqueueAudio(await res.blob());
-    } catch { /* skip silently */ }
-  }, [enqueueAudio]);
-
-  // SSE — connect to live timing when a moto is in_progress
   const activeMoto = motos?.find(m => m.status === "in_progress");
-  useEffect(() => {
-    const motoId = activeMoto?.status === "in_progress" ? activeMoto.id : null;
-    if (!motoId || !liveMode) {
-      esRef.current?.close();
-      esRef.current = null;
-      activeMotoIdRef.current = null;
-      prevSseStatusRef.current = null;
-      return;
-    }
-    if (activeMotoIdRef.current === motoId) return;
-
-    esRef.current?.close();
-    activeMotoIdRef.current = motoId;
-    prevLapsRef.current = new Map();
-    prevPositionsRef.current = new Map();
-    prevSseStatusRef.current = null;
-
-    const es = new EventSource(`/api/timing/live/${motoId}`);
-    esRef.current = es;
-
-    es.onmessage = (evt) => {
-      try {
-        const payload = JSON.parse(evt.data);
-        if (payload.error) return;
-
-        const top5 = (payload.leaderboard as SseEntry[]).filter(r => !r.dnf && !r.dns).slice(0, 5);
-        let maxNewLap = 0;
-        const posChanges: Array<{ riderName: string; from: number; to: number }> = [];
-
-        for (const entry of top5) {
-          const oldLaps = prevLapsRef.current.get(entry.riderId) ?? 0;
-          const oldPos = prevPositionsRef.current.get(entry.riderId);
-          if (entry.laps > oldLaps && entry.laps > 0) maxNewLap = Math.max(maxNewLap, entry.laps);
-          if (oldPos !== undefined && oldPos !== entry.position && entry.position <= 5) {
-            posChanges.push({ riderName: entry.riderName, from: oldPos, to: entry.position });
-          }
-        }
-        for (const entry of payload.leaderboard as SseEntry[]) {
-          prevLapsRef.current.set(entry.riderId, entry.laps);
-          prevPositionsRef.current.set(entry.riderId, entry.position);
-        }
-
-        const isComplete = payload.status === "completed";
-        const wasInProgress = prevSseStatusRef.current === "in_progress";
-        prevSseStatusRef.current = payload.status;
-
-        if (maxNewLap > 0) triggerAnnouncement(maxNewLap, top5, posChanges, isComplete);
-        else if (isComplete && wasInProgress) triggerAnnouncement(top5[0]?.laps ?? 0, top5, posChanges, true);
-      } catch { /* ignore parse errors */ }
-    };
-
-    return () => {
-      es.close();
-      if (esRef.current === es) { esRef.current = null; activeMotoIdRef.current = null; }
-    };
-  }, [activeMoto?.id, activeMoto?.status, liveMode, triggerAnnouncement]);
 
   if (event && !activeClass && event.raceClasses && event.raceClasses.length > 0) {
     setActiveClass(event.raceClasses[0]);
@@ -369,25 +250,6 @@ export default function EventResults() {
                       <h2 className="text-2xl font-heading font-bold uppercase flex items-center gap-3">
                         <Trophy className="text-primary" /> {activeClass}
                       </h2>
-                      <div className="flex items-center gap-3">
-                        {announcerOn && announcerLabel && (
-                          <span className="text-primary/60 text-xs flex items-center gap-1">
-                            <Volume2 size={10} /> {announcerLabel}
-                          </span>
-                        )}
-                        <button
-                          onClick={() => setAnnouncerOn(v => !v)}
-                          title={announcerOn ? "Mute AI announcer" : "Enable AI announcer"}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all border ${
-                            announcerOn
-                              ? "bg-primary/10 text-primary border-primary/30 hover:bg-primary/20"
-                              : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
-                          }`}
-                        >
-                          {announcerOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                          {announcerOn ? "Announcer On" : "Announcer Off"}
-                        </button>
-                      </div>
                     </div>
 
                     {classResults.length === 0 ? (
