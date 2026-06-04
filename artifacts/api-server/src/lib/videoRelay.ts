@@ -20,7 +20,11 @@ interface StreamState {
 
 // Keep only the last few chunks — enough for a smooth late-join start without
 // overwhelming the Replit proxy with a large burst when a new viewer connects.
-const MAX_BUFFER_CHUNKS = 2;
+// Keep 10 recent chunks (~5 s at 500 ms/chunk) so late-joining viewers have
+// enough context to find a keyframe and start decoding. Combined with
+// sb.mode="sequence" on the client side this prevents the timestamp-gap
+// decode errors that caused the viewer to cycle every 2-3 seconds.
+const MAX_BUFFER_CHUNKS = 10;
 
 // eventId → stream state
 const streams = new Map<number, StreamState>();

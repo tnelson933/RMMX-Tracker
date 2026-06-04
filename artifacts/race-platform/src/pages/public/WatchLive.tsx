@@ -282,6 +282,13 @@ export default function WatchLive() {
 
       try {
         const sb = ms.addSourceBuffer(mime);
+        // "sequence" mode: MSE assigns timestamps sequentially, ignoring the
+        // timestamps embedded in the WebM cluster blocks. This is essential for
+        // live streaming where late-joining viewers receive an init segment from
+        // t=0 followed by buffered chunks from a much later timestamp. Without
+        // sequence mode the decoder detects the timestamp gap and fires a decode
+        // error that closes the MediaSource and causes the viewer to cycle.
+        sb.mode = "sequence";
         sbRef.current = sb;
 
         sb.addEventListener("error", (e) => {
