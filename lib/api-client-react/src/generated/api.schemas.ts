@@ -895,6 +895,11 @@ export interface PointsTableInput {
   scoringFormula?: string | null;
 }
 
+export interface UpdateResultLapsInput {
+  /** Lap times in milliseconds */
+  lapTimes: number[];
+}
+
 export interface ErrorEnvelope {
   error: string;
 }
@@ -924,6 +929,12 @@ search?: string;
 
 export type ListRfidTagsParams = {
 eventId?: number;
+};
+
+export type UpdateResultLaps200 = {
+  id?: number;
+  lapTimes?: number[];
+  totalTime?: string | null;
 };
 
 export type ListRecentResultsParams = {

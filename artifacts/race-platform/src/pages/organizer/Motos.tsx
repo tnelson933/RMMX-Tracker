@@ -3,7 +3,7 @@ import { useRoute, Link } from "wouter";
 import {
   useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables, useAdvanceToMain,
-  useUpdateEvent,
+  useUpdateEvent, useUpdateResultLaps,
   getListMotosQueryKey, getListCheckinsQueryKey, Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -365,9 +365,151 @@ function DraggablePoolRider({ riderId, riderName, bibNumber }: { riderId: number
   );
 }
 
-function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, rowNum }: {
+// ── Lap time helpers (mirrors server formatMs / parseTimeToMs) ─────────────────
+
+function fmtLapMs(ms: number): string {
+  if (ms <= 0) return "0:00.00";
+  const mins = Math.floor(ms / 60000);
+  const secs = Math.floor((ms % 60000) / 1000);
+  const centis = Math.floor((ms % 1000) / 10);
+  return `${mins}:${String(secs).padStart(2, "0")}.${String(centis).padStart(2, "0")}`;
+}
+
+function parseLapInput(s: string): number {
+  const colIdx = s.indexOf(":");
+  if (colIdx >= 0) {
+    const mins = parseInt(s.slice(0, colIdx), 10) || 0;
+    const [secStr, fracStr = "0"] = s.slice(colIdx + 1).split(".");
+    const secs = parseInt(secStr, 10) || 0;
+    const frac = parseInt(fracStr.padEnd(3, "0").slice(0, 3), 10) || 0;
+    return (mins * 60 + secs) * 1000 + frac;
+  }
+  const [secStr, fracStr = "0"] = s.split(".");
+  const secs = parseInt(secStr, 10) || 0;
+  const frac = parseInt(fracStr.padEnd(3, "0").slice(0, 3), 10) || 0;
+  return secs * 1000 + frac;
+}
+
+// ── Lap Times Editor Dialog ────────────────────────────────────────────────────
+
+type LapEditTarget = { riderId: number; riderName: string; motoId: number; eventId: number };
+
+function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: () => void }) {
+  const [laps, setLaps] = useState<string[]>([]);
+  const [resultId, setResultId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+  const updateLaps = useUpdateResultLaps();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/events/${target.eventId}/results`)
+      .then(r => r.json())
+      .then((results: any[]) => {
+        const match = results.find((r: any) => r.motoId === target.motoId && r.riderId === target.riderId);
+        if (match) {
+          setResultId(match.id);
+          const rawLaps: unknown[] = Array.isArray(match.lapTimes) ? match.lapTimes : [];
+          setLaps(rawLaps.map(t => fmtLapMs(typeof t === "number" ? t : 0)));
+        } else {
+          setResultId(null);
+          setLaps([]);
+        }
+      })
+      .catch(() => toast({ title: "Failed to load lap times", variant: "destructive" }))
+      .finally(() => setLoading(false));
+  }, [target.eventId, target.motoId, target.riderId]);
+
+  const lapMs = laps.map(parseLapInput).filter(ms => ms > 0);
+  const totalMs = lapMs.reduce((s, t) => s + t, 0);
+
+  const handleSave = () => {
+    if (resultId === null) {
+      toast({ title: "No result record found for this rider", variant: "destructive" });
+      return;
+    }
+    updateLaps.mutate(
+      { eventId: target.eventId, resultId, data: { lapTimes: lapMs } },
+      {
+        onSuccess: () => {
+          toast({ title: "Lap times saved", description: `${lapMs.length} laps for ${target.riderName}` });
+          queryClient.invalidateQueries({ queryKey: ["listResults", target.eventId] as any });
+          onClose();
+        },
+        onError: (err: any) => {
+          toast({ title: "Failed to save", description: err?.message ?? "Unknown error", variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  return (
+    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-heading uppercase tracking-tight flex items-center gap-2">
+            <Clock size={16} className="text-primary" />
+            Lap Times — {target.riderName}
+          </DialogTitle>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="py-10 text-center text-sm text-muted-foreground animate-pulse">Loading…</div>
+        ) : (
+          <div className="space-y-3">
+            {laps.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-2">No lap times recorded yet. Add one below.</p>
+            )}
+            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+              {laps.map((lap, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-8 text-xs text-muted-foreground text-right font-mono shrink-0">L{i + 1}</span>
+                  <Input
+                    value={lap}
+                    onChange={e => setLaps(prev => { const n = [...prev]; n[i] = e.target.value; return n; })}
+                    className="font-mono text-sm h-8"
+                    placeholder="0:00.00"
+                  />
+                  <button
+                    onClick={() => setLaps(prev => prev.filter((_, j) => j !== i))}
+                    className="text-muted-foreground/40 hover:text-destructive transition-colors shrink-0 p-0.5"
+                    title="Remove lap"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <Button variant="outline" size="sm" className="w-full" onClick={() => setLaps(prev => [...prev, ""])}>
+              <Plus size={13} className="mr-1" /> Add Lap
+            </Button>
+
+            {lapMs.length > 0 && (
+              <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs font-mono text-muted-foreground flex justify-between">
+                <span>{lapMs.length} laps</span>
+                <span>Total: {fmtLapMs(totalMs)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} disabled={updateLaps.isPending || loading || resultId === null}>
+            {updateLaps.isPending ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, rowNum, onViewLaps }: {
   entry: LineupEntry; motoId: number; locked?: boolean;
   onRecordLap?: () => void; lapCooldown?: boolean; rowNum?: number;
+  onViewLaps?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `rider-${motoId}-${entry.riderId}`,
@@ -394,7 +536,14 @@ function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, ro
           </span>
         )}
       </TableCell>
-      <TableCell className="font-medium">{entry.riderName}</TableCell>
+      <TableCell className="font-medium">
+        {onViewLaps ? (
+          <button onClick={onViewLaps} className="flex items-center gap-1 hover:text-primary transition-colors group">
+            {entry.riderName}
+            <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+          </button>
+        ) : entry.riderName}
+      </TableCell>
       <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
       <TableCell className="text-center">
         {entry.rfidNumber ? (
@@ -549,6 +698,7 @@ export default function Motos() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
+  const [lapEditTarget, setLapEditTarget] = useState<LapEditTarget | null>(null);
   const [poolSearch, setPoolSearch] = useState("");
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
   const [classFilter, setClassFilter] = useState<string>("schedule");
@@ -1707,6 +1857,7 @@ export default function Motos() {
                               onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
                               lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
                               rowNum={idx + 1}
+                              onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId }) : undefined}
                             />
                           ))
                         ) : (
@@ -1738,7 +1889,14 @@ export default function Motos() {
                             return (
                               <TableRow key={entry.riderId} className="h-8">
                                 <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                                <TableCell className="font-medium">{entry.riderName}</TableCell>
+                                <TableCell className="font-medium">
+                                  {moto.status === "completed" ? (
+                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId })} className="flex items-center gap-1 hover:text-primary transition-colors group">
+                                      {entry.riderName}
+                                      <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+                                    </button>
+                                  ) : entry.riderName}
+                                </TableCell>
                                 <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
                                 <TableCell className="text-center">
                                   {entry.rfidNumber ? (
@@ -1970,6 +2128,7 @@ export default function Motos() {
                               onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
                               lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
                               rowNum={idx + 1}
+                              onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId }) : undefined}
                             />
                           ))
                         ) : (
@@ -1999,7 +2158,14 @@ export default function Motos() {
                             return (
                               <TableRow key={entry.riderId} className="h-9">
                                 <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                                <TableCell className="font-medium">{entry.riderName}</TableCell>
+                                <TableCell className="font-medium">
+                                  {moto.status === "completed" ? (
+                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId })} className="flex items-center gap-1 hover:text-primary transition-colors group">
+                                      {entry.riderName}
+                                      <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+                                    </button>
+                                  ) : entry.riderName}
+                                </TableCell>
                                 <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
                                 <TableCell className="text-center">
                                   {entry.rfidNumber ? (
@@ -2109,6 +2275,9 @@ export default function Motos() {
           </Dialog>
         );
       })()}
+
+      {/* Lap times editor */}
+      {lapEditTarget && <LapTimesDialog target={lapEditTarget} onClose={() => setLapEditTarget(null)} />}
 
       {/* Delete confirmation dialog */}
       <Dialog open={confirmDeleteId !== null} onOpenChange={open => { if (!open) setConfirmDeleteId(null); }}>

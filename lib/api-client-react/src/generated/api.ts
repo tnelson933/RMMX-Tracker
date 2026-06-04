@@ -81,6 +81,8 @@ import type {
   StripeConnectStatus,
   UpcomingEventItem,
   UpdateMe,
+  UpdateResultLaps200,
+  UpdateResultLapsInput,
   UploadUrlRequest,
   UploadUrlResponse,
   User
@@ -3192,6 +3194,80 @@ export const useSubmitResults = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSubmitResultsMutationOptions(options));
+    }
+
+export const getUpdateResultLapsUrl = (eventId: number,
+    resultId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/results/${resultId}/laps`
+}
+
+/**
+ * @summary Update lap times for a single race result
+ */
+export const updateResultLaps = async (eventId: number,
+    resultId: number,
+    updateResultLapsInput: UpdateResultLapsInput, options?: RequestInit): Promise<UpdateResultLaps200> => {
+
+  return customFetch<UpdateResultLaps200>(getUpdateResultLapsUrl(eventId,resultId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateResultLapsInput,)
+  }
+);}
+
+
+
+
+export const getUpdateResultLapsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateResultLaps>>, TError,{eventId: number;resultId: number;data: BodyType<UpdateResultLapsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateResultLaps>>, TError,{eventId: number;resultId: number;data: BodyType<UpdateResultLapsInput>}, TContext> => {
+
+const mutationKey = ['updateResultLaps'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateResultLaps>>, {eventId: number;resultId: number;data: BodyType<UpdateResultLapsInput>}> = (props) => {
+          const {eventId,resultId,data} = props ?? {};
+
+          return  updateResultLaps(eventId,resultId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateResultLapsMutationResult = NonNullable<Awaited<ReturnType<typeof updateResultLaps>>>
+    export type UpdateResultLapsMutationBody = BodyType<UpdateResultLapsInput>
+    export type UpdateResultLapsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update lap times for a single race result
+ */
+export const useUpdateResultLaps = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateResultLaps>>, TError,{eventId: number;resultId: number;data: BodyType<UpdateResultLapsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateResultLaps>>,
+        TError,
+        {eventId: number;resultId: number;data: BodyType<UpdateResultLapsInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateResultLapsMutationOptions(options));
     }
 
 export const getPublishResultsUrl = (eventId: number,) => {

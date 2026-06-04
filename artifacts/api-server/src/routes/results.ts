@@ -200,6 +200,40 @@ router.post("/events/:eventId/results", async (req, res) => {
   })));
 });
 
+function formatMs(ms: number): string {
+  if (ms <= 0) return "0:00.00";
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  const centis = Math.floor((ms % 1000) / 10);
+  return `${minutes}:${String(seconds).padStart(2, "0")}.${String(centis).padStart(2, "0")}`;
+}
+
+router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const resultId = Number(req.params.resultId);
+  const { lapTimes } = req.body as { lapTimes?: unknown };
+
+  if (!Array.isArray(lapTimes) || lapTimes.some((t) => typeof t !== "number")) {
+    res.status(400).json({ error: "lapTimes must be an array of numbers (milliseconds)" });
+    return;
+  }
+
+  const totalMs = (lapTimes as number[]).reduce((s, t) => s + t, 0);
+  const totalTime = lapTimes.length > 0 ? formatMs(totalMs) : null;
+
+  const [updated] = await db
+    .update(raceResultsTable)
+    .set({ lapTimes: lapTimes as number[], totalTime })
+    .where(eq(raceResultsTable.id, resultId))
+    .returning();
+
+  if (!updated) { res.status(404).json({ error: "Result not found" }); return; }
+
+  res.json({ id: updated.id, lapTimes: updated.lapTimes, totalTime: updated.totalTime });
+});
+
 router.post("/events/:eventId/results/publish", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const { published } = req.body;

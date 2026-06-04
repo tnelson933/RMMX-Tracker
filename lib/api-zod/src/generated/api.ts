@@ -958,6 +958,25 @@ export const SubmitResultsBody = zod.object({
 
 
 /**
+ * @summary Update lap times for a single race result
+ */
+export const UpdateResultLapsParams = zod.object({
+  "eventId": zod.coerce.number(),
+  "resultId": zod.coerce.number()
+})
+
+export const UpdateResultLapsBody = zod.object({
+  "lapTimes": zod.array(zod.number()).describe('Lap times in milliseconds')
+})
+
+export const UpdateResultLapsResponse = zod.object({
+  "id": zod.number().optional(),
+  "lapTimes": zod.array(zod.number()).optional(),
+  "totalTime": zod.string().nullish()
+})
+
+
+/**
  * @summary Publish or unpublish event results
  */
 export const PublishResultsParams = zod.object({

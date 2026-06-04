@@ -96,6 +96,8 @@ export * from './stripeConnectStartResult';
 export * from './stripeConnectStatus';
 export * from './upcomingEventItem';
 export * from './updateMe';
+export * from './updateResultLaps200';
+export * from './updateResultLapsInput';
 export * from './uploadUrlRequest';
 export * from './uploadUrlResponse';
 export * from './user';

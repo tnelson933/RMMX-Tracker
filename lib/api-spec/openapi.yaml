@@ -858,6 +858,46 @@ paths:
                 items:
                   $ref: "#/components/schemas/RaceResult"
 
+  /events/{eventId}/results/{resultId}/laps:
+    patch:
+      operationId: updateResultLaps
+      tags: [results]
+      summary: Update lap times for a single race result
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: resultId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateResultLapsInput"
+      responses:
+        "200":
+          description: Lap times updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  lapTimes:
+                    type: array
+                    items:
+                      type: integer
+                  totalTime:
+                    type: string
+                    nullable: true
+
   /events/{eventId}/results/publish:
     post:
       operationId: publishResults
@@ -2640,6 +2680,16 @@ components:
         scoringFormula:
           type: ["string", "null"]
           description: JS expression using position and riders variables
+
+    UpdateResultLapsInput:
+      type: object
+      required: [lapTimes]
+      properties:
+        lapTimes:
+          type: array
+          items:
+            type: integer
+          description: Lap times in milliseconds
 
     ErrorEnvelope:
       type: object
