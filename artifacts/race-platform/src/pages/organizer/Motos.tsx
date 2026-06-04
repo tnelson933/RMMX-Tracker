@@ -1299,52 +1299,130 @@ export default function Motos() {
         </div>
       </div>
 
-      {/* Minimum Lap Times panel */}
-      {((event as any)?.raceClasses as string[] | undefined)?.length ? (
-        <div className="border rounded-xl bg-card overflow-hidden">
-          <div className="flex items-center gap-2 px-5 py-3 border-b bg-muted/30">
-            <Timer size={15} className="text-muted-foreground" />
-            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">Minimum Lap Times</h3>
-            <span className="text-xs text-muted-foreground font-normal ml-1">— Crossings below this will be flagged in red</span>
-          </div>
-          <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {((event as any)?.raceClasses as string[]).map(cls => {
-              const saved = ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[cls];
-              const isSaved = minLapSavedClass === cls;
-              return (
-                <div key={cls} className="space-y-1.5">
-                  <label className="text-xs font-medium text-foreground truncate block" title={cls}>{cls}</label>
-                  <div className="relative">
-                    <Input
-                      value={minLapInputs[cls] ?? ""}
-                      onChange={e => setMinLapInputs(prev => ({ ...prev, [cls]: e.target.value }))}
-                      onBlur={() => handleMinLapBlur(cls)}
-                      onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                      placeholder={saved ? formatMinLapTime(saved) : "e.g. 1:30"}
-                      className="h-8 text-xs font-mono pr-8"
-                    />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                      {isSaved ? (
-                        <Check size={12} className="text-green-500" />
-                      ) : (minLapInputs[cls] ?? "").trim() === "" && !saved ? null : (
-                        <span className="text-[10px] text-muted-foreground">m:ss</span>
+      {/* Settings row — Minimum Lap Times + Advance to Main side by side */}
+      {(((event as any)?.raceClasses as string[] | undefined)?.length || (isSupercrossFormat && (motos ?? []).some(m => m.type === "main"))) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+
+          {/* Minimum Lap Times — compact */}
+          {((event as any)?.raceClasses as string[] | undefined)?.length ? (
+            <div className="border rounded-lg bg-card overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
+                <Timer size={13} className="text-muted-foreground shrink-0" />
+                <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Minimum Lap Times</h3>
+                <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">— flags short laps red</span>
+              </div>
+              <div className="px-3 py-2 grid grid-cols-2 gap-2">
+                {((event as any)?.raceClasses as string[]).map(cls => {
+                  const saved = ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[cls];
+                  const isSaved = minLapSavedClass === cls;
+                  return (
+                    <div key={cls} className="space-y-1">
+                      <label className="text-[10px] font-medium text-muted-foreground truncate block" title={cls}>{cls}</label>
+                      <div className="relative">
+                        <Input
+                          value={minLapInputs[cls] ?? ""}
+                          onChange={e => setMinLapInputs(prev => ({ ...prev, [cls]: e.target.value }))}
+                          onBlur={() => handleMinLapBlur(cls)}
+                          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                          placeholder={saved ? formatMinLapTime(saved) : "m:ss"}
+                          className="h-7 text-xs font-mono pr-7"
+                        />
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                          {isSaved ? (
+                            <Check size={11} className="text-green-500" />
+                          ) : (minLapInputs[cls] ?? "").trim() === "" && !saved ? null : (
+                            <span className="text-[9px] text-muted-foreground">m:ss</span>
+                          )}
+                        </div>
+                      </div>
+                      {saved && (
+                        <div className="text-[9px] text-muted-foreground">✓ {formatMinLapTime(saved)}</div>
                       )}
                     </div>
-                  </div>
-                  {saved && (
-                    <div className="text-[10px] text-muted-foreground">
-                      Saved: {formatMinLapTime(saved)}
+                  );
+                })}
+              </div>
+            </div>
+          ) : <div />}
+
+          {/* Advance to Main — compact, Supercross only */}
+          {isSupercrossFormat && (motos ?? []).some(m => m.type === "main") ? (
+            <div className="border rounded-lg bg-card overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
+                <Flag size={13} className="text-primary shrink-0" />
+                <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Advance to Main Event</h3>
+              </div>
+              <div className="px-3 py-2 space-y-1.5">
+                {[...new Set((motos ?? []).filter(m => m.type === "main").map(m => m.raceClass).filter((c): c is string => !!c))].map(cls => {
+                  const heats = (motos ?? []).filter(m => m.type === "heat" && m.raceClass === cls);
+                  const completedHeats = heats.filter(m => m.status === "completed");
+                  const allHeatsComplete = heats.length > 0 && completedHeats.length === heats.length;
+                  const totalInHeats = heats.reduce((s, h) => s + ((h.lineup as any[])?.length ?? 0), 0);
+                  const currentVal = topPerHeatByClass[cls] ?? defaultTopPerHeat[cls] ?? 1;
+                  return (
+                    <div key={cls} className={`rounded-md border px-2.5 py-2 ${allHeatsComplete ? "bg-muted/30" : "bg-muted/10 opacity-75"}`}>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-heading font-semibold text-xs uppercase tracking-wide truncate">{cls}</div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {completedHeats.length}/{heats.length} heats · {totalInHeats} riders
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] text-muted-foreground">Top</span>
+                          <div className="flex items-center border rounded overflow-hidden bg-background">
+                            <button
+                              type="button"
+                              className="px-1.5 py-1 text-xs font-bold hover:bg-muted transition-colors disabled:opacity-40"
+                              disabled={currentVal <= 1}
+                              onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: Math.max(1, currentVal - 1) }))}
+                            >−</button>
+                            <input
+                              type="number"
+                              min={1}
+                              max={totalInHeats || 99}
+                              value={currentVal}
+                              onChange={e => {
+                                const v = parseInt(e.target.value, 10);
+                                if (!isNaN(v) && v >= 1) setTopPerHeatByClass(p => ({ ...p, [cls]: v }));
+                              }}
+                              className="w-8 text-center text-xs font-mono font-bold bg-transparent border-x py-1 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button
+                              type="button"
+                              className="px-1.5 py-1 text-xs font-bold hover:bg-muted transition-colors"
+                              onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: currentVal + 1 }))}
+                            >+</button>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">/ heat</span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="font-heading uppercase tracking-wider gap-1 shrink-0 h-7 text-xs px-2"
+                          disabled={!allHeatsComplete || advanceToMainMutation.isPending}
+                          title={!allHeatsComplete ? `${heats.length - completedHeats.length} heat(s) must be completed first` : undefined}
+                          onClick={() => handleAdvanceToMain(cls)}
+                        >
+                          <Flag size={11} />
+                          Go
+                        </Button>
+                      </div>
+                      {!allHeatsComplete && (
+                        <div className="mt-1 text-[10px] text-amber-600 flex items-center gap-1">
+                          <span>⏳</span>
+                          <span>{heats.length - completedHeats.length} heat(s) must finish first</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div className="px-5 pb-3 text-[11px] text-muted-foreground">
-            Enter as <span className="font-mono bg-muted px-1 rounded">m:ss</span> (e.g. <span className="font-mono bg-muted px-1 rounded">1:30</span>) or seconds (e.g. <span className="font-mono bg-muted px-1 rounded">90</span>). Leave blank to disable for that class. Saves on Enter or focus-out.
-          </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : <div />}
+
         </div>
-      ) : null}
+      )}
 
       {/* Live Video Feed panel */}
       {showBroadcast && (
@@ -1382,89 +1460,6 @@ export default function Motos() {
               <code className="bg-muted px-1 rounded text-xs font-mono">{`{ rfidNumber, motoId }`}</code>.
               The leaderboard updates in real time via SSE.
             </span>
-          </div>
-        </div>
-      )}
-
-      {/* Advance to Main panel — Supercross format only */}
-      {isSupercrossFormat && (motos ?? []).some(m => m.type === "main") && (
-        <div className="border rounded-xl p-5 bg-card space-y-4">
-          <div className="flex items-center gap-2">
-            <Flag size={16} className="text-primary" />
-            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">Advance to Main Event</h3>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Select how many top finishers from each heat advance to the Main Event. Auto-set to ~30% of heat size — adjust per class as needed.
-          </p>
-          <div className="space-y-2">
-            {[...new Set((motos ?? []).filter(m => m.type === "main").map(m => m.raceClass).filter((c): c is string => !!c))].map(cls => {
-              const heats = (motos ?? []).filter(m => m.type === "heat" && m.raceClass === cls);
-              const completedHeats = heats.filter(m => m.status === "completed");
-              const allHeatsComplete = heats.length > 0 && completedHeats.length === heats.length;
-              const totalInHeats = heats.reduce((s, h) => s + ((h.lineup as any[])?.length ?? 0), 0);
-              const currentVal = topPerHeatByClass[cls] ?? defaultTopPerHeat[cls] ?? 1;
-              return (
-                <div key={cls} className={`rounded-lg border px-4 py-3 ${allHeatsComplete ? "bg-muted/30" : "bg-muted/10 opacity-75"}`}>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-heading font-semibold text-sm uppercase tracking-wide">{cls}</div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                        <span>{completedHeats.length}/{heats.length} heat{heats.length !== 1 ? "s" : ""} complete</span>
-                        <span>·</span>
-                        <span>{totalInHeats} riders</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">Top</span>
-                      <div className="flex items-center border rounded-md overflow-hidden bg-background">
-                        <button
-                          type="button"
-                          className="px-2 py-1.5 text-sm font-bold hover:bg-muted transition-colors disabled:opacity-40"
-                          disabled={currentVal <= 1}
-                          onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: Math.max(1, currentVal - 1) }))}
-                        >−</button>
-                        <input
-                          type="number"
-                          min={1}
-                          max={totalInHeats || 99}
-                          value={currentVal}
-                          onChange={e => {
-                            const v = parseInt(e.target.value, 10);
-                            if (!isNaN(v) && v >= 1) setTopPerHeatByClass(p => ({ ...p, [cls]: v }));
-                          }}
-                          className="w-10 text-center text-sm font-mono font-bold bg-transparent border-x py-1.5 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <button
-                          type="button"
-                          className="px-2 py-1.5 text-sm font-bold hover:bg-muted transition-colors"
-                          onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: currentVal + 1 }))}
-                        >+</button>
-                      </div>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">per heat</span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="font-heading uppercase tracking-wider gap-1.5 shrink-0"
-                      disabled={!allHeatsComplete || advanceToMainMutation.isPending}
-                      title={!allHeatsComplete ? `${heats.length - completedHeats.length} heat${heats.length - completedHeats.length !== 1 ? "s" : ""} still need to be completed` : undefined}
-                      onClick={() => handleAdvanceToMain(cls)}
-                    >
-                      <Flag size={13} />
-                      Advance
-                    </Button>
-                  </div>
-                  {!allHeatsComplete && (
-                    <div className="mt-2 text-xs text-amber-600 flex items-center gap-1.5">
-                      <span>⏳</span>
-                      <span>
-                        {heats.length - completedHeats.length} heat{heats.length - completedHeats.length !== 1 ? "s" : ""} must be completed before advancing
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
           </div>
         </div>
       )}
