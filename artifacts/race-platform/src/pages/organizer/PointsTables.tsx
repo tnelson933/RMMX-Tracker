@@ -1149,8 +1149,9 @@ export default function PointsTables() {
       toast({ title: "Points table deleted" });
       setSheetOpen(false);
       queryClient.invalidateQueries({ queryKey: getListPointsTablesQueryKey() });
-    } catch {
-      toast({ title: "Failed to delete", variant: "destructive" });
+    } catch (err: any) {
+      const message = err?.message || err?.response?.data?.error || "Could not delete this scoring table.";
+      toast({ title: "Failed to delete", description: message, variant: "destructive" });
     }
   }
 
