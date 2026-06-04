@@ -133,6 +133,8 @@ router.patch("/motos/:motoId", async (req, res) => {
   if (req.body.lineup !== undefined) updates.lineup = req.body.lineup;
   if (req.body.scheduledTime !== undefined) updates.scheduledTime = req.body.scheduledTime;
   if (req.body.lapCount !== undefined) updates.lapCount = req.body.lapCount !== null ? Number(req.body.lapCount) : null;
+  if (req.body.motoNumber !== undefined) updates.motoNumber = Number(req.body.motoNumber);
+  if (req.body.name !== undefined) updates.name = String(req.body.name);
 
   const [moto] = await db.update(motosTable).set(updates as any).where(eq(motosTable.id, id)).returning();
   if (!moto) return res.status(404).json({ error: "Not found" });

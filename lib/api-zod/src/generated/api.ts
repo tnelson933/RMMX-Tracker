@@ -820,7 +820,9 @@ export const UpdateMotoBody = zod.object({
   "status": zod.string().optional(),
   "lineup": zod.array(zod.number()).optional(),
   "scheduledTime": zod.string().optional(),
-  "lapCount": zod.number().nullish()
+  "lapCount": zod.number().nullish(),
+  "motoNumber": zod.number().optional(),
+  "name": zod.string().optional()
 })
 
 export const UpdateMotoResponse = zod.object({

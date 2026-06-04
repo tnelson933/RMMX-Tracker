@@ -550,6 +550,8 @@ export interface MotoUpdate {
   scheduledTime?: string;
   /** @nullable */
   lapCount?: number | null;
+  motoNumber?: number;
+  name?: string;
 }
 
 export type LineupGenerateInputRaceFormat = typeof LineupGenerateInputRaceFormat[keyof typeof LineupGenerateInputRaceFormat];

@@ -2011,6 +2011,10 @@ components:
           type: string
         lapCount:
           type: ["integer", "null"]
+        motoNumber:
+          type: integer
+        name:
+          type: string
 
     LineupEntry:
       type: object
