@@ -11,4 +11,5 @@ export interface LineupGenerateInput {
   raceFormat: LineupGenerateInputRaceFormat;
   classes: string[];
   ridersPerHeat?: number;
+  usePracticeSeeding?: boolean;
 }

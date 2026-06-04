@@ -554,6 +554,11 @@ export interface MotoUpdate {
   name?: string;
 }
 
+export interface GateSettings {
+  gateCount?: number | null;
+  gateSeeding?: number[];
+}
+
 export type LineupGenerateInputRaceFormat = typeof LineupGenerateInputRaceFormat[keyof typeof LineupGenerateInputRaceFormat];
 
 
@@ -567,6 +572,7 @@ export interface LineupGenerateInput {
   raceFormat: LineupGenerateInputRaceFormat;
   classes: string[];
   ridersPerHeat?: number;
+  usePracticeSeeding?: boolean;
 }
 
 export interface RiderResultInput {

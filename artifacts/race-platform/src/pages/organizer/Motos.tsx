@@ -544,6 +544,7 @@ export default function Motos() {
   const [topPerHeatByClass, setTopPerHeatByClass] = useState<Record<string, number>>({});
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
+  const [usePracticeSeeding, setUsePracticeSeeding] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
@@ -890,7 +891,7 @@ export default function Motos() {
     if (!event?.raceClasses) return;
     const perHeat = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
     generateMutation.mutate(
-      { eventId, data: { raceFormat: format, classes: event.raceClasses, ridersPerHeat: perHeat } },
+      { eventId, data: { raceFormat: format, classes: event.raceClasses, ridersPerHeat: perHeat, usePracticeSeeding } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -1288,6 +1289,20 @@ export default function Motos() {
                   {isSupercrossFormat
                     ? "If a class exceeds this number, additional heats are created automatically."
                     : "If a class exceeds this number, riders are split into separate groups."}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/30 px-4 py-3 space-y-1.5">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={usePracticeSeeding}
+                    onChange={e => setUsePracticeSeeding(e.target.checked)}
+                    className="h-4 w-4 rounded accent-primary"
+                  />
+                  <span className="text-sm font-medium">Use practice lap seeding</span>
+                </label>
+                <p className="text-xs text-muted-foreground pl-7">
+                  Distributes riders into groups by best practice lap time (serpentine seeding) and assigns starting gates in order of speed. Requires gate settings to be configured.
                 </p>
               </div>
               <Button onClick={handleGenerate} disabled={generateMutation.isPending} className="w-full font-heading uppercase">

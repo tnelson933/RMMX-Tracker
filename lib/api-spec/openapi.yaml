@@ -278,6 +278,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/Club"
 
+  /clubs/gate-settings:
+    get:
+      operationId: getGateSettings
+      tags: [clubs]
+      summary: Get gate count and seeding order for the logged-in organizer's club
+      responses:
+        "200":
+          description: Gate settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateSettings"
+    patch:
+      operationId: updateGateSettings
+      tags: [clubs]
+      summary: Save gate count and seeding order for the logged-in organizer's club
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GateSettings"
+      responses:
+        "200":
+          description: Updated gate settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GateSettings"
+
   /clubs/{clubId}:
     get:
       operationId: getClub
@@ -2031,6 +2061,17 @@ components:
         rfidNumber:
           type: ["string", "null"]
 
+    GateSettings:
+      type: object
+      properties:
+        gateCount:
+          type: integer
+          nullable: true
+        gateSeeding:
+          type: array
+          items:
+            type: integer
+
     LineupGenerateInput:
       type: object
       required: [raceFormat, classes]
@@ -2044,6 +2085,8 @@ components:
             type: string
         ridersPerHeat:
           type: integer
+        usePracticeSeeding:
+          type: boolean
 
     RaceResult:
       type: object

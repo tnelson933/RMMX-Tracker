@@ -179,6 +179,29 @@ export const CreateClubBody = zod.object({
 
 
 /**
+ * @summary Get gate count and seeding order for the logged-in organizer's club
+ */
+export const GetGateSettingsResponse = zod.object({
+  "gateCount": zod.number().nullish(),
+  "gateSeeding": zod.array(zod.number()).optional()
+})
+
+
+/**
+ * @summary Save gate count and seeding order for the logged-in organizer's club
+ */
+export const UpdateGateSettingsBody = zod.object({
+  "gateCount": zod.number().nullish(),
+  "gateSeeding": zod.array(zod.number()).optional()
+})
+
+export const UpdateGateSettingsResponse = zod.object({
+  "gateCount": zod.number().nullish(),
+  "gateSeeding": zod.array(zod.number()).optional()
+})
+
+
+/**
  * @summary Get a club
  */
 export const GetClubParams = zod.object({
@@ -863,7 +886,8 @@ export const GenerateLineupsParams = zod.object({
 export const GenerateLineupsBody = zod.object({
   "raceFormat": zod.enum(['one_moto', 'two_moto', 'three_moto']),
   "classes": zod.array(zod.string()),
-  "ridersPerHeat": zod.number().optional()
+  "ridersPerHeat": zod.number().optional(),
+  "usePracticeSeeding": zod.boolean().optional()
 })
 
 export const GenerateLineupsResponseItem = zod.object({

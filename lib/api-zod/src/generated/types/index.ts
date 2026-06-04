@@ -43,6 +43,7 @@ export * from './eventUpdate';
 export * from './eventUpdateMinLapTimes';
 export * from './eventUpdateRaceClassLimits';
 export * from './eventUpdateTimingTechnology';
+export * from './gateSettings';
 export * from './healthStatus';
 export * from './lineupEntry';
 export * from './lineupGenerateInput';
