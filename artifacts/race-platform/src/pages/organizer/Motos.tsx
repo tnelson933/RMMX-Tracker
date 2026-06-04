@@ -1118,7 +1118,6 @@ export default function Motos() {
                         <SelectItem value="heat">Heat</SelectItem>
                         <SelectItem value="lcq">LCQ</SelectItem>
                         <SelectItem value="main">Main</SelectItem>
-                        <SelectItem value="practice">Practice</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1535,9 +1534,9 @@ export default function Motos() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {[...Array(4)].map((_, i) => <Card key={i} className="h-64 animate-pulse" />)}
           </div>
-        ) : motos?.length ? (
+        ) : motos?.filter(m => m.type !== "practice").length ? (
         <div className="space-y-0">
-          {motos.sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
+          {motos.filter(m => m.type !== "practice").sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
             <div key={moto.id}>
               <DroppableMotoSlot id={`moto-slot-${moto.id}`} active={!!activeMotoCardDrag && activeMotoCardDrag.motoId !== moto.id} />
             <Card className="flex flex-col h-full border-sidebar-border overflow-hidden">
