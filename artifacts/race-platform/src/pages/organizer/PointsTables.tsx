@@ -476,6 +476,7 @@ function AiAssistPanel({
 function AiTweakPanel({
   currentForm,
   onApply,
+  label = "AI Edits",
 }: {
   currentForm: FormState;
   onApply: (result: {
@@ -486,6 +487,7 @@ function AiTweakPanel({
     pointsScale: number[];
     scoringFormula?: string | null;
   }) => void;
+  label?: string;
 }) {
   const [instruction, setInstruction] = useState("");
   const tweakMutation = useAiTweakPointsTable();
@@ -518,21 +520,27 @@ function AiTweakPanel({
     }
   }
 
+  const isRefine = label !== "AI Edits";
+
   return (
     <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-4 space-y-3">
       <div className="flex items-center gap-2">
         <Sparkles size={16} className="text-primary" />
         <span className="text-sm font-heading font-bold uppercase tracking-wider text-primary">
-          AI Edits
+          {label}
         </span>
         <span className="ml-auto text-[10px] font-heading uppercase tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-          Describe a change
+          {isRefine ? "AI refines" : "Describe a change"}
         </span>
       </div>
 
       <div className="space-y-1.5">
         <Textarea
-          placeholder='e.g. "Give 1st place 30 points instead of 25" or "Add 5 more positions at the bottom, each 1 point less" or "Switch to lowest positions scoring"'
+          placeholder={
+            isRefine
+              ? 'e.g. "Give 1st place 30 points instead of 25" or "Add more positions" or "Switch to 3 motos per class"'
+              : 'e.g. "Give 1st place 30 points instead of 25" or "Add 5 more positions at the bottom, each 1 point less" or "Switch to lowest positions scoring"'
+          }
           rows={3}
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
@@ -553,12 +561,12 @@ function AiTweakPanel({
         {tweakMutation.isPending ? (
           <>
             <span className="animate-spin">✦</span>
-            Applying…
+            {isRefine ? "Refining…" : "Applying…"}
           </>
         ) : (
           <>
             <Sparkles size={14} />
-            Apply with AI
+            {isRefine ? "Refine with AI" : "Apply with AI"}
           </>
         )}
       </Button>
@@ -666,9 +674,12 @@ function TableFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5 pt-1">
-          {/* AI panel — create: full generator; edit: tweak box */}
-          {!isEditing && (
+          {/* AI panel — create (no AI yet): full generator; create (after AI): refine box; edit: tweak box */}
+          {!isEditing && !aiUsed && (
             <AiAssistPanel onApply={applyAiResult} />
+          )}
+          {!isEditing && aiUsed && (
+            <AiTweakPanel currentForm={form} onApply={applyAiResult} label="What needs to be improved?" />
           )}
           {isEditing && (
             <AiTweakPanel currentForm={form} onApply={applyAiResult} />
