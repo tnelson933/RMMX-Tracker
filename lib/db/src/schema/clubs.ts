@@ -1,9 +1,9 @@
-import { pgTable, serial, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const clubsTable = pgTable("clubs", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity({ startWith: 1000 }),
   name: text("name").notNull(),
   state: text("state").notNull(),
   contactEmail: text("contact_email"),
