@@ -315,9 +315,11 @@ export default function StandalonePractice() {
                     </div>
                   )}
                 </div>
-                <div className="text-xs text-sidebar-foreground/50 mt-0.5 font-mono">
-                  POST /api/practice/{selectedSession.id}/crossing — for reader integration
-                </div>
+                {selectedSession.startedAt && (
+                  <div className="text-xs text-sidebar-foreground/50 mt-0.5">
+                    Started {new Date(selectedSession.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -371,18 +373,11 @@ export default function StandalonePractice() {
                     </div>
                     <div className="text-muted-foreground text-sm max-w-sm">
                       {selectedSession.status === "idle"
-                        ? "Start the session, then any RFID crossing will be automatically captured. Riders are identified by their transponder number, with name lookup from your event history."
+                        ? "Start the session and riders will appear automatically as they cross the timing gate. Names are matched from your RFID assignments and rider profiles."
                         : selectedSession.status === "active"
-                        ? "Riders will appear here as they cross the timing gate. Crossings are auto-sent by your RFID bridge using the endpoint below."
+                        ? "Riders will appear here as they cross the timing gate. Make sure your RFID reader is powered on and the bridge is running."
                         : "No lap data was captured in this session."}
                     </div>
-                    {selectedSession.status === "active" && (
-                      <div className="mt-4 inline-block bg-muted px-4 py-2 rounded-lg font-mono text-xs text-left border border-border">
-                        POST /api/practice/{selectedSession.id}/crossing
-                        <br />
-                        Body: {"{"} rfidNumber: "TAG_ID" {"}"}
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
