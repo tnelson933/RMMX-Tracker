@@ -911,7 +911,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
 export default function RiderHistory() {
   const [, params] = useRoute("/rider/portal/:riderId");
   const riderId = parseInt(params?.riderId ?? "0", 10);
-  const [activeTab, setActiveTab] = useState<"today" | "nearby" | "races" | "practice">("today");
+  const [activeTab, setActiveTab] = useState<"today" | "upcoming" | "nearby" | "races" | "practice">("today");
 
   const { data, isLoading, error } = useQuery<RiderHistoryResponse>({
     queryKey: ["rider-history", riderId],
@@ -936,12 +936,20 @@ export default function RiderHistory() {
   const history = data?.history ?? [];
   const practiceSessions = practiceData?.sessions ?? [];
 
-  // Auto-switch to "Near Me" if rider has no active/upcoming events
+  // Split schedule events: today = race_day only; upcoming = everything else (registration_open, etc.)
+  const todayEvents = (scheduleData?.events ?? []).filter(e => e.status === "race_day");
+  const upcomingEvents = (scheduleData?.events ?? []).filter(e => e.status !== "race_day" && e.status !== "completed");
+
+  // Auto-switch tab based on what the rider has scheduled
   const didAutoTab = useRef(false);
   useEffect(() => {
     if (!scheduleLoading && scheduleData && !didAutoTab.current) {
       didAutoTab.current = true;
-      if (scheduleData.events.length === 0) {
+      if (todayEvents.length > 0) {
+        setActiveTab("today");
+      } else if (upcomingEvents.length > 0) {
+        setActiveTab("upcoming");
+      } else {
         setActiveTab("nearby");
       }
     }
@@ -1033,8 +1041,7 @@ export default function RiderHistory() {
           <div className="flex gap-1 border-b border-border overflow-x-auto">
             {/* Today tab */}
             {(() => {
-              const scheduleEvents = scheduleData?.events ?? [];
-              const hasLive = scheduleEvents.some(e => e.motos.some(m => m.status === "in_progress"));
+              const hasLive = todayEvents.some(e => e.motos.some(m => m.status === "in_progress"));
               return (
                 <button
                   onClick={() => setActiveTab("today")}
@@ -1046,18 +1053,37 @@ export default function RiderHistory() {
                 >
                   {hasLive ? <Radio size={14} className="animate-pulse text-green-500" /> : <Flag size={14} />}
                   Today
-                  {scheduleEvents.length > 0 && (
+                  {todayEvents.length > 0 && (
                     <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
                       activeTab === "today"
                         ? hasLive ? "bg-green-500/10 text-green-600" : "bg-primary/10 text-primary"
                         : "bg-muted text-muted-foreground"
                     }`}>
-                      {scheduleEvents.length}
+                      {todayEvents.length}
                     </span>
                   )}
                 </button>
               );
             })()}
+            {/* Upcoming tab */}
+            <button
+              onClick={() => setActiveTab("upcoming")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+                activeTab === "upcoming"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Calendar size={14} />
+              Upcoming
+              {upcomingEvents.length > 0 && (
+                <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
+                  activeTab === "upcoming" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                }`}>
+                  {upcomingEvents.length}
+                </span>
+              )}
+            </button>
             <button
               onClick={() => setActiveTab("nearby")}
               className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
@@ -1110,27 +1136,111 @@ export default function RiderHistory() {
           {/* Near Me tab */}
           {activeTab === "nearby" && <NearMeTab />}
 
-          {/* Today / Schedule tab */}
+          {/* Today tab — race_day events only */}
           {activeTab === "today" && (
             <div>
               {scheduleLoading ? (
                 <div className="space-y-4">
                   {[1, 2].map(i => <div key={i} className="h-40 bg-muted animate-pulse rounded-xl" />)}
                 </div>
-              ) : !scheduleData?.events.length ? (
+              ) : todayEvents.length === 0 ? (
                 <Card>
                   <CardContent className="p-12 text-center">
                     <Flag size={40} className="mx-auto text-muted-foreground/30 mb-3" />
-                    <h3 className="font-heading font-bold text-lg uppercase mb-1">No Active Events</h3>
+                    <h3 className="font-heading font-bold text-lg uppercase mb-1">No Events Today</h3>
                     <p className="text-muted-foreground text-sm">
-                      You're not registered for any upcoming events yet.
+                      You don't have any races scheduled for today.
+                      {upcomingEvents.length > 0 && (
+                        <> Check the <button onClick={() => setActiveTab("upcoming")} className="text-primary underline underline-offset-2">Upcoming</button> tab for future events.</>
+                      )}
                     </p>
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-8">
-                  {scheduleData.events.map(event => (
+                <div className="space-y-6">
+                  {todayEvents.map(event => (
                     <ScheduleEventSection key={event.eventId} event={event} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Upcoming tab — future registered events */}
+          {activeTab === "upcoming" && (
+            <div>
+              {scheduleLoading ? (
+                <div className="space-y-4">
+                  {[1, 2].map(i => <div key={i} className="h-40 bg-muted animate-pulse rounded-xl" />)}
+                </div>
+              ) : upcomingEvents.length === 0 ? (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Calendar size={40} className="mx-auto text-muted-foreground/30 mb-3" />
+                    <h3 className="font-heading font-bold text-lg uppercase mb-1">No Upcoming Events</h3>
+                    <p className="text-muted-foreground text-sm">
+                      You're not registered for any future events yet.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  {upcomingEvents.map(event => (
+                    <div key={event.eventId} className="rounded-2xl border-2 overflow-hidden shadow-sm">
+                      <div className="p-5 bg-muted">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-heading font-black text-xl uppercase tracking-tight leading-none">
+                              {event.eventName}
+                            </h3>
+                            <div className="flex items-center gap-3 mt-2 flex-wrap text-sm text-muted-foreground">
+                              {event.eventDate && (
+                                <span className="flex items-center gap-1">
+                                  <Calendar size={13} />
+                                  {new Date(event.eventDate).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                                </span>
+                              )}
+                              {(event.eventLocation || event.eventState) && (
+                                <span className="flex items-center gap-1">
+                                  <MapPin size={13} />
+                                  {event.eventLocation ?? event.eventState}
+                                  {event.eventLocation && event.eventState && `, ${event.eventState}`}
+                                </span>
+                              )}
+                            </div>
+                            {event.registrations.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                                {event.registrations.map(r => (
+                                  <span key={r.riderId} className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary border border-primary/20 rounded-full px-2.5 py-0.5 font-semibold">
+                                    {r.riderName}{r.raceClass ? ` · ${r.raceClass}` : ""}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            {event.eventDate && (() => {
+                              const days = Math.ceil((new Date(event.eventDate).getTime() - Date.now()) / 86_400_000);
+                              return days > 0 ? (
+                                <>
+                                  <div className="font-heading font-black text-3xl text-primary leading-none">{days}</div>
+                                  <div className="text-xs text-muted-foreground">day{days !== 1 ? "s" : ""} away</div>
+                                </>
+                              ) : null;
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                      {event.motos.length > 0 ? (
+                        <div className="px-5 py-3 bg-background border-t text-sm text-muted-foreground">
+                          {event.motos.length} race{event.motos.length !== 1 ? "s" : ""} scheduled — full lineup available on race day
+                        </div>
+                      ) : (
+                        <div className="px-5 py-3 bg-background border-t text-sm text-muted-foreground">
+                          Race schedule not posted yet — check back closer to race day
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
