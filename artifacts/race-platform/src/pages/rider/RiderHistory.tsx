@@ -769,15 +769,25 @@ function ScheduleMotoCard({ moto, isUpNext }: { moto: ScheduleMoto; isUpNext?: b
   );
 }
 
+const STATUS_DISPLAY_ORDER: Record<string, number> = { in_progress: 0, scheduled: 1, completed: 2, cancelled: 3 };
+
 function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   const isRaceDay = event.status === "race_day";
   const hasLiveMotos = event.motos.some(m => m.status === "in_progress");
   const myMotos = event.motos.filter(m => m.isAnyFamilyMemberInMoto);
 
-  // "Up Next" = first moto whose status is "scheduled" (motos are sorted by motoNumber)
+  // Re-sort for display: live → upcoming → completed, preserving motoNumber order within each group
+  const sortedMotos = [...event.motos].sort((a, b) => {
+    const oa = STATUS_DISPLAY_ORDER[a.status] ?? 1;
+    const ob = STATUS_DISPLAY_ORDER[b.status] ?? 1;
+    if (oa !== ob) return oa - ob;
+    return (a.motoNumber ?? 0) - (b.motoNumber ?? 0);
+  });
+
+  // "Up Next" = first scheduled moto in run order (by original motoNumber)
   const upNextMotoId = event.motos.find(m => m.status === "scheduled")?.motoId ?? null;
 
-  // How many races (motos) come before the rider's next upcoming moto
+  // How many races (motos) come before the rider's next upcoming moto (in run order)
   const nextMyMotoIdx = event.motos.findIndex(m => m.isAnyFamilyMemberInMoto && m.status === "scheduled");
   const racesUntilTurn = nextMyMotoIdx > 0 ? nextMyMotoIdx : null;
 
@@ -837,20 +847,42 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
         </div>
       </div>
 
-      {/* Motos — full schedule in run order, all classes */}
+      {/* Motos — live/upcoming first, completed at bottom */}
       <div className="space-y-2 pl-1">
-        {event.motos.map(moto => (
-          <ScheduleMotoCard
-            key={moto.motoId}
-            moto={moto}
-            isUpNext={moto.motoId === upNextMotoId}
-          />
-        ))}
-        {event.motos.length === 0 && (
+        {sortedMotos.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-4">
             No races scheduled yet — check back closer to race day.
           </p>
         )}
+        {(() => {
+          const upcoming = sortedMotos.filter(m => m.status !== "completed" && m.status !== "cancelled");
+          const finished = sortedMotos.filter(m => m.status === "completed" || m.status === "cancelled");
+          return (
+            <>
+              {upcoming.map(moto => (
+                <ScheduleMotoCard
+                  key={moto.motoId}
+                  moto={moto}
+                  isUpNext={moto.motoId === upNextMotoId}
+                />
+              ))}
+              {finished.length > 0 && upcoming.length > 0 && (
+                <div className="flex items-center gap-3 py-1">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-muted-foreground font-heading uppercase tracking-wider shrink-0">Finished</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              )}
+              {finished.map(moto => (
+                <ScheduleMotoCard
+                  key={moto.motoId}
+                  moto={moto}
+                  isUpNext={false}
+                />
+              ))}
+            </>
+          );
+        })()}
       </div>
     </div>
   );
