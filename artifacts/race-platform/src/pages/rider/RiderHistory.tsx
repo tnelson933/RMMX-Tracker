@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Trophy, Clock, Star, ChevronDown, ChevronUp,
   Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer,
-  Wifi, Pencil, Check, X, Loader2
+  Wifi, Pencil, Check, X, Loader2, Radio, DoorOpen
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,9 @@ import {
   type MotoResult,
   type RiderPracticeResponse,
   type PracticeSessionHistory,
+  type RiderScheduleResponse,
+  type ScheduleEvent,
+  type ScheduleMoto,
 } from "@/lib/rider-api";
 
 function positionBadge(pos: number) {
@@ -345,12 +348,218 @@ function PracticeSessionCard({ session }: { session: PracticeSessionHistory }) {
   );
 }
 
+// ─── Schedule components ──────────────────────────────────────────────────────
+
+function motoStatusBadge(status: string) {
+  if (status === "in_progress") return "bg-green-500/20 text-green-700 border-green-400/50";
+  if (status === "completed") return "bg-muted text-muted-foreground border-border";
+  return "bg-muted/50 text-muted-foreground border-border/50";
+}
+
+function motoTypeLabel(type: string) {
+  if (type === "heat") return "Heat";
+  if (type === "main") return "Main Event";
+  if (type === "lcq") return "LCQ";
+  return type;
+}
+
+function ScheduleMotoCard({ moto, riderId }: { moto: ScheduleMoto; riderId: number }) {
+  const [open, setOpen] = useState(false);
+  const isLive = moto.status === "in_progress";
+  const isDone = moto.status === "completed";
+
+  if (!moto.isRiderInMoto) {
+    // Greyed-out compact row
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border bg-muted/30 opacity-50 select-none">
+        <span className="font-mono text-sm text-muted-foreground w-6 text-center shrink-0">
+          {moto.motoNumber}
+        </span>
+        <span className="text-sm text-muted-foreground flex-1 truncate">{moto.name}</span>
+        <Badge variant="outline" className="text-xs shrink-0 capitalize">{motoTypeLabel(moto.type)}</Badge>
+        <Badge variant="outline" className={`text-xs shrink-0 border ${motoStatusBadge(moto.status)}`}>
+          {moto.status === "in_progress" ? "Live" : moto.status === "completed" ? "Done" : "Upcoming"}
+        </Badge>
+      </div>
+    );
+  }
+
+  // Full-color card for rider's own motos
+  return (
+    <div className={`rounded-xl border-2 overflow-hidden ${
+      isLive
+        ? "border-green-500 shadow-lg shadow-green-500/10"
+        : isDone
+        ? "border-border"
+        : "border-primary/60"
+    }`}>
+      {/* Header */}
+      <div className={`px-4 py-3 flex items-center justify-between gap-3 ${
+        isLive ? "bg-green-500 text-white" : isDone ? "bg-muted" : "bg-primary text-primary-foreground"
+      }`}>
+        <div className="flex items-center gap-2 min-w-0">
+          {isLive && <Radio size={14} className="animate-pulse shrink-0" />}
+          <span className="font-heading font-bold text-base uppercase tracking-tight truncate">
+            {moto.name}
+          </span>
+          <Badge className={`text-xs shrink-0 font-bold ${
+            isLive
+              ? "bg-white/20 text-white border-white/30"
+              : isDone
+              ? "bg-muted-foreground/20 text-muted-foreground border-border"
+              : "bg-white/20 text-white border-white/30"
+          } border`}>
+            {moto.status === "in_progress" ? "Live Now" : moto.status === "completed" ? "Finished" : "Upcoming"}
+          </Badge>
+        </div>
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="shrink-0 opacity-80 hover:opacity-100 transition-opacity"
+          aria-label="Toggle lineup"
+        >
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+      </div>
+
+      {/* Gate highlight */}
+      <div className="flex items-center gap-4 px-4 py-3 bg-background border-b">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col items-center justify-center w-16 h-16 rounded-xl bg-foreground text-background shrink-0">
+            <DoorOpen size={18} className="mb-0.5 opacity-70" />
+            <span className="font-heading font-black text-2xl leading-none">{moto.riderGate}</span>
+            <span className="text-[9px] font-bold uppercase tracking-wider opacity-60 mt-0.5">Gate</span>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Your Starting Gate</div>
+            <div className="text-sm text-muted-foreground mt-0.5">
+              {moto.raceClass && <span className="text-foreground font-semibold">{moto.raceClass}</span>}
+              {" · "}
+              {motoTypeLabel(moto.type)}
+              {moto.lapCount && <span className="text-muted-foreground"> · {moto.lapCount} laps</span>}
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              {moto.lineup.length} rider{moto.lineup.length !== 1 ? "s" : ""} in this moto
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Lineup (expandable) */}
+      {open && moto.lineup.length > 0 && (
+        <div className="bg-background">
+          <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
+            Starting Order
+          </div>
+          <div className="divide-y">
+            {moto.lineup.map(entry => {
+              const isMe = entry.riderId === riderId;
+              return (
+                <div
+                  key={entry.gate}
+                  className={`flex items-center gap-3 px-4 py-2.5 ${
+                    isMe ? "bg-foreground text-background" : ""
+                  }`}
+                >
+                  <span className={`w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-sm shrink-0 ${
+                    isMe
+                      ? "bg-background/20 text-background"
+                      : "bg-muted text-muted-foreground"
+                  }`}>
+                    {entry.gate}
+                  </span>
+                  <span className={`flex-1 text-sm font-medium ${isMe ? "font-bold" : ""}`}>
+                    {entry.riderName}
+                    {isMe && <span className="ml-2 text-xs opacity-70 font-normal">(you)</span>}
+                  </span>
+                  {entry.bibNumber && (
+                    <span className={`text-xs font-mono shrink-0 ${isMe ? "opacity-70" : "text-muted-foreground"}`}>
+                      #{entry.bibNumber}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="w-full text-xs text-muted-foreground hover:text-foreground py-2 transition-colors text-center border-t"
+        >
+          Show all {moto.lineup.length} riders · tap to expand
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ScheduleEventSection({ event, riderId }: { event: ScheduleEvent; riderId: number }) {
+  const isRaceDay = event.status === "race_day";
+  const hasLiveMotos = event.motos.some(m => m.status === "in_progress");
+  const myMotos = event.motos.filter(m => m.isRiderInMoto);
+
+  return (
+    <div className="space-y-3">
+      {/* Event header */}
+      <div className={`flex items-start justify-between gap-3 p-4 rounded-xl border ${
+        isRaceDay ? "bg-primary/5 border-primary/30" : "bg-muted/30 border-border"
+      }`}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-heading font-bold text-lg uppercase tracking-tight">{event.eventName}</h3>
+            {hasLiveMotos && (
+              <span className="flex items-center gap-1 text-xs font-bold text-green-600 bg-green-500/10 border border-green-500/30 rounded-full px-2 py-0.5">
+                <Radio size={10} className="animate-pulse" /> Live
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 mt-1 flex-wrap text-sm text-muted-foreground">
+            {event.eventDate && (
+              <span className="flex items-center gap-1">
+                <Calendar size={12} />
+                {new Date(event.eventDate).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+              </span>
+            )}
+            {(event.eventLocation || event.eventState) && (
+              <span className="flex items-center gap-1">
+                <MapPin size={12} />
+                {event.eventLocation ?? event.eventState}
+              </span>
+            )}
+            {event.raceClass && (
+              <Badge variant="secondary" className="text-xs">{event.raceClass}</Badge>
+            )}
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-xs text-muted-foreground">Your races</div>
+          <div className="font-heading font-bold text-2xl text-primary">{myMotos.length}</div>
+        </div>
+      </div>
+
+      {/* Motos */}
+      <div className="space-y-2 pl-1">
+        {event.motos.map(moto => (
+          <ScheduleMotoCard key={moto.motoId} moto={moto} riderId={riderId} />
+        ))}
+        {event.motos.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No races scheduled yet — check back closer to race day.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function RiderHistory() {
   const [, params] = useRoute("/rider/portal/:riderId");
   const riderId = parseInt(params?.riderId ?? "0", 10);
-  const [activeTab, setActiveTab] = useState<"races" | "practice">("races");
+  const [activeTab, setActiveTab] = useState<"today" | "races" | "practice">("today");
 
   const { data, isLoading, error } = useQuery<RiderHistoryResponse>({
     queryKey: ["rider-history", riderId],
@@ -362,6 +571,13 @@ export default function RiderHistory() {
     queryKey: ["rider-practice", riderId],
     queryFn: () => riderApi.practice(riderId),
     enabled: !!riderId,
+  } as any);
+
+  const { data: scheduleData, isLoading: scheduleLoading } = useQuery<RiderScheduleResponse>({
+    queryKey: ["rider-schedule", riderId],
+    queryFn: () => riderApi.schedule(riderId),
+    enabled: !!riderId,
+    refetchInterval: 30_000,
   } as any);
 
   const rider = data?.rider;
@@ -451,16 +667,43 @@ export default function RiderHistory() {
           </div>
 
           {/* Tab switcher */}
-          <div className="flex gap-1 border-b border-border">
+          <div className="flex gap-1 border-b border-border overflow-x-auto">
+            {/* Today tab */}
+            {(() => {
+              const scheduleEvents = scheduleData?.events ?? [];
+              const hasLive = scheduleEvents.some(e => e.motos.some(m => m.status === "in_progress"));
+              return (
+                <button
+                  onClick={() => setActiveTab("today")}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+                    activeTab === "today"
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {hasLive ? <Radio size={14} className="animate-pulse text-green-500" /> : <Flag size={14} />}
+                  Today
+                  {scheduleEvents.length > 0 && (
+                    <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
+                      activeTab === "today"
+                        ? hasLive ? "bg-green-500/10 text-green-600" : "bg-primary/10 text-primary"
+                        : "bg-muted text-muted-foreground"
+                    }`}>
+                      {scheduleEvents.length}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
             <button
               onClick={() => setActiveTab("races")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px ${
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
                 activeTab === "races"
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              <Flag size={14} />
+              <Trophy size={14} />
               Race History
               {eventsRaced > 0 && (
                 <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
@@ -472,7 +715,7 @@ export default function RiderHistory() {
             </button>
             <button
               onClick={() => setActiveTab("practice")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px ${
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
                 activeTab === "practice"
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -489,6 +732,33 @@ export default function RiderHistory() {
               )}
             </button>
           </div>
+
+          {/* Today / Schedule tab */}
+          {activeTab === "today" && (
+            <div>
+              {scheduleLoading ? (
+                <div className="space-y-4">
+                  {[1, 2].map(i => <div key={i} className="h-40 bg-muted animate-pulse rounded-xl" />)}
+                </div>
+              ) : !scheduleData?.events.length ? (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Flag size={40} className="mx-auto text-muted-foreground/30 mb-3" />
+                    <h3 className="font-heading font-bold text-lg uppercase mb-1">No Active Events</h3>
+                    <p className="text-muted-foreground text-sm">
+                      You're not registered for any upcoming events yet.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-8">
+                  {scheduleData.events.map(event => (
+                    <ScheduleEventSection key={event.eventId} event={event} riderId={riderId} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Race History tab */}
           {activeTab === "races" && (

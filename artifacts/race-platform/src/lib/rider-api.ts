@@ -98,6 +98,44 @@ export interface RiderPracticeResponse {
   sessions: PracticeSessionHistory[];
 }
 
+export interface ScheduleMotoLineupEntry {
+  gate: number;
+  riderId: number;
+  riderName: string;
+  bibNumber: string | null;
+}
+
+export interface ScheduleMoto {
+  motoId: number;
+  motoNumber: number;
+  name: string;
+  type: string;
+  raceClass: string | null;
+  status: string;
+  lapCount: number | null;
+  scheduledTime: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  isRiderInMoto: boolean;
+  riderGate: number | null;
+  lineup: ScheduleMotoLineupEntry[];
+}
+
+export interface ScheduleEvent {
+  eventId: number;
+  eventName: string;
+  eventDate: string | null;
+  eventState: string | null;
+  eventLocation: string | null;
+  status: string;
+  raceClass: string | null;
+  motos: ScheduleMoto[];
+}
+
+export interface RiderScheduleResponse {
+  events: ScheduleEvent[];
+}
+
 export const riderApi = {
   register: (email: string, password: string): Promise<RiderAccount> =>
     apiFetch("/rider/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }),
@@ -125,4 +163,7 @@ export const riderApi = {
       method: "PATCH",
       body: JSON.stringify({ rfidNumber }),
     }),
+
+  schedule: (riderId: number): Promise<RiderScheduleResponse> =>
+    apiFetch(`/rider/profiles/${riderId}/schedule`),
 };

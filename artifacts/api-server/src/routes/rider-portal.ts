@@ -9,8 +9,9 @@ import {
   eventsTable,
   practiceCrossingsTable,
   practiceSessionsTable,
+  registrationsTable,
 } from "@workspace/db";
-import { eq, desc, asc, or } from "drizzle-orm";
+import { eq, desc, asc, or, and, ne, inArray } from "drizzle-orm";
 
 const router = Router();
 
@@ -354,6 +355,117 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
     });
 
   return res.json({ rider: { id: rider.id, firstName: rider.firstName, lastName: rider.lastName }, sessions });
+});
+
+// GET /rider/profiles/:riderId/schedule — all registered events with full moto lineups
+router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  // All confirmed registrations for this rider
+  const regs = await db
+    .select({
+      eventId: registrationsTable.eventId,
+      raceClass: registrationsTable.raceClass,
+      status: registrationsTable.status,
+    })
+    .from(registrationsTable)
+    .where(and(
+      eq(registrationsTable.riderId, riderId),
+      ne(registrationsTable.status, "void"),
+    ));
+
+  if (regs.length === 0) return res.json({ events: [] });
+
+  const eventIds = [...new Set(regs.map(r => r.eventId))];
+
+  // Fetch events (exclude drafts)
+  const events = await db
+    .select()
+    .from(eventsTable)
+    .where(and(
+      inArray(eventsTable.id, eventIds),
+      ne(eventsTable.status, "draft"),
+    ));
+
+  if (events.length === 0) return res.json({ events: [] });
+
+  // Fetch all non-practice motos for these events
+  const motos = await db
+    .select()
+    .from(motosTable)
+    .where(and(
+      inArray(motosTable.eventId, eventIds),
+      ne(motosTable.type, "practice"),
+    ))
+    .orderBy(asc(motosTable.motoNumber));
+
+  // Build response grouped by event
+  const results = events.map(event => {
+    const reg = regs.find(r => r.eventId === event.id);
+    const eventMotos = motos.filter(m => m.eventId === event.id);
+
+    const motosWithRider = eventMotos.map(moto => {
+      const lineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{
+        position: number; riderId: number; riderName: string; bibNumber?: string | null;
+      }>;
+      const riderEntry = lineup.find(e => e.riderId === riderId);
+      return {
+        motoId: moto.id,
+        motoNumber: moto.motoNumber,
+        name: moto.name,
+        type: moto.type,
+        raceClass: moto.raceClass,
+        status: moto.status,
+        lapCount: moto.lapCount,
+        scheduledTime: moto.scheduledTime ?? null,
+        startedAt: moto.startedAt?.toISOString() ?? null,
+        completedAt: moto.completedAt?.toISOString() ?? null,
+        isRiderInMoto: !!riderEntry,
+        riderGate: riderEntry?.position ?? null,
+        lineup: lineup
+          .sort((a, b) => a.position - b.position)
+          .map(e => ({
+            gate: e.position,
+            riderId: e.riderId,
+            riderName: e.riderName,
+            bibNumber: e.bibNumber ?? null,
+          })),
+      };
+    });
+
+    return {
+      eventId: event.id,
+      eventName: event.name,
+      eventDate: event.date ?? null,
+      eventState: event.state ?? null,
+      eventLocation: event.location ?? null,
+      status: event.status,
+      raceClass: reg?.raceClass ?? null,
+      motos: motosWithRider,
+    };
+  });
+
+  // Sort: race_day first, then registration_open, then by date desc
+  const statusOrder: Record<string, number> = { race_day: 0, registration_open: 1, completed: 2 };
+  results.sort((a, b) => {
+    const oa = statusOrder[a.status] ?? 3;
+    const ob = statusOrder[b.status] ?? 3;
+    if (oa !== ob) return oa - ob;
+    return (b.eventDate ?? "").localeCompare(a.eventDate ?? "");
+  });
+
+  return res.json({ events: results });
 });
 
 export default router;
