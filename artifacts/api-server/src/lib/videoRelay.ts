@@ -18,7 +18,9 @@ interface StreamState {
   isDualFisheye: boolean;
 }
 
-const MAX_BUFFER_CHUNKS = 30;
+// Keep only the last few chunks — enough for a smooth late-join start without
+// overwhelming the Replit proxy with a large burst when a new viewer connects.
+const MAX_BUFFER_CHUNKS = 5;
 
 // eventId → stream state
 const streams = new Map<number, StreamState>();
@@ -175,11 +177,12 @@ function handleViewer(ws: WebSocket, eventId: number) {
 
   // Periodic ping to keep the connection alive through the Replit proxy.
   // The browser WebSocket API responds to protocol-level ping frames automatically.
+  // 5 s is short enough to prevent proxy idle-timeout disconnections.
   const pingInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.ping();
     }
-  }, 20_000);
+  }, 5_000);
 
   // Send current stream state immediately
   if (state.live) {
@@ -189,12 +192,16 @@ function handleViewer(ws: WebSocket, eventId: number) {
     if (state.initSegment && ws.readyState === WebSocket.OPEN) {
       ws.send(state.initSegment, { binary: true });
     }
-    // Then send recent buffered chunks for a near-live start
-    for (const chunk of state.chunkBuffer) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(chunk, { binary: true });
-      }
+    // Send buffered chunks one-per-event-loop-tick to avoid overwhelming the
+    // Replit proxy with a large synchronous burst that can drop the connection.
+    const chunks = [...state.chunkBuffer];
+    let i = 0;
+    function sendNextChunk() {
+      if (i >= chunks.length || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(chunks[i++], { binary: true });
+      setImmediate(sendNextChunk);
     }
+    if (chunks.length > 0) setImmediate(sendNextChunk);
   } else {
     ws.send(JSON.stringify({ type: "offline" }));
   }

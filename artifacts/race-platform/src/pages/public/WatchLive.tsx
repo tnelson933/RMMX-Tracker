@@ -468,7 +468,9 @@ export default function WatchLive() {
       }
     };
 
-    // Stall watchdog — if playing but currentTime hasn't advanced in 4 s, force a full reconnect
+    // Stall watchdog — if playing but currentTime hasn't advanced in 4 s, force a full reconnect.
+    // Only closes the WS — ws.onclose handles teardown + reconnect scheduling so we don't
+    // end up with two simultaneous connect() calls.
     if (stallTimerRef.current) clearInterval(stallTimerRef.current);
     lastTimeRef.current = -1;
     stallTimerRef.current = setInterval(() => {
@@ -479,10 +481,7 @@ export default function WatchLive() {
         logEvent("stall detected — reconnecting");
         clearInterval(stallTimerRef.current!);
         stallTimerRef.current = null;
-        wsRef.current?.close();
-        teardownMSE();
-        setViewerStateSynced("buffering");
-        reconnectTimer.current = setTimeout(() => connect(), 1000);
+        wsRef.current?.close(); // ws.onclose schedules the reconnect
       } else {
         lastTimeRef.current = t;
       }
@@ -493,11 +492,14 @@ export default function WatchLive() {
     ws.onclose = () => {
       if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
       if (!cleaningUpRef.current) {
+        // Capture state BEFORE overwriting so the "ended" delay check is accurate.
+        const wasEnded = viewerStateRef.current === "ended";
         // Always tear down MSE on unexpected disconnect so reconnect gets a clean slate.
         // This eliminates the fragile REUSE path (stale currentTime + SB updating race).
         teardownMSE();
         setViewerStateSynced("buffering");
-        const delay = viewerStateRef.current === "ended" ? 8000 : 3000;
+        // Back off longer after a clean stream-end to avoid hammering the server.
+        const delay = wasEnded ? 8000 : 3000;
         reconnectTimer.current = setTimeout(() => connect(), delay);
       }
     };

@@ -146,7 +146,9 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
 
       const recorder = new MediaRecorder(stream, {
         mimeType,
-        videoBitsPerSecond: 1_500_000,
+        // Lower bitrate keeps chunk sizes small so the Replit proxy can relay
+        // them without dropping the WebSocket connection on burst.
+        videoBitsPerSecond: 500_000,
         audioBitsPerSecond: 64_000,
       });
       recorderRef.current = recorder;
