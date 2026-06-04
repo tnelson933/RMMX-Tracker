@@ -60,11 +60,11 @@ export function RiderLayout({ children, showBack, backTo = "/rider/portal", back
         </div>
       </header>
 
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8">
+      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-4 sm:py-8">
         {children}
       </main>
 
-      <footer className="border-t py-4 text-center text-xs text-muted-foreground">
+      <footer className="border-t py-3 text-center text-xs text-muted-foreground">
         RMMX Tracker
       </footer>
     </div>

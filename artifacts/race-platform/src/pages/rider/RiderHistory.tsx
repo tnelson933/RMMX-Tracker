@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { useRoute } from "wouter";
+import { useState, useMemo } from "react";
+import { useRoute, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Trophy, Clock, Star, ChevronDown, ChevronUp,
   Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer,
-  Wifi, Pencil, Check, X, Loader2, Radio, DoorOpen
+  Wifi, Pencil, Check, X, Loader2, Radio, DoorOpen,
+  Navigation, LocateFixed, ExternalLink
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -348,6 +349,201 @@ function PracticeSessionCard({ session }: { session: PracticeSessionHistory }) {
   );
 }
 
+// ─── Near Me tab ─────────────────────────────────────────────────────────────
+
+const STATE_CENTROIDS: Record<string, [number, number]> = {
+  AL:[32.318,-86.902],AK:[64.200,-153.493],AZ:[34.048,-111.093],AR:[34.799,-92.199],
+  CA:[36.778,-119.417],CO:[39.550,-105.782],CT:[41.603,-73.087],DE:[38.910,-75.527],
+  FL:[27.664,-81.515],GA:[32.165,-82.900],HI:[19.898,-155.665],ID:[44.068,-114.742],
+  IL:[40.633,-89.398],IN:[40.267,-86.134],IA:[41.878,-93.097],KS:[38.526,-96.726],
+  KY:[37.668,-84.670],LA:[31.169,-91.867],ME:[44.693,-69.381],MD:[39.045,-76.641],
+  MA:[42.407,-71.382],MI:[44.314,-85.602],MN:[46.729,-94.685],MS:[32.354,-89.398],
+  MO:[37.964,-91.831],MT:[46.879,-110.362],NE:[41.492,-99.901],NV:[38.802,-116.419],
+  NH:[43.193,-71.572],NJ:[40.058,-74.405],NM:[34.519,-105.870],NY:[42.165,-74.948],
+  NC:[35.630,-79.806],ND:[47.528,-99.784],OH:[40.417,-82.907],OK:[35.467,-97.516],
+  OR:[43.804,-120.554],PA:[41.203,-77.194],RI:[41.680,-71.511],SC:[33.836,-81.163],
+  SD:[43.969,-99.901],TN:[35.517,-86.580],TX:[31.968,-99.901],UT:[39.321,-111.093],
+  VT:[44.558,-72.577],VA:[37.431,-78.656],WA:[47.751,-120.740],WV:[38.597,-80.454],
+  WI:[43.784,-88.787],WY:[43.075,-107.290],
+};
+
+function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 3959;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+interface UpcomingEvent {
+  eventId: number;
+  name: string;
+  state: string;
+  date: string | null;
+  location: string | null;
+  trackName: string | null;
+  status: string;
+  clubName: string;
+  dist?: number | null;
+}
+
+function statusLabel(s: string) {
+  if (s === "registration_open") return { label: "Registration Open", cls: "bg-green-500/15 text-green-700 border-green-400/40" };
+  if (s === "race_day") return { label: "Race Day", cls: "bg-primary/15 text-primary border-primary/40" };
+  return { label: s.replace(/_/g, " "), cls: "bg-muted text-muted-foreground border-border" };
+}
+
+function NearbyEventCard({ event }: { event: UpcomingEvent }) {
+  const [, navigate] = useLocation();
+  const { label, cls } = statusLabel(event.status);
+  const canRegister = event.status === "registration_open";
+
+  return (
+    <div className={`rounded-xl border overflow-hidden ${canRegister ? "border-green-400/50 bg-green-500/5" : "border-border bg-card"}`}>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-heading font-bold text-base uppercase tracking-tight leading-tight truncate">
+              {event.name}
+            </h3>
+            <div className="flex items-center gap-2 mt-1 flex-wrap text-sm text-muted-foreground">
+              {event.date && (
+                <span className="flex items-center gap-1">
+                  <Calendar size={12} />
+                  {new Date(event.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                </span>
+              )}
+              <span className="flex items-center gap-1">
+                <MapPin size={12} />
+                {event.location ?? event.state}
+                {event.location && event.state && <span className="text-muted-foreground/60">, {event.state}</span>}
+              </span>
+            </div>
+            {event.trackName && (
+              <p className="text-xs text-muted-foreground mt-0.5">{event.trackName}</p>
+            )}
+            {event.clubName && (
+              <p className="text-xs text-muted-foreground mt-0.5">{event.clubName}</p>
+            )}
+          </div>
+
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <Badge variant="outline" className={`text-xs border ${cls}`}>{label}</Badge>
+            {event.dist != null && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono">
+                <Navigation size={11} />
+                ~{Math.round(event.dist).toLocaleString()} mi
+              </span>
+            )}
+          </div>
+        </div>
+
+        {canRegister && (
+          <Button
+            className="w-full mt-3 font-heading uppercase tracking-wider gap-2"
+            onClick={() => navigate(`/register/${event.eventId}`)}
+          >
+            <ExternalLink size={14} />
+            Register Now
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NearMeTab() {
+  const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "granted" | "denied">("idle");
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  const { data: rawEvents = [], isLoading } = useQuery<UpcomingEvent[]>({
+    queryKey: ["public-upcoming-nearbytab"],
+    queryFn: () => fetch("/api/public/upcoming").then(r => r.json()),
+    staleTime: 5 * 60_000,
+  } as any);
+
+  const events = useMemo<UpcomingEvent[]>(() => {
+    if (!userCoords) return rawEvents as UpcomingEvent[];
+    return (rawEvents as UpcomingEvent[])
+      .map(e => {
+        const centroid = STATE_CENTROIDS[e.state];
+        const dist = centroid ? haversineMiles(userCoords.lat, userCoords.lng, centroid[0], centroid[1]) : null;
+        return { ...e, dist };
+      })
+      .sort((a, b) => (a.dist ?? Infinity) - (b.dist ?? Infinity));
+  }, [rawEvents, userCoords]);
+
+  const requestLocation = () => {
+    setGeoStatus("loading");
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGeoStatus("granted");
+      },
+      () => setGeoStatus("denied"),
+      { timeout: 10_000 },
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map(i => <div key={i} className="h-28 bg-muted animate-pulse rounded-xl" />)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Location banner */}
+      {geoStatus === "idle" && (
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
+            <LocateFixed size={16} className="text-primary shrink-0" />
+            <span>Allow location to sort by distance from you</span>
+          </div>
+          <Button size="sm" variant="outline" className="shrink-0 font-heading uppercase text-xs tracking-wider" onClick={requestLocation}>
+            Use My Location
+          </Button>
+        </div>
+      )}
+      {geoStatus === "loading" && (
+        <div className="flex items-center gap-2 rounded-xl border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          <Loader2 size={15} className="animate-spin shrink-0" />
+          Getting your location…
+        </div>
+      )}
+      {geoStatus === "granted" && (
+        <div className="flex items-center gap-2 rounded-xl border border-green-400/40 bg-green-500/5 px-4 py-3 text-sm text-green-700">
+          <LocateFixed size={14} className="shrink-0" />
+          Sorted closest to farthest from your location
+        </div>
+      )}
+      {geoStatus === "denied" && (
+        <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-muted-foreground">
+          <AlertTriangle size={14} className="text-destructive shrink-0" />
+          Location access denied — showing all upcoming events
+        </div>
+      )}
+
+      {events.length === 0 ? (
+        <Card>
+          <CardContent className="p-12 text-center">
+            <MapPin size={40} className="mx-auto text-muted-foreground/30 mb-3" />
+            <h3 className="font-heading font-bold text-lg uppercase mb-1">No Upcoming Events</h3>
+            <p className="text-muted-foreground text-sm">Check back soon — new events are added regularly.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {events.map(e => <NearbyEventCard key={e.eventId} event={e} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Schedule components ──────────────────────────────────────────────────────
 
 function motoStatusBadge(status: string) {
@@ -559,7 +755,7 @@ function ScheduleEventSection({ event, riderId }: { event: ScheduleEvent; riderI
 export default function RiderHistory() {
   const [, params] = useRoute("/rider/portal/:riderId");
   const riderId = parseInt(params?.riderId ?? "0", 10);
-  const [activeTab, setActiveTab] = useState<"today" | "races" | "practice">("today");
+  const [activeTab, setActiveTab] = useState<"today" | "nearby" | "races" | "practice">("today");
 
   const { data, isLoading, error } = useQuery<RiderHistoryResponse>({
     queryKey: ["rider-history", riderId],
@@ -696,6 +892,17 @@ export default function RiderHistory() {
               );
             })()}
             <button
+              onClick={() => setActiveTab("nearby")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+                activeTab === "nearby"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <MapPin size={14} />
+              Near Me
+            </button>
+            <button
               onClick={() => setActiveTab("races")}
               className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
                 activeTab === "races"
@@ -732,6 +939,9 @@ export default function RiderHistory() {
               )}
             </button>
           </div>
+
+          {/* Near Me tab */}
+          {activeTab === "nearby" && <NearMeTab />}
 
           {/* Today / Schedule tab */}
           {activeTab === "today" && (
