@@ -11,7 +11,18 @@ import { getListMotosQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Play, Square, Timer, Wifi, WifiOff, Users, Clock, Trophy, RefreshCw } from "lucide-react";
+import {
+  Play, Square, Timer, Wifi, WifiOff, Users,
+  Clock, Trophy, RefreshCw, ChevronDown
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+
+const ALL_CLASSES = "All Classes";
 
 function formatMs(ms: number | null | undefined): string {
   if (!ms || ms <= 0) return "—";
@@ -64,23 +75,47 @@ export default function EventPractice() {
 
   const [liveData, setLiveData] = useState<LiveSnapshot | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
+  const [selectedClass, setSelectedClass] = useState<string>(ALL_CLASSES);
   const esRef = useRef<EventSource | null>(null);
 
+  // All checked-in riders
   const checkedInRiders = (checkins as any[]).filter((c: any) => c.checkedIn);
 
-  // Find the most recent practice moto (prefer in_progress, then most recent)
-  const practiceMoots = motos.filter((m: any) => m.type === "practice");
-  const activePractice = practiceMoots.find((m: any) => m.status === "in_progress")
-    ?? practiceMoots[practiceMoots.length - 1];
+  // Unique classes across all checked-in riders (sorted)
+  const availableClasses: string[] = Array.from(
+    new Set(checkedInRiders.map((r: any) => r.raceClass as string))
+  ).sort();
 
-  // SSE connection to live timing
+  // Ensure selectedClass is still valid when check-ins change
   useEffect(() => {
-    if (!activePractice || activePractice.status !== "in_progress") {
-      esRef.current?.close();
-      esRef.current = null;
-      setSseConnected(false);
-      return;
+    if (selectedClass !== ALL_CLASSES && !availableClasses.includes(selectedClass)) {
+      setSelectedClass(ALL_CLASSES);
     }
+  }, [availableClasses.join(",")]);
+
+  // Left panel: riders filtered by selected class
+  const visibleRiders = selectedClass === ALL_CLASSES
+    ? checkedInRiders
+    : checkedInRiders.filter((r: any) => r.raceClass === selectedClass);
+
+  // All practice motos
+  const practiceMotos = motos.filter((m: any) => m.type === "practice");
+
+  // Active practice moto for the selected class
+  // raceClass stored on moto: selectedClass (or ALL_CLASSES for "All Classes")
+  const sessionKey = selectedClass; // what we store in moto.raceClass
+  const classMotos = practiceMotos.filter((m: any) => m.raceClass === sessionKey);
+  const activePractice = classMotos.find((m: any) => m.status === "in_progress")
+    ?? classMotos[classMotos.length - 1] ?? null;
+
+  // SSE connection for active practice moto
+  useEffect(() => {
+    esRef.current?.close();
+    esRef.current = null;
+    setSseConnected(false);
+    setLiveData(null);
+
+    if (!activePractice || activePractice.status !== "in_progress") return;
 
     const es = new EventSource(`/api/timing/live/${activePractice.id}`);
     esRef.current = es;
@@ -102,11 +137,28 @@ export default function EventPractice() {
     };
   }, [activePractice?.id, activePractice?.status]);
 
+  // Reset live data when class changes
+  useEffect(() => {
+    setLiveData(null);
+  }, [selectedClass]);
+
   async function startPractice() {
+    const sessionName = selectedClass === ALL_CLASSES
+      ? "Practice – All Classes"
+      : `Practice – ${selectedClass}`;
+
     try {
       const moto = await new Promise<any>((resolve, reject) => {
         createMoto.mutate(
-          { eventId, data: { name: "Practice Session", type: "practice", raceClass: "Open Practice", motoNumber: 0 } },
+          {
+            eventId,
+            data: {
+              name: sessionName,
+              type: "practice",
+              raceClass: sessionKey,
+              motoNumber: 0,
+            },
+          },
           { onSuccess: resolve, onError: reject }
         );
       });
@@ -122,7 +174,7 @@ export default function EventPractice() {
           }
         );
       });
-      toast({ title: "Practice session started" });
+      toast({ title: `Practice started — ${sessionName}` });
     } catch {
       toast({ title: "Failed to start practice", variant: "destructive" });
     }
@@ -146,32 +198,72 @@ export default function EventPractice() {
   const isLoading = createMoto.isPending || updateMoto.isPending;
   const isActive = activePractice?.status === "in_progress";
   const isEnded = activePractice?.status === "completed";
-
   const riders: LiveRider[] = liveData?.riders ?? [];
+
+  // Previous sessions for this class (all but the current activePractice)
+  const previousMotos = classMotos.filter((m: any) => m.id !== activePractice?.id);
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Left panel — checked-in riders */}
+      {/* Left panel — checked-in riders for selected class */}
       <div className="w-72 shrink-0 border-r border-border bg-sidebar flex flex-col">
         <div className="px-4 py-4 border-b border-sidebar-border">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-3">
             <Users size={16} className="text-primary" />
             <span className="font-heading font-bold uppercase tracking-wider text-white text-sm">
               Checked-In Riders
             </span>
           </div>
-          <span className="text-xs text-sidebar-foreground/50 uppercase tracking-widest">
-            {checkedInRiders.length} rider{checkedInRiders.length !== 1 ? "s" : ""} ready
-          </span>
+
+          {/* Class filter dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-sidebar-accent/40 border border-sidebar-border text-sm text-white hover:bg-sidebar-accent/60 transition-colors">
+                <span className="truncate font-medium">
+                  {selectedClass}
+                </span>
+                <ChevronDown size={14} className="shrink-0 text-sidebar-foreground/50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuItem
+                onClick={() => setSelectedClass(ALL_CLASSES)}
+                className={selectedClass === ALL_CLASSES ? "font-bold text-primary" : ""}
+              >
+                All Classes
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {checkedInRiders.length}
+                </span>
+              </DropdownMenuItem>
+              {availableClasses.map(cls => (
+                <DropdownMenuItem
+                  key={cls}
+                  onClick={() => setSelectedClass(cls)}
+                  className={selectedClass === cls ? "font-bold text-primary" : ""}
+                >
+                  {cls}
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {checkedInRiders.filter((r: any) => r.raceClass === cls).length}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div className="mt-2 text-xs text-sidebar-foreground/50 uppercase tracking-widest">
+            {visibleRiders.length} rider{visibleRiders.length !== 1 ? "s" : ""} in session
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {checkedInRiders.length === 0 && (
+          {visibleRiders.length === 0 && (
             <div className="p-6 text-center text-sidebar-foreground/40 text-sm">
-              No riders checked in yet
+              {checkedInRiders.length === 0
+                ? "No riders checked in yet"
+                : `No ${selectedClass} riders checked in`}
             </div>
           )}
-          {checkedInRiders.map((rider: any) => (
+          {visibleRiders.map((rider: any) => (
             <div
               key={rider.riderId}
               className="flex items-center gap-3 px-4 py-3 border-b border-sidebar-border/30 hover:bg-sidebar-accent/20 transition-colors"
@@ -185,7 +277,9 @@ export default function EventPractice() {
                 <div className="font-medium text-white text-sm leading-tight truncate">
                   {rider.riderName}
                 </div>
-                <div className="text-xs text-sidebar-foreground/50 truncate">{rider.raceClass}</div>
+                <div className="text-xs text-sidebar-foreground/50 truncate">
+                  {selectedClass === ALL_CLASSES ? rider.raceClass : ""}
+                </div>
               </div>
               <div className="shrink-0">
                 {rider.rfidNumber ? (
@@ -206,9 +300,16 @@ export default function EventPractice() {
           <div className="flex items-center gap-3">
             <Timer size={18} className="text-primary" />
             <div>
-              <span className="font-heading font-bold uppercase tracking-wider text-white">
-                Practice Timing
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-heading font-bold uppercase tracking-wider text-white">
+                  Practice Timing
+                </span>
+                {selectedClass !== ALL_CLASSES && (
+                  <Badge variant="outline" className="border-primary/40 text-primary text-xs font-bold">
+                    {selectedClass}
+                  </Badge>
+                )}
+              </div>
               {isActive && (
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
@@ -219,7 +320,9 @@ export default function EventPractice() {
                 </div>
               )}
               {isEnded && (
-                <span className="block text-xs text-sidebar-foreground/50 uppercase tracking-widest mt-0.5">Session ended</span>
+                <span className="block text-xs text-sidebar-foreground/50 uppercase tracking-widest mt-0.5">
+                  Session ended
+                </span>
               )}
             </div>
           </div>
@@ -240,8 +343,9 @@ export default function EventPractice() {
               <Button
                 size="sm"
                 onClick={startPractice}
-                disabled={isLoading}
+                disabled={isLoading || visibleRiders.length === 0}
                 className="font-heading uppercase tracking-wider h-9 bg-primary hover:bg-primary/90"
+                title={visibleRiders.length === 0 ? "No riders in this class are checked in" : undefined}
               >
                 {isLoading
                   ? <RefreshCw size={14} className="mr-1.5 animate-spin" />
@@ -264,15 +368,20 @@ export default function EventPractice() {
                   No Active Practice
                 </div>
                 <div className="text-muted-foreground text-sm max-w-xs">
-                  Start a practice session to begin tracking lap times. Make sure your RFID reader is connected and crossings are flowing.
+                  {selectedClass === ALL_CLASSES
+                    ? "Select a class or start an all-class session."
+                    : `Start a practice session for ${selectedClass}.`}
+                  {" "}Make sure your RFID reader is connected.
                 </div>
               </div>
               <Button
                 onClick={startPractice}
-                disabled={isLoading}
+                disabled={isLoading || visibleRiders.length === 0}
                 className="font-heading uppercase tracking-wider mt-2"
+                title={visibleRiders.length === 0 ? "No riders in this class are checked in" : undefined}
               >
-                <Play size={16} className="mr-2" /> Start Practice Session
+                <Play size={16} className="mr-2" />
+                Start{selectedClass !== ALL_CLASSES ? ` ${selectedClass}` : ""} Practice
               </Button>
             </div>
           )}
@@ -316,7 +425,6 @@ export default function EventPractice() {
                         : "bg-card border-border hover:border-border/80"
                     }`}
                   >
-                    {/* Position */}
                     <div className="text-center">
                       {isLeader ? (
                         <Trophy size={18} className="text-primary mx-auto" />
@@ -327,7 +435,6 @@ export default function EventPractice() {
                       )}
                     </div>
 
-                    {/* Rider info */}
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         {rider.bibNumber && (
@@ -343,14 +450,12 @@ export default function EventPractice() {
                       </div>
                     </div>
 
-                    {/* Lap count */}
                     <div className="text-center">
                       <span className={`font-heading font-bold text-2xl ${isLeader ? "text-primary" : "text-foreground"}`}>
                         {rider.laps}
                       </span>
                     </div>
 
-                    {/* Best lap */}
                     <div className="text-center">
                       <div className="flex items-center justify-center gap-1">
                         {isLeader && <Clock size={12} className="text-primary shrink-0" />}
@@ -360,14 +465,12 @@ export default function EventPractice() {
                       </div>
                     </div>
 
-                    {/* Last lap */}
                     <div className="text-center">
                       <span className="font-mono text-sm text-muted-foreground">
                         {formatMs(rider.lastLapMs)}
                       </span>
                     </div>
 
-                    {/* Gap to leader */}
                     <div className="text-center">
                       {isLeader ? (
                         <span className="text-xs text-primary font-bold uppercase tracking-wider">Leader</span>
@@ -385,14 +488,17 @@ export default function EventPractice() {
             </div>
           )}
 
-          {/* Previous sessions */}
-          {practiceMoots.length > 1 && (
+          {/* Previous sessions for this class */}
+          {previousMotos.length > 0 && (
             <div className="mt-8">
               <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
                 Previous Sessions
+                {selectedClass !== ALL_CLASSES && (
+                  <span className="ml-2 font-normal normal-case text-muted-foreground/60">— {selectedClass}</span>
+                )}
               </div>
               <div className="space-y-2">
-                {[...practiceMoots].reverse().slice(1).map((m: any) => (
+                {[...previousMotos].reverse().map((m: any) => (
                   <div key={m.id} className="flex items-center justify-between px-4 py-2 rounded-lg bg-card border border-border text-sm">
                     <span className="text-muted-foreground font-mono text-xs">{m.name}</span>
                     <Badge variant="outline" className="text-xs capitalize">{m.status}</Badge>
