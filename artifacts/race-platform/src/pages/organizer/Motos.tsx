@@ -375,7 +375,9 @@ function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, ro
   });
   return (
     <TableRow ref={setNodeRef} className={`h-8 select-none ${isDragging ? "opacity-25" : ""}`}>
-      <TableCell className="w-6 text-center text-xs text-muted-foreground font-mono select-none">{rowNum ?? ""}</TableCell>
+      <TableCell className="w-12 text-center">
+        <span className="font-heading font-bold text-sm text-foreground">{rowNum ?? ""}</span>
+      </TableCell>
       <TableCell className="w-8 text-center">
         {locked ? (
           <span className="inline-flex items-center justify-center text-muted-foreground/30" title="Moto is completed — lineup locked">
@@ -1596,7 +1598,7 @@ export default function Motos() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
-                          <TableHead className="w-6 text-center text-xs text-muted-foreground">#</TableHead>
+                          <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate</TableHead>
                           <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
                             <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
@@ -1848,7 +1850,7 @@ export default function Motos() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
-                          <TableHead className="w-6 text-center text-xs text-muted-foreground">#</TableHead>
+                          <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate</TableHead>
                           <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
                             <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
