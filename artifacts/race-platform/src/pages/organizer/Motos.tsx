@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Users, Zap, GripVertical, Maximize2, Timer, Search } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -445,14 +445,52 @@ function DroppableTrashZone({ visible }: { visible: boolean }) {
   );
 }
 
-function DroppableMotoLineup({ motoId, children, locked, className }: { motoId: number; children: React.ReactNode; locked?: boolean; className?: string }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `drop-${motoId}`, disabled: locked });
+function DroppableMotoLineup({ motoId, children, locked, disableDrop, className }: { motoId: number; children: React.ReactNode; locked?: boolean; disableDrop?: boolean; className?: string }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `drop-${motoId}`, disabled: locked || disableDrop });
   return (
     <div
       ref={setNodeRef}
-      className={`border-b transition-colors ${isOver && !locked ? "bg-primary/5 ring-2 ring-inset ring-primary/30" : ""} ${className ?? "flex-1 overflow-y-auto max-h-52"}`}
+      className={`border-b transition-colors ${isOver && !locked && !disableDrop ? "bg-primary/5 ring-2 ring-inset ring-primary/30" : ""} ${className ?? "flex-1 overflow-y-auto max-h-52"}`}
     >
       {children}
+    </div>
+  );
+}
+
+function DraggableMotoGrip({ motoId, disabled }: { motoId: number; disabled?: boolean }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `moto-card-${motoId}`,
+    disabled,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`cursor-grab active:cursor-grabbing p-1 rounded hover:bg-white/10 text-sidebar-foreground/40 hover:text-sidebar-foreground/80 transition-colors touch-none shrink-0 ${isDragging ? "opacity-40" : ""}`}
+      title="Drag to reorder"
+    >
+      <GripVertical size={15} />
+    </div>
+  );
+}
+
+function DroppableMotoSlot({ id, active }: { id: string; active: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: !active });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`transition-all duration-150 rounded-xl mx-0.5 ${
+        active
+          ? isOver
+            ? "h-14 bg-primary/10 border-2 border-dashed border-primary/50 flex items-center justify-center"
+            : "h-2.5 border-2 border-dashed border-transparent"
+          : "h-1"
+      }`}
+    >
+      {active && isOver && (
+        <span className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Drop here</span>
+      )}
     </div>
   );
 }
@@ -516,6 +554,7 @@ export default function Motos() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const [lineupDrafts, setLineupDrafts] = useState<Record<number, LineupEntry[]>>({});
   const [activeDrag, setActiveDrag] = useState<{ riderName: string; bibNumber?: string | null } | null>(null);
+  const [activeMotoCardDrag, setActiveMotoCardDrag] = useState<{ motoId: number; name: string } | null>(null);
 
   // Manual create moto state
   const [newMotoName, setNewMotoName] = useState("");
@@ -601,8 +640,92 @@ export default function Motos() {
   const getLineup = (moto: { id: number; lineup?: unknown }): LineupEntry[] =>
     lineupDrafts[moto.id] ?? (Array.isArray(moto.lineup) ? (moto.lineup as LineupEntry[]) : []);
 
+  const handleQuickAddHeat = (sourceMoto: Moto) => {
+    const nextMotoNumber = (motos?.length ? Math.max(...motos.map(m => m.motoNumber ?? 0)) : 0) + 1;
+    const typeLabel = sourceMoto.type === "heat" ? (isSupercrossFormat ? "Heat" : "Division")
+      : sourceMoto.type === "main" ? "Main Event"
+      : sourceMoto.type === "lcq" ? "LCQ"
+      : "Practice";
+    const newName = `New ${typeLabel}`;
+    createMotoMutation.mutate(
+      { eventId, data: { name: newName, type: sourceMoto.type, raceClass: sourceMoto.raceClass!, motoNumber: nextMotoNumber, lineup: [] as any }},
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          toast({ title: `+ ${newName} added — drag it into position` });
+        },
+        onError: (err) => {
+          toast({ title: "Failed to create", description: err.message, variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  const handleMotoDrop = async (movedMotoId: number, beforeMotoId: number | "end") => {
+    const allMotos = [...(motos ?? [])].sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+    const without = allMotos.filter(m => m.id !== movedMotoId);
+    let insertIdx: number;
+    if (beforeMotoId === "end") {
+      insertIdx = without.length;
+    } else {
+      insertIdx = without.findIndex(m => m.id === beforeMotoId);
+      if (insertIdx === -1) insertIdx = without.length;
+    }
+    const movedMoto = allMotos.find(m => m.id === movedMotoId);
+    if (!movedMoto) return;
+    const newOrder = [...without.slice(0, insertIdx), movedMoto, ...without.slice(insertIdx)];
+
+    // Build motoNumber + name updates per moto
+    const updateMap = new Map<number, Record<string, unknown>>();
+    newOrder.forEach((m, i) => {
+      if ((m.motoNumber ?? 0) !== i + 1) {
+        updateMap.set(m.id, { motoNumber: i + 1 });
+      }
+    });
+
+    // Auto-rename within each class+type group by their new order
+    const groups = new Map<string, typeof newOrder>();
+    for (const m of newOrder) {
+      const key = `${m.raceClass}|${m.type}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(m);
+    }
+    for (const [, group] of groups) {
+      const cls = group[0].raceClass ?? "";
+      const type = group[0].type;
+      const typeLabel = type === "heat" ? (isSupercrossFormat ? "Heat" : "Division")
+        : type === "main" ? "Main Event"
+        : type === "lcq" ? "LCQ"
+        : "Practice";
+      group.forEach((m, i) => {
+        const newName = type === "main" && group.length === 1
+          ? `${cls} Main Event`
+          : `${cls} ${typeLabel} ${i + 1}`;
+        const existing = updateMap.get(m.id) ?? {};
+        updateMap.set(m.id, { ...existing, name: newName });
+      });
+    }
+
+    try {
+      await Promise.all([...updateMap.entries()].map(([motoId, data]) =>
+        updateMutation.mutateAsync({ motoId, data })
+      ));
+      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      toast({ title: "✅ Order updated" });
+    } catch {
+      toast({ title: "Failed to reorder", variant: "destructive" });
+    }
+  };
+
   const handleRiderDragStart = (event: DragStartEvent) => {
-    const parts = String(event.active.id).split("-");
+    const idStr = String(event.active.id);
+    if (idStr.startsWith("moto-card-")) {
+      const motoId = parseInt(idStr.replace("moto-card-", ""));
+      const moto = motos?.find(m => m.id === motoId);
+      setActiveMotoCardDrag(moto ? { motoId, name: moto.name } : null);
+      return;
+    }
+    const parts = idStr.split("-");
     if (parts[0] === "pool") {
       const riderId = parseInt(parts[1]);
       const c = (checkins ?? []).find(c => c.riderId === riderId);
@@ -619,10 +742,24 @@ export default function Motos() {
   };
 
   const handleRiderDragEnd = (event: DragEndEvent) => {
-    setActiveDrag(null);
     const { active, over } = event;
+    const idStr = String(active.id);
+
+    // ── Moto card reorder ────────────────────────────────────────────────────
+    if (idStr.startsWith("moto-card-")) {
+      setActiveMotoCardDrag(null);
+      if (!over) return;
+      const overId = String(over.id);
+      if (!overId.startsWith("moto-slot-")) return;
+      const movedMotoId = parseInt(idStr.replace("moto-card-", ""));
+      const slotTarget = overId.replace("moto-slot-", "");
+      handleMotoDrop(movedMotoId, slotTarget === "end" ? "end" : parseInt(slotTarget));
+      return;
+    }
+
+    setActiveDrag(null);
     if (!over) return;
-    const parts = String(active.id).split("-");
+    const parts = idStr.split("-");
 
     // ── Pool rider → trash: un-check from event ──────────────────────────────
     if (parts[0] === "pool" && String(over.id) === "drop-trash") {
@@ -1399,19 +1536,22 @@ export default function Motos() {
             {[...Array(4)].map((_, i) => <Card key={i} className="h-64 animate-pulse" />)}
           </div>
         ) : motos?.length ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        <div className="space-y-0">
           {motos.sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
-            <Card key={moto.id} className="flex flex-col h-full border-sidebar-border overflow-hidden">
-              <CardHeader className="bg-sidebar text-sidebar-foreground py-3 border-b flex flex-row items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-sidebar-accent text-white w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-lg">
+            <div key={moto.id}>
+              <DroppableMotoSlot id={`moto-slot-${moto.id}`} active={!!activeMotoCardDrag && activeMotoCardDrag.motoId !== moto.id} />
+            <Card className="flex flex-col h-full border-sidebar-border overflow-hidden">
+              <CardHeader className="bg-sidebar text-sidebar-foreground py-3 border-b flex flex-row items-center justify-between gap-2">
+                <DraggableMotoGrip motoId={moto.id} disabled={moto.status === "in_progress" || moto.status === "completed"} />
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="bg-sidebar-accent text-white w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-lg shrink-0">
                     {moto.motoNumber}
                   </div>
-                  <div>
-                    <CardTitle className="font-heading uppercase text-lg text-white leading-tight">{moto.name}</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle className="font-heading uppercase text-lg text-white leading-tight truncate">{moto.name}</CardTitle>
                     <div className="flex items-center gap-2 text-xs text-sidebar-foreground/70 uppercase tracking-widest">
-                      <span>{moto.raceClass}</span>
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider border ${
+                      <span className="truncate">{moto.raceClass}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider border shrink-0 ${
                         moto.type === "main"
                           ? "bg-primary/30 text-primary border-primary/40"
                           : "bg-white/10 text-sidebar-foreground/80 border-white/20"
@@ -1421,7 +1561,7 @@ export default function Motos() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
                     moto.status === "in_progress" ? "bg-primary/20 text-primary border-primary/30 animate-pulse" :
                     moto.status === "completed" ? "bg-secondary/20 text-secondary border-secondary/30" :
@@ -1432,6 +1572,14 @@ export default function Motos() {
                     )}
                     {moto.status.replace("_", " ")}
                   </span>
+                  <button
+                    onClick={() => handleQuickAddHeat(moto)}
+                    disabled={createMotoMutation.isPending}
+                    className="text-sidebar-foreground/50 hover:text-green-400 transition-colors p-1 rounded hover:bg-white/10 disabled:opacity-40"
+                    title={`Add another ${moto.type === "main" ? "main" : isSupercrossFormat ? "heat" : "division"} for ${moto.raceClass}`}
+                  >
+                    <Plus size={14} />
+                  </button>
                   <button
                     onClick={() => setExpandedMotoId(moto.id)}
                     className="text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors p-1 rounded hover:bg-white/10"
@@ -1445,7 +1593,7 @@ export default function Motos() {
               <CardContent className="p-0 flex-1 flex flex-col">
                 {/* Lineup table */}
                 {moto.type === "heat" ? (
-                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"}>
+                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} disableDrop={!!activeMotoCardDrag}>
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
@@ -1618,7 +1766,9 @@ export default function Motos() {
                 </div>
               </CardContent>
             </Card>
+            </div>
           ))}
+          <DroppableMotoSlot id="moto-slot-end" active={!!activeMotoCardDrag} />
         </div>
         ) : (
           <Card>
@@ -1635,6 +1785,12 @@ export default function Motos() {
         </div>{/* right column */}
       </div>{/* flex row */}
       <DragOverlay dropAnimation={null}>
+        {activeMotoCardDrag && (
+          <div className="flex items-center gap-2 bg-sidebar text-sidebar-foreground border border-primary/40 shadow-xl rounded-md px-3 py-2.5 text-sm font-medium pointer-events-none opacity-90">
+            <GripVertical size={14} className="text-sidebar-foreground/50 shrink-0" />
+            <span className="font-heading uppercase text-sm">{activeMotoCardDrag.name}</span>
+          </div>
+        )}
         {activeDrag && (
           <div className="flex items-center gap-2 bg-card border border-primary/40 shadow-lg rounded-md px-3 py-2 text-sm font-medium pointer-events-none">
             <GripVertical size={14} className="text-muted-foreground shrink-0" />
