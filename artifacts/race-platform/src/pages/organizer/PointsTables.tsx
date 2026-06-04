@@ -377,6 +377,7 @@ function AiAssistPanel({
   }) => void;
 }) {
   const [scoringDesc, setScoringDesc] = useState("");
+  const [motoTerminology, setMotoTerminology] = useState<"heats" | "divisions" | "motos">("motos");
   const [motoDesc, setMotoDesc] = useState("");
   const [motoNotes, setMotoNotes] = useState<string | null>(null);
   const suggestMutation = useAiSuggestPointsTable();
@@ -388,10 +389,14 @@ function AiAssistPanel({
       return;
     }
     try {
+      const terminologyNote = motoTerminology !== "motos"
+        ? `Call the races "${motoTerminology}" (not "motos"). `
+        : "";
+      const combinedMotoDesc = terminologyNote + (motoDesc.trim() || "");
       const result = await suggestMutation.mutateAsync({
         data: {
           scoringDescription: scoringDesc.trim(),
-          motoDescription: motoDesc.trim() || undefined,
+          motoDescription: combinedMotoDesc || undefined,
         },
       });
       setMotoNotes(result.motoNotes ?? null);
@@ -426,8 +431,22 @@ function AiAssistPanel({
       </div>
 
       <div className="space-y-1.5">
+        <Label className="text-xs font-medium">What should races be called?</Label>
+        <Select value={motoTerminology} onValueChange={(v) => setMotoTerminology(v as "heats" | "divisions" | "motos")}>
+          <SelectTrigger className="bg-background text-sm h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="motos">Motos</SelectItem>
+            <SelectItem value="heats">Heats</SelectItem>
+            <SelectItem value="divisions">Divisions</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1.5">
         <Label className="text-xs font-medium">
-          How should motos be structured?{" "}
+          How should races be structured?{" "}
           <span className="text-muted-foreground font-normal">(optional)</span>
         </Label>
         <Textarea
