@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { Video, VideoOff, Mic, MicOff, Radio, AlertCircle, Wifi } from "lucide-react";
+import { Video, VideoOff, Mic, MicOff, Radio, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
 import { useBroadcast } from "@/contexts/BroadcastContext";
 
 interface LiveBroadcastProps {
@@ -10,7 +9,6 @@ interface LiveBroadcastProps {
 }
 
 export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
-  const { toast } = useToast();
   const {
     broadcastState,
     errorMsg,
@@ -150,8 +148,6 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
     return `${m}:${String(sec).padStart(2, "0")}`;
   };
 
-  const watchUrl = `${window.location.origin}/watch/${eventId}`;
-
   return (
     <div className="space-y-4">
       {/* Camera preview */}
@@ -272,25 +268,6 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
         )}
       </div>
 
-      {/* Watch link while live */}
-      {isLive && (
-        <div className="flex items-center gap-3 bg-muted/50 rounded-lg px-3 py-2.5 text-sm max-w-xl">
-          <Wifi size={14} className="text-green-500 flex-shrink-0" />
-          <span className="text-muted-foreground text-xs flex-1 truncate">
-            Viewers watch at: <span className="font-mono">{watchUrl}</span>
-          </span>
-          <Button
-            size="sm" variant="outline"
-            className="text-xs font-heading uppercase h-7"
-            onClick={() => {
-              navigator.clipboard.writeText(watchUrl);
-              toast({ title: "Watch link copied!" });
-            }}
-          >
-            Copy
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
