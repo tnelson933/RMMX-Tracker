@@ -21,10 +21,11 @@ export default function RiderLogin() {
 
   const loginMutation = useMutation({
     mutationFn: () => riderApi.login(loginEmail, loginPassword),
-    onSuccess: () => {
-      // Remove any stale "not authenticated" cache so RiderProtectedRoute
-      // shows a loading spinner while /me re-checks with the new session cookie.
-      queryClient.removeQueries({ queryKey: ["rider-auth-me"] });
+    onSuccess: (data) => {
+      // Set auth data directly from login response so RiderProtectedRoute
+      // immediately sees isAuthenticated=true when navigate() fires.
+      // (removeQueries caused a flash: isLoading=false + isAuthenticated=false → redirect)
+      queryClient.setQueryData(["rider-auth-me"], data);
       navigate("/rider/portal");
     },
   });
@@ -34,8 +35,8 @@ export default function RiderLogin() {
       if (regPassword !== regConfirm) throw new Error("Passwords do not match");
       return riderApi.register(regEmail, regPassword);
     },
-    onSuccess: () => {
-      queryClient.removeQueries({ queryKey: ["rider-auth-me"] });
+    onSuccess: (data) => {
+      queryClient.setQueryData(["rider-auth-me"], data);
       navigate("/rider/portal");
     },
   });
