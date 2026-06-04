@@ -450,7 +450,7 @@ function AiAssistPanel({
           <span className="text-muted-foreground font-normal">(optional)</span>
         </Label>
         <Textarea
-          placeholder='e.g. "All races count equally toward the day\'s total" or "Riders qualify in heats, then race a main event — only the main event counts for points"'
+          placeholder={`e.g. "All races count equally toward the day's total" or "Riders qualify in heats, then race a main event — only the main event counts for points"`}
           rows={3}
           value={motoDesc}
           onChange={(e) => setMotoDesc(e.target.value)}
