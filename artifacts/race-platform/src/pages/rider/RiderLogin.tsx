@@ -21,9 +21,10 @@ export default function RiderLogin() {
 
   const loginMutation = useMutation({
     mutationFn: () => riderApi.login(loginEmail, loginPassword),
-    onSuccess: (account) => {
-      queryClient.cancelQueries({ queryKey: ["rider-auth-me"] });
-      queryClient.setQueryData(["rider-auth-me"], account);
+    onSuccess: () => {
+      // Remove any stale "not authenticated" cache so RiderProtectedRoute
+      // shows a loading spinner while /me re-checks with the new session cookie.
+      queryClient.removeQueries({ queryKey: ["rider-auth-me"] });
       navigate("/rider/portal");
     },
   });
@@ -33,9 +34,8 @@ export default function RiderLogin() {
       if (regPassword !== regConfirm) throw new Error("Passwords do not match");
       return riderApi.register(regEmail, regPassword);
     },
-    onSuccess: (account) => {
-      queryClient.cancelQueries({ queryKey: ["rider-auth-me"] });
-      queryClient.setQueryData(["rider-auth-me"], account);
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ["rider-auth-me"] });
       navigate("/rider/portal");
     },
   });
