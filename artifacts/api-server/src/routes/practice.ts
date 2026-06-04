@@ -6,9 +6,17 @@ import {
   rfidAssignmentsTable,
   ridersTable,
   eventsTable,
+  usersTable,
 } from "@workspace/db";
 import { eq, and, desc, asc } from "drizzle-orm";
 import type { Response } from "express";
+
+async function getClubId(req: any): Promise<number | null> {
+  const userId = (req.session as any).userId;
+  if (!userId) return null;
+  const [user] = await db.select({ clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, userId));
+  return user?.clubId ?? null;
+}
 
 const router = Router();
 
@@ -89,7 +97,7 @@ function broadcast(sessionId: number, payload: object) {
 router.get("/practice", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const clubId = (req.session as any).clubId;
+  const clubId = await getClubId(req);
   if (!clubId) return res.status(403).json({ error: "No club" });
 
   const sessions = await db.select().from(practiceSessionsTable)
@@ -110,7 +118,7 @@ router.get("/practice/:id", async (req, res) => {
 router.post("/practice", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const clubId = (req.session as any).clubId;
+  const clubId = await getClubId(req);
   if (!clubId) return res.status(403).json({ error: "No club" });
 
   const { name, debounceMs } = req.body;
@@ -130,7 +138,7 @@ router.patch("/practice/:id", async (req, res) => {
   const id = Number(req.params.id);
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const clubId = (req.session as any).clubId;
+  const clubId = await getClubId(req);
 
   const [existing] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
   if (!existing) return res.status(404).json({ error: "Not found" });
@@ -163,7 +171,7 @@ router.delete("/practice/:id", async (req, res) => {
   const id = Number(req.params.id);
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const clubId = (req.session as any).clubId;
+  const clubId = await getClubId(req);
 
   const [existing] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
   if (!existing) return res.status(404).json({ error: "Not found" });
