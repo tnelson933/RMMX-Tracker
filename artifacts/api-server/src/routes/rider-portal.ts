@@ -11,7 +11,7 @@ import {
   practiceSessionsTable,
   registrationsTable,
 } from "@workspace/db";
-import { eq, desc, asc, or, and, ne, inArray } from "drizzle-orm";
+import { eq, desc, asc, or, and, ne, inArray, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -357,7 +357,7 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
   return res.json({ rider: { id: rider.id, firstName: rider.firstName, lastName: rider.lastName }, sessions });
 });
 
-// GET /rider/profiles/:riderId/schedule — all registered events with full moto lineups
+// GET /rider/profiles/:riderId/schedule — events for all riders sharing this account's email
 router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
@@ -372,20 +372,30 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     return res.status(403).json({ error: "Access denied" });
   }
 
-  // All confirmed registrations for this rider
+  // Find ALL riders whose email matches this account (family members included)
+  const familyRiders = await db
+    .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName })
+    .from(ridersTable)
+    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+
+  const familyRiderIds = familyRiders.map(r => r.id);
+  const familyRiderMap = new Map(familyRiders.map(r => [r.id, `${r.firstName} ${r.lastName}`]));
+
+  // All confirmed registrations for ALL family riders
   const regs = await db
     .select({
+      riderId: registrationsTable.riderId,
       eventId: registrationsTable.eventId,
       raceClass: registrationsTable.raceClass,
       status: registrationsTable.status,
     })
     .from(registrationsTable)
     .where(and(
-      eq(registrationsTable.riderId, riderId),
+      inArray(registrationsTable.riderId, familyRiderIds),
       ne(registrationsTable.status, "void"),
     ));
 
-  if (regs.length === 0) return res.json({ events: [] });
+  if (regs.length === 0) return res.json({ familyRiderIds, events: [] });
 
   const eventIds = [...new Set(regs.map(r => r.eventId))];
 
@@ -398,7 +408,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       ne(eventsTable.status, "draft"),
     ));
 
-  if (events.length === 0) return res.json({ events: [] });
+  if (events.length === 0) return res.json({ familyRiderIds, events: [] });
 
   // Fetch all non-practice motos for these events
   const motos = await db
@@ -410,16 +420,23 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     ))
     .orderBy(asc(motosTable.motoNumber));
 
-  // Build response grouped by event
+  // Build response grouped by event (one section per event regardless of how many family members)
   const results = events.map(event => {
-    const reg = regs.find(r => r.eventId === event.id);
+    const eventRegs = regs.filter(r => r.eventId === event.id);
+    const registrations = eventRegs.map(r => ({
+      riderId: r.riderId,
+      riderName: familyRiderMap.get(r.riderId) ?? "Unknown",
+      raceClass: r.raceClass ?? null,
+    }));
+
     const eventMotos = motos.filter(m => m.eventId === event.id);
 
-    const motosWithRider = eventMotos.map(moto => {
+    const motosWithFamily = eventMotos.map(moto => {
       const lineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{
         position: number; riderId: number; riderName: string; bibNumber?: string | null;
       }>;
-      const riderEntry = lineup.find(e => e.riderId === riderId);
+      const familyInLineup = lineup.filter(e => familyRiderIds.includes(e.riderId));
+
       return {
         motoId: moto.id,
         motoNumber: moto.motoNumber,
@@ -431,8 +448,10 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
         scheduledTime: moto.scheduledTime ?? null,
         startedAt: moto.startedAt?.toISOString() ?? null,
         completedAt: moto.completedAt?.toISOString() ?? null,
-        isRiderInMoto: !!riderEntry,
-        riderGate: riderEntry?.position ?? null,
+        isAnyFamilyMemberInMoto: familyInLineup.length > 0,
+        familyGates: familyInLineup
+          .sort((a, b) => a.position - b.position)
+          .map(e => ({ gate: e.position, riderId: e.riderId, riderName: e.riderName })),
         lineup: lineup
           .sort((a, b) => a.position - b.position)
           .map(e => ({
@@ -440,6 +459,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
             riderId: e.riderId,
             riderName: e.riderName,
             bibNumber: e.bibNumber ?? null,
+            isFamilyMember: familyRiderIds.includes(e.riderId),
           })),
       };
     });
@@ -451,8 +471,8 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       eventState: event.state ?? null,
       eventLocation: event.location ?? null,
       status: event.status,
-      raceClass: reg?.raceClass ?? null,
-      motos: motosWithRider,
+      registrations,
+      motos: motosWithFamily,
     };
   });
 
@@ -465,7 +485,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     return (b.eventDate ?? "").localeCompare(a.eventDate ?? "");
   });
 
-  return res.json({ events: results });
+  return res.json({ familyRiderIds, events: results });
 });
 
 export default router;

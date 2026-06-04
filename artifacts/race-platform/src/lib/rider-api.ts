@@ -103,6 +103,13 @@ export interface ScheduleMotoLineupEntry {
   riderId: number;
   riderName: string;
   bibNumber: string | null;
+  isFamilyMember: boolean;
+}
+
+export interface ScheduleFamilyGate {
+  gate: number;
+  riderId: number;
+  riderName: string;
 }
 
 export interface ScheduleMoto {
@@ -116,9 +123,15 @@ export interface ScheduleMoto {
   scheduledTime: string | null;
   startedAt: string | null;
   completedAt: string | null;
-  isRiderInMoto: boolean;
-  riderGate: number | null;
+  isAnyFamilyMemberInMoto: boolean;
+  familyGates: ScheduleFamilyGate[];
   lineup: ScheduleMotoLineupEntry[];
+}
+
+export interface ScheduleRegistration {
+  riderId: number;
+  riderName: string;
+  raceClass: string | null;
 }
 
 export interface ScheduleEvent {
@@ -128,11 +141,12 @@ export interface ScheduleEvent {
   eventState: string | null;
   eventLocation: string | null;
   status: string;
-  raceClass: string | null;
+  registrations: ScheduleRegistration[];
   motos: ScheduleMoto[];
 }
 
 export interface RiderScheduleResponse {
+  familyRiderIds: number[];
   events: ScheduleEvent[];
 }
 

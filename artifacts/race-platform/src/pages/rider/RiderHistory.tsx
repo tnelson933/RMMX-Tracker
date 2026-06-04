@@ -22,6 +22,8 @@ import {
   type RiderScheduleResponse,
   type ScheduleEvent,
   type ScheduleMoto,
+  type ScheduleFamilyGate,
+  type ScheduleRegistration,
 } from "@/lib/rider-api";
 
 function positionBadge(pos: number) {
@@ -559,13 +561,13 @@ function motoTypeLabel(type: string) {
   return type;
 }
 
-function ScheduleMotoCard({ moto, riderId }: { moto: ScheduleMoto; riderId: number }) {
+function ScheduleMotoCard({ moto }: { moto: ScheduleMoto }) {
   const [open, setOpen] = useState(false);
   const isLive = moto.status === "in_progress";
   const isDone = moto.status === "completed";
 
-  if (!moto.isRiderInMoto) {
-    // Greyed-out compact row
+  if (!moto.isAnyFamilyMemberInMoto) {
+    // Greyed-out compact row — no family member in this moto
     return (
       <div className="flex items-center gap-3 px-4 py-3 rounded-lg border bg-muted/30 opacity-50 select-none">
         <span className="font-mono text-sm text-muted-foreground w-6 text-center shrink-0">
@@ -580,7 +582,7 @@ function ScheduleMotoCard({ moto, riderId }: { moto: ScheduleMoto; riderId: numb
     );
   }
 
-  // Full-color card for rider's own motos
+  // Full-color card — at least one family member is in this moto
   return (
     <div className={`rounded-xl border-2 overflow-hidden ${
       isLive
@@ -617,26 +619,33 @@ function ScheduleMotoCard({ moto, riderId }: { moto: ScheduleMoto; riderId: numb
         </button>
       </div>
 
-      {/* Gate highlight */}
-      <div className="flex items-center gap-4 px-4 py-3 bg-background border-b">
-        <div className="flex items-center gap-3">
-          <div className="flex flex-col items-center justify-center w-16 h-16 rounded-xl bg-foreground text-background shrink-0">
-            <DoorOpen size={18} className="mb-0.5 opacity-70" />
-            <span className="font-heading font-black text-2xl leading-none">{moto.riderGate}</span>
-            <span className="text-[9px] font-bold uppercase tracking-wider opacity-60 mt-0.5">Gate</span>
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Your Starting Gate</div>
-            <div className="text-sm text-muted-foreground mt-0.5">
-              {moto.raceClass && <span className="text-foreground font-semibold">{moto.raceClass}</span>}
-              {" · "}
-              {motoTypeLabel(moto.type)}
-              {moto.lapCount && <span className="text-muted-foreground"> · {moto.lapCount} laps</span>}
+      {/* Gate highlight — one card per family member */}
+      <div className="px-4 py-3 bg-background border-b">
+        <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold mb-2">
+          {moto.familyGates.length === 1 ? "Starting Gate" : "Your Gates"}
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {moto.familyGates.map(fg => (
+            <div key={fg.riderId} className="flex items-center gap-3">
+              <div className="flex flex-col items-center justify-center w-16 h-16 rounded-xl bg-foreground text-background shrink-0">
+                <DoorOpen size={18} className="mb-0.5 opacity-70" />
+                <span className="font-heading font-black text-2xl leading-none">{fg.gate}</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider opacity-60 mt-0.5">Gate</span>
+              </div>
+              <div>
+                <div className="text-sm font-bold text-primary leading-tight">{fg.riderName}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {moto.raceClass && <span className="text-foreground font-medium">{moto.raceClass}</span>}
+                  {moto.raceClass && " · "}
+                  {motoTypeLabel(moto.type)}
+                  {moto.lapCount && <span> · {moto.lapCount} laps</span>}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {moto.lineup.length} rider{moto.lineup.length !== 1 ? "s" : ""} in moto
+                </div>
+              </div>
             </div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              {moto.lineup.length} rider{moto.lineup.length !== 1 ? "s" : ""} in this moto
-            </div>
-          </div>
+          ))}
         </div>
       </div>
 
@@ -647,34 +656,36 @@ function ScheduleMotoCard({ moto, riderId }: { moto: ScheduleMoto; riderId: numb
             Starting Order
           </div>
           <div className="divide-y">
-            {moto.lineup.map(entry => {
-              const isMe = entry.riderId === riderId;
-              return (
-                <div
-                  key={entry.gate}
-                  className={`flex items-center gap-3 px-4 py-2.5 ${
-                    isMe ? "bg-foreground text-background" : ""
-                  }`}
-                >
-                  <span className={`w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-sm shrink-0 ${
-                    isMe
-                      ? "bg-background/20 text-background"
-                      : "bg-muted text-muted-foreground"
+            {moto.lineup.map(entry => (
+              <div
+                key={entry.gate}
+                className={`flex items-center gap-3 px-4 py-2.5 ${
+                  entry.isFamilyMember ? "bg-primary/5" : ""
+                }`}
+              >
+                <span className={`w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-sm shrink-0 ${
+                  entry.isFamilyMember
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
+                }`}>
+                  {entry.gate}
+                </span>
+                <span className={`flex-1 text-sm ${
+                  entry.isFamilyMember
+                    ? "font-bold text-primary"
+                    : "font-medium text-foreground"
+                }`}>
+                  {entry.riderName}
+                </span>
+                {entry.bibNumber && (
+                  <span className={`text-xs font-mono shrink-0 ${
+                    entry.isFamilyMember ? "text-primary font-bold" : "text-muted-foreground"
                   }`}>
-                    {entry.gate}
+                    #{entry.bibNumber}
                   </span>
-                  <span className={`flex-1 text-sm font-medium ${isMe ? "font-bold" : ""}`}>
-                    {entry.riderName}
-                    {isMe && <span className="ml-2 text-xs opacity-70 font-normal">(you)</span>}
-                  </span>
-                  {entry.bibNumber && (
-                    <span className={`text-xs font-mono shrink-0 ${isMe ? "opacity-70" : "text-muted-foreground"}`}>
-                      #{entry.bibNumber}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -691,10 +702,10 @@ function ScheduleMotoCard({ moto, riderId }: { moto: ScheduleMoto; riderId: numb
   );
 }
 
-function ScheduleEventSection({ event, riderId }: { event: ScheduleEvent; riderId: number }) {
+function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   const isRaceDay = event.status === "race_day";
   const hasLiveMotos = event.motos.some(m => m.status === "in_progress");
-  const myMotos = event.motos.filter(m => m.isRiderInMoto);
+  const myMotos = event.motos.filter(m => m.isAnyFamilyMemberInMoto);
 
   return (
     <div className="space-y-3">
@@ -724,13 +735,20 @@ function ScheduleEventSection({ event, riderId }: { event: ScheduleEvent; riderI
                 {event.eventLocation ?? event.eventState}
               </span>
             )}
-            {event.raceClass && (
-              <Badge variant="secondary" className="text-xs">{event.raceClass}</Badge>
-            )}
           </div>
+          {/* Family registrations — names + classes */}
+          {event.registrations.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {event.registrations.map(r => (
+                <span key={r.riderId} className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary border border-primary/20 rounded-full px-2.5 py-0.5 font-semibold">
+                  {r.riderName}{r.raceClass ? ` · ${r.raceClass}` : ""}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="text-right shrink-0">
-          <div className="text-xs text-muted-foreground">Your races</div>
+          <div className="text-xs text-muted-foreground">Races</div>
           <div className="font-heading font-bold text-2xl text-primary">{myMotos.length}</div>
         </div>
       </div>
@@ -738,7 +756,7 @@ function ScheduleEventSection({ event, riderId }: { event: ScheduleEvent; riderI
       {/* Motos */}
       <div className="space-y-2 pl-1">
         {event.motos.map(moto => (
-          <ScheduleMotoCard key={moto.motoId} moto={moto} riderId={riderId} />
+          <ScheduleMotoCard key={moto.motoId} moto={moto} />
         ))}
         {event.motos.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-4">
@@ -963,7 +981,7 @@ export default function RiderHistory() {
               ) : (
                 <div className="space-y-8">
                   {scheduleData.events.map(event => (
-                    <ScheduleEventSection key={event.eventId} event={event} riderId={riderId} />
+                    <ScheduleEventSection key={event.eventId} event={event} />
                   ))}
                 </div>
               )}
