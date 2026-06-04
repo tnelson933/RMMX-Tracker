@@ -175,14 +175,27 @@ function handleViewer(ws: WebSocket, eventId: number) {
 
   logger.info({ eventId, viewers: state.viewers.size }, "Viewer connected");
 
-  // Periodic ping to keep the connection alive through the Replit proxy.
-  // The browser WebSocket API responds to protocol-level ping frames automatically.
-  // 5 s is short enough to prevent proxy idle-timeout disconnections.
-  const pingInterval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.ping();
-    }
-  }, 5_000);
+  // Application-level heartbeat to keep the Replit proxy from closing idle
+  // connections. The proxy has a ~2-second application-data idle timeout; a
+  // protocol-level ws.ping() does NOT count as application data, so we send a
+  // small JSON heartbeat frame every 1.5 s instead. When a live stream is
+  // active the incoming video chunks already reset the proxy's idle timer, so
+  // the heartbeat only matters in the "offline" waiting state. We start it
+  // after the initial message is sent and clear it on disconnect.
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+  const startHeartbeat = () => {
+    if (heartbeatInterval) return;
+    heartbeatInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "heartbeat" }));
+      }
+    }, 1_500);
+  };
+
+  const stopHeartbeat = () => {
+    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+  };
 
   // Delay initial messages so the Replit proxy relay has time to fully establish
   // the bidirectional pipe before we burst data down it. Without the delay, the
@@ -210,17 +223,20 @@ function handleViewer(ws: WebSocket, eventId: number) {
       if (chunks.length > 0) setImmediate(sendNextChunk);
     } else {
       ws.send(JSON.stringify({ type: "offline" }));
+      // Start heartbeat — keeps the proxy alive while waiting for the stream.
+      // It will be cleared when the connection closes or errors.
+      startHeartbeat();
     }
   }, 150);
 
   ws.on("close", () => {
-    clearInterval(pingInterval);
+    stopHeartbeat();
     state.viewers.delete(ws);
     logger.info({ eventId, viewers: state.viewers.size }, "Viewer disconnected");
   });
 
   ws.on("error", (err) => {
-    clearInterval(pingInterval);
+    stopHeartbeat();
     logger.error({ eventId, err: err.message }, "Viewer WebSocket error");
     state.viewers.delete(ws);
   });

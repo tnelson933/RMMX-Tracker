@@ -465,7 +465,9 @@ export default function WatchLive() {
 
       if (jsonMsg !== null) {
         // ── Text / JSON control message ────────────────────────────────────────
-        if (jsonMsg.type === "offline") {
+        if (jsonMsg.type === "heartbeat") {
+          // Server keep-alive frame — no action needed, just prevents proxy idle timeout.
+        } else if (jsonMsg.type === "offline") {
           setViewerStateSynced("offline");
           // Poll the REST status endpoint every 8 s while offline so we reconnect
           // promptly when the stream goes live, even if the push notification is
