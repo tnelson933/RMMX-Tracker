@@ -887,9 +887,11 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
             />
           ))}
           {finished.length > 0 && upcoming.length > 0 && (
-            <div className="flex items-center gap-3 py-1">
+            <div className="flex items-center gap-3 py-2">
               <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-muted-foreground font-heading uppercase tracking-wider shrink-0">Finished</span>
+              <span className="text-sm font-heading font-bold uppercase tracking-widest text-foreground shrink-0 px-1">
+                ✓ Finished Motos
+              </span>
               <div className="flex-1 h-px bg-border" />
             </div>
           )}
