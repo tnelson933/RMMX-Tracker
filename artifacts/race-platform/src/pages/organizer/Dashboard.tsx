@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Calendar, Users, CheckCircle, Plus, Tag, Activity,
-  Upload, ImageIcon, Loader2, X, Sparkles, Save, Building2, LayoutDashboard, Mail,
+  Upload, ImageIcon, Loader2, X, Sparkles, Save, Building2, LayoutDashboard, Mail, Copy, ClipboardCheck,
 } from "lucide-react";
 import { Link } from "wouter";
 import { format, parseISO } from "date-fns";
@@ -107,6 +107,15 @@ export default function Dashboard() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState("");
+  const [clubIdCopied, setClubIdCopied] = useState(false);
+
+  const handleCopyClubId = () => {
+    if (!clubId) return;
+    navigator.clipboard.writeText(String(clubId)).then(() => {
+      setClubIdCopied(true);
+      setTimeout(() => setClubIdCopied(false), 2000);
+    });
+  };
 
   useEffect(() => {
     if (club) {
@@ -379,6 +388,34 @@ export default function Dashboard() {
                 </div>
               </CardContent>
             )}
+          </Card>
+
+          {/* Club ID — read-only, for RFID bridge / internal reference */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="font-heading uppercase tracking-tight text-base">Club ID</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Your permanent club identifier. Use this when configuring the RFID bridge in practice mode (<code className="text-xs bg-muted px-1 py-0.5 rounded">--club-id</code>) or for any hardware timing integration. This value is assigned automatically and cannot be changed.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 bg-muted border border-border rounded-lg px-4 py-3 flex-1 max-w-xs">
+                  <span className="text-xs text-muted-foreground font-heading uppercase tracking-widest">Club ID</span>
+                  <span className="font-mono font-bold text-2xl text-foreground tracking-wider">{clubId}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopyClubId}
+                  className="font-heading uppercase tracking-wider h-11 gap-2"
+                >
+                  {clubIdCopied
+                    ? <><ClipboardCheck size={14} className="text-green-500" /> Copied</>
+                    : <><Copy size={14} /> Copy</>}
+                </Button>
+              </div>
+            </CardContent>
           </Card>
 
           {/* Organizer & Club name */}
