@@ -179,9 +179,20 @@ router.delete("/motos/:motoId", async (req, res) => {
   return res.status(204).send();
 });
 
+// Helper: convert a GateConfig's gatePriorities to the seeding order array used by lineup builder
+// seedingOrder[seedPos] = gate number for that seed position
+function gateConfigToSeedingOrder(config: { gateCount: number; gatePriorities: number[] }): number[] {
+  const order: number[] = [];
+  for (let seed = 1; seed <= config.gateCount; seed++) {
+    const gateIdx = config.gatePriorities.indexOf(seed);
+    if (gateIdx !== -1) order.push(gateIdx + 1); // 1-indexed gate number
+  }
+  return order;
+}
+
 router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { raceFormat, classes, ridersPerHeat, usePracticeSeeding } = req.body;
+  const { raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateConfigId } = req.body;
 
   // Determine if this is a Supercross-style event (main event only, heats feed into main)
   const { isSupercross: isSupercrossFormat } = await getEventFormat(eventId);
@@ -195,10 +206,19 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     // Get the club for this event
     const [eventRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
     if (eventRow?.clubId) {
-      const [club] = await db.select({ gateCount: clubsTable.gateCount, gateSeeding: clubsTable.gateSeeding })
+      const [club] = await db.select({ gateSeeding: clubsTable.gateSeeding })
         .from(clubsTable).where(eq(clubsTable.id, eventRow.clubId));
-      gateSeeding = (club?.gateSeeding as number[] | null) ?? [];
-      gateCountFromClub = club?.gateCount ?? null;
+
+      // Support new multi-config format (GateConfig[]) or empty
+      const gateConfigs = (club?.gateSeeding as any[] | null) ?? [];
+      const selectedConfig = gateConfigId
+        ? gateConfigs.find((c: any) => c.id === gateConfigId)
+        : gateConfigs[0];
+
+      if (selectedConfig?.gatePriorities) {
+        gateSeeding = gateConfigToSeedingOrder(selectedConfig);
+        gateCountFromClub = selectedConfig.gateCount ?? null;
+      }
 
       // Get all practice sessions for this club
       const sessions = await db.select({ id: practiceSessionsTable.id })

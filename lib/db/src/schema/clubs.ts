@@ -2,6 +2,13 @@ import { pgTable, integer, text, boolean, timestamp, jsonb } from "drizzle-orm/p
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+export interface GateConfig {
+  id: string;
+  name: string;
+  gateCount: number;
+  gatePriorities: number[]; // gatePriorities[i] = seed priority for gate (i+1); 1 = fastest rider gets this gate
+}
+
 export const clubsTable = pgTable("clubs", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity({ startWith: 1000 }),
   name: text("name").notNull(),
@@ -14,7 +21,7 @@ export const clubsTable = pgTable("clubs", {
   stripeAccountId: text("stripe_account_id"),
   stripeOnboardingComplete: boolean("stripe_onboarding_complete").notNull().default(false),
   gateCount: integer("gate_count"),
-  gateSeeding: jsonb("gate_seeding").$type<number[]>(),
+  gateSeeding: jsonb("gate_seeding").$type<GateConfig[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

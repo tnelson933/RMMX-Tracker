@@ -6,7 +6,7 @@ import {
   useUpdateEvent,
   getListMotosQueryKey, getListCheckinsQueryKey, Moto,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -545,6 +545,7 @@ export default function Motos() {
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
   const [usePracticeSeeding, setUsePracticeSeeding] = useState(false);
+  const [selectedGateConfigId, setSelectedGateConfigId] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
@@ -574,6 +575,15 @@ export default function Motos() {
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: motos, isLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
   const { data: checkins } = useListCheckins(eventId, { query: { enabled: !!eventId } as any });
+  const { data: gateConfigsData } = useQuery({
+    queryKey: ["gateConfigs"],
+    queryFn: async () => {
+      const res = await fetch("/api/clubs/gate-settings", { credentials: "include" });
+      if (!res.ok) return { gateConfigs: [] };
+      return res.json() as Promise<{ gateConfigs: Array<{ id: string; name: string; gateCount: number; gatePriorities: number[] }> }>;
+    },
+  });
+  const gateConfigs = gateConfigsData?.gateConfigs ?? [];
 
   const generateMutation = useGenerateLineups();
   const createMotoMutation = useCreateMoto();
@@ -890,8 +900,9 @@ export default function Motos() {
   const handleGenerate = () => {
     if (!event?.raceClasses) return;
     const perHeat = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
+    const gateConfigId = usePracticeSeeding && selectedGateConfigId ? selectedGateConfigId : undefined;
     generateMutation.mutate(
-      { eventId, data: { raceFormat: format, classes: event.raceClasses, ridersPerHeat: perHeat, usePracticeSeeding } },
+      { eventId, data: { raceFormat: format, classes: event.raceClasses, ridersPerHeat: perHeat, usePracticeSeeding, gateConfigId } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -1291,12 +1302,16 @@ export default function Motos() {
                     : "If a class exceeds this number, riders are split into separate groups."}
                 </p>
               </div>
-              <div className="rounded-lg border bg-muted/30 px-4 py-3 space-y-1.5">
+              <div className="rounded-lg border bg-muted/30 px-4 py-3 space-y-3">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={usePracticeSeeding}
-                    onChange={e => setUsePracticeSeeding(e.target.checked)}
+                    onChange={e => {
+                      setUsePracticeSeeding(e.target.checked);
+                      if (!e.target.checked) setSelectedGateConfigId("");
+                      else if (gateConfigs.length > 0 && !selectedGateConfigId) setSelectedGateConfigId(gateConfigs[0].id);
+                    }}
                     className="h-4 w-4 rounded accent-primary"
                   />
                   <span className="text-sm font-medium">Use practice lap seeding</span>
@@ -1304,6 +1319,36 @@ export default function Motos() {
                 <p className="text-xs text-muted-foreground pl-7">
                   Distributes riders into groups by best practice lap time (serpentine seeding) and assigns starting gates in order of speed. Requires gate settings to be configured.
                 </p>
+                {usePracticeSeeding && gateConfigs.length === 0 && (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 ml-7">
+                    No gate configs found — set them up on the Gate Assignments page first.
+                  </p>
+                )}
+                {usePracticeSeeding && gateConfigs.length > 1 && (
+                  <div className="pl-7 space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Gate Config</label>
+                    <Select
+                      value={selectedGateConfigId || gateConfigs[0]?.id || ""}
+                      onValueChange={setSelectedGateConfigId}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select gate config…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {gateConfigs.map(cfg => (
+                          <SelectItem key={cfg.id} value={cfg.id}>
+                            {cfg.name} <span className="text-muted-foreground ml-1">({cfg.gateCount} gates)</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {usePracticeSeeding && gateConfigs.length === 1 && (
+                  <p className="text-xs text-muted-foreground pl-7">
+                    Using: <span className="font-medium">{gateConfigs[0].name}</span> ({gateConfigs[0].gateCount} gates)
+                  </p>
+                )}
               </div>
               <Button onClick={handleGenerate} disabled={generateMutation.isPending} className="w-full font-heading uppercase">
                 {generateMutation.isPending ? "Generating..." : "Generate Lineups"}

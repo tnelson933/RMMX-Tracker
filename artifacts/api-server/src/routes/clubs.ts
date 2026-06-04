@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubsTable, usersTable } from "@workspace/db";
+import type { GateConfig } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 const router = Router();
@@ -35,11 +36,12 @@ router.get("/clubs/gate-settings", async (req, res) => {
   const [user] = await db.select({ clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, session.userId));
   if (!user?.clubId) return res.status(404).json({ error: "No club assigned to this account" });
 
-  const [club] = await db.select({ gateCount: clubsTable.gateCount, gateSeeding: clubsTable.gateSeeding })
+  const [club] = await db.select({ gateSeeding: clubsTable.gateSeeding })
     .from(clubsTable).where(eq(clubsTable.id, user.clubId));
   if (!club) return res.status(404).json({ error: "Club not found" });
 
-  return res.json({ gateCount: club.gateCount ?? null, gateSeeding: club.gateSeeding ?? [] });
+  const gateConfigs = (club.gateSeeding as GateConfig[] | null) ?? [];
+  return res.json({ gateConfigs });
 });
 
 // PATCH /clubs/gate-settings — MUST be before /clubs/:clubId
@@ -50,14 +52,15 @@ router.patch("/clubs/gate-settings", async (req, res) => {
   const [user] = await db.select({ clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, session.userId));
   if (!user?.clubId) return res.status(404).json({ error: "No club assigned to this account" });
 
-  const { gateCount, gateSeeding } = req.body as { gateCount: number | null; gateSeeding: number[] };
+  const { gateConfigs } = req.body as { gateConfigs: GateConfig[] };
+  if (!Array.isArray(gateConfigs)) return res.status(400).json({ error: "gateConfigs must be an array" });
 
   const [club] = await db.update(clubsTable)
-    .set({ gateCount: gateCount ?? null, gateSeeding: gateSeeding ?? [] })
+    .set({ gateSeeding: gateConfigs })
     .where(eq(clubsTable.id, user.clubId))
-    .returning({ gateCount: clubsTable.gateCount, gateSeeding: clubsTable.gateSeeding });
+    .returning({ gateSeeding: clubsTable.gateSeeding });
 
-  return res.json({ gateCount: club.gateCount ?? null, gateSeeding: club.gateSeeding ?? [] });
+  return res.json({ gateConfigs: (club.gateSeeding as GateConfig[] | null) ?? [] });
 });
 
 router.get("/clubs/:clubId", async (req, res) => {
@@ -66,27 +69,6 @@ router.get("/clubs/:clubId", async (req, res) => {
   if (!clubs[0]) return res.status(404).json({ error: "Not found" });
   const c = clubs[0];
   return res.json({ ...c, createdAt: c.createdAt.toISOString() });
-});
-
-router.patch("/clubs/:clubId", async (req, res) => {
-  const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
-
-  const id = Number(req.params.clubId);
-  const { name, state, contactEmail, contactPhone, logoUrl, website, description } = req.body;
-  const [club] = await db.update(clubsTable).set({ name, state, contactEmail, contactPhone, logoUrl, website, description }).where(eq(clubsTable.id, id)).returning();
-  if (!club) return res.status(404).json({ error: "Not found" });
-  return res.json({ ...club, createdAt: club.createdAt.toISOString() });
-});
-
-router.delete("/clubs/:clubId", async (req, res) => {
-  const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
-
-  const id = Number(req.params.clubId);
-  const deleted = await db.delete(clubsTable).where(eq(clubsTable.id, id)).returning();
-  if (!deleted.length) return res.status(404).json({ error: "Not found" });
-  return res.status(204).send();
 });
 
 export default router;
