@@ -693,6 +693,16 @@ export interface RaceDaySummary {
   paymentSummary?: RaceDaySummaryPaymentSummary;
 }
 
+export interface PublicSeriesItem {
+  id: number;
+  name: string;
+  season: number;
+  clubId: number;
+  clubName: string;
+  state: string;
+  classes?: string[];
+}
+
 export interface StateInfo {
   state: string;
   eventCount: number;
@@ -935,6 +945,10 @@ export type UpdateResultLaps200 = {
   id?: number;
   lapTimes?: number[];
   totalTime?: string | null;
+};
+
+export type ListPublicSeriesParams = {
+state?: string;
 };
 
 export type ListRecentResultsParams = {

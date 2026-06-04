@@ -45,6 +45,7 @@ import type {
   HealthStatus,
   LineupGenerateInput,
   ListEventsParams,
+  ListPublicSeriesParams,
   ListRecentResultsParams,
   ListRfidTagsParams,
   ListRidersParams,
@@ -55,6 +56,7 @@ import type {
   OrganizerUser,
   PointsTable,
   PointsTableInput,
+  PublicSeriesItem,
   PublishInput,
   RaceDaySummary,
   RaceResult,
@@ -4355,6 +4357,167 @@ export function useGetRaceDaySummary<TData = Awaited<ReturnType<typeof getRaceDa
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetRaceDaySummaryQueryOptions(eventId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListSeriesStatesUrl = () => {
+
+
+
+
+  return `/api/public/series/states`
+}
+
+/**
+ * @summary List all US states that have at least one series
+ */
+export const listSeriesStates = async ( options?: RequestInit): Promise<string[]> => {
+
+  return customFetch<string[]>(getListSeriesStatesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSeriesStatesQueryKey = () => {
+    return [
+    `/api/public/series/states`
+    ] as const;
+    }
+
+
+export const getListSeriesStatesQueryOptions = <TData = Awaited<ReturnType<typeof listSeriesStates>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSeriesStates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSeriesStatesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSeriesStates>>> = ({ signal }) => listSeriesStates({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSeriesStates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSeriesStatesQueryResult = NonNullable<Awaited<ReturnType<typeof listSeriesStates>>>
+export type ListSeriesStatesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all US states that have at least one series
+ */
+
+export function useListSeriesStates<TData = Awaited<ReturnType<typeof listSeriesStates>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSeriesStates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSeriesStatesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListPublicSeriesUrl = (params?: ListPublicSeriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/public/series?${stringifiedParams}` : `/api/public/series`
+}
+
+/**
+ * @summary List all series across all clubs (public, filterable by state)
+ */
+export const listPublicSeries = async (params?: ListPublicSeriesParams, options?: RequestInit): Promise<PublicSeriesItem[]> => {
+
+  return customFetch<PublicSeriesItem[]>(getListPublicSeriesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPublicSeriesQueryKey = (params?: ListPublicSeriesParams,) => {
+    return [
+    `/api/public/series`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListPublicSeriesQueryOptions = <TData = Awaited<ReturnType<typeof listPublicSeries>>, TError = ErrorType<unknown>>(params?: ListPublicSeriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublicSeries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPublicSeriesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPublicSeries>>> = ({ signal }) => listPublicSeries(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPublicSeries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPublicSeriesQueryResult = NonNullable<Awaited<ReturnType<typeof listPublicSeries>>>
+export type ListPublicSeriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all series across all clubs (public, filterable by state)
+ */
+
+export function useListPublicSeries<TData = Awaited<ReturnType<typeof listPublicSeries>>, TError = ErrorType<unknown>>(
+ params?: ListPublicSeriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublicSeries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPublicSeriesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

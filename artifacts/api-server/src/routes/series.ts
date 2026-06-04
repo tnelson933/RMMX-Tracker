@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable, registrationsTable, pointsTablesTable } from "@workspace/db";
+import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable, registrationsTable, pointsTablesTable, clubsTable } from "@workspace/db";
 import { eq, inArray, and } from "drizzle-orm";
 
 const router = Router();
@@ -197,6 +197,37 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
 
 router.post("/series/:seriesId/recalculate", async (req, res) => {
   return res.json({ ok: true });
+});
+
+// ── Public: states that have at least one series ──────────────────────────────
+router.get("/public/series/states", async (_req, res) => {
+  const rows = await db
+    .selectDistinct({ state: clubsTable.state })
+    .from(seriesTable)
+    .innerJoin(clubsTable, eq(seriesTable.clubId, clubsTable.id))
+    .orderBy(clubsTable.state);
+  return res.json(rows.map(r => r.state));
+});
+
+// ── Public: all series across all clubs (optional ?state= filter) ─────────────
+router.get("/public/series", async (req, res) => {
+  const state = typeof req.query.state === "string" ? req.query.state : undefined;
+  const query = db
+    .select({
+      id: seriesTable.id,
+      name: seriesTable.name,
+      season: seriesTable.season,
+      clubId: seriesTable.clubId,
+      clubName: clubsTable.name,
+      state: clubsTable.state,
+      classes: seriesTable.classes,
+    })
+    .from(seriesTable)
+    .innerJoin(clubsTable, eq(seriesTable.clubId, clubsTable.id));
+  const rows = state
+    ? await query.where(eq(clubsTable.state, state)).orderBy(seriesTable.name)
+    : await query.orderBy(seriesTable.name);
+  return res.json(rows);
 });
 
 // ── Public: series info (for embeddable widget) ───────────────────────────────

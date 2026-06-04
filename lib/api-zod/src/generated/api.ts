@@ -1318,6 +1318,32 @@ export const GetRaceDaySummaryResponse = zod.object({
 
 
 /**
+ * @summary List all US states that have at least one series
+ */
+export const ListSeriesStatesResponseItem = zod.string()
+export const ListSeriesStatesResponse = zod.array(ListSeriesStatesResponseItem)
+
+
+/**
+ * @summary List all series across all clubs (public, filterable by state)
+ */
+export const ListPublicSeriesQueryParams = zod.object({
+  "state": zod.coerce.string().optional()
+})
+
+export const ListPublicSeriesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "season": zod.number(),
+  "clubId": zod.number(),
+  "clubName": zod.string(),
+  "state": zod.string(),
+  "classes": zod.array(zod.string()).optional()
+})
+export const ListPublicSeriesResponse = zod.array(ListPublicSeriesResponseItem)
+
+
+/**
  * @summary List all US states that have published events
  */
 export const ListStatesResponseItem = zod.object({

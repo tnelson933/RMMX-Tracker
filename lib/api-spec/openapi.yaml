@@ -1211,6 +1211,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/RaceDaySummary"
 
+  /public/series/states:
+    get:
+      operationId: listSeriesStates
+      tags: [dashboard]
+      summary: List all US states that have at least one series
+      responses:
+        "200":
+          description: List of state codes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /public/series:
+    get:
+      operationId: listPublicSeries
+      tags: [dashboard]
+      summary: List all series across all clubs (public, filterable by state)
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Series list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicSeriesItem"
+
   /public/states:
     get:
       operationId: listStates
@@ -2403,6 +2438,27 @@ components:
           type: integer
         checkedIn:
           type: integer
+
+    PublicSeriesItem:
+      type: object
+      required: [id, name, season, clubId, clubName, state]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        season:
+          type: integer
+        clubId:
+          type: integer
+        clubName:
+          type: string
+        state:
+          type: string
+        classes:
+          type: array
+          items:
+            type: string
 
     StateInfo:
       type: object
