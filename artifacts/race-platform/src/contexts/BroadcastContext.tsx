@@ -170,6 +170,10 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
     };
 
+    // The server sends {"type":"heartbeat"} every second to keep the
+    // server→broadcaster proxy direction alive. Consume silently.
+    ws.onmessage = () => {};
+
     ws.onerror = () => {
       setErrorMsg("Connection to the server was lost. Please try again.");
       setBroadcastState("error");

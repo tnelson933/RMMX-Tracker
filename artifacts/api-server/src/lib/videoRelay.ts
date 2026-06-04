@@ -93,6 +93,18 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
 
   logger.info({ eventId }, "Broadcaster connected");
 
+  // Server→broadcaster heartbeat — the broadcaster sends video chunks every 500 ms
+  // which keeps the broadcaster→server proxy direction alive, but the server never
+  // sends anything back. The Replit proxy enforces a per-direction idle timeout on
+  // application data; without this heartbeat the server→broadcaster direction goes
+  // silent and the proxy kills the connection after ~20–30 s, cutting off the stream.
+  // The broadcaster client silently ignores these heartbeat messages.
+  const broadcasterHeartbeat = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "heartbeat" }));
+    }
+  }, 1_000);
+
   ws.on("message", (data: Buffer | string, isBinary: boolean) => {
     // Normalise to Buffer regardless of frame type.
     // The Replit proxy converts text WebSocket frames to binary, so we cannot rely
@@ -151,6 +163,7 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
   });
 
   ws.on("close", () => {
+    clearInterval(broadcasterHeartbeat);
     state.live = false;
     state.broadcasterWs = null;
     logger.info({ eventId }, "Broadcaster disconnected — stream ended");
@@ -165,6 +178,7 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
   });
 
   ws.on("error", (err) => {
+    clearInterval(broadcasterHeartbeat);
     logger.error({ eventId, err: err.message }, "Broadcaster WebSocket error");
   });
 }

@@ -51,3 +51,11 @@ The Replit proxy closes WebSocket connections that have no **application-layer d
 - Server: handle `{"type":"pong"}` from viewers — ignore it (just prevents it being misread as binary video data)
 
 This creates continuous bidirectional application-data flow that keeps both proxy directions alive indefinitely.
+
+## Broadcaster-side idle timeout (~20–30 seconds on the silent direction)
+
+The broadcaster sends video chunks every 500 ms (broadcaster→server active), but if the server never sends anything back the server→broadcaster direction idles. The proxy kills the broadcaster connection after ~20–30 seconds of server→broadcaster silence, which cuts off the chunk stream to all viewers (video freezes).
+
+**Pattern (broadcaster heartbeat):**
+- Server (`handleBroadcaster`): start a `setInterval` every 1 s on broadcaster connect; send `{"type":"heartbeat"}` to the broadcaster; clear the interval in both `close` and `error` handlers.
+- Broadcaster client (`BroadcastContext.tsx`): `ws.onmessage = () => {}` — silently consume; the broadcaster never needs to process server messages.
