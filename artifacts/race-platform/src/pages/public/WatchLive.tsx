@@ -434,7 +434,14 @@ export default function WatchLive() {
       if (jsonMsg !== null) {
         // ── Text / JSON control message ────────────────────────────────────────
         if (jsonMsg.type === "heartbeat") {
-          // Server keep-alive frame — no action needed, just prevents proxy idle timeout.
+          // Server keep-alive frame — reply with a pong so the Replit proxy sees
+          // bidirectional application-data flow from the CLIENT side too.
+          // The proxy has a per-direction idle timeout; heartbeats alone (server→client)
+          // are not enough — we must also send client→server data to prevent the proxy
+          // from closing the connection on the client's silent side.
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "pong" }));
+          }
         } else if (jsonMsg.type === "offline") {
           setViewerStateSynced("offline");
           // Poll the REST status endpoint every 8 s while offline so we reconnect

@@ -223,11 +223,30 @@ function handleViewer(ws: WebSocket, eventId: number) {
       if (chunks.length > 0) setImmediate(sendNextChunk);
     } else {
       ws.send(JSON.stringify({ type: "offline" }));
-      // Start heartbeat — keeps the proxy alive while waiting for the stream.
-      // It will be cleared when the connection closes or errors.
-      startHeartbeat();
     }
+
+    // Always start the heartbeat regardless of stream state.
+    // The Replit proxy requires bidirectional application-data flow to stay
+    // alive — a protocol-level ws.ping() does NOT count. When the stream is
+    // live the video chunks reset the proxy timer from the server side, but
+    // the CLIENT side is silent unless we send it something to reply to.
+    // Heartbeats give the client a cue to send a pong back (see WatchLive.tsx),
+    // keeping both directions active and preventing proxy idle-timeouts.
+    startHeartbeat();
   }, 150);
+
+  // Handle messages from viewers (only pong keep-alives expected; ignore everything else)
+  ws.on("message", (data: Buffer | string) => {
+    const chunk: Buffer = typeof data === "string"
+      ? Buffer.from(data, "utf8")
+      : (Buffer.isBuffer(data) ? data : Buffer.from(data as unknown as ArrayBuffer));
+    if (chunk.length > 0 && chunk[0] === 0x7b) {
+      try {
+        const msg = JSON.parse(chunk.toString("utf8")) as Record<string, unknown>;
+        if (msg.type === "pong") return; // client keep-alive reply — no action needed
+      } catch { /* ignore */ }
+    }
+  });
 
   ws.on("close", () => {
     stopHeartbeat();

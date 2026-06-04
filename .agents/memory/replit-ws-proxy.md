@@ -43,4 +43,11 @@ The Replit proxy closes WebSocket connections that have no **application-layer d
 
 **Why:** Confirmed when viewer WebSockets kept disconnecting ~2 seconds after connecting in the "offline" (no broadcaster) state. Server was sending one `{"type":"offline"}` then only `ws.ping()` every 5 s. Proxy closed the connection before the first ping fired, causing a perpetual reconnect loop showing "Connecting…" to users.
 
-**How to apply:** Any WebSocket that can be idle for more than ~2 seconds (e.g., a viewer waiting for a stream to start) must send application-level data frames — not just protocol pings — at least every 1.5 s. Send a small `{"type":"heartbeat"}` JSON message server→client every 1.5 s; ignore it silently on the client side. When live video chunks flow (≥1 per 500 ms), the heartbeat is redundant and can be skipped.
+**How to apply:** Any WebSocket that can be idle for more than ~2 seconds must send application-level data frames in **both directions** — not just protocol pings, and not just one-directional. The proxy has a per-direction idle timeout. Server→client heartbeats alone (e.g. `{"type":"heartbeat"}` every 1.5 s) are not enough; the client side must also send data back or the proxy will close the connection from the client side.
+
+**Pattern (bidirectional heartbeat):**
+- Server: send `{"type":"heartbeat"}` every 1.5 s to ALL viewer connections (not just when offline — video chunks may have gaps)
+- Client: on receiving heartbeat, immediately reply `{"type":"pong"}` back to the server
+- Server: handle `{"type":"pong"}` from viewers — ignore it (just prevents it being misread as binary video data)
+
+This creates continuous bidirectional application-data flow that keeps both proxy directions alive indefinitely.
