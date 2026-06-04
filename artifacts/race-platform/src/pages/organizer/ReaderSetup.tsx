@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Wifi, Copy, Check, Send, RefreshCw, Circle, Tag, Globe, Settings, PlayCircle,
   ClipboardList, FlaskConical, Download, WifiOff, ShieldCheck, Terminal, FileDown,
-  Info, Timer, ChevronRight, ArrowLeft, Cpu, Zap,
+  Info, Timer, ChevronRight, ArrowLeft, Cpu, Zap, Radio,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -101,6 +101,7 @@ export default function ReaderSetup() {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedPayload, setCopiedPayload] = useState(false);
   const [copiedAmbrcBody, setCopiedAmbrcBody] = useState(false);
+  const [copiedRmonitor, setCopiedRmonitor] = useState(false);
 
   // ── Generic / test state ───────────────────────────────────────────────────
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -1307,6 +1308,102 @@ export default function ReaderSetup() {
 
         </CardContent>
       </Card>
+
+      {/* ── RMonitor Live Output — scoreboard / announcer TCP feed ─────────── */}
+      {(() => {
+        const evId = rfidEventId || nativeTestEventId || ambrcEventId || selectedEventId;
+        const bridgeCmd = [
+          "python rfid_bridge.py",
+          `  --api-url ${BASE_URL}`,
+          evId ? `  --event-id ${evId}` : "  --event-id YOUR_EVENT_ID",
+          "  --rmonitor 50000",
+        ].join(" \\\n");
+        const copyRmon = () => {
+          navigator.clipboard.writeText(bridgeCmd);
+          setCopiedRmonitor(true);
+          setTimeout(() => setCopiedRmonitor(false), 2000);
+        };
+        return (
+          <Card>
+            <CardHeader className="pb-3 border-b">
+              <div className="flex items-center gap-2">
+                <Radio size={18} className="text-primary shrink-0" />
+                <CardTitle className="font-heading uppercase tracking-wider text-base">
+                  RMonitor Live Output
+                </CardTitle>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-1">TCP :50000</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Push live lap data to trackside scoreboards, announcer laptops, and the Race Monitor app — all in real time.
+              </p>
+            </CardHeader>
+            <CardContent className="pt-5 space-y-5">
+
+              {/* How it works */}
+              <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-1.5">
+                <p className="font-semibold text-foreground">How it works</p>
+                <p className="text-muted-foreground">
+                  Add <code className="bg-background border rounded px-1 py-0.5 text-xs font-mono">--rmonitor 50000</code> to
+                  your bridge command. The bridge subscribes to the cloud and exposes a local TCP server on port 50000.
+                  Scoreboard software connects once at the start of race day and receives every lap automatically.
+                </p>
+              </div>
+
+              {/* Bridge command */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Bridge Command
+                  {!evId && <span className="ml-2 text-amber-500 normal-case font-normal">— select an event above to fill in the event ID</span>}
+                </label>
+                <div className="flex items-stretch gap-2">
+                  <pre className="flex-1 font-mono text-xs bg-background border rounded-md p-3 overflow-x-auto leading-relaxed text-foreground whitespace-pre">{bridgeCmd}</pre>
+                  <Button variant="outline" size="sm" onClick={copyRmon} className="shrink-0 self-start mt-0 gap-1.5 h-auto px-3 py-2">
+                    {copiedRmonitor ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Scoreboard connection address */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Scoreboard / Race Monitor Connection
+                </label>
+                <div className="rounded-lg border p-3 font-mono text-sm bg-background">
+                  <span className="text-muted-foreground">tcp://</span>
+                  <span className="text-primary font-semibold">YOUR-LAPTOP-IP</span>
+                  <span className="text-muted-foreground">:50000</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Enter this address in your scoreboard or Race Monitor software. Use your laptop's LAN IP address (e.g. 192.168.1.50) — not localhost.
+                </p>
+              </div>
+
+              {/* Compatible software */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Compatible Software
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    "Race Monitor (iOS/Android)",
+                    "AMBrc / Orbits",
+                    "MyLaps Speedhive",
+                    "Westhold Scoreboards",
+                    "Custom TCP clients",
+                    "Announcer laptop apps",
+                  ].map(name => (
+                    <div key={name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Circle size={5} className="fill-primary text-primary shrink-0" />
+                      {name}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Recent Crossings — for moto-based review */}
       {(selectedMotoId || crossings.length > 0) && !isNativeReader && (

@@ -41,6 +41,83 @@ export function sseBroadcast(motoId: number, data: object) {
   }
 }
 
+// ── RMonitor SSE registry: eventId → bridge connections ───────────────────────
+// Each entry is a bridge running rfid_bridge.py with --rmonitor enabled.
+// Messages are RMonitor protocol lines (\r\n terminated) wrapped as JSON arrays.
+const rmonitorClients = new Map<number, Set<Response>>();
+
+function rmonitorSubscribe(eventId: number, res: Response) {
+  if (!rmonitorClients.has(eventId)) rmonitorClients.set(eventId, new Set());
+  rmonitorClients.get(eventId)!.add(res);
+}
+
+function rmonitorUnsubscribe(eventId: number, res: Response) {
+  rmonitorClients.get(eventId)?.delete(res);
+}
+
+function rmonitorBroadcast(eventId: number, lines: string[]) {
+  const clients = rmonitorClients.get(eventId);
+  if (!clients?.size) return;
+  const payload = `data: ${JSON.stringify({ lines })}\n\n`;
+  for (const client of [...clients]) {
+    try {
+      (client as any).write(payload);
+    } catch {
+      clients.delete(client);
+    }
+  }
+}
+
+export function rmonitorClientCount(eventId: number): number {
+  return rmonitorClients.get(eventId)?.size ?? 0;
+}
+
+// ── RMonitor message builders ──────────────────────────────────────────────────
+// All times in "M:SS.cc" (centiseconds) — the standard AMB/MyLaps format.
+// Lines do NOT include the trailing \r\n — the bridge adds that when sending TCP.
+
+function rmonitorEscape(s: string): string {
+  return s.replace(/"/g, "'");
+}
+
+function buildRMonitorLines(
+  snapshot: NonNullable<Awaited<ReturnType<typeof buildLeaderboard>>>,
+  crossing?: { riderId: number | null; bibNumber?: string | null; lapTimeMs: number; lapNumber: number }
+): string[] {
+  const lines: string[] = [];
+
+  // $B — session info
+  lines.push(`$B,"1","${rmonitorEscape(snapshot.motoName)}"`);
+
+  // $A — one competitor record per known rider
+  for (const e of snapshot.leaderboard) {
+    const reg = e.bibNumber ?? String(e.riderId ?? "?");
+    const name = rmonitorEscape(e.riderName ?? "");
+    const [first = "", ...rest] = name.split(" ");
+    const last = rest.join(" ");
+    lines.push(`$A,"${reg}","${reg}",0,"${first}","${last}","USA",1`);
+  }
+
+  // $F — new crossing (the lap that just happened)
+  if (crossing) {
+    const entry = snapshot.leaderboard.find((e) => e.riderId === crossing.riderId);
+    const reg = crossing.bibNumber ?? (entry?.bibNumber ?? String(crossing.riderId ?? "?"));
+    const lapStr = formatLapTime(crossing.lapTimeMs);
+    const totalMs = entry?.totalMs ?? crossing.lapTimeMs;
+    lines.push(`$F,"${reg}","${reg}","${lapStr}","${formatLapTime(totalMs)}",${crossing.lapNumber}`);
+  }
+
+  // $G — full leaderboard positions
+  for (const e of snapshot.leaderboard) {
+    const reg = e.bibNumber ?? String(e.riderId ?? "?");
+    lines.push(
+      `$G,${e.position},"${reg}","${reg}","${e.bestLap ?? ""}","${e.lastLap ?? ""}","${e.totalTime ?? ""}",${e.laps}`
+    );
+  }
+
+  return lines;
+}
+
 // ── Utility: format milliseconds → "M:SS.mm" ──────────────────────────────────
 export function formatLapTime(ms: number): string {
   if (ms <= 0) return "0:00.00";
@@ -103,6 +180,7 @@ export async function buildLeaderboard(motoId: number) {
     const lapMs = raw.map(normalizeLapMs);
     const totalMs = lapMs.reduce((s, t) => s + t, 0);
     const lastMs = lapMs.at(-1) ?? null;
+    const bestMs = lapMs.length ? Math.min(...lapMs) : null;
     return {
       position: r.position,
       riderId: r.riderId,
@@ -112,6 +190,8 @@ export async function buildLeaderboard(motoId: number) {
       lapTimes: lapMs.map(formatLapTime),
       lastLapMs: lastMs,
       lastLap: lastMs != null ? formatLapTime(lastMs) : null,
+      bestLapMs: bestMs,
+      bestLap: bestMs != null ? formatLapTime(bestMs) : null,
       totalMs,
       totalTime: lapMs.length ? formatLapTime(totalMs) : null,
       dnf: r.dnf,
@@ -266,9 +346,19 @@ async function processCrossing(opts: {
     }
   }
 
-  // 7. Build & broadcast leaderboard
+  // 7. Build & broadcast leaderboard (JSON SSE for the live scoreboard widget)
   const snapshot = await buildLeaderboard(motoId);
-  if (snapshot) sseBroadcast(motoId, snapshot);
+  if (snapshot) {
+    sseBroadcast(motoId, snapshot);
+    // Also push RMonitor lines to any bridge clients subscribed to this event
+    const rmonLines = buildRMonitorLines(snapshot, {
+      riderId,
+      bibNumber: snapshot.leaderboard.find((e) => e.riderId === riderId)?.bibNumber ?? null,
+      lapTimeMs,
+      lapNumber,
+    });
+    rmonitorBroadcast(moto.eventId, rmonLines);
+  }
 
   return { crossing, lapNumber, lapTimeMs };
 }
@@ -739,6 +829,98 @@ router.get("/timing/leaderboard/:motoId", async (req, res) => {
   const snapshot = await buildLeaderboard(Number(req.params.motoId));
   if (!snapshot) return res.status(404).json({ error: "Moto not found" });
   return res.json(snapshot);
+});
+
+// ── RMonitor live feed (SSE) — consumed by rfid_bridge.py --rmonitor ──────────
+// Each SSE event carries a JSON payload: { lines: string[] }
+// Lines are raw RMonitor protocol strings WITHOUT \r\n (bridge adds them on TCP send).
+router.get("/timing/rmonitor-feed", async (req, res) => {
+  const eventId = Number(req.query.eventId);
+  if (!eventId || isNaN(eventId)) {
+    return res.status(400).json({ error: "eventId is required" });
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  (res as any).flushHeaders?.();
+
+  // Send initial snapshot so the bridge can greet newly-connected TCP clients
+  const activeMoto = await db
+    .select()
+    .from(motosTable)
+    .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "in_progress")))
+    .limit(1);
+
+  if (activeMoto[0]) {
+    const snap = await buildLeaderboard(activeMoto[0].id);
+    if (snap) {
+      const lines = buildRMonitorLines(snap);
+      (res as any).write(`data: ${JSON.stringify({ lines, snapshot: true })}\n\n`);
+    }
+  }
+
+  rmonitorSubscribe(eventId, res);
+
+  const heartbeat = setInterval(() => {
+    try {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mm = String(now.getMinutes()).padStart(2, "0");
+      const ss = String(now.getSeconds()).padStart(2, "0");
+      const heartLine = `$E,"DATE","${now.toLocaleDateString("en-US")}","${hh}:${mm}:${ss}"`;
+      (res as any).write(`data: ${JSON.stringify({ lines: [heartLine], heartbeat: true })}\n\n`);
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 20_000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    rmonitorUnsubscribe(eventId, res);
+  });
+
+  return;
+});
+
+// ── RMonitor snapshot — returns full initial state as array of protocol lines ──
+// Called by the bridge on new TCP client connect to pre-load state.
+router.get("/timing/rmonitor-snapshot", async (req, res) => {
+  const eventId = Number(req.query.eventId);
+  if (!eventId || isNaN(eventId)) {
+    return res.status(400).json({ error: "eventId is required" });
+  }
+
+  // Prefer in-progress moto; fall back to most recent completed
+  const [activeMoto] = await db
+    .select()
+    .from(motosTable)
+    .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "in_progress")))
+    .limit(1);
+
+  const moto = activeMoto ?? (await db
+    .select()
+    .from(motosTable)
+    .where(eq(motosTable.eventId, eventId))
+    .orderBy(asc(motosTable.id))
+    .limit(1))[0];
+
+  if (!moto) return res.json({ lines: [] });
+
+  const snap = await buildLeaderboard(moto.id);
+  if (!snap) return res.json({ lines: [] });
+
+  return res.json({ lines: buildRMonitorLines(snap) });
+});
+
+// ── RMonitor status — how many bridge SSE subscribers are active ───────────────
+router.get("/timing/rmonitor-status", (req, res) => {
+  const eventId = Number(req.query.eventId);
+  if (!eventId || isNaN(eventId)) {
+    return res.status(400).json({ error: "eventId is required" });
+  }
+  return res.json({ bridges: rmonitorClientCount(eventId) });
 });
 
 // ── Announcement script builder (pure code — no LLM needed) ───────────────────

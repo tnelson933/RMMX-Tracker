@@ -11,6 +11,8 @@ this bridge running locally on your laptop. The bridge:
   • Caches crossings in a local SQLite database when offline.
   • Automatically replays all cached crossings (in order, with their original
     hardware timestamps) the moment connectivity is restored.
+  • Optionally exposes a local RMonitor TCP server (port 50000) so scoreboards,
+    announcer laptops, and the Race Monitor app get live lap data.
 
 Your lap times are never lost — even if you lose internet for the entire race.
 
@@ -55,6 +57,21 @@ QUICK START — Zebra FX7500 (native IoT Connector format)
        http://localhost:5555/timing/zebra-crossing?eventId=12
 
 ────────────────────────────────────────────────────────────────────────────────
+QUICK START — RMonitor live output (scoreboards / Race Monitor)
+────────────────────────────────────────────────────────────────────────────────
+
+Add --rmonitor 50000 and --event-id N to any of the above commands:
+
+       python rfid_bridge.py --api-url https://your-app.replit.app \
+                             --event-id 12 \
+                             --rmonitor 50000
+
+Then point your scoreboard or announcer software to:
+       tcp://YOUR-LAPTOP-IP:50000
+
+Compatible software: Race Monitor, AMBrc, Orbits, any RMonitor TCP client.
+
+────────────────────────────────────────────────────────────────────────────────
 Optional flags (all readers):
   --port   5555           Local port (default 5555)
   --db     cache.sqlite3  Local cache file path
@@ -65,14 +82,21 @@ Native reader flags:
               Reader mode (default: generic)
   --event-id N
               Event ID for native reader endpoints (required for
-              impinj-r700 and zebra-fx7500 modes)
+              impinj-r700 and zebra-fx7500 modes; also required for
+              --rmonitor)
+
+RMonitor output flags:
+  --rmonitor N
+              Enable RMonitor TCP server on local port N (default 0 = disabled).
+              Requires --event-id. Scoreboards connect to tcp://YOUR-IP:N.
 
 Environment variables (alternative to flags):
-  RMMX_API_URL   Cloud API base URL
-  RMMX_PORT      Local port
-  RMMX_DB        Cache file path
-  RMMX_READER    Reader mode
-  RMMX_EVENT_ID  Event ID for native reader mode
+  RMMX_API_URL      Cloud API base URL
+  RMMX_PORT         Local port
+  RMMX_DB           Cache file path
+  RMMX_READER       Reader mode
+  RMMX_EVENT_ID     Event ID for native reader mode / RMonitor
+  RMMX_RMONITOR     RMonitor TCP port (0 = disabled)
 ────────────────────────────────────────────────────────────────────────────────
 """
 
@@ -80,6 +104,7 @@ import argparse
 import json
 import logging
 import os
+import socket
 import socketserver
 import sqlite3
 import sys
@@ -212,6 +237,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     event_id: str = ""              # required for native reader modes
     db: sqlite3.Connection = None   # type: ignore
     db_lock: threading.Lock = threading.Lock()
+    rmonitor_server: "RMonitorServer | None" = None  # set by main() if --rmonitor is on
 
     def log_message(self, fmt, *args):
         pass  # suppress default noisy access log
@@ -341,6 +367,21 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         else:
             local_endpoint = f"http://localhost:{self.local_port}/timing/crossing"
 
+        rmonitor_clients = self.rmonitor_server.client_count if self.rmonitor_server else 0
+        rmonitor_port    = self.rmonitor_server.port        if self.rmonitor_server else 0
+        rmonitor_card = ""
+        if self.rmonitor_server:
+            rm_color = "#22c55e" if rmonitor_clients else "#6b7280"
+            rm_status = f"{rmonitor_clients} connected" if rmonitor_clients else "Waiting for clients"
+            rmonitor_card = f"""
+  <div class="card">
+    <h2>RMonitor Live Output</h2>
+    <div class="row"><span>TCP port</span> <span class="val">{rmonitor_port}</span></div>
+    <div class="row"><span>Scoreboard clients</span> <span class="val" style="color:{rm_color}">{rm_status}</span></div>
+    <p style="color:#aaa;font-size:0.85rem;margin-top:0.75rem">Connect your scoreboard or Race Monitor to:</p>
+    <code>tcp://YOUR-LAPTOP-IP:{rmonitor_port}</code>
+  </div>"""
+
         html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -388,6 +429,7 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     <p style="color:#aaa;font-size:0.85rem">Point your {reader_label}&apos;s HTTP output to:</p>
     <code>{local_endpoint}</code>
   </div>
+  {rmonitor_card}
   <p class="dim">Page refreshes every 5 seconds</p>
 </body>
 </html>"""
@@ -398,6 +440,155 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+
+# ── RMonitor TCP server ────────────────────────────────────────────────────────
+# Accepts connections from scoreboards, announcer software, and Race Monitor.
+# Each connected client receives all RMonitor protocol lines pushed by the cloud
+# via the SSE feed.  The bridge acts as the protocol bridge:
+#
+#   Cloud SSE  →  rfid_bridge (this script)  →  TCP :50000  →  scoreboard/app
+
+class RMonitorServer:
+    """Local TCP server that re-exposes the cloud RMonitor SSE feed on a TCP port."""
+
+    def __init__(self, port: int, api_url: str, event_id: str):
+        self.port = port
+        self.api_url = api_url
+        self.event_id = event_id
+        self._clients: list = []
+        self._lock = threading.Lock()
+
+    def start(self, stop: threading.Event):
+        """Start the TCP accept loop and SSE listener in background threads."""
+        threading.Thread(
+            target=self._accept_loop, args=(stop,),
+            daemon=True, name="rmonitor-tcp",
+        ).start()
+        threading.Thread(
+            target=self._sse_loop, args=(stop,),
+            daemon=True, name="rmonitor-sse",
+        ).start()
+
+    # ── TCP accept loop ─────────────────────────────────────────────────────
+    def _accept_loop(self, stop: threading.Event):
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("0.0.0.0", self.port))
+        srv.listen(16)
+        srv.settimeout(1.0)
+        log.info("RMonitor: TCP server listening on port %d", self.port)
+        while not stop.is_set():
+            try:
+                conn, addr = srv.accept()
+                threading.Thread(
+                    target=self._handle_client, args=(conn, addr),
+                    daemon=True,
+                ).start()
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if not stop.is_set():
+                    log.warning("RMonitor: accept error: %s", e)
+        try:
+            srv.close()
+        except Exception:
+            pass
+
+    def _handle_client(self, conn: socket.socket, addr):
+        log.info("RMonitor: client connected  %s:%d", *addr)
+        with self._lock:
+            self._clients.append(conn)
+        try:
+            # Send snapshot so the client gets current race state immediately
+            snapshot_lines = self._fetch_snapshot()
+            for line in snapshot_lines:
+                conn.sendall((line + "\r\n").encode("ascii", errors="ignore"))
+            # Keep open — the client rarely sends anything but we poll to
+            # detect disconnection quickly.
+            conn.settimeout(2.0)
+            while True:
+                try:
+                    data = conn.recv(64)
+                    if not data:
+                        break  # graceful close
+                except socket.timeout:
+                    continue  # just checking if still alive
+                except Exception:
+                    break
+        except Exception:
+            pass
+        finally:
+            with self._lock:
+                if conn in self._clients:
+                    self._clients.remove(conn)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            log.info("RMonitor: client disconnected  %s:%d", *addr)
+
+    def _fetch_snapshot(self) -> list:
+        url = f"{self.api_url.rstrip('/')}/api/timing/rmonitor-snapshot?eventId={self.event_id}"
+        try:
+            with urllib.request.urlopen(url, timeout=6) as resp:
+                data = json.loads(resp.read().decode())
+                return data.get("lines", [])
+        except Exception as e:
+            log.warning("RMonitor: failed to fetch snapshot: %s", e)
+            return []
+
+    # ── SSE listener ────────────────────────────────────────────────────────
+    def _sse_loop(self, stop: threading.Event):
+        url = f"{self.api_url.rstrip('/')}/api/timing/rmonitor-feed?eventId={self.event_id}"
+        while not stop.is_set():
+            try:
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req, timeout=90) as resp:
+                    log.info("RMonitor: subscribed to cloud SSE feed (event %s)", self.event_id)
+                    buf = ""
+                    while not stop.is_set():
+                        chunk = resp.read(4096)
+                        if not chunk:
+                            break  # server closed stream
+                        buf += chunk.decode("utf-8", errors="ignore")
+                        # SSE events are separated by double newline
+                        while "\n\n" in buf:
+                            event_block, buf = buf.split("\n\n", 1)
+                            for line in event_block.split("\n"):
+                                if line.startswith("data: "):
+                                    raw = line[6:].strip()
+                                    try:
+                                        msg = json.loads(raw)
+                                        lines = msg.get("lines", [])
+                                        if lines and not msg.get("heartbeat"):
+                                            self._broadcast(lines)
+                                    except Exception:
+                                        pass
+            except Exception as e:
+                if not stop.is_set():
+                    log.warning("RMonitor: SSE disconnected — %s  (reconnect in 5s)", e)
+                    time.sleep(5)
+
+    def _broadcast(self, lines: list):
+        if not lines:
+            return
+        data = "".join(line + "\r\n" for line in lines).encode("ascii", errors="ignore")
+        with self._lock:
+            dead = []
+            for conn in list(self._clients):
+                try:
+                    conn.sendall(data)
+                except Exception:
+                    dead.append(conn)
+            for conn in dead:
+                if conn in self._clients:
+                    self._clients.remove(conn)
+
+    @property
+    def client_count(self) -> int:
+        with self._lock:
+            return len(self._clients)
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -443,7 +634,15 @@ def main():
         "--event-id",
         default=os.getenv("RMMX_EVENT_ID", ""),
         metavar="N",
-        help="Event ID — required for impinj-r700 and zebra-fx7500 reader modes",
+        help="Event ID — required for impinj-r700 and zebra-fx7500 reader modes; also required for --rmonitor",
+    )
+    parser.add_argument(
+        "--rmonitor",
+        type=int,
+        default=int(os.getenv("RMMX_RMONITOR", "0")),
+        metavar="PORT",
+        help="Enable RMonitor TCP server on this local port (default 0 = disabled). "
+             "Scoreboards/announcers connect to tcp://YOUR-IP:PORT. Requires --event-id.",
     )
     args = parser.parse_args()
 
@@ -464,6 +663,17 @@ def main():
         print(f"  python rfid_bridge.py --api-url https://your-app.replit.app \\")
         print(f"                        --reader {args.reader} \\")
         print(f"                        --event-id 12")
+        print()
+        sys.exit(1)
+
+    if args.rmonitor and not args.event_id:
+        print()
+        print("ERROR: --event-id is required when using --rmonitor")
+        print()
+        print("Example:")
+        print("  python rfid_bridge.py --api-url https://your-app.replit.app \\")
+        print("                        --event-id 12 \\")
+        print("                        --rmonitor 50000")
         print()
         sys.exit(1)
 
@@ -490,9 +700,13 @@ def main():
     log.info("  Local port : %d", args.port)
     log.info("  Cache file : %s", args.db)
     log.info("  Retry every: %ds", args.retry)
+    if args.rmonitor:
+        log.info("  RMonitor   : tcp://YOUR-LAPTOP-IP:%d  (scoreboards / Race Monitor)", args.rmonitor)
     log.info("")
     log.info("  Reader endpoint → %s", local_endpoint)
     log.info("  Status page     → http://localhost:%d", args.port)
+    if args.rmonitor:
+        log.info("  RMonitor TCP    → connect scoreboard to tcp://YOUR-LAPTOP-IP:%d", args.rmonitor)
     log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     db = init_db(args.db)
@@ -519,6 +733,13 @@ def main():
     BridgeHandler.event_id = args.event_id
     BridgeHandler.db = db
     BridgeHandler.db_lock = db_lock
+
+    # ── Start RMonitor TCP server (optional) ──────────────────────────────────
+    rmonitor_server: "RMonitorServer | None" = None
+    if args.rmonitor:
+        rmonitor_server = RMonitorServer(args.rmonitor, args.api_url, args.event_id)
+        rmonitor_server.start(stop_event)
+    BridgeHandler.rmonitor_server = rmonitor_server
 
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.ThreadingTCPServer(("0.0.0.0", args.port), BridgeHandler) as server:
