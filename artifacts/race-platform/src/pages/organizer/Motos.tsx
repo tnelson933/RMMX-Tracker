@@ -549,6 +549,7 @@ export default function Motos() {
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
   const [poolSearch, setPoolSearch] = useState("");
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
+  const [classFilter, setClassFilter] = useState<string>("schedule");
   const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
   const [bibInputs, setBibInputs] = useState<Record<number, string>>({});
 
@@ -1532,18 +1533,53 @@ export default function Motos() {
 
         {/* ── Right: motos grid / loading / empty state ─────────────── */}
         <div className="flex-1 min-w-0">
+
+        {/* Class filter bar */}
+        {!isLoading && !!motos?.filter(m => m.type !== "practice").length && (() => {
+          const uniqueClasses = [...new Set(
+            (motos ?? []).filter(m => m.type !== "practice").map(m => m.raceClass).filter((c): c is string => !!c)
+          )].sort();
+          return (
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                onClick={() => setClassFilter("schedule")}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors ${
+                  classFilter === "schedule"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                }`}
+              >
+                Schedule
+              </button>
+              {uniqueClasses.map(cls => (
+                <button
+                  key={cls}
+                  onClick={() => setClassFilter(cls)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors ${
+                    classFilter === cls
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                  }`}
+                >
+                  {cls}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+
         {isLoading ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {[...Array(4)].map((_, i) => <Card key={i} className="h-64 animate-pulse" />)}
           </div>
         ) : motos?.filter(m => m.type !== "practice").length ? (
         <div className="space-y-0">
-          {motos.filter(m => m.type !== "practice").sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
+          {motos.filter(m => m.type !== "practice" && (classFilter === "schedule" || m.raceClass === classFilter)).sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
             <div key={moto.id}>
               <DroppableMotoSlot id={`moto-slot-${moto.id}`} active={!!activeMotoCardDrag && activeMotoCardDrag.motoId !== moto.id} />
             <Card className="flex flex-col h-full border-sidebar-border overflow-hidden">
               <CardHeader className="bg-sidebar text-sidebar-foreground py-3 border-b flex flex-row items-center justify-between gap-2">
-                <DraggableMotoGrip motoId={moto.id} disabled={moto.status === "in_progress" || moto.status === "completed"} />
+                <DraggableMotoGrip motoId={moto.id} disabled={classFilter !== "schedule" || moto.status === "in_progress" || moto.status === "completed"} />
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="bg-sidebar-accent text-white w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-lg shrink-0">
                     {moto.motoNumber}
@@ -1769,7 +1805,7 @@ export default function Motos() {
             </Card>
             </div>
           ))}
-          <DroppableMotoSlot id="moto-slot-end" active={!!activeMotoCardDrag} />
+          {classFilter === "schedule" && <DroppableMotoSlot id="moto-slot-end" active={!!activeMotoCardDrag} />}
         </div>
         ) : (
           <Card>
