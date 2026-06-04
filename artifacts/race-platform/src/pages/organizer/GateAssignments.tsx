@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Save, Plus, Trash2, ChevronDown, ChevronRight, RefreshCw, Info, AlertTriangle } from "lucide-react";
+import { Save, Plus, Trash2, ChevronDown, ChevronRight, RefreshCw, Info, AlertTriangle, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -88,13 +88,15 @@ function ConfigPanel({ config, isCollapsed, onToggleCollapse, onChange, onDelete
         >
           {isCollapsed ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
         </button>
-        <Input
-          value={config.name}
-          onChange={e => { e.stopPropagation(); handleNameChange(e.target.value); }}
-          onClick={e => e.stopPropagation()}
-          placeholder="Track name…"
-          className="flex-1 h-8 text-sm font-heading font-bold uppercase tracking-wide border-0 bg-transparent shadow-none focus-visible:ring-1 px-1"
-        />
+        <div className="flex-1 flex items-center gap-1 min-w-0" onClick={e => e.stopPropagation()}>
+          <Input
+            value={config.name}
+            onChange={e => handleNameChange(e.target.value)}
+            placeholder="Track name…"
+            className="flex-1 h-8 text-sm font-heading font-bold uppercase tracking-wide border-0 bg-transparent shadow-none focus-visible:ring-1 px-1"
+          />
+          <Pencil size={12} className="shrink-0 text-muted-foreground/50" />
+        </div>
         {hasError && (
           <AlertTriangle size={16} className="text-amber-500 shrink-0" />
         )}
@@ -216,9 +218,6 @@ function ConfigPanel({ config, isCollapsed, onToggleCollapse, onChange, onDelete
                           hasRowError ? "border-amber-400" : ""
                         }`}
                       />
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {priority === 1 ? "🥇" : priority === 2 ? "🥈" : priority === 3 ? "🥉" : ""}
-                      </span>
                     </div>
                   </div>
                 );
