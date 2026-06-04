@@ -617,7 +617,7 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
             {moto.lineup.length > 0 ? (
               <>
                 <div className="px-4 pt-2 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
-                  Starting Order
+                  Gate Assignment
                 </div>
                 <div className="divide-y">
                   {moto.lineup.map(entry => (
@@ -715,7 +715,7 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
       {open && moto.lineup.length > 0 && (
         <div className="bg-background">
           <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
-            Starting Order
+            Gate Assignment
           </div>
           <div className="divide-y">
             {moto.lineup.map(entry => (
