@@ -435,6 +435,25 @@ export default function WatchLive() {
         // ── Text / JSON control message ────────────────────────────────────────
         if (jsonMsg.type === "offline") {
           setViewerStateSynced("offline");
+          // Poll the REST status endpoint every 8 s while offline so we reconnect
+          // promptly when the stream goes live, even if the push notification is
+          // missed (e.g. the proxy dropped the WS in the interim).
+          const offlinePollId = setInterval(async () => {
+            try {
+              const r = await fetch(`/api/video/status/${eventId}`);
+              if (r.ok) {
+                const body = await r.json() as { live: boolean };
+                if (body.live) {
+                  clearInterval(offlinePollId);
+                  // Close this WS — onclose will re-open it and the server will
+                  // now send the init + initSegment since the stream is live.
+                  ws.close();
+                }
+              }
+            } catch { /* ignore network errors during poll */ }
+          }, 8_000);
+          // Stop polling when this WS connection closes (cleanup).
+          ws.addEventListener("close", () => clearInterval(offlinePollId), { once: true });
         } else if (jsonMsg.type === "ended") {
           setViewerStateSynced("ended");
           wsRef.current?.close();

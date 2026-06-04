@@ -20,7 +20,7 @@ interface StreamState {
 
 // Keep only the last few chunks — enough for a smooth late-join start without
 // overwhelming the Replit proxy with a large burst when a new viewer connects.
-const MAX_BUFFER_CHUNKS = 5;
+const MAX_BUFFER_CHUNKS = 2;
 
 // eventId → stream state
 const streams = new Map<number, StreamState>();
@@ -184,27 +184,34 @@ function handleViewer(ws: WebSocket, eventId: number) {
     }
   }, 5_000);
 
-  // Send current stream state immediately
-  if (state.live) {
-    ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye }));
-    // Always send the WebM init segment first — without it the decoder cannot
-    // parse any of the subsequent cluster chunks (video stays black).
-    if (state.initSegment && ws.readyState === WebSocket.OPEN) {
-      ws.send(state.initSegment, { binary: true });
+  // Delay initial messages so the Replit proxy relay has time to fully establish
+  // the bidirectional pipe before we burst data down it. Without the delay, the
+  // proxy can drop the connection on a late-joining viewer who gets init + video
+  // data immediately after the WS handshake completes.
+  setTimeout(() => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+
+    if (state.live) {
+      ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye }));
+      // Always send the WebM init segment first — without it the decoder cannot
+      // parse any of the subsequent cluster chunks (video stays black).
+      if (state.initSegment && ws.readyState === WebSocket.OPEN) {
+        ws.send(state.initSegment, { binary: true });
+      }
+      // Send buffered chunks one-per-event-loop-tick to avoid overwhelming the
+      // Replit proxy with a large synchronous burst that can drop the connection.
+      const chunks = [...state.chunkBuffer];
+      let i = 0;
+      function sendNextChunk() {
+        if (i >= chunks.length || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(chunks[i++], { binary: true });
+        setImmediate(sendNextChunk);
+      }
+      if (chunks.length > 0) setImmediate(sendNextChunk);
+    } else {
+      ws.send(JSON.stringify({ type: "offline" }));
     }
-    // Send buffered chunks one-per-event-loop-tick to avoid overwhelming the
-    // Replit proxy with a large synchronous burst that can drop the connection.
-    const chunks = [...state.chunkBuffer];
-    let i = 0;
-    function sendNextChunk() {
-      if (i >= chunks.length || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(chunks[i++], { binary: true });
-      setImmediate(sendNextChunk);
-    }
-    if (chunks.length > 0) setImmediate(sendNextChunk);
-  } else {
-    ws.send(JSON.stringify({ type: "offline" }));
-  }
+  }, 150);
 
   ws.on("close", () => {
     clearInterval(pingInterval);
