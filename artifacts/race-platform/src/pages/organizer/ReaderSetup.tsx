@@ -15,6 +15,7 @@ import { format } from "date-fns";
 
 const BASE_URL = window.location.origin;
 const GENERIC_ENDPOINT = `${BASE_URL}/api/timing/crossing`;
+const MYLAPS_NATIVE_ENDPOINT_BASE = `${BASE_URL}/api/timing/mylaps-crossing`;
 
 type RfidReader = "none" | "impinj-r700" | "zebra-fx7500" | "generic";
 
@@ -119,17 +120,19 @@ export default function ReaderSetup() {
   const [crossings, setCrossings] = useState<Crossing[]>([]);
   const [crossingsLoading, setCrossingsLoading] = useState(false);
 
-  // ── AMBrc state (MyLaps only) ──────────────────────────────────────────────
+  // ── AMBrc / MyLaps native state ────────────────────────────────────────────
   const [ambrcEventId, setAmbrcEventId] = useState("");
-  const [ambrcMotoId, setAmbrcMotoId] = useState("");
   const [ambrcReaderId, setAmbrcReaderId] = useState("finish-line-1");
+  // MyLaps native test
+  const [mylapsTestEventId, setMylapsTestEventId] = useState("");
+  const [mylapsTestTransponder, setMylapsTestTransponder] = useState("");
+  const [mylapsTestResult, setMylapsTestResult] = useState<{ ok: boolean; body: string } | null>(null);
+  const [mylapsTestLoading, setMylapsTestLoading] = useState(false);
 
   // ── Data hooks ────────────────────────────────────────────────────────────
   const { data: events } = useListEvents({}, { query: {} as any });
   const eventId = parseInt(selectedEventId) || 0;
   const { data: motos } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
-  const ambrcEventIdNum = parseInt(ambrcEventId) || 0;
-  const { data: ambrcMotos } = useListMotos(ambrcEventIdNum, { query: { enabled: !!ambrcEventIdNum } as any });
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const copyUrl = () => {
@@ -193,6 +196,42 @@ export default function ReaderSetup() {
       toast({ title: "Request failed", description: err.message, variant: "destructive" });
     } finally {
       setTestLoading(false);
+    }
+  };
+
+  // MyLaps native test crossing
+  const sendMylapsNativeTest = async () => {
+    if (!mylapsTestTransponder || !mylapsTestEventId) return;
+    setMylapsTestLoading(true);
+    setMylapsTestResult(null);
+    try {
+      const endpoint = `/api/timing/mylaps-crossing?eventId=${mylapsTestEventId}`;
+      const body = {
+        transponder: mylapsTestTransponder,
+        passingTime: new Date().toISOString(),
+        loopId: "finish-line-1",
+      };
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      setMylapsTestResult({ ok: res.ok, body: JSON.stringify(data, null, 2) });
+      if (res.ok) {
+        if (data.debounced) {
+          toast({ title: "Debounced (duplicate burst)", description: "Transponder was seen too recently — normal behaviour." });
+        } else {
+          toast({ title: "Test crossing accepted", description: `Moto ${data.motoId} — Lap ${data.lapNumber ?? "?"}` });
+        }
+      } else {
+        toast({ title: "Crossing rejected", description: data.error, variant: "destructive" });
+      }
+    } catch (err: any) {
+      setMylapsTestResult({ ok: false, body: err.message });
+      toast({ title: "Request failed", description: err.message, variant: "destructive" });
+    } finally {
+      setMylapsTestLoading(false);
     }
   };
 
@@ -263,27 +302,21 @@ export default function ReaderSetup() {
     }
   };
 
-  // AMBrc helpers
-  const selectedAmbrcMotoName = ambrcMotos?.find(m => m.id.toString() === ambrcMotoId)?.name ?? null;
-  const ambrcBodyTemplate = ambrcMotoId
-    ? JSON.stringify({
-        rfidNumber: "%TRANSPONDER%",
-        motoId: parseInt(ambrcMotoId),
-        crossingTime: "%PASSTIME_ISO%",
-        readerId: ambrcReaderId || "finish-line-1",
-      }, null, 2)
+  // AMBrc helpers — native endpoint, no motoId
+  const nativeAmbrcBodyTemplate = ambrcEventId
+    ? `{\n  "transponder": "%TRANSPONDER%",\n  "passingTime": "%PASSTIME_ISO%"${ambrcReaderId ? `,\n  "loopId": "${ambrcReaderId}"` : ""}\n}`
     : null;
 
   const copyAmbrcBody = () => {
-    if (!ambrcBodyTemplate) return;
-    navigator.clipboard.writeText(ambrcBodyTemplate);
+    if (!nativeAmbrcBodyTemplate) return;
+    navigator.clipboard.writeText(nativeAmbrcBodyTemplate);
     setCopiedAmbrcBody(true);
     setTimeout(() => setCopiedAmbrcBody(false), 2000);
   };
 
   const downloadAmbrcConfig = () => {
-    if (!ambrcMotoId) return;
-    const motoLabel = selectedAmbrcMotoName ? `${selectedAmbrcMotoName} (ID: ${ambrcMotoId})` : `ID: ${ambrcMotoId}`;
+    if (!ambrcEventId) return;
+    const nativeEndpoint = `${MYLAPS_NATIVE_ENDPOINT_BASE}?eventId=${ambrcEventId}`;
     const config = {
       _readme: [
         "AMBrc HTTP Output Configuration — Rocky Mountain Race Platform",
@@ -292,38 +325,38 @@ export default function ReaderSetup() {
         "HOW TO USE IN AMBrc:",
         "  1. Open AMBrc → Settings → Passings Output → HTTP Output",
         "  2. Enable HTTP output / check 'Send passings via HTTP'",
-        "  3. Set URL to the value in 'endpoint' below",
+        "  3. Set URL to the value in 'nativeEndpoint' below",
         "  4. Set Method to POST",
         "  5. Add header  Content-Type: application/json",
         "  6. Copy the JSON from 'bodyTemplate' into the Body / Template field",
-        "  7. Verify variable names match your AMBrc version (see 'variableNotes')",
+        "  7. Save — you never need to change the URL or template between heats",
         "",
-        `Moto: ${motoLabel}`,
-        "Update 'motoId' in the body template before each heat.",
+        "IMPORTANT: This uses the native /api/timing/mylaps-crossing endpoint.",
+        "The platform auto-discovers whichever moto is In Progress for this event.",
+        "No motoId in the payload — it is resolved server-side from the eventId in the URL.",
       ],
-      endpoint: GENERIC_ENDPOINT,
+      nativeEndpoint,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       bodyTemplate: {
-        rfidNumber: "%TRANSPONDER%",
-        motoId: parseInt(ambrcMotoId),
-        crossingTime: "%PASSTIME_ISO%",
-        readerId: ambrcReaderId || "finish-line-1",
+        transponder: "%TRANSPONDER%",
+        passingTime: "%PASSTIME_ISO%",
+        ...(ambrcReaderId ? { loopId: ambrcReaderId } : {}),
       },
       variableNotes: {
-        "%TRANSPONDER%": "Transponder / passing code — AMBrc built-in variable",
+        "%TRANSPONDER%": "Transponder number / passing code — AMBrc built-in variable",
         "%PASSTIME_ISO%": "ISO 8601 hardware timestamp from the decoder's clock",
-        motoId: `Pre-filled with moto ${motoLabel} — update before each heat`,
+        eventId: `Embedded in the URL — routes to event ID ${ambrcEventId}`,
       },
     };
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ambrc-config-moto-${ambrcMotoId}.json`;
+    a.download = `ambrc-config-event-${ambrcEventId}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast({ title: "Config downloaded", description: `ambrc-config-moto-${ambrcMotoId}.json` });
+    toast({ title: "Config downloaded", description: `ambrc-config-event-${ambrcEventId}.json` });
   };
 
   // ── Step number helper ──────────────────────────────────────────────────────
@@ -600,50 +633,62 @@ export default function ReaderSetup() {
 
           {isMylaps ? (
             <>
-              {/* MyLaps steps (unchanged) */}
+              {/* MyLaps steps — native endpoint, no motoId needed */}
               <div className="flex gap-4 py-5 first:pt-0">
                 <Step n={1} />
                 <div className="space-y-1.5 min-w-0">
                   <div className="flex items-center gap-2"><Globe size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Connect the decoder to your network</p></div>
-                  <p className="text-sm text-muted-foreground">Power on your AMB / MyLaps decoder and connect it via Ethernet to your race-day router. The decoder needs a valid IP address and must be able to reach the API endpoint URL. Note the decoder's IP address for AMBrc / Orbits 4 configuration.</p>
-                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Tip:</span> Assign a static IP to the decoder via your router's DHCP reservation feature.</div>
+                  <p className="text-sm text-muted-foreground">Power on your AMB / MyLaps decoder and connect it via Ethernet to your race-day router. The decoder needs a valid IP address and must be able to reach the cloud API URL. Note the decoder's IP address for AMBrc / Orbits 4 configuration.</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Tip:</span> Assign a static IP to the decoder via your router's DHCP reservation feature so the address stays consistent across events.</div>
                 </div>
               </div>
               <div className="flex gap-4 py-5">
                 <Step n={2} />
                 <div className="space-y-1.5 min-w-0">
                   <div className="flex items-center gap-2"><Tag size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Assign transponder numbers to riders</p></div>
-                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Transponder Management</span> page in the sidebar to link each rider's MyLaps transponder number to their profile. The number is the 4-8 digit numeric ID printed on or programmed into each unit.</p>
-                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Note:</span> Crossings from unregistered transponders are still recorded as "Unknown." You can link them at any time and past crossings will update automatically.</div>
+                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Transponder Management</span> page in the sidebar to link each rider's MyLaps transponder number to their profile. The number is the 4–8 digit numeric ID printed on or programmed into each unit.</p>
+                  <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Note:</span> Crossings from unregistered transponders are still recorded as "Unknown." You can link them at any time — past crossings update automatically.</div>
                 </div>
               </div>
               <div className="flex gap-4 py-5">
                 <Step n={3} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2"><ClipboardList size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Create your event and motos</p></div>
-                  <p className="text-sm text-muted-foreground">In <span className="font-semibold text-foreground">Events</span>, create the race event (selecting <span className="font-semibold text-foreground">MyLaps Transponders</span> as the timing technology). On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat. Each moto gets a unique <code className="font-mono bg-muted px-1 rounded">motoId</code> you'll reference when configuring output.</p>
+                  <div className="flex items-center gap-2"><ClipboardList size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Create your event in this platform</p></div>
+                  <p className="text-sm text-muted-foreground">In <span className="font-semibold text-foreground">Events</span>, create the race event (select <span className="font-semibold text-foreground">MyLaps Transponders</span> as timing technology). Note the <span className="font-semibold text-foreground">Event ID</span> — you'll embed it once in the endpoint URL. On the <span className="font-semibold text-foreground">Motos</span> tab, add a moto for each class / heat.</p>
+                  <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800/40 rounded-md px-3 py-2 text-xs text-green-800 dark:text-green-300 mt-2 flex gap-2">
+                    <Zap size={12} className="shrink-0 mt-0.5 text-green-600 dark:text-green-400" />
+                    <span><span className="font-bold">Set it once.</span> The native endpoint auto-detects the active moto — you never need to update the URL or body template between heats.</span>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-4 py-5">
                 <Step n={4} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2"><Settings size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Configure AMBrc or Orbits 4 HTTP output</p></div>
-                  <p className="text-sm text-muted-foreground">Navigate to <span className="font-semibold text-foreground">Output → HTTP / Webhook</span>. Set URL to the endpoint below, method to <span className="font-semibold text-foreground">POST</span>, and configure the JSON body to include: <code className="font-mono bg-muted px-1 rounded text-xs">rfidNumber</code>, <code className="font-mono bg-muted px-1 rounded text-xs">motoId</code>, <code className="font-mono bg-muted px-1 rounded text-xs">crossingTime</code> (ISO 8601), and optionally <code className="font-mono bg-muted px-1 rounded text-xs">readerId</code>.</p>
+                  <div className="flex items-center gap-2"><Settings size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Configure AMBrc HTTP output with the native endpoint</p></div>
+                  <p className="text-sm text-muted-foreground">In AMBrc, navigate to <span className="font-semibold text-foreground">Settings → Passings Output → HTTP Output</span>. Use these settings:</p>
+                  <ol className="text-sm text-muted-foreground space-y-1.5 mt-2 ml-1 list-decimal list-inside">
+                    <li>Enable HTTP output / check <span className="font-semibold text-foreground">Send passings via HTTP</span>.</li>
+                    <li>Set <span className="font-semibold text-foreground">URL</span> to the native endpoint from the section below (includes your <code className="font-mono bg-muted px-1 rounded text-xs">?eventId=N</code>).</li>
+                    <li>Set <span className="font-semibold text-foreground">Method</span> to <span className="font-semibold text-foreground">POST</span>.</li>
+                    <li>Add header: <code className="font-mono bg-muted px-1 rounded text-xs">Content-Type: application/json</code>.</li>
+                    <li>Set body template to just: <code className="font-mono bg-muted px-1 rounded text-xs">{"{"}"transponder": "%TRANSPONDER%", "passingTime": "%PASSTIME_ISO%"{"}"}</code></li>
+                    <li>Save. That's it — you never need to change the URL or body again.</li>
+                  </ol>
                   <div className="bg-muted/60 border rounded-md px-3 py-2 text-xs text-muted-foreground mt-2"><span className="font-bold text-foreground">Compatible decoders:</span> AMB TranX, AMB RC4, AMB MX, MyLaps X2, P3 Flex (AMBrc ≥ 5 or Orbits 4).</div>
                 </div>
               </div>
               <div className="flex gap-4 py-5">
                 <Step n={5} />
                 <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2"><PlayCircle size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Start the moto before each heat</p></div>
-                  <p className="text-sm text-muted-foreground">On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto to <span className="font-semibold text-foreground">In Progress</span> immediately before the gate drops. The platform only accepts crossings while the moto is in progress — crossings sent before or after are rejected with a <code className="font-mono bg-muted px-1 rounded text-xs">409</code>.</p>
+                  <div className="flex items-center gap-2"><PlayCircle size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Start each moto before the gate drops</p></div>
+                  <p className="text-sm text-muted-foreground">On the event's <span className="font-semibold text-foreground">Motos</span> tab, set the moto to <span className="font-semibold text-foreground">In Progress</span> immediately before the start. The platform only accepts crossings while a moto is in progress — crossings received when none is active return <code className="font-mono bg-muted px-1 rounded text-xs">409</code>. End each moto when the heat finishes so the next one can begin.</p>
                 </div>
               </div>
               <div className="flex gap-4 py-5 last:pb-0">
                 <Step n={6} />
                 <div className="space-y-1.5 min-w-0">
                   <div className="flex items-center gap-2"><FlaskConical size={15} className="text-primary shrink-0" /><p className="font-semibold text-sm">Test the connection</p></div>
-                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Test Connection</span> tool below to fire a simulated crossing before you go live. A green "Accepted" response confirms the endpoint is reachable and the moto is active.</p>
+                  <p className="text-sm text-muted-foreground">Use the <span className="font-semibold text-foreground">Test Connection</span> tool below to fire a simulated transponder crossing in native AMBrc format. Select your event, enter a transponder number, and click <span className="font-semibold text-foreground">Send Test Crossing</span>. A green "Accepted" confirms the endpoint is live and the active moto is being scored.</p>
                 </div>
               </div>
             </>
@@ -827,68 +872,68 @@ export default function ReaderSetup() {
               <CardTitle className="font-heading uppercase tracking-wider text-base">AMBrc Output Configuration</CardTitle>
             </div>
             <p className="text-sm text-muted-foreground mt-1">
-              Select the event and moto you want to configure. The generator produces a pre-filled JSON body template and a downloadable reference file.
+              Select your event to generate a native endpoint URL and minimal body template. With the native endpoint you set AMBrc once — no motoId updates between heats.
             </p>
           </CardHeader>
           <CardContent className="pt-5 space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
-                <Select value={ambrcEventId} onValueChange={v => { setAmbrcEventId(v); setAmbrcMotoId(""); }}>
+                <Select value={ambrcEventId} onValueChange={v => { setAmbrcEventId(v); }}>
                   <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
                   <SelectContent>
                     {events?.filter((e: any) => e.timingTechnology === "mylaps").map(e => (
-                      <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">({e.status})</span></SelectItem>
+                      <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">(ID: {e.id})</span></SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Moto</label>
-                <Select value={ambrcMotoId} onValueChange={setAmbrcMotoId} disabled={!ambrcEventId}>
-                  <SelectTrigger className="h-11"><SelectValue placeholder="Select moto..." /></SelectTrigger>
-                  <SelectContent>
-                    {ambrcMotos?.map(m => (
-                      <SelectItem key={m.id} value={m.id.toString()}>
-                        <span className="flex items-center gap-2">{m.name}<Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">{m.id}</Badge></span>
-                      </SelectItem>
-                    ))}
-                    {ambrcMotos?.length === 0 && <SelectItem value="__none" disabled>No motos for this event</SelectItem>}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reader / Loop ID</label>
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Loop / Reader ID (optional)</label>
                 <Input value={ambrcReaderId} onChange={e => setAmbrcReaderId(e.target.value)} placeholder="e.g. finish-line-1" className="font-mono h-11" />
               </div>
             </div>
-            {ambrcMotoId ? (
+            {ambrcEventId ? (
               <div className="space-y-4">
+                {/* Native endpoint */}
                 <div className="space-y-1.5">
-                  <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Endpoint URL</p>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 font-mono text-xs bg-muted px-3 py-2.5 rounded border overflow-x-auto">{GENERIC_ENDPOINT}</code>
-                    <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(GENERIC_ENDPOINT); }} className="shrink-0 gap-1.5"><Copy size={13} /> Copy</Button>
+                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Native Endpoint URL</p>
+                    <Badge className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700 text-[10px] font-bold uppercase tracking-wider">Recommended</Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 font-mono text-xs bg-muted px-3 py-2.5 rounded border overflow-x-auto">
+                      {MYLAPS_NATIVE_ENDPOINT_BASE}?eventId={ambrcEventId}
+                    </code>
+                    <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(`${MYLAPS_NATIVE_ENDPOINT_BASE}?eventId=${ambrcEventId}`); toast({ title: "Copied!" }); }} className="shrink-0 gap-1.5"><Copy size={13} /> Copy</Button>
+                  </div>
+                  <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800/40 rounded-md px-3 py-2 text-xs text-green-800 dark:text-green-300 flex gap-2">
+                    <Zap size={12} className="shrink-0 mt-0.5 text-green-600 dark:text-green-400" />
+                    <span>Set this URL in AMBrc once. The platform auto-detects whichever moto is In Progress — you never update it between heats.</span>
                   </div>
                 </div>
+
+                {/* Native body template */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">JSON Body Template</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">JSON Body Template (native)</p>
                     <Button variant="outline" size="sm" onClick={copyAmbrcBody} className="gap-1.5">{copiedAmbrcBody ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}</Button>
                   </div>
-                  <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">{ambrcBodyTemplate}</pre>
+                  <pre className="bg-muted font-mono text-xs p-4 rounded border whitespace-pre overflow-x-auto leading-relaxed">{`{\n  "transponder": "%TRANSPONDER%",\n  "passingTime": "%PASSTIME_ISO%"${ambrcReaderId ? `,\n  "loopId": "${ambrcReaderId}"` : ""}\n}`}</pre>
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/40 rounded-md px-3 py-2 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
                     <Info size={13} className="shrink-0 mt-0.5" />
-                    <span><span className="font-bold">%TRANSPONDER%</span> and <span className="font-bold">%PASSTIME_ISO%</span> are AMBrc template variables.{selectedAmbrcMotoName && (<> The <span className="font-bold">motoId</span> is pre-filled for <span className="font-bold">{selectedAmbrcMotoName}</span> (ID&nbsp;{ambrcMotoId}) — update it before each heat.</>)}</span>
+                    <span><span className="font-bold">%TRANSPONDER%</span> and <span className="font-bold">%PASSTIME_ISO%</span> are AMBrc built-in template variables. No <code className="font-mono">motoId</code> needed — the endpoint URL handles that via <code className="font-mono">?eventId={ambrcEventId}</code>.</span>
                   </div>
                 </div>
+
+                {/* Download */}
                 <div className="flex items-center gap-3 pt-1">
-                  <Button onClick={downloadAmbrcConfig} className="font-heading uppercase tracking-wider h-11 px-6 gap-2"><FileDown size={16} /> Download Config File</Button>
-                  <p className="text-xs text-muted-foreground">Saves <code className="font-mono">ambrc-config-moto-{ambrcMotoId}.json</code> — open it on your scoring computer while setting up AMBrc.</p>
+                  <Button onClick={downloadAmbrcConfig} className="font-heading uppercase tracking-wider h-11 px-6 gap-2"><FileDown size={16} /> Download Config Reference</Button>
+                  <p className="text-xs text-muted-foreground">Saves a JSON reference file — open it on your scoring computer while configuring AMBrc.</p>
                 </div>
               </div>
             ) : (
-              <div className="rounded border border-dashed bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">Select an event and moto above to generate the pre-filled configuration.</div>
+              <div className="rounded border border-dashed bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">Select a MyLaps event above to generate the endpoint URL and body template.</div>
             )}
           </CardContent>
         </Card>
@@ -1092,15 +1137,65 @@ export default function ReaderSetup() {
             <CardTitle className="font-heading uppercase tracking-wider text-base">Test Connection</CardTitle>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {isNativeReader
-              ? `Fire a simulated ${readerLabel} crossing to verify the endpoint is reachable and your moto is in progress.`
-              : "Fire a simulated crossing to verify your endpoint is reachable and the moto is accepting crossings."}
+            {isMylaps
+              ? "Fire a simulated transponder crossing in native AMBrc format to verify the endpoint is live."
+              : isNativeReader
+                ? `Fire a simulated ${readerLabel} crossing to verify the endpoint is reachable and your moto is in progress.`
+                : "Fire a simulated crossing to verify your endpoint is reachable and the moto is accepting crossings."}
           </p>
         </CardHeader>
         <CardContent className="pt-5 space-y-5">
 
-          {isNativeReader ? (
-            /* Native reader test tool */
+          {isMylaps ? (
+            /* MyLaps native test tool */
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Event</label>
+                  <Select value={mylapsTestEventId} onValueChange={setMylapsTestEventId}>
+                    <SelectTrigger className="h-11"><SelectValue placeholder="Select event..." /></SelectTrigger>
+                    <SelectContent>
+                      {events?.filter((e: any) => e.timingTechnology === "mylaps").map(e => (
+                        <SelectItem key={e.id} value={e.id.toString()}>{e.name} <span className="text-muted-foreground ml-1">({e.status})</span></SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Must have a moto set to In Progress.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Transponder Number</label>
+                  <Input
+                    value={mylapsTestTransponder}
+                    onChange={e => setMylapsTestTransponder(e.target.value)}
+                    placeholder="e.g. 12345"
+                    className="font-mono h-11"
+                  />
+                  <p className="text-xs text-muted-foreground">The numeric ID on the rider's MyLaps transponder.</p>
+                </div>
+              </div>
+
+              <Button
+                onClick={sendMylapsNativeTest}
+                disabled={mylapsTestLoading || !mylapsTestEventId || !mylapsTestTransponder}
+                className="font-heading uppercase tracking-wider h-11 px-6 gap-2"
+              >
+                {mylapsTestLoading ? <><RefreshCw size={16} className="animate-spin" /> Sending…</> : <><Send size={16} /> Send Test Crossing</>}
+              </Button>
+
+              {mylapsTestResult && (
+                <div className={`rounded-lg border p-4 space-y-2 ${mylapsTestResult.ok ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-destructive/5 border-destructive/30"}`}>
+                  <div className="flex items-center gap-2">
+                    <Circle size={10} className={mylapsTestResult.ok ? "fill-green-500 text-green-500" : "fill-destructive text-destructive"} />
+                    <span className={`text-sm font-semibold ${mylapsTestResult.ok ? "text-green-700 dark:text-green-400" : "text-destructive"}`}>
+                      {mylapsTestResult.ok ? "Accepted" : "Rejected"}
+                    </span>
+                  </div>
+                  <pre className="font-mono text-xs bg-background/60 p-3 rounded border overflow-x-auto whitespace-pre leading-relaxed">{mylapsTestResult.body}</pre>
+                </div>
+              )}
+            </>
+          ) : isNativeReader ? (
+            /* Native RFID reader test tool (Impinj / Zebra) */
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -1150,7 +1245,7 @@ export default function ReaderSetup() {
               )}
             </>
           ) : (
-            /* Generic / MyLaps test tool (existing) */
+            /* Generic reader test tool */
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
@@ -1179,8 +1274,8 @@ export default function ReaderSetup() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{isMylaps ? "Transponder Number" : "RFID Tag Number"}</label>
-                  <Input value={testRfid} onChange={e => setTestRfid(e.target.value)} placeholder={isMylaps ? "e.g. 12345" : "e.g. 1A2B3C4D"} className="font-mono h-11" />
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">RFID Tag Number</label>
+                  <Input value={testRfid} onChange={e => setTestRfid(e.target.value)} placeholder="e.g. 1A2B3C4D" className="font-mono h-11" />
                 </div>
               </div>
 
