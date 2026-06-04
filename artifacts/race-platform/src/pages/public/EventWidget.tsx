@@ -14,15 +14,51 @@ const BRAND_COLORS: Record<string, { bg: string; text: string }> = {
   "Beta":     { bg: "#E8220D", text: "#ffffff" },
 };
 
-function toLapNums(lapTimes: string[] | undefined): number[] {
-  if (!lapTimes) return [];
-  return lapTimes.map(Number).filter(n => n > 0);
+/**
+ * Parse a totalTime value that may be:
+ *  - a plain millisecond number or number-string (e.g. 91217 or "91217")
+ *  - a "MM:SS.d" / "M:SS.dd" formatted string (e.g. "31:58.1", "3:07.07")
+ *  - a plain seconds decimal string (e.g. "58.4")
+ * Returns milliseconds, or null if unparseable.
+ */
+function parseTotalTimeMs(totalTime: string | number | null | undefined): number | null {
+  if (totalTime == null) return null;
+  if (typeof totalTime === "number") return totalTime > 0 ? totalTime : null;
+  const colonIdx = totalTime.indexOf(":");
+  if (colonIdx >= 0) {
+    const mins = parseFloat(totalTime.slice(0, colonIdx));
+    const secs = parseFloat(totalTime.slice(colonIdx + 1));
+    if (!isNaN(mins) && !isNaN(secs)) return Math.round((mins * 60 + secs) * 1000);
+    return null;
+  }
+  const n = parseFloat(totalTime);
+  if (!isNaN(n) && n > 0) {
+    // If large enough to be ms (>10000 = more than 10s as ms), treat as ms; otherwise as seconds
+    return n > 10000 ? n : Math.round(n * 1000);
+  }
+  return null;
 }
 
-function toTotalMs(totalTime: string | null | undefined): number | null {
-  if (!totalTime) return null;
-  const n = Number(totalTime);
-  return isNaN(n) || n <= 0 ? null : n;
+/**
+ * Convert lapTimes array to millisecond numbers.
+ * Handles:
+ *  - plain numbers (ms from RFID)
+ *  - {lap, time} objects where time is "MM:SS.d"
+ *  - string numbers
+ */
+function toLapNums(lapTimes: unknown[] | undefined): number[] {
+  if (!lapTimes) return [];
+  return lapTimes.map(item => {
+    if (typeof item === "number") return item;
+    if (typeof item === "string") {
+      const n = Number(item);
+      return isNaN(n) ? 0 : n;
+    }
+    if (item && typeof item === "object" && "time" in item) {
+      return parseTotalTimeMs((item as Record<string, unknown>).time as string) ?? 0;
+    }
+    return 0;
+  }).filter(n => n > 0);
 }
 
 function fmtMs(ms: number | null | undefined): string {
@@ -78,14 +114,51 @@ export default function EventWidget() {
     ? (results ?? []).filter(r => r.riderName.toLowerCase().includes(search.toLowerCase()))
     : (results ?? []).filter(r => r.raceClass === activeClass);
 
-  const uniqueRiders = Array.from(
-    filteredResults.reduce<Map<number, RaceResult>>((map, r) => {
-      const key = r.riderId;
-      const existing = map.get(key);
-      if (!existing || (r.position ?? 999) < (existing.position ?? 999)) map.set(key, r);
-      return map;
-    }, new Map()).values()
-  ).sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
+  /**
+   * For a class with a completed "main" moto (supercross format),
+   * use only that moto's results for the summary ranking.
+   * For traditional multi-heat events, rank by total accumulated points.
+   */
+  const mainMotoForClass = !search.trim()
+    ? (motos ?? []).find(
+        m => (m as any).raceClass === activeClass && (m as any).type === "main" && m.status === "completed"
+      )
+    : null;
+
+  const uniqueRiders: RaceResult[] = (() => {
+    if (search.trim()) {
+      // Search mode: show best-position result per rider across all classes
+      return Array.from(
+        filteredResults.reduce<Map<number, RaceResult>>((map, r) => {
+          const ex = map.get(r.riderId);
+          if (!ex || (r.position ?? 999) < (ex.position ?? 999)) map.set(r.riderId, r);
+          return map;
+        }, new Map()).values()
+      ).sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
+    }
+
+    if (mainMotoForClass) {
+      // Supercross / main-event format: definitive ranking comes from the main moto only
+      return (results ?? [])
+        .filter(r => r.raceClass === activeClass && r.motoId === mainMotoForClass.id)
+        .sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
+    }
+
+    // Traditional multi-heat: rank by total accumulated points across all motos
+    const byRider = new Map<number, { result: RaceResult; totalPoints: number }>();
+    (results ?? []).filter(r => r.raceClass === activeClass).forEach(r => {
+      const pts = r.points ?? 0;
+      const ex = byRider.get(r.riderId);
+      if (!ex) {
+        byRider.set(r.riderId, { result: r, totalPoints: pts });
+      } else {
+        byRider.set(r.riderId, { result: ex.result, totalPoints: ex.totalPoints + pts });
+      }
+    });
+    return Array.from(byRider.values())
+      .sort((a, b) => b.totalPoints - a.totalPoints || (a.result.position ?? 999) - (b.result.position ?? 999))
+      .map((entry, i) => ({ ...entry.result, position: i + 1 }));
+  })();
 
   const riderMotoResults = (riderId: number, raceClass: string) =>
     (results ?? [])
@@ -93,7 +166,7 @@ export default function EventWidget() {
       .sort((a, b) => {
         const ma = motos?.find(m => m.id === a.motoId);
         const mb = motos?.find(m => m.id === b.motoId);
-        return (ma?.motoNumber ?? 0) - (mb?.motoNumber ?? 0);
+        return ((ma as any)?.motoNumber ?? 0) - ((mb as any)?.motoNumber ?? 0);
       });
 
   if (eventLoading) {
@@ -194,17 +267,22 @@ export default function EventWidget() {
               <span>Rider</span>
               <span style={{ textAlign: "center" }}>Laps</span>
               <span style={{ textAlign: "right" }}>Best</span>
-              <span style={{ textAlign: "right" }}>Total</span>
+              <span style={{ textAlign: "right" }}>{mainMotoForClass ? "Total" : "Pts"}</span>
             </div>
 
             {uniqueRiders.map(rider => {
               const motoResults = riderMotoResults(rider.riderId, rider.raceClass ?? "");
-              const allLaps = motoResults.flatMap(m => toLapNums(m.lapTimes));
-              const directLaps = toLapNums(rider.lapTimes);
+              const allLaps = motoResults.flatMap(m => toLapNums(m.lapTimes as unknown[] | undefined));
+              const directLaps = toLapNums(rider.lapTimes as unknown[] | undefined);
               const lapsToShow = allLaps.length > 0 ? allLaps : directLaps;
               const bl = bestLapMs(lapsToShow);
-              const totalMs = toTotalMs(rider.totalTime);
+              const totalMs = parseTotalTimeMs(rider.totalTime);
               const isExpanded = expanded === rider.riderId;
+
+              // For multi-heat: compute total points for this rider
+              const totalPts = !mainMotoForClass
+                ? motoResults.reduce((sum, r) => sum + (r.points ?? 0), 0)
+                : null;
 
               return (
                 <div key={rider.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
@@ -248,9 +326,11 @@ export default function EventWidget() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", fontSize: 12, color: "#16a34a", fontVariantNumeric: "tabular-nums" }}>
                       {fmtMs(bl)}
                     </div>
-                    {/* Total time */}
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", fontSize: 12, color: "#64748b", fontVariantNumeric: "tabular-nums" }}>
-                      {fmtMs(totalMs)}
+                    {/* Total time (main format) OR total points (multi-heat) */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", fontSize: 12, fontVariantNumeric: "tabular-nums", color: mainMotoForClass ? "#64748b" : "#dc2626", fontWeight: mainMotoForClass ? 400 : 700 }}>
+                      {mainMotoForClass
+                        ? fmtMs(totalMs)
+                        : (totalPts != null && totalPts > 0 ? `${totalPts}` : "—")}
                     </div>
                   </div>
 
@@ -263,22 +343,29 @@ export default function EventWidget() {
 
                       {motoResults.length > 0 ? (
                         motoResults.map(moto => {
-                          const laps = toLapNums(moto.lapTimes);
+                          const laps = toLapNums(moto.lapTimes as unknown[] | undefined);
                           const motoInfo = motos?.find(m => m.id === moto.motoId);
                           const mbl = bestLapMs(laps);
+                          const motoTotalMs = parseTotalTimeMs(moto.totalTime);
                           return (
                             <div key={moto.id} style={{ marginBottom: 14 }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#dc2626", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
                                 <span style={{ textTransform: "uppercase", letterSpacing: "0.05em" }}>
                                   {motoInfo?.name ?? moto.motoName ?? `Moto`}
                                 </span>
+                                {moto.position != null && (
+                                  <span style={{ fontSize: 10, color: "#64748b" }}>P{moto.position}</span>
+                                )}
                                 {moto.dnf && <span style={{ color: "#dc2626", fontSize: 10 }}>DNF</span>}
                                 {moto.dns && <span style={{ color: "#94a3b8", fontSize: 10 }}>DNS</span>}
-                                {laps.length > 0 && (
-                                  <span style={{ marginLeft: "auto", color: "#94a3b8", fontSize: 10 }}>
-                                    Best: <span style={{ color: "#16a34a" }}>{fmtMs(mbl)}</span>
-                                  </span>
-                                )}
+                                <span style={{ marginLeft: "auto", display: "flex", gap: 10, color: "#94a3b8", fontSize: 10 }}>
+                                  {laps.length > 0 && (
+                                    <span>Best: <span style={{ color: "#16a34a" }}>{fmtMs(mbl)}</span></span>
+                                  )}
+                                  {motoTotalMs && (
+                                    <span>Total: <span style={{ color: "#64748b" }}>{fmtMs(motoTotalMs)}</span></span>
+                                  )}
+                                </span>
                               </div>
                               {laps.length > 0 ? (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>

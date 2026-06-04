@@ -13,11 +13,36 @@ const BRAND_COLORS: Record<string, { bg: string; text: string }> = {
   "Beta":     { bg: "#E8220D", text: "#ffffff" },
 };
 
+/**
+ * Parse a totalTime value that may be:
+ *  - a plain millisecond number or number-string (e.g. 91217 or "91217")
+ *  - a "MM:SS.d" formatted string (e.g. "31:58.1", "3:07.07")
+ * Returns milliseconds, or null if unparseable.
+ */
+function parseTotalTimeMs(totalTime: string | number | null | undefined): number | null {
+  if (totalTime == null) return null;
+  if (typeof totalTime === "number") return totalTime > 0 ? totalTime : null;
+  const colonIdx = totalTime.indexOf(":");
+  if (colonIdx >= 0) {
+    const mins = parseFloat(totalTime.slice(0, colonIdx));
+    const secs = parseFloat(totalTime.slice(colonIdx + 1));
+    if (!isNaN(mins) && !isNaN(secs)) return Math.round((mins * 60 + secs) * 1000);
+    return null;
+  }
+  const n = parseFloat(totalTime);
+  if (!isNaN(n) && n > 0) return n > 10000 ? n : Math.round(n * 1000);
+  return null;
+}
+
 function toLapNums(lapTimes: unknown[] | undefined): number[] {
   if (!lapTimes) return [];
   return lapTimes.map(item => {
     if (typeof item === "number") return item;
     if (typeof item === "string") return Number(item);
+    // {lap, time} objects from traditional results
+    if (item && typeof item === "object" && "time" in item) {
+      return parseTotalTimeMs((item as Record<string, unknown>).time as string) ?? 0;
+    }
     return 0;
   }).filter(n => n > 0);
 }
@@ -133,13 +158,46 @@ export default function SeriesWidget() {
     ? eventResults.filter(r => r.riderName.toLowerCase().includes(search.toLowerCase()))
     : eventResults.filter(r => r.raceClass === displayEventClass);
 
-  const uniqueRiders = Array.from(
-    filteredEventResults.reduce<Map<number, RaceResult>>((map, r) => {
-      const existing = map.get(r.riderId);
-      if (!existing || (r.position ?? 999) < (existing.position ?? 999)) map.set(r.riderId, r);
-      return map;
-    }, new Map()).values()
-  ).sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
+  // Find a completed "main" moto for the active event class (supercross format)
+  const mainMotoForEventClass = !search.trim()
+    ? eventMotos.find(
+        m => (m as any).raceClass === displayEventClass && (m as any).type === "main" && m.status === "completed"
+      )
+    : null;
+
+  const uniqueRiders = (() => {
+    if (search.trim()) {
+      return Array.from(
+        filteredEventResults.reduce<Map<number, RaceResult>>((map, r) => {
+          const ex = map.get(r.riderId);
+          if (!ex || (r.position ?? 999) < (ex.position ?? 999)) map.set(r.riderId, r);
+          return map;
+        }, new Map()).values()
+      ).sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
+    }
+
+    if (mainMotoForEventClass) {
+      // Supercross: use main moto results only for definitive ranking
+      return eventResults
+        .filter(r => r.raceClass === displayEventClass && r.motoId === mainMotoForEventClass.id)
+        .sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
+    }
+
+    // Traditional multi-heat: rank by total accumulated points
+    const byRider = new Map<number, { result: RaceResult; totalPoints: number }>();
+    eventResults.filter(r => r.raceClass === displayEventClass).forEach(r => {
+      const pts = (r as any).points ?? 0;
+      const ex = byRider.get(r.riderId);
+      if (!ex) {
+        byRider.set(r.riderId, { result: r, totalPoints: pts });
+      } else {
+        byRider.set(r.riderId, { result: ex.result, totalPoints: ex.totalPoints + pts });
+      }
+    });
+    return Array.from(byRider.values())
+      .sort((a, b) => b.totalPoints - a.totalPoints || (a.result.position ?? 999) - (b.result.position ?? 999))
+      .map((entry, i) => ({ ...entry.result, position: i + 1 }));
+  })();
 
   const riderMotoResults = (riderId: number, raceClass: string) =>
     eventResults.filter(r => r.riderId === riderId && r.raceClass === raceClass)
@@ -357,7 +415,7 @@ export default function SeriesWidget() {
                 <span>Pos</span><span>Rider</span>
                 <span style={{ textAlign: "center" }}>Laps</span>
                 <span style={{ textAlign: "right" }}>Best</span>
-                <span style={{ textAlign: "right" }}>Total</span>
+                <span style={{ textAlign: "right" }}>{mainMotoForEventClass ? "Total" : "Pts"}</span>
               </div>
 
               {uniqueRiders.map(rider => {
@@ -366,7 +424,10 @@ export default function SeriesWidget() {
                 const directLaps = toLapNums(rider.lapTimes ?? undefined);
                 const lapsToShow = allLaps.length > 0 ? allLaps : directLaps;
                 const bl = bestLapMs(lapsToShow);
-                const totalMs = rider.totalTime ? Number(rider.totalTime) : null;
+                const totalMs = parseTotalTimeMs(rider.totalTime);
+                const totalPts = !mainMotoForEventClass
+                  ? motoResults.reduce((sum, r) => sum + ((r as any).points ?? 0), 0)
+                  : null;
                 const isExpanded = expanded === rider.riderId;
                 const rInfo = riderInfoMap.get(rider.riderId);
 
@@ -403,8 +464,12 @@ export default function SeriesWidget() {
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#64748b" }}>{lapsToShow.length || "—"}</div>
                       {/* Best */}
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", fontSize: 12, color: "#16a34a", fontVariantNumeric: "tabular-nums" }}>{fmtMs(bl)}</div>
-                      {/* Total */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", fontSize: 12, color: "#64748b", fontVariantNumeric: "tabular-nums" }}>{totalMs && totalMs > 0 ? fmtMs(totalMs) : "—"}</div>
+                      {/* Total time (main format) OR total points (multi-heat) */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", fontSize: 12, fontVariantNumeric: "tabular-nums", color: mainMotoForEventClass ? "#64748b" : "#dc2626", fontWeight: mainMotoForEventClass ? 400 : 700 }}>
+                        {mainMotoForEventClass
+                          ? fmtMs(totalMs)
+                          : (totalPts != null && totalPts > 0 ? `${totalPts}` : "—")}
+                      </div>
                     </div>
 
                     {/* Expanded lap history */}
