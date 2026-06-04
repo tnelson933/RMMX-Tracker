@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Trophy, Calendar, Star, User, ChevronRight, Plus, Clock } from "lucide-react";
@@ -76,12 +77,20 @@ function ProfileCard({ profile }: { profile: RiderProfile }) {
 
 export default function RiderPortal() {
   const { account } = useRiderAuth();
+  const [, navigate] = useLocation();
 
   const { data: profiles, isLoading } = useQuery<RiderProfile[]>({
     queryKey: ["rider-profiles"],
     queryFn: () => riderApi.profiles(),
     enabled: !!account,
   } as any);
+
+  // Auto-navigate directly to the profile detail page when there's only one profile
+  useEffect(() => {
+    if (!isLoading && profiles && profiles.length === 1) {
+      navigate(`/rider/portal/${profiles[0].id}`, { replace: true });
+    }
+  }, [profiles, isLoading, navigate]);
 
   return (
     <RiderLayout>

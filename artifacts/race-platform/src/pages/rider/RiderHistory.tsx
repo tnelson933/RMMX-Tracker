@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -561,23 +561,85 @@ function motoTypeLabel(type: string) {
   return type;
 }
 
-function ScheduleMotoCard({ moto }: { moto: ScheduleMoto }) {
+function ScheduleMotoCard({ moto, isUpNext }: { moto: ScheduleMoto; isUpNext?: boolean }) {
   const [open, setOpen] = useState(false);
   const isLive = moto.status === "in_progress";
   const isDone = moto.status === "completed";
 
   if (!moto.isAnyFamilyMemberInMoto) {
-    // Greyed-out compact row — no family member in this moto
+    // Collapsed title-only row — rider is NOT in this moto
+    // Shows title + status badges, expands to reveal the full lineup
     return (
-      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border bg-muted/30 opacity-50 select-none">
-        <span className="font-mono text-sm text-muted-foreground w-6 text-center shrink-0">
-          {moto.motoNumber}
-        </span>
-        <span className="text-sm text-muted-foreground flex-1 truncate">{moto.name}</span>
-        <Badge variant="outline" className="text-xs shrink-0 capitalize">{motoTypeLabel(moto.type)}</Badge>
-        <Badge variant="outline" className={`text-xs shrink-0 border ${motoStatusBadge(moto.status)}`}>
-          {moto.status === "in_progress" ? "Live" : moto.status === "completed" ? "Done" : "Upcoming"}
-        </Badge>
+      <div className={`rounded-lg border overflow-hidden transition-colors ${
+        isLive
+          ? "border-green-400/60 bg-green-500/5"
+          : isUpNext
+          ? "border-primary/40 bg-primary/5"
+          : isDone
+          ? "border-border bg-muted/20 opacity-50"
+          : "border-border bg-card"
+      }`}>
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left"
+        >
+          <span className="font-mono text-xs text-muted-foreground w-5 text-center shrink-0">
+            {moto.motoNumber}
+          </span>
+          <div className="flex-1 min-w-0">
+            <span className={`text-sm font-medium truncate block ${isDone ? "text-muted-foreground" : "text-foreground"}`}>
+              {moto.name}
+            </span>
+            {moto.raceClass && (
+              <span className="text-xs text-muted-foreground">{moto.raceClass} · {motoTypeLabel(moto.type)}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isLive && (
+              <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-500/15 border border-green-400/50 rounded-full px-2 py-0.5">
+                <Radio size={9} className="animate-pulse" /> Live
+              </span>
+            )}
+            {isUpNext && !isLive && (
+              <span className="text-xs font-bold text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5">
+                Up Next
+              </span>
+            )}
+            {isDone && !isLive && !isUpNext && (
+              <Badge variant="outline" className="text-xs text-muted-foreground border-border">Done</Badge>
+            )}
+            {open ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+          </div>
+        </button>
+
+        {open && (
+          <div className="border-t bg-background">
+            {moto.lineup.length > 0 ? (
+              <>
+                <div className="px-4 pt-2 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
+                  Starting Order
+                </div>
+                <div className="divide-y">
+                  {moto.lineup.map(entry => (
+                    <div key={entry.gate} className="flex items-center gap-3 px-4 py-2">
+                      <span className="w-7 h-7 rounded-full flex items-center justify-center font-heading font-bold text-xs shrink-0 bg-muted text-muted-foreground">
+                        {entry.gate}
+                      </span>
+                      <span className="flex-1 text-sm text-foreground">{entry.riderName}</span>
+                      {entry.bibNumber && (
+                        <span className="text-xs font-mono text-muted-foreground">#{entry.bibNumber}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="px-4 py-3 text-sm text-muted-foreground text-center">
+                Lineup not set yet
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -595,9 +657,9 @@ function ScheduleMotoCard({ moto }: { moto: ScheduleMoto }) {
       <div className={`px-4 py-3 flex items-center justify-between gap-3 ${
         isLive ? "bg-green-500 text-white" : isDone ? "bg-muted" : "bg-primary text-primary-foreground"
       }`}>
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           {isLive && <Radio size={14} className="animate-pulse shrink-0" />}
-          <span className="font-heading font-bold text-base uppercase tracking-tight truncate">
+          <span className="font-heading font-bold text-base uppercase tracking-tight">
             {moto.name}
           </span>
           <Badge className={`text-xs shrink-0 font-bold ${
@@ -609,6 +671,11 @@ function ScheduleMotoCard({ moto }: { moto: ScheduleMoto }) {
           } border`}>
             {moto.status === "in_progress" ? "Live Now" : moto.status === "completed" ? "Finished" : "Upcoming"}
           </Badge>
+          {isUpNext && !isLive && !isDone && (
+            <Badge className="text-xs font-bold bg-white/30 text-white border-white/40 border">
+              Up Next
+            </Badge>
+          )}
         </div>
         <button
           onClick={() => setOpen(v => !v)}
@@ -707,6 +774,13 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   const hasLiveMotos = event.motos.some(m => m.status === "in_progress");
   const myMotos = event.motos.filter(m => m.isAnyFamilyMemberInMoto);
 
+  // "Up Next" = first moto whose status is "scheduled" (motos are sorted by motoNumber)
+  const upNextMotoId = event.motos.find(m => m.status === "scheduled")?.motoId ?? null;
+
+  // How many races (motos) come before the rider's next upcoming moto
+  const nextMyMotoIdx = event.motos.findIndex(m => m.isAnyFamilyMemberInMoto && m.status === "scheduled");
+  const racesUntilTurn = nextMyMotoIdx > 0 ? nextMyMotoIdx : null;
+
   return (
     <div className="space-y-3">
       {/* Event header */}
@@ -748,15 +822,29 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
           )}
         </div>
         <div className="text-right shrink-0">
-          <div className="text-xs text-muted-foreground">Races</div>
-          <div className="font-heading font-bold text-2xl text-primary">{myMotos.length}</div>
+          {racesUntilTurn !== null ? (
+            <>
+              <div className="text-xs text-muted-foreground leading-tight">races until</div>
+              <div className="font-heading font-bold text-2xl text-primary leading-none">{racesUntilTurn}</div>
+              <div className="text-xs text-muted-foreground leading-tight">your turn</div>
+            </>
+          ) : (
+            <>
+              <div className="text-xs text-muted-foreground">Your Races</div>
+              <div className="font-heading font-bold text-2xl text-primary">{myMotos.length}</div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Motos */}
+      {/* Motos — full schedule in run order, all classes */}
       <div className="space-y-2 pl-1">
         {event.motos.map(moto => (
-          <ScheduleMotoCard key={moto.motoId} moto={moto} />
+          <ScheduleMotoCard
+            key={moto.motoId}
+            moto={moto}
+            isUpNext={moto.motoId === upNextMotoId}
+          />
         ))}
         {event.motos.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-4">
@@ -797,6 +885,17 @@ export default function RiderHistory() {
   const rider = data?.rider;
   const history = data?.history ?? [];
   const practiceSessions = practiceData?.sessions ?? [];
+
+  // Auto-switch to "Near Me" if rider has no active/upcoming events
+  const didAutoTab = useRef(false);
+  useEffect(() => {
+    if (!scheduleLoading && scheduleData && !didAutoTab.current) {
+      didAutoTab.current = true;
+      if (scheduleData.events.length === 0) {
+        setActiveTab("nearby");
+      }
+    }
+  }, [scheduleData, scheduleLoading]);
 
   const totalPoints = history.reduce((s, e) => s + e.totalPoints, 0);
   const eventsRaced = history.length;
