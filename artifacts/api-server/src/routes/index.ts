@@ -20,6 +20,7 @@ import storageRouter from "./storage";
 import compCodesRouter from "./comp-codes";
 import pointsTablesRouter from "./points-tables";
 import aiRouter from "./ai";
+import practiceRouter from "./practice";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use(storageRouter);
 router.use(compCodesRouter);
 router.use(pointsTablesRouter);
 router.use(aiRouter);
+router.use(practiceRouter);
 
 export default router;

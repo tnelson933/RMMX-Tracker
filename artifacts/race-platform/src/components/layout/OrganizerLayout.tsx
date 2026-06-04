@@ -23,6 +23,7 @@ import {
   Video,
   VideoOff,
   ListOrdered,
+  Timer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import rmLogo from "@assets/rm-logo.png";
@@ -59,6 +60,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: false },
     { href: "/events", label: "Events", icon: CalendarDays, exact: false },
+    { href: "/practice", label: "Practice", icon: Timer, exact: false },
     { href: "/riders", label: "Riders", icon: Users, exact: false },
     { href: "/series", label: "Series", icon: Trophy, exact: false },
     { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, exact: false },

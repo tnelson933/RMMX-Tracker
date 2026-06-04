@@ -30,6 +30,7 @@ import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
 import UsersAdmin from "@/pages/organizer/UsersAdmin";
 import SetPassword from "@/pages/public/SetPassword";
 import StripeConnect from "@/pages/organizer/StripeConnect";
+import StandalonePractice from "@/pages/organizer/StandalonePractice";
 import RiderLogin from "@/pages/rider/RiderLogin";
 import RiderPortal from "@/pages/rider/RiderPortal";
 import RiderHistory from "@/pages/rider/RiderHistory";
@@ -142,6 +143,9 @@ function Router() {
       </Route>
       <Route path="/payments">
         <ProtectedRoute><StripeConnect /></ProtectedRoute>
+      </Route>
+      <Route path="/practice">
+        <ProtectedRoute><StandalonePractice /></ProtectedRoute>
       </Route>
 
       <Route component={NotFound} />

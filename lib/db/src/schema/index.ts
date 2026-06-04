@@ -13,3 +13,4 @@ export * from "./setup_tokens";
 export * from "./rider_accounts";
 export * from "./comp-codes";
 export * from "./points-tables";
+export * from "./practice";
