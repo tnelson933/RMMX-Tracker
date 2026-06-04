@@ -561,7 +561,7 @@ function motoTypeLabel(type: string) {
   return type;
 }
 
-function ScheduleMotoCard({ moto, isUpNext }: { moto: ScheduleMoto; isUpNext?: boolean }) {
+function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isNowUp?: boolean; isUpNext?: boolean }) {
   const [open, setOpen] = useState(false);
   const isLive = moto.status === "in_progress";
   const isDone = moto.status === "completed";
@@ -595,12 +595,12 @@ function ScheduleMotoCard({ moto, isUpNext }: { moto: ScheduleMoto; isUpNext?: b
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {isLive && (
+            {(isLive || isNowUp) && (
               <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-500/15 border border-green-400/50 rounded-full px-2 py-0.5">
-                <Radio size={9} className="animate-pulse" /> Now Up
+                <Radio size={9} className={isLive ? "animate-pulse" : undefined} /> Now Up
               </span>
             )}
-            {isUpNext && !isLive && (
+            {isUpNext && !isLive && !isNowUp && (
               <span className="text-xs font-bold text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5">
                 Up Next
               </span>
@@ -669,13 +669,8 @@ function ScheduleMotoCard({ moto, isUpNext }: { moto: ScheduleMoto; isUpNext?: b
               ? "bg-muted-foreground/20 text-muted-foreground border-border"
               : "bg-white/20 text-white border-white/30"
           } border`}>
-            {moto.status === "in_progress" ? "Now Up" : moto.status === "completed" ? "Finished" : "Upcoming"}
+            {isLive ? "Now Up" : isDone ? "Finished" : isNowUp ? "Now Up" : isUpNext ? "Up Next" : "Upcoming"}
           </Badge>
-          {isUpNext && !isLive && !isDone && (
-            <Badge className="text-xs font-bold bg-white/30 text-white border-white/40 border">
-              Up Next
-            </Badge>
-          )}
         </div>
         <button
           onClick={() => setOpen(v => !v)}
@@ -785,8 +780,12 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
     return (a.motoNumber ?? 0) - (b.motoNumber ?? 0);
   });
 
-  // "Up Next" = first scheduled moto in run order (by original motoNumber)
-  const upNextMotoId = event.motos.find(m => m.status === "scheduled")?.motoId ?? null;
+  // "Now Up" = rider's first upcoming moto in run order; "Up Next" = their second
+  const myScheduled = event.motos
+    .filter(m => m.isAnyFamilyMemberInMoto && m.status === "scheduled")
+    .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+  const nowUpMotoId = myScheduled[0]?.motoId ?? null;
+  const upNextMotoId = myScheduled[1]?.motoId ?? null;
 
   // How many races (motos) come before the rider's next upcoming moto (in run order)
   const nextMyMotoIdx = event.motos.findIndex(m => m.isAnyFamilyMemberInMoto && m.status === "scheduled");
@@ -883,6 +882,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
             <ScheduleMotoCard
               key={moto.motoId}
               moto={moto}
+              isNowUp={moto.motoId === nowUpMotoId}
               isUpNext={moto.motoId === upNextMotoId}
             />
           ))}
