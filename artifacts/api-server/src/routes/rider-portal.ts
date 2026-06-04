@@ -124,6 +124,7 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
         lastName: rider.lastName,
         email: rider.email,
         bibNumber: rider.bibNumber,
+        rfidNumber: rider.rfidNumber,
         dateOfBirth: rider.dateOfBirth,
         eventsRaced: uniqueEvents.size,
         totalPoints,
@@ -241,7 +242,34 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     };
   });
 
-  return res.json({ rider, history });
+  return res.json({ rider: { ...rider, rfidNumber: rider.rfidNumber ?? null }, history });
+});
+
+// PATCH /rider/profiles/:riderId/rfid — rider self-service RFID update
+router.patch("/rider/profiles/:riderId/rfid", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  const { rfidNumber } = req.body;
+  const value = typeof rfidNumber === "string" ? rfidNumber.trim() : null;
+
+  const [updated] = await db
+    .update(ridersTable)
+    .set({ rfidNumber: value || null })
+    .where(eq(ridersTable.id, riderId))
+    .returning();
+
+  return res.json({ rfidNumber: updated.rfidNumber ?? null });
 });
 
 // GET /rider/profiles/:riderId/practice — practice session history for a rider

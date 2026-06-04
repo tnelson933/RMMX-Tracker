@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useRoute } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Trophy, Clock, Star, ChevronDown, ChevronUp,
-  Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer
+  Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer,
+  Wifi, Pencil, Check, X, Loader2
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { RiderLayout } from "@/components/layout/RiderLayout";
 import {
   riderApi,
@@ -32,6 +34,86 @@ function formatMs(ms: number | null | undefined): string {
   const secs = totalSec % 60;
   const dec = Math.floor((ms % 1000) / 10);
   return `${mins}:${String(secs).padStart(2, "0")}.${String(dec).padStart(2, "0")}`;
+}
+
+// ─── RFID editor ────────────────────────────────────────────────────────────
+
+function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: string | null }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(currentRfid ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function startEdit() {
+    setValue(currentRfid ?? "");
+    setError(null);
+    setEditing(true);
+  }
+
+  function cancel() {
+    setEditing(false);
+    setError(null);
+  }
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      await riderApi.updateRfid(riderId, value.trim() || null);
+      queryClient.invalidateQueries({ queryKey: ["rider-history", riderId] });
+      queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["rider-practice", riderId] });
+      setEditing(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-1.5 mt-2">
+        <div className="flex items-center gap-2">
+          <Wifi size={13} className="text-muted-foreground shrink-0" />
+          <Input
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            placeholder="e.g. AB12CD34"
+            className="h-8 text-sm font-mono w-48"
+            autoFocus
+            onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
+          />
+          <Button size="sm" className="h-8 px-2" onClick={save} disabled={saving}>
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8 px-2" onClick={cancel} disabled={saving}>
+            <X size={13} />
+          </Button>
+        </div>
+        {error && <p className="text-xs text-destructive ml-5">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 mt-1">
+      <Wifi size={13} className="text-muted-foreground shrink-0" />
+      {currentRfid ? (
+        <span className="text-sm font-mono text-muted-foreground">{currentRfid}</span>
+      ) : (
+        <span className="text-sm text-muted-foreground italic">No transponder set</span>
+      )}
+      <button
+        onClick={startEdit}
+        className="ml-1 text-muted-foreground hover:text-primary transition-colors"
+        title="Edit transponder number"
+      >
+        <Pencil size={11} />
+      </button>
+    </div>
+  );
 }
 
 // ─── Race history components ────────────────────────────────────────────────
@@ -334,6 +416,7 @@ export default function RiderHistory() {
                   </span>
                 )}
               </div>
+              <RfidEditor riderId={rider.id} currentRfid={rider.rfidNumber ?? null} />
             </div>
           </div>
 

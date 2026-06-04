@@ -25,6 +25,7 @@ export interface RiderProfile {
   lastName: string;
   email: string | null;
   bibNumber: string | null;
+  rfidNumber: string | null;
   dateOfBirth: string | null;
   eventsRaced: number;
   totalPoints: number;
@@ -66,6 +67,7 @@ export interface RiderHistoryResponse {
     lastName: string;
     email: string | null;
     bibNumber: string | null;
+    rfidNumber: string | null;
     dateOfBirth: string | null;
   };
   history: EventHistory[];
@@ -117,4 +119,10 @@ export const riderApi = {
 
   practice: (riderId: number): Promise<RiderPracticeResponse> =>
     apiFetch(`/rider/profiles/${riderId}/practice`),
+
+  updateRfid: (riderId: number, rfidNumber: string | null): Promise<{ rfidNumber: string | null }> =>
+    apiFetch(`/rider/profiles/${riderId}/rfid`, {
+      method: "PATCH",
+      body: JSON.stringify({ rfidNumber }),
+    }),
 };
