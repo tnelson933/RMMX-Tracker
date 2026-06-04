@@ -775,6 +775,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   const isRaceDay = event.status === "race_day";
   const hasLiveMotos = event.motos.some(m => m.status === "in_progress");
   const myMotos = event.motos.filter(m => m.isAnyFamilyMemberInMoto);
+  const [collapsed, setCollapsed] = useState(false);
 
   // Re-sort for display: live → upcoming → completed, preserving motoNumber order within each group
   const sortedMotos = [...event.motos].sort((a, b) => {
@@ -791,22 +792,34 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   const nextMyMotoIdx = event.motos.findIndex(m => m.isAnyFamilyMemberInMoto && m.status === "scheduled");
   const racesUntilTurn = nextMyMotoIdx > 0 ? nextMyMotoIdx : null;
 
+  const upcoming = sortedMotos.filter(m => m.status !== "completed" && m.status !== "cancelled");
+  const finished = sortedMotos.filter(m => m.status === "completed" || m.status === "cancelled");
+
   return (
-    <div className="space-y-3">
-      {/* Event header */}
-      <div className={`flex items-start justify-between gap-3 p-4 rounded-xl border ${
-        isRaceDay ? "bg-primary/5 border-primary/30" : "bg-muted/30 border-border"
-      }`}>
+    <div className="rounded-2xl border-2 overflow-hidden shadow-sm">
+      {/* Event header — prominent, clickable to collapse */}
+      <button
+        onClick={() => setCollapsed(v => !v)}
+        className={`w-full text-left flex items-start gap-4 p-5 transition-colors ${
+          isRaceDay
+            ? hasLiveMotos
+              ? "bg-green-600 text-white"
+              : "bg-primary text-primary-foreground"
+            : "bg-muted"
+        }`}
+      >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-heading font-bold text-lg uppercase tracking-tight">{event.eventName}</h3>
+            <h3 className="font-heading font-black text-xl uppercase tracking-tight leading-none">
+              {event.eventName}
+            </h3>
             {hasLiveMotos && (
-              <span className="flex items-center gap-1 text-xs font-bold text-green-600 bg-green-500/10 border border-green-500/30 rounded-full px-2 py-0.5">
+              <span className="flex items-center gap-1 text-xs font-bold bg-white/20 text-white border border-white/30 rounded-full px-2 py-0.5">
                 <Radio size={10} className="animate-pulse" /> Live
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3 mt-1 flex-wrap text-sm text-muted-foreground">
+          <div className={`flex items-center gap-3 mt-1.5 flex-wrap text-sm ${isRaceDay ? "text-white/70" : "text-muted-foreground"}`}>
             {event.eventDate && (
               <span className="flex items-center gap-1">
                 <Calendar size={12} />
@@ -824,66 +837,71 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
           {event.registrations.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {event.registrations.map(r => (
-                <span key={r.riderId} className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary border border-primary/20 rounded-full px-2.5 py-0.5 font-semibold">
+                <span key={r.riderId} className={`inline-flex items-center gap-1 text-xs rounded-full px-2.5 py-0.5 font-semibold border ${
+                  isRaceDay
+                    ? "bg-white/15 text-white border-white/25"
+                    : "bg-primary/10 text-primary border-primary/20"
+                }`}>
                   {r.riderName}{r.raceClass ? ` · ${r.raceClass}` : ""}
                 </span>
               ))}
             </div>
           )}
         </div>
-        <div className="text-right shrink-0">
-          {racesUntilTurn !== null ? (
-            <>
-              <div className="text-xs text-muted-foreground leading-tight">races until</div>
-              <div className="font-heading font-bold text-2xl text-primary leading-none">{racesUntilTurn}</div>
-              <div className="text-xs text-muted-foreground leading-tight">your turn</div>
-            </>
-          ) : (
-            <>
-              <div className="text-xs text-muted-foreground">Your Races</div>
-              <div className="font-heading font-bold text-2xl text-primary">{myMotos.length}</div>
-            </>
-          )}
+
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="text-right">
+            {racesUntilTurn !== null ? (
+              <>
+                <div className={`text-xs leading-tight ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>races until</div>
+                <div className={`font-heading font-black text-3xl leading-none ${isRaceDay ? "text-white" : "text-primary"}`}>{racesUntilTurn}</div>
+                <div className={`text-xs leading-tight ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>your turn</div>
+              </>
+            ) : (
+              <>
+                <div className={`text-xs ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>Your Races</div>
+                <div className={`font-heading font-black text-3xl ${isRaceDay ? "text-white" : "text-primary"}`}>{myMotos.length}</div>
+              </>
+            )}
+          </div>
+          {collapsed
+            ? <ChevronDown size={20} className={isRaceDay ? "text-white/70" : "text-muted-foreground"} />
+            : <ChevronUp size={20} className={isRaceDay ? "text-white/70" : "text-muted-foreground"} />
+          }
         </div>
-      </div>
+      </button>
 
       {/* Motos — live/upcoming first, completed at bottom */}
-      <div className="space-y-2 pl-1">
-        {sortedMotos.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            No races scheduled yet — check back closer to race day.
-          </p>
-        )}
-        {(() => {
-          const upcoming = sortedMotos.filter(m => m.status !== "completed" && m.status !== "cancelled");
-          const finished = sortedMotos.filter(m => m.status === "completed" || m.status === "cancelled");
-          return (
-            <>
-              {upcoming.map(moto => (
-                <ScheduleMotoCard
-                  key={moto.motoId}
-                  moto={moto}
-                  isUpNext={moto.motoId === upNextMotoId}
-                />
-              ))}
-              {finished.length > 0 && upcoming.length > 0 && (
-                <div className="flex items-center gap-3 py-1">
-                  <div className="flex-1 h-px bg-border" />
-                  <span className="text-xs text-muted-foreground font-heading uppercase tracking-wider shrink-0">Finished</span>
-                  <div className="flex-1 h-px bg-border" />
-                </div>
-              )}
-              {finished.map(moto => (
-                <ScheduleMotoCard
-                  key={moto.motoId}
-                  moto={moto}
-                  isUpNext={false}
-                />
-              ))}
-            </>
-          );
-        })()}
-      </div>
+      {!collapsed && (
+        <div className="p-3 space-y-2 bg-background">
+          {sortedMotos.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No races scheduled yet — check back closer to race day.
+            </p>
+          )}
+          {upcoming.map(moto => (
+            <ScheduleMotoCard
+              key={moto.motoId}
+              moto={moto}
+              isUpNext={moto.motoId === upNextMotoId}
+            />
+          ))}
+          {finished.length > 0 && upcoming.length > 0 && (
+            <div className="flex items-center gap-3 py-1">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground font-heading uppercase tracking-wider shrink-0">Finished</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+          )}
+          {finished.map(moto => (
+            <ScheduleMotoCard
+              key={moto.motoId}
+              moto={moto}
+              isUpNext={false}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
