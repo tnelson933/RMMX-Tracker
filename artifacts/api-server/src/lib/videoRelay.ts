@@ -241,16 +241,23 @@ function handleViewer(ws: WebSocket, eventId: number) {
       if (state.initSegment && ws.readyState === WebSocket.OPEN) {
         ws.send(state.initSegment, { binary: true });
       }
-      // Send buffered chunks one-per-event-loop-tick to avoid overwhelming the
-      // Replit proxy with a large synchronous burst that can drop the connection.
-      const chunks = [...state.chunkBuffer];
-      let i = 0;
-      function sendNextChunk() {
-        if (i >= chunks.length || ws.readyState !== WebSocket.OPEN) return;
-        ws.send(chunks[i++], { binary: true });
-        setImmediate(sendNextChunk);
-      }
-      if (chunks.length > 0) setImmediate(sendNextChunk);
+      // Do NOT send buffered chunks to late-joining viewers.
+      //
+      // The buffered chunks are from broadcast time T-5s to T (the last 10 chunks
+      // at 500ms each). The initSegment is from broadcast time 0-500ms.  There is
+      // a large gap between them (potentially minutes of missing data).  VP8
+      // P-frames in the buffered chunks reference I-frames that exist in the
+      // middle of that gap — frames we never send.  Chrome's VP8 decoder uses
+      // error concealment (shows the last valid decoded frame) for every
+      // undecadable P-frame, so the video appears permanently frozen until the
+      // next I-frame arrives in the live stream.
+      //
+      // By sending ONLY the initSegment we give the decoder one valid I-frame
+      // (the very first frame of the broadcast) and then the NEXT live chunk from
+      // the broadcaster arrives within ≤500ms.  If that chunk starts with an
+      // I-frame the video plays immediately.  If not, error concealment lasts
+      // at most one VP8 GOP interval (typically ≤2 s) before the next I-frame
+      // recovers the decoder — far better than sending 5 s of undecodable data.
     } else {
       ws.send(JSON.stringify({ type: "offline" }));
     }
