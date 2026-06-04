@@ -597,7 +597,7 @@ function ScheduleMotoCard({ moto, isUpNext }: { moto: ScheduleMoto; isUpNext?: b
           <div className="flex items-center gap-2 shrink-0">
             {isLive && (
               <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-500/15 border border-green-400/50 rounded-full px-2 py-0.5">
-                <Radio size={9} className="animate-pulse" /> Live
+                <Radio size={9} className="animate-pulse" /> Now Up
               </span>
             )}
             {isUpNext && !isLive && (
@@ -669,7 +669,7 @@ function ScheduleMotoCard({ moto, isUpNext }: { moto: ScheduleMoto; isUpNext?: b
               ? "bg-muted-foreground/20 text-muted-foreground border-border"
               : "bg-white/20 text-white border-white/30"
           } border`}>
-            {moto.status === "in_progress" ? "Live Now" : moto.status === "completed" ? "Finished" : "Upcoming"}
+            {moto.status === "in_progress" ? "Now Up" : moto.status === "completed" ? "Finished" : "Upcoming"}
           </Badge>
           {isUpNext && !isLive && !isDone && (
             <Badge className="text-xs font-bold bg-white/30 text-white border-white/40 border">
