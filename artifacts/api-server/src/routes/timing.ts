@@ -931,8 +931,9 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
   });
 
   // Broadcast updated leaderboard (outside transaction — read-only)
+  // Include correction: true so live viewers know a crossing was removed
   const snapshot = await buildLeaderboard(motoId);
-  if (snapshot) sseBroadcast(motoId, snapshot);
+  if (snapshot) sseBroadcast(motoId, { ...snapshot, correction: true });
 
   return res.json({ ok: true });
 });

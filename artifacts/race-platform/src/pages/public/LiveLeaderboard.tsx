@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoute, Link } from "wouter";
-import { Flag, Clock, Wifi, WifiOff, ChevronLeft, Radio } from "lucide-react";
+import { Flag, Clock, WifiOff, ChevronLeft, Radio, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface LeaderboardEntry {
@@ -26,6 +26,7 @@ interface LeaderboardData {
   completedAt: string | null;
   leaderboard: LeaderboardEntry[];
   updatedAt: string;
+  correction?: boolean;
 }
 
 function ElapsedClock({ startedAt }: { startedAt: string }) {
@@ -56,6 +57,8 @@ export default function LiveLeaderboard() {
   const [data, setData] = useState<LeaderboardData | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [correctionVisible, setCorrectionVisible] = useState(false);
+  const correctionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   // Track previous leaderboard state for change detection
@@ -75,6 +78,13 @@ export default function LiveLeaderboard() {
         try {
           const payload = JSON.parse(e.data) as LeaderboardData;
           if ((payload as any).error) { setError((payload as any).error); return; }
+
+          // Show a timed "Results corrected" notice when a crossing deletion broadcast arrives
+          if (payload.correction) {
+            setCorrectionVisible(true);
+            if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
+            correctionTimerRef.current = setTimeout(() => setCorrectionVisible(false), 5000);
+          }
 
           setData(prev => {
             // Detect changes vs previous state
@@ -122,6 +132,7 @@ export default function LiveLeaderboard() {
     connect();
     return () => {
       esRef.current?.close();
+      if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
     };
   }, [motoId]);
 
@@ -129,6 +140,23 @@ export default function LiveLeaderboard() {
 
   return (
     <div className="min-h-screen bg-sidebar text-sidebar-foreground">
+      {/* Correction notice banner */}
+      <AnimatePresence>
+        {correctionVisible && (
+          <motion.div
+            key="correction-banner"
+            initial={{ opacity: 0, y: -40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -40 }}
+            transition={{ duration: 0.3 }}
+            className="fixed top-0 inset-x-0 z-50 flex items-center justify-center gap-2 bg-amber-500 text-black text-sm font-bold px-4 py-2 shadow-lg"
+          >
+            <AlertTriangle size={15} />
+            Results corrected — a timing entry was removed by the organizer
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header bar */}
       <div className="border-b border-white/10 px-4 py-3 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 text-white/50 hover:text-white text-sm transition-colors">
