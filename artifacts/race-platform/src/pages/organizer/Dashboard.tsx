@@ -18,14 +18,166 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Calendar, Users, CheckCircle, Plus, Tag, Activity,
   Upload, ImageIcon, Loader2, X, Sparkles, Save, Building2, LayoutDashboard, Mail, Copy, ClipboardCheck, Download,
+  Cloud, CloudOff, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { Link } from "wouter";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, formatDistanceToNow } from "date-fns";
+
+interface SyncState {
+  enabled: boolean;
+  cloudUrl: string | null;
+  clubId: number | null;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  rowsSynced: Record<string, number> | null;
+}
+
+function SyncStatusBanner({ syncStatus, loading }: { syncStatus: SyncState | null; loading: boolean }) {
+  if (!syncStatus) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="p-4 flex items-center gap-3 text-muted-foreground">
+          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          <span className="text-sm font-medium">Checking cloud sync status…</span>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { enabled, cloudUrl, lastSuccessAt, lastAttemptAt, lastError, rowsSynced } = syncStatus;
+
+  if (!enabled) {
+    return (
+      <Card className="border-dashed border-muted-foreground/30">
+        <CardContent className="p-4 flex items-center gap-3 text-muted-foreground">
+          <CloudOff size={16} />
+          <div>
+            <span className="text-sm font-medium">Auto-sync disabled</span>
+            <span className="text-xs text-muted-foreground ml-2">Running in local-only mode — data is not being pushed to the cloud.</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const hasSynced = !!lastSuccessAt;
+  const isError = !!lastError && (!hasSynced || (lastAttemptAt && lastSuccessAt && lastAttemptAt > lastSuccessAt));
+
+  let timeAgo: string | null = null;
+  if (lastSuccessAt) {
+    try { timeAgo = formatDistanceToNow(new Date(lastSuccessAt), { addSuffix: true }); } catch { /* ignore */ }
+  }
+
+  const totalRows = rowsSynced
+    ? Object.values(rowsSynced).reduce((sum, n) => sum + n, 0)
+    : null;
+
+  const rowBreakdown = rowsSynced && Object.keys(rowsSynced).length > 0
+    ? Object.entries(rowsSynced)
+        .filter(([, n]) => n > 0)
+        .map(([table, n]) => `${n.toLocaleString()} ${table}`)
+        .join(", ")
+    : null;
+
+  if (isError) {
+    return (
+      <Card className="border-destructive/40 bg-destructive/5">
+        <CardContent className="p-4 flex items-start gap-3">
+          <AlertTriangle size={16} className="text-destructive mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold uppercase tracking-wider text-destructive font-heading">Sync Error</span>
+              {loading && <RefreshCw size={12} className="animate-spin text-muted-foreground" />}
+            </div>
+            <p className="text-xs text-destructive/80 mt-0.5 truncate max-w-lg">{lastError}</p>
+            {timeAgo && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Last successful sync {timeAgo}
+                {totalRows != null ? ` · ${totalRows.toLocaleString()} rows` : ""}
+              </p>
+            )}
+            {cloudUrl && <p className="text-xs text-muted-foreground mt-0.5 truncate">→ {cloudUrl}</p>}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-green-500/30 bg-green-500/5">
+      <CardContent className="p-4 flex items-center gap-3">
+        <Cloud size={16} className="text-green-600 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold uppercase tracking-wider text-green-700 font-heading">Cloud Synced</span>
+            {loading && <RefreshCw size={12} className="animate-spin text-muted-foreground" />}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+            {timeAgo && <span className="text-xs text-muted-foreground">Last sync {timeAgo}</span>}
+            {totalRows != null && (
+              <span className="text-xs text-muted-foreground" title={rowBreakdown ?? undefined}>
+                {totalRows.toLocaleString()} rows synced
+              </span>
+            )}
+            {cloudUrl && <span className="text-xs text-muted-foreground truncate max-w-xs">→ {cloudUrl}</span>}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Dashboard() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const clubId = user?.clubId;
+
+  // ── Local-mode sync status ────────────────────────────────────────────────
+  const [isLocalMode, setIsLocalMode] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<SyncState | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    async function checkMode() {
+      try {
+        const res = await fetch("/api/healthz", { credentials: "include" });
+        if (!res.ok || cancelled) return;
+        const data = await res.json() as { mode?: string };
+        if (data.mode === "local" && !cancelled) {
+          setIsLocalMode(true);
+          fetchSyncStatus();
+          intervalId = setInterval(fetchSyncStatus, 30_000);
+        }
+      } catch {
+        // not local mode or unreachable — stay hidden
+      }
+    }
+
+    async function fetchSyncStatus() {
+      if (cancelled) return;
+      setSyncLoading(true);
+      try {
+        const res = await fetch("/api/status", { credentials: "include" });
+        if (!res.ok || cancelled) return;
+        const data = await res.json() as { autoSync: SyncState };
+        if (!cancelled) setSyncStatus(data.autoSync);
+      } catch {
+        // silent — keep last known state
+      } finally {
+        if (!cancelled) setSyncLoading(false);
+      }
+    }
+
+    checkMode();
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
 
   const { data: dashboard, isLoading } = useGetClubDashboard(clubId || 0, {
     query: { enabled: !!clubId } as any,
@@ -228,6 +380,11 @@ export default function Dashboard() {
 
         {/* ── OVERVIEW TAB ─────────────────────────────────────────────── */}
         <TabsContent value="overview" className="space-y-8 mt-4">
+          {/* Cloud Sync Status — only shown in local mode */}
+          {isLocalMode && (
+            <SyncStatusBanner syncStatus={syncStatus} loading={syncLoading} />
+          )}
+
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
             <Card className="border-sidebar-border bg-sidebar text-sidebar-foreground">
