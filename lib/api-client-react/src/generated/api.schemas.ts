@@ -910,6 +910,15 @@ export interface UpdateResultLapsInput {
   lapTimes: number[];
 }
 
+export interface OfflinePackageInfo {
+  /** ISO 8601 timestamp of when the offline package was last built */
+  builtAt: string;
+  /** Version string encoding the build timestamp (YYYY.MM.DD.HHmm) */
+  version: string;
+  /** ETag matching the Content-Disposition header on the download endpoint */
+  etag: string;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }

@@ -60,6 +60,7 @@ export * from './motoInputType';
 export * from './motoStatus';
 export * from './motoType';
 export * from './motoUpdate';
+export * from './offlinePackageInfo';
 export * from './organizerUser';
 export * from './pointsTable';
 export * from './pointsTableInput';

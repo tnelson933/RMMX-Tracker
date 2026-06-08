@@ -36,6 +36,8 @@ tags:
     description: Dashboard summary data
   - name: Storage
     description: Object storage upload and serving endpoints.
+  - name: offline
+    description: Offline mode package management
 
 paths:
   /healthz:
@@ -50,6 +52,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /offline/package-info:
+    get:
+      operationId: getOfflinePackageInfo
+      tags: [offline]
+      summary: Get offline package build metadata
+      description: Returns the build timestamp and version of the current offline server package. Requires authentication.
+      responses:
+        "200":
+          description: Package metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflinePackageInfo"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Offline package not yet built
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 
   # AUTH
   /auth/login:
@@ -2746,6 +2774,21 @@ components:
           items:
             type: integer
           description: Lap times in milliseconds
+
+    OfflinePackageInfo:
+      type: object
+      required: [builtAt, version, etag]
+      properties:
+        builtAt:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the offline package was last built
+        version:
+          type: string
+          description: Version string encoding the build timestamp (YYYY.MM.DD.HHmm)
+        etag:
+          type: string
+          description: ETag matching the Content-Disposition header on the download endpoint
 
     ErrorEnvelope:
       type: object

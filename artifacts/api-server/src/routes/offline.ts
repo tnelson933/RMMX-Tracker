@@ -102,10 +102,23 @@ function buildZip(entries: ZipEntry[]): Buffer {
 
 // ── Package contents ──────────────────────────────────────────────────────────
 
-function buildPackageJson(): Buffer {
+// Version string encodes the build timestamp so organizers can compare their
+// downloaded copy against the current server build.
+function buildVersion(mtimeMs: number): string {
+  const d = new Date(mtimeMs);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const min = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${yyyy}.${mm}.${dd}.${hh}${min}`;
+}
+
+function buildPackageJson(mtimeMs: number): Buffer {
   const pkg = {
     name: "rocky-mountain-local-server",
-    version: "1.0.0",
+    version: buildVersion(mtimeMs),
+    builtAt: new Date(mtimeMs).toISOString(),
     type: "module",
     scripts: {
       start: "node --enable-source-maps ./dist/index.mjs",
@@ -156,8 +169,57 @@ Self-contained offline race server for use at venues without internet access.
 let cachedZip: Buffer | null = null;
 let cachedMtimeMs = -1;
 
-// ── Route ─────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
+function distFilePath(): string {
+  // The API server always runs from its esbuild bundle at artifacts/api-server/dist/.
+  // Three levels up from dist/ reaches the workspace root.
+  const workspaceRoot = resolve(__dirname, "..", "..", "..");
+  return resolve(
+    workspaceRoot,
+    "artifacts",
+    "local-server",
+    "dist",
+    "index.mjs",
+  );
+}
+
+function getDistMtime(): number {
+  return statSync(distFilePath()).mtimeMs;
+}
+
+// ETag is a hex-encoded truncated mtime, stable across requests for the same build.
+function mtimeToETag(mtimeMs: number): string {
+  return `"${Math.floor(mtimeMs).toString(16)}"`;
+}
+
+// ── Routes ────────────────────────────────────────────────────────────────────
+
+// GET /offline/package-info — lightweight metadata about the current build.
+// Used by the Offline Mode page to display build date without downloading the zip.
+router.get("/offline/package-info", (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  try {
+    const mtimeMs = getDistMtime();
+    res.json({
+      builtAt: new Date(mtimeMs).toISOString(),
+      version: buildVersion(mtimeMs),
+      etag: mtimeToETag(mtimeMs),
+    });
+  } catch {
+    res.status(503).json({
+      error:
+        "Offline package is not available yet — the local server has not been built.",
+    });
+  }
+});
+
+// GET /offline/package — download the zip bundle.
 router.get("/offline/package", (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) {
@@ -165,20 +227,12 @@ router.get("/offline/package", (req, res) => {
     return;
   }
 
-  // The API server always runs from its esbuild bundle at artifacts/api-server/dist/.
-  // Three levels up from dist/ reaches the workspace root.
-  const workspaceRoot = resolve(__dirname, "..", "..", "..");
-  const distFile = resolve(
-    workspaceRoot,
-    "artifacts",
-    "local-server",
-    "dist",
-    "index.mjs",
-  );
+  const distFile = distFilePath();
 
   let zip: Buffer;
+  let mtimeMs: number;
   try {
-    const { mtimeMs } = statSync(distFile);
+    ({ mtimeMs } = statSync(distFile));
     if (cachedZip && mtimeMs === cachedMtimeMs) {
       zip = cachedZip;
     } else {
@@ -190,7 +244,7 @@ router.get("/offline/package", (req, res) => {
         },
         {
           name: "rocky-mountain-local-server/package.json",
-          data: buildPackageJson(),
+          data: buildPackageJson(mtimeMs),
         },
         {
           name: "rocky-mountain-local-server/README.md",
@@ -209,12 +263,25 @@ router.get("/offline/package", (req, res) => {
     return;
   }
 
+  const etag = mtimeToETag(mtimeMs!);
+  const lastModified = new Date(mtimeMs!).toUTCString();
+
+  // Support conditional GET so browsers can detect a newer build without
+  // re-downloading the full zip.
+  if (req.headers["if-none-match"] === etag) {
+    res.status(304).end();
+    return;
+  }
+
   res.setHeader(
     "Content-Disposition",
     'attachment; filename="rocky-mountain-local-server-latest.zip"',
   );
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Length", zip.length);
+  res.setHeader("Last-Modified", lastModified);
+  res.setHeader("ETag", etag);
+  res.setHeader("Cache-Control", "no-cache");
   res.send(zip);
 });
 

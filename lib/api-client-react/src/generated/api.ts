@@ -53,6 +53,7 @@ import type {
   Moto,
   MotoInput,
   MotoUpdate,
+  OfflinePackageInfo,
   OrganizerUser,
   PointsTable,
   PointsTableInput,
@@ -167,6 +168,84 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getHealthCheckQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetOfflinePackageInfoUrl = () => {
+
+
+
+
+  return `/api/offline/package-info`
+}
+
+/**
+ * Returns the build timestamp and version of the current offline server package. Requires authentication.
+ * @summary Get offline package build metadata
+ */
+export const getOfflinePackageInfo = async ( options?: RequestInit): Promise<OfflinePackageInfo> => {
+
+  return customFetch<OfflinePackageInfo>(getGetOfflinePackageInfoUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOfflinePackageInfoQueryKey = () => {
+    return [
+    `/api/offline/package-info`
+    ] as const;
+    }
+
+
+export const getGetOfflinePackageInfoQueryOptions = <TData = Awaited<ReturnType<typeof getOfflinePackageInfo>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOfflinePackageInfo>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOfflinePackageInfoQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOfflinePackageInfo>>> = ({ signal }) => getOfflinePackageInfo({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOfflinePackageInfo>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOfflinePackageInfoQueryResult = NonNullable<Awaited<ReturnType<typeof getOfflinePackageInfo>>>
+export type GetOfflinePackageInfoQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Get offline package build metadata
+ */
+
+export function useGetOfflinePackageInfo<TData = Awaited<ReturnType<typeof getOfflinePackageInfo>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOfflinePackageInfo>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOfflinePackageInfoQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -1,9 +1,14 @@
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   WifiOff, Download, Settings, PlayCircle, UploadCloud, AlertTriangle,
   CheckCircle2, XCircle, Info, Terminal, Link as LinkIcon, RefreshCw,
 } from "lucide-react";
+import { useGetOfflinePackageInfo } from "@workspace/api-client-react";
+
+// ── Local-storage key for last-downloaded package ETag ────────────────────────
+const LAST_DOWNLOAD_KEY = "offline_package_last_downloaded_etag";
 
 // ── Reusable primitives ────────────────────────────────────────────────────────
 
@@ -77,9 +82,100 @@ function CheckItem({ ok, children }: { ok: boolean; children: React.ReactNode })
   );
 }
 
+// ── Build-date display helpers ─────────────────────────────────────────────────
+
+function formatBuildDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function formatBuildDateTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+}
+
+// ── Package info banner ────────────────────────────────────────────────────────
+
+function PackageInfoBanner({
+  builtAt,
+  version,
+  etag,
+  onDownload,
+}: {
+  builtAt: string;
+  version: string;
+  etag: string;
+  onDownload: () => void;
+}) {
+  const [lastEtag, setLastEtag] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLastEtag(localStorage.getItem(LAST_DOWNLOAD_KEY));
+  }, []);
+
+  const isOutOfDate = lastEtag !== null && lastEtag !== etag;
+  const hasNeverDownloaded = lastEtag === null;
+
+  if (isOutOfDate) {
+    return (
+      <div className="rounded-lg border-2 border-amber-500/40 bg-amber-500/10 p-4 flex gap-3 text-sm">
+        <RefreshCw size={15} className="text-amber-500 shrink-0 mt-0.5" />
+        <div>
+          <span className="font-bold text-amber-500">Update available: </span>
+          <span className="text-foreground/90">
+            A newer package was built on{" "}
+            <strong>{formatBuildDate(builtAt)}</strong> — your previous download
+            is out of date. Re-download below before your next event.
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (hasNeverDownloaded) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Package built{" "}
+        <span className="font-medium text-foreground">{formatBuildDate(builtAt)}</span>
+        {" "}(v{version})
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-xs text-muted-foreground">
+      <CheckCircle2 size={11} className="text-green-500 inline mr-1 -mt-0.5" />
+      You have the latest build — published{" "}
+      <span className="font-medium text-foreground">{formatBuildDateTime(builtAt)}</span>
+    </p>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function OfflineMode() {
+  const { data: pkgInfo, isError: pkgError } = useGetOfflinePackageInfo(
+    { query: { retry: false } as any },
+  );
+
+  const handleDownload = useCallback(() => {
+    if (pkgInfo?.etag) {
+      localStorage.setItem(LAST_DOWNLOAD_KEY, pkgInfo.etag);
+    }
+  }, [pkgInfo?.etag]);
+
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-8">
 
@@ -180,18 +276,45 @@ export default function OfflineMode() {
           <div className="space-y-3">
             <div className="flex gap-3">
               <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</div>
-              <div className="space-y-2">
+              <div className="space-y-2 flex-1">
                 <p className="text-foreground font-medium">Download the package</p>
+
+                {/* ── Out-of-date / version warning ─────────────────────────────── */}
+                {pkgInfo && (
+                  <PackageInfoBanner
+                    builtAt={pkgInfo.builtAt}
+                    version={pkgInfo.version}
+                    etag={pkgInfo.etag}
+                    onDownload={handleDownload}
+                  />
+                )}
+                {pkgError && (
+                  <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
+                    <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
+                    <span className="text-muted-foreground">
+                      Package info unavailable — the server bundle may not be built yet.
+                      Contact support if this persists.
+                    </span>
+                  </div>
+                )}
+
                 <a
                   href="/api/offline/package"
                   download="rocky-mountain-local-server-latest.zip"
+                  onClick={handleDownload}
                   className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
                 >
                   <Download size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
                   <span className="text-xs font-mono text-primary flex-1">
                     rocky-mountain-local-server-latest.zip
                   </span>
-                  <Badge variant="default" className="text-[10px] px-1.5 py-0 ml-auto">Download</Badge>
+                  {pkgInfo ? (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-auto font-mono text-muted-foreground">
+                      v{pkgInfo.version}
+                    </Badge>
+                  ) : (
+                    <Badge variant="default" className="text-[10px] px-1.5 py-0 ml-auto">Download</Badge>
+                  )}
                 </a>
                 <p className="text-xs">
                   Downloads a self-contained Node.js server bundle (~1 MB). Run{" "}
@@ -247,6 +370,11 @@ set SQLITE_FILE=./race_data.db`}</CodeBlock>
                 <p className="text-xs">
                   Open <code className="bg-muted rounded px-1 font-mono text-xs">http://localhost:8080/api/healthz</code> in
                   a browser. You should see <code className="bg-muted rounded px-1 font-mono text-xs">{`{"status":"ok","mode":"local"}`}</code>.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  You can also check the build version inside the downloaded package:{" "}
+                  <code className="bg-muted rounded px-1 font-mono text-xs">cat package.json | grep version</code>.
+                  It should match the version shown on the download button above.
                 </p>
               </div>
             </div>

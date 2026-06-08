@@ -17,6 +17,17 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * Returns the build timestamp and version of the current offline server package. Requires authentication.
+ * @summary Get offline package build metadata
+ */
+export const GetOfflinePackageInfoResponse = zod.object({
+  "builtAt": zod.coerce.date().describe('ISO 8601 timestamp of when the offline package was last built'),
+  "version": zod.string().describe('Version string encoding the build timestamp (YYYY.MM.DD.HHmm)'),
+  "etag": zod.string().describe('ETag matching the Content-Disposition header on the download endpoint')
+})
+
+
+/**
  * @summary Login with email and password
  */
 export const LoginBody = zod.object({
