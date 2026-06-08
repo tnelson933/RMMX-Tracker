@@ -226,10 +226,14 @@ export default function WatchLive() {
 
   function teardownMSE() {
     // Null refs first — any subsequent sourceclose/updateend from old objects is harmless
+    const hadMs = msRef.current !== null;
     msRef.current = null;
     sbRef.current = null;
     queueRef.current = [];
-    if (videoRef.current) {
+    // Only reset video.src when there was an active MediaSource to detach.
+    // Skipping this on a fresh connection (hadMs = false) avoids spurious
+    // load events that can interfere with a pending MSE initialisation.
+    if (videoRef.current && hadMs) {
       videoRef.current.src = "";   // triggers sourceclose on the old MediaSource (ignored since ref is null)
       videoRef.current.load();     // reset decoder state
     }
@@ -504,14 +508,18 @@ export default function WatchLive() {
           setIs360(sigIs360);
           setIsDualFisheye(sigDualFisheye);
           if (sigIs360 || sigDualFisheye) { formatLockedRef.current = true; }
-          // ws.onclose always calls teardownMSE() before reconnecting, so msRef
-          // is always null here. Always do a clean FRESH INIT — no REUSE path.
-          queueRef.current = [];
-          sbRef.current = null;
+          // Tear down any existing MSE but do NOT create a new one yet.
+          // The MediaSource is created lazily on the first binary chunk (see the
+          // binary branch below).  Creating it eagerly here — before any data
+          // has arrived — causes Chrome to fire sourceclose on the empty
+          // MediaSource after ~2.4 s, which closed the WebSocket and triggered
+          // the reconnect cycle.  The server now holds this viewer in a
+          // "pending" queue and only sends binary data once a fresh keyframe is
+          // ready, so the MSE is guaranteed to have data within its first tick.
+          teardownMSE();
           setNeedsTap(false);
           audioUnlockedRef.current = false; setAudioUnlocked(false);
-          logEvent("init → fresh MSE");
-          initMSE(newMime);
+          logEvent("init → teardownMSE, awaiting first binary chunk");
         }
       } else {
         // ── Binary video data ──────────────────────────────────────────────────

@@ -5,19 +5,20 @@ import { logger } from "./logger";
 
 interface StreamState {
   broadcasterWs: WebSocket | null;
+  // Viewers actively receiving the live stream
   viewers: Set<WebSocket>;
-  // WebM initialization segment (first chunk from broadcaster — contains EBML header + Tracks
-  // element + first Cluster with the broadcast's very first I-frame).
-  // Must be sent to every viewer before any cluster chunks so the decoder can initialize.
+  // Viewers that have joined but are waiting for the next keyframe before
+  // being graduated to the live stream.  They hold the JSON init message but
+  // no binary data yet — their MediaSource has not been created.
+  pendingViewers: Set<WebSocket>;
+  // WebM initialization segment (first chunk from broadcaster — contains EBML
+  // header + Tracks element + first Cluster with the broadcast's first I-frame).
+  // Must be sent before any cluster chunks so the decoder can initialize.
   initSegment: Buffer | null;
   // Most recent chunk that contained a VP8/VP9 keyframe (I-frame).
-  // Kept separate from initSegment because VP8 produces a new I-frame every ~2-4 seconds.
-  // Late joiners receive initSegment + lastKeyframeChunk + gopTail so their decoder
-  // always has a valid reference frame for the live P-frames that follow.
   lastKeyframeChunk: Buffer | null;
-  // P-frame chunks since the last keyframe (current GOP tail).
-  // Combined with initSegment + lastKeyframeChunk these form a decodable "bootstrap bundle"
-  // for late joiners — all P-frames here reference the I-frame in lastKeyframeChunk.
+  // P-frame chunks since the last keyframe (current GOP tail) — kept for
+  // future use but NOT sent to late joiners to avoid proxy burst.
   gopTail: Buffer[];
   mimeType: string;
   live: boolean;
@@ -26,7 +27,6 @@ interface StreamState {
   isDualFisheye: boolean;
 }
 
-// eventId → stream state
 const streams = new Map<number, StreamState>();
 
 /**
@@ -49,7 +49,6 @@ function containsKeyframe(buf: Buffer): boolean {
 
     let pos = i + 1;
 
-    // Parse VINT-encoded element size (leading-one-bit determines width)
     if (pos >= buf.length) continue;
     const sb = buf[pos];
     let sizeLen: number;
@@ -57,10 +56,9 @@ function containsKeyframe(buf: Buffer): boolean {
     else if ((sb & 0x40) !== 0) sizeLen = 2;
     else if ((sb & 0x20) !== 0) sizeLen = 3;
     else if ((sb & 0x10) !== 0) sizeLen = 4;
-    else continue; // wider VINT not expected in normal WebM
+    else continue;
     pos += sizeLen;
 
-    // Parse VINT-encoded track number (usually 1 byte: 0x81 = track 1)
     if (pos >= buf.length) continue;
     const tb = buf[pos];
     if      ((tb & 0x80) !== 0) pos += 1;
@@ -68,10 +66,8 @@ function containsKeyframe(buf: Buffer): boolean {
     else if ((tb & 0x20) !== 0) pos += 3;
     else continue;
 
-    // Skip 2-byte timecode
     pos += 2;
 
-    // Flags byte: bit 7 (0x80) = keyframe
     if (pos < buf.length && (buf[pos] & 0x80) !== 0) {
       return true;
     }
@@ -84,6 +80,7 @@ function getOrCreate(eventId: number): StreamState {
     streams.set(eventId, {
       broadcasterWs: null,
       viewers: new Set(),
+      pendingViewers: new Set(),
       initSegment: null,
       lastKeyframeChunk: null,
       gopTail: [],
@@ -113,9 +110,7 @@ export function attachVideoWebSocket(httpServer: Server) {
   httpServer.on("upgrade", (req: IncomingMessage, socket, head) => {
     const url = req.url ?? "";
 
-    // /api/video/broadcast/:eventId  — organizer side
     const broadcastMatch = url.match(/^\/api\/video\/broadcast\/(\d+)/);
-    // /api/video/watch/:eventId      — viewer side
     const watchMatch = url.match(/^\/api\/video\/watch\/(\d+)/);
 
     if (broadcastMatch || watchMatch) {
@@ -132,10 +127,51 @@ export function attachVideoWebSocket(httpServer: Server) {
   logger.info("Video WebSocket relay attached");
 }
 
+/**
+ * Graduate all pending viewers into the live stream.
+ *
+ * Called every time a keyframe chunk arrives from the broadcaster.
+ * Each pending viewer receives exactly two frames:
+ *   1. initSegment  — EBML header + Tracks (decoder setup, sent only if different from keyframeChunk)
+ *   2. keyframeChunk — fresh I-frame at a clean GOP boundary
+ *
+ * After this point the viewer is in state.viewers and will receive every
+ * subsequent live chunk.  Because we start them exactly at a keyframe, all
+ * subsequent P-frames are guaranteed to have their reference I-frame in the
+ * viewer's decoder buffer — eliminating the "frozen video" symptom.
+ *
+ * Total bytes burst per viewer: ≤ 2 × ~35 KB = ~70 KB, sent as two separate
+ * send() calls, not one large burst.  This keeps us well within the Replit
+ * proxy's per-connection buffer limits.
+ */
+function flushPendingViewers(state: StreamState, keyframeChunk: Buffer): void {
+  if (state.pendingViewers.size === 0) return;
+
+  for (const pending of state.pendingViewers) {
+    if (pending.readyState !== WebSocket.OPEN) continue;
+
+    // Send initSegment first so the viewer's MSE can initialize the decoder.
+    // Skip this send if keyframeChunk IS the initSegment (i.e. the very first
+    // broadcast chunk, which is both the EBML init AND the first keyframe) —
+    // we'd otherwise send the same buffer twice.
+    if (state.initSegment && state.initSegment !== keyframeChunk) {
+      pending.send(state.initSegment, { binary: true });
+    }
+
+    // Send the fresh keyframe.  The client will call initMSE on the first
+    // binary frame and queue the rest — both sends happen before the MSE
+    // sourceopen fires, so both chunks will be flushed in order.
+    pending.send(keyframeChunk, { binary: true });
+
+    state.viewers.add(pending);
+  }
+
+  state.pendingViewers.clear();
+}
+
 function handleBroadcaster(ws: WebSocket, eventId: number) {
   const state = getOrCreate(eventId);
 
-  // Kick any existing broadcaster
   if (state.broadcasterWs) {
     try { state.broadcasterWs.close(1001, "New broadcaster connected"); } catch {}
   }
@@ -149,12 +185,6 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
 
   logger.info({ eventId }, "Broadcaster connected");
 
-  // Server→broadcaster heartbeat — the broadcaster sends video chunks every 500 ms
-  // which keeps the broadcaster→server proxy direction alive, but the server never
-  // sends anything back. The Replit proxy enforces a per-direction idle timeout on
-  // application data; without this heartbeat the server→broadcaster direction goes
-  // silent and the proxy kills the connection after ~20–30 s, cutting off the stream.
-  // The broadcaster client silently ignores these heartbeat messages.
   const broadcasterHeartbeat = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "heartbeat" }));
@@ -162,10 +192,6 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
   }, 1_000);
 
   ws.on("message", (data: Buffer | string, isBinary: boolean) => {
-    // Normalise to Buffer regardless of frame type.
-    // The Replit proxy converts text WebSocket frames to binary, so we cannot rely
-    // on !isBinary / typeof data === "string" to detect JSON control messages.
-    // Instead, detect JSON by the opening '{' byte (0x7b).
     const chunk: Buffer = typeof data === "string"
       ? Buffer.from(data, "utf8")
       : (Buffer.isBuffer(data) ? data : Buffer.from(data as unknown as ArrayBuffer));
@@ -177,54 +203,52 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
           state.mimeType = msg.mimeType;
           state.is360 = msg.is360 === true;
           state.isDualFisheye = msg.isDualFisheye === true;
-          // Reset segments when broadcaster announces a new stream
           state.initSegment = null;
           state.lastKeyframeChunk = null;
           state.gopTail = [];
-          // Notify all current viewers of the new mime type and format flags
+          // Notify active viewers of format change
           const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye });
           for (const viewer of state.viewers) {
-            if (viewer.readyState === WebSocket.OPEN) {
-              viewer.send(initMsg);
-            }
+            if (viewer.readyState === WebSocket.OPEN) viewer.send(initMsg);
+          }
+          // Also re-send to pending viewers so they have the updated mimeType
+          for (const pending of state.pendingViewers) {
+            if (pending.readyState === WebSocket.OPEN) pending.send(initMsg);
           }
         }
-        return; // consumed as JSON control message
+        return;
       } catch {
         // Not valid JSON — fall through and treat as binary video data
       }
     }
 
-    // ── Binary frame = video chunk ────────────────────────────────────────────
+    // ── Binary frame = video chunk ──────────────────────────────────────────
 
-    // First binary chunk is the WebM initialization segment (EBML header + Tracks +
-    // first Cluster with the broadcast's first I-frame). Store it as both the
-    // initSegment AND as the initial lastKeyframeChunk.
     if (!state.initSegment) {
+      // First binary chunk: EBML header + Tracks + first I-frame.
+      // Store as initSegment AND as lastKeyframeChunk (it always contains a keyframe).
       state.initSegment = chunk;
-      state.lastKeyframeChunk = chunk; // initSegment always contains the first I-frame
+      state.lastKeyframeChunk = chunk;
       state.gopTail = [];
+      // Flush any viewers who joined before the stream started.
+      // keyframeChunk === initSegment here, so flushPendingViewers sends it once.
+      flushPendingViewers(state, chunk);
+    } else if (containsKeyframe(chunk)) {
+      // New I-frame: start of a fresh GOP.
+      state.lastKeyframeChunk = chunk;
+      state.gopTail = [];
+      // Flush pending viewers exactly at this keyframe boundary — their
+      // decoder will have initSegment (codec setup) + this I-frame, and
+      // every P-frame that follows will reference exactly this I-frame.
+      flushPendingViewers(state, chunk);
     } else {
-      // Subsequent chunks: detect keyframes and maintain the current GOP window.
-      // A keyframe chunk starts a new GOP — reset gopTail and store as lastKeyframeChunk.
-      // P-frame chunks belong to the current GOP — append to gopTail.
-      //
-      // Late joiners receive: initSegment + lastKeyframeChunk + gopTail
-      // This guarantees their decoder has a valid I-frame reference for all
-      // the P-frames in the live stream, eliminating the "immediately frozen" symptom.
-      if (containsKeyframe(chunk)) {
-        state.lastKeyframeChunk = chunk;
-        state.gopTail = [];
-      } else {
-        // Cap GOP tail at 16 chunks (~8 s) as a safety valve against very long GOPs.
-        state.gopTail.push(chunk);
-        if (state.gopTail.length > 16) {
-          state.gopTail.shift();
-        }
+      state.gopTail.push(chunk);
+      if (state.gopTail.length > 16) {
+        state.gopTail.shift();
       }
     }
 
-    // Forward to all viewers
+    // Forward to ACTIVE viewers only — pending viewers are waiting for their keyframe.
     for (const viewer of state.viewers) {
       if (viewer.readyState === WebSocket.OPEN) {
         viewer.send(chunk, { binary: true });
@@ -238,13 +262,15 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
     state.broadcasterWs = null;
     logger.info({ eventId }, "Broadcaster disconnected — stream ended");
 
-    // Notify viewers stream ended
     const endMsg = JSON.stringify({ type: "ended" });
     for (const viewer of state.viewers) {
-      if (viewer.readyState === WebSocket.OPEN) {
-        viewer.send(endMsg);
-      }
+      if (viewer.readyState === WebSocket.OPEN) viewer.send(endMsg);
     }
+    // Also notify pending viewers so they don't wait indefinitely
+    for (const pending of state.pendingViewers) {
+      if (pending.readyState === WebSocket.OPEN) pending.send(endMsg);
+    }
+    state.pendingViewers.clear();
   });
 
   ws.on("error", (err) => {
@@ -255,26 +281,19 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
 
 function handleViewer(ws: WebSocket, eventId: number) {
   const state = getOrCreate(eventId);
-  state.viewers.add(ws);
+  // Do NOT add to state.viewers yet — the viewer will be graduated when the
+  // next keyframe arrives, guaranteeing a clean GOP start point.
 
-  logger.info({ eventId, viewers: state.viewers.size }, "Viewer connected");
+  logger.info({ eventId, viewers: state.viewers.size, pending: state.pendingViewers.size + 1 }, "Viewer connected");
 
-  // Application-level heartbeat to keep the Replit proxy from closing idle
-  // connections. The proxy has a ~2-second per-direction idle timeout on
-  // application data; protocol-level ws.ping() does NOT count.
-  //
-  // The viewer client sends a {"type":"hello"} immediately on ws.onopen to
-  // establish the client→server direction right away. Then, each time it
-  // receives a heartbeat it replies with {"type":"pong"}, maintaining both
-  // directions continuously. We send the first heartbeat 500 ms after the
-  // initial message (not 1500 ms) so the client can pong back well before the
-  // 2-second proxy deadline. Subsequent heartbeats fire every 1000 ms.
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   let firstHeartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+  // Fallback: if no keyframe arrives within 5 s (stalled broadcaster), flush
+  // the viewer with the best available data so they aren't waiting forever.
+  let pendingFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   const startHeartbeat = () => {
     if (heartbeatInterval || firstHeartbeatTimer) return;
-    // First beat sooner — gives client time to pong before the 2-second proxy timeout
     firstHeartbeatTimer = setTimeout(() => {
       firstHeartbeatTimer = null;
       if (ws.readyState === WebSocket.OPEN) {
@@ -293,67 +312,50 @@ function handleViewer(ws: WebSocket, eventId: number) {
     if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
   };
 
-  // Delay initial messages so the Replit proxy relay has time to fully establish
-  // the bidirectional pipe before we burst data down it. Without the delay, the
-  // proxy can drop the connection on a late-joining viewer who gets init + video
-  // data immediately after the WS handshake completes.
+  const stopPendingFlush = () => {
+    if (pendingFlushTimer) { clearTimeout(pendingFlushTimer); pendingFlushTimer = null; }
+  };
+
   setTimeout(() => {
     if (ws.readyState !== WebSocket.OPEN) return;
 
     if (state.live) {
+      // Send the JSON init message so the client knows the mimeType and format
+      // flags.  Do NOT send any binary data yet — the client defers MediaSource
+      // creation until the first binary frame arrives (see WatchLive.tsx), so
+      // Chrome can never fire sourceclose on an empty MSE before data arrives.
       ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye }));
 
-      if (state.initSegment && ws.readyState === WebSocket.OPEN) {
-        // ── Late-joiner bootstrap bundle ────────────────────────────────────────
-        //
-        // The goal: give the viewer's VP8/VP9 decoder a valid I-frame that is as
-        // CLOSE to the current live edge as possible, so the P-frames in the live
-        // stream can be decoded correctly without error concealment (frozen frames).
-        //
-        // What we send:
-        //   1. initSegment       — WebM EBML header + Tracks + broadcast's first I-frame.
-        //                          Required for the decoder to understand the codec and
-        //                          initialise the MediaSource.
-        //   2. lastKeyframeChunk — The most recent chunk that contained an I-frame.
-        //                          Skipped if it's the same object as initSegment (stream
-        //                          is still in its first GOP, no more recent I-frame yet).
-        //   3. gopTail           — P-frame chunks that arrived after lastKeyframeChunk
-        //                          up to the current live edge.  These reference the I-frame
-        //                          in lastKeyframeChunk, so the live P-frames that follow
-        //                          are decodable immediately.
-        //
-        // With sb.mode="sequence" on the client the MSE assigns artificial sequential
-        // timestamps, so the decoder sees no gap even though initSegment is from t=0
-        // and lastKeyframeChunk may be from several minutes into the broadcast.
+      // Park this viewer in pendingViewers.  The next keyframe from the
+      // broadcaster will call flushPendingViewers() which sends initSegment +
+      // keyframe and moves the viewer into state.viewers for live forwarding.
+      state.pendingViewers.add(ws);
 
-        ws.send(state.initSegment, { binary: true });
+      // Safety fallback: if the broadcaster hasn't sent a keyframe within 5 s
+      // (e.g. broadcaster is paused, very long GOP, or stalled), flush with the
+      // best available data so the viewer isn't stuck in "Connecting…" forever.
+      pendingFlushTimer = setTimeout(() => {
+        pendingFlushTimer = null;
+        if (!state.pendingViewers.has(ws)) return; // already flushed normally
+        if (ws.readyState !== WebSocket.OPEN) return;
 
-        // Send the most recent keyframe chunk so the viewer's decoder has a valid
-        // I-frame close to the live edge. We intentionally skip the gopTail here —
-        // sending up to 16 × 35KB in a burst right after connection establishment
-        // can exceed the Replit proxy's per-connection buffer and cause the proxy to
-        // drop the connection. The viewer will see at most one GOP (≤4 s) of
-        // partially-decodable frames before the next keyframe arrives from the live
-        // stream, which is acceptable.
-        if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment && ws.readyState === WebSocket.OPEN) {
-          ws.send(state.lastKeyframeChunk, { binary: true });
+        if (state.initSegment) {
+          ws.send(state.initSegment, { binary: true });
+          if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment) {
+            ws.send(state.lastKeyframeChunk, { binary: true });
+          }
         }
-      }
+        state.pendingViewers.delete(ws);
+        state.viewers.add(ws);
+        logger.warn({ eventId }, "Pending viewer flushed via 5s fallback (no keyframe arrived)");
+      }, 5_000);
     } else {
       ws.send(JSON.stringify({ type: "offline" }));
     }
 
-    // Always start the heartbeat regardless of stream state.
-    // The Replit proxy requires bidirectional application-data flow to stay
-    // alive — a protocol-level ws.ping() does NOT count. When the stream is
-    // live the video chunks reset the proxy timer from the server side, but
-    // the CLIENT side is silent unless we send it something to reply to.
-    // Heartbeats give the client a cue to send a pong back (see WatchLive.tsx),
-    // keeping both directions active and preventing proxy idle-timeouts.
     startHeartbeat();
   }, 150);
 
-  // Handle messages from viewers (only pong keep-alives expected; ignore everything else)
   ws.on("message", (data: Buffer | string) => {
     const chunk: Buffer = typeof data === "string"
       ? Buffer.from(data, "utf8")
@@ -361,20 +363,24 @@ function handleViewer(ws: WebSocket, eventId: number) {
     if (chunk.length > 0 && chunk[0] === 0x7b) {
       try {
         const msg = JSON.parse(chunk.toString("utf8")) as Record<string, unknown>;
-        if (msg.type === "pong" || msg.type === "hello") return; // client keep-alive — no action needed
+        if (msg.type === "pong" || msg.type === "hello") return;
       } catch { /* ignore */ }
     }
   });
 
   ws.on("close", () => {
     stopHeartbeat();
+    stopPendingFlush();
     state.viewers.delete(ws);
+    state.pendingViewers.delete(ws);
     logger.info({ eventId, viewers: state.viewers.size }, "Viewer disconnected");
   });
 
   ws.on("error", (err) => {
     stopHeartbeat();
+    stopPendingFlush();
     logger.error({ eventId, err: err.message }, "Viewer WebSocket error");
     state.viewers.delete(ws);
+    state.pendingViewers.delete(ws);
   });
 }
