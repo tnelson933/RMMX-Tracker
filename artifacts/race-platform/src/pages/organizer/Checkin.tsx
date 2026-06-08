@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Search, CheckCircle, Tag, X, AlertCircle } from "lucide-react";
+import { useOfflineAwareQuery } from "@/hooks/useOfflineAwareQuery";
+import { CacheStatusBadge } from "@/components/CacheStatusBadge";
 
 // MyLaps transponder numbers: purely numeric, 1–9 digits.
 function isInvalidTransponder(val: string | null | undefined): boolean {
@@ -129,9 +131,11 @@ export default function Checkin() {
 
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const isMylaps = ((event as any)?.timingTechnology ?? "rfid") === "mylaps";
-  const { data: checkins, isLoading: checkinsLoading } = useListCheckins(eventId, {
+  const { data: rawCheckins, isLoading: checkinsLoading, isError: checkinsError } = useListCheckins(eventId, {
     query: { enabled: !!eventId, refetchInterval: 30000 } as any
   });
+  const { data: checkins, isFromCache: checkinsFromCache, cachedAt: checkinsCachedAt } =
+    useOfflineAwareQuery(`checkins/${eventId}`, rawCheckins, checkinsLoading, checkinsError);
   const { data: summary } = useGetRaceDaySummary(eventId, {
     query: { enabled: !!eventId, refetchInterval: 30000 } as any
   });
@@ -253,7 +257,12 @@ export default function Checkin() {
   return (
     <div className="bg-gray-50 min-h-full">
       <div className="bg-sidebar text-sidebar-foreground px-4 py-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-        <h1 className="text-xl md:text-3xl font-heading font-bold uppercase tracking-tight text-white leading-tight">{event?.name} — Check-In</h1>
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-xl md:text-3xl font-heading font-bold uppercase tracking-tight text-white leading-tight">{event?.name} — Check-In</h1>
+          {checkinsFromCache && checkinsCachedAt && (
+            <CacheStatusBadge cachedAt={checkinsCachedAt} />
+          )}
+        </div>
         <div className="flex gap-3 w-full md:w-auto">
           <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
             <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">Checked In</div>

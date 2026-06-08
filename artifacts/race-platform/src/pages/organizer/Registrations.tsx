@@ -4,6 +4,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useListRegistrations, useUpdateRegistration, useGetEvent, getListRegistrationsQueryKey } from "@workspace/api-client-react";
+import { useOfflineAwareQuery } from "@/hooks/useOfflineAwareQuery";
+import { CacheStatusBadge } from "@/components/CacheStatusBadge";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -143,7 +145,9 @@ export default function Registrations() {
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
-  const { data: registrations, isLoading } = useListRegistrations(eventId, { query: { enabled: !!eventId } as any });
+  const { data: rawRegistrations, isLoading, isError: registrationsError } = useListRegistrations(eventId, { query: { enabled: !!eventId } as any });
+  const { data: registrations, isFromCache: registrationsFromCache, cachedAt: registrationsCachedAt } =
+    useOfflineAwareQuery(`registrations/${eventId}`, rawRegistrations, isLoading, registrationsError);
   const updateMutation = useUpdateRegistration();
 
   const eventEntryFee: number | null = (event as any)?.entryFee ?? null;
@@ -1259,6 +1263,9 @@ export default function Registrations() {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
+      {registrationsFromCache && registrationsCachedAt && (
+        <CacheStatusBadge cachedAt={registrationsCachedAt} />
+      )}
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
         <div className="relative w-full max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
