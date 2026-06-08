@@ -4,3 +4,4 @@
 - [Anthropic AI integration pattern](anthropic-ai-pattern.md) — how to call Anthropic via Replit proxy; strip markdown fences from response before JSON.parse.
 - [useMutation unmount flush](mutation-unmount-flush.md) — TanStack Query v5 destroys mutation observer on unmount; use raw fetch for any save that runs in an unmount cleanup.
 - [VP9 MediaRecorder keyframe behavior](vp9-mediarecorder-keyframes.md) — Chrome VP9 emits only 1 keyframe; must add videoKeyFrameIntervalDuration: 2_000 for live streaming pending-queue to work.
+- [better-sqlite3 native build](better-sqlite3-build.md) — pnpm blocks build scripts by default; must add to onlyBuiltDependencies in pnpm-workspace.yaml then run `pnpm rebuild better-sqlite3`.

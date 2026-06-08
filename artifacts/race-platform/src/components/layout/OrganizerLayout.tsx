@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { LocalModeBanner } from "@/components/LocalModeBanner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
 import { PastEventCheckDialog } from "@/components/organizer/PastEventCheckDialog";
@@ -209,6 +210,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           </span>
         </div>
 
+        <LocalModeBanner />
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>

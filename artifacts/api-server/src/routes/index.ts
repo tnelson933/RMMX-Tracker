@@ -21,6 +21,7 @@ import compCodesRouter from "./comp-codes";
 import pointsTablesRouter from "./points-tables";
 import aiRouter from "./ai";
 import practiceRouter from "./practice";
+import exportRouter from "./export";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use(compCodesRouter);
 router.use(pointsTablesRouter);
 router.use(aiRouter);
 router.use(practiceRouter);
+router.use(exportRouter);
 
 export default router;
