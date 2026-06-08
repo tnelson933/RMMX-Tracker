@@ -20,22 +20,30 @@ export default function RiderLogin() {
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
+  // true after a successful registration — triggers profile-tab deep-link
+  const [fromRegister, setFromRegister] = useState(false);
 
   // Navigate once the auth context confirms the session is live.
-  // This avoids the race condition where navigate() fires before
-  // RiderAuthProvider re-renders with the new session data, which
-  // caused RiderProtectedRoute to briefly see isAuthenticated=false
-  // and redirect back to the login page (making the user log in twice).
   useEffect(() => {
-    if (isAuthenticated) navigate("/rider/portal");
-  }, [isAuthenticated, navigate]);
+    if (!isAuthenticated) return;
+    if (fromRegister) {
+      // After registration, jump straight to the profile tab of the first
+      // linked rider so they can fill in bike brand, AMA number, etc.
+      riderApi.profiles().then(profiles => {
+        if (profiles.length === 1) {
+          navigate(`/rider/portal/${profiles[0].id}?tab=profile`);
+        } else {
+          navigate("/rider/portal");
+        }
+      }).catch(() => navigate("/rider/portal"));
+    } else {
+      navigate("/rider/portal");
+    }
+  }, [isAuthenticated, fromRegister, navigate]);
 
   const loginMutation = useMutation({
     mutationFn: () => riderApi.login(loginEmail, loginPassword),
     onSuccess: () => {
-      // Refetch /rider/auth/me so RiderAuthContext gets the confirmed session
-      // data from the server. The useEffect above will navigate once
-      // isAuthenticated flips to true.
       queryClient.invalidateQueries({ queryKey: ["rider-auth-me"] });
     },
   });
@@ -46,6 +54,7 @@ export default function RiderLogin() {
       return riderApi.register(regEmail, regPassword);
     },
     onSuccess: () => {
+      setFromRegister(true);
       queryClient.invalidateQueries({ queryKey: ["rider-auth-me"] });
     },
   });

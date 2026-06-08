@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useRoute, useLocation } from "wouter";
+import { useRoute, useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Trophy, Clock, Star, ChevronDown, ChevronUp,
@@ -1338,7 +1338,11 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
 export default function RiderHistory() {
   const [, params] = useRoute("/rider/portal/:riderId");
   const riderId = parseInt(params?.riderId ?? "0", 10);
-  const [activeTab, setActiveTab] = useState<"today" | "upcoming" | "nearby" | "races" | "practice" | "profile">("today");
+  const searchStr = useSearch();
+  const tabParam = new URLSearchParams(searchStr).get("tab");
+  const validTabs = ["today", "upcoming", "nearby", "races", "practice", "profile"] as const;
+  const initialTab = validTabs.includes(tabParam as any) ? (tabParam as typeof validTabs[number]) : "today";
+  const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(initialTab);
 
   const { data, isLoading, error } = useQuery<RiderHistoryResponse>({
     queryKey: ["rider-history", riderId],
