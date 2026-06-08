@@ -338,54 +338,73 @@ function handleViewer(ws: WebSocket, eventId: number) {
     if (ws.readyState !== WebSocket.OPEN) return;
 
     if (state.live) {
-      // Send the JSON init message so the client knows the mimeType and format
-      // flags.  Do NOT send any binary data yet — the client defers MediaSource
-      // creation until the first binary frame arrives (see WatchLive.tsx), so
-      // Chrome can never fire sourceclose on an empty MSE before data arrives.
+      // Always send the JSON init message first so the client knows the mimeType
+      // and format flags before any binary data arrives.
       ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye }));
 
-      // Park this viewer in pendingViewers.  The next keyframe from the
-      // broadcaster will call flushPendingViewers() which sends initSegment +
-      // keyframe and moves the viewer into state.viewers for live forwarding.
-      state.pendingViewers.add(ws);
-
-      // Safety fallback: if the broadcaster hasn't sent a keyframe within 2 s
-      // (e.g. stalled broadcaster or browser that ignores videoKeyFrameIntervalDuration),
-      // flush the viewer with the best available data so they aren't stuck forever.
-      // With videoKeyFrameIntervalDuration: 2000 in the broadcaster, a real keyframe
-      // normally arrives within 2 s and this path is rarely taken.
-      pendingFlushTimer = setTimeout(() => {
+      if (state.initSegment) {
+        // The broadcaster is already mid-stream — graduate this viewer immediately
+        // using the most recent keyframe.  We do NOT wait for the next keyframe
+        // because that requires containsKeyframe() to correctly scan every VP9
+        // chunk, which can be missed if the browser ignores videoKeyFrameIntervalDuration
+        // or the VINT parser skips an ambiguous byte sequence.
+        //
+        // Safety: all P-frames since the last keyframe reference that keyframe, so
+        // sending initSegment + lastKeyframeChunk is always a valid decode starting
+        // point.  When the next keyframe arrives from the broadcaster it resets the
+        // reference normally — no decoder gap.
         try {
-          pendingFlushTimer = null;
-          // Log immediately — before any sends — so we always see it even if a
-          // subsequent ws.send() throws due to a race with connection teardown.
-          logger.warn({ eventId, hasInit: !!state.initSegment, hasKeyframe: !!state.lastKeyframeChunk }, "Pending viewer flushed via 2s fallback (no keyframe from broadcaster)");
-
-          if (!state.pendingViewers.has(ws)) return; // already flushed normally
-          if (ws.readyState !== WebSocket.OPEN) {
-            state.pendingViewers.delete(ws);
-            return;
-          }
-
-          if (state.initSegment) {
+          if (state.initSegment !== state.lastKeyframeChunk) {
             ws.send(state.initSegment, { binary: true });
-            if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment) {
-              ws.send(state.lastKeyframeChunk, { binary: true });
-            }
           }
-          state.pendingViewers.delete(ws);
+          if (state.lastKeyframeChunk) {
+            ws.send(state.lastKeyframeChunk, { binary: true });
+          }
           state.viewers.add(ws);
+          logger.info({ eventId, viewers: state.viewers.size }, "Viewer graduated immediately (stream already live)");
         } catch (err) {
-          logger.error({ eventId, err: err instanceof Error ? err.message : String(err) }, "Pending viewer fallback error — removing from pending");
-          state.pendingViewers.delete(ws);
+          logger.error({ eventId, err: err instanceof Error ? err.message : String(err) }, "Immediate graduation error — falling back to pending queue");
+          state.pendingViewers.add(ws);
+          schedulePendingFlush();
         }
-      }, 2_000);
+      } else {
+        // No data yet — broadcaster just connected but hasn't sent the first chunk.
+        // Park this viewer until the initSegment arrives (normally < 500 ms).
+        state.pendingViewers.add(ws);
+        schedulePendingFlush();
+      }
     } else {
       ws.send(JSON.stringify({ type: "offline" }));
     }
 
     startHeartbeat();
   }, 150);
+
+  function schedulePendingFlush() {
+    pendingFlushTimer = setTimeout(() => {
+      try {
+        pendingFlushTimer = null;
+        logger.warn({ eventId, hasInit: !!state.initSegment, hasKeyframe: !!state.lastKeyframeChunk }, "Pending viewer flushed via 2s fallback (no initSegment from broadcaster)");
+
+        if (!state.pendingViewers.has(ws)) return;
+        if (ws.readyState !== WebSocket.OPEN) {
+          state.pendingViewers.delete(ws);
+          return;
+        }
+        if (state.initSegment) {
+          ws.send(state.initSegment, { binary: true });
+          if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment) {
+            ws.send(state.lastKeyframeChunk, { binary: true });
+          }
+        }
+        state.pendingViewers.delete(ws);
+        state.viewers.add(ws);
+      } catch (err) {
+        logger.error({ eventId, err: err instanceof Error ? err.message : String(err) }, "Pending viewer fallback error — removing from pending");
+        state.pendingViewers.delete(ws);
+      }
+    }, 2_000);
+  }
 
   ws.on("message", (data: Buffer | string) => {
     const chunk: Buffer = typeof data === "string"
