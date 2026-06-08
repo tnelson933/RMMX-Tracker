@@ -759,6 +759,9 @@ export default function Motos() {
   // Last snapshot successfully committed to the server. Used for change-detection instead
   // of event.minLapTimes, which may be stale before the invalidated query refetches.
   const lastCommittedRef = useRef<Record<string, number>>({});
+  // Always-current eventId — used in async callbacks to detect stale cross-event saves.
+  const currentEventIdRef = useRef(eventId);
+  currentEventIdRef.current = eventId;
 
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: motos, isLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
@@ -836,6 +839,9 @@ export default function Motos() {
       return;
     }
     isSavingRef.current = true;
+    // Capture the event this mutation belongs to — used in callbacks to discard
+    // stale results if the organizer navigated to a different event before it settled.
+    const saveEventId = eventId;
     const displayClass = triggerClass ?? Object.keys(inputs)[0] ?? null;
     const flushPending = () => {
       isSavingRef.current = false;
@@ -849,6 +855,9 @@ export default function Motos() {
       { eventId, data: { minLapTimes: newMinLapTimes } },
       {
         onSuccess: () => {
+          // Guard: if the user navigated to a different event before this settled,
+          // discard all side-effects (refs already reset by the eventId change effect).
+          if (saveEventId !== currentEventIdRef.current) return;
           lastCommittedRef.current = { ...newMinLapTimes };
           queryClient.invalidateQueries({ queryKey: ["getEvent", eventId] as any });
           if (displayClass) {
@@ -857,7 +866,10 @@ export default function Motos() {
           }
           flushPending();
         },
-        onError: () => flushPending(),
+        onError: () => {
+          if (saveEventId !== currentEventIdRef.current) return;
+          flushPending();
+        },
       }
     );
   };
