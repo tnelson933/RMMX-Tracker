@@ -524,10 +524,20 @@ export default function WatchLive() {
       } else {
         // ── Binary video data ──────────────────────────────────────────────────
         if (!sbRef.current && !msRef.current) {
+          // First binary chunk — lazily create the MSE now that we have real data.
+          // We do NOT set "playing" here; sourceopen will set it once the MSE
+          // is open and the init segment is being appended.  Setting "playing"
+          // prematurely (before sourceopen) makes the overlay disappear while
+          // video.src is connected to a not-yet-open MediaSource, leaving a
+          // black frame.  If autoplay is blocked the user would see a black
+          // screen with the Live badge but no video — exactly the symptom.
           initMSE(mimeTypeRef.current);
           queueRef.current.push(e.data as ArrayBuffer);
         } else {
-          if (viewerStateRef.current !== "playing") setViewerStateSynced("playing");
+          // Subsequent binary chunks — MSE is initialising or already open.
+          // Don't set "playing" here either; sourceopen is the single source
+          // of truth.  appendChunk will queue the data until the SourceBuffer
+          // is ready.
           appendChunk(e.data as ArrayBuffer);
         }
       }

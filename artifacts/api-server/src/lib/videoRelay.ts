@@ -135,17 +135,18 @@ export function attachVideoWebSocket(httpServer: Server) {
  *   1. initSegment  — EBML header + Tracks (decoder setup, sent only if different from keyframeChunk)
  *   2. keyframeChunk — fresh I-frame at a clean GOP boundary
  *
- * After this point the viewer is in state.viewers and will receive every
- * subsequent live chunk.  Because we start them exactly at a keyframe, all
- * subsequent P-frames are guaranteed to have their reference I-frame in the
- * viewer's decoder buffer — eliminating the "frozen video" symptom.
+ * Returns the set of newly graduated viewers so the caller can add them to
+ * state.viewers AFTER the live-forward loop runs.  This prevents the keyframe
+ * from being sent a second time — the double-send would corrupt the MSE
+ * sequence-mode timeline and could leave the client showing a black frame.
  *
  * Total bytes burst per viewer: ≤ 2 × ~35 KB = ~70 KB, sent as two separate
  * send() calls, not one large burst.  This keeps us well within the Replit
  * proxy's per-connection buffer limits.
  */
-function flushPendingViewers(state: StreamState, keyframeChunk: Buffer): void {
-  if (state.pendingViewers.size === 0) return;
+function flushPendingViewers(state: StreamState, keyframeChunk: Buffer): Set<WebSocket> {
+  const graduated = new Set<WebSocket>();
+  if (state.pendingViewers.size === 0) return graduated;
 
   for (const pending of state.pendingViewers) {
     if (pending.readyState !== WebSocket.OPEN) continue;
@@ -163,10 +164,13 @@ function flushPendingViewers(state: StreamState, keyframeChunk: Buffer): void {
     // sourceopen fires, so both chunks will be flushed in order.
     pending.send(keyframeChunk, { binary: true });
 
-    state.viewers.add(pending);
+    graduated.add(pending);
   }
 
   state.pendingViewers.clear();
+  // NOTE: do NOT call state.viewers.add() here.  The caller must add them
+  // AFTER the live-forward loop so this keyframe isn't forwarded a second time.
+  return graduated;
 }
 
 function handleBroadcaster(ws: WebSocket, eventId: number) {
@@ -224,6 +228,8 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
 
     // ── Binary frame = video chunk ──────────────────────────────────────────
 
+    let justGraduated = new Set<WebSocket>();
+
     if (!state.initSegment) {
       // First binary chunk: EBML header + Tracks + first I-frame.
       // Store as initSegment AND as lastKeyframeChunk (it always contains a keyframe).
@@ -232,7 +238,7 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
       state.gopTail = [];
       // Flush any viewers who joined before the stream started.
       // keyframeChunk === initSegment here, so flushPendingViewers sends it once.
-      flushPendingViewers(state, chunk);
+      justGraduated = flushPendingViewers(state, chunk);
     } else if (containsKeyframe(chunk)) {
       // New I-frame: start of a fresh GOP.
       state.lastKeyframeChunk = chunk;
@@ -240,7 +246,7 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
       // Flush pending viewers exactly at this keyframe boundary — their
       // decoder will have initSegment (codec setup) + this I-frame, and
       // every P-frame that follows will reference exactly this I-frame.
-      flushPendingViewers(state, chunk);
+      justGraduated = flushPendingViewers(state, chunk);
     } else {
       state.gopTail.push(chunk);
       if (state.gopTail.length > 16) {
@@ -249,10 +255,19 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
     }
 
     // Forward to ACTIVE viewers only — pending viewers are waiting for their keyframe.
+    // justGraduated are NOT in state.viewers yet, so they don't receive this chunk again.
     for (const viewer of state.viewers) {
       if (viewer.readyState === WebSocket.OPEN) {
         viewer.send(chunk, { binary: true });
       }
+    }
+
+    // Graduate newly flushed viewers AFTER the live-forward loop.
+    // They already received initSegment + keyframe from flushPendingViewers.
+    // Their first live chunk will be the NEXT broadcast message — a P-frame
+    // that correctly references the keyframe they just received.
+    for (const ws of justGraduated) {
+      state.viewers.add(ws);
     }
   });
 
