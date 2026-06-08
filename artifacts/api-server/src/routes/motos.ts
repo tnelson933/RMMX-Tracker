@@ -296,6 +296,11 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     }));
   }
 
+  // Pre-compute groups for every class before inserting any motos so we can
+  // interleave them in round-robin order (all classes run Moto 1 before any run Moto 2).
+  type ClassEntry = { cls: string; groups: CheckinRow[][] };
+  const allClassGroups: ClassEntry[] = [];
+
   for (const cls of (classes || [])) {
     let classRiders = checkins.filter(c => c.raceClass === cls);
     if (classRiders.length === 0) continue;
@@ -332,9 +337,13 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       }
     }
 
-    const multiGroup = groups.length > 1;
+    allClassGroups.push({ cls, groups });
+  }
 
-    if (isSupercrossFormat) {
+  if (isSupercrossFormat) {
+    // Supercross: all heats across all classes run before any main events
+    for (const { cls, groups } of allClassGroups) {
+      const multiGroup = groups.length > 1;
       for (let h = 0; h < groups.length; h++) {
         const heatName = multiGroup ? `${cls} Heat ${h + 1}` : `${cls} Heat`;
         const lineup = buildLineup(groups[h], gateSeeding);
@@ -344,18 +353,23 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         }).returning();
         motos.push(moto);
       }
-
+    }
+    for (const { cls } of allClassGroups) {
       const [mainMoto] = await db.insert(motosTable).values({
         eventId, name: `${cls} Main Event`, type: "main", raceClass: cls,
         motoNumber: motoNumber++, status: "scheduled", lineup: [],
       }).returning();
       motos.push(mainMoto);
-    } else {
-      for (let h = 0; h < groups.length; h++) {
-        const groupLabel = multiGroup ? ` Group ${h + 1}` : "";
-        for (let d = 1; d <= divCount; d++) {
-          const divLabel = divCount > 1 ? ` Division ${d}` : " Division";
-          const name = `${cls}${groupLabel}${divLabel}`;
+    }
+  } else {
+    // Round-robin: all classes complete Moto 1 before any class runs Moto 2, etc.
+    for (let d = 1; d <= divCount; d++) {
+      for (const { cls, groups } of allClassGroups) {
+        const multiGroup = groups.length > 1;
+        for (let h = 0; h < groups.length; h++) {
+          const groupLabel = multiGroup ? ` Group ${h + 1}` : "";
+          const motoLabel = divCount > 1 ? ` Moto ${d}` : " Moto";
+          const name = `${cls}${groupLabel}${motoLabel}`;
           const lineup = buildLineup(groups[h], gateSeeding);
           const [moto] = await db.insert(motosTable).values({
             eventId, name, type: "heat", raceClass: cls,

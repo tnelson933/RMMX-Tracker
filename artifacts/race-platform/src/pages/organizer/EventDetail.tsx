@@ -762,7 +762,7 @@ export default function EventDetail() {
                               </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                              Supercross formats generate Heats + Main Event. AMA/Olympic generate Divisions.
+                              Supercross formats generate Heats + Main Event. AMA/Olympic generate Motos.
                             </p>
                           </FormItem>
                         )}

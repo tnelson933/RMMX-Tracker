@@ -1028,7 +1028,7 @@ export default function Motos() {
 
   const handleQuickAddHeat = (sourceMoto: Moto) => {
     const nextMotoNumber = (motos?.length ? Math.max(...motos.map(m => m.motoNumber ?? 0)) : 0) + 1;
-    const typeLabel = sourceMoto.type === "heat" ? (isSupercrossFormat ? "Heat" : "Division")
+    const typeLabel = sourceMoto.type === "heat" ? (isSupercrossFormat ? "Heat" : "Moto")
       : sourceMoto.type === "main" ? "Main Event"
       : sourceMoto.type === "lcq" ? "LCQ"
       : "Practice";
@@ -1079,7 +1079,7 @@ export default function Motos() {
     for (const [, group] of groups) {
       const cls = group[0].raceClass ?? "";
       const type = group[0].type;
-      const typeLabel = type === "heat" ? (isSupercrossFormat ? "Heat" : "Division")
+      const typeLabel = type === "heat" ? (isSupercrossFormat ? "Heat" : "Moto")
         : type === "main" ? "Main Event"
         : type === "lcq" ? "LCQ"
         : "Practice";
@@ -1685,16 +1685,16 @@ export default function Motos() {
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Generates Division motos based on checked-in riders for all classes.
+                    Generates motos based on checked-in riders for all classes.
                   </p>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Divisions per Class</label>
+                    <label className="text-sm font-medium">Motos per Class</label>
                     <Select value={format} onValueChange={(v: any) => setFormat(v)}>
                       <SelectTrigger><SelectValue placeholder="Select Format" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="one_moto">1 Division</SelectItem>
-                        <SelectItem value="two_moto">2 Divisions</SelectItem>
-                        <SelectItem value="three_moto">3 Divisions</SelectItem>
+                        <SelectItem value="one_moto">1 Moto</SelectItem>
+                        <SelectItem value="two_moto">2 Motos</SelectItem>
+                        <SelectItem value="three_moto">3 Motos</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -2084,7 +2084,7 @@ export default function Motos() {
                           ? "bg-primary/30 text-primary border-primary/40"
                           : "bg-white/10 text-sidebar-foreground/80 border-white/20"
                       }`}>
-                        {moto.type === "main" ? "Main Event" : isSupercrossFormat ? "Heat" : "Division"}
+                        {moto.type === "main" ? "Main Event" : isSupercrossFormat ? "Heat" : "Moto"}
                       </span>
                     </div>
                   </div>
@@ -2382,7 +2382,7 @@ export default function Motos() {
                           ? "bg-primary/30 text-primary border-primary/40"
                           : "bg-white/10 text-sidebar-foreground/80 border-white/20"
                       }`}>
-                        {moto.type === "main" ? "Main Event" : isSupercrossFormat ? "Heat" : "Division"}
+                        {moto.type === "main" ? "Main Event" : isSupercrossFormat ? "Heat" : "Moto"}
                       </span>
                     </div>
                   </div>
