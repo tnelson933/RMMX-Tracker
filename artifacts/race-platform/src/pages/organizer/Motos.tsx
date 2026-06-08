@@ -665,6 +665,19 @@ function DroppableMotoSlot({ id, active }: { id: string; active: boolean }) {
   );
 }
 
+function GateDropSlotRow({ id, isActive, colSpan }: { id: string; isActive: boolean; colSpan: number }) {
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: !isActive });
+  return (
+    <tr ref={setNodeRef} style={{ height: isActive ? (isOver ? "6px" : "4px") : "0px" }}>
+      <td
+        colSpan={colSpan}
+        style={{ padding: 0, height: "inherit" }}
+        className={`transition-colors ${isActive && isOver ? "bg-primary" : ""}`}
+      />
+    </tr>
+  );
+}
+
 // ── Min lap time helpers ─────────────────────────────────────────────────────
 
 function parseMinLapTime(str: string): number | null {
@@ -729,6 +742,7 @@ export default function Motos() {
   const [lineupDrafts, setLineupDrafts] = useState<Record<number, LineupEntry[]>>({});
   const [activeDrag, setActiveDrag] = useState<{ riderName: string; bibNumber?: string | null } | null>(null);
   const [activeMotoCardDrag, setActiveMotoCardDrag] = useState<{ motoId: number; name: string } | null>(null);
+  const [activeDragMotoId, setActiveDragMotoId] = useState<number | null>(null);
 
   // Manual create moto state
   const [newMotoName, setNewMotoName] = useState("");
@@ -1036,6 +1050,7 @@ export default function Motos() {
       const riderId = parseInt(parts[1]);
       const c = (checkins ?? []).find(c => c.riderId === riderId);
       setActiveDrag(c ? { riderName: c.riderName ?? "Rider", bibNumber: c.bibNumber } : null);
+      setActiveDragMotoId(null);
       return;
     }
     if (parts[0] !== "rider") return;
@@ -1045,6 +1060,7 @@ export default function Motos() {
     if (!moto) return;
     const entry = getLineup(moto).find(e => e.riderId === riderId);
     setActiveDrag(entry ? { riderName: entry.riderName, bibNumber: entry.bibNumber } : null);
+    setActiveDragMotoId(motoId);
   };
 
   const handleRiderDragEnd = (event: DragEndEvent) => {
@@ -1064,6 +1080,7 @@ export default function Motos() {
     }
 
     setActiveDrag(null);
+    setActiveDragMotoId(null);
     if (!over) return;
     const parts = idStr.split("-");
 
@@ -1087,6 +1104,47 @@ export default function Motos() {
     if (parts[0] !== "rider") return;
     const sourceMotoId = parseInt(parts[1]);
     const riderId = parseInt(parts[2]);
+
+    // ── Same-moto gate reorder via slot drop ──────────────────────────────────
+    const overId = String(over.id);
+    if (overId.startsWith("gate-slot-")) {
+      const slotParts = overId.split("-"); // ["gate", "slot", motoId, index]
+      const slotMotoId = parseInt(slotParts[2]);
+      const slotIndex = parseInt(slotParts[3]);
+      if (slotMotoId !== sourceMotoId) return;
+      const moto = motos?.find(m => m.id === sourceMotoId);
+      if (!moto || moto.status === "completed") return;
+      const lineup = getLineup(moto);
+      const draggedIdx = lineup.findIndex(e => e.riderId === riderId);
+      const draggedEntry = lineup[draggedIdx];
+      if (!draggedEntry) return;
+      // Compute insertion index in the filtered array
+      const without = lineup.filter(e => e.riderId !== riderId);
+      const insertAt = draggedIdx < slotIndex ? slotIndex - 1 : slotIndex;
+      // Skip if no-op (dropping right before or after current position)
+      if (insertAt === draggedIdx) return;
+      const newLineup = [
+        ...without.slice(0, insertAt),
+        draggedEntry,
+        ...without.slice(insertAt),
+      ].map((e, i) => ({ ...e, position: i + 1 }));
+      setLineupDrafts(p => ({ ...p, [sourceMotoId]: newLineup }));
+      updateMutation.mutate(
+        { motoId: sourceMotoId, data: { lineup: newLineup as any } },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+            setLineupDrafts(p => { const n = { ...p }; delete n[sourceMotoId]; return n; });
+            toast({ title: `✅ Gate order updated` });
+          },
+          onError: () => {
+            setLineupDrafts(p => { const n = { ...p }; delete n[sourceMotoId]; return n; });
+            toast({ title: "Failed to reorder", variant: "destructive" });
+          },
+        }
+      );
+      return;
+    }
 
     // ── Trash drop: remove rider from lineup ──────────────────────────────────
     if (String(over.id) === "drop-trash") {
@@ -1993,15 +2051,24 @@ export default function Motos() {
                       </TableHeader>
                       <TableBody>
                         {getLineup(moto).length > 0 ? (
-                          getLineup(moto).map((entry, idx) => (
-                            <DraggableRiderRow
-                              key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
-                              onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
-                              lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
-                              rowNum={idx + 1}
-                              onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId }) : undefined}
-                            />
-                          ))
+                          getLineup(moto).flatMap((entry, idx, arr) => {
+                            const isSlotActive = activeDragMotoId === moto.id && moto.status !== "completed";
+                            const slotColSpan = moto.status === "in_progress" ? 6 : 5;
+                            const rows = [
+                              <GateDropSlotRow key={`slot-${moto.id}-${idx}`} id={`gate-slot-${moto.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />,
+                              <DraggableRiderRow
+                                key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
+                                onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
+                                lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
+                                rowNum={idx + 1}
+                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId }) : undefined}
+                              />,
+                            ];
+                            if (idx === arr.length - 1) {
+                              rows.push(<GateDropSlotRow key={`slot-${moto.id}-${idx + 1}`} id={`gate-slot-${moto.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />);
+                            }
+                            return rows;
+                          })
                         ) : (
                           <TableRow>
                             <TableCell colSpan={moto.status === "in_progress" ? 5 : 4} className="text-center py-4 text-muted-foreground text-sm">
@@ -2264,15 +2331,24 @@ export default function Motos() {
                       </TableHeader>
                       <TableBody>
                         {getLineup(moto).length > 0 ? (
-                          getLineup(moto).map((entry, idx) => (
-                            <DraggableRiderRow
-                              key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
-                              onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
-                              lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
-                              rowNum={idx + 1}
-                              onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId }) : undefined}
-                            />
-                          ))
+                          getLineup(moto).flatMap((entry, idx, arr) => {
+                            const isSlotActive = activeDragMotoId === moto.id && moto.status !== "completed";
+                            const slotColSpan = moto.status === "in_progress" ? 6 : 5;
+                            const rows = [
+                              <GateDropSlotRow key={`slot-${moto.id}-${idx}`} id={`gate-slot-${moto.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />,
+                              <DraggableRiderRow
+                                key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
+                                onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
+                                lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
+                                rowNum={idx + 1}
+                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId }) : undefined}
+                              />,
+                            ];
+                            if (idx === arr.length - 1) {
+                              rows.push(<GateDropSlotRow key={`slot-${moto.id}-${idx + 1}`} id={`gate-slot-${moto.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />);
+                            }
+                            return rows;
+                          })
                         ) : (
                           <TableRow>
                             <TableCell colSpan={moto.status === "in_progress" ? 5 : 4} className="text-center py-6 text-muted-foreground text-sm">No lineup generated</TableCell>
