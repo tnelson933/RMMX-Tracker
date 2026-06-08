@@ -22,6 +22,7 @@ import pointsTablesRouter from "./points-tables";
 import aiRouter from "./ai";
 import practiceRouter from "./practice";
 import exportRouter from "./export";
+import syncRouter from "./sync";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use(pointsTablesRouter);
 router.use(aiRouter);
 router.use(practiceRouter);
 router.use(exportRouter);
+router.use(syncRouter);
 
 export default router;

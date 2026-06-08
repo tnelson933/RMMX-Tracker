@@ -199,6 +199,12 @@ CREATE TABLE IF NOT EXISTS series_points (
   event_results TEXT NOT NULL DEFAULT '[]',
   updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS _sync_watermarks (
+  table_name      TEXT PRIMARY KEY,
+  max_imported_id INTEGER NOT NULL DEFAULT 0,
+  last_synced_at  TEXT
+);
 `);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -287,6 +293,29 @@ for (const [table, rows] of steps) {
 
 db.pragma("foreign_keys = ON");
 
+// ─── Write sync watermarks ────────────────────────────────────────────────────
+
+const watermarkStmt = db.prepare(
+  "INSERT OR REPLACE INTO _sync_watermarks (table_name, max_imported_id) VALUES (?, ?)",
+);
+
+const writeWatermarks = db.transaction(() => {
+  for (const [table, rows] of steps) {
+    if (rows && (rows as unknown[]).length > 0) {
+      const ids = (rows as Record<string, unknown>[])
+        .map((r) => Number(r["id"]) || 0)
+        .filter((n) => n > 0);
+      if (ids.length > 0) {
+        watermarkStmt.run(table, Math.max(...ids));
+      }
+    }
+  }
+});
+writeWatermarks();
+
 console.log(
-  `\n  Total: ${totalInserted} rows written to ${dbFile}\n  Done!\n`,
+  `\n  Total: ${totalInserted} rows written to ${dbFile}`,
+);
+console.log(
+  `  Sync watermarks saved — run sync-to-cloud to upload changes.\n  Done!\n`,
 );
