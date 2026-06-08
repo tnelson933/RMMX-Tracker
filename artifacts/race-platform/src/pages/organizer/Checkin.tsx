@@ -181,7 +181,8 @@ export default function Checkin() {
 
   const handleCheckin = (riderId: number, currentRfid?: string | null, bibOverride?: string) => {
     if (isOffline) {
-      void queueCheckin(riderId, currentRfid ?? null, bibOverride ?? null);
+      if (pendingRiderIds.has(riderId)) return; // guard double-tap before async refresh completes
+      void queueCheckin(riderId, currentRfid ?? null, bibOverride || null);
       toast({ title: "Check-in saved offline", description: "Will sync automatically when connection returns." });
       return;
     }
@@ -287,34 +288,36 @@ export default function Checkin() {
 
   return (
     <div className="bg-gray-50 min-h-full">
-      <div className="bg-sidebar text-sidebar-foreground px-4 py-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-        <div className="flex flex-col gap-1.5">
-          <h1 className="text-xl md:text-3xl font-heading font-bold uppercase tracking-tight text-white leading-tight">{event?.name} — Check-In</h1>
-          {checkinsFromCache && checkinsCachedAt && (
-            <CacheStatusBadge cachedAt={checkinsCachedAt} />
-          )}
-        </div>
-        <div className="flex gap-3 w-full md:w-auto">
-          <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
-            <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">Checked In</div>
-            <div className="text-xl md:text-2xl font-heading font-bold text-secondary">{summary?.checkedIn || 0} / {summary?.totalRegistered || 0}</div>
+      <div className="bg-sidebar text-sidebar-foreground px-4 py-4 md:p-6 flex flex-col gap-3">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          <div className="flex flex-col gap-1.5">
+            <h1 className="text-xl md:text-3xl font-heading font-bold uppercase tracking-tight text-white leading-tight">{event?.name} — Check-In</h1>
+            {checkinsFromCache && checkinsCachedAt && (
+              <CacheStatusBadge cachedAt={checkinsCachedAt} />
+            )}
           </div>
-          <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
-            <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">{isMylaps ? "Transponder" : "RFID Linked"}</div>
-            <div className="text-xl md:text-2xl font-heading font-bold text-white">{summary?.rfidLinked || 0}</div>
-          </div>
-          {(pendingCount > 0 || isSyncing) && (
-            <div className="bg-amber-500/10 rounded-lg px-3 py-2 border border-amber-500/30 text-center flex-1 md:flex-none md:min-w-32">
-              <div className="text-amber-400 text-[10px] font-bold uppercase tracking-widest mb-0.5">Pending Sync</div>
-              <div className="text-xl md:text-2xl font-heading font-bold text-amber-400 flex items-center justify-center gap-1.5">
-                {isSyncing ? <RefreshCw size={18} className="animate-spin" /> : <Clock size={18} />}
-                {pendingCount}
-              </div>
+          <div className="flex gap-3 w-full md:w-auto">
+            <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
+              <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">Checked In</div>
+              <div className="text-xl md:text-2xl font-heading font-bold text-secondary">{summary?.checkedIn || 0} / {summary?.totalRegistered || 0}</div>
             </div>
-          )}
+            <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
+              <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">{isMylaps ? "Transponder" : "RFID Linked"}</div>
+              <div className="text-xl md:text-2xl font-heading font-bold text-white">{summary?.rfidLinked || 0}</div>
+            </div>
+            {(pendingCount > 0 || isSyncing) && (
+              <div className="bg-amber-500/10 rounded-lg px-3 py-2 border border-amber-500/30 text-center flex-1 md:flex-none md:min-w-32">
+                <div className="text-amber-400 text-[10px] font-bold uppercase tracking-widest mb-0.5">Pending Sync</div>
+                <div className="text-xl md:text-2xl font-heading font-bold text-amber-400 flex items-center justify-center gap-1.5">
+                  {isSyncing ? <RefreshCw size={18} className="animate-spin" /> : <Clock size={18} />}
+                  {pendingCount}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         {syncError && (
-          <div className="w-full mt-1 text-xs text-red-400 flex items-center gap-1.5">
+          <div className="text-xs text-red-400 flex items-center gap-1.5">
             <AlertCircle size={12} /> {syncError}
           </div>
         )}
