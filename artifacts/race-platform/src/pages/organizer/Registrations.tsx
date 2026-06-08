@@ -22,6 +22,13 @@ import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 
+// MyLaps transponder numbers are purely numeric, 1–9 digits.
+// Anything else (letters, dashes, spaces, >9 digits) is a format error.
+function isInvalidTransponder(val: string | null | undefined): boolean {
+  if (!val || !val.trim()) return false;
+  return !/^\d{1,9}$/.test(val.trim());
+}
+
 const BIKE_BRANDS = [
   { name: "KTM",       color: "#FF6600", text: "#ffffff" },
   { name: "Honda",     color: "#CC0000", text: "#ffffff" },
@@ -374,6 +381,18 @@ export default function Registrations() {
     (r.bibNumber && r.bibNumber.includes(search)) ||
     (suggestions.get(r.id) ?? "").includes(search)
   );
+
+  // Float registrations with invalid transponder numbers to the top so they
+  // can't be missed — the rest of the list order is unchanged.
+  const sortedRegs = isMyLaps
+    ? [...filteredRegs].sort((a, b) => {
+        const aInvalid = isInvalidTransponder((a as any).myLapsTransponderNumber);
+        const bInvalid = isInvalidTransponder((b as any).myLapsTransponderNumber);
+        if (aInvalid && !bInvalid) return -1;
+        if (!aInvalid && bInvalid) return 1;
+        return 0;
+      })
+    : filteredRegs;
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreate = async (data: OnSiteRegForm) => {
@@ -1385,23 +1404,27 @@ export default function Registrations() {
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Rider</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Class</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Bib</TableHead>
+                {isMyLaps && <TableHead className="font-heading font-bold uppercase tracking-wider">Transponder</TableHead>}
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Status</TableHead>
                 <TableHead className="text-right font-heading font-bold uppercase tracking-wider">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
-              ) : filteredRegs.length > 0 ? (
-                filteredRegs.map(reg => {
+                <TableRow><TableCell colSpan={isMyLaps ? 7 : 6} className="text-center py-8">Loading...</TableCell></TableRow>
+              ) : sortedRegs.length > 0 ? (
+                sortedRegs.map(reg => {
                   const suggested = suggestions.get(reg.id);
                   const effectiveBib = reg.bibNumber || suggested || "";
                   const isDuplicate = effectiveBib ? (bibCount.get(effectiveBib) ?? 0) > 1 : false;
                   const isSuggested = !reg.bibNumber && !!suggested;
                   const isEditing = editingBibId === reg.id;
+                  const transponderVal = (reg as any).myLapsTransponderNumber as string | null;
+                  const transponderIsRental = !!(reg as any).transponderRental;
+                  const hasInvalidTransponder = isMyLaps && isInvalidTransponder(transponderVal);
 
                   return (
-                    <TableRow key={reg.id}>
+                    <TableRow key={reg.id} className={hasInvalidTransponder ? "bg-red-50 dark:bg-red-950/20 border-l-4 border-l-destructive" : ""}>
                       <TableCell className="text-muted-foreground font-mono">{reg.id}</TableCell>
                       <TableCell>
                         <button
@@ -1470,6 +1493,25 @@ export default function Registrations() {
                           </button>
                         )}
                       </TableCell>
+                      {isMyLaps && (
+                        <TableCell>
+                          {hasInvalidTransponder ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-sm text-destructive">{transponderVal}</span>
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-bold bg-destructive/10 text-destructive border border-destructive/20 whitespace-nowrap">
+                                <AlertCircle size={10} />
+                                Invalid
+                              </span>
+                            </div>
+                          ) : transponderVal ? (
+                            <span className="font-mono text-sm">{transponderVal}</span>
+                          ) : transponderIsRental ? (
+                            <span className="text-xs text-muted-foreground italic">Rental</span>
+                          ) : (
+                            <span className="text-muted-foreground/40 text-sm">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
@@ -1502,7 +1544,7 @@ export default function Registrations() {
                   );
                 })
               ) : (
-                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No registrations found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={isMyLaps ? 7 : 6} className="text-center py-8 text-muted-foreground">No registrations found.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

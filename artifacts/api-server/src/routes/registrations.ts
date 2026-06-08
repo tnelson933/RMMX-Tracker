@@ -70,6 +70,8 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     createdAt: registrationsTable.createdAt,
     displayFirstName: registrationsTable.displayFirstName,
     displayLastName: registrationsTable.displayLastName,
+    myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
+    transponderRental: registrationsTable.transponderRental,
     riderFirstName: ridersTable.firstName,
     riderLastName: ridersTable.lastName,
     email: ridersTable.email,
@@ -102,6 +104,8 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     paymentStatus: r.paymentStatus,
     amountPaid: r.amountPaid ? Number(r.amountPaid) : null,
     bibNumber: r.bibNumber,
+    myLapsTransponderNumber: r.myLapsTransponderNumber ?? null,
+    transponderRental: r.transponderRental ?? false,
     createdAt: r.createdAt.toISOString(),
     };
   }));
