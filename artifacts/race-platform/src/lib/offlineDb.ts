@@ -6,13 +6,30 @@ interface CachedApiEntry {
   cachedAt: number;
 }
 
+export interface PendingMutation {
+  id?: number;
+  type: "checkin";
+  eventId: number;
+  riderId: number;
+  rfidNumber: string | null;
+  bibNumber: string | null;
+  createdAt: number;
+  attempts: number;
+  lastError: string | null;
+}
+
 class OfflineDatabase extends Dexie {
   apiCache!: Table<CachedApiEntry>;
+  pendingMutations!: Table<PendingMutation>;
 
   constructor() {
     super("RMRacePlatformOfflineDB");
     this.version(1).stores({
       apiCache: "key, cachedAt",
+    });
+    this.version(2).stores({
+      apiCache: "key, cachedAt",
+      pendingMutations: "++id, type, eventId, createdAt",
     });
   }
 }

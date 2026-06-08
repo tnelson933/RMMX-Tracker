@@ -5,8 +5,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, CheckCircle, Tag, X, AlertCircle } from "lucide-react";
+import { Search, CheckCircle, Tag, X, AlertCircle, Clock, RefreshCw } from "lucide-react";
 import { useOfflineAwareQuery } from "@/hooks/useOfflineAwareQuery";
+import { useOfflineStatus } from "@/hooks/useOfflineStatus";
+import { useSyncQueue } from "@/hooks/useSyncQueue";
 import { CacheStatusBadge } from "@/components/CacheStatusBadge";
 
 // MyLaps transponder numbers: purely numeric, 1–9 digits.
@@ -77,36 +79,57 @@ function CheckinButton({
   checkin,
   pending,
   isPending,
+  isPendingSync,
   isBibDuplicate,
   onCheckin,
 }: {
   checkin: CheckinRow;
   pending: string | undefined;
   isPending: boolean;
+  isPendingSync: boolean;
   isBibDuplicate: (riderId: number, value: string) => boolean;
   onCheckin: (bibToSave?: string) => void;
 }) {
   const hasDuplicate = pending !== undefined && isBibDuplicate(checkin.riderId, pending);
   const bibToSave = pending && !hasDuplicate ? pending : undefined;
+
+  if (checkin.checkedIn) {
+    return (
+      <Button
+        className="h-10 md:h-16 w-full text-sm md:text-xl font-heading uppercase tracking-widest mt-2 bg-muted text-muted-foreground hover:bg-muted/80"
+        disabled
+      >
+        <span className="flex items-center gap-2">
+          <CheckCircle size={24} /> Checked In
+        </span>
+      </Button>
+    );
+  }
+
+  if (isPendingSync) {
+    return (
+      <Button
+        className="h-10 md:h-16 w-full text-sm md:text-xl font-heading uppercase tracking-widest mt-2 bg-amber-500/80 text-white cursor-default hover:bg-amber-500/80"
+        disabled
+      >
+        <span className="flex items-center gap-2">
+          <Clock size={18} /> Pending Sync
+        </span>
+      </Button>
+    );
+  }
+
   return (
     <Button
       className={`h-10 md:h-16 w-full text-sm md:text-xl font-heading uppercase tracking-widest mt-2 ${
-        checkin.checkedIn
-          ? "bg-muted text-muted-foreground hover:bg-muted/80"
-          : hasDuplicate
+        hasDuplicate
           ? "bg-red-500/80 text-white cursor-not-allowed"
           : "bg-primary hover:bg-primary/90"
       }`}
       onClick={() => !hasDuplicate && onCheckin(bibToSave)}
       disabled={isPending || hasDuplicate}
     >
-      {checkin.checkedIn ? (
-        <span className="flex items-center gap-2">
-          <CheckCircle size={24} /> Checked In
-        </span>
-      ) : (
-        "Check In"
-      )}
+      Check In
     </Button>
   );
 }
@@ -140,6 +163,9 @@ export default function Checkin() {
     query: { enabled: !!eventId, refetchInterval: 30000 } as any
   });
 
+  const { isOffline } = useOfflineStatus();
+  const { pendingRiderIds, pendingCount, isSyncing, syncError, queueCheckin } = useSyncQueue(eventId);
+
   const checkinMutation = useCheckinRider();
   const saveBibMutation = useUpdateRegistration();
 
@@ -154,6 +180,11 @@ export default function Checkin() {
   };
 
   const handleCheckin = (riderId: number, currentRfid?: string | null, bibOverride?: string) => {
+    if (isOffline) {
+      void queueCheckin(riderId, currentRfid ?? null, bibOverride ?? null);
+      toast({ title: "Check-in saved offline", description: "Will sync automatically when connection returns." });
+      return;
+    }
     checkinMutation.mutate({ eventId, data: { riderId, rfidNumber: currentRfid || undefined, bibNumber: bibOverride || undefined } }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
@@ -272,7 +303,21 @@ export default function Checkin() {
             <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">{isMylaps ? "Transponder" : "RFID Linked"}</div>
             <div className="text-xl md:text-2xl font-heading font-bold text-white">{summary?.rfidLinked || 0}</div>
           </div>
+          {(pendingCount > 0 || isSyncing) && (
+            <div className="bg-amber-500/10 rounded-lg px-3 py-2 border border-amber-500/30 text-center flex-1 md:flex-none md:min-w-32">
+              <div className="text-amber-400 text-[10px] font-bold uppercase tracking-widest mb-0.5">Pending Sync</div>
+              <div className="text-xl md:text-2xl font-heading font-bold text-amber-400 flex items-center justify-center gap-1.5">
+                {isSyncing ? <RefreshCw size={18} className="animate-spin" /> : <Clock size={18} />}
+                {pendingCount}
+              </div>
+            </div>
+          )}
         </div>
+        {syncError && (
+          <div className="w-full mt-1 text-xs text-red-400 flex items-center gap-1.5">
+            <AlertCircle size={12} /> {syncError}
+          </div>
+        )}
       </div>
 
       <div className="p-3 md:p-6 flex flex-col gap-4">
@@ -326,7 +371,7 @@ export default function Checkin() {
                 ? isInvalidTransponder(tagVal)
                 : isInvalidRfid(tagVal);
               return (
-              <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : 'hover:border-primary/50'}`}>
+              <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : pendingRiderIds.has(checkin.riderId) ? 'border-amber-500 bg-amber-500/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
                   {(() => {
                     // Bib is "locked" (solid, non-editable) ONLY once the rider is checked in.
@@ -469,6 +514,7 @@ export default function Checkin() {
                       checkin={checkin}
                       pending={bibEdits.get(checkin.riderId)}
                       isPending={checkinMutation.isPending}
+                      isPendingSync={pendingRiderIds.has(checkin.riderId)}
                       isBibDuplicate={isBibDuplicate}
                       onCheckin={(bibToSave) => {
                         if (isTagInvalid) {
