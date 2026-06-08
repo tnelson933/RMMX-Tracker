@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   WifiOff, Download, Settings, PlayCircle, UploadCloud, AlertTriangle,
-  CheckCircle2, XCircle, Info, Terminal, Link as LinkIcon,
+  CheckCircle2, XCircle, Info, Terminal, Link as LinkIcon, RefreshCw,
 } from "lucide-react";
 
 // ── Reusable primitives ────────────────────────────────────────────────────────
@@ -361,48 +361,71 @@ ipconfig                    # Look for "IPv4 Address" under your adapter`}</Code
         </CardHeader>
         <CardContent className="pt-5 space-y-4 text-sm text-muted-foreground">
           <p>
-            After the final moto, export the local database and upload it to the cloud. Results will
-            be visible publicly as soon as the sync completes.
+            When the local server detects internet connectivity and at least one event is marked
+            completed, it automatically pushes all data — check-ins, RFID assignments, walk-up
+            registrations — to the cloud. No terminal commands needed.
           </p>
+
+          {/* Auto-sync explanation */}
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={14} className="text-primary shrink-0" />
+              <p className="text-xs font-semibold text-foreground uppercase tracking-wider">How auto-sync works</p>
+            </div>
+            <ul className="space-y-2 text-xs">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
+                <span>The server checks for internet every 2 minutes in the background.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
+                <span>Sync fires automatically once the cloud is reachable <strong>and</strong> at least one event is set to <em>completed</em>.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
+                <span>Re-running sync never duplicates data — the watermark system skips rows that already exist in the cloud.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
+                <span>Auto-sync requires <code className="bg-background border rounded px-1 font-mono">CLOUD_URL</code>, <code className="bg-background border rounded px-1 font-mono">CLUB_ID</code>, <code className="bg-background border rounded px-1 font-mono">CLOUD_EMAIL</code>, and <code className="bg-background border rounded px-1 font-mono">CLOUD_PASSWORD</code> to be set when starting the server.</span>
+              </li>
+            </ul>
+          </div>
 
           <div className="space-y-3">
             <div className="flex gap-3">
               <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</div>
               <div className="space-y-1.5">
-                <p className="text-foreground font-medium">Run the sync script</p>
+                <p className="text-foreground font-medium">Start the server with cloud credentials</p>
                 <p className="text-xs">
-                  From the local server directory, run <code className="bg-muted rounded px-1 font-mono">npm run sync</code> with
-                  your cloud credentials. The script uploads all check-ins, RFID assignments,
-                  and bib numbers directly to the cloud.
+                  Set your cloud credentials when launching the local server. Auto-sync will start automatically once an event is completed and internet is detected.
                 </p>
                 <CodeBlock>{`# macOS / Linux
 CLOUD_URL=https://your-app.replit.app \\
 CLUB_ID=1 \\
 CLOUD_EMAIL=you@club.com \\
 CLOUD_PASSWORD=yourpassword \\
-npm run sync
+npm start
 
 # Windows (Command Prompt — set vars first)
 set CLOUD_URL=https://your-app.replit.app
 set CLUB_ID=1
 set CLOUD_EMAIL=you@club.com
 set CLOUD_PASSWORD=yourpassword
-npm run sync`}</CodeBlock>
+npm start`}</CodeBlock>
               </div>
             </div>
 
             <div className="flex gap-3">
               <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</div>
               <div className="space-y-1.5">
-                <p className="text-foreground font-medium">Upload via the admin sync tool</p>
-                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
-                  <UploadCloud size={14} className="text-primary shrink-0" />
-                  <span className="text-xs font-mono text-primary">Admin → Sync from Offline Export</span>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-auto">Coming soon</Badge>
-                </div>
+                <p className="text-foreground font-medium">Check sync status</p>
                 <p className="text-xs">
-                  The sync tool validates the export file, detects conflicts, and imports all
-                  crossings, results, and rider data into the live database.
+                  Open the status page from any browser on your local network to confirm sync happened and see how many rows were uploaded.
+                </p>
+                <CodeBlock>{`http://<laptop-ip>:8080/api/status`}</CodeBlock>
+                <p className="text-xs">
+                  The response shows <code className="bg-muted rounded px-1 font-mono">autoSync.lastSuccessAt</code> when sync completed, plus row counts for each table.
                 </p>
               </div>
             </div>
@@ -428,13 +451,20 @@ npm run sync`}</CodeBlock>
             you have confirmed a successful upload.
           </Callout>
 
+          <Callout kind="info">
+            If credentials aren't configured, auto-sync is disabled and the server will print a
+            warning at startup. You can still sync manually using{" "}
+            <code className="bg-primary/10 rounded px-1 font-mono text-xs">npm run sync</code> from the
+            local server directory — see the README in the downloaded package for details.
+          </Callout>
+
           <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
             <div className="flex items-center gap-2">
               <Terminal size={14} className="text-primary shrink-0" />
               <p className="text-xs font-semibold text-foreground uppercase tracking-wider">Verify the sync</p>
             </div>
             <p className="text-xs">
-              After uploading, open the public Results page for your event. If lap counts and
+              After sync, open the public Results page for your event. If lap counts and
               positions match what you saw on the local portal, the sync was successful. You can
               then safely archive the local database file.
             </p>

@@ -7,10 +7,12 @@ import registrationsRouter from "./registrations";
 import rfidRouter from "./rfid";
 import motosRouter from "./motos";
 import timingRouter from "./timing";
+import statusRouter from "./status";
 
 const router = Router();
 
 router.use(healthRouter);
+router.use(statusRouter);
 router.use(authRouter);
 router.use(eventsRouter);
 router.use(checkinsRouter);

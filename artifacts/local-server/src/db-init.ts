@@ -169,6 +169,16 @@ export function initDb() {
       max_imported_id INTEGER NOT NULL DEFAULT 0,
       last_synced_at  TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS _sync_state (
+      id              INTEGER PRIMARY KEY CHECK (id = 1),
+      last_attempt_at TEXT,
+      last_success_at TEXT,
+      last_error      TEXT,
+      rows_synced     TEXT NOT NULL DEFAULT '{}'
+    );
+
+    INSERT OR IGNORE INTO _sync_state (id) VALUES (1);
   `);
 
   const migrations: Array<[string, string]> = [
