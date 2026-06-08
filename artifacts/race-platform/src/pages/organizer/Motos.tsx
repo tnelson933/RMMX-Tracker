@@ -765,6 +765,9 @@ export default function Motos() {
   // Min lap times per class
   const [minLapInputs, setMinLapInputs] = useState<Record<string, string>>({});
   const [minLapSavedClass, setMinLapSavedClass] = useState<string | null>(null);
+  const [minLapSaveStatus, setMinLapSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // Timer ref so we can cancel the "Saved ✓" auto-dismiss on a rapid follow-up save.
+  const minLapSavedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Tracks which eventId the inputs have been seeded for — prevents the seed effect
   // from overwriting user input when the event query refetches after a save.
   const seededForEventIdRef = useRef<number | null>(null);
@@ -865,6 +868,12 @@ export default function Motos() {
       return;
     }
     isSavingRef.current = true;
+    // Show "Saving…" in the card header badge; cancel any pending "Saved ✓" dismiss.
+    if (minLapSavedTimer.current) {
+      clearTimeout(minLapSavedTimer.current);
+      minLapSavedTimer.current = null;
+    }
+    setMinLapSaveStatus('saving');
     // Capture the event this mutation belongs to — used in callbacks to discard
     // stale results if the organizer navigated to a different event before it settled.
     const saveEventId = eventId;
@@ -890,10 +899,16 @@ export default function Motos() {
             setMinLapSavedClass(displayClass);
             setTimeout(() => setMinLapSavedClass(null), 2000);
           }
+          setMinLapSaveStatus('saved');
+          minLapSavedTimer.current = setTimeout(() => {
+            setMinLapSaveStatus('idle');
+            minLapSavedTimer.current = null;
+          }, 2500);
           flushPending();
         },
         onError: () => {
           if (saveEventId !== currentEventIdRef.current) return;
+          setMinLapSaveStatus('error');
           flushPending();
         },
       }
@@ -962,6 +977,9 @@ export default function Motos() {
         Object.keys(newMinLapTimes).length !== Object.keys(committed).length ||
         Object.entries(newMinLapTimes).some(([cls, ms]) => committed[cls] !== ms);
       if (!hasChange) return;
+      // Fire-and-forget: no save indicator here by design. The component is
+      // unmounting (user navigated away), so React state updates would be
+      // discarded immediately. The value is still persisted on the server.
       fetch(`/api/events/${eid}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1768,6 +1786,26 @@ export default function Motos() {
                 <Timer size={13} className="text-muted-foreground shrink-0" />
                 <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Minimum Lap Times</h3>
                 <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">— flags short laps red</span>
+                <div className="ml-auto shrink-0">
+                  {minLapSaveStatus === 'saving' && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground animate-pulse">
+                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 inline-block" />
+                      Saving…
+                    </span>
+                  )}
+                  {minLapSaveStatus === 'saved' && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
+                      <Check size={10} />
+                      Saved
+                    </span>
+                  )}
+                  {minLapSaveStatus === 'error' && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-destructive">
+                      <span>!</span>
+                      Error — retry?
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="px-3 py-2 grid grid-cols-2 gap-2">
                 {((event as any)?.raceClasses as string[]).map(cls => {
