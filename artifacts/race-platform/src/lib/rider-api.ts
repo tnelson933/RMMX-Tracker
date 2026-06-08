@@ -60,17 +60,42 @@ export interface EventHistory {
   bestPosition: number | null;
 }
 
+export interface RiderFull {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  bibNumber: string | null;
+  rfidNumber: string | null;
+  dateOfBirth: string | null;
+  emergencyContact: string | null;
+  emergencyPhone: string | null;
+  bikeManufacturer: string | null;
+  sponsors: string | null;
+  amaNumber: string | null;
+  hometown: string | null;
+  homeState: string | null;
+}
+
 export interface RiderHistoryResponse {
-  rider: {
-    id: number;
-    firstName: string;
-    lastName: string;
-    email: string | null;
-    bibNumber: string | null;
-    rfidNumber: string | null;
-    dateOfBirth: string | null;
-  };
+  rider: RiderFull;
   history: EventHistory[];
+}
+
+export interface UpdateProfilePayload {
+  firstName?: string;
+  lastName?: string;
+  phone?: string | null;
+  dateOfBirth?: string | null;
+  emergencyContact?: string | null;
+  emergencyPhone?: string | null;
+  bibNumber?: string | null;
+  amaNumber?: string | null;
+  bikeManufacturer?: string | null;
+  sponsors?: string | null;
+  hometown?: string | null;
+  homeState?: string | null;
 }
 
 export interface PracticeLap {
@@ -180,4 +205,10 @@ export const riderApi = {
 
   schedule: (riderId: number): Promise<RiderScheduleResponse> =>
     apiFetch(`/rider/profiles/${riderId}/schedule`),
+
+  updateProfile: (riderId: number, payload: UpdateProfilePayload): Promise<RiderFull> =>
+    apiFetch(`/rider/profiles/${riderId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
 };

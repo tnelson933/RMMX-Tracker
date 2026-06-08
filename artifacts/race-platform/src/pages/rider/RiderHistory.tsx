@@ -5,16 +5,21 @@ import {
   Trophy, Clock, Star, ChevronDown, ChevronUp,
   Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer,
   Wifi, Pencil, Check, X, Loader2, Radio, DoorOpen,
-  Navigation, LocateFixed, ExternalLink, LayoutList, LayoutGrid
+  Navigation, LocateFixed, ExternalLink, LayoutList, LayoutGrid,
+  Settings, Phone, Shield, Bike, Ribbon
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RiderLayout } from "@/components/layout/RiderLayout";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   riderApi,
   type RiderHistoryResponse,
+  type RiderFull,
+  type UpdateProfilePayload,
   type EventHistory,
   type MotoResult,
   type RiderPracticeResponse,
@@ -118,6 +123,199 @@ function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: st
       >
         <Pencil size={11} />
       </button>
+    </div>
+  );
+}
+
+// ─── Profile editor ─────────────────────────────────────────────────────────
+
+function ProfileEditor({ rider }: { rider: RiderFull }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [form, setForm] = useState<UpdateProfilePayload>({
+    firstName: rider.firstName,
+    lastName: rider.lastName,
+    phone: rider.phone ?? "",
+    dateOfBirth: rider.dateOfBirth ?? "",
+    emergencyContact: rider.emergencyContact ?? "",
+    emergencyPhone: rider.emergencyPhone ?? "",
+    bibNumber: rider.bibNumber ?? "",
+    amaNumber: rider.amaNumber ?? "",
+    bikeManufacturer: rider.bikeManufacturer ?? "",
+    sponsors: rider.sponsors ?? "",
+    hometown: rider.hometown ?? "",
+    homeState: rider.homeState ?? "",
+  });
+
+  function startEdit() {
+    setForm({
+      firstName: rider.firstName,
+      lastName: rider.lastName,
+      phone: rider.phone ?? "",
+      dateOfBirth: rider.dateOfBirth ?? "",
+      emergencyContact: rider.emergencyContact ?? "",
+      emergencyPhone: rider.emergencyPhone ?? "",
+      bibNumber: rider.bibNumber ?? "",
+      amaNumber: rider.amaNumber ?? "",
+      bikeManufacturer: rider.bikeManufacturer ?? "",
+      sponsors: rider.sponsors ?? "",
+      hometown: rider.hometown ?? "",
+      homeState: rider.homeState ?? "",
+    });
+    setError(null);
+    setSaved(false);
+    setEditing(true);
+  }
+
+  function cancel() {
+    setEditing(false);
+    setError(null);
+  }
+
+  function set(key: keyof UpdateProfilePayload, value: string) {
+    setForm(f => ({ ...f, [key]: value }));
+  }
+
+  async function save() {
+    if (!form.firstName?.trim() || !form.lastName?.trim()) {
+      setError("First and last name are required");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await riderApi.updateProfile(rider.id, form);
+      queryClient.invalidateQueries({ queryKey: ["rider-history", rider.id] });
+      queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
+      setEditing(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const field = (label: string, key: keyof UpdateProfilePayload, placeholder?: string) => (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</Label>
+      {editing ? (
+        <Input
+          value={String(form[key] ?? "")}
+          onChange={e => set(key, e.target.value)}
+          placeholder={placeholder}
+          className="h-9 text-sm"
+        />
+      ) : (
+        <p className="text-sm py-1.5 px-0 min-h-[2rem]">
+          {String(rider[key as keyof RiderFull] ?? "") || <span className="text-muted-foreground italic">Not set</span>}
+        </p>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <h2 className="font-heading font-bold text-lg uppercase tracking-wide">Profile Information</h2>
+        {!editing ? (
+          <div className="flex items-center gap-2">
+            {saved && (
+              <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
+                <Check size={14} /> Saved
+              </span>
+            )}
+            <Button size="sm" variant="outline" onClick={startEdit}>
+              <Pencil size={13} className="mr-1.5" /> Edit Profile
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={cancel} disabled={saving}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={save} disabled={saving}>
+              {saving ? <Loader2 size={13} className="animate-spin mr-1.5" /> : <Check size={13} className="mr-1.5" />}
+              Save Changes
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</p>
+      )}
+
+      {/* Personal */}
+      <Card>
+        <CardHeader className="pb-3 pt-4 px-5">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+            <User size={13} /> Personal
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
+          {field("First Name", "firstName", "First name")}
+          {field("Last Name", "lastName", "Last name")}
+          {field("Phone", "phone", "e.g. 555-867-5309")}
+          {field("Date of Birth", "dateOfBirth", "YYYY-MM-DD")}
+          {field("Hometown", "hometown", "City")}
+          {field("Home State", "homeState", "e.g. AZ")}
+        </CardContent>
+      </Card>
+
+      {/* Racing */}
+      <Card>
+        <CardHeader className="pb-3 pt-4 px-5">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+            <Trophy size={13} /> Racing Info
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
+          {field("Bib / Race #", "bibNumber", "e.g. 42")}
+          {field("AMA Number", "amaNumber", "AMA membership #")}
+          {field("Bike Brand", "bikeManufacturer", "e.g. KTM, Honda")}
+          <div className="col-span-2 space-y-1.5">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sponsors</Label>
+            {editing ? (
+              <Textarea
+                value={String(form.sponsors ?? "")}
+                onChange={e => set("sponsors", e.target.value)}
+                placeholder="e.g. Local Moto Shop, Fox Racing"
+                className="text-sm min-h-[72px] resize-none"
+              />
+            ) : (
+              <p className="text-sm py-1.5 min-h-[2rem]">
+                {rider.sponsors || <span className="text-muted-foreground italic">Not set</span>}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Emergency contact */}
+      <Card>
+        <CardHeader className="pb-3 pt-4 px-5">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+            <Shield size={13} /> Emergency Contact
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
+          {field("Contact Name", "emergencyContact", "Full name")}
+          {field("Contact Phone", "emergencyPhone", "e.g. 555-867-5309")}
+        </CardContent>
+      </Card>
+
+      {/* Email note */}
+      <p className="text-xs text-muted-foreground px-1">
+        Email address cannot be changed here — it's your account login and links your race history.
+        To update email, contact the race organizer.
+      </p>
     </div>
   );
 }
@@ -1056,7 +1254,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
 export default function RiderHistory() {
   const [, params] = useRoute("/rider/portal/:riderId");
   const riderId = parseInt(params?.riderId ?? "0", 10);
-  const [activeTab, setActiveTab] = useState<"today" | "upcoming" | "nearby" | "races" | "practice">("today");
+  const [activeTab, setActiveTab] = useState<"today" | "upcoming" | "nearby" | "races" | "practice" | "profile">("today");
 
   const { data, isLoading, error } = useQuery<RiderHistoryResponse>({
     queryKey: ["rider-history", riderId],
@@ -1285,6 +1483,17 @@ export default function RiderHistory() {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setActiveTab("profile")}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+                activeTab === "profile"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Settings size={14} />
+              Profile
+            </button>
           </div>
 
           {/* Near Me tab */}
@@ -1478,6 +1687,10 @@ export default function RiderHistory() {
                 </div>
               )}
             </div>
+          )}
+          {/* Profile tab */}
+          {activeTab === "profile" && (
+            <ProfileEditor rider={rider} />
           )}
         </div>
       ) : null}

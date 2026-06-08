@@ -273,6 +273,55 @@ router.patch("/rider/profiles/:riderId/rfid", requireRiderAuth, async (req, res)
   return res.json({ rfidNumber: updated.rfidNumber ?? null });
 });
 
+// PATCH /rider/profiles/:riderId — rider self-service profile update
+router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  const allowed = [
+    "firstName", "lastName", "phone", "dateOfBirth",
+    "emergencyContact", "emergencyPhone",
+    "bibNumber", "amaNumber", "bikeManufacturer", "sponsors",
+    "hometown", "homeState",
+  ] as const;
+
+  type AllowedKey = typeof allowed[number];
+  const patch: Partial<Record<AllowedKey, string | null>> = {};
+
+  for (const key of allowed) {
+    if (key in req.body) {
+      const val = req.body[key];
+      patch[key] = typeof val === "string" ? val.trim() || null : null;
+    }
+  }
+
+  if (("firstName" in patch && !patch.firstName) || ("lastName" in patch && !patch.lastName)) {
+    return res.status(400).json({ error: "First and last name are required" });
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return res.status(400).json({ error: "No valid fields provided" });
+  }
+
+  const [updated] = await db
+    .update(ridersTable)
+    .set(patch)
+    .where(eq(ridersTable.id, riderId))
+    .returning();
+
+  return res.json(updated);
+});
+
 // GET /rider/profiles/:riderId/practice — practice session history for a rider
 router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
