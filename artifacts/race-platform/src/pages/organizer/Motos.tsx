@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -747,6 +747,7 @@ export default function Motos() {
   const [classFilter, setClassFilter] = useState<string>("schedule");
   const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
   const [bibInputs, setBibInputs] = useState<Record<number, string>>({});
+  const [viewMode, setViewMode] = useState<"grid" | "run-order">("grid");
 
   // Drag-and-drop state
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -2088,45 +2089,185 @@ export default function Motos() {
         {/* ── Right: motos grid / loading / empty state ─────────────── */}
         <div className="flex-1 min-w-0">
 
-        {/* Class filter bar */}
+        {/* Class filter bar + view toggle */}
         {!isLoading && !!motos?.filter(m => m.type !== "practice").length && (() => {
           const uniqueClasses = [...new Set(
             (motos ?? []).filter(m => m.type !== "practice").map(m => m.raceClass).filter((c): c is string => !!c)
           )].sort();
           return (
-            <div className="flex flex-wrap gap-2 mb-4">
-              <button
-                onClick={() => setClassFilter("schedule")}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors ${
-                  classFilter === "schedule"
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
-                }`}
-              >
-                Schedule
-              </button>
-              {uniqueClasses.map(cls => (
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              {viewMode === "grid" && (
+                <>
+                  <button
+                    onClick={() => setClassFilter("schedule")}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors ${
+                      classFilter === "schedule"
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                    }`}
+                  >
+                    Schedule
+                  </button>
+                  {uniqueClasses.map(cls => (
+                    <button
+                      key={cls}
+                      onClick={() => setClassFilter(cls)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors ${
+                        classFilter === cls
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                      }`}
+                    >
+                      {cls}
+                    </button>
+                  ))}
+                </>
+              )}
+              <div className="ml-auto flex items-center gap-1 border rounded-lg p-0.5 bg-muted/40">
                 <button
-                  key={cls}
-                  onClick={() => setClassFilter(cls)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors ${
-                    classFilter === cls
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                  onClick={() => setViewMode("grid")}
+                  title="Card grid view"
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider transition-colors ${
+                    viewMode === "grid"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {cls}
+                  <LayoutGrid size={13} />
+                  <span className="hidden sm:inline">Grid</span>
                 </button>
-              ))}
+                <button
+                  onClick={() => setViewMode("run-order")}
+                  title="Run order list"
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider transition-colors ${
+                    viewMode === "run-order"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <LayoutList size={13} />
+                  <span className="hidden sm:inline">Run Order</span>
+                </button>
+              </div>
             </div>
           );
         })()}
 
-        {isLoading ? (
+        {viewMode === "run-order" && !isLoading && (() => {
+          const runOrderMotos = [...(motos ?? [])]
+            .filter(m => m.type !== "practice")
+            .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+          if (!runOrderMotos.length) return null;
+          return (
+            <div className="border rounded-lg overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/30 border-b">
+                <LayoutList size={14} className="text-muted-foreground shrink-0" />
+                <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Run Order</h3>
+                <span className="text-[10px] text-muted-foreground font-normal">— {runOrderMotos.length} motos, read-only</span>
+              </div>
+              <Table>
+                <TableHeader className="bg-muted/20">
+                  <TableRow>
+                    <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">#</TableHead>
+                    <TableHead className="text-xs font-bold uppercase tracking-wider">Name</TableHead>
+                    <TableHead className="text-xs font-bold uppercase tracking-wider hidden sm:table-cell">Class</TableHead>
+                    <TableHead className="text-xs font-bold uppercase tracking-wider hidden md:table-cell">Type</TableHead>
+                    <TableHead className="w-16 text-center text-xs font-bold uppercase tracking-wider">Riders</TableHead>
+                    <TableHead className="w-24 text-right pr-4 text-xs font-bold uppercase tracking-wider">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {runOrderMotos.map((moto, idx) => {
+                    const riderCount = Array.isArray(moto.lineup) ? (moto.lineup as any[]).length : 0;
+                    const isNext = moto.status === "scheduled" && runOrderMotos.slice(0, idx).every(m => m.status === "completed" || m.status === "in_progress");
+                    return (
+                      <TableRow
+                        key={moto.id}
+                        className={`h-11 ${
+                          moto.status === "in_progress"
+                            ? "bg-primary/5 border-l-2 border-l-primary"
+                            : moto.status === "completed"
+                            ? "opacity-60"
+                            : isNext
+                            ? "bg-amber-500/5"
+                            : ""
+                        }`}
+                      >
+                        <TableCell className="text-center">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-heading font-bold text-sm mx-auto ${
+                            moto.status === "in_progress"
+                              ? "bg-primary text-primary-foreground"
+                              : moto.status === "completed"
+                              ? "bg-muted text-muted-foreground"
+                              : isNext
+                              ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30"
+                              : "bg-muted/60 text-muted-foreground"
+                          }`}>
+                            {moto.motoNumber}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm truncate">{moto.name}</span>
+                            {moto.status === "in_progress" && (
+                              <span className="relative flex h-2 w-2 shrink-0">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                              </span>
+                            )}
+                            {isNext && moto.status === "scheduled" && (
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 shrink-0">
+                                Up next
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground sm:hidden">{moto.raceClass}</div>
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell">
+                          <span className="text-sm text-muted-foreground truncate">{moto.raceClass}</span>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider border ${
+                            moto.type === "main"
+                              ? "bg-primary/10 text-primary border-primary/30"
+                              : moto.type === "lcq"
+                              ? "bg-orange-500/10 text-orange-600 border-orange-500/30"
+                              : "bg-muted text-muted-foreground border-border"
+                          }`}>
+                            {moto.type === "main" ? "Main" : moto.type === "lcq" ? "LCQ" : isSupercrossFormat ? "Heat" : "Moto"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="font-heading font-bold text-sm tabular-nums">{riderCount}</span>
+                        </TableCell>
+                        <TableCell className="text-right pr-4">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                            moto.status === "in_progress"
+                              ? "bg-primary/15 text-primary border-primary/30 animate-pulse"
+                              : moto.status === "completed"
+                              ? "bg-secondary/15 text-secondary border-secondary/30"
+                              : "bg-muted text-muted-foreground border-transparent"
+                          }`}>
+                            {moto.status === "in_progress" && (
+                              <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-ping shrink-0" />
+                            )}
+                            {moto.status.replace("_", " ")}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          );
+        })()}
+
+        {viewMode === "grid" && isLoading ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {[...Array(4)].map((_, i) => <Card key={i} className="h-64 animate-pulse" />)}
           </div>
-        ) : motos?.filter(m => m.type !== "practice").length ? (
+        ) : viewMode === "grid" && motos?.filter(m => m.type !== "practice").length ? (
         <div className="space-y-0">
           {motos.filter(m => m.type !== "practice" && (classFilter === "schedule" || m.raceClass === classFilter)).sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
             <div key={moto.id}>
@@ -2391,7 +2532,7 @@ export default function Motos() {
             <span className="text-sm font-bold uppercase tracking-widest">Add New Race</span>
           </button>
         </div>
-        ) : (
+        ) : viewMode === "grid" ? (
           <Card>
             <CardContent className="p-16 text-center">
               <Flag className="mx-auto text-muted-foreground opacity-20 mb-4" size={48} />
@@ -2402,7 +2543,7 @@ export default function Motos() {
               </Button>
             </CardContent>
           </Card>
-        )}
+        ) : null}
         </div>{/* right column */}
       </div>{/* flex row */}
       <DragOverlay dropAnimation={null}>

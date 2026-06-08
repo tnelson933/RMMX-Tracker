@@ -5,7 +5,7 @@ import {
   Trophy, Clock, Star, ChevronDown, ChevronUp,
   Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer,
   Wifi, Pencil, Check, X, Loader2, Radio, DoorOpen,
-  Navigation, LocateFixed, ExternalLink
+  Navigation, LocateFixed, ExternalLink, LayoutList, LayoutGrid
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -778,6 +778,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   const hasLiveMotos = event.motos.some(m => m.status === "in_progress");
   const myMotos = event.motos.filter(m => m.isAnyFamilyMemberInMoto);
   const [collapsed, setCollapsed] = useState(false);
+  const [showRunOrder, setShowRunOrder] = useState(false);
 
   // Re-sort for display: live → upcoming → completed, preserving motoNumber order within each group
   const sortedMotos = [...event.motos].sort((a, b) => {
@@ -786,6 +787,9 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
     if (oa !== ob) return oa - ob;
     return (a.motoNumber ?? 0) - (b.motoNumber ?? 0);
   });
+
+  // Strictly by motoNumber for the run order view
+  const runOrderMotos = [...event.motos].sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
 
   // "Now Up" = rider's first upcoming moto in run order; "Up Next" = their second
   const myScheduled = event.motos
@@ -877,38 +881,170 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
         </div>
       </button>
 
-      {/* Motos — live/upcoming first, completed at bottom */}
+      {/* Motos — toggle bar + content */}
       {!collapsed && (
-        <div className="p-3 space-y-2 bg-background">
-          {sortedMotos.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              No races scheduled yet — check back closer to race day.
-            </p>
-          )}
-          {upcoming.map(moto => (
-            <ScheduleMotoCard
-              key={moto.motoId}
-              moto={moto}
-              isNowUp={moto.motoId === nowUpMotoId}
-              isUpNext={moto.motoId === upNextMotoId}
-            />
-          ))}
-          {finished.length > 0 && upcoming.length > 0 && (
-            <div className="flex items-center gap-3 py-2">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-sm font-heading font-bold uppercase tracking-widest text-foreground shrink-0 px-1">
-                ✓ Finished Motos
+        <div className="bg-background">
+          {/* View toggle bar */}
+          {sortedMotos.length > 0 && (
+            <div className="flex items-center justify-between px-3 pt-3 pb-1 gap-2">
+              <span className="text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
+                {showRunOrder ? "Run Order" : "My Schedule"}
               </span>
-              <div className="flex-1 h-px bg-border" />
+              <div className="flex items-center gap-0.5 border rounded-lg p-0.5 bg-muted/40">
+                <button
+                  onClick={() => setShowRunOrder(false)}
+                  title="My schedule view"
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
+                    !showRunOrder
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <LayoutGrid size={12} />
+                  <span>Schedule</span>
+                </button>
+                <button
+                  onClick={() => setShowRunOrder(true)}
+                  title="Full run order"
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
+                    showRunOrder
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <LayoutList size={12} />
+                  <span>Run Order</span>
+                </button>
+              </div>
             </div>
           )}
-          {finished.map(moto => (
-            <ScheduleMotoCard
-              key={moto.motoId}
-              moto={moto}
-              isUpNext={false}
-            />
-          ))}
+
+          {/* Run Order list */}
+          {showRunOrder ? (
+            <div className="p-3">
+              {runOrderMotos.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No races scheduled yet — check back closer to race day.
+                </p>
+              ) : (
+                <div className="border rounded-xl overflow-hidden">
+                  {runOrderMotos.map((moto, idx) => {
+                    const isLive = moto.status === "in_progress";
+                    const isDone = moto.status === "completed";
+                    const isMine = moto.isAnyFamilyMemberInMoto;
+                    const isNowUp = moto.motoId === nowUpMotoId || isLive;
+                    const isUpNext = !isNowUp && moto.motoId === upNextMotoId;
+                    const isFirstScheduled = !isLive && !isDone && runOrderMotos.slice(0, idx).every(m => m.status === "completed" || m.status === "in_progress") && moto.status === "scheduled";
+                    const riderCount = moto.lineup.length;
+
+                    return (
+                      <div
+                        key={moto.motoId}
+                        className={`flex items-center gap-3 px-3 py-2.5 border-b last:border-b-0 transition-colors ${
+                          isLive
+                            ? "bg-green-500/8 border-l-[3px] border-l-green-500"
+                            : isMine && !isDone
+                            ? "bg-primary/5 border-l-[3px] border-l-primary"
+                            : isDone
+                            ? "opacity-50"
+                            : isFirstScheduled
+                            ? "bg-amber-500/5"
+                            : ""
+                        }`}
+                      >
+                        {/* Moto number circle */}
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center font-heading font-bold text-sm shrink-0 ${
+                          isLive
+                            ? "bg-green-500 text-white"
+                            : isMine && !isDone
+                            ? "bg-primary text-primary-foreground"
+                            : isDone
+                            ? "bg-muted text-muted-foreground"
+                            : isFirstScheduled
+                            ? "bg-amber-500/20 text-amber-700 border border-amber-400/40"
+                            : "bg-muted/60 text-muted-foreground"
+                        }`}>
+                          {moto.motoNumber}
+                        </div>
+
+                        {/* Name + class */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-sm font-medium truncate ${isDone ? "text-muted-foreground" : isMine ? "text-foreground font-semibold" : "text-foreground"}`}>
+                              {moto.name}
+                            </span>
+                            {isLive && (
+                              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75" />
+                                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+                              </span>
+                            )}
+                            {isMine && !isDone && (
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-primary shrink-0">
+                                {isNowUp ? "Now Up" : isUpNext ? "Up Next" : "Mine"}
+                              </span>
+                            )}
+                            {isFirstScheduled && !isMine && (
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 shrink-0">Next</span>
+                            )}
+                          </div>
+                          {moto.raceClass && (
+                            <span className="text-xs text-muted-foreground">
+                              {moto.raceClass} · {motoTypeLabel(moto.type)}
+                              {riderCount > 0 && ` · ${riderCount} riders`}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Status */}
+                        <div className="shrink-0">
+                          {isLive ? (
+                            <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-500/15 border border-green-400/40 rounded-full px-2 py-0.5">
+                              <Radio size={9} className="animate-pulse" /> Live
+                            </span>
+                          ) : isDone ? (
+                            <span className="text-xs text-muted-foreground border border-border rounded-full px-2 py-0.5">Done</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-3 space-y-2">
+              {sortedMotos.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No races scheduled yet — check back closer to race day.
+                </p>
+              )}
+              {upcoming.map(moto => (
+                <ScheduleMotoCard
+                  key={moto.motoId}
+                  moto={moto}
+                  isNowUp={moto.motoId === nowUpMotoId}
+                  isUpNext={moto.motoId === upNextMotoId}
+                />
+              ))}
+              {finished.length > 0 && upcoming.length > 0 && (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-sm font-heading font-bold uppercase tracking-widest text-foreground shrink-0 px-1">
+                    ✓ Finished Motos
+                  </span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              )}
+              {finished.map(moto => (
+                <ScheduleMotoCard
+                  key={moto.motoId}
+                  moto={moto}
+                  isUpNext={false}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
