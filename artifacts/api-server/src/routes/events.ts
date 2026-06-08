@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable } from "@workspace/db";
+import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { sendStatsEmail } from "../lib/email";
 
@@ -318,6 +318,54 @@ router.delete("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
   await db.delete(eventsTable).where(eq(eventsTable.id, id));
   return res.status(204).send();
+});
+
+// ── Completed events with unpublished results (>24h after race day) ────────────
+router.get("/clubs/:clubId/unpublished-completed-events", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const clubId = Number(req.params.clubId);
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const completedEvents = await db
+    .select({
+      id: eventsTable.id,
+      name: eventsTable.name,
+      date: eventsTable.date,
+      location: eventsTable.location,
+      trackName: eventsTable.trackName,
+      state: eventsTable.state,
+    })
+    .from(eventsTable)
+    .where(
+      and(
+        eq(eventsTable.clubId, clubId),
+        eq(eventsTable.status, "completed"),
+        sql`${eventsTable.date} < ${cutoff.toISOString()}`,
+      )
+    );
+
+  if (completedEvents.length === 0) return res.json([]);
+
+  const eventIds = completedEvents.map(e => e.id);
+  const published = await db
+    .select({ eventId: eventPublicationTable.eventId })
+    .from(eventPublicationTable)
+    .where(
+      and(
+        inArray(eventPublicationTable.eventId, eventIds),
+        eq(eventPublicationTable.published, true),
+      )
+    );
+
+  const publishedSet = new Set(published.map(p => p.eventId));
+  const unpublished = completedEvents.filter(e => !publishedSet.has(e.id));
+
+  return res.json(unpublished.map(e => ({
+    ...e,
+    date: typeof e.date === "string" ? e.date : (e.date as Date).toISOString(),
+  })));
 });
 
 export default router;

@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
 import { PastEventCheckDialog } from "@/components/organizer/PastEventCheckDialog";
+import { UnpublishedResultsDialog } from "@/components/organizer/UnpublishedResultsDialog";
 import { ProductTour } from "@/components/organizer/ProductTour";
 import { useBroadcast } from "@/contexts/BroadcastContext";
 import {
@@ -214,6 +215,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {clubId && <PastEventCheckDialog clubId={clubId} />}
+      {clubId && <UnpublishedResultsDialog clubId={clubId} />}
 
       {/* Floating live broadcast bar — visible on every organizer page while streaming */}
       {isLive && (
