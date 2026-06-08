@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -2289,12 +2289,74 @@ export default function Motos() {
             .filter(m => m.type !== "practice")
             .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
           if (!runOrderMotos.length) return null;
+          const typeLabel = (type: string) =>
+            type === "main" ? "Main Event" : type === "lcq" ? "LCQ" : isSupercrossFormat ? "Heat" : "Moto";
           return (
+            <>
+            <div id="heat-sheet-print" aria-hidden="true">
+              <div className="heat-sheet-header">
+                <div className="heat-sheet-event-name">{(event as any)?.name ?? "Event"}</div>
+                <div className="heat-sheet-meta">
+                  {(event as any)?.date ? new Date((event as any).date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }) : ""}
+                  {(event as any)?.location ? ` · ${(event as any).location}` : ""}
+                  {(event as any)?.state ? `, ${(event as any).state}` : ""}
+                </div>
+                <div className="heat-sheet-title">Heat Sheet — Run Order</div>
+                <div className="heat-sheet-generated">Generated {new Date().toLocaleString()}</div>
+              </div>
+              <div className="heat-sheet-motos">
+                {runOrderMotos.map((moto) => {
+                  const lineup: LineupEntry[] = Array.isArray(moto.lineup)
+                    ? [...(moto.lineup as LineupEntry[])].sort((a, b) => a.position - b.position)
+                    : [];
+                  return (
+                    <div key={moto.id} className="heat-sheet-moto">
+                      <div className="heat-sheet-moto-header">
+                        <span className="heat-sheet-moto-num">#{moto.motoNumber}</span>
+                        <span className="heat-sheet-moto-name">{moto.name}</span>
+                        <span className="heat-sheet-moto-class">{moto.raceClass}</span>
+                        <span className="heat-sheet-moto-type">{typeLabel(moto.type ?? "heat")}</span>
+                      </div>
+                      {lineup.length > 0 ? (
+                        <table className="heat-sheet-lineup-table">
+                          <thead>
+                            <tr>
+                              <th>Gate</th>
+                              <th>Rider</th>
+                              <th>Bib</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lineup.map((entry, i) => (
+                              <tr key={entry.riderId}>
+                                <td className="heat-sheet-gate">{i + 1}</td>
+                                <td className="heat-sheet-rider">{entry.riderName}</td>
+                                <td className="heat-sheet-bib">{entry.bibNumber ?? "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="heat-sheet-no-riders">No riders assigned</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             <div className="border rounded-lg overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/30 border-b">
                 <LayoutList size={14} className="text-muted-foreground shrink-0" />
                 <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Run Order</h3>
                 <span className="text-[10px] text-muted-foreground font-normal">— {runOrderMotos.length} motos, read-only</span>
+                <button
+                  onClick={() => window.print()}
+                  className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded border border-border bg-background hover:bg-muted/60 text-xs font-bold uppercase tracking-wider text-foreground transition-colors no-print"
+                  title="Print heat sheet"
+                >
+                  <Printer size={12} />
+                  <span>Print</span>
+                </button>
               </div>
               <Table>
                 <TableHeader className="bg-muted/20">
@@ -2391,6 +2453,7 @@ export default function Motos() {
                 </TableBody>
               </Table>
             </div>
+            </>
           );
         })()}
 

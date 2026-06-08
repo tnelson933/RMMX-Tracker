@@ -153,3 +153,186 @@
     @apply font-heading uppercase tracking-wide;
   }
 }
+
+/* ── Heat sheet: hidden on screen, shown only when printing ── */
+#heat-sheet-print {
+  display: none;
+}
+
+@media print {
+  /* Hide everything, then selectively reveal the heat sheet */
+  body * {
+    visibility: hidden !important;
+  }
+
+  #heat-sheet-print,
+  #heat-sheet-print * {
+    visibility: visible !important;
+  }
+
+  #heat-sheet-print {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color: #000;
+    background: #fff;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Hide print button and other no-print elements while printing */
+  .no-print {
+    display: none !important;
+  }
+
+  /* ── Header ── */
+  .heat-sheet-header {
+    text-align: center;
+    border-bottom: 2px solid #000;
+    padding-bottom: 8pt;
+    margin-bottom: 12pt;
+  }
+
+  .heat-sheet-event-name {
+    font-size: 18pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .heat-sheet-meta {
+    font-size: 9pt;
+    color: #444;
+    margin-top: 2pt;
+  }
+
+  .heat-sheet-title {
+    font-size: 12pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 4pt;
+  }
+
+  .heat-sheet-generated {
+    font-size: 7pt;
+    color: #888;
+    margin-top: 2pt;
+  }
+
+  /* ── Moto grid — 2-up columns ── */
+  .heat-sheet-motos {
+    column-count: 2;
+    column-gap: 16pt;
+  }
+
+  .heat-sheet-moto {
+    break-inside: avoid;
+    margin-bottom: 10pt;
+    border: 1px solid #ccc;
+    border-radius: 3pt;
+    overflow: hidden;
+  }
+
+  .heat-sheet-moto-header {
+    display: flex;
+    align-items: baseline;
+    gap: 5pt;
+    background: #111;
+    color: #fff;
+    padding: 4pt 6pt;
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .heat-sheet-moto-num {
+    font-size: 11pt;
+    font-weight: 900;
+    min-width: 22pt;
+  }
+
+  .heat-sheet-moto-name {
+    flex: 1;
+    font-size: 9pt;
+  }
+
+  .heat-sheet-moto-class {
+    font-size: 7.5pt;
+    opacity: 0.85;
+  }
+
+  .heat-sheet-moto-type {
+    font-size: 7pt;
+    background: rgba(255,255,255,0.2);
+    padding: 1pt 4pt;
+    border-radius: 2pt;
+    white-space: nowrap;
+  }
+
+  /* ── Rider table ── */
+  .heat-sheet-lineup-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8pt;
+  }
+
+  .heat-sheet-lineup-table thead tr {
+    background: #f0f0f0;
+  }
+
+  .heat-sheet-lineup-table th {
+    padding: 2pt 5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 6.5pt;
+    letter-spacing: 0.06em;
+    text-align: left;
+    border-bottom: 1px solid #ccc;
+  }
+
+  .heat-sheet-lineup-table tr:nth-child(even) {
+    background: #f8f8f8;
+  }
+
+  .heat-sheet-lineup-table td {
+    padding: 3pt 5pt;
+    border-bottom: 1px solid #e8e8e8;
+    vertical-align: middle;
+  }
+
+  .heat-sheet-gate {
+    font-weight: 700;
+    width: 24pt;
+    text-align: center;
+    color: #555;
+    font-size: 7.5pt;
+  }
+
+  .heat-sheet-rider {
+    font-weight: 500;
+  }
+
+  .heat-sheet-bib {
+    font-weight: 700;
+    width: 28pt;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #333;
+  }
+
+  .heat-sheet-no-riders {
+    padding: 5pt 6pt;
+    font-size: 7.5pt;
+    color: #888;
+    font-style: italic;
+  }
+
+  /* Page setup */
+  @page {
+    size: letter portrait;
+    margin: 0.6in 0.5in;
+  }
+}
