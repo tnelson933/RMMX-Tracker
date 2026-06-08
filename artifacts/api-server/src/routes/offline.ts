@@ -122,6 +122,7 @@ function buildPackageJson(mtimeMs: number): Buffer {
     type: "module",
     scripts: {
       start: "node --enable-source-maps ./dist/index.mjs",
+      sync:  "node --enable-source-maps ./dist/sync.mjs",
     },
     dependencies: {
       bcryptjs: "^3.0.3",
@@ -153,11 +154,29 @@ Self-contained offline race server for use at venues without internet access.
 ## Point your timing hardware at:
    http://<your-laptop-ip>:8080/api/timing/active/crossing?clubId=<id>
 
+## Syncing back to the cloud
+
+### Automatic (recommended)
+Start the server with your cloud credentials and sync runs automatically
+when internet is detected and an event is in progress or completed:
+
+  CLOUD_URL=https://your-app.replit.app \\
+  CLUB_ID=1 \\
+  CLOUD_EMAIL=you@club.com \\
+  CLOUD_PASSWORD=yourpassword \\
+  npm start
+
+### Manual
+  CLOUD_URL=https://your-app.replit.app \\
+  CLUB_ID=1 \\
+  CLOUD_EMAIL=you@club.com \\
+  CLOUD_PASSWORD=yourpassword \\
+  npm run sync
+
 ## Notes
 - Use http:// (NOT https://) — the local server has no TLS certificate.
 - Keep this server running throughout race day.
 - Do NOT delete race_data.db until you have confirmed a successful cloud sync.
-- After race day: export via the Rocky Mountain cloud portal (Admin → Sync from Offline Export).
 `;
   return Buffer.from(text, "utf8");
 }
@@ -237,10 +256,15 @@ router.get("/offline/package", (req, res) => {
       zip = cachedZip;
     } else {
       const serverBundle = readFileSync(distFile);
+      const syncBundle  = readFileSync(distFile.replace("index.mjs", "sync.mjs"));
       zip = buildZip([
         {
           name: "rocky-mountain-local-server/dist/index.mjs",
           data: serverBundle,
+        },
+        {
+          name: "rocky-mountain-local-server/dist/sync.mjs",
+          data: syncBundle,
         },
         {
           name: "rocky-mountain-local-server/package.json",

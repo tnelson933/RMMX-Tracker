@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -112,19 +112,13 @@ function PackageInfoBanner({
   builtAt,
   version,
   etag,
-  onDownload,
+  lastEtag,
 }: {
   builtAt: string;
   version: string;
   etag: string;
-  onDownload: () => void;
+  lastEtag: string | null;
 }) {
-  const [lastEtag, setLastEtag] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLastEtag(localStorage.getItem(LAST_DOWNLOAD_KEY));
-  }, []);
-
   const isOutOfDate = lastEtag !== null && lastEtag !== etag;
   const hasNeverDownloaded = lastEtag === null;
 
@@ -170,9 +164,14 @@ export default function OfflineMode() {
     { query: { retry: false } as any },
   );
 
+  const [lastDownloadedEtag, setLastDownloadedEtag] = useState<string | null>(() =>
+    localStorage.getItem(LAST_DOWNLOAD_KEY),
+  );
+
   const handleDownload = useCallback(() => {
     if (pkgInfo?.etag) {
       localStorage.setItem(LAST_DOWNLOAD_KEY, pkgInfo.etag);
+      setLastDownloadedEtag(pkgInfo.etag);
     }
   }, [pkgInfo?.etag]);
 
@@ -285,7 +284,7 @@ export default function OfflineMode() {
                     builtAt={pkgInfo.builtAt}
                     version={pkgInfo.version}
                     etag={pkgInfo.etag}
-                    onDownload={handleDownload}
+                    lastEtag={lastDownloadedEtag}
                   />
                 )}
                 {pkgError && (
@@ -507,7 +506,7 @@ ipconfig                    # Look for "IPv4 Address" under your adapter`}</Code
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
-                <span>Sync fires automatically once the cloud is reachable <strong>and</strong> at least one event is set to <em>completed</em>.</span>
+                <span>Sync fires automatically once the cloud is reachable <strong>and</strong> at least one event is in progress or completed.</span>
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
@@ -573,7 +572,7 @@ npm start`}</CodeBlock>
 
           <Callout kind="warning">
             <strong>Sync before wiping the laptop.</strong> The local SQLite database (
-            <code className="bg-amber-500/20 rounded px-1 font-mono text-xs">race-data.db</code>) is the
+            <code className="bg-amber-500/20 rounded px-1 font-mono text-xs">race_data.db</code>) is the
             only copy of your race data until the sync completes. Do not delete it, reformat the
             laptop, or run <code className="bg-amber-500/20 rounded px-1 font-mono text-xs">npm run reset-db</code> until
             you have confirmed a successful upload.

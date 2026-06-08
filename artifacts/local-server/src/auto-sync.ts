@@ -103,10 +103,10 @@ async function isCloudReachable(): Promise<boolean> {
 
 // ─── Completed-event gate ─────────────────────────────────────────────────────
 
-function hasCompletedEvent(): boolean {
+function hasActiveOrCompletedEvent(): boolean {
   const db  = getDb();
   const row = db
-    .prepare("SELECT COUNT(*) as cnt FROM events WHERE status = 'completed'")
+    .prepare("SELECT COUNT(*) as cnt FROM events WHERE status IN ('race_day', 'completed')")
     .get() as { cnt: number };
   return row.cnt > 0;
 }
@@ -188,8 +188,8 @@ async function syncOnce() {
     return;
   }
 
-  if (!hasCompletedEvent()) {
-    console.log("[auto-sync] No completed events — skipping sync");
+  if (!hasActiveOrCompletedEvent()) {
+    console.log("[auto-sync] No active or completed events — skipping sync");
     getDb()
       .prepare("UPDATE _sync_state SET last_error = NULL WHERE id = 1")
       .run();
