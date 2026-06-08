@@ -211,15 +211,17 @@ npm install`}</CodeBlock>
               <div className="space-y-2">
                 <p className="text-foreground font-medium">Set the database path</p>
                 <p className="text-xs">
-                  The local server uses SQLite instead of Postgres. Set the{" "}
-                  <code className="bg-muted rounded px-1 font-mono">DATABASE_URL</code> environment
-                  variable to a local file path.
+                  The local server uses SQLite. Set{" "}
+                  <code className="bg-muted rounded px-1 font-mono">SQLITE_FILE</code> to where
+                  you want the database file stored. If not set, it defaults to{" "}
+                  <code className="bg-muted rounded px-1 font-mono">./race_data.db</code> in the
+                  server directory.
                 </p>
-                <CodeBlock>{`# macOS / Linux
-export DATABASE_URL="file:./race-data.db"
+                <CodeBlock>{`# macOS / Linux (optional — default is ./race_data.db)
+export SQLITE_FILE="./race_data.db"
 
 # Windows (Command Prompt)
-set DATABASE_URL=file:./race-data.db`}</CodeBlock>
+set SQLITE_FILE=./race_data.db`}</CodeBlock>
               </div>
             </div>
 
@@ -230,8 +232,12 @@ set DATABASE_URL=file:./race-data.db`}</CodeBlock>
                 <CodeBlock>{`npm start
 
 # Expected output:
-# ✓ Database ready (SQLite)
-# ✓ Server listening on http://localhost:8080`}</CodeBlock>
+#   ============================================
+#    🏁  Rocky Mountain Race — Local Server
+#   ============================================
+#    URL:      http://localhost:8080
+#    Database: ./race_data.db
+#   ============================================`}</CodeBlock>
                 <p className="text-xs">
                   Open <code className="bg-muted rounded px-1 font-mono text-xs">http://localhost:8080/api/healthz</code> in
                   a browser. You should see <code className="bg-muted rounded px-1 font-mono text-xs">{`{"ok":true}`}</code>.
@@ -314,20 +320,20 @@ ipconfig                    # Look for "IPv4 Address" under your adapter`}</Code
             <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4">
               <p className="font-semibold text-green-600 dark:text-green-400 text-xs uppercase tracking-wider mb-2.5">Works offline</p>
               <ul className="space-y-1.5">
-                <CheckItem ok={true}>Rider check-in</CheckItem>
-                <CheckItem ok={true}>RFID timing &amp; lap recording</CheckItem>
-                <CheckItem ok={true}>Moto scoring and results entry</CheckItem>
-                <CheckItem ok={true}>Heat sheet and gate assignments</CheckItem>
-                <CheckItem ok={true}>Series points calculation</CheckItem>
-                <CheckItem ok={true}>PDF / print reports</CheckItem>
+                <CheckItem ok={true}>Rider check-in &amp; sign-in</CheckItem>
+                <CheckItem ok={true}>RFID tag assignment</CheckItem>
+                <CheckItem ok={true}>Bib number management</CheckItem>
+                <CheckItem ok={true}>Walk-up registration management</CheckItem>
+                <CheckItem ok={true}>View event registrations</CheckItem>
               </ul>
             </div>
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
               <p className="font-semibold text-destructive text-xs uppercase tracking-wider mb-2.5">Not available offline</p>
               <ul className="space-y-1.5">
+                <CheckItem ok={false}>Live timing &amp; lap recording</CheckItem>
+                <CheckItem ok={false}>Moto scoring &amp; results entry</CheckItem>
                 <CheckItem ok={false}>Online pre-registration</CheckItem>
                 <CheckItem ok={false}>Public results page</CheckItem>
-                <CheckItem ok={false}>Live broadcast (WatchLive)</CheckItem>
                 <CheckItem ok={false}>Email confirmations</CheckItem>
                 <CheckItem ok={false}>Payment processing</CheckItem>
               </ul>
@@ -357,11 +363,25 @@ ipconfig                    # Look for "IPv4 Address" under your adapter`}</Code
             <div className="flex gap-3">
               <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</div>
               <div className="space-y-1.5">
-                <p className="text-foreground font-medium">Export the local database</p>
-                <p className="text-xs">Run this command in the server directory to create a portable export file.</p>
-                <CodeBlock>{`npm run export
+                <p className="text-foreground font-medium">Run the sync script</p>
+                <p className="text-xs">
+                  From the local server directory, run <code className="bg-muted rounded px-1 font-mono">npm run sync</code> with
+                  your cloud credentials. The script uploads all check-ins, RFID assignments,
+                  and bib numbers directly to the cloud.
+                </p>
+                <CodeBlock>{`# macOS / Linux
+CLOUD_URL=https://your-app.replit.app \\
+CLUB_ID=1 \\
+CLOUD_EMAIL=you@club.com \\
+CLOUD_PASSWORD=yourpassword \\
+npm run sync
 
-# Creates: race-export-YYYYMMDD-HHMMSS.json`}</CodeBlock>
+# Windows (Command Prompt — set vars first)
+set CLOUD_URL=https://your-app.replit.app
+set CLUB_ID=1
+set CLOUD_EMAIL=you@club.com
+set CLOUD_PASSWORD=yourpassword
+npm run sync`}</CodeBlock>
               </div>
             </div>
 

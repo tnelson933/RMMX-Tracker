@@ -1,4 +1,4 @@
-import { Wifi } from "lucide-react";
+import { WifiOff } from "lucide-react";
 
 function isLocalhost(): boolean {
   if (typeof window === "undefined") return false;
@@ -11,7 +11,7 @@ export function LocalModeBanner() {
 
   return (
     <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
-      <Wifi className="w-4 h-4 shrink-0" />
+      <WifiOff className="w-4 h-4 shrink-0" />
       <span className="font-semibold">Local Mode</span>
       <span className="text-muted-foreground hidden sm:inline">
         · Running on this device — data stored locally
