@@ -336,3 +336,10 @@
     margin: 0.6in 0.5in;
   }
 }
+
+@utility hide-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

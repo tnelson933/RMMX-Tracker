@@ -51,7 +51,7 @@ export default function RiderLogin() {
   });
 
   return (
-    <div className="min-h-screen overflow-hidden bg-background flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen h-screen overflow-y-auto hide-scrollbar bg-background flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center gap-3 mb-8">
           <Mountain size={32} className="text-primary" />
