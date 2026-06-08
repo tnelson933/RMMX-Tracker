@@ -20,7 +20,7 @@ export function RiderLayout({ children, showBack, backTo = "/rider/portal", back
   const handleLogout = async () => {
     await riderApi.logout().catch(() => {});
     queryClient.clear();
-    navigate("/rider/login");
+    navigate("/");
   };
 
   return (
