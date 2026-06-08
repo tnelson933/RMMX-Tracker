@@ -146,7 +146,7 @@ export default function Registrations() {
   // ── Data ─────────────────────────────────────────────────────────────────────
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: rawRegistrations, isLoading, isError: registrationsError } = useListRegistrations(eventId, { query: { enabled: !!eventId } as any });
-  const { data: registrations, isFromCache: registrationsFromCache, cachedAt: registrationsCachedAt } =
+  const { data: registrations, isLoading: registrationsOfflineLoading, isFromCache: registrationsFromCache, cachedAt: registrationsCachedAt } =
     useOfflineAwareQuery(`registrations/${eventId}`, rawRegistrations, isLoading, registrationsError);
   const updateMutation = useUpdateRegistration();
 
@@ -1425,7 +1425,7 @@ export default function Registrations() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {registrationsOfflineLoading ? (
                 <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
               ) : sortedRegs.length > 0 ? (
                 sortedRegs.map(reg => {

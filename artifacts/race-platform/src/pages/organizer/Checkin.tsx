@@ -134,7 +134,7 @@ export default function Checkin() {
   const { data: rawCheckins, isLoading: checkinsLoading, isError: checkinsError } = useListCheckins(eventId, {
     query: { enabled: !!eventId, refetchInterval: 30000 } as any
   });
-  const { data: checkins, isFromCache: checkinsFromCache, cachedAt: checkinsCachedAt } =
+  const { data: checkins, isLoading: checkinsOfflineLoading, isFromCache: checkinsFromCache, cachedAt: checkinsCachedAt } =
     useOfflineAwareQuery(`checkins/${eventId}`, rawCheckins, checkinsLoading, checkinsError);
   const { data: summary } = useGetRaceDaySummary(eventId, {
     query: { enabled: !!eventId, refetchInterval: 30000 } as any
@@ -252,7 +252,7 @@ export default function Checkin() {
     return allCheckins.some(c => c.riderId !== riderId && c.registrationBib != null && String(c.registrationBib) === v);
   };
 
-  if (eventLoading || checkinsLoading) return <div className="p-8">Loading...</div>;
+  if (eventLoading || checkinsOfflineLoading) return <div className="p-8">Loading...</div>;
 
   return (
     <div className="bg-gray-50 min-h-full">
