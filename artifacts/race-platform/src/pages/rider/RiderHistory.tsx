@@ -515,10 +515,50 @@ function EventCard({ event }: { event: EventHistory }) {
 
 // ─── Event practice components ────────────────────────────────────────────────
 
-function EventPracticeSessionCard({ session }: { session: EventPracticeSession }) {
+function EventPracticeSessionCard({ session, riderId }: { session: EventPracticeSession; riderId: number }) {
   const [showMyLaps, setShowMyLaps] = useState(false);
+  const [liveLeaderboard, setLiveLeaderboard] = useState<EventPracticeLeaderboardEntry[] | null>(null);
+  const [sseConnected, setSseConnected] = useState(false);
   const isLive = session.status === "in_progress";
-  const myEntry = session.leaderboard.find(e => e.isMe);
+
+  useEffect(() => {
+    if (!isLive) return;
+    const es = new EventSource(`/api/timing/live/${session.motoId}`);
+    es.onopen = () => setSseConnected(true);
+    es.onerror = () => setSseConnected(false);
+    es.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (!data?.leaderboard) return;
+        // Re-rank by fastest single lap — this is gate pick order
+        const sorted = [...data.leaderboard].sort((a: any, b: any) => {
+          if (a.bestLapMs == null && b.bestLapMs == null) return 0;
+          if (a.bestLapMs == null) return 1;
+          if (b.bestLapMs == null) return -1;
+          return a.bestLapMs - b.bestLapMs;
+        });
+        setLiveLeaderboard(
+          sorted.map((r: any, i: number) => ({
+            rank: i + 1,
+            riderId: r.riderId,
+            riderName: r.riderName,
+            bibNumber: r.bibNumber ?? null,
+            bestLapMs: r.bestLapMs ?? null,
+            lapCount: r.laps ?? 0,
+            isMe: r.riderId === riderId,
+          }))
+        );
+        setSseConnected(true);
+      } catch { /* ignore parse errors */ }
+    };
+    return () => {
+      es.close();
+      setSseConnected(false);
+    };
+  }, [session.motoId, isLive, riderId]);
+
+  const displayLeaderboard = liveLeaderboard ?? session.leaderboard;
+  const myEntry = displayLeaderboard.find(e => e.isMe);
   const myLapsWithTime = session.myLaps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
 
   return (
@@ -532,9 +572,13 @@ function EventPracticeSessionCard({ session }: { session: EventPracticeSession }
             </CardTitle>
           </div>
           {isLive ? (
-            <span className="flex items-center gap-1.5 text-xs font-bold uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20 shrink-0">
-              <Radio size={10} className="animate-pulse" />
-              Live
+            <span className={`flex items-center gap-1.5 text-xs font-bold uppercase px-2.5 py-1 rounded-full border shrink-0 ${
+              sseConnected
+                ? "text-primary bg-primary/10 border-primary/20"
+                : "text-muted-foreground bg-muted border-border"
+            }`}>
+              <Radio size={10} className={sseConnected ? "animate-pulse" : ""} />
+              {sseConnected ? "Live" : "Connecting…"}
             </span>
           ) : (
             <Badge variant="outline" className="text-xs shrink-0">Done</Badge>
@@ -548,7 +592,7 @@ function EventPracticeSessionCard({ session }: { session: EventPracticeSession }
           Gate pick order — ranked by fastest single lap
         </div>
 
-        {session.leaderboard.length === 0 ? (
+        {displayLeaderboard.length === 0 ? (
           <p className="text-sm text-muted-foreground italic">No lap times recorded yet</p>
         ) : (
           <div className="rounded-lg border border-border overflow-hidden">
@@ -558,7 +602,7 @@ function EventPracticeSessionCard({ session }: { session: EventPracticeSession }
               <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">Laps</div>
               <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">Best Lap</div>
             </div>
-            {session.leaderboard.map((entry: EventPracticeLeaderboardEntry) => (
+            {displayLeaderboard.map((entry: EventPracticeLeaderboardEntry) => (
               <div
                 key={entry.rank}
                 className={`grid grid-cols-[2.25rem_1fr_2.75rem_5rem] gap-2 items-center px-3 py-2.5 border-b border-border/50 last:border-b-0 ${
@@ -632,9 +676,11 @@ function EventPracticeSessionCard({ session }: { session: EventPracticeSession }
 function EventPracticePanel({
   events,
   loading,
+  riderId,
 }: {
   events: EventPracticeEvent[];
   loading: boolean;
+  riderId: number;
 }) {
   if (loading) {
     return (
@@ -682,7 +728,7 @@ function EventPracticePanel({
           </div>
           <div className="space-y-3">
             {event.sessions.map(session => (
-              <EventPracticeSessionCard key={session.motoId} session={session} />
+              <EventPracticeSessionCard key={session.motoId} session={session} riderId={riderId} />
             ))}
           </div>
         </div>
@@ -1942,6 +1988,7 @@ export default function RiderHistory() {
                 <EventPracticePanel
                   events={eventPracticeData?.events ?? []}
                   loading={eventPracticeLoading}
+                  riderId={riderId}
                 />
               )}
 
