@@ -150,7 +150,17 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
         // them without dropping the WebSocket connection on burst.
         videoBitsPerSecond: 500_000,
         audioBitsPerSecond: 64_000,
-      });
+        // Force a keyframe every 2 s.  Without this, VP9 MediaRecorder only
+        // emits ONE keyframe (the very first chunk = the init segment).  Every
+        // subsequent 500 ms timeslice is a P-frame.  The server parks late
+        // viewers in a "pending" queue and graduates them on the next keyframe;
+        // without periodic keyframes, pending viewers are never graduated and
+        // the fallback sends them stale init data that the decoder can't use
+        // with the current live P-frames → video starts then immediately freezes.
+        // Chrome 94+ honours videoKeyFrameIntervalDuration (milliseconds);
+        // older/other browsers silently ignore it.
+        videoKeyFrameIntervalDuration: 2_000,
+      } as MediaRecorderOptions);
       recorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {

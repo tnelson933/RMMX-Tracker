@@ -168,6 +168,9 @@ function flushPendingViewers(state: StreamState, keyframeChunk: Buffer): Set<Web
   }
 
   state.pendingViewers.clear();
+  if (graduated.size > 0) {
+    logger.info({ eventId: (state as any).eventId, count: graduated.size }, "Pending viewers graduated via keyframe");
+  }
   // NOTE: do NOT call state.viewers.add() here.  The caller must add them
   // AFTER the live-forward loop so this keyframe isn't forwarded a second time.
   return graduated;
@@ -346,24 +349,37 @@ function handleViewer(ws: WebSocket, eventId: number) {
       // keyframe and moves the viewer into state.viewers for live forwarding.
       state.pendingViewers.add(ws);
 
-      // Safety fallback: if the broadcaster hasn't sent a keyframe within 5 s
-      // (e.g. broadcaster is paused, very long GOP, or stalled), flush with the
-      // best available data so the viewer isn't stuck in "Connecting…" forever.
+      // Safety fallback: if the broadcaster hasn't sent a keyframe within 2 s
+      // (e.g. stalled broadcaster or browser that ignores videoKeyFrameIntervalDuration),
+      // flush the viewer with the best available data so they aren't stuck forever.
+      // With videoKeyFrameIntervalDuration: 2000 in the broadcaster, a real keyframe
+      // normally arrives within 2 s and this path is rarely taken.
       pendingFlushTimer = setTimeout(() => {
-        pendingFlushTimer = null;
-        if (!state.pendingViewers.has(ws)) return; // already flushed normally
-        if (ws.readyState !== WebSocket.OPEN) return;
+        try {
+          pendingFlushTimer = null;
+          // Log immediately — before any sends — so we always see it even if a
+          // subsequent ws.send() throws due to a race with connection teardown.
+          logger.warn({ eventId, hasInit: !!state.initSegment, hasKeyframe: !!state.lastKeyframeChunk }, "Pending viewer flushed via 2s fallback (no keyframe from broadcaster)");
 
-        if (state.initSegment) {
-          ws.send(state.initSegment, { binary: true });
-          if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment) {
-            ws.send(state.lastKeyframeChunk, { binary: true });
+          if (!state.pendingViewers.has(ws)) return; // already flushed normally
+          if (ws.readyState !== WebSocket.OPEN) {
+            state.pendingViewers.delete(ws);
+            return;
           }
+
+          if (state.initSegment) {
+            ws.send(state.initSegment, { binary: true });
+            if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment) {
+              ws.send(state.lastKeyframeChunk, { binary: true });
+            }
+          }
+          state.pendingViewers.delete(ws);
+          state.viewers.add(ws);
+        } catch (err) {
+          logger.error({ eventId, err: err instanceof Error ? err.message : String(err) }, "Pending viewer fallback error — removing from pending");
+          state.pendingViewers.delete(ws);
         }
-        state.pendingViewers.delete(ws);
-        state.viewers.add(ws);
-        logger.warn({ eventId }, "Pending viewer flushed via 5s fallback (no keyframe arrived)");
-      }, 5_000);
+      }, 2_000);
     } else {
       ws.send(JSON.stringify({ type: "offline" }));
     }
