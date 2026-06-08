@@ -194,6 +194,34 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const { raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateConfigId } = req.body;
 
+  // --- Guard: skip classes that already have completed motos to preserve results ---
+  const existingMotos = await db.select({
+    id: motosTable.id,
+    raceClass: motosTable.raceClass,
+    status: motosTable.status,
+    motoNumber: motosTable.motoNumber,
+  }).from(motosTable).where(eq(motosTable.eventId, eventId));
+
+  const lockedClasses = new Set(
+    existingMotos
+      .filter(m => m.status === "completed")
+      .map(m => m.raceClass)
+      .filter((c): c is string => c != null)
+  );
+
+  // Only generate for classes that have no completed motos
+  const classesToGenerate: string[] = ((classes as string[]) || []).filter(c => !lockedClasses.has(c));
+
+  // Delete existing non-completed motos for the classes we will regenerate (avoid duplicates)
+  if (classesToGenerate.length > 0) {
+    const idsToDelete = existingMotos
+      .filter(m => m.raceClass != null && classesToGenerate.includes(m.raceClass) && m.status !== "completed")
+      .map(m => m.id);
+    if (idsToDelete.length > 0) {
+      await db.delete(motosTable).where(inArray(motosTable.id, idsToDelete));
+    }
+  }
+
   // Determine if this is a Supercross-style event (main event only, heats feed into main)
   const { isSupercross: isSupercrossFormat } = await getEventFormat(eventId);
 
@@ -264,7 +292,9 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.checkedIn, true)));
 
   const motos: typeof motosTable.$inferSelect[] = [];
-  let motoNumber = 1;
+  // Start numbering after the highest existing moto number so new motos don't collide with preserved ones
+  const maxExistingMotoNumber = existingMotos.reduce((max, m) => Math.max(max, m.motoNumber ?? 0), 0);
+  let motoNumber = maxExistingMotoNumber + 1;
 
   const divCount = raceFormat === "three_moto" ? 3 : raceFormat === "two_moto" ? 2 : 1;
 
@@ -301,7 +331,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   type ClassEntry = { cls: string; groups: CheckinRow[][] };
   const allClassGroups: ClassEntry[] = [];
 
-  for (const cls of (classes || [])) {
+  for (const cls of classesToGenerate) {
     let classRiders = checkins.filter(c => c.raceClass === cls);
     if (classRiders.length === 0) continue;
 

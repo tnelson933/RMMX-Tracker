@@ -1315,15 +1315,26 @@ export default function Motos() {
 
   const handleGenerate = () => {
     if (!event?.raceClasses) return;
+    const allClasses: string[] = event.raceClasses as string[];
+    const lockedClasses = allClasses.filter(cls =>
+      (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
+    );
     const perHeat = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
     const gateConfigId = usePracticeSeeding && selectedGateConfigId ? selectedGateConfigId : undefined;
     generateMutation.mutate(
-      { eventId, data: { raceFormat: format, classes: event.raceClasses, ridersPerHeat: perHeat, usePracticeSeeding, gateConfigId } as any },
+      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, usePracticeSeeding, gateConfigId } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           setIsGenerateOpen(false);
-          toast({ title: "Lineups generated" });
+          if (lockedClasses.length > 0) {
+            toast({
+              title: "Lineups generated",
+              description: `Skipped ${lockedClasses.length} class${lockedClasses.length > 1 ? "es" : ""} with completed motos: ${lockedClasses.join(", ")}`,
+            });
+          } else {
+            toast({ title: "Lineups generated" });
+          }
         },
         onError: (err) => {
           toast({ title: "Failed to generate", description: err.message, variant: "destructive" });
@@ -1678,6 +1689,49 @@ export default function Motos() {
               <DialogTitle className="font-heading uppercase text-xl">Generate Lineups</DialogTitle>
             </DialogHeader>
             <div className="space-y-6 py-4">
+              {(() => {
+                const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+                const lockedClasses = allClasses.filter(cls =>
+                  (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
+                );
+                const regenerableClasses = allClasses.filter(cls => !lockedClasses.includes(cls));
+                if (lockedClasses.length === 0) return null;
+                return (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-3 py-2.5 space-y-1.5">
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                      <span>⚠️</span> Some classes have completed motos
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      Completed motos and their results are never overwritten. Only classes without completed motos will be regenerated.
+                    </p>
+                    <div className="space-y-1 pt-0.5">
+                      <p className="text-[11px] font-medium text-amber-800 dark:text-amber-300 uppercase tracking-wider">Skipped (has completed motos):</p>
+                      <div className="flex flex-wrap gap-1">
+                        {lockedClasses.map(cls => (
+                          <span key={cls} className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+                            {cls}
+                          </span>
+                        ))}
+                      </div>
+                      {regenerableClasses.length > 0 && (
+                        <>
+                          <p className="text-[11px] font-medium text-green-700 dark:text-green-400 uppercase tracking-wider pt-1">Will regenerate:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {regenerableClasses.map(cls => (
+                              <span key={cls} className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-700">
+                                {cls}
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {regenerableClasses.length === 0 && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400 pt-1 font-medium">All classes are locked — nothing to regenerate.</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               {isSupercrossFormat ? (
                 <p className="text-sm text-muted-foreground">
                   <span className="font-semibold text-foreground">Supercross format:</span> Heat motos and an empty Main Event will be created per class. Use <span className="font-semibold">Advance to Main</span> after heats to populate the Main Event lineup.
@@ -1766,7 +1820,16 @@ export default function Motos() {
                   </p>
                 )}
               </div>
-              <Button onClick={handleGenerate} disabled={generateMutation.isPending} className="w-full font-heading uppercase">
+              <Button
+                onClick={handleGenerate}
+                disabled={generateMutation.isPending || (() => {
+                  const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+                  return allClasses.length > 0 && allClasses.every(cls =>
+                    (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
+                  );
+                })()}
+                className="w-full font-heading uppercase"
+              >
                 {generateMutation.isPending ? "Generating..." : "Generate Lineups"}
               </Button>
             </div>
