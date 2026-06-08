@@ -2481,7 +2481,12 @@ export default function Motos() {
           </div>
         ) : viewMode === "grid" && motos?.filter(m => m.type !== "practice").length ? (
         <div className="space-y-0">
-          {motos.filter(m => m.type !== "practice" && (classFilter === "schedule" || m.raceClass === classFilter)).sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
+          {motos.filter(m => m.type !== "practice" && (classFilter === "schedule" || m.raceClass === classFilter)).sort((a, b) => {
+              const rank = (s: string) => s === "in_progress" ? 0 : s === "scheduled" ? 1 : s === "completed" ? 2 : 3;
+              const rd = rank(a.status) - rank(b.status);
+              if (rd !== 0) return rd;
+              return (a.motoNumber || 0) - (b.motoNumber || 0);
+            }).map((moto) => (
             <div key={moto.id} id={`moto-card-${moto.id}`}>
               <DroppableMotoSlot id={`moto-slot-${moto.id}`} active={!!activeMotoCardDrag && activeMotoCardDrag.motoId !== moto.id} />
             <Card className="flex flex-col h-full border-sidebar-border overflow-hidden">
