@@ -996,10 +996,14 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   const nowUpMotoId = myScheduled[0]?.motoId ?? null;
   const upNextMotoId = myScheduled[1]?.motoId ?? null;
 
-  // How many races come before the rider's turn. 0 = they're up now (in_progress).
-  const riderIsNowUp = event.motos.some(m => m.isAnyFamilyMemberInMoto && m.status === "in_progress");
-  const nextMyMotoIdx = event.motos.findIndex(m => m.isAnyFamilyMemberInMoto && m.status === "scheduled");
-  const racesUntilTurn = riderIsNowUp ? 0 : nextMyMotoIdx > 0 ? nextMyMotoIdx : null;
+  // How many scheduled motos (by motoNumber) come before the rider's next moto.
+  // in_progress motos don't count — they're already running and don't delay the rider.
+  const nowUpMoto = myScheduled[0] ?? null;
+  const nowUpMotoNum = nowUpMoto?.motoNumber ?? Infinity;
+  const scheduledBefore = nowUpMoto
+    ? event.motos.filter(m => m.status === "scheduled" && (m.motoNumber ?? 0) < nowUpMotoNum).length
+    : null;
+  const racesUntilTurn = scheduledBefore;
 
   const upcoming = sortedMotos.filter(m => m.status !== "completed" && m.status !== "cancelled");
   const finished = sortedMotos.filter(m => m.status === "completed" || m.status === "cancelled");
@@ -1063,9 +1067,26 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
             {racesUntilTurn !== null ? (
               <>
                 {racesUntilTurn === 0 ? (
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-green-500/15 border border-green-500/30 text-green-600 text-xs font-heading font-black uppercase tracking-wider animate-pulse">
-                    Now Up
-                  </span>
+                  <div className="text-right">
+                    <div className="text-xs font-heading font-black uppercase tracking-wider text-green-600 animate-pulse">Up Now</div>
+                    {nowUpMoto && nowUpMoto.familyGates.length > 0 && (
+                      nowUpMoto.familyGates.length === 1 ? (
+                        <div className="flex items-baseline gap-1 justify-end mt-0.5">
+                          <span className={`text-xs ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>Gate</span>
+                          <span className={`font-heading font-black text-2xl leading-none ${isRaceDay ? "text-white" : "text-foreground"}`}>{nowUpMoto.familyGates[0].gate}</span>
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 space-y-0.5">
+                          {nowUpMoto.familyGates.map(fg => (
+                            <div key={fg.gate} className="flex items-baseline gap-1 justify-end">
+                              <span className={`text-xs ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>{fg.riderName.split(" ")[0]} G</span>
+                              <span className={`font-heading font-black text-xl leading-none ${isRaceDay ? "text-white" : "text-foreground"}`}>{fg.gate}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    )}
+                  </div>
                 ) : (
                   <>
                     <div className={`font-heading font-black text-3xl leading-none text-right ${isRaceDay ? "text-white" : "text-primary"}`}>{racesUntilTurn}</div>
