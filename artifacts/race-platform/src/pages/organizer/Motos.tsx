@@ -70,6 +70,7 @@ function LiveCrossingsFeed({ motoId, minLapTimeMs }: { motoId: number; minLapTim
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [flash, setFlash] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const knownIdsRef = useRef<Set<number>>(new Set());
@@ -202,14 +203,32 @@ function LiveCrossingsFeed({ motoId, minLapTimeMs }: { motoId: number; minLapTim
                       {format(new Date(c.crossingTime), "h:mm:ss")}
                     </TableCell>
                     <TableCell className="py-1 pr-1 text-right">
-                      <button
-                        onClick={() => handleDeleteCrossing(c.id)}
-                        disabled={deletingId === c.id}
-                        className="text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-40 p-0.5 rounded"
-                        title="Delete crossing"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      {confirmDeleteId === c.id ? (
+                        <span className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => { setConfirmDeleteId(null); handleDeleteCrossing(c.id); }}
+                            disabled={deletingId === c.id}
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-40"
+                          >
+                            Yes
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteId(c.id)}
+                          disabled={deletingId === c.id}
+                          className="text-muted-foreground/40 hover:text-destructive transition-colors disabled:opacity-40 p-0.5 rounded"
+                          title="Delete crossing"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
