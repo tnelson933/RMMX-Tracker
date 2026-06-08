@@ -743,8 +743,12 @@ export default function Motos() {
   // Tracks which eventId the inputs have been seeded for — prevents the seed effect
   // from overwriting user input when the event query refetches after a save.
   const seededForEventIdRef = useRef<number | null>(null);
-  // Per-class debounce timers — cleared and reset on every minLapInputs change.
-  const minLapDebounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Single global debounce timer — one timer for ALL classes eliminates the per-class
+  // concurrent-partial-payload race condition.
+  const minLapDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Always-current snapshot of minLapInputs so the unmount-flush can read it synchronously.
+  const minLapInputsRef = useRef(minLapInputs);
+  minLapInputsRef.current = minLapInputs;
 
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: motos, isLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
@@ -774,10 +778,8 @@ export default function Motos() {
   }, [eventId]);
 
   // Seed min-lap inputs from saved event data exactly once per eventId.
-  // Using a ref guard instead of the old "if (!(cls in prev))" condition means the
-  // seed always writes a clean set of inputs from the database, but only fires on the
-  // initial load — not on subsequent refetches triggered by a save — so user input
-  // that is still in the debounce window is never overwritten.
+  // Ref guard: fires on initial load only — not on refetches triggered by a successful
+  // save — so user input still in the debounce window is never overwritten.
   useEffect(() => {
     if (!event) return;
     const currentEventId = (event as any).id as number;
@@ -794,76 +796,78 @@ export default function Motos() {
     });
   }, [event]);
 
-  const handleMinLapBlur = (cls: string) => {
-    const raw = minLapInputs[cls] ?? "";
-    const ms = parseMinLapTime(raw);
-    const saved = (event as any)?.minLapTimes as Record<string, number> | undefined;
-    // Format the displayed value
-    if (ms != null) {
-      setMinLapInputs(prev => ({ ...prev, [cls]: formatMinLapTime(ms) }));
+  // Always-current save function stored in a ref so timer/unmount callbacks call the
+  // latest version regardless of when they fire — eliminates stale-closure risk.
+  // Payload is built from ALL current inputs (never a partial per-class merge), and
+  // an isUnchanged check avoids unnecessary round-trips.
+  const saveMinLapRef = useRef<(inputs: Record<string, string>, triggerClass: string | null) => void>(() => {});
+  saveMinLapRef.current = (inputs: Record<string, string>, triggerClass: string | null): void => {
+    const newMinLapTimes: Record<string, number> = {};
+    for (const [cls, raw] of Object.entries(inputs)) {
+      const ms = parseMinLapTime(raw);
+      if (ms != null) newMinLapTimes[cls] = ms;
     }
-    // Save only if changed
-    const prevMs = saved?.[cls] ?? null;
-    if (ms === prevMs) return;
-    const newMinLapTimes = { ...(saved ?? {}) };
-    if (ms != null) {
-      newMinLapTimes[cls] = ms;
-    } else {
-      delete newMinLapTimes[cls];
-    }
+    const saved = ((event as any)?.minLapTimes ?? {}) as Record<string, number>;
+    const hasChange =
+      Object.keys(newMinLapTimes).length !== Object.keys(saved).length ||
+      Object.entries(newMinLapTimes).some(([cls, ms]) => saved[cls] !== ms);
+    if (!hasChange) return;
+    const displayClass = triggerClass ?? Object.keys(inputs)[0] ?? null;
     updateEventMutation.mutate(
       { eventId, data: { minLapTimes: newMinLapTimes } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["getEvent", eventId] as any });
-          setMinLapSavedClass(cls);
-          setTimeout(() => setMinLapSavedClass(null), 2000);
+          if (displayClass) {
+            setMinLapSavedClass(displayClass);
+            setTimeout(() => setMinLapSavedClass(null), 2000);
+          }
         },
       }
     );
   };
 
-  // Debounced save-on-change — fires ~600 ms after the user stops typing in any class.
-  // This ensures the value is saved even when the organizer navigates away without
-  // blurring the input first. handleMinLapBlur still provides an immediate flush on blur.
-  useEffect(() => {
-    // Cancel all pending timers whenever minLapInputs changes
-    Object.values(minLapDebounceTimers.current).forEach(t => clearTimeout(t));
-    minLapDebounceTimers.current = {};
-
-    const saved = (event as any)?.minLapTimes as Record<string, number> | undefined;
-
-    for (const [cls, raw] of Object.entries(minLapInputs)) {
-      minLapDebounceTimers.current[cls] = setTimeout(() => {
-        const ms = parseMinLapTime(raw);
-        const prevMs = saved?.[cls] ?? null;
-        if (ms === prevMs) return;
-        const newMinLapTimes = { ...(saved ?? {}) };
-        if (ms != null) {
-          newMinLapTimes[cls] = ms;
-        } else {
-          delete newMinLapTimes[cls];
-        }
-        updateEventMutation.mutate(
-          { eventId, data: { minLapTimes: newMinLapTimes } },
-          {
-            onSuccess: () => {
-              queryClient.invalidateQueries({ queryKey: ["getEvent", eventId] as any });
-              setMinLapSavedClass(cls);
-              setTimeout(() => setMinLapSavedClass(null), 2000);
-            },
-          }
-        );
-      }, 600);
+  // On blur: normalize display value, cancel debounce, flush save immediately.
+  // Cancelling before flushing ensures exactly one mutation fires — no double-send.
+  const handleMinLapBlur = (cls: string) => {
+    const raw = minLapInputs[cls] ?? "";
+    const ms = parseMinLapTime(raw);
+    const normalizedInputs = ms != null
+      ? { ...minLapInputs, [cls]: formatMinLapTime(ms) }
+      : { ...minLapInputs };
+    if (ms != null) setMinLapInputs(normalizedInputs);
+    if (minLapDebounceTimer.current) {
+      clearTimeout(minLapDebounceTimer.current);
+      minLapDebounceTimer.current = null;
     }
+    saveMinLapRef.current(normalizedInputs, cls);
+  };
 
+  // Debounced save-on-change — single global timer reset on every keystroke.
+  // Fires 600 ms after the user stops typing, persisting values even when the
+  // organizer navigates away without touching blur.
+  useEffect(() => {
+    if (minLapDebounceTimer.current) clearTimeout(minLapDebounceTimer.current);
+    const snapInputs = { ...minLapInputs }; // stable snapshot for this timer window
+    minLapDebounceTimer.current = setTimeout(() => {
+      saveMinLapRef.current(snapInputs, null);
+    }, 600);
     return () => {
-      Object.values(minLapDebounceTimers.current).forEach(t => clearTimeout(t));
-      minLapDebounceTimers.current = {};
+      if (minLapDebounceTimer.current) clearTimeout(minLapDebounceTimer.current);
     };
-    // event and eventId are captured in the closure and stay stable for the 600 ms window
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minLapInputs]);
+
+  // On unmount (navigate away): cancel any pending timer and flush immediately so
+  // values typed without blur are never lost.
+  useEffect(() => {
+    return () => {
+      if (minLapDebounceTimer.current) {
+        clearTimeout(minLapDebounceTimer.current);
+        minLapDebounceTimer.current = null;
+      }
+      saveMinLapRef.current(minLapInputsRef.current, null);
+    };
+  }, []); // empty deps — cleanup runs only on unmount
 
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const eventScoringTable = (pointsTables ?? []).find(t => t.id === (event as any)?.scoringTableId);
