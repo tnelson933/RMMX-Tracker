@@ -7,8 +7,12 @@ const router = Router();
 
 router.get("/rfid", async (req, res) => {
   const { eventId } = req.query;
+  const numEventId = eventId ? parseInt(String(eventId), 10) : null;
+  if (eventId && (numEventId === null || isNaN(numEventId))) {
+    return res.status(400).json({ error: "Invalid eventId" });
+  }
   let assignments;
-  if (eventId) {
+  if (numEventId) {
     assignments = await db.select({
       id: rfidAssignmentsTable.id,
       riderId: rfidAssignmentsTable.riderId,
@@ -19,7 +23,7 @@ router.get("/rfid", async (req, res) => {
       lastName: ridersTable.lastName,
     }).from(rfidAssignmentsTable)
       .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
-      .where(eq(rfidAssignmentsTable.eventId, Number(eventId)));
+      .where(eq(rfidAssignmentsTable.eventId, numEventId));
   } else {
     assignments = await db.select({
       id: rfidAssignmentsTable.id,
@@ -47,25 +51,32 @@ router.post("/rfid", async (req, res) => {
   const { riderId, rfidNumber, eventId } = req.body;
   if (!riderId || !rfidNumber) return res.status(400).json({ error: "riderId and rfidNumber required" });
 
+  const numRiderId = parseInt(String(riderId), 10);
+  if (isNaN(numRiderId)) return res.status(400).json({ error: "Invalid riderId" });
+  const numEventId = eventId != null ? parseInt(String(eventId), 10) : null;
+  if (eventId != null && (numEventId === null || isNaN(numEventId))) {
+    return res.status(400).json({ error: "Invalid eventId" });
+  }
+
   // Guard: prevent the same tag number being assigned to multiple riders in the same event.
   // If that happened the timing lookup (rfidNumber + eventId) would match the wrong rider.
-  if (eventId) {
+  if (numEventId) {
     const existing = await db
       .select({ id: rfidAssignmentsTable.id, riderId: rfidAssignmentsTable.riderId })
       .from(rfidAssignmentsTable)
-      .where(and(eq(rfidAssignmentsTable.rfidNumber, rfidNumber), eq(rfidAssignmentsTable.eventId, Number(eventId))));
-    if (existing.length > 0 && existing[0].riderId !== Number(riderId)) {
+      .where(and(eq(rfidAssignmentsTable.rfidNumber, rfidNumber), eq(rfidAssignmentsTable.eventId, numEventId)));
+    if (existing.length > 0 && existing[0].riderId !== numRiderId) {
       return res.status(409).json({ error: `Tag ${rfidNumber} is already assigned to another rider for this event` });
     }
   }
 
   // Upsert: if this rider already has an assignment for this event, replace it
   let assignment;
-  if (eventId) {
+  if (numEventId) {
     const existing = await db
       .select({ id: rfidAssignmentsTable.id })
       .from(rfidAssignmentsTable)
-      .where(and(eq(rfidAssignmentsTable.riderId, Number(riderId)), eq(rfidAssignmentsTable.eventId, Number(eventId))))
+      .where(and(eq(rfidAssignmentsTable.riderId, numRiderId), eq(rfidAssignmentsTable.eventId, numEventId)))
       .limit(1);
     if (existing.length > 0) {
       [assignment] = await db.update(rfidAssignmentsTable)
@@ -73,26 +84,26 @@ router.post("/rfid", async (req, res) => {
         .where(eq(rfidAssignmentsTable.id, existing[0].id))
         .returning();
     } else {
-      [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId, rfidNumber, eventId }).returning();
+      [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId: numRiderId, rfidNumber, eventId: numEventId }).returning();
     }
   } else {
-    [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId, rfidNumber, eventId }).returning();
+    [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId: numRiderId, rfidNumber, eventId: null }).returning();
   }
 
   // Also update rider's primary rfid
-  await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, riderId));
+  await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, numRiderId));
 
   // Update the checkin row so the check-in page reflects rfidLinked immediately
-  if (eventId) {
+  if (numEventId) {
     await db.update(checkinsTable)
       .set({ rfidNumber, rfidLinked: true })
       .where(and(
-        eq(checkinsTable.eventId, Number(eventId)),
-        eq(checkinsTable.riderId, Number(riderId)),
+        eq(checkinsTable.eventId, numEventId),
+        eq(checkinsTable.riderId, numRiderId),
       ));
   }
 
-  const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, numRiderId));
   const rider = riders[0];
 
   return res.status(201).json({

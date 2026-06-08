@@ -65,6 +65,7 @@ export default function StandalonePractice() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [liveBoard, setLiveBoard] = useState<LiveBoard | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -75,15 +76,20 @@ export default function StandalonePractice() {
   const loadSessions = useCallback(async () => {
     try {
       const res = await fetch("/api/practice", { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data);
-        if (!selectedId && data.length > 0) {
-          const active = data.find((s: PracticeSession) => s.status === "active");
-          setSelectedId((active ?? data[0]).id);
-        }
+      if (!res.ok) {
+        setLoadError(`Server error (${res.status}) — check your connection and refresh.`);
+        return;
       }
-    } catch { /* ignore */ }
+      const data = await res.json();
+      setLoadError(null);
+      setSessions(data);
+      if (!selectedId && data.length > 0) {
+        const active = data.find((s: PracticeSession) => s.status === "active");
+        setSelectedId((active ?? data[0]).id);
+      }
+    } catch {
+      setLoadError("Could not reach the server — check your connection and refresh.");
+    }
   }, [selectedId]);
 
   useEffect(() => {
@@ -297,7 +303,12 @@ export default function StandalonePractice() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {sessions.length === 0 && (
+            {loadError && (
+              <div className="mx-3 mt-3 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs text-destructive">
+                {loadError}
+              </div>
+            )}
+            {!loadError && sessions.length === 0 && (
               <div className="p-6 text-center text-sidebar-foreground/40 text-sm">
                 No sessions yet.
                 <br />

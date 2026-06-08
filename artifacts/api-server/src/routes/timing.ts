@@ -223,13 +223,27 @@ export async function buildLeaderboard(motoId: number) {
   };
 }
 
-// Minimum milliseconds between two valid crossings for the same tag in the same moto.
-// A rider physically cannot complete a motocross/ATV lap in under 30 seconds.
-// This prevents a single antenna burst (50+ reads in 0.2 s) from being recorded as 50 laps.
+// Default minimum milliseconds between two valid crossings for the same tag in the same moto.
+// Prevents a single antenna burst (50+ reads in 0.2 s) from being recorded as 50 laps.
+// Per-class overrides come from event.minLapTimes (set on the event edit page).
 const DEBOUNCE_MS = 30_000;
 
-// ── Core crossing processor ───────────────────────────────────────────────────
-async function processCrossing(opts: {
+// ── Per-moto async lock ────────────────────────────────────────────────────────
+// Node.js yields at every `await`, so two simultaneous requests can interleave:
+//   both read the same prev-crossings list → both compute lap #N → positions flip.
+// This lock serialises all crossing processing for a given moto, preventing
+// duplicate lap numbers and position collisions under real-track load.
+const motoLocks = new Map<number, Promise<void>>();
+function withMotoLock<T>(motoId: number, fn: () => Promise<T>): Promise<T> {
+  let unlock!: () => void;
+  const token = new Promise<void>(r => { unlock = r; });
+  const prev = motoLocks.get(motoId) ?? Promise.resolve();
+  motoLocks.set(motoId, prev.then(() => token));
+  return prev.then(() => fn()).finally(unlock);
+}
+
+// ── Core crossing processor (runs inside per-moto lock) ───────────────────────
+async function _processCrossing(opts: {
   rfidNumber: string;
   motoId: number;
   crossingTime: Date;
@@ -245,6 +259,12 @@ async function processCrossing(opts: {
   if (!moto) throw new Error("Moto not found");
   if (moto.status !== "in_progress") throw new Error("Moto is not in progress");
   if (!moto.startedAt) throw new Error("Moto has no start time");
+
+  // 1b. Per-class debounce threshold — use event's minLapTimes if configured, else DEBOUNCE_MS
+  const [eventRow] = await db.select({ minLapTimes: eventsTable.minLapTimes })
+    .from(eventsTable).where(eq(eventsTable.id, moto.eventId));
+  const classMinMs = (eventRow?.minLapTimes as Record<string, number> | null)?.[moto.raceClass ?? ""] ?? null;
+  const debounceMs = classMinMs ?? DEBOUNCE_MS;
 
   // 2. Resolve rider — use override if provided (manual crossing), else look up from RFID assignment
   let riderId: number | null = overrideRiderId !== undefined ? overrideRiderId : null;
@@ -268,7 +288,7 @@ async function processCrossing(opts: {
   if (!bypassDebounce && prevCrossings.length > 0) {
     const lastCrossing = prevCrossings[prevCrossings.length - 1];
     const gapMs = crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime();
-    if (gapMs < DEBOUNCE_MS) {
+    if (gapMs < debounceMs) {
       // Silent accept — not an error, just a duplicate burst read
       return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
     }
@@ -361,6 +381,13 @@ async function processCrossing(opts: {
   }
 
   return { crossing, lapNumber, lapTimeMs };
+}
+
+// Public entry point — acquires the per-moto lock before running the processor
+// so concurrent crossings are serialised, preventing lap-number duplicates and
+// position flips when multiple tags arrive at the same instant.
+function processCrossing(opts: Parameters<typeof _processCrossing>[0]) {
+  return withMotoLock(opts.motoId, () => _processCrossing(opts));
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
