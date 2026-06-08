@@ -285,7 +285,7 @@ function handleViewer(ws: WebSocket, eventId: number) {
           ws.send(JSON.stringify({ type: "heartbeat" }));
         }
       }, 1_000);
-    }, 500);
+    }, 150);
   };
 
   const stopHeartbeat = () => {
@@ -328,13 +328,15 @@ function handleViewer(ws: WebSocket, eventId: number) {
 
         ws.send(state.initSegment, { binary: true });
 
+        // Send the most recent keyframe chunk so the viewer's decoder has a valid
+        // I-frame close to the live edge. We intentionally skip the gopTail here —
+        // sending up to 16 × 35KB in a burst right after connection establishment
+        // can exceed the Replit proxy's per-connection buffer and cause the proxy to
+        // drop the connection. The viewer will see at most one GOP (≤4 s) of
+        // partially-decodable frames before the next keyframe arrives from the live
+        // stream, which is acceptable.
         if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment && ws.readyState === WebSocket.OPEN) {
           ws.send(state.lastKeyframeChunk, { binary: true });
-
-          for (const tail of state.gopTail) {
-            if (ws.readyState !== WebSocket.OPEN) break;
-            ws.send(tail, { binary: true });
-          }
         }
       }
     } else {

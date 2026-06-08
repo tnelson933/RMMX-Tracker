@@ -430,6 +430,17 @@ export default function WatchLive() {
       }
     };
 
+    // Independent client→server keep-alive: send a ping every 1.5 s regardless
+    // of whether a server heartbeat has arrived. This guarantees the proxy sees
+    // client→server application data within its idle-timeout window even if the
+    // first server heartbeat is delayed or the pong reply is lost.
+    const keepAliveId = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "hello" }));
+      }
+    }, 1_500);
+    ws.addEventListener("close", () => clearInterval(keepAliveId), { once: true });
+
     ws.onmessage = (e) => {
       // The Replit proxy converts text WebSocket frames into binary frames.
       // Detect JSON messages by checking for the '{' magic byte (0x7b) so we
