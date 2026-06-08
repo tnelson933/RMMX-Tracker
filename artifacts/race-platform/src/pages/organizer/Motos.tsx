@@ -880,6 +880,16 @@ export default function Motos() {
   const [bibInputs, setBibInputs] = useState<Record<number, string>>({});
   const [viewMode, setViewMode] = useState<"grid" | "run-order">("grid");
 
+  // Scroll expanded moto card into view when jumping from run-order
+  useEffect(() => {
+    if (viewMode !== "grid" || expandedMotoId === null) return;
+    const el = document.getElementById(`moto-card-${expandedMotoId}`);
+    if (!el) return;
+    // Small timeout lets React finish rendering before we scroll
+    const t = setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    return () => clearTimeout(t);
+  }, [expandedMotoId, viewMode]);
+
   // Drag-and-drop state
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const [lineupDrafts, setLineupDrafts] = useState<Record<number, LineupEntry[]>>({});
@@ -2376,14 +2386,19 @@ export default function Motos() {
                     return (
                       <TableRow
                         key={moto.id}
-                        className={`h-11 ${
+                        onClick={() => {
+                          setViewMode("grid");
+                          setClassFilter(moto.raceClass ?? "schedule");
+                          setExpandedMotoId(moto.id);
+                        }}
+                        className={`h-11 cursor-pointer group ${
                           moto.status === "in_progress"
-                            ? "bg-primary/5 border-l-2 border-l-primary"
+                            ? "bg-primary/5 border-l-2 border-l-primary hover:bg-primary/10"
                             : moto.status === "completed"
-                            ? "opacity-60"
+                            ? "opacity-60 hover:opacity-80 hover:bg-muted/40"
                             : isNext
-                            ? "bg-amber-500/5"
-                            : ""
+                            ? "bg-amber-500/5 hover:bg-amber-500/10"
+                            : "hover:bg-muted/40"
                         }`}
                       >
                         <TableCell className="text-center">
@@ -2434,18 +2449,21 @@ export default function Motos() {
                           <span className="font-heading font-bold text-sm tabular-nums">{riderCount}</span>
                         </TableCell>
                         <TableCell className="text-right pr-4">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                            moto.status === "in_progress"
-                              ? "bg-primary/15 text-primary border-primary/30 animate-pulse"
-                              : moto.status === "completed"
-                              ? "bg-secondary/15 text-secondary border-secondary/30"
-                              : "bg-muted text-muted-foreground border-transparent"
-                          }`}>
-                            {moto.status === "in_progress" && (
-                              <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-ping shrink-0" />
-                            )}
-                            {moto.status.replace("_", " ")}
-                          </span>
+                          <div className="flex items-center justify-end gap-2">
+                            <LayoutGrid size={13} className="text-muted-foreground/0 group-hover:text-muted-foreground/50 transition-colors shrink-0" aria-label="Open in grid" />
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                              moto.status === "in_progress"
+                                ? "bg-primary/15 text-primary border-primary/30 animate-pulse"
+                                : moto.status === "completed"
+                                ? "bg-secondary/15 text-secondary border-secondary/30"
+                                : "bg-muted text-muted-foreground border-transparent"
+                            }`}>
+                              {moto.status === "in_progress" && (
+                                <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-ping shrink-0" />
+                              )}
+                              {moto.status.replace("_", " ")}
+                            </span>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -2464,7 +2482,7 @@ export default function Motos() {
         ) : viewMode === "grid" && motos?.filter(m => m.type !== "practice").length ? (
         <div className="space-y-0">
           {motos.filter(m => m.type !== "practice" && (classFilter === "schedule" || m.raceClass === classFilter)).sort((a, b) => (a.motoNumber || 0) - (b.motoNumber || 0)).map((moto) => (
-            <div key={moto.id}>
+            <div key={moto.id} id={`moto-card-${moto.id}`}>
               <DroppableMotoSlot id={`moto-slot-${moto.id}`} active={!!activeMotoCardDrag && activeMotoCardDrag.motoId !== moto.id} />
             <Card className="flex flex-col h-full border-sidebar-border overflow-hidden">
               <CardHeader className="bg-sidebar text-sidebar-foreground py-3 border-b flex flex-row items-center justify-between gap-2">
