@@ -23,6 +23,7 @@ import aiRouter from "./ai";
 import practiceRouter from "./practice";
 import exportRouter from "./export";
 import syncRouter from "./sync";
+import offlineRouter from "./offline";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(aiRouter);
 router.use(practiceRouter);
 router.use(exportRouter);
 router.use(syncRouter);
+router.use(offlineRouter);
 
 export default router;

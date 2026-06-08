@@ -182,16 +182,22 @@ export default function OfflineMode() {
               <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</div>
               <div className="space-y-2">
                 <p className="text-foreground font-medium">Download the package</p>
-                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
-                  <Download size={14} className="text-primary shrink-0" />
-                  <span className="text-xs font-mono text-primary">
+                <a
+                  href="/api/offline/package"
+                  download="rocky-mountain-local-server-latest.zip"
+                  className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
+                >
+                  <Download size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
+                  <span className="text-xs font-mono text-primary flex-1">
                     rocky-mountain-local-server-latest.zip
                   </span>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 ml-auto">Coming soon</Badge>
-                </div>
+                  <Badge variant="default" className="text-[10px] px-1.5 py-0 ml-auto">Download</Badge>
+                </a>
                 <p className="text-xs">
-                  The download link will appear here once the offline package is available. Check back
-                  before your next event.
+                  Downloads a self-contained Node.js server bundle (~1 MB). Run{" "}
+                  <code className="bg-muted rounded px-1 font-mono">npm install</code> once after
+                  unzipping to add the native SQLite driver, then{" "}
+                  <code className="bg-muted rounded px-1 font-mono">npm start</code> on race day.
                 </p>
               </div>
             </div>
@@ -240,7 +246,7 @@ set SQLITE_FILE=./race_data.db`}</CodeBlock>
 #   ============================================`}</CodeBlock>
                 <p className="text-xs">
                   Open <code className="bg-muted rounded px-1 font-mono text-xs">http://localhost:8080/api/healthz</code> in
-                  a browser. You should see <code className="bg-muted rounded px-1 font-mono text-xs">{`{"ok":true}`}</code>.
+                  a browser. You should see <code className="bg-muted rounded px-1 font-mono text-xs">{`{"status":"ok","mode":"local"}`}</code>.
                 </p>
               </div>
             </div>
