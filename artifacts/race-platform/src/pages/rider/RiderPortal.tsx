@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Trophy, Calendar, Star, User, ChevronRight, Plus, Clock } from "lucide-react";
+import { Trophy, Calendar, Star, User, ChevronRight, Plus, Clock, UserPlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,7 @@ function ProfileCard({ profile }: { profile: RiderProfile }) {
 
 export default function RiderPortal() {
   const { account } = useRiderAuth();
+  const [, navigate] = useLocation();
 
   const { data: profiles, isLoading } = useQuery<RiderProfile[]>({
     queryKey: ["rider-profiles"],
@@ -86,11 +87,20 @@ export default function RiderPortal() {
   return (
     <RiderLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="font-heading font-bold text-3xl uppercase tracking-tight">My Profiles</h1>
-          <p className="text-muted-foreground mt-1">
-            All rider profiles linked to <span className="font-medium text-foreground">{account?.email}</span>
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-heading font-bold text-3xl uppercase tracking-tight">My Profiles</h1>
+            <p className="text-muted-foreground mt-1">
+              All rider profiles linked to <span className="font-medium text-foreground">{account?.email}</span>
+            </p>
+          </div>
+          <Button
+            onClick={() => navigate("/rider/new-profile")}
+            size="sm"
+            className="font-heading uppercase tracking-wider shrink-0 mt-1"
+          >
+            <UserPlus size={14} className="mr-2" /> Add Profile
+          </Button>
         </div>
 
         {isLoading ? (
@@ -109,12 +119,21 @@ export default function RiderPortal() {
           </div>
         ) : (
           <Card>
-            <CardContent className="p-12 text-center space-y-3">
+            <CardContent className="p-10 text-center space-y-4">
               <User size={40} className="mx-auto text-muted-foreground/30" />
-              <h3 className="font-heading font-bold text-lg uppercase">No Rider Profiles Found</h3>
-              <p className="text-muted-foreground text-sm max-w-sm mx-auto">
-                No rider profiles are linked to your email address yet. When you register for an event, use this email address and your history will appear here automatically.
-              </p>
+              <div className="space-y-1.5">
+                <h3 className="font-heading font-bold text-lg uppercase">No Rider Profiles Found</h3>
+                <p className="text-muted-foreground text-sm max-w-sm mx-auto">
+                  No rider profiles are linked to your email yet. Register for an event with this email and your history will appear here — or add a profile manually.
+                </p>
+              </div>
+              <Button
+                onClick={() => navigate("/rider/new-profile")}
+                size="sm"
+                className="font-heading uppercase tracking-wider"
+              >
+                <UserPlus size={14} className="mr-2" /> Add Profile
+              </Button>
             </CardContent>
           </Card>
         )}

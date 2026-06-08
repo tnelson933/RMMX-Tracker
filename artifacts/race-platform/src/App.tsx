@@ -35,6 +35,7 @@ import GateAssignments from "@/pages/organizer/GateAssignments";
 import RiderLogin from "@/pages/rider/RiderLogin";
 import RiderPortal from "@/pages/rider/RiderPortal";
 import RiderHistory from "@/pages/rider/RiderHistory";
+import RiderCreateProfile from "@/pages/rider/RiderCreateProfile";
 import WatchLive from "@/pages/public/WatchLive";
 import EventWidget from "@/pages/public/EventWidget";
 import SeriesWidget from "@/pages/public/SeriesWidget";
@@ -101,6 +102,9 @@ function Router() {
 
       <Route path="/rider/login">
         <RiderLogin />
+      </Route>
+      <Route path="/rider/new-profile">
+        <RiderProtectedRoute><RiderCreateProfile /></RiderProtectedRoute>
       </Route>
       <Route path="/rider/portal/:riderId">
         <RiderProtectedRoute><RiderHistory /></RiderProtectedRoute>

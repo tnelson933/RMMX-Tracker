@@ -84,6 +84,20 @@ export interface RiderHistoryResponse {
   history: EventHistory[];
 }
 
+export interface CreateProfilePayload {
+  firstName: string;
+  lastName: string;
+  phone?: string | null;
+  dateOfBirth?: string | null;
+  bibNumber?: string | null;
+  amaNumber?: string | null;
+  bikeManufacturer?: string | null;
+  sponsors?: string | null;
+  hometown?: string | null;
+  homeState?: string | null;
+  myLapsTransponderNumber?: string | null;
+}
+
 export interface UpdateProfilePayload {
   firstName?: string;
   lastName?: string;
@@ -211,6 +225,12 @@ export const riderApi = {
   updateProfile: (riderId: number, payload: UpdateProfilePayload): Promise<RiderFull> =>
     apiFetch(`/rider/profiles/${riderId}`, {
       method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  createProfile: (payload: CreateProfilePayload): Promise<{ id: number }> =>
+    apiFetch("/rider/profiles", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
 };

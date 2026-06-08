@@ -243,7 +243,14 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     };
   });
 
-  return res.json({ rider: { ...rider, rfidNumber: rider.rfidNumber ?? null }, history });
+  return res.json({
+    rider: {
+      ...rider,
+      rfidNumber: rider.rfidNumber ?? null,
+      myLapsTransponderNumber: rider.mylapsTransponderId ?? null,
+    },
+    history,
+  });
 });
 
 // PATCH /rider/profiles/:riderId/rfid — rider self-service RFID update
@@ -292,17 +299,23 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     "firstName", "lastName", "phone", "dateOfBirth",
     "emergencyContact", "emergencyPhone",
     "bibNumber", "amaNumber", "bikeManufacturer", "sponsors",
-    "hometown", "homeState", "myLapsTransponderNumber",
+    "hometown", "homeState",
   ] as const;
 
   type AllowedKey = typeof allowed[number];
-  const patch: Partial<Record<AllowedKey, string | null>> = {};
+  const patch: Partial<Record<AllowedKey, string | null>> & { mylapsTransponderId?: string | null } = {};
 
   for (const key of allowed) {
     if (key in req.body) {
       const val = req.body[key];
       patch[key] = typeof val === "string" ? val.trim() || null : null;
     }
+  }
+
+  // myLapsTransponderNumber in the API maps to mylapsTransponderId in the DB
+  if ("myLapsTransponderNumber" in req.body) {
+    const val = req.body.myLapsTransponderNumber;
+    patch.mylapsTransponderId = typeof val === "string" ? val.trim() || null : null;
   }
 
   if (("firstName" in patch && !patch.firstName) || ("lastName" in patch && !patch.lastName)) {
@@ -320,6 +333,37 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     .returning();
 
   return res.json(updated);
+});
+
+// POST /rider/profiles — create a new rider profile linked to this account's email
+router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const { firstName, lastName, phone, dateOfBirth, bibNumber, amaNumber,
+    bikeManufacturer, sponsors, hometown, homeState, myLapsTransponderNumber } = req.body;
+
+  if (!firstName?.trim() || !lastName?.trim()) {
+    return res.status(400).json({ error: "First and last name are required" });
+  }
+
+  const [rider] = await db.insert(ridersTable).values({
+    firstName: firstName.trim(),
+    lastName: lastName.trim(),
+    email: account.email,
+    phone: phone?.trim() || null,
+    dateOfBirth: dateOfBirth?.trim() || null,
+    bibNumber: bibNumber?.trim() || null,
+    amaNumber: amaNumber?.trim() || null,
+    bikeManufacturer: bikeManufacturer?.trim() || null,
+    sponsors: sponsors?.trim() || null,
+    hometown: hometown?.trim() || null,
+    homeState: homeState?.trim() || null,
+    mylapsTransponderId: myLapsTransponderNumber?.trim() || null,
+  }).returning();
+
+  return res.status(201).json({ ...rider, myLapsTransponderNumber: rider.mylapsTransponderId ?? null });
 });
 
 // GET /rider/profiles/:riderId/practice — practice session history for a rider
