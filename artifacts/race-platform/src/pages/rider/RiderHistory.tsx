@@ -996,9 +996,10 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   const nowUpMotoId = myScheduled[0]?.motoId ?? null;
   const upNextMotoId = myScheduled[1]?.motoId ?? null;
 
-  // How many races (motos) come before the rider's next upcoming moto (in run order)
+  // How many races come before the rider's turn. 0 = they're up now (in_progress).
+  const riderIsNowUp = event.motos.some(m => m.isAnyFamilyMemberInMoto && m.status === "in_progress");
   const nextMyMotoIdx = event.motos.findIndex(m => m.isAnyFamilyMemberInMoto && m.status === "scheduled");
-  const racesUntilTurn = nextMyMotoIdx > 0 ? nextMyMotoIdx : null;
+  const racesUntilTurn = riderIsNowUp ? 0 : nextMyMotoIdx > 0 ? nextMyMotoIdx : null;
 
   const upcoming = sortedMotos.filter(m => m.status !== "completed" && m.status !== "cancelled");
   const finished = sortedMotos.filter(m => m.status === "completed" || m.status === "cancelled");
@@ -1061,9 +1062,16 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
           <div className="text-right">
             {racesUntilTurn !== null ? (
               <>
-                <div className={`text-xs leading-tight ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>races until</div>
-                <div className={`font-heading font-black text-3xl leading-none ${isRaceDay ? "text-white" : "text-primary"}`}>{racesUntilTurn}</div>
-                <div className={`text-xs leading-tight ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>your turn</div>
+                {racesUntilTurn === 0 ? (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-green-500/15 border border-green-500/30 text-green-600 text-xs font-heading font-black uppercase tracking-wider animate-pulse">
+                    Now Up
+                  </span>
+                ) : (
+                  <>
+                    <div className={`font-heading font-black text-3xl leading-none text-right ${isRaceDay ? "text-white" : "text-primary"}`}>{racesUntilTurn}</div>
+                    <div className={`text-xs leading-tight text-right ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>races away</div>
+                  </>
+                )}
               </>
             ) : (
               <>
