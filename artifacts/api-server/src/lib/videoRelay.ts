@@ -30,48 +30,112 @@ interface StreamState {
 const streams = new Map<number, StreamState>();
 
 /**
- * Scan a WebM buffer for a SimpleBlock element (EBML ID 0xA3) with the
- * keyframe flag set (flags byte bit 7 = 0x80).
+ * Detect whether a WebM buffer from Chrome MediaRecorder contains a VP8/VP9
+ * keyframe (IDR).
  *
- * WebM SimpleBlock layout inside a Cluster:
- *   [0xA3]                    — 1-byte element ID
- *   [size VINT]               — variable-length encoded element size (1–4 bytes)
- *   [track number VINT]       — variable-length track number (1–3 bytes, usually 0x81 for track 1)
- *   [timecode]                — 2 bytes (signed, relative to cluster timecode)
- *   [flags byte]              — bit 7 = keyframe, bits 5-4 = lacing, bit 0 = discardable
- *   [frame payload]           — VP8/VP9 encoded frame data
+ * IMPORTANT: Do NOT scan all bytes for 0xA3 (SimpleBlock ID).  0xA3 is common
+ * in compressed video payloads and produces a 100% false-positive rate — every
+ * P-frame chunk incorrectly looks like a keyframe, emptying gopTail constantly
+ * and breaking late-joiner graduation.
+ *
+ * Instead, parse top-down from known EBML structure:
+ *
+ *   Case 1 — initSegment (EBML magic 1A 45 DF A3):
+ *     The first chunk from MediaRecorder always starts with EBML magic and
+ *     always contains the codec IDR.  Return true immediately.
+ *
+ *   Case 2 — Cluster chunk (Cluster ID 1F 43 B6 75):
+ *     Chrome MediaRecorder timeslice chunks are individual Clusters.
+ *     Parse: Cluster ID (4) → size VINT (1–8) → Timecode element (E7) →
+ *     first SimpleBlock (A3) → check flags bit 7.
+ *     Only read the first ~128 bytes of the cluster body so we never touch
+ *     VP9 payload bytes.
  */
 function containsKeyframe(buf: Buffer): boolean {
-  const SIMPLE_BLOCK_ID = 0xA3;
+  if (buf.length < 4) return false;
 
-  for (let i = 0; i < buf.length - 6; i++) {
-    if (buf[i] !== SIMPLE_BLOCK_ID) continue;
-
-    let pos = i + 1;
-
-    if (pos >= buf.length) continue;
-    const sb = buf[pos];
-    let sizeLen: number;
-    if      ((sb & 0x80) !== 0) sizeLen = 1;
-    else if ((sb & 0x40) !== 0) sizeLen = 2;
-    else if ((sb & 0x20) !== 0) sizeLen = 3;
-    else if ((sb & 0x10) !== 0) sizeLen = 4;
-    else continue;
-    pos += sizeLen;
-
-    if (pos >= buf.length) continue;
-    const tb = buf[pos];
-    if      ((tb & 0x80) !== 0) pos += 1;
-    else if ((tb & 0x40) !== 0) pos += 2;
-    else if ((tb & 0x20) !== 0) pos += 3;
-    else continue;
-
-    pos += 2;
-
-    if (pos < buf.length && (buf[pos] & 0x80) !== 0) {
-      return true;
-    }
+  // Case 1: initSegment starts with EBML magic and always has a keyframe.
+  if (buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3) {
+    return true;
   }
+
+  // Case 2: Cluster chunk — must start with Cluster ID 1F 43 B6 75.
+  if (buf[0] !== 0x1F || buf[1] !== 0x43 || buf[2] !== 0xB6 || buf[3] !== 0x75) {
+    return false;
+  }
+
+  // Skip Cluster ID (4 bytes) + Cluster size VINT (1–8 bytes).
+  // Chrome live streams use "unknown" size = 01 FF FF FF FF FF FF FF (8 bytes).
+  let pos = 4;
+  if (pos >= buf.length) return false;
+  const csb = buf[pos];
+  let csLen: number;
+  if      ((csb & 0x80) !== 0) csLen = 1;
+  else if ((csb & 0x40) !== 0) csLen = 2;
+  else if ((csb & 0x20) !== 0) csLen = 3;
+  else if ((csb & 0x10) !== 0) csLen = 4;
+  else if ((csb & 0x08) !== 0) csLen = 5;
+  else if ((csb & 0x04) !== 0) csLen = 6;
+  else if ((csb & 0x02) !== 0) csLen = 7;
+  else if ((csb & 0x01) !== 0) csLen = 8;
+  else return false;
+  pos += csLen;
+
+  // Scan the first 128 bytes of the cluster body.
+  // We expect: optional Timecode (E7), then the first SimpleBlock (A3).
+  // Stopping at 128 bytes guarantees we never read VP9 frame payload data.
+  const bodyLimit = Math.min(pos + 128, buf.length);
+
+  while (pos + 1 < bodyLimit) {
+    const elementId = buf[pos];
+    pos++;
+
+    // Parse element size VINT.
+    if (pos >= bodyLimit) break;
+    const esb = buf[pos];
+    let esLen: number;
+    if      ((esb & 0x80) !== 0) esLen = 1;
+    else if ((esb & 0x40) !== 0) esLen = 2;
+    else if ((esb & 0x20) !== 0) esLen = 3;
+    else if ((esb & 0x10) !== 0) esLen = 4;
+    else return false;  // Unexpectedly large size VINT in the cluster header area
+
+    let dataSize = esb & ~(0x80 >> (esLen - 1));
+    for (let k = 1; k < esLen; k++) {
+      if (pos + k >= buf.length) return false;
+      dataSize = (dataSize << 8) | buf[pos + k];
+    }
+    pos += esLen;  // pos now points to the first byte of element data
+
+    if (elementId === 0xE7) {
+      // Timecode element — skip data bytes and move to next element.
+      pos += dataSize;
+      continue;
+    }
+
+    if (elementId === 0xA3) {
+      // SimpleBlock — read track-number VINT + 2-byte relative timecode + flags.
+      if (pos >= buf.length) break;
+      const tv = buf[pos];
+      let tvLen: number;
+      if      ((tv & 0x80) !== 0) tvLen = 1;
+      else if ((tv & 0x40) !== 0) tvLen = 2;
+      else if ((tv & 0x20) !== 0) tvLen = 3;
+      else break;
+      pos += tvLen + 2;  // skip track VINT + 2-byte relative timecode
+      if (pos < buf.length) {
+        // Bit 7 of the flags byte = keyframe (IDR) flag.
+        return (buf[pos] & 0x80) !== 0;
+      }
+      break;
+    }
+
+    // Any other element (e.g. 0xAB BlockGroup, 0xFB DiscardPadding):
+    // skip its data and continue.  Bound-check to avoid runaway advance.
+    if (pos + dataSize > buf.length) break;
+    pos += dataSize;
+  }
+
   return false;
 }
 
