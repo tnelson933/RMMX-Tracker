@@ -19,7 +19,10 @@ export function RiderLayout({ children, showBack, backTo = "/rider/portal", back
 
   const handleLogout = async () => {
     await riderApi.logout().catch(() => {});
-    queryClient.clear();
+    // Immediately zero out the auth cache so RiderLogin's useEffect
+    // sees isAuthenticated=false before any refetch completes.
+    queryClient.setQueryData(["rider-auth-me"], null);
+    queryClient.removeQueries({ queryKey: ["rider-auth-me"] });
     navigate("/");
   };
 

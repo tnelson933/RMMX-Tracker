@@ -73,8 +73,8 @@ router.post("/rider/auth/login", async (req, res) => {
 
 // POST /rider/auth/logout
 router.post("/rider/auth/logout", (req, res) => {
-  (req.session as any).riderAccountId = undefined;
-  res.json({ ok: true });
+  delete (req.session as any).riderAccountId;
+  req.session.save(() => res.json({ ok: true }));
 });
 
 // GET /rider/auth/me
