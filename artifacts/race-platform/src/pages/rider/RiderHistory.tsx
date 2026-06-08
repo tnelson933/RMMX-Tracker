@@ -129,6 +129,17 @@ function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: st
 
 // ─── Profile editor ─────────────────────────────────────────────────────────
 
+const BIKE_BRANDS = [
+  { name: "KTM",       color: "#FF6600", text: "#ffffff" },
+  { name: "Honda",     color: "#CC0000", text: "#ffffff" },
+  { name: "Gas Gas",   color: "#E30613", text: "#ffffff" },
+  { name: "Husqvarna", color: "#F5C222", text: "#000000" },
+  { name: "Yamaha",    color: "#003087", text: "#ffffff" },
+  { name: "Kawasaki",  color: "#3D9B35", text: "#ffffff" },
+  { name: "Suzuki",    color: "#FFDE00", text: "#000000" },
+  { name: "Beta",      color: "#E8220D", text: "#ffffff" },
+] as const;
+
 function ProfileEditor({ rider }: { rider: RiderFull }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -279,7 +290,39 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
         <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
           {field("Bib / Race #", "bibNumber", "e.g. 42")}
           {field("AMA Number", "amaNumber", "AMA membership #")}
-          {field("Bike Brand", "bikeManufacturer", "e.g. KTM, Honda")}
+          <div className="col-span-2 space-y-1.5">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bike Brand</Label>
+            {editing ? (
+              <div className="grid grid-cols-4 gap-2 mt-1">
+                {BIKE_BRANDS.map(brand => {
+                  const selected = form.bikeManufacturer === brand.name;
+                  return (
+                    <button
+                      key={brand.name}
+                      type="button"
+                      onClick={() => set("bikeManufacturer", selected ? "" : brand.name)}
+                      className="rounded-md px-2 py-3 text-sm font-bold font-heading uppercase tracking-wide transition-all border-2"
+                      style={selected
+                        ? { backgroundColor: brand.color, color: brand.text, borderColor: brand.color }
+                        : { backgroundColor: "transparent", color: "inherit", borderColor: brand.color + "60" }
+                      }
+                    >
+                      {brand.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm py-1.5 min-h-[2rem]">
+                {(() => {
+                  const b = BIKE_BRANDS.find(b => b.name === rider.bikeManufacturer);
+                  return b
+                    ? <span className="inline-block rounded px-2 py-0.5 text-xs font-bold font-heading uppercase tracking-wide" style={{ backgroundColor: b.color, color: b.text }}>{b.name}</span>
+                    : rider.bikeManufacturer || <span className="text-muted-foreground italic">Not set</span>;
+                })()}
+              </p>
+            )}
+          </div>
           <div className="col-span-2 space-y-1.5">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sponsors</Label>
             {editing ? (
