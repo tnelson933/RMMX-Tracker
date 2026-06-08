@@ -7,6 +7,7 @@ import { RiderAuthProvider, useRiderAuth } from "@/contexts/RiderAuthContext";
 import { BroadcastProvider } from "@/contexts/BroadcastContext";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { OrganizerLayout } from "@/components/layout/OrganizerLayout";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/public/Home";
@@ -168,6 +169,7 @@ function App() {
         <RiderAuthProvider>
           <BroadcastProvider>
             <TooltipProvider>
+              <OfflineBanner />
               <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
                 <Router />
               </WouterRouter>
