@@ -29,6 +29,10 @@ import {
   type ScheduleMoto,
   type ScheduleFamilyGate,
   type ScheduleRegistration,
+  type RiderEventPracticeResponse,
+  type EventPracticeEvent,
+  type EventPracticeSession,
+  type EventPracticeLeaderboardEntry,
 } from "@/lib/rider-api";
 
 function positionBadge(pos: number) {
@@ -509,7 +513,185 @@ function EventCard({ event }: { event: EventHistory }) {
   );
 }
 
-// ─── Practice history components ─────────────────────────────────────────────
+// ─── Event practice components ────────────────────────────────────────────────
+
+function EventPracticeSessionCard({ session }: { session: EventPracticeSession }) {
+  const [showMyLaps, setShowMyLaps] = useState(false);
+  const isLive = session.status === "in_progress";
+  const myEntry = session.leaderboard.find(e => e.isMe);
+  const myLapsWithTime = session.myLaps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
+
+  return (
+    <Card>
+      <CardHeader className="py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Timer size={14} className="text-primary shrink-0" />
+            <CardTitle className="font-heading font-bold text-base uppercase tracking-tight truncate">
+              {session.sessionName}
+            </CardTitle>
+          </div>
+          {isLive ? (
+            <span className="flex items-center gap-1.5 text-xs font-bold uppercase text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/20 shrink-0">
+              <Radio size={10} className="animate-pulse" />
+              Live
+            </span>
+          ) : (
+            <Badge variant="outline" className="text-xs shrink-0">Done</Badge>
+          )}
+        </div>
+      </CardHeader>
+
+      <CardContent className="pt-0">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
+          <Trophy size={11} />
+          Gate pick order — ranked by fastest single lap
+        </div>
+
+        {session.leaderboard.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic">No lap times recorded yet</p>
+        ) : (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <div className="grid grid-cols-[2.25rem_1fr_2.75rem_5rem] gap-2 px-3 py-2 bg-muted/50 border-b border-border">
+              <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">Pick</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Rider</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">Laps</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">Best Lap</div>
+            </div>
+            {session.leaderboard.map((entry: EventPracticeLeaderboardEntry) => (
+              <div
+                key={entry.rank}
+                className={`grid grid-cols-[2.25rem_1fr_2.75rem_5rem] gap-2 items-center px-3 py-2.5 border-b border-border/50 last:border-b-0 ${
+                  entry.isMe ? "bg-primary/10 border-l-2 border-l-primary" : ""
+                }`}
+              >
+                <div className="text-center">
+                  {entry.rank === 1 ? (
+                    <Trophy size={13} className="text-primary mx-auto" />
+                  ) : (
+                    <span className="text-xs font-mono font-bold text-muted-foreground">{entry.rank}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className={`text-sm truncate ${entry.isMe ? "font-bold text-primary" : "text-foreground"}`}>
+                    {entry.riderName}
+                  </span>
+                  {entry.bibNumber && (
+                    <span className="text-xs text-muted-foreground shrink-0 hidden xs:inline">#{entry.bibNumber}</span>
+                  )}
+                  {entry.isMe && (
+                    <Badge className="text-[10px] px-1.5 py-0 h-4 leading-none shrink-0">You</Badge>
+                  )}
+                </div>
+                <div className="text-center text-sm font-heading font-bold text-foreground">{entry.lapCount}</div>
+                <div className={`text-center font-mono text-sm font-bold ${entry.isMe || entry.rank === 1 ? "text-primary" : "text-foreground"}`}>
+                  {formatMs(entry.bestLapMs)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {myLapsWithTime.length > 0 && (
+          <div className="mt-3">
+            <button
+              onClick={() => setShowMyLaps(v => !v)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
+            >
+              {showMyLaps ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              My lap times ({myLapsWithTime.length})
+            </button>
+            {showMyLaps && (
+              <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                {myLapsWithTime.map((lap) => {
+                  const isBest = lap.lapTimeMs === myEntry?.bestLapMs;
+                  return (
+                    <div
+                      key={lap.lapNumber}
+                      className={`rounded px-2 py-2 text-center border ${
+                        isBest ? "bg-primary/10 border-primary/30" : "bg-muted border-transparent"
+                      }`}
+                    >
+                      <div className="text-xs text-muted-foreground">Lap {lap.lapNumber}</div>
+                      <div className={`font-mono text-xs font-bold mt-0.5 ${isBest ? "text-primary" : ""}`}>
+                        {formatMs(lap.lapTimeMs)}
+                      </div>
+                      {isBest && <div className="text-xs text-primary font-bold mt-0.5">Best</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EventPracticePanel({
+  events,
+  loading,
+}: {
+  events: EventPracticeEvent[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2].map(i => (
+          <div key={i} className="h-32 bg-muted animate-pulse rounded-xl" />
+        ))}
+      </div>
+    );
+  }
+
+  const eventsWithSessions = events.filter(e => e.sessions.length > 0);
+
+  if (eventsWithSessions.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-12 text-center">
+          <Flag size={40} className="mx-auto text-muted-foreground/30 mb-3" />
+          <p className="text-muted-foreground text-sm">No event practice sessions yet</p>
+          <p className="text-muted-foreground text-xs mt-1 max-w-xs mx-auto">
+            Once an organizer runs a practice session at an event you're registered for, your gate pick ranking will appear here.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {eventsWithSessions.map(event => (
+        <div key={event.eventId}>
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <Flag size={13} className="text-primary shrink-0" />
+            <h3 className="font-heading font-bold uppercase tracking-wider text-sm text-foreground">
+              {event.eventName}
+            </h3>
+            {event.raceClass && (
+              <Badge variant="outline" className="text-xs">{event.raceClass}</Badge>
+            )}
+            {event.eventDate && (
+              <span className="text-xs text-muted-foreground">
+                {new Date(event.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+              </span>
+            )}
+          </div>
+          <div className="space-y-3">
+            {event.sessions.map(session => (
+              <EventPracticeSessionCard key={session.motoId} session={session} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Open practice history components ─────────────────────────────────────────
 
 function PracticeSessionCard({ session }: { session: PracticeSessionHistory }) {
   const [open, setOpen] = useState(false);
@@ -1343,6 +1525,7 @@ export default function RiderHistory() {
   const validTabs = ["today", "upcoming", "nearby", "races", "practice", "profile"] as const;
   const initialTab = validTabs.includes(tabParam as any) ? (tabParam as typeof validTabs[number]) : "today";
   const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(initialTab);
+  const [practiceMode, setPracticeMode] = useState<"event" | "open">("event");
 
   const { data, isLoading, error } = useQuery<RiderHistoryResponse>({
     queryKey: ["rider-history", riderId],
@@ -1354,6 +1537,13 @@ export default function RiderHistory() {
     queryKey: ["rider-practice", riderId],
     queryFn: () => riderApi.practice(riderId),
     enabled: !!riderId,
+  } as any);
+
+  const { data: eventPracticeData, isLoading: eventPracticeLoading } = useQuery<RiderEventPracticeResponse>({
+    queryKey: ["rider-event-practice", riderId],
+    queryFn: () => riderApi.eventPractice(riderId),
+    enabled: !!riderId,
+    refetchInterval: 30_000,
   } as any);
 
   const { data: scheduleData, isLoading: scheduleLoading } = useQuery<RiderScheduleResponse>({
@@ -1721,58 +1911,93 @@ export default function RiderHistory() {
           {/* Practice tab */}
           {activeTab === "practice" && (
             <div>
-              {practiceLoading ? (
-                <div className="space-y-3">
-                  {[1, 2].map(i => (
-                    <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />
-                  ))}
-                </div>
-              ) : practiceSessions.length === 0 ? (
-                <Card>
-                  <CardContent className="p-12 text-center">
-                    <Timer size={40} className="mx-auto text-muted-foreground/30 mb-3" />
-                    <p className="text-muted-foreground text-sm">No practice sessions recorded yet</p>
-                    <p className="text-muted-foreground text-xs mt-1">
-                      Practice lap times appear here when your RFID tag is captured during an open practice session.
-                    </p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {/* Practice summary bar */}
-                  <div className="grid grid-cols-3 gap-3 mb-4">
-                    <Card>
-                      <CardContent className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
-                          <Timer size={11} /> Sessions
-                        </div>
-                        <div className="font-heading font-bold text-3xl">{practiceSessions.length}</div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
-                          <Flag size={11} /> Total Laps
-                        </div>
-                        <div className="font-heading font-bold text-3xl">{totalPracticeLaps}</div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
-                          <Clock size={11} /> Best Lap
-                        </div>
-                        <div className="font-heading font-bold text-xl text-primary font-mono">
-                          {formatMs(overallBestPracticeMs)}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+              {/* Mode toggle */}
+              <div className="flex gap-1 mb-4 p-1 bg-muted rounded-lg">
+                <button
+                  onClick={() => setPracticeMode("event")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-heading font-bold uppercase tracking-wider transition-colors ${
+                    practiceMode === "event"
+                      ? "bg-background text-primary shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Flag size={12} />
+                  Event Practice
+                </button>
+                <button
+                  onClick={() => setPracticeMode("open")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-heading font-bold uppercase tracking-wider transition-colors ${
+                    practiceMode === "open"
+                      ? "bg-background text-primary shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Radio size={12} />
+                  Open Practice
+                </button>
+              </div>
 
-                  {practiceSessions.map((session) => (
-                    <PracticeSessionCard key={session.sessionId} session={session} />
-                  ))}
-                </div>
+              {/* Event Practice panel */}
+              {practiceMode === "event" && (
+                <EventPracticePanel
+                  events={eventPracticeData?.events ?? []}
+                  loading={eventPracticeLoading}
+                />
+              )}
+
+              {/* Open Practice panel */}
+              {practiceMode === "open" && (
+                practiceLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2].map(i => (
+                      <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />
+                    ))}
+                  </div>
+                ) : practiceSessions.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-12 text-center">
+                      <Timer size={40} className="mx-auto text-muted-foreground/30 mb-3" />
+                      <p className="text-muted-foreground text-sm">No open practice sessions recorded yet</p>
+                      <p className="text-muted-foreground text-xs mt-1">
+                        Lap times appear here when your RFID tag is captured during an open practice session.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3 mb-4">
+                      <Card>
+                        <CardContent className="p-4 text-center">
+                          <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
+                            <Timer size={11} /> Sessions
+                          </div>
+                          <div className="font-heading font-bold text-3xl">{practiceSessions.length}</div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="p-4 text-center">
+                          <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
+                            <Flag size={11} /> Total Laps
+                          </div>
+                          <div className="font-heading font-bold text-3xl">{totalPracticeLaps}</div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="p-4 text-center">
+                          <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
+                            <Clock size={11} /> Best Lap
+                          </div>
+                          <div className="font-heading font-bold text-xl text-primary font-mono">
+                            {formatMs(overallBestPracticeMs)}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                    {practiceSessions.map((session) => (
+                      <PracticeSessionCard key={session.sessionId} session={session} />
+                    ))}
+                  </div>
+                )
               )}
             </div>
           )}

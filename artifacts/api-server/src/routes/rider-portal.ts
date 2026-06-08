@@ -10,6 +10,7 @@ import {
   practiceCrossingsTable,
   practiceSessionsTable,
   registrationsTable,
+  lapCrossingsTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql } from "drizzle-orm";
 
@@ -448,6 +449,165 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
     });
 
   return res.json({ rider: { id: rider.id, firstName: rider.firstName, lastName: rider.lastName }, sessions });
+});
+
+// GET /rider/profiles/:riderId/event-practice — class gate-pick leaderboard from event practice motos
+router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  const registrations = await db
+    .select({ eventId: registrationsTable.eventId, raceClass: registrationsTable.raceClass })
+    .from(registrationsTable)
+    .where(and(eq(registrationsTable.riderId, riderId), eq(registrationsTable.status, "confirmed")));
+
+  if (registrations.length === 0) return res.json({ events: [] });
+
+  const eventIds = [...new Set(registrations.map(r => r.eventId))];
+  const events = await db.select().from(eventsTable).where(inArray(eventsTable.id, eventIds));
+
+  const practiceMotos = await db.select().from(motosTable)
+    .where(and(inArray(motosTable.eventId, eventIds), eq(motosTable.type, "practice")))
+    .orderBy(asc(motosTable.id));
+
+  if (practiceMotos.length === 0) return res.json({ events: [] });
+
+  const motoIds = practiceMotos.map(m => m.id);
+
+  const crossings = await db.select({
+    motoId: lapCrossingsTable.motoId,
+    riderId: lapCrossingsTable.riderId,
+    rfidNumber: lapCrossingsTable.rfidNumber,
+    lapNumber: lapCrossingsTable.lapNumber,
+    lapTimeMs: lapCrossingsTable.lapTimeMs,
+    crossingTime: lapCrossingsTable.crossingTime,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+    bibNumber: ridersTable.bibNumber,
+  })
+    .from(lapCrossingsTable)
+    .leftJoin(ridersTable, eq(lapCrossingsTable.riderId, ridersTable.id))
+    .where(inArray(lapCrossingsTable.motoId, motoIds))
+    .orderBy(asc(lapCrossingsTable.motoId), asc(lapCrossingsTable.crossingTime));
+
+  const crossingsByMoto = new Map<number, typeof crossings>();
+  for (const c of crossings) {
+    if (!crossingsByMoto.has(c.motoId)) crossingsByMoto.set(c.motoId, []);
+    crossingsByMoto.get(c.motoId)!.push(c);
+  }
+
+  const result = [];
+
+  for (const event of events) {
+    const reg = registrations.find(r => r.eventId === event.id);
+    const riderClass = reg?.raceClass ?? null;
+
+    const eventMotos = practiceMotos.filter(m => {
+      if (m.eventId !== event.id) return false;
+      if (!riderClass) return true;
+      const mc = (m.raceClass as string | null) ?? "";
+      return mc === riderClass || mc === "" || mc === "All Classes";
+    });
+
+    if (eventMotos.length === 0) continue;
+
+    const sessions = [];
+
+    for (const moto of eventMotos) {
+      const motoCrossings = crossingsByMoto.get(moto.id) ?? [];
+      if (motoCrossings.length === 0 && moto.status !== "in_progress") continue;
+
+      const riderMap = new Map<string, {
+        riderId: number | null;
+        rfidNumber: string;
+        riderName: string;
+        bibNumber: string | null;
+        laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
+        bestLapMs: number | null;
+      }>();
+
+      for (const c of motoCrossings) {
+        const key = c.rfidNumber;
+        if (!riderMap.has(key)) {
+          riderMap.set(key, {
+            riderId: c.riderId,
+            rfidNumber: c.rfidNumber,
+            riderName: c.firstName ? `${c.firstName} ${c.lastName ?? ""}`.trim() : c.rfidNumber,
+            bibNumber: c.bibNumber ?? null,
+            laps: [],
+            bestLapMs: null,
+          });
+        }
+        const entry = riderMap.get(key)!;
+        if (c.riderId && !entry.riderId) entry.riderId = c.riderId;
+        if (c.firstName && entry.riderName === c.rfidNumber) {
+          entry.riderName = `${c.firstName} ${c.lastName ?? ""}`.trim();
+        }
+        entry.laps.push({
+          lapNumber: c.lapNumber ?? 0,
+          lapTimeMs: c.lapTimeMs,
+          crossingTime: c.crossingTime.toISOString(),
+        });
+        if (c.lapTimeMs !== null && c.lapTimeMs > 0) {
+          entry.bestLapMs = entry.bestLapMs === null ? c.lapTimeMs : Math.min(entry.bestLapMs, c.lapTimeMs);
+        }
+      }
+
+      // Rank by fastest single lap ascending — this is the gate pick order
+      const sorted = [...riderMap.values()].sort((a, b) => {
+        if (a.bestLapMs === null && b.bestLapMs === null) return 0;
+        if (a.bestLapMs === null) return 1;
+        if (b.bestLapMs === null) return -1;
+        return a.bestLapMs - b.bestLapMs;
+      });
+
+      const leaderboard = sorted.map((r, i) => ({
+        rank: i + 1,
+        riderId: r.riderId,
+        riderName: r.riderName,
+        bibNumber: r.bibNumber,
+        bestLapMs: r.bestLapMs,
+        lapCount: r.laps.length,
+        isMe: r.riderId === riderId || (!!rider.rfidNumber && r.rfidNumber === rider.rfidNumber),
+      }));
+
+      const myEntry = [...riderMap.values()].find(
+        r => r.riderId === riderId || (!!rider.rfidNumber && r.rfidNumber === rider.rfidNumber)
+      );
+      const myLaps = (myEntry?.laps ?? []).sort((a, b) => a.lapNumber - b.lapNumber);
+
+      sessions.push({
+        motoId: moto.id,
+        sessionName: moto.name as string,
+        status: moto.status as string,
+        leaderboard,
+        myLaps,
+      });
+    }
+
+    if (sessions.length === 0) continue;
+
+    result.push({
+      eventId: event.id,
+      eventName: event.name,
+      eventDate: (event.date as string | null) ?? null,
+      eventState: (event.state as string | null) ?? null,
+      raceClass: riderClass,
+      sessions,
+    });
+  }
+
+  return res.json({ events: result });
 });
 
 // GET /rider/profiles/:riderId/schedule — events for all riders sharing this account's email

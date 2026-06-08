@@ -139,6 +139,43 @@ export interface RiderPracticeResponse {
   sessions: PracticeSessionHistory[];
 }
 
+export interface EventPracticeLap {
+  lapNumber: number;
+  lapTimeMs: number | null;
+  crossingTime: string;
+}
+
+export interface EventPracticeLeaderboardEntry {
+  rank: number;
+  riderId: number | null;
+  riderName: string;
+  bibNumber: string | null;
+  bestLapMs: number | null;
+  lapCount: number;
+  isMe: boolean;
+}
+
+export interface EventPracticeSession {
+  motoId: number;
+  sessionName: string;
+  status: string;
+  leaderboard: EventPracticeLeaderboardEntry[];
+  myLaps: EventPracticeLap[];
+}
+
+export interface EventPracticeEvent {
+  eventId: number;
+  eventName: string;
+  eventDate: string | null;
+  eventState: string | null;
+  raceClass: string | null;
+  sessions: EventPracticeSession[];
+}
+
+export interface RiderEventPracticeResponse {
+  events: EventPracticeEvent[];
+}
+
 export interface ScheduleMotoLineupEntry {
   gate: number;
   riderId: number;
@@ -218,6 +255,9 @@ export const riderApi = {
       method: "PATCH",
       body: JSON.stringify({ rfidNumber }),
     }),
+
+  eventPractice: (riderId: number): Promise<RiderEventPracticeResponse> =>
+    apiFetch(`/rider/profiles/${riderId}/event-practice`),
 
   schedule: (riderId: number): Promise<RiderScheduleResponse> =>
     apiFetch(`/rider/profiles/${riderId}/schedule`),
