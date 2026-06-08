@@ -160,6 +160,7 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
     sponsors: rider.sponsors ?? "",
     hometown: rider.hometown ?? "",
     homeState: rider.homeState ?? "",
+    myLapsTransponderNumber: rider.myLapsTransponderNumber ?? "",
   });
 
   function startEdit() {
@@ -176,6 +177,7 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
       sponsors: rider.sponsors ?? "",
       hometown: rider.hometown ?? "",
       homeState: rider.homeState ?? "",
+      myLapsTransponderNumber: rider.myLapsTransponderNumber ?? "",
     });
     setError(null);
     setSaved(false);
@@ -290,6 +292,7 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
         <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
           {field("Bib / Race #", "bibNumber", "e.g. 42")}
           {field("AMA Number", "amaNumber", "AMA membership #")}
+          {field("MyLaps Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
           <div className="col-span-2 space-y-1.5">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bike Brand</Label>
             {editing ? (

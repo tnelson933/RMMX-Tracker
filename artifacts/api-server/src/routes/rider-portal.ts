@@ -292,7 +292,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     "firstName", "lastName", "phone", "dateOfBirth",
     "emergencyContact", "emergencyPhone",
     "bibNumber", "amaNumber", "bikeManufacturer", "sponsors",
-    "hometown", "homeState",
+    "hometown", "homeState", "myLapsTransponderNumber",
   ] as const;
 
   type AllowedKey = typeof allowed[number];
@@ -315,7 +315,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
 
   const [updated] = await db
     .update(ridersTable)
-    .set(patch)
+    .set(patch as any)
     .where(eq(ridersTable.id, riderId))
     .returning();
 

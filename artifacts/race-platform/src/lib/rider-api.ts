@@ -76,6 +76,7 @@ export interface RiderFull {
   amaNumber: string | null;
   hometown: string | null;
   homeState: string | null;
+  myLapsTransponderNumber: string | null;
 }
 
 export interface RiderHistoryResponse {
@@ -96,6 +97,7 @@ export interface UpdateProfilePayload {
   sponsors?: string | null;
   hometown?: string | null;
   homeState?: string | null;
+  myLapsTransponderNumber?: string | null;
 }
 
 export interface PracticeLap {
