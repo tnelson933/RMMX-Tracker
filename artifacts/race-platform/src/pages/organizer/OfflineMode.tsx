@@ -1,26 +1,22 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  WifiOff, Download, Settings, PlayCircle, UploadCloud, AlertTriangle,
-  CheckCircle2, XCircle, Info, Terminal, Link as LinkIcon, RefreshCw, Copy, Check,
+  WifiOff, Download, PlayCircle, UploadCloud, AlertTriangle,
+  CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { useGetOfflinePackageInfo } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 
-// ── Local-storage key for last-downloaded package ETag ────────────────────────
 const LAST_DOWNLOAD_KEY = "offline_package_last_downloaded_etag";
 
-// ── Reusable primitives ────────────────────────────────────────────────────────
-
-function PhaseHeader({ n, title, icon: Icon }: { n: number; title: string; icon: React.ElementType }) {
+function StepHeader({ n, title }: { n: number; title: string }) {
   return (
     <div className="flex items-center gap-3 mb-4">
-      <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-heading font-bold flex-shrink-0">
+      <div className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-base font-heading font-bold flex-shrink-0">
         {n}
       </div>
-      <Icon size={20} className="text-primary flex-shrink-0" />
       <h2 className="text-xl font-heading font-bold uppercase tracking-tight">{title}</h2>
     </div>
   );
@@ -35,7 +31,7 @@ function CopyableCodeBlock({ children }: { children: string }) {
   };
   return (
     <div className="relative group">
-      <pre className="bg-background border border-border rounded-lg px-4 py-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre pr-10">
+      <pre className="bg-background border border-border rounded-lg px-4 py-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre pr-12">
         {children}
       </pre>
       <button
@@ -50,49 +46,17 @@ function CopyableCodeBlock({ children }: { children: string }) {
   );
 }
 
-function CodeBlock({ children }: { children: string }) {
-  return (
-    <pre className="bg-background border border-border rounded-lg px-4 py-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre">
-      {children}
-    </pre>
-  );
-}
-
-function Callout({
-  kind,
-  children,
-}: {
-  kind: "warning" | "tip" | "info";
-  children: React.ReactNode;
-}) {
+function Callout({ kind, children }: { kind: "warning" | "tip" | "info"; children: React.ReactNode }) {
   const styles = {
-    warning: {
-      wrapper: "border-amber-500/40 bg-amber-500/10",
-      icon: <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />,
-      label: "Warning",
-      labelClass: "text-amber-500",
-    },
-    tip: {
-      wrapper: "border-green-500/40 bg-green-500/10",
-      icon: <CheckCircle2 size={15} className="text-green-500 shrink-0 mt-0.5" />,
-      label: "Tip",
-      labelClass: "text-green-500",
-    },
-    info: {
-      wrapper: "border-primary/40 bg-primary/10",
-      icon: <Info size={15} className="text-primary shrink-0 mt-0.5" />,
-      label: "Note",
-      labelClass: "text-primary",
-    },
+    warning: { wrapper: "border-amber-500/40 bg-amber-500/10", icon: <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" /> },
+    tip:     { wrapper: "border-green-500/40 bg-green-500/10",  icon: <CheckCircle2  size={15} className="text-green-500 shrink-0 mt-0.5" /> },
+    info:    { wrapper: "border-primary/40 bg-primary/10",      icon: <RefreshCw     size={15} className="text-primary shrink-0 mt-0.5" /> },
   };
   const s = styles[kind];
   return (
     <div className={`rounded-lg border-2 ${s.wrapper} p-4 flex gap-3 text-sm`}>
       {s.icon}
-      <div>
-        <span className={`font-bold ${s.labelClass}`}>{s.label}: </span>
-        <span className="text-foreground/90">{children}</span>
-      </div>
+      <span className="text-foreground/90">{children}</span>
     </div>
   );
 }
@@ -108,87 +72,80 @@ function CheckItem({ ok, children }: { ok: boolean; children: React.ReactNode })
   );
 }
 
-// ── Build-date display helpers ─────────────────────────────────────────────────
+function ShowMeHow({ label = "Show me how", children }: { label?: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+      >
+        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        {open ? "Hide" : label}
+      </button>
+      {open && <div className="space-y-2">{children}</div>}
+    </div>
+  );
+}
+
+function OsToggle({ os, onChange }: { os: "mac" | "windows"; onChange: (os: "mac" | "windows") => void }) {
+  return (
+    <div className="flex items-center gap-1 text-xs">
+      <span className="text-muted-foreground mr-1">My computer:</span>
+      <button
+        onClick={() => onChange("mac")}
+        className={`px-2.5 py-1 rounded border font-medium transition-colors ${os === "mac" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+      >
+        Mac / Linux
+      </button>
+      <button
+        onClick={() => onChange("windows")}
+        className={`px-2.5 py-1 rounded border font-medium transition-colors ${os === "windows" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+      >
+        Windows
+      </button>
+    </div>
+  );
+}
 
 function formatBuildDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 }
-
 function formatBuildDateTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
+  return new Date(iso).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
 }
 
-// ── Package info banner ────────────────────────────────────────────────────────
-
-function PackageInfoBanner({
-  builtAt,
-  version,
-  etag,
-  lastEtag,
-}: {
-  builtAt: string;
-  version: string;
-  etag: string;
-  lastEtag: string | null;
-}) {
+function PackageInfoBanner({ builtAt, version, etag, lastEtag }: { builtAt: string; version: string; etag: string; lastEtag: string | null }) {
   const isOutOfDate = lastEtag !== null && lastEtag !== etag;
   const hasNeverDownloaded = lastEtag === null;
 
   if (isOutOfDate) {
     return (
-      <div className="rounded-lg border-2 border-amber-500/40 bg-amber-500/10 p-4 flex gap-3 text-sm">
-        <RefreshCw size={15} className="text-amber-500 shrink-0 mt-0.5" />
-        <div>
-          <span className="font-bold text-amber-500">Update available: </span>
-          <span className="text-foreground/90">
-            A newer package was built on{" "}
-            <strong>{formatBuildDate(builtAt)}</strong> — your previous download
-            is out of date. Re-download below before your next event.
-          </span>
-        </div>
+      <div className="rounded-lg border-2 border-amber-500/40 bg-amber-500/10 p-3 flex gap-2 text-xs">
+        <RefreshCw size={13} className="text-amber-500 shrink-0 mt-0.5" />
+        <span className="text-foreground/90">
+          A newer version was built on <strong>{formatBuildDate(builtAt)}</strong> — re-download before your next event.
+        </span>
       </div>
     );
   }
-
   if (hasNeverDownloaded) {
     return (
       <p className="text-xs text-muted-foreground">
-        Package built{" "}
-        <span className="font-medium text-foreground">{formatBuildDate(builtAt)}</span>
-        {" "}(v{version})
+        Package built <span className="font-medium text-foreground">{formatBuildDate(builtAt)}</span> (v{version})
       </p>
     );
   }
-
   return (
     <p className="text-xs text-muted-foreground">
       <CheckCircle2 size={11} className="text-green-500 inline mr-1 -mt-0.5" />
-      You have the latest build — published{" "}
-      <span className="font-medium text-foreground">{formatBuildDateTime(builtAt)}</span>
+      You have the latest version — published <span className="font-medium text-foreground">{formatBuildDateTime(builtAt)}</span>
     </p>
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
-
 export default function OfflineMode() {
-  const { data: pkgInfo, isError: pkgError } = useGetOfflinePackageInfo(
-    { query: { retry: false } as any },
-  );
+  const { data: pkgInfo, isError: pkgError } = useGetOfflinePackageInfo({ query: { retry: false } as any });
 
   const [lastDownloadedEtag, setLastDownloadedEtag] = useState<string | null>(() =>
     localStorage.getItem(LAST_DOWNLOAD_KEY),
@@ -201,6 +158,8 @@ export default function OfflineMode() {
     }
   }, [pkgInfo?.etag]);
 
+  const [os, setOs] = useState<"mac" | "windows">("mac");
+
   const { user } = useAuth();
   const cloudDomain = window.location.origin;
   const clubId = user?.clubId ?? "<your-club-id>";
@@ -208,447 +167,233 @@ export default function OfflineMode() {
   const cloudEndpoint = `${cloudDomain}/api/timing/active/crossing?clubId=${clubId}`;
   const localEndpoint = `http://<laptop-ip>:8080/api/timing/active/crossing?clubId=${clubId}`;
 
-  const syncScriptMac = `# macOS / Linux
-CLOUD_URL=${cloudDomain} \\
-CLUB_ID=${clubId} \\
-CLOUD_EMAIL=you@club.com \\
-CLOUD_PASSWORD=yourpassword \\
-npm start`;
+  const installCmdMac = `unzip rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
+  const installCmdWindows = `tar -xf rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
 
-  const syncScriptWindows = `# Windows (Command Prompt — set vars first)
-set CLOUD_URL=${cloudDomain}
-set CLUB_ID=${clubId}
-set CLOUD_EMAIL=you@club.com
-set CLOUD_PASSWORD=yourpassword
-npm start`;
+  const startCmdMac = `cd rocky-mountain-local-server\nnpm start`;
+  const startCmdWindows = `cd rocky-mountain-local-server\nnpm start`;
+
+  const syncCmdMac = `CLOUD_URL=${cloudDomain} CLUB_ID=${clubId} CLOUD_EMAIL=you@club.com CLOUD_PASSWORD=yourpassword npm start`;
+  const syncCmdWindows = `set CLOUD_URL=${cloudDomain}\nset CLUB_ID=${clubId}\nset CLOUD_EMAIL=you@club.com\nset CLOUD_PASSWORD=yourpassword\nnpm start`;
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-8">
 
-      {/* ── Page header ───────────────────────────────────────────────────────── */}
+      {/* ── Page header ─────────────────────────────────────────────────────────── */}
       <div>
         <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
           <WifiOff className="text-primary" size={32} /> Offline Mode
         </h1>
         <p className="text-muted-foreground mt-1">
-          Run a complete race day with no internet — then sync everything back to the cloud when you're done.
+          Run a full race day with no internet — your laptop handles everything, then syncs back to the cloud when you're done.
         </p>
       </div>
 
-      {/* ── Phase 1 — Overview ───────────────────────────────────────────────── */}
+      {/* ── Step 1 — Before Race Day ─────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3 border-b">
-          <PhaseHeader n={1} title="Overview" icon={WifiOff} />
+          <StepHeader n={1} title="Before Race Day — One-Time Setup" />
         </CardHeader>
-        <CardContent className="pt-5 space-y-4 text-sm text-muted-foreground leading-relaxed">
-          <p>
-            Many race venues — desert washes, mountain tracks, fairgrounds — have little or no cell
-            signal on race day. Offline Mode lets you run a full event on a laptop connected directly
-            to your timing hardware over a local Wi-Fi hotspot. Nothing reaches the internet until
-            you choose to sync.
-          </p>
-          <p>
-            The local server is an exact mirror of the cloud platform. Check-in, transponder timing,
-            moto scoring, and results entry all work the same way. When the day is over you export the
-            local database and upload it — results appear publicly within minutes.
-          </p>
-          <Callout kind="info">
-            Offline Mode requires a one-time download and setup before you leave for the venue.
-            Complete Steps 2–4 at home or at the office where you have reliable internet.
-          </Callout>
-        </CardContent>
-      </Card>
+        <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
 
-      {/* ── Phase 2 — Prerequisites ──────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3 border-b">
-          <PhaseHeader n={2} title="Prerequisites" icon={CheckCircle2} />
-        </CardHeader>
-        <CardContent className="pt-5 space-y-4 text-sm">
-          <p className="text-muted-foreground">
-            Before race day you'll need the following items ready on your laptop.
-          </p>
-          <ul className="space-y-3">
-            <CheckItem ok={true}>
-              <span>
-                <strong>Node.js 20 or later</strong> — download from{" "}
-                <a
-                  href="https://nodejs.org"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary underline underline-offset-2 inline-flex items-center gap-1"
-                >
-                  nodejs.org
-                </a>
-                . Verify with <code className="bg-muted rounded px-1 py-0.5 text-xs font-mono">node --version</code>.
-              </span>
-            </CheckItem>
-            <CheckItem ok={true}>
-              <span>
-                <strong>Local server package</strong> — downloaded and unzipped from the link in Step 3 below.
-              </span>
-            </CheckItem>
-            <CheckItem ok={true}>
-              <span>
-                <strong>Laptop with a Wi-Fi adapter</strong> — you'll create a hotspot that your timing
-                hardware joins. Ethernet also works if your reader supports it.
-              </span>
-            </CheckItem>
-            <CheckItem ok={true}>
-              <span>
-                <strong>Your club ID</strong> — your club ID is{" "}
-                {user?.clubId ? (
-                  <code className="bg-primary/10 border border-primary/30 rounded px-1 py-0.5 font-mono font-bold text-primary">{user.clubId}</code>
-                ) : (
-                  <span className="text-muted-foreground italic">loading…</span>
-                )}
-                . It is pre-filled in all commands and URLs below.
-              </span>
-            </CheckItem>
-          </ul>
-          <Callout kind="warning">
-            Test the full offline workflow at least once before an actual event. A 30-minute dry
-            run at home will surface any hardware or network issues before race day.
-          </Callout>
-        </CardContent>
-      </Card>
-
-      {/* ── Phase 3 — Download & Install ─────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3 border-b">
-          <PhaseHeader n={3} title="Download & Install the Local Server" icon={Download} />
-        </CardHeader>
-        <CardContent className="pt-5 space-y-4 text-sm text-muted-foreground">
-          <p>
-            The local server package is a self-contained Node.js application. Follow these steps on
-            the laptop you'll bring to the venue.
-          </p>
-
+          {/* 1a — Download */}
           <div className="space-y-3">
-            <div className="flex gap-3">
-              <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</div>
-              <div className="space-y-2 flex-1">
-                <p className="text-foreground font-medium">Download the package</p>
+            <p className="text-foreground font-semibold">Download the software to your laptop</p>
 
-                {/* ── Out-of-date / version warning ─────────────────────────────── */}
-                {pkgInfo && (
-                  <PackageInfoBanner
-                    builtAt={pkgInfo.builtAt}
-                    version={pkgInfo.version}
-                    etag={pkgInfo.etag}
-                    lastEtag={lastDownloadedEtag}
-                  />
-                )}
-                {pkgError && (
-                  <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
-                    <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
-                    <span className="text-muted-foreground">
-                      Package info unavailable — the server bundle may not be built yet.
-                      Contact support if this persists.
-                    </span>
-                  </div>
-                )}
-
-                <a
-                  href="/api/offline/package"
-                  download="rocky-mountain-local-server-latest.zip"
-                  onClick={handleDownload}
-                  className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
-                >
-                  <Download size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
-                  <span className="text-xs font-mono text-primary flex-1">
-                    rocky-mountain-local-server-latest.zip
-                  </span>
-                  {pkgInfo ? (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-auto font-mono text-muted-foreground">
-                      v{pkgInfo.version}
-                    </Badge>
-                  ) : (
-                    <Badge variant="default" className="text-[10px] px-1.5 py-0 ml-auto">Download</Badge>
-                  )}
-                </a>
-                <p className="text-xs">
-                  Downloads a self-contained Node.js server bundle (~1 MB). Run{" "}
-                  <code className="bg-muted rounded px-1 font-mono">npm install</code> once after
-                  unzipping to add the native SQLite driver, then{" "}
-                  <code className="bg-muted rounded px-1 font-mono">npm start</code> on race day.
-                </p>
+            {pkgInfo && (
+              <PackageInfoBanner
+                builtAt={pkgInfo.builtAt}
+                version={pkgInfo.version}
+                etag={pkgInfo.etag}
+                lastEtag={lastDownloadedEtag}
+              />
+            )}
+            {pkgError && (
+              <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
+                <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
+                <span className="text-muted-foreground">Download info unavailable — contact support if this persists.</span>
               </div>
-            </div>
+            )}
 
-            <div className="flex gap-3">
-              <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</div>
-              <div className="space-y-2">
-                <p className="text-foreground font-medium">Unzip and install dependencies</p>
-                <CodeBlock>{`unzip rocky-mountain-local-server-latest.zip
-cd rocky-mountain-local-server
-npm install`}</CodeBlock>
+            <a
+              href="/api/offline/package"
+              download="rocky-mountain-local-server-latest.zip"
+              onClick={handleDownload}
+              className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
+            >
+              <Download size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-mono text-primary flex-1">rocky-mountain-local-server-latest.zip</span>
+              {pkgInfo ? (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-auto font-mono text-muted-foreground">v{pkgInfo.version}</Badge>
+              ) : (
+                <Badge variant="default" className="text-[10px] px-1.5 py-0 ml-auto">Download</Badge>
+              )}
+            </a>
+          </div>
+
+          {/* 1b — Install */}
+          <div className="space-y-2">
+            <p className="text-foreground font-semibold">Install it (one time only)</p>
+            <p>Unzip the file you just downloaded, then run a quick install so everything is ready for race day.</p>
+            <OsToggle os={os} onChange={setOs} />
+            <ShowMeHow label="Show me how to install">
+              <p className="text-xs text-muted-foreground">Open the Terminal app and type:</p>
+              <CopyableCodeBlock>{os === "mac" ? installCmdMac : installCmdWindows}</CopyableCodeBlock>
+            </ShowMeHow>
+          </div>
+
+          {/* 1c — Test it */}
+          <div className="space-y-2">
+            <p className="text-foreground font-semibold">Test it at home first</p>
+            <p>Start the software and make sure it runs on your laptop before the day of the event.</p>
+            <ShowMeHow label="Show me how to start it">
+              <p className="text-xs text-muted-foreground">In your Terminal, type:</p>
+              <CopyableCodeBlock>{os === "mac" ? startCmdMac : startCmdWindows}</CopyableCodeBlock>
+              <p className="text-xs text-muted-foreground">
+                You should see a startup message and the software will be running at <span className="font-mono bg-muted rounded px-1">http://localhost:8080</span>.
+                Open that address in your browser to confirm it's working.
+              </p>
+            </ShowMeHow>
+          </div>
+
+          <Callout kind="tip">
+            Do this at home before your first event — a quick test now prevents surprises on race day.
+          </Callout>
+
+        </CardContent>
+      </Card>
+
+      {/* ── Step 2 — On Race Day ─────────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3 border-b">
+          <StepHeader n={2} title="On Race Day" />
+        </CardHeader>
+        <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
+
+          {/* 2a — Start the software */}
+          <div className="space-y-2">
+            <p className="text-foreground font-semibold">Start the software on your laptop</p>
+            <p>Open a terminal window and start the software the same way you tested it at home. Keep that window open all day — don't close it.</p>
+            <ShowMeHow label="Show me the start command">
+              <p className="text-xs text-muted-foreground">Type this in your terminal:</p>
+              <CopyableCodeBlock>{os === "mac" ? startCmdMac : startCmdWindows}</CopyableCodeBlock>
+            </ShowMeHow>
+          </div>
+
+          {/* 2b — Point your reader at the laptop */}
+          <div className="space-y-2">
+            <p className="text-foreground font-semibold">Point your timing reader at your laptop</p>
+            <p>
+              Your timing reader normally sends data to the cloud. For offline mode, you need to change
+              that address to your laptop instead. Your laptop's address on the local network will look
+              something like <span className="font-mono bg-muted rounded px-1 text-foreground">192.168.x.x</span>.
+            </p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-foreground">Use this address for your reader:</p>
+              <CopyableCodeBlock>{localEndpoint}</CopyableCodeBlock>
+            </div>
+            <p className="text-xs">
+              Replace <span className="font-mono bg-muted rounded px-1">&lt;laptop-ip&gt;</span> with your
+              laptop's actual address on your hotspot network.{" "}
+              <a href="/rfid/setup" className="text-primary underline underline-offset-2">
+                See the Reader Setup page
+              </a>{" "}
+              for step-by-step screenshots.
+            </p>
+          </div>
+
+          {/* 2c — Run the event */}
+          <div className="space-y-3">
+            <p className="text-foreground font-semibold">Run your event normally</p>
+            <p>Open the organizer portal in your browser and run the day exactly as you would with the cloud. Everything below works with no internet.</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4">
+                <p className="font-semibold text-green-600 dark:text-green-400 text-xs uppercase tracking-wider mb-2.5">Works offline</p>
+                <ul className="space-y-1.5">
+                  <CheckItem ok={true}>Rider check-in</CheckItem>
+                  <CheckItem ok={true}>Live transponder timing</CheckItem>
+                  <CheckItem ok={true}>Moto scoring &amp; results</CheckItem>
+                  <CheckItem ok={true}>Transponder / bib setup</CheckItem>
+                  <CheckItem ok={true}>Walk-up registration</CheckItem>
+                </ul>
               </div>
-            </div>
-
-            <div className="flex gap-3">
-              <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">3</div>
-              <div className="space-y-2">
-                <p className="text-foreground font-medium">Set the database path</p>
-                <p className="text-xs">
-                  The local server uses SQLite. Set{" "}
-                  <code className="bg-muted rounded px-1 font-mono">SQLITE_FILE</code> to where
-                  you want the database file stored. If not set, it defaults to{" "}
-                  <code className="bg-muted rounded px-1 font-mono">./race_data.db</code> in the
-                  server directory.
-                </p>
-                <CodeBlock>{`# macOS / Linux (optional — default is ./race_data.db)
-export SQLITE_FILE="./race_data.db"
-
-# Windows (Command Prompt)
-set SQLITE_FILE=./race_data.db`}</CodeBlock>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">4</div>
-              <div className="space-y-2">
-                <p className="text-foreground font-medium">Start the server and verify</p>
-                <CodeBlock>{`npm start
-
-# Expected output:
-#   ============================================
-#    🏁  Rocky Mountain Race — Local Server
-#   ============================================
-#    URL:      http://localhost:8080
-#    Database: ./race_data.db
-#   ============================================`}</CodeBlock>
-                <p className="text-xs">
-                  Open <code className="bg-muted rounded px-1 font-mono text-xs">http://localhost:8080/api/healthz</code> in
-                  a browser. You should see <code className="bg-muted rounded px-1 font-mono text-xs">{`{"status":"ok","mode":"local"}`}</code>.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  You can also check the build version inside the downloaded package:{" "}
-                  <code className="bg-muted rounded px-1 font-mono text-xs">cat package.json | grep version</code>.
-                  It should match the version shown on the download button above.
-                </p>
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                <p className="font-semibold text-destructive text-xs uppercase tracking-wider mb-2.5">Not available offline</p>
+                <ul className="space-y-1.5">
+                  <CheckItem ok={false}>Series points &amp; standings</CheckItem>
+                  <CheckItem ok={false}>Online pre-registration</CheckItem>
+                  <CheckItem ok={false}>Public results page</CheckItem>
+                  <CheckItem ok={false}>Email confirmations</CheckItem>
+                  <CheckItem ok={false}>Payment processing</CheckItem>
+                </ul>
               </div>
             </div>
           </div>
 
           <Callout kind="tip">
-            Keep the server running in a terminal window throughout race day. If you close it,
-            crossings will queue on the hardware and may be lost depending on your reader's buffer
-            size.
+            Keep the terminal window open all day — closing it stops the software and your timing reader will lose its connection.
           </Callout>
+
         </CardContent>
       </Card>
 
-      {/* ── Phase 4 — Configure Hardware ─────────────────────────────────────── */}
+      {/* ── Step 3 — After the Race ──────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3 border-b">
-          <PhaseHeader n={4} title="Configure Your Timing Hardware" icon={Settings} />
+          <StepHeader n={3} title="After the Race — Sync Your Results" />
         </CardHeader>
-        <CardContent className="pt-5 space-y-4 text-sm text-muted-foreground">
-          <p>
-            Update your timing system's HTTP POST endpoint from the cloud URL to your laptop's local
-            IP address. Everything else — method, headers, body template — stays the same.
-          </p>
+        <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
 
+          {/* 3a — Auto-sync */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-foreground uppercase tracking-wider">Cloud endpoint (your current setting)</p>
+            <p className="text-foreground font-semibold">Results sync automatically when you get internet</p>
+            <p>
+              As soon as your laptop connects to the internet — whether that's driving home or stopping at a café —
+              the software will push all your race data to the cloud on its own. Results will appear publicly within minutes.
+            </p>
+            <p>
+              For this to work, you need to start the software with your cloud account details. Expand the section below to set that up.
+            </p>
+            <ShowMeHow label="Set up automatic sync (recommended)">
+              <p className="text-xs text-muted-foreground">
+                Start the software with your login details instead of the plain start command.
+                Replace <span className="font-mono bg-muted rounded px-1">you@club.com</span> and <span className="font-mono bg-muted rounded px-1">yourpassword</span> with your organizer account credentials:
+              </p>
+              <OsToggle os={os} onChange={setOs} />
+              <CopyableCodeBlock>{os === "mac" ? syncCmdMac : syncCmdWindows}</CopyableCodeBlock>
+              <p className="text-xs text-muted-foreground">
+                Once you have internet, the software will sync automatically. You don't need to do anything else.
+              </p>
+            </ShowMeHow>
+          </div>
+
+          {/* 3b — Manual upload fallback */}
+          <div className="space-y-2">
+            <p className="text-foreground font-semibold">Or upload manually from the cloud portal</p>
+            <p>
+              If auto-sync didn't run, you can upload your results file directly from this website.
+            </p>
+            <Link
+              href="/offline/sync"
+              className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
+            >
+              <UploadCloud size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-mono text-primary flex-1">Upload Offline Results →</span>
+            </Link>
+          </div>
+
+          {/* 3c — Point reader back */}
+          <div className="space-y-2">
+            <p className="text-foreground font-semibold">Switch your timing reader back to the cloud</p>
+            <p>After syncing, update your timing reader to point back to the normal cloud address so it's ready for your next event.</p>
             <CopyableCodeBlock>{`POST ${cloudEndpoint}`}</CopyableCodeBlock>
           </div>
 
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-foreground uppercase tracking-wider">Local endpoint (replace before race day)</p>
-            <CopyableCodeBlock>{`POST ${localEndpoint}`}</CopyableCodeBlock>
-          </div>
-
-          <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-xs">
-            <p className="font-semibold text-foreground">Finding your laptop's IP address</p>
-            <CodeBlock>{`# macOS / Linux
-ipconfig getifaddr en0      # Wi-Fi
-ipconfig getifaddr en1      # Ethernet
-
-# Windows
-ipconfig                    # Look for "IPv4 Address" under your adapter`}</CodeBlock>
-            <p className="text-muted-foreground">
-              Your laptop and the timing hardware must be on the same local network (e.g. both joined to
-              your mobile hotspot). The IP is typically <code className="bg-background border rounded px-1 font-mono">192.168.x.x</code>.
-            </p>
-          </div>
-
-          <Callout kind="info">
-            For per-reader configuration screenshots and payload format details, see the{" "}
-            <a href="/rfid/setup" className="text-primary underline underline-offset-2">
-              Timing Hardware Setup
-            </a>{" "}
-            page. Swap the domain portion of the URL shown there with your laptop's local IP.
-          </Callout>
-
           <Callout kind="warning">
-            Use <strong>http://</strong> (not https) for the local address. The local server does
-            not have a TLS certificate — readers will reject the connection if you use https.
-          </Callout>
-        </CardContent>
-      </Card>
-
-      {/* ── Phase 5 — Run Race Day ───────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3 border-b">
-          <PhaseHeader n={5} title="Run Race Day Offline" icon={PlayCircle} />
-        </CardHeader>
-        <CardContent className="pt-5 space-y-4 text-sm text-muted-foreground">
-          <p>
-            Once the local server is running and your timing hardware is pointed at it, open the
-            organizer portal in a browser on the same laptop. All normal race-day workflows operate
-            exactly as they do in the cloud.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4">
-              <p className="font-semibold text-green-600 dark:text-green-400 text-xs uppercase tracking-wider mb-2.5">Works offline</p>
-              <ul className="space-y-1.5">
-                <CheckItem ok={true}>Rider check-in &amp; sign-in</CheckItem>
-                <CheckItem ok={true}>Transponder &amp; MyLaps live timing</CheckItem>
-                <CheckItem ok={true}>Moto scoring &amp; results entry</CheckItem>
-                <CheckItem ok={true}>Timing assignments</CheckItem>
-                <CheckItem ok={true}>Bib number management</CheckItem>
-                <CheckItem ok={true}>Walk-up registration management</CheckItem>
-              </ul>
-            </div>
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-              <p className="font-semibold text-destructive text-xs uppercase tracking-wider mb-2.5">Not available offline</p>
-              <ul className="space-y-1.5">
-                <CheckItem ok={false}>Series points calculation</CheckItem>
-                <CheckItem ok={false}>Online pre-registration</CheckItem>
-                <CheckItem ok={false}>Public results page</CheckItem>
-                <CheckItem ok={false}>Email confirmations</CheckItem>
-                <CheckItem ok={false}>Payment processing</CheckItem>
-              </ul>
-            </div>
-          </div>
-
-          <Callout kind="tip">
-            Walk-up registration still works — add riders manually through the Riders page, then
-            register them for the event. Their results will sync to the cloud along with everything
-            else.
-          </Callout>
-        </CardContent>
-      </Card>
-
-      {/* ── Phase 6 — Sync Back ──────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3 border-b">
-          <PhaseHeader n={6} title="Sync Back to the Cloud" icon={UploadCloud} />
-        </CardHeader>
-        <CardContent className="pt-5 space-y-4 text-sm text-muted-foreground">
-          <p>
-            When the local server detects internet connectivity and at least one event is marked
-            completed, it automatically pushes all data — check-ins, RFID assignments, walk-up
-            registrations — to the cloud. No terminal commands needed.
-          </p>
-
-          {/* Auto-sync explanation */}
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <RefreshCw size={14} className="text-primary shrink-0" />
-              <p className="text-xs font-semibold text-foreground uppercase tracking-wider">How auto-sync works</p>
-            </div>
-            <ul className="space-y-2 text-xs">
-              <li className="flex items-start gap-2">
-                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
-                <span>The server checks for internet every 2 minutes in the background.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
-                <span>Sync fires automatically once the cloud is reachable <strong>and</strong> at least one event is in progress or completed.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
-                <span>Re-running sync never duplicates data — the watermark system skips rows that already exist in the cloud.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
-                <span>Auto-sync requires <code className="bg-background border rounded px-1 font-mono">CLOUD_URL</code>, <code className="bg-background border rounded px-1 font-mono">CLUB_ID</code>, <code className="bg-background border rounded px-1 font-mono">CLOUD_EMAIL</code>, and <code className="bg-background border rounded px-1 font-mono">CLOUD_PASSWORD</code> to be set when starting the server.</span>
-              </li>
-            </ul>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex gap-3">
-              <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</div>
-              <div className="space-y-1.5">
-                <p className="text-foreground font-medium">Start the server with cloud credentials</p>
-                <p className="text-xs">
-                  Set your cloud credentials when launching the local server. Auto-sync will start automatically once an event is completed and internet is detected.
-                </p>
-                <CopyableCodeBlock>{syncScriptMac}</CopyableCodeBlock>
-                <CopyableCodeBlock>{syncScriptWindows}</CopyableCodeBlock>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</div>
-              <div className="space-y-1.5">
-                <p className="text-foreground font-medium">Confirm sync &amp; upload manually if needed</p>
-                <p className="text-xs">
-                  Check the auto-sync status from any browser on your local network:
-                </p>
-                <CodeBlock>{`http://<laptop-ip>:8080/api/status`}</CodeBlock>
-                <p className="text-xs">
-                  The response shows <code className="bg-muted rounded px-1 font-mono">autoSync.lastSuccessAt</code> when sync completed, plus row counts for each table.
-                  If auto-sync didn't fire, upload the export manually via the cloud portal:
-                </p>
-                <Link
-                  href="/offline/sync"
-                  className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
-                >
-                  <UploadCloud size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
-                  <span className="text-xs font-mono text-primary flex-1">Sync from Offline Export →</span>
-                </Link>
-                <p className="text-xs">
-                  Upload the <code className="bg-muted rounded px-1 font-mono">race_data.db</code> export file directly.
-                  Results will appear publicly once the import is complete.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">3</div>
-              <div className="space-y-1.5">
-                <p className="text-foreground font-medium">Restore hardware to the cloud endpoint</p>
-                <p className="text-xs">
-                  Update each timing system's HTTP endpoint back to the cloud URL. You only need to do
-                  this once — the timing hardware will continue using the cloud URL for all future events.
-                </p>
-                <CopyableCodeBlock>{`POST ${cloudEndpoint}`}</CopyableCodeBlock>
-              </div>
-            </div>
-          </div>
-
-          <Callout kind="warning">
-            <strong>Sync before wiping the laptop.</strong> The local SQLite database (
-            <code className="bg-amber-500/20 rounded px-1 font-mono text-xs">race_data.db</code>) is the
-            only copy of your race data until the sync completes. Do not delete it, reformat the
-            laptop, or run <code className="bg-amber-500/20 rounded px-1 font-mono text-xs">npm run reset-db</code> until
-            you have confirmed a successful upload.
+            Don't delete or reset anything on your laptop until you've confirmed the sync went through. Check the public Results page — if your results are showing, you're good to go.
           </Callout>
 
-          <Callout kind="info">
-            If credentials aren't configured, auto-sync is disabled and the server will print a
-            warning at startup. You can still sync manually using{" "}
-            <code className="bg-primary/10 rounded px-1 font-mono text-xs">npm run sync</code> from the
-            local server directory — see the README in the downloaded package for details.
-          </Callout>
-
-          <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
-            <div className="flex items-center gap-2">
-              <Terminal size={14} className="text-primary shrink-0" />
-              <p className="text-xs font-semibold text-foreground uppercase tracking-wider">Verify the sync</p>
-            </div>
-            <p className="text-xs">
-              After sync, open the public Results page for your event. If lap counts and
-              positions match what you saw on the local portal, the sync was successful. You can
-              then safely archive the local database file.
-            </p>
-          </div>
         </CardContent>
       </Card>
 
