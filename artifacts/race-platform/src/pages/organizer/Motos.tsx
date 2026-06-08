@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -35,6 +35,28 @@ type RawCrossing = {
   lapTimeMs: number | null;
   crossingTime: string;
   readerId: string | null;
+};
+
+type LeaderboardEntry = {
+  position: number;
+  riderId: number | null;
+  riderName: string;
+  bibNumber: string | null;
+  laps: number;
+  lastLap: string | null;
+  totalTime: string | null;
+  gap: string;
+  dnf?: boolean;
+  dns?: boolean;
+};
+
+type LeaderboardSnapshot = {
+  motoId: number;
+  motoName: string;
+  raceClass: string;
+  status: string;
+  leaderboard: LeaderboardEntry[];
+  updatedAt: string;
 };
 
 const POLL_INTERVAL_MS = 3000;
@@ -63,6 +85,115 @@ function playRfidPing(count: number) {
   } catch {
     // AudioContext may be blocked; ignore
   }
+}
+
+function LiveLeaderboard({ motoId }: { motoId: number }) {
+  const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const esRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setSnapshot(null);
+
+    const es = new EventSource(`/api/timing/live/${motoId}`);
+    esRef.current = es;
+
+    es.onmessage = (evt) => {
+      try {
+        const data: LeaderboardSnapshot = JSON.parse(evt.data);
+        if (!("error" in data)) {
+          setSnapshot(data);
+          setLastUpdated(new Date());
+          setLoading(false);
+        }
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    es.onerror = () => {
+      setLoading(false);
+    };
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, [motoId]);
+
+  return (
+    <div className="flex flex-col min-w-0">
+      <div className="flex items-center justify-between px-3 py-2 bg-secondary/10 border-b">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-secondary" />
+          </span>
+          <span className="text-xs font-bold uppercase tracking-widest text-secondary">Live Order</span>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {lastUpdated ? `${format(lastUpdated, "h:mm:ss a")}` : "Waiting…"}
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="px-3 py-4 text-center text-xs text-muted-foreground animate-pulse">
+          Connecting…
+        </div>
+      ) : !snapshot || snapshot.leaderboard.length === 0 ? (
+        <div className="px-3 py-4 text-center text-xs text-muted-foreground flex flex-col items-center gap-1.5">
+          <Trophy size={16} className="text-muted-foreground/40" />
+          No results yet
+        </div>
+      ) : (
+        <div className="max-h-44 overflow-y-auto">
+          <Table>
+            <TableHeader className="bg-muted/40 sticky top-0">
+              <TableRow>
+                <TableHead className="text-xs py-1.5 w-8 text-center px-2">P</TableHead>
+                <TableHead className="text-xs py-1.5">Rider</TableHead>
+                <TableHead className="text-xs py-1.5 text-center w-10">Lps</TableHead>
+                <TableHead className="text-xs py-1.5 text-right pr-3 w-20">Gap</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {snapshot.leaderboard.map((entry) => (
+                <TableRow
+                  key={entry.riderId ?? entry.riderName}
+                  className={`h-7 ${entry.position === 1 ? "bg-secondary/10" : ""}`}
+                >
+                  <TableCell className="py-1 px-2 text-center">
+                    <span className={`font-heading font-bold text-xs ${entry.position === 1 ? "text-secondary" : "text-muted-foreground"}`}>
+                      {entry.position}
+                    </span>
+                  </TableCell>
+                  <TableCell className="py-1 text-xs font-medium leading-tight">
+                    <span className={entry.dnf || entry.dns ? "line-through text-muted-foreground" : ""}>
+                      {entry.riderName}
+                    </span>
+                    {entry.dnf && <span className="ml-1 text-[10px] text-destructive font-bold">DNF</span>}
+                    {entry.dns && <span className="ml-1 text-[10px] text-muted-foreground font-bold">DNS</span>}
+                  </TableCell>
+                  <TableCell className="py-1 text-center text-xs font-mono font-bold tabular-nums">
+                    {entry.laps}
+                  </TableCell>
+                  <TableCell className="py-1 pr-3 text-right text-xs tabular-nums text-muted-foreground">
+                    {entry.gap === "Leader" ? (
+                      <span className="text-secondary font-bold">Ldr</span>
+                    ) : (
+                      entry.gap
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function LiveCrossingsFeed({ motoId, minLapTimeMs }: { motoId: number; minLapTimeMs?: number | null }) {
@@ -133,7 +264,7 @@ function LiveCrossingsFeed({ motoId, minLapTimeMs }: { motoId: number; minLapTim
   }, [motoId]);
 
   return (
-    <div className={`border-t transition-all duration-150 ${flash ? "ring-2 ring-primary ring-offset-0" : ""}`}>
+    <div className={`flex flex-col min-w-0 transition-all duration-150 ${flash ? "ring-2 ring-primary ring-offset-0" : ""}`}>
       <div className="flex items-center justify-between px-3 py-2 bg-primary/5 border-b">
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-2">
@@ -2444,12 +2575,15 @@ export default function Motos() {
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
                 )}
 
-                {/* Live crossing feed — hidden when expanded dialog is open to prevent double pings */}
+                {/* Live leaderboard + crossings — hidden when expanded dialog is open to prevent double pings */}
                 {moto.status === "in_progress" && expandedMotoId !== moto.id && (
-                  <LiveCrossingsFeed
-                    motoId={moto.id}
-                    minLapTimeMs={moto.raceClass ? ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[moto.raceClass] ?? null : null}
-                  />
+                  <div className="border-t grid grid-cols-2 divide-x">
+                    <LiveLeaderboard motoId={moto.id} />
+                    <LiveCrossingsFeed
+                      motoId={moto.id}
+                      minLapTimeMs={moto.raceClass ? ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[moto.raceClass] ?? null : null}
+                    />
+                  </div>
                 )}
 
                 {/* Action bar */}

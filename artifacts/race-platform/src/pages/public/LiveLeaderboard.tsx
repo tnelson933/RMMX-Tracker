@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoute, Link } from "wouter";
-import { Flag, Clock, WifiOff, ChevronLeft, Radio, AlertTriangle } from "lucide-react";
+import { Flag, Clock, WifiOff, ChevronLeft, Radio, AlertTriangle, TrendingUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface LeaderboardEntry {
@@ -61,9 +61,13 @@ export default function LiveLeaderboard() {
   const correctionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
-  // Track previous leaderboard state for change detection
-  const prevLapsRef = useRef<Map<number, number>>(new Map());
+  // Track previous state for change detection
   const prevPositionsRef = useRef<Map<number, number>>(new Map());
+  const prevLapsRef = useRef<Map<number, number>>(new Map());
+
+  // Set of riderIds currently in their 2-second "gained position" highlight
+  const [positionGains, setPositionGains] = useState<Set<number>>(new Set());
+  const gainTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     if (!motoId) return;
@@ -79,45 +83,51 @@ export default function LiveLeaderboard() {
           const payload = JSON.parse(e.data) as LeaderboardData;
           if ((payload as any).error) { setError((payload as any).error); return; }
 
-          // Show a timed "Results corrected" notice when a crossing deletion broadcast arrives
+          // Show correction banner
           if (payload.correction) {
             setCorrectionVisible(true);
             if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
             correctionTimerRef.current = setTimeout(() => setCorrectionVisible(false), 5000);
           }
 
-          setData(prev => {
-            // Detect changes vs previous state
-            const prevLaps = prevLapsRef.current;
-            const prevPos = prevPositionsRef.current;
-
-            const top5 = payload.leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
-
-            // Find the max lap just completed by any top-5 rider
-            let maxNewLap = 0;
-            const posChanges: Array<{ riderName: string; from: number; to: number }> = [];
-
-            for (const entry of top5) {
-              const oldLaps = prevLaps.get(entry.riderId) ?? 0;
-              const oldPos = prevPos.get(entry.riderId);
-
-              if (entry.laps > oldLaps && entry.laps > 0) {
-                maxNewLap = Math.max(maxNewLap, entry.laps);
-              }
-
-              if (oldPos !== undefined && oldPos !== entry.position && entry.position <= 5) {
-                posChanges.push({ riderName: entry.riderName, from: oldPos, to: entry.position });
-              }
+          // Detect riders who gained a position
+          const gainers: number[] = [];
+          for (const entry of payload.leaderboard) {
+            if (entry.dnf || entry.dns) continue;
+            const oldPos = prevPositionsRef.current.get(entry.riderId);
+            if (oldPos !== undefined && entry.position < oldPos) {
+              gainers.push(entry.riderId);
             }
+          }
 
-            // Update refs for next comparison
-            for (const entry of payload.leaderboard) {
-              prevLaps.set(entry.riderId, entry.laps);
-              prevPos.set(entry.riderId, entry.position);
-            }
+          // Update tracking refs
+          for (const entry of payload.leaderboard) {
+            prevPositionsRef.current.set(entry.riderId, entry.position);
+            prevLapsRef.current.set(entry.riderId, entry.laps);
+          }
 
-            return payload;
-          });
+          // Trigger 2-second highlight for gainers
+          if (gainers.length > 0) {
+            setPositionGains(prev => {
+              const next = new Set(prev);
+              gainers.forEach(id => next.add(id));
+              return next;
+            });
+            gainers.forEach(riderId => {
+              const existing = gainTimersRef.current.get(riderId);
+              if (existing) clearTimeout(existing);
+              gainTimersRef.current.set(riderId, setTimeout(() => {
+                setPositionGains(prev => {
+                  const next = new Set(prev);
+                  next.delete(riderId);
+                  return next;
+                });
+                gainTimersRef.current.delete(riderId);
+              }, 2000));
+            });
+          }
+
+          setData(payload);
           setError(null);
         } catch { /* ignore parse errors */ }
       };
@@ -133,6 +143,7 @@ export default function LiveLeaderboard() {
     return () => {
       esRef.current?.close();
       if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
+      gainTimersRef.current.forEach(t => clearTimeout(t));
     };
   }, [motoId]);
 
@@ -177,7 +188,6 @@ export default function LiveLeaderboard() {
               <WifiOff size={14} /> Reconnecting…
             </span>
           )}
-
         </div>
       </div>
 
@@ -225,7 +235,6 @@ export default function LiveLeaderboard() {
                   <Flag size={13} /> Race finished
                 </span>
               )}
-
             </div>
           </div>
 
@@ -251,48 +260,82 @@ export default function LiveLeaderboard() {
                 </thead>
                 <tbody>
                   <AnimatePresence initial={false}>
-                    {data.leaderboard.map((entry) => (
-                      <motion.tr
-                        key={entry.riderId}
-                        layout
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.3 }}
-                        className={`border-b border-white/5 ${
-                          entry.position === 1 ? "bg-white/5" : ""
-                        } ${entry.dnf || entry.dns ? "opacity-40" : ""}`}
-                      >
-                        <td className="text-center py-3 px-3 w-12">
-                          <span className={`font-heading font-bold text-lg ${
-                            entry.position === 1 ? "text-yellow-400" :
-                            entry.position === 2 ? "text-slate-300" :
-                            entry.position === 3 ? "text-amber-600" :
-                            "text-white/50"
-                          }`}>
-                            {entry.dnf ? "DNF" : entry.dns ? "DNS" : entry.position}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="font-heading font-bold text-base">{entry.riderName}</div>
-                        </td>
-                        <td className="text-center py-3 px-2 hidden sm:table-cell">
-                          <span className="font-mono text-white/50 text-xs">{entry.bibNumber ?? "—"}</span>
-                        </td>
-                        <td className="text-center py-3 px-2">
-                          <span className="font-heading font-bold text-white">{entry.laps}</span>
-                        </td>
-                        <td className="text-right py-3 px-3 font-mono text-sm tabular-nums">
-                          {entry.totalTime ?? "—"}
-                        </td>
-                        <td className="text-right py-3 px-3 font-mono text-sm text-white/50 tabular-nums hidden md:table-cell">
-                          {entry.lastLap ?? "—"}
-                        </td>
-                        <td className="text-right py-3 px-3 text-sm text-white/40 hidden lg:table-cell">
-                          {entry.gap}
-                        </td>
-                      </motion.tr>
-                    ))}
+                    {data.leaderboard.map((entry) => {
+                      const justGained = positionGains.has(entry.riderId);
+                      return (
+                        <motion.tr
+                          key={entry.riderId}
+                          layout
+                          layoutId={`rider-${entry.riderId}`}
+                          initial={{ opacity: 0, y: -12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ layout: { type: "spring", stiffness: 400, damping: 35 }, duration: 0.3 }}
+                          className={`border-b border-white/5 ${
+                            entry.position === 1 ? "bg-white/5" : ""
+                          } ${entry.dnf || entry.dns ? "opacity-40" : ""}`}
+                        >
+                          <td className="text-center py-3 px-3 w-12">
+                            <motion.span
+                              layout
+                              className={`font-heading font-bold text-lg ${
+                                entry.position === 1 ? "text-yellow-400" :
+                                entry.position === 2 ? "text-slate-300" :
+                                entry.position === 3 ? "text-amber-600" :
+                                "text-white/50"
+                              }`}
+                            >
+                              {entry.dnf ? "DNF" : entry.dns ? "DNS" : entry.position}
+                            </motion.span>
+                          </td>
+
+                          {/* Rider name — enlarges for 2s on position gain */}
+                          <td className="py-2 px-3">
+                            <motion.div
+                              animate={justGained
+                                ? { scale: 1.18, color: "#4ade80" }
+                                : { scale: 1, color: "#ffffff" }
+                              }
+                              transition={{ type: "spring", stiffness: 300, damping: 22 }}
+                              style={{ originX: 0 }}
+                              className="font-heading font-bold text-base flex items-center gap-2"
+                            >
+                              <AnimatePresence>
+                                {justGained && (
+                                  <motion.span
+                                    key="gain-arrow"
+                                    initial={{ opacity: 0, x: -6, scale: 0.7 }}
+                                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                                    exit={{ opacity: 0, x: -6, scale: 0.7 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="inline-flex items-center"
+                                  >
+                                    <TrendingUp size={16} className="text-green-400 shrink-0" />
+                                  </motion.span>
+                                )}
+                              </AnimatePresence>
+                              {entry.riderName}
+                            </motion.div>
+                          </td>
+
+                          <td className="text-center py-3 px-2 hidden sm:table-cell">
+                            <span className="font-mono text-white/50 text-xs">{entry.bibNumber ?? "—"}</span>
+                          </td>
+                          <td className="text-center py-3 px-2">
+                            <span className="font-heading font-bold text-white">{entry.laps}</span>
+                          </td>
+                          <td className="text-right py-3 px-3 font-mono text-sm tabular-nums">
+                            {entry.totalTime ?? "—"}
+                          </td>
+                          <td className="text-right py-3 px-3 font-mono text-sm text-white/50 tabular-nums hidden md:table-cell">
+                            {entry.lastLap ?? "—"}
+                          </td>
+                          <td className="text-right py-3 px-3 text-sm text-white/40 hidden lg:table-cell">
+                            {entry.gap}
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
                   </AnimatePresence>
                 </tbody>
               </table>
