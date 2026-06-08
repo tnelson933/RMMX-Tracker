@@ -4,6 +4,9 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateRawSync, crc32 as zlibCrc32 } from "node:zlib";
 import { spawnSync } from "node:child_process";
+import multer from "multer";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -263,6 +266,21 @@ function rebuildLocalServer(localServerDir: string): void {
   }
 }
 
+// ── Multer upload — store in OS temp dir ──────────────────────────────────────
+const upload = multer({
+  dest: join(tmpdir(), "rmmx-offline-uploads"),
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB max
+  fileFilter: (_req, file, cb) => {
+    const allowed = [".db", ".zip"];
+    const ext = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf("."));
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only .db and .zip files are accepted"));
+    }
+  },
+});
+
 // ── Zip cache ─────────────────────────────────────────────────────────────────
 // Cache the generated zip buffer keyed on the dist file's mtime (ms).
 // Re-reads and rebuilds only when the file changes on disk.
@@ -433,6 +451,37 @@ router.get("/offline/package", (req, res) => {
   res.setHeader("ETag", etag);
   res.setHeader("Cache-Control", "no-cache");
   res.send(zip);
+});
+
+router.post("/offline/sync-upload", (req, res, next) => {
+  const userId = (req.session as any).userId;
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  upload.single("export")(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message ?? "File upload failed." });
+      return;
+    }
+    if (!req.file) {
+      res.status(400).json({ error: "No file received. Please attach a .db or .zip export file." });
+      return;
+    }
+    const { originalname, size, path: tempPath, mimetype } = req.file;
+    const clubId = (req.session as any).clubId ?? "unknown";
+    req.log.info(
+      { userId, clubId, filename: originalname, sizeBytes: size, tempPath, mimetype },
+      "offline sync upload received",
+    );
+    res.json({
+      received: true,
+      message:
+        `Upload received (${originalname}, ${(size / 1024).toFixed(1)} KB). ` +
+        "An admin will process the import and merge the data into the live database. " +
+        "Results will appear publicly once the import is complete.",
+    });
+  });
 });
 
 export default router;

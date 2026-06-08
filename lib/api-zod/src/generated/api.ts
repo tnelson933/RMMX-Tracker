@@ -1401,6 +1401,15 @@ export const ListRecentResultsResponse = zod.array(ListRecentResultsResponseItem
 
 
 /**
+ * @summary Upload a SQLite offline export for cloud import (multipart/form-data, field name "export")
+ */
+export const OfflineSyncUploadResponse = zod.object({
+  "received": zod.boolean(),
+  "message": zod.string()
+})
+
+
+/**
  * @summary Generate event report (registration, checkin, results summary)
  */
 export const GetEventReportParams = zod.object({

@@ -54,6 +54,7 @@ import type {
   MotoInput,
   MotoUpdate,
   OfflinePackageInfo,
+  OfflineSyncUpload200,
   OrganizerUser,
   PointsTable,
   PointsTableInput,
@@ -4846,6 +4847,76 @@ export function useListRecentResults<TData = Awaited<ReturnType<typeof listRecen
 
 
 
+
+export const getOfflineSyncUploadUrl = () => {
+
+
+
+
+  return `/api/offline/sync-upload`
+}
+
+/**
+ * @summary Upload a SQLite offline export for cloud import (multipart/form-data, field name "export")
+ */
+export const offlineSyncUpload = async ( options?: RequestInit): Promise<OfflineSyncUpload200> => {
+
+  return customFetch<OfflineSyncUpload200>(getOfflineSyncUploadUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getOfflineSyncUploadMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof offlineSyncUpload>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof offlineSyncUpload>>, TError,void, TContext> => {
+
+const mutationKey = ['offlineSyncUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof offlineSyncUpload>>, void> = () => {
+
+
+          return  offlineSyncUpload(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OfflineSyncUploadMutationResult = NonNullable<Awaited<ReturnType<typeof offlineSyncUpload>>>
+
+    export type OfflineSyncUploadMutationError = ErrorType<void>
+
+    /**
+ * @summary Upload a SQLite offline export for cloud import (multipart/form-data, field name "export")
+ */
+export const useOfflineSyncUpload = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof offlineSyncUpload>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof offlineSyncUpload>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getOfflineSyncUploadMutationOptions(options));
+    }
 
 export const getGetEventReportUrl = (eventId: number,) => {
 

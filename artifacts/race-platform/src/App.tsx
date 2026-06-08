@@ -26,6 +26,7 @@ import RiderDetail from "@/pages/organizer/RiderDetail";
 import RfidManagement from "@/pages/organizer/RfidManagement";
 import ReaderSetup from "@/pages/organizer/ReaderSetup";
 import OfflineMode from "@/pages/organizer/OfflineMode";
+import OfflineSync from "@/pages/organizer/OfflineSync";
 import Series from "@/pages/organizer/Series";
 import PointsTables from "@/pages/organizer/PointsTables";
 import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
@@ -135,6 +136,9 @@ function Router() {
       </Route>
       <Route path="/offline-mode">
         <ProtectedRoute><OfflineMode /></ProtectedRoute>
+      </Route>
+      <Route path="/offline/sync">
+        <ProtectedRoute><OfflineSync /></ProtectedRoute>
       </Route>
       <Route path="/rfid">
         <ProtectedRoute><RfidManagement /></ProtectedRoute>

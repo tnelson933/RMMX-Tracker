@@ -1328,6 +1328,29 @@ paths:
                 items:
                   $ref: "#/components/schemas/RecentResultItem"
 
+  /offline/sync-upload:
+    post:
+      operationId: offlineSyncUpload
+      tags: [reports]
+      summary: Upload a SQLite offline export for cloud import (multipart/form-data, field name "export")
+      responses:
+        "200":
+          description: Upload received
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received, message]
+                properties:
+                  received:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          description: No file or invalid file type
+        "401":
+          description: Not authenticated
+
   /reports/event/{eventId}:
     get:
       operationId: getEventReport

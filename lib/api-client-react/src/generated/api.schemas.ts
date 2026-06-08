@@ -965,6 +965,11 @@ state?: string;
 limit?: number;
 };
 
+export type OfflineSyncUpload200 = {
+  received: boolean;
+  message: string;
+};
+
 export type DisconnectStripeConnect200 = {
   ok?: boolean;
 };

@@ -1,11 +1,13 @@
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   WifiOff, Download, Settings, PlayCircle, UploadCloud, AlertTriangle,
-  CheckCircle2, XCircle, Info, Terminal, Link as LinkIcon, RefreshCw,
+  CheckCircle2, XCircle, Info, Terminal, Link as LinkIcon, RefreshCw, Copy, Check,
 } from "lucide-react";
 import { useGetOfflinePackageInfo } from "@workspace/api-client-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 // ── Local-storage key for last-downloaded package ETag ────────────────────────
 const LAST_DOWNLOAD_KEY = "offline_package_last_downloaded_etag";
@@ -20,6 +22,30 @@ function PhaseHeader({ n, title, icon: Icon }: { n: number; title: string; icon:
       </div>
       <Icon size={20} className="text-primary flex-shrink-0" />
       <h2 className="text-xl font-heading font-bold uppercase tracking-tight">{title}</h2>
+    </div>
+  );
+}
+
+function CopyableCodeBlock({ children }: { children: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(children);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="relative group">
+      <pre className="bg-background border border-border rounded-lg px-4 py-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre pr-10">
+        {children}
+      </pre>
+      <button
+        onClick={copy}
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 rounded border border-border bg-background px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+        title="Copy"
+      >
+        {copied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+        {copied ? "Copied" : "Copy"}
+      </button>
     </div>
   );
 }
@@ -175,6 +201,27 @@ export default function OfflineMode() {
     }
   }, [pkgInfo?.etag]);
 
+  const { user } = useAuth();
+  const cloudDomain = window.location.origin;
+  const clubId = user?.clubId ?? "<your-club-id>";
+
+  const cloudEndpoint = `${cloudDomain}/api/timing/active/crossing?clubId=${clubId}`;
+  const localEndpoint = `http://<laptop-ip>:8080/api/timing/active/crossing?clubId=${clubId}`;
+
+  const syncScriptMac = `# macOS / Linux
+CLOUD_URL=${cloudDomain} \\
+CLUB_ID=${clubId} \\
+CLOUD_EMAIL=you@club.com \\
+CLOUD_PASSWORD=yourpassword \\
+npm start`;
+
+  const syncScriptWindows = `# Windows (Command Prompt — set vars first)
+set CLOUD_URL=${cloudDomain}
+set CLUB_ID=${clubId}
+set CLOUD_EMAIL=you@club.com
+set CLOUD_PASSWORD=yourpassword
+npm start`;
+
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-8">
 
@@ -201,8 +248,8 @@ export default function OfflineMode() {
             you choose to sync.
           </p>
           <p>
-            The local server is an exact mirror of the cloud platform. Check-in, RFID timing, moto
-            scoring, and results entry all work the same way. When the day is over you export the
+            The local server is an exact mirror of the cloud platform. Check-in, transponder timing,
+            moto scoring, and results entry all work the same way. When the day is over you export the
             local database and upload it — results appear publicly within minutes.
           </p>
           <Callout kind="info">
@@ -231,7 +278,7 @@ export default function OfflineMode() {
                   rel="noopener noreferrer"
                   className="text-primary underline underline-offset-2 inline-flex items-center gap-1"
                 >
-                  nodejs.org <LinkIcon size={11} />
+                  nodejs.org
                 </a>
                 . Verify with <code className="bg-muted rounded px-1 py-0.5 text-xs font-mono">node --version</code>.
               </span>
@@ -249,8 +296,13 @@ export default function OfflineMode() {
             </CheckItem>
             <CheckItem ok={true}>
               <span>
-                <strong>Your club ID</strong> — visible in the URL bar on any organizer page, or on the
-                Reader Setup page. You'll need it when pointing hardware at the local server.
+                <strong>Your club ID</strong> — your club ID is{" "}
+                {user?.clubId ? (
+                  <code className="bg-primary/10 border border-primary/30 rounded px-1 py-0.5 font-mono font-bold text-primary">{user.clubId}</code>
+                ) : (
+                  <span className="text-muted-foreground italic">loading…</span>
+                )}
+                . It is pre-filled in all commands and URLs below.
               </span>
             </CheckItem>
           </ul>
@@ -394,18 +446,18 @@ set SQLITE_FILE=./race_data.db`}</CodeBlock>
         </CardHeader>
         <CardContent className="pt-5 space-y-4 text-sm text-muted-foreground">
           <p>
-            Update your reader's HTTP POST endpoint from the cloud URL to your laptop's local IP
-            address. Everything else — method, headers, body template — stays the same.
+            Update your timing system's HTTP POST endpoint from the cloud URL to your laptop's local
+            IP address. Everything else — method, headers, body template — stays the same.
           </p>
 
           <div className="space-y-2">
             <p className="text-xs font-medium text-foreground uppercase tracking-wider">Cloud endpoint (your current setting)</p>
-            <CodeBlock>{`POST https://<your-domain>/api/timing/active/crossing?clubId=<id>`}</CodeBlock>
+            <CopyableCodeBlock>{`POST ${cloudEndpoint}`}</CopyableCodeBlock>
           </div>
 
           <div className="space-y-2">
             <p className="text-xs font-medium text-foreground uppercase tracking-wider">Local endpoint (replace before race day)</p>
-            <CodeBlock>{`POST http://<laptop-ip>:8080/api/timing/active/crossing?clubId=<id>`}</CodeBlock>
+            <CopyableCodeBlock>{`POST ${localEndpoint}`}</CopyableCodeBlock>
           </div>
 
           <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-xs">
@@ -417,7 +469,7 @@ ipconfig getifaddr en1      # Ethernet
 # Windows
 ipconfig                    # Look for "IPv4 Address" under your adapter`}</CodeBlock>
             <p className="text-muted-foreground">
-              Your laptop and the reader must be on the same local network (e.g. both joined to
+              Your laptop and the timing hardware must be on the same local network (e.g. both joined to
               your mobile hotspot). The IP is typically <code className="bg-background border rounded px-1 font-mono">192.168.x.x</code>.
             </p>
           </div>
@@ -425,7 +477,7 @@ ipconfig                    # Look for "IPv4 Address" under your adapter`}</Code
           <Callout kind="info">
             For per-reader configuration screenshots and payload format details, see the{" "}
             <a href="/rfid/setup" className="text-primary underline underline-offset-2">
-              Reader Setup
+              Timing Hardware Setup
             </a>{" "}
             page. Swap the domain portion of the URL shown there with your laptop's local IP.
           </Callout>
@@ -444,9 +496,9 @@ ipconfig                    # Look for "IPv4 Address" under your adapter`}</Code
         </CardHeader>
         <CardContent className="pt-5 space-y-4 text-sm text-muted-foreground">
           <p>
-            Once the local server is running and your hardware is pointed at it, open the organizer
-            portal in a browser on the same laptop. All normal race-day workflows operate exactly as
-            they do in the cloud.
+            Once the local server is running and your timing hardware is pointed at it, open the
+            organizer portal in a browser on the same laptop. All normal race-day workflows operate
+            exactly as they do in the cloud.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -454,9 +506,9 @@ ipconfig                    # Look for "IPv4 Address" under your adapter`}</Code
               <p className="font-semibold text-green-600 dark:text-green-400 text-xs uppercase tracking-wider mb-2.5">Works offline</p>
               <ul className="space-y-1.5">
                 <CheckItem ok={true}>Rider check-in &amp; sign-in</CheckItem>
-                <CheckItem ok={true}>RFID &amp; MyLaps live timing</CheckItem>
+                <CheckItem ok={true}>Transponder &amp; MyLaps live timing</CheckItem>
                 <CheckItem ok={true}>Moto scoring &amp; results entry</CheckItem>
-                <CheckItem ok={true}>RFID tag assignment</CheckItem>
+                <CheckItem ok={true}>Timing assignments</CheckItem>
                 <CheckItem ok={true}>Bib number management</CheckItem>
                 <CheckItem ok={true}>Walk-up registration management</CheckItem>
               </ul>
@@ -527,32 +579,33 @@ ipconfig                    # Look for "IPv4 Address" under your adapter`}</Code
                 <p className="text-xs">
                   Set your cloud credentials when launching the local server. Auto-sync will start automatically once an event is completed and internet is detected.
                 </p>
-                <CodeBlock>{`# macOS / Linux
-CLOUD_URL=https://your-app.replit.app \\
-CLUB_ID=1 \\
-CLOUD_EMAIL=you@club.com \\
-CLOUD_PASSWORD=yourpassword \\
-npm start
-
-# Windows (Command Prompt — set vars first)
-set CLOUD_URL=https://your-app.replit.app
-set CLUB_ID=1
-set CLOUD_EMAIL=you@club.com
-set CLOUD_PASSWORD=yourpassword
-npm start`}</CodeBlock>
+                <CopyableCodeBlock>{syncScriptMac}</CopyableCodeBlock>
+                <CopyableCodeBlock>{syncScriptWindows}</CopyableCodeBlock>
               </div>
             </div>
 
             <div className="flex gap-3">
               <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</div>
               <div className="space-y-1.5">
-                <p className="text-foreground font-medium">Check sync status</p>
+                <p className="text-foreground font-medium">Confirm sync &amp; upload manually if needed</p>
                 <p className="text-xs">
-                  Open the status page from any browser on your local network to confirm sync happened and see how many rows were uploaded.
+                  Check the auto-sync status from any browser on your local network:
                 </p>
                 <CodeBlock>{`http://<laptop-ip>:8080/api/status`}</CodeBlock>
                 <p className="text-xs">
                   The response shows <code className="bg-muted rounded px-1 font-mono">autoSync.lastSuccessAt</code> when sync completed, plus row counts for each table.
+                  If auto-sync didn't fire, upload the export manually via the cloud portal:
+                </p>
+                <Link
+                  href="/offline/sync"
+                  className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
+                >
+                  <UploadCloud size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
+                  <span className="text-xs font-mono text-primary flex-1">Sync from Offline Export →</span>
+                </Link>
+                <p className="text-xs">
+                  Upload the <code className="bg-muted rounded px-1 font-mono">race_data.db</code> export file directly.
+                  Results will appear publicly once the import is complete.
                 </p>
               </div>
             </div>
@@ -562,10 +615,10 @@ npm start`}</CodeBlock>
               <div className="space-y-1.5">
                 <p className="text-foreground font-medium">Restore hardware to the cloud endpoint</p>
                 <p className="text-xs">
-                  Update each reader's HTTP endpoint back to the cloud URL. You only need to do this
-                  once — the reader will continue using the cloud URL for all future events.
+                  Update each timing system's HTTP endpoint back to the cloud URL. You only need to do
+                  this once — the timing hardware will continue using the cloud URL for all future events.
                 </p>
-                <CodeBlock>{`POST https://<your-domain>/api/timing/active/crossing?clubId=<id>`}</CodeBlock>
+                <CopyableCodeBlock>{`POST ${cloudEndpoint}`}</CopyableCodeBlock>
               </div>
             </div>
           </div>
