@@ -749,6 +749,16 @@ export default function Motos() {
   // Always-current snapshot of minLapInputs so the unmount-flush can read it synchronously.
   const minLapInputsRef = useRef(minLapInputs);
   minLapInputsRef.current = minLapInputs;
+  // Set before a blur-normalization setState so the debounce effect skips the cycle
+  // triggered by that state change (the blur already flushed the save immediately).
+  const isBlurFlushingRef = useRef(false);
+  // True while a mutation is in-flight — prevents concurrent overlapping saves.
+  const isSavingRef = useRef(false);
+  // Holds the latest snapshot queued while a save is in-flight; flushed when it settles.
+  const pendingSaveRef = useRef<{ inputs: Record<string, string>; triggerClass: string | null } | null>(null);
+  // Last snapshot successfully committed to the server. Used for change-detection instead
+  // of event.minLapTimes, which may be stale before the invalidated query refetches.
+  const lastCommittedRef = useRef<Record<string, number>>({});
 
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: motos, isLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
@@ -775,6 +785,9 @@ export default function Motos() {
   useEffect(() => {
     setMinLapInputs({});
     seededForEventIdRef.current = null;
+    lastCommittedRef.current = {};
+    pendingSaveRef.current = null;
+    isSavingRef.current = false;
   }, [eventId]);
 
   // Seed min-lap inputs from saved event data exactly once per eventId.
@@ -787,6 +800,8 @@ export default function Motos() {
     seededForEventIdRef.current = currentEventId;
     const saved = (event as any)?.minLapTimes as Record<string, number> | undefined;
     if (!saved) return;
+    // Sync the committed baseline so change-detection works from day one.
+    lastCommittedRef.current = { ...saved };
     setMinLapInputs(() => {
       const next: Record<string, string> = {};
       for (const [cls, ms] of Object.entries(saved)) {
@@ -807,35 +822,60 @@ export default function Motos() {
       const ms = parseMinLapTime(raw);
       if (ms != null) newMinLapTimes[cls] = ms;
     }
-    const saved = ((event as any)?.minLapTimes ?? {}) as Record<string, number>;
+    // Compare against the locally-tracked committed baseline, not the query cache —
+    // event.minLapTimes may still be stale before the invalidated query refetches.
+    const committed = lastCommittedRef.current;
     const hasChange =
-      Object.keys(newMinLapTimes).length !== Object.keys(saved).length ||
-      Object.entries(newMinLapTimes).some(([cls, ms]) => saved[cls] !== ms);
+      Object.keys(newMinLapTimes).length !== Object.keys(committed).length ||
+      Object.entries(newMinLapTimes).some(([cls, ms]) => committed[cls] !== ms);
     if (!hasChange) return;
+    // Serialise: if a mutation is already in-flight, queue the latest snapshot and
+    // return — the onSuccess/onError handler will flush it once the current one settles.
+    if (isSavingRef.current) {
+      pendingSaveRef.current = { inputs, triggerClass };
+      return;
+    }
+    isSavingRef.current = true;
     const displayClass = triggerClass ?? Object.keys(inputs)[0] ?? null;
+    const flushPending = () => {
+      isSavingRef.current = false;
+      if (pendingSaveRef.current) {
+        const pending = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        saveMinLapRef.current(pending.inputs, pending.triggerClass);
+      }
+    };
     updateEventMutation.mutate(
       { eventId, data: { minLapTimes: newMinLapTimes } },
       {
         onSuccess: () => {
+          lastCommittedRef.current = { ...newMinLapTimes };
           queryClient.invalidateQueries({ queryKey: ["getEvent", eventId] as any });
           if (displayClass) {
             setMinLapSavedClass(displayClass);
             setTimeout(() => setMinLapSavedClass(null), 2000);
           }
+          flushPending();
         },
+        onError: () => flushPending(),
       }
     );
   };
 
-  // On blur: normalize display value, cancel debounce, flush save immediately.
-  // Cancelling before flushing ensures exactly one mutation fires — no double-send.
+  // On blur: normalize display, cancel debounce, flush save immediately.
+  // Using isBlurFlushingRef to signal the debounce effect so the re-render caused
+  // by the normalization setState doesn't re-arm a second timer (no double-send).
   const handleMinLapBlur = (cls: string) => {
     const raw = minLapInputs[cls] ?? "";
     const ms = parseMinLapTime(raw);
-    const normalizedInputs = ms != null
-      ? { ...minLapInputs, [cls]: formatMinLapTime(ms) }
-      : { ...minLapInputs };
-    if (ms != null) setMinLapInputs(normalizedInputs);
+    const formatted = ms != null ? formatMinLapTime(ms) : raw;
+    const normalizedInputs = { ...minLapInputs, [cls]: formatted };
+    // Only update state if the string actually changes (avoids a spurious debounce
+    // cycle when the display value is already in normalized form).
+    if (formatted !== raw) {
+      isBlurFlushingRef.current = true;
+      setMinLapInputs(normalizedInputs);
+    }
     if (minLapDebounceTimer.current) {
       clearTimeout(minLapDebounceTimer.current);
       minLapDebounceTimer.current = null;
@@ -847,6 +887,11 @@ export default function Motos() {
   // Fires 600 ms after the user stops typing, persisting values even when the
   // organizer navigates away without touching blur.
   useEffect(() => {
+    // Skip the cycle triggered by blur-normalization setState — blur already flushed.
+    if (isBlurFlushingRef.current) {
+      isBlurFlushingRef.current = false;
+      return;
+    }
     if (minLapDebounceTimer.current) clearTimeout(minLapDebounceTimer.current);
     const snapInputs = { ...minLapInputs }; // stable snapshot for this timer window
     minLapDebounceTimer.current = setTimeout(() => {
