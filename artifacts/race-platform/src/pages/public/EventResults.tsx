@@ -10,11 +10,326 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Calendar, MapPin, Trophy, Flag, ChevronLeft, ChevronRight,
   Clock, Award, Radio, CheckCircle, AlertCircle, Activity,
-  ChevronDown, ChevronUp, Users, Timer,
+  ChevronDown, ChevronUp, Users, Timer, Zap,
 } from "lucide-react";
 import { format, parseISO, isToday } from "date-fns";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
+// ─── Lap time formatter ───────────────────────────────────────────────────────
+function formatLapTime(ms: number): string {
+  const totalSeconds = ms / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = (totalSeconds % 60).toFixed(3).padStart(6, "0");
+  return minutes > 0 ? `${minutes}:${seconds}` : seconds;
+}
+
+// ─── LapTimesModal ────────────────────────────────────────────────────────────
+function LapTimesModal({
+  result,
+  onClose,
+}: {
+  result: RaceResult | null;
+  onClose: () => void;
+}) {
+  if (!result) return null;
+
+  const lapTimes = result.lapTimes ?? [];
+  const parsedLaps = lapTimes.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n > 0);
+  const bestLapMs = parsedLaps.length > 0 ? Math.min(...parsedLaps) : null;
+
+  return (
+    <Dialog open={!!result} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-heading uppercase tracking-wide text-lg flex items-center gap-2">
+            <Timer size={18} className="text-primary" />
+            {result.riderName}
+          </DialogTitle>
+          <p className="text-sm text-muted-foreground font-medium">
+            {result.motoName} · #{result.bibNumber || "—"}
+          </p>
+        </DialogHeader>
+
+        {parsedLaps.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Clock className="mx-auto mb-3 opacity-30" size={36} />
+            <p>No lap time data available for this result.</p>
+          </div>
+        ) : (
+          <div className="mt-2">
+            <div className="grid grid-cols-3 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground border-b pb-2 mb-1 px-1">
+              <span>Lap</span>
+              <span className="text-right">Time</span>
+              <span className="text-right"></span>
+            </div>
+            <div className="space-y-0.5 max-h-72 overflow-y-auto">
+              {parsedLaps.map((lapMs, idx) => {
+                const isBest = lapMs === bestLapMs;
+                return (
+                  <div
+                    key={idx}
+                    className={`grid grid-cols-3 items-center px-1 py-2 rounded-md text-sm ${
+                      isBest ? "bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400" : "hover:bg-muted/40"
+                    }`}
+                  >
+                    <span className="font-heading font-bold text-muted-foreground">
+                      Lap {idx + 1}
+                    </span>
+                    <span className="text-right font-mono font-bold">
+                      {formatLapTime(lapMs)}
+                    </span>
+                    <span className="text-right">
+                      {isBest && (
+                        <span className="inline-flex items-center gap-1 text-xs font-heading font-bold uppercase text-green-600 dark:text-green-400">
+                          <Zap size={11} /> Best
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {result.totalTime && (
+              <div className="border-t mt-2 pt-3 flex items-center justify-between px-1">
+                <span className="text-sm text-muted-foreground font-heading uppercase tracking-wider font-bold">Total Time</span>
+                <span className="font-mono font-bold text-base">{result.totalTime}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── ResultTable ──────────────────────────────────────────────────────────────
+function ResultTable({
+  results,
+  onRiderClick,
+}: {
+  results: RaceResult[];
+  onRiderClick?: (result: RaceResult) => void;
+}) {
+  const clickable = !!onRiderClick;
+  return (
+    <div className="border rounded-md overflow-hidden bg-card">
+      <Table>
+        <TableHeader className="bg-sidebar text-sidebar-foreground">
+          <TableRow className="hover:bg-sidebar">
+            <TableHead className="w-16 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Pos</TableHead>
+            <TableHead className="w-24 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Bib</TableHead>
+            <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Rider</TableHead>
+            <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
+              <span className="flex items-center justify-end gap-1"><Clock size={14} /> Time</span>
+            </TableHead>
+            <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
+              <span className="flex items-center justify-end gap-1"><Award size={14} /> Pts</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {results.map(result => (
+            <TableRow
+              key={result.id}
+              className={`transition-colors ${clickable ? "cursor-pointer hover:bg-primary/5" : "hover:bg-muted/50"}`}
+              onClick={() => onRiderClick?.(result)}
+            >
+              <TableCell className="text-center font-heading font-bold text-xl">
+                {result.dnf ? (
+                  <span className="text-destructive text-sm uppercase">DNF</span>
+                ) : result.dns ? (
+                  <span className="text-muted-foreground text-sm uppercase">DNS</span>
+                ) : (
+                  <span className={result.position === 1 ? "text-primary" : ""}>{result.position}</span>
+                )}
+              </TableCell>
+              <TableCell className="text-center">
+                <span className="inline-block bg-muted px-2 py-1 rounded font-mono font-bold text-sm border">
+                  {result.bibNumber || "-"}
+                </span>
+              </TableCell>
+              <TableCell className="font-bold text-lg">
+                <span className="flex items-center gap-2">
+                  {result.riderName}
+                  {clickable && (
+                    <Timer size={13} className="text-muted-foreground/50 shrink-0" />
+                  )}
+                </span>
+              </TableCell>
+              <TableCell className="text-right font-mono font-medium text-muted-foreground">{result.totalTime || "-"}</TableCell>
+              <TableCell className="text-right font-heading font-bold text-xl text-primary">
+                {result.points !== null && result.points !== undefined ? result.points : "-"}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+// ─── MotoScheduleRow ──────────────────────────────────────────────────────────
+function MotoScheduleRow({
+  moto,
+  results,
+  onRiderClick,
+}: {
+  moto: Moto;
+  results?: RaceResult[];
+  onRiderClick?: (result: RaceResult) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const lineup = moto.lineup ?? [];
+
+  const motoResults = results?.filter(r => r.motoId === moto.id).sort((a, b) => a.position - b.position) ?? [];
+  const isCompleted = moto.status === "completed";
+  const hasStandings = isCompleted && motoResults.length > 0;
+  const hasLineup = lineup.length > 0;
+  const canExpand = hasStandings || hasLineup;
+
+  const statusMap: Record<string, { icon: React.ReactNode; label: string; cls: string }> = {
+    scheduled: { icon: <Clock size={15} className="text-muted-foreground" />, label: "Scheduled", cls: "text-muted-foreground" },
+    in_progress: { icon: <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"/><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"/></span>, label: "IN PROGRESS", cls: "text-red-500 font-bold" },
+    completed: { icon: <CheckCircle size={15} className="text-green-500" />, label: "Completed", cls: "text-green-600" },
+  };
+  const statusConfig = statusMap[moto.status] ?? { icon: <AlertCircle size={15} />, label: moto.status, cls: "text-muted-foreground" };
+
+  return (
+    <div className={`rounded-lg border overflow-hidden ${moto.status === "in_progress" ? "border-red-400/50 bg-red-50/30 dark:bg-red-950/20" : isCompleted ? "border-green-300/40 bg-green-50/10 dark:bg-green-950/10" : "border-border bg-muted/20"}`}>
+      {/* Header row */}
+      <div
+        className={`flex items-center justify-between px-4 py-3 ${canExpand ? "cursor-pointer hover:bg-muted/40 transition-colors" : ""}`}
+        onClick={() => canExpand && setExpanded(v => !v)}
+      >
+        <div className="flex items-center gap-3">
+          {statusConfig.icon}
+          <div>
+            <div className={`font-heading font-bold uppercase tracking-wide text-sm ${moto.status === "in_progress" ? "text-foreground" : ""}`}>
+              {moto.name}
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+              {moto.type.charAt(0).toUpperCase() + moto.type.slice(1)}
+              {hasStandings ? (
+                <>
+                  <span>·</span>
+                  <Trophy size={11} />
+                  {motoResults.length} finishers
+                </>
+              ) : hasLineup ? (
+                <>
+                  <span>·</span>
+                  <Users size={11} />
+                  {lineup.length} riders
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {moto.scheduledTime && (
+            <span className="text-sm text-muted-foreground font-mono">{moto.scheduledTime}</span>
+          )}
+          <span className={`text-xs uppercase tracking-wider ${statusConfig.cls}`}>{statusConfig.label}</span>
+          {canExpand && (
+            <span className="text-muted-foreground ml-1">
+              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded content */}
+      {expanded && canExpand && (
+        <div className="border-t bg-background">
+          {hasStandings ? (
+            /* Completed moto — show standings */
+            <div className="px-4 pb-4 pt-3">
+              <div className="overflow-hidden rounded-md border border-green-200/60 dark:border-green-800/40">
+                <Table>
+                  <TableHeader className="bg-green-900/90 dark:bg-green-950/80">
+                    <TableRow className="hover:bg-green-900/90 dark:hover:bg-green-950/80 border-0">
+                      <TableHead className="w-12 text-center text-white/80 font-heading font-bold uppercase tracking-wider py-3 text-xs">Pos</TableHead>
+                      <TableHead className="w-16 text-center text-white/80 font-heading font-bold uppercase tracking-wider py-3 text-xs">Bib</TableHead>
+                      <TableHead className="text-white/80 font-heading font-bold uppercase tracking-wider py-3 text-xs">Rider</TableHead>
+                      <TableHead className="text-right text-white/80 font-heading font-bold uppercase tracking-wider py-3 text-xs">Time</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {motoResults.map(result => (
+                      <TableRow
+                        key={result.id}
+                        className={`transition-colors border-border/50 ${onRiderClick ? "cursor-pointer hover:bg-primary/5" : "hover:bg-muted/50"}`}
+                        onClick={() => onRiderClick?.(result)}
+                      >
+                        <TableCell className="text-center font-heading font-bold text-base py-2.5">
+                          {result.dnf ? (
+                            <span className="text-destructive text-xs uppercase">DNF</span>
+                          ) : result.dns ? (
+                            <span className="text-muted-foreground text-xs uppercase">DNS</span>
+                          ) : (
+                            <span className={result.position === 1 ? "text-primary" : ""}>{result.position}</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center py-2.5">
+                          <span className="inline-block bg-muted px-1.5 py-0.5 rounded font-mono font-bold text-xs border">
+                            {result.bibNumber || "-"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-semibold py-2.5">
+                          <span className="flex items-center gap-2">
+                            {result.riderName}
+                            {onRiderClick && (
+                              <Timer size={12} className="text-muted-foreground/50 shrink-0" />
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm text-muted-foreground py-2.5">
+                          {result.totalTime || "-"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {onRiderClick && (
+                <p className="text-xs text-muted-foreground mt-2 text-center flex items-center justify-center gap-1">
+                  <Timer size={11} /> Click a rider to see lap times
+                </p>
+              )}
+            </div>
+          ) : (
+            /* Non-completed moto — show pre-race lineup */
+            <div className="px-4 pb-4 pt-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5 pt-2">
+                {[...lineup]
+                  .sort((a, b) => a.position - b.position)
+                  .map(entry => (
+                    <div
+                      key={entry.riderId}
+                      className="flex items-center gap-2 bg-muted/60 rounded px-2.5 py-1.5 border border-border/50"
+                    >
+                      <span className="font-mono font-bold text-xs text-muted-foreground min-w-5 text-center shrink-0">
+                        #{entry.bibNumber ?? "—"}
+                      </span>
+                      <span className="text-sm font-medium truncate">{entry.riderName}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── EventResults (main page) ─────────────────────────────────────────────────
 export default function EventResults() {
   const params = useParams();
   const eventId = parseInt(params.eventId || "0");
@@ -42,6 +357,7 @@ export default function EventResults() {
 
   const [activeClass, setActiveClass] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [selectedResult, setSelectedResult] = useState<RaceResult | null>(null);
 
   useEffect(() => {
     if (!eventId) return;
@@ -279,15 +595,27 @@ export default function EventResults() {
                             const motoResults = classResults
                               .filter(r => r.motoName === motoName)
                               .sort((a, b) => a.position - b.position);
+                            const matchingMoto = motos?.find(m => m.name === motoName && m.raceClass === activeClass);
+                            const isComplete = matchingMoto?.status === "completed";
                             return (
                               <div key={motoName} className="space-y-4">
-                                <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
-                                <ResultTable results={motoResults} />
+                                <div className="flex items-center gap-3">
+                                  <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
+                                  {isComplete && (
+                                    <Badge className="bg-green-600/90 hover:bg-green-600/90 text-white border-0 font-heading uppercase tracking-wider px-3 py-1 text-xs flex items-center gap-1.5">
+                                      <CheckCircle size={13} /> Race Complete
+                                    </Badge>
+                                  )}
+                                </div>
+                                <ResultTable
+                                  results={motoResults}
+                                  onRiderClick={isComplete ? setSelectedResult : undefined}
+                                />
                               </div>
                             );
                           })
                         ) : (
-                          <ResultTable results={classResults.sort((a, b) => a.position - b.position)} />
+                          <ResultTable results={classResults.sort((a, b) => a.position - b.position)} onRiderClick={setSelectedResult} />
                         )}
                       </div>
                     )}
@@ -328,7 +656,12 @@ export default function EventResults() {
                           {clsMotos
                             .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0))
                             .map(moto => (
-                              <MotoScheduleRow key={moto.id} moto={moto} />
+                              <MotoScheduleRow
+                                key={moto.id}
+                                moto={moto}
+                                results={results}
+                                onRiderClick={setSelectedResult}
+                              />
                             ))}
                         </div>
                       </div>
@@ -392,12 +725,12 @@ export default function EventResults() {
                               return (
                                 <div key={motoName} className="space-y-4">
                                   <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
-                                  <ResultTable results={motoResults} />
+                                  <ResultTable results={motoResults} onRiderClick={setSelectedResult} />
                                 </div>
                               );
                             })
                           ) : (
-                            <ResultTable results={clsResults.sort((a, b) => a.position - b.position)} />
+                            <ResultTable results={clsResults.sort((a, b) => a.position - b.position)} onRiderClick={setSelectedResult} />
                           )}
                         </div>
                       )}
@@ -422,7 +755,14 @@ export default function EventResults() {
                           <div className="space-y-2">
                             {clsMotos
                               .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0))
-                              .map(moto => <MotoScheduleRow key={moto.id} moto={moto} />)}
+                              .map(moto => (
+                                <MotoScheduleRow
+                                  key={moto.id}
+                                  moto={moto}
+                                  results={results}
+                                  onRiderClick={setSelectedResult}
+                                />
+                              ))}
                           </div>
                         </div>
                       ))}
@@ -452,127 +792,9 @@ export default function EventResults() {
           )
         )}
       </div>
-    </div>
-  );
-}
 
-function MotoScheduleRow({ moto }: { moto: Moto }) {
-  const [expanded, setExpanded] = useState(false);
-  const lineup = moto.lineup ?? [];
-  const hasLineup = lineup.length > 0;
-
-  const statusMap: Record<string, { icon: React.ReactNode; label: string; cls: string }> = {
-    scheduled: { icon: <Clock size={15} className="text-muted-foreground" />, label: "Scheduled", cls: "text-muted-foreground" },
-    in_progress: { icon: <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"/><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"/></span>, label: "IN PROGRESS", cls: "text-red-500 font-bold" },
-    completed: { icon: <CheckCircle size={15} className="text-green-500" />, label: "Completed", cls: "text-green-600" },
-  };
-  const statusConfig = statusMap[moto.status] ?? { icon: <AlertCircle size={15} />, label: moto.status, cls: "text-muted-foreground" };
-
-  return (
-    <div className={`rounded-lg border overflow-hidden ${moto.status === "in_progress" ? "border-red-400/50 bg-red-50/30 dark:bg-red-950/20" : "border-border bg-muted/20"}`}>
-      {/* Header row — clickable when lineup exists */}
-      <div
-        className={`flex items-center justify-between px-4 py-3 ${hasLineup ? "cursor-pointer hover:bg-muted/40 transition-colors" : ""}`}
-        onClick={() => hasLineup && setExpanded(v => !v)}
-      >
-        <div className="flex items-center gap-3">
-          {statusConfig.icon}
-          <div>
-            <div className={`font-heading font-bold uppercase tracking-wide text-sm ${moto.status === "in_progress" ? "text-foreground" : ""}`}>
-              {moto.name}
-            </div>
-            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-              {moto.type.charAt(0).toUpperCase() + moto.type.slice(1)}
-              {hasLineup && (
-                <>
-                  <span>·</span>
-                  <Users size={11} />
-                  {lineup.length} riders
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {moto.scheduledTime && (
-            <span className="text-sm text-muted-foreground font-mono">{moto.scheduledTime}</span>
-          )}
-          <span className={`text-xs uppercase tracking-wider ${statusConfig.cls}`}>{statusConfig.label}</span>
-          {hasLineup && (
-            <span className="text-muted-foreground ml-1">
-              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Expanded rider list */}
-      {expanded && hasLineup && (
-        <div className="px-4 pb-4 pt-1 border-t bg-background">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5 pt-2">
-            {[...lineup]
-              .sort((a, b) => a.position - b.position)
-              .map(entry => (
-                <div
-                  key={entry.riderId}
-                  className="flex items-center gap-2 bg-muted/60 rounded px-2.5 py-1.5 border border-border/50"
-                >
-                  <span className="font-mono font-bold text-xs text-muted-foreground min-w-5 text-center shrink-0">
-                    #{entry.bibNumber ?? "—"}
-                  </span>
-                  <span className="text-sm font-medium truncate">{entry.riderName}</span>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ResultTable({ results }: { results: RaceResult[] }) {
-  return (
-    <div className="border rounded-md overflow-hidden bg-card">
-      <Table>
-        <TableHeader className="bg-sidebar text-sidebar-foreground">
-          <TableRow className="hover:bg-sidebar">
-            <TableHead className="w-16 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Pos</TableHead>
-            <TableHead className="w-24 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Bib</TableHead>
-            <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Rider</TableHead>
-            <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
-              <span className="flex items-center justify-end gap-1"><Clock size={14} /> Time</span>
-            </TableHead>
-            <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
-              <span className="flex items-center justify-end gap-1"><Award size={14} /> Pts</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {results.map(result => (
-            <TableRow key={result.id} className="hover:bg-muted/50 transition-colors">
-              <TableCell className="text-center font-heading font-bold text-xl">
-                {result.dnf ? (
-                  <span className="text-destructive text-sm uppercase">DNF</span>
-                ) : result.dns ? (
-                  <span className="text-muted-foreground text-sm uppercase">DNS</span>
-                ) : (
-                  <span className={result.position === 1 ? "text-primary" : ""}>{result.position}</span>
-                )}
-              </TableCell>
-              <TableCell className="text-center">
-                <span className="inline-block bg-muted px-2 py-1 rounded font-mono font-bold text-sm border">
-                  {result.bibNumber || "-"}
-                </span>
-              </TableCell>
-              <TableCell className="font-bold text-lg">{result.riderName}</TableCell>
-              <TableCell className="text-right font-mono font-medium text-muted-foreground">{result.totalTime || "-"}</TableCell>
-              <TableCell className="text-right font-heading font-bold text-xl text-primary">
-                {result.points !== null && result.points !== undefined ? result.points : "-"}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      {/* Shared lap times modal — driven by selectedResult across both tabs */}
+      <LapTimesModal result={selectedResult} onClose={() => setSelectedResult(null)} />
     </div>
   );
 }
