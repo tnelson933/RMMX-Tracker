@@ -85,6 +85,12 @@ export default function WatchLive() {
     motos?.find(m => m.status === "in_progress") ??
     [...(motos ?? [])].filter(m => m.status === "completed").pop();
 
+  // Next 3 scheduled motos after the active one (sorted by motoNumber then id)
+  const upcomingMotos = [...(motos ?? [])]
+    .filter(m => m.status === "scheduled")
+    .sort((a, b) => (a.motoNumber ?? a.id) - (b.motoNumber ?? b.id))
+    .slice(0, 3);
+
   // Unified rider row type satisfied by both LineupEntry and RaceResult
   type RiderRow = { position: number; riderId: number; riderName: string; bibNumber?: string | null };
   const liveRiders: RiderRow[] = activeMoto
@@ -775,6 +781,38 @@ export default function WatchLive() {
               <div className="px-3 py-1.5 border-t border-white/5 text-white/15 text-[10px] text-center shrink-0">
                 {sseLeaderboard && activeMoto.status === "in_progress" ? "● live timing" : "↻ updates every 15s"}
               </div>
+
+              {/* Up Next */}
+              {upcomingMotos.length > 0 && (
+                <div className="shrink-0 border-t border-white/10">
+                  <div className="px-3 pt-2.5 pb-1 text-white/25 text-[10px] uppercase tracking-widest font-bold">
+                    Up Next
+                  </div>
+                  {upcomingMotos.map((m, idx) => (
+                    <div
+                      key={m.id}
+                      className={`flex items-center gap-2 px-3 py-2 ${idx < upcomingMotos.length - 1 ? "border-b border-white/5" : ""}`}
+                    >
+                      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 ${motoTypeColor(m.type)}`}>
+                        {motoTypeLabel(m.type)}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-white/70 text-[11px] font-heading uppercase tracking-wide truncate leading-tight">
+                          {m.name}
+                        </div>
+                        {m.raceClass && (
+                          <div className="text-white/30 text-[10px] truncate leading-tight">{m.raceClass}</div>
+                        )}
+                      </div>
+                      {m.scheduledTime && (
+                        <div className="text-white/25 text-[10px] font-mono shrink-0">
+                          {new Date(m.scheduledTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center">
