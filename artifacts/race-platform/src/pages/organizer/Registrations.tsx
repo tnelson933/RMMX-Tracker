@@ -29,6 +29,13 @@ function isInvalidTransponder(val: string | null | undefined): boolean {
   return !/^\d{1,9}$/.test(val.trim());
 }
 
+// RFID tags are alphanumeric + dashes, 1–32 characters.
+// Spaces, special chars, or extreme lengths are invalid.
+function isInvalidRfid(val: string | null | undefined): boolean {
+  if (!val || !val.trim()) return false;
+  return !/^[A-Za-z0-9\-]{1,32}$/.test(val.trim());
+}
+
 const BIKE_BRANDS = [
   { name: "KTM",       color: "#FF6600", text: "#ffffff" },
   { name: "Honda",     color: "#CC0000", text: "#ffffff" },
@@ -382,17 +389,18 @@ export default function Registrations() {
     (suggestions.get(r.id) ?? "").includes(search)
   );
 
-  // Float registrations with invalid transponder numbers to the top so they
-  // can't be missed — the rest of the list order is unchanged.
-  const sortedRegs = isMyLaps
-    ? [...filteredRegs].sort((a, b) => {
-        const aInvalid = isInvalidTransponder((a as any).myLapsTransponderNumber);
-        const bInvalid = isInvalidTransponder((b as any).myLapsTransponderNumber);
-        if (aInvalid && !bInvalid) return -1;
-        if (!aInvalid && bInvalid) return 1;
-        return 0;
-      })
-    : filteredRegs;
+  // Float registrations with invalid transponder/RFID numbers to the top.
+  const sortedRegs = [...filteredRegs].sort((a, b) => {
+    const aInvalid = isMyLaps
+      ? isInvalidTransponder((a as any).myLapsTransponderNumber)
+      : isInvalidRfid((a as any).rfidNumber);
+    const bInvalid = isMyLaps
+      ? isInvalidTransponder((b as any).myLapsTransponderNumber)
+      : isInvalidRfid((b as any).rfidNumber);
+    if (aInvalid && !bInvalid) return -1;
+    if (!aInvalid && bInvalid) return 1;
+    return 0;
+  });
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreate = async (data: OnSiteRegForm) => {
@@ -1404,14 +1412,14 @@ export default function Registrations() {
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Rider</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Class</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Bib</TableHead>
-                {isMyLaps && <TableHead className="font-heading font-bold uppercase tracking-wider">Transponder</TableHead>}
+                <TableHead className="font-heading font-bold uppercase tracking-wider">{isMyLaps ? "Transponder" : "RFID"}</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Status</TableHead>
                 <TableHead className="text-right font-heading font-bold uppercase tracking-wider">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={isMyLaps ? 7 : 6} className="text-center py-8">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
               ) : sortedRegs.length > 0 ? (
                 sortedRegs.map(reg => {
                   const suggested = suggestions.get(reg.id);
@@ -1422,9 +1430,11 @@ export default function Registrations() {
                   const transponderVal = (reg as any).myLapsTransponderNumber as string | null;
                   const transponderIsRental = !!(reg as any).transponderRental;
                   const hasInvalidTransponder = isMyLaps && isInvalidTransponder(transponderVal);
+                  const rfidVal = !isMyLaps ? (reg as any).rfidNumber as string | null : null;
+                  const hasInvalidRfid = !isMyLaps && isInvalidRfid(rfidVal);
 
                   return (
-                    <TableRow key={reg.id} className={hasInvalidTransponder ? "bg-red-50 dark:bg-red-950/20 border-l-4 border-l-destructive" : ""}>
+                    <TableRow key={reg.id} className={hasInvalidTransponder || hasInvalidRfid ? "bg-red-50 dark:bg-red-950/20 border-l-4 border-l-destructive" : ""}>
                       <TableCell className="text-muted-foreground font-mono">{reg.id}</TableCell>
                       <TableCell>
                         <button
@@ -1493,14 +1503,14 @@ export default function Registrations() {
                           </button>
                         )}
                       </TableCell>
-                      {isMyLaps && (
-                        <TableCell>
-                          {hasInvalidTransponder ? (
+                      <TableCell>
+                        {isMyLaps ? (
+                          hasInvalidTransponder ? (
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono text-sm text-destructive">{transponderVal}</span>
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-bold bg-destructive/10 text-destructive border border-destructive/20 whitespace-nowrap">
                                 <AlertCircle size={10} />
-                                Invalid
+                                Transponder invalid
                               </span>
                             </div>
                           ) : transponderVal ? (
@@ -1509,9 +1519,23 @@ export default function Registrations() {
                             <span className="text-xs text-muted-foreground italic">Rental</span>
                           ) : (
                             <span className="text-muted-foreground/40 text-sm">—</span>
-                          )}
-                        </TableCell>
-                      )}
+                          )
+                        ) : (
+                          hasInvalidRfid ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-sm text-destructive">{rfidVal}</span>
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-bold bg-destructive/10 text-destructive border border-destructive/20 whitespace-nowrap">
+                                <AlertCircle size={10} />
+                                RFID invalid
+                              </span>
+                            </div>
+                          ) : rfidVal ? (
+                            <span className="font-mono text-sm">{rfidVal}</span>
+                          ) : (
+                            <span className="text-muted-foreground/40 text-sm">—</span>
+                          )
+                        )}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
@@ -1544,7 +1568,7 @@ export default function Registrations() {
                   );
                 })
               ) : (
-                <TableRow><TableCell colSpan={isMyLaps ? 7 : 6} className="text-center py-8 text-muted-foreground">No registrations found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No registrations found.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

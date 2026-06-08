@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable } from "@workspace/db";
+import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable } from "@workspace/db";
 import { eq, and, sql, desc, ne } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 
@@ -79,8 +79,13 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     dateOfBirth: ridersTable.dateOfBirth,
     emergencyContact: ridersTable.emergencyContact,
     emergencyPhone: ridersTable.emergencyPhone,
+    rfidNumber: rfidAssignmentsTable.rfidNumber,
   }).from(registrationsTable)
     .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+    .leftJoin(rfidAssignmentsTable, and(
+      eq(rfidAssignmentsTable.riderId, registrationsTable.riderId),
+      eq(rfidAssignmentsTable.eventId, registrationsTable.eventId),
+    ))
     .where(eq(registrationsTable.eventId, eventId))
     .orderBy(registrationsTable.createdAt);
 
@@ -106,6 +111,7 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     bibNumber: r.bibNumber,
     myLapsTransponderNumber: r.myLapsTransponderNumber ?? null,
     transponderRental: r.transponderRental ?? false,
+    rfidNumber: r.rfidNumber ?? null,
     createdAt: r.createdAt.toISOString(),
     };
   }));

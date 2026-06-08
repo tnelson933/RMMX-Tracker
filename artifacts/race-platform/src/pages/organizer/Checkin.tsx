@@ -5,7 +5,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, CheckCircle, Tag, X } from "lucide-react";
+import { Search, CheckCircle, Tag, X, AlertCircle } from "lucide-react";
+
+// MyLaps transponder numbers: purely numeric, 1–9 digits.
+function isInvalidTransponder(val: string | null | undefined): boolean {
+  if (!val || !val.trim()) return false;
+  return !/^\d{1,9}$/.test(val.trim());
+}
+
+// RFID tags: alphanumeric + dashes, 1–32 characters.
+function isInvalidRfid(val: string | null | undefined): boolean {
+  if (!val || !val.trim()) return false;
+  return !/^[A-Za-z0-9\-]{1,32}$/.test(val.trim());
+}
 import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrationsQueryKey, getListRidersQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -297,7 +309,14 @@ export default function Checkin() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filteredCheckins.map(checkin => (
+            {filteredCheckins.map(checkin => {
+              const tagVal = isMylaps
+                ? (checkin as any).myLapsTransponderNumber as string | null
+                : checkin.rfidNumber ?? null;
+              const isTagInvalid = isMylaps
+                ? isInvalidTransponder(tagVal)
+                : isInvalidRfid(tagVal);
+              return (
               <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
                   {(() => {
@@ -393,15 +412,26 @@ export default function Checkin() {
                       <div className="flex justify-between items-start mb-1.5">
                         <h3 className="font-heading font-bold text-base md:text-2xl uppercase leading-tight">{checkin.riderName}</h3>
                       </div>
-                      <div className="flex items-center gap-2 text-xs md:text-sm font-medium mb-3">
+                      <div className="flex items-center gap-2 text-xs md:text-sm font-medium mb-3 flex-wrap">
                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{checkin.raceClass}</span>
-                        {checkin.rfidLinked ? (
+                        {isTagInvalid ? (
+                          <button
+                            onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
+                            className="flex items-center gap-1 text-destructive hover:text-destructive/80 transition-colors"
+                            title={`${isMylaps ? "Transponder" : "RFID"} number is invalid — click to fix`}
+                          >
+                            <AlertCircle size={14} />
+                            <span className="font-mono">{tagVal}</span>
+                            <span className="font-bold">— {isMylaps ? "Transponder" : "RFID"} invalid</span>
+                          </button>
+                        ) : checkin.rfidLinked ? (
                           <button
                             onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
                             className="flex items-center gap-1 text-sidebar-primary/80 hover:text-primary transition-colors underline-offset-2 hover:underline"
                             title={isMylaps ? "Click to change transponder" : "Click to change RFID tag"}
                           >
-                            <Tag size={14} /> {isMylaps ? "Transponder Linked" : "RFID Linked"}
+                            <Tag size={14} />
+                            <span className="font-mono">{tagVal}</span>
                           </button>
                         ) : (
                           <button
@@ -431,12 +461,24 @@ export default function Checkin() {
                       pending={bibEdits.get(checkin.riderId)}
                       isPending={checkinMutation.isPending}
                       isBibDuplicate={isBibDuplicate}
-                      onCheckin={(bibToSave) => handleCheckin(checkin.riderId, checkin.rfidNumber, bibToSave)}
+                      onCheckin={(bibToSave) => {
+                        if (isTagInvalid) {
+                          toast({
+                            title: isMylaps ? "Transponder invalid" : "RFID invalid",
+                            description: `Please assign a valid ${isMylaps ? "transponder" : "RFID"} number before checking in.`,
+                            variant: "destructive",
+                          });
+                          setRfidInputOpenId(checkin.riderId);
+                          return;
+                        }
+                        handleCheckin(checkin.riderId, checkin.rfidNumber, bibToSave);
+                      }}
                     />
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
 
             {filteredCheckins.length === 0 && (
               <div className="col-span-full py-12 text-center text-muted-foreground">
