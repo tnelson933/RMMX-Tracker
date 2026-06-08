@@ -1068,7 +1068,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
               <>
                 {racesUntilTurn === 0 ? (
                   <div className="text-right">
-                    <div className="text-xs font-heading font-black uppercase tracking-wider text-green-600 animate-pulse">Up Now</div>
+                    <div className="text-sm font-heading font-black uppercase tracking-wider text-white animate-pulse">Up Now</div>
                     {nowUpMoto && nowUpMoto.familyGates.length > 0 && (
                       nowUpMoto.familyGates.length === 1 ? (
                         <div className="flex items-baseline gap-1 justify-end mt-0.5">
