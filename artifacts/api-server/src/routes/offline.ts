@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateRawSync, crc32 as zlibCrc32 } from "node:zlib";
+import { spawnSync } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -144,9 +145,7 @@ Self-contained offline race server for use at venues without internet access.
 
 1. Make sure Node.js 20+ is installed: \`node --version\`
 2. Install dependencies:  \`npm install\`
-3. Set the database file path (optional — defaults to \`./race_data.db\`):
-   - macOS / Linux:  \`export SQLITE_FILE="./race_data.db"\`
-   - Windows CMD:    \`set SQLITE_FILE=./race_data.db\`
+3. Configure environment variables (see sections below).
 4. Start the server:  \`npm start\`
 5. Verify: open http://localhost:8080/api/healthz in a browser.
    You should see {"status":"ok","mode":"local"}.
@@ -154,31 +153,114 @@ Self-contained offline race server for use at venues without internet access.
 ## Point your timing hardware at:
    http://<your-laptop-ip>:8080/api/timing/active/crossing?clubId=<id>
 
-## Syncing back to the cloud
+## Environment Variables
 
-### Automatic (recommended)
-Start the server with your cloud credentials and sync runs automatically
-when internet is detected and an event is in progress or completed:
+### Basic setup (optional)
 
-  CLOUD_URL=https://your-app.replit.app \\
-  CLUB_ID=1 \\
-  CLOUD_EMAIL=you@club.com \\
-  CLOUD_PASSWORD=yourpassword \\
-  npm start
+| Variable      | Default            | Description                         |
+|---------------|--------------------|-------------------------------------|
+| \`SQLITE_FILE\` | \`./race_data.db\`   | Path to the local SQLite database   |
+| \`PORT\`        | \`8080\`             | Port the local server listens on    |
+| \`CLUB_ID\`     | _(none)_           | Your club's numeric ID from the cloud portal |
 
-### Manual
-  CLOUD_URL=https://your-app.replit.app \\
-  CLUB_ID=1 \\
-  CLOUD_EMAIL=you@club.com \\
-  CLOUD_PASSWORD=yourpassword \\
-  npm run sync
+### Auto-sync (optional but recommended)
+
+Set these variables to enable automatic background sync to the cloud after
+each completed event. The server will attempt a sync every 2 minutes once
+a completed event is detected and the cloud is reachable.
+
+| Variable          | Description                                              |
+|-------------------|----------------------------------------------------------|
+| \`CLOUD_URL\`       | Base URL of the Rocky Mountain cloud portal, e.g. \`https://your-replit-app.replit.app\` |
+| \`CLOUD_EMAIL\`     | Email address of your organizer account                  |
+| \`CLOUD_PASSWORD\`  | Password for your organizer account                      |
+| \`CLUB_ID\`         | Your club's numeric ID (required for auto-sync)          |
+
+#### Setting variables
+
+macOS / Linux:
+\`\`\`
+export CLUB_ID=1
+export CLOUD_URL=https://your-app.replit.app
+export CLOUD_EMAIL=you@yourclub.com
+export CLOUD_PASSWORD=yourpassword
+npm start
+\`\`\`
+
+Windows CMD:
+\`\`\`
+set CLUB_ID=1
+set CLOUD_URL=https://your-app.replit.app
+set CLOUD_EMAIL=you@yourclub.com
+set CLOUD_PASSWORD=yourpassword
+npm start
+\`\`\`
+
+Windows PowerShell:
+\`\`\`
+$env:CLUB_ID=1
+$env:CLOUD_URL="https://your-app.replit.app"
+$env:CLOUD_EMAIL="you@yourclub.com"
+$env:CLOUD_PASSWORD="yourpassword"
+npm start
+\`\`\`
+
+## Manual Sync
+
+If auto-sync is not configured, run this after race day to push results to the cloud:
+
+\`\`\`
+npm run sync
+\`\`\`
 
 ## Notes
 - Use http:// (NOT https://) — the local server has no TLS certificate.
 - Keep this server running throughout race day.
 - Do NOT delete race_data.db until you have confirmed a successful cloud sync.
+- Auto-sync status is visible on the organizer dashboard once results are uploaded.
 `;
   return Buffer.from(text, "utf8");
+}
+
+// ── Source staleness check & auto-rebuild ─────────────────────────────────────
+// The local-server source lives at artifacts/local-server/src/.
+// When any .ts file there is newer than dist/index.mjs, we rebuild via
+// `node build.mjs` so the download always reflects the latest code.
+
+function getMaxSourceMtime(srcDir: string): number {
+  let max = 0;
+  try {
+    const scan = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = resolve(dir, entry.name);
+        if (entry.isDirectory()) {
+          scan(full);
+        } else if (entry.name.endsWith(".ts")) {
+          const { mtimeMs } = statSync(full);
+          if (mtimeMs > max) max = mtimeMs;
+        }
+      }
+    };
+    scan(srcDir);
+  } catch {
+    // If we can't read src, return 0 so we don't block serving an existing dist
+  }
+  return max;
+}
+
+function rebuildLocalServer(localServerDir: string): void {
+  const result = spawnSync("node", ["build.mjs"], {
+    cwd: localServerDir,
+    stdio: "pipe",
+    timeout: 60_000,
+  });
+  if (result.status !== 0) {
+    const stderr = result.stderr?.toString() ?? "";
+    const stdout = result.stdout?.toString() ?? "";
+    throw new Error(
+      `Local server rebuild failed (exit ${result.status}):\n${stderr || stdout}`,
+    );
+  }
 }
 
 // ── Zip cache ─────────────────────────────────────────────────────────────────
@@ -187,6 +269,7 @@ when internet is detected and an event is in progress or completed:
 
 let cachedZip: Buffer | null = null;
 let cachedMtimeMs = -1;
+let isRebuilding = false;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -246,17 +329,60 @@ router.get("/offline/package", (req, res) => {
     return;
   }
 
-  const distFile = distFilePath();
+  if (isRebuilding) {
+    res.status(503).json({
+      error: "Offline package is being rebuilt — please try again in a moment.",
+    });
+    return;
+  }
+
+  const workspaceRoot = resolve(__dirname, "..", "..", "..");
+  const localServerDir = resolve(workspaceRoot, "artifacts", "local-server");
+  const srcDir = resolve(localServerDir, "src");
+  const distIndexFile = distFilePath();
+  const distSyncFile = resolve(localServerDir, "dist", "sync.mjs");
+
+  // Check staleness and rebuild if any source file is newer than the dist bundle
+  try {
+    const srcMtime = getMaxSourceMtime(srcDir);
+    let distMtime = -1;
+    try {
+      distMtime = statSync(distIndexFile).mtimeMs;
+    } catch {
+      // dist doesn't exist yet — needs a build
+    }
+
+    if (srcMtime > distMtime) {
+      req.log.info("Local server source is newer than dist — rebuilding…");
+      isRebuilding = true;
+      try {
+        rebuildLocalServer(localServerDir);
+        cachedZip = null; // invalidate cache after rebuild
+        cachedMtimeMs = -1;
+      } finally {
+        isRebuilding = false;
+      }
+      req.log.info("Local server rebuild complete.");
+    }
+  } catch (err) {
+    isRebuilding = false;
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Failed to rebuild local server");
+    res.status(503).json({
+      error: `Offline package could not be built: ${msg}`,
+    });
+    return;
+  }
 
   let zip: Buffer;
   let mtimeMs: number;
   try {
-    ({ mtimeMs } = statSync(distFile));
+    ({ mtimeMs } = statSync(distIndexFile));
     if (cachedZip && mtimeMs === cachedMtimeMs) {
       zip = cachedZip;
     } else {
-      const serverBundle = readFileSync(distFile);
-      const syncBundle  = readFileSync(distFile.replace("index.mjs", "sync.mjs"));
+      const serverBundle = readFileSync(distIndexFile);
+      const syncBundle   = readFileSync(distSyncFile);
       zip = buildZip([
         {
           name: "rocky-mountain-local-server/dist/index.mjs",
