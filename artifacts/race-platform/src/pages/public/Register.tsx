@@ -835,6 +835,13 @@ export default function Register() {
                               );
                             })}
                           </div>
+                          <input
+                            type="text"
+                            placeholder="Other brand (e.g. Sherco, TM, Rieju…)"
+                            value={BIKE_BRANDS.some(b => b.name === field.value) ? "" : (field.value ?? "")}
+                            onChange={e => field.onChange(e.target.value)}
+                            className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
                           <FormMessage />
                         </FormItem>
                       )}

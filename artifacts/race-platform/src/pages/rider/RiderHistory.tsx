@@ -296,25 +296,34 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
           <div className="col-span-2 space-y-1.5">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bike Brand</Label>
             {editing ? (
-              <div className="grid grid-cols-4 gap-2 mt-1">
-                {BIKE_BRANDS.map(brand => {
-                  const selected = form.bikeManufacturer === brand.name;
-                  return (
-                    <button
-                      key={brand.name}
-                      type="button"
-                      onClick={() => set("bikeManufacturer", selected ? "" : brand.name)}
-                      className="rounded-md px-2 py-3 text-sm font-bold font-heading uppercase tracking-wide transition-all border-2"
-                      style={selected
-                        ? { backgroundColor: brand.color, color: brand.text, borderColor: brand.color }
-                        : { backgroundColor: "transparent", color: "inherit", borderColor: brand.color + "60" }
-                      }
-                    >
-                      {brand.name}
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className="grid grid-cols-4 gap-2 mt-1">
+                  {BIKE_BRANDS.map(brand => {
+                    const selected = form.bikeManufacturer === brand.name;
+                    return (
+                      <button
+                        key={brand.name}
+                        type="button"
+                        onClick={() => set("bikeManufacturer", selected ? "" : brand.name)}
+                        className="rounded-md px-2 py-3 text-sm font-bold font-heading uppercase tracking-wide transition-all border-2"
+                        style={selected
+                          ? { backgroundColor: brand.color, color: brand.text, borderColor: brand.color }
+                          : { backgroundColor: "transparent", color: "inherit", borderColor: brand.color + "60" }
+                        }
+                      >
+                        {brand.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Other brand (e.g. Sherco, TM, Rieju…)"
+                  value={BIKE_BRANDS.some(b => b.name === form.bikeManufacturer) ? "" : (form.bikeManufacturer ?? "")}
+                  onChange={e => set("bikeManufacturer", e.target.value)}
+                  className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </>
             ) : (
               <p className="text-sm py-1.5 min-h-[2rem]">
                 {(() => {
