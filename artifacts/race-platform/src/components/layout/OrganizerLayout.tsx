@@ -27,6 +27,7 @@ import {
   ListOrdered,
   Timer,
   GitFork,
+  WifiOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import rmLogo from "@assets/rm-logo.png";
@@ -69,6 +70,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
     { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, exact: false },
     { href: "/gate-assignments", label: "Gate Assignments", icon: GitFork, exact: false },
     { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, exact: false },
+    { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, exact: false },
     { href: "/payments", label: "Payments", icon: CreditCard, exact: false },
   ];
 
