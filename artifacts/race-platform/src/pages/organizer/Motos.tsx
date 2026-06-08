@@ -740,6 +740,11 @@ export default function Motos() {
   // Min lap times per class
   const [minLapInputs, setMinLapInputs] = useState<Record<string, string>>({});
   const [minLapSavedClass, setMinLapSavedClass] = useState<string | null>(null);
+  // Tracks which eventId the inputs have been seeded for — prevents the seed effect
+  // from overwriting user input when the event query refetches after a save.
+  const seededForEventIdRef = useRef<number | null>(null);
+  // Per-class debounce timers — cleared and reset on every minLapInputs change.
+  const minLapDebounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: motos, isLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
@@ -761,14 +766,29 @@ export default function Motos() {
   const advanceToMainMutation = useAdvanceToMain();
   const updateEventMutation = useUpdateEvent();
 
-  // Seed min-lap inputs from saved event data (once loaded)
+  // Reset local state when the organizer navigates between events so stale values
+  // from Event A never bleed into Event B's inputs.
   useEffect(() => {
+    setMinLapInputs({});
+    seededForEventIdRef.current = null;
+  }, [eventId]);
+
+  // Seed min-lap inputs from saved event data exactly once per eventId.
+  // Using a ref guard instead of the old "if (!(cls in prev))" condition means the
+  // seed always writes a clean set of inputs from the database, but only fires on the
+  // initial load — not on subsequent refetches triggered by a save — so user input
+  // that is still in the debounce window is never overwritten.
+  useEffect(() => {
+    if (!event) return;
+    const currentEventId = (event as any).id as number;
+    if (seededForEventIdRef.current === currentEventId) return;
+    seededForEventIdRef.current = currentEventId;
     const saved = (event as any)?.minLapTimes as Record<string, number> | undefined;
     if (!saved) return;
-    setMinLapInputs(prev => {
-      const next: Record<string, string> = { ...prev };
+    setMinLapInputs(() => {
+      const next: Record<string, string> = {};
       for (const [cls, ms] of Object.entries(saved)) {
-        if (!(cls in prev)) next[cls] = formatMinLapTime(ms);
+        next[cls] = formatMinLapTime(ms as number);
       }
       return next;
     });
@@ -802,6 +822,48 @@ export default function Motos() {
       }
     );
   };
+
+  // Debounced save-on-change — fires ~600 ms after the user stops typing in any class.
+  // This ensures the value is saved even when the organizer navigates away without
+  // blurring the input first. handleMinLapBlur still provides an immediate flush on blur.
+  useEffect(() => {
+    // Cancel all pending timers whenever minLapInputs changes
+    Object.values(minLapDebounceTimers.current).forEach(t => clearTimeout(t));
+    minLapDebounceTimers.current = {};
+
+    const saved = (event as any)?.minLapTimes as Record<string, number> | undefined;
+
+    for (const [cls, raw] of Object.entries(minLapInputs)) {
+      minLapDebounceTimers.current[cls] = setTimeout(() => {
+        const ms = parseMinLapTime(raw);
+        const prevMs = saved?.[cls] ?? null;
+        if (ms === prevMs) return;
+        const newMinLapTimes = { ...(saved ?? {}) };
+        if (ms != null) {
+          newMinLapTimes[cls] = ms;
+        } else {
+          delete newMinLapTimes[cls];
+        }
+        updateEventMutation.mutate(
+          { eventId, data: { minLapTimes: newMinLapTimes } },
+          {
+            onSuccess: () => {
+              queryClient.invalidateQueries({ queryKey: ["getEvent", eventId] as any });
+              setMinLapSavedClass(cls);
+              setTimeout(() => setMinLapSavedClass(null), 2000);
+            },
+          }
+        );
+      }, 600);
+    }
+
+    return () => {
+      Object.values(minLapDebounceTimers.current).forEach(t => clearTimeout(t));
+      minLapDebounceTimers.current = {};
+    };
+    // event and eventId are captured in the closure and stay stable for the 600 ms window
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minLapInputs]);
 
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const eventScoringTable = (pointsTables ?? []).find(t => t.id === (event as any)?.scoringTableId);
