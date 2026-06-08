@@ -244,15 +244,20 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
       justGraduated = flushPendingViewers(state, chunk);
     } else if (containsKeyframe(chunk)) {
       // New I-frame: start of a fresh GOP.
+      const prevTailLen = state.gopTail.length;
       state.lastKeyframeChunk = chunk;
       state.gopTail = [];
+      logger.info({ eventId, chunkSize: chunk.length, prevGopTailFrames: prevTailLen }, "Periodic keyframe detected — GOP boundary");
       // Flush pending viewers exactly at this keyframe boundary — their
       // decoder will have initSegment (codec setup) + this I-frame, and
       // every P-frame that follows will reference exactly this I-frame.
       justGraduated = flushPendingViewers(state, chunk);
     } else {
       state.gopTail.push(chunk);
-      if (state.gopTail.length > 16) {
+      // Keep enough P-frames to cover up to ~30 s at 500 ms timeslices.
+      // With videoKeyFrameIntervalDuration: 2_000 the tail should stay at 4 frames,
+      // but a larger cap protects against missed keyframe detection.
+      if (state.gopTail.length > 60) {
         state.gopTail.shift();
       }
     }
@@ -343,16 +348,17 @@ function handleViewer(ws: WebSocket, eventId: number) {
       ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye }));
 
       if (state.initSegment) {
-        // The broadcaster is already mid-stream — graduate this viewer immediately
-        // using the most recent keyframe.  We do NOT wait for the next keyframe
-        // because that requires containsKeyframe() to correctly scan every VP9
-        // chunk, which can be missed if the browser ignores videoKeyFrameIntervalDuration
-        // or the VINT parser skips an ambiguous byte sequence.
+        // The broadcaster is already mid-stream — graduate this viewer immediately.
         //
-        // Safety: all P-frames since the last keyframe reference that keyframe, so
-        // sending initSegment + lastKeyframeChunk is always a valid decode starting
-        // point.  When the next keyframe arrives from the broadcaster it resets the
-        // reference normally — no decoder gap.
+        // VP9 P-frames form a CHAIN: each P-frame references the previously decoded
+        // frame, not the keyframe directly.  Sending only initSegment + lastKeyframeChunk
+        // is not enough — the live P-frames that follow reference frames in the gopTail
+        // (P-frames between the last keyframe and the current live edge).  Without the
+        // full chain the decoder cannot reconstruct anything → video freezes at first frame.
+        //
+        // We therefore send:  initSegment → lastKeyframeChunk → gopTail (in order).
+        // The gopTail brings the decoder to the same state as the broadcaster, so the
+        // very next live P-frame is decodable.
         try {
           if (state.initSegment !== state.lastKeyframeChunk) {
             ws.send(state.initSegment, { binary: true });
@@ -360,8 +366,16 @@ function handleViewer(ws: WebSocket, eventId: number) {
           if (state.lastKeyframeChunk) {
             ws.send(state.lastKeyframeChunk, { binary: true });
           }
+          for (const frame of state.gopTail) {
+            ws.send(frame, { binary: true });
+          }
           state.viewers.add(ws);
-          logger.info({ eventId, viewers: state.viewers.size }, "Viewer graduated immediately (stream already live)");
+          logger.info({
+            eventId,
+            viewers: state.viewers.size,
+            gopTailFrames: state.gopTail.length,
+            separateKeyframe: state.initSegment !== state.lastKeyframeChunk,
+          }, "Viewer graduated immediately (stream already live)");
         } catch (err) {
           logger.error({ eventId, err: err instanceof Error ? err.message : String(err) }, "Immediate graduation error — falling back to pending queue");
           state.pendingViewers.add(ws);
@@ -395,6 +409,9 @@ function handleViewer(ws: WebSocket, eventId: number) {
           ws.send(state.initSegment, { binary: true });
           if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment) {
             ws.send(state.lastKeyframeChunk, { binary: true });
+          }
+          for (const frame of state.gopTail) {
+            ws.send(frame, { binary: true });
           }
         }
         state.pendingViewers.delete(ws);
