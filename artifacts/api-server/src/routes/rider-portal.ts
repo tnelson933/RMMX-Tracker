@@ -332,7 +332,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     .where(eq(ridersTable.id, riderId))
     .returning();
 
-  return res.json(updated);
+  return res.json({ ...updated, myLapsTransponderNumber: updated.mylapsTransponderId ?? null });
 });
 
 // POST /rider/profiles — create a new rider profile linked to this account's email
@@ -363,7 +363,7 @@ router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
     mylapsTransponderId: myLapsTransponderNumber?.trim() || null,
   }).returning();
 
-  return res.status(201).json({ ...rider, myLapsTransponderNumber: rider.mylapsTransponderId ?? null });
+  return res.status(201).json({ id: rider.id });
 });
 
 // GET /rider/profiles/:riderId/practice — practice session history for a rider
