@@ -3,7 +3,7 @@ import { useRoute, Link } from "wouter";
 import {
   useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables, useAdvanceToMain,
-  useUpdateEvent, useUpdateResultLaps,
+  useUpdateEvent, useUpdateResultLaps, useListResults,
   getListMotosQueryKey, getListCheckinsQueryKey, Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -411,7 +411,7 @@ function parseLapInput(s: string): number {
 
 // ── Lap Times Editor Dialog ────────────────────────────────────────────────────
 
-type LapEditTarget = { riderId: number; riderName: string; motoId: number; eventId: number };
+type LapEditTarget = { riderId: number; riderName: string; motoId: number; eventId: number; minLapTimeMs?: number | null };
 
 function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: () => void }) {
   const [laps, setLaps] = useState<string[]>([]);
@@ -481,24 +481,35 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
               <p className="text-sm text-muted-foreground text-center py-2">No lap times recorded yet. Add one below.</p>
             )}
             <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-              {laps.map((lap, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="w-8 text-xs text-muted-foreground text-right font-mono shrink-0">L{i + 1}</span>
-                  <Input
-                    value={lap}
-                    onChange={e => setLaps(prev => { const n = [...prev]; n[i] = e.target.value; return n; })}
-                    className="font-mono text-sm h-8"
-                    placeholder="0:00.00"
-                  />
-                  <button
-                    onClick={() => setLaps(prev => prev.filter((_, j) => j !== i))}
-                    className="text-muted-foreground/40 hover:text-destructive transition-colors shrink-0 p-0.5"
-                    title="Remove lap"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
+              {laps.map((lap, i) => {
+                const lapMsValue = parseLapInput(lap);
+                const isBelowMin = target.minLapTimeMs != null && lapMsValue > 0 && lapMsValue < target.minLapTimeMs;
+                return (
+                  <div key={i} className={`flex items-center gap-2 ${isBelowMin ? "rounded px-1 -mx-1 bg-red-50 dark:bg-red-950/30" : ""}`}>
+                    <span className={`w-8 text-xs text-right font-mono shrink-0 ${isBelowMin ? "text-red-600 dark:text-red-400 font-bold" : "text-muted-foreground"}`}>
+                      L{i + 1}
+                    </span>
+                    <Input
+                      value={lap}
+                      onChange={e => setLaps(prev => { const n = [...prev]; n[i] = e.target.value; return n; })}
+                      className={`font-mono text-sm h-8 ${isBelowMin ? "border-red-400 text-red-600 dark:text-red-400 focus-visible:ring-red-400" : ""}`}
+                      placeholder="0:00.00"
+                    />
+                    {isBelowMin && (
+                      <span className="text-red-500 shrink-0" title="Below minimum lap time">
+                        <Flag size={12} />
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setLaps(prev => prev.filter((_, j) => j !== i))}
+                      className="text-muted-foreground/40 hover:text-destructive transition-colors shrink-0 p-0.5"
+                      title="Remove lap"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
 
             <Button variant="outline" size="sm" className="w-full" onClick={() => setLaps(prev => [...prev, ""])}>
@@ -525,10 +536,10 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
   );
 }
 
-function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, rowNum, onViewLaps }: {
+function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, rowNum, onViewLaps, hasShortLap }: {
   entry: LineupEntry; motoId: number; locked?: boolean;
   onRecordLap?: () => void; lapCooldown?: boolean; rowNum?: number;
-  onViewLaps?: () => void;
+  onViewLaps?: () => void; hasShortLap?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `rider-${motoId}-${entry.riderId}`,
@@ -555,9 +566,9 @@ function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, ro
           </span>
         )}
       </TableCell>
-      <TableCell className="font-medium">
+      <TableCell className={`font-medium ${hasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
         {onViewLaps ? (
-          <button onClick={onViewLaps} className="flex items-center gap-1 hover:text-primary transition-colors group">
+          <button onClick={onViewLaps} className={`flex items-center gap-1 transition-colors group ${hasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
             {entry.riderName}
             <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
           </button>
@@ -780,6 +791,7 @@ export default function Motos() {
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: motos, isLoading } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
   const { data: checkins } = useListCheckins(eventId, { query: { enabled: !!eventId } as any });
+  const { data: results } = useListResults(eventId, { query: { enabled: !!eventId } as any });
   const { data: gateConfigsData } = useQuery({
     queryKey: ["gateConfigs"],
     queryFn: async () => {
@@ -962,6 +974,23 @@ export default function Motos() {
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const eventScoringTable = (pointsTables ?? []).find(t => t.id === (event as any)?.scoringTableId);
   const isSupercrossFormat = eventScoringTable?.mainEventOnly === true;
+
+  // Build a set of "motoId-riderId" keys for riders who have at least one lap under
+  // the minimum lap time for their class — used to highlight names red in the lineup.
+  const minLapTimes = (event as any)?.minLapTimes as Record<string, number> | undefined;
+  const shortLapSet = useMemo(() => {
+    const set = new Set<string>();
+    if (!results || !minLapTimes) return set;
+    for (const r of results) {
+      const moto = (motos ?? []).find(m => m.id === (r as any).motoId);
+      if (!moto?.raceClass) continue;
+      const minMs = minLapTimes[moto.raceClass];
+      if (minMs == null) continue;
+      const laps = Array.isArray((r as any).lapTimes) ? (r as any).lapTimes as number[] : [];
+      if (laps.some(t => t > 0 && t < minMs)) set.add(`${(r as any).motoId}-${(r as any).riderId}`);
+    }
+    return set;
+  }, [results, motos, minLapTimes]);
 
   // Checked-in riders for the currently selected class in the create dialog
   const classCheckins = (checkins ?? []).filter(c => c.checkedIn && c.raceClass === newMotoClass);
@@ -2080,7 +2109,8 @@ export default function Motos() {
                                 onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
                                 lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
                                 rowNum={idx + 1}
-                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId }) : undefined}
+                                hasShortLap={shortLapSet.has(`${moto.id}-${entry.riderId}`)}
+                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: moto.raceClass ? (minLapTimes?.[moto.raceClass] ?? null) : null }) : undefined}
                               />,
                             ];
                             if (idx === arr.length - 1) {
@@ -2114,12 +2144,13 @@ export default function Motos() {
                         {moto.lineup && moto.lineup.length > 0 ? (
                           (moto.lineup as LineupEntry[]).map((entry) => {
                             const cooldown = manualLapCooldown.has(`${moto.id}-${entry.riderId}`);
+                            const entryHasShortLap = shortLapSet.has(`${moto.id}-${entry.riderId}`);
                             return (
                               <TableRow key={entry.riderId} className="h-8">
                                 <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                                <TableCell className="font-medium">
+                                <TableCell className={`font-medium ${entryHasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
                                   {moto.status === "completed" ? (
-                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId })} className="flex items-center gap-1 hover:text-primary transition-colors group">
+                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: moto.raceClass ? (minLapTimes?.[moto.raceClass] ?? null) : null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
                                       {entry.riderName}
                                       <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
                                     </button>
@@ -2360,7 +2391,8 @@ export default function Motos() {
                                 onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
                                 lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
                                 rowNum={idx + 1}
-                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId }) : undefined}
+                                hasShortLap={shortLapSet.has(`${moto.id}-${entry.riderId}`)}
+                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: moto.raceClass ? (minLapTimes?.[moto.raceClass] ?? null) : null }) : undefined}
                               />,
                             ];
                             if (idx === arr.length - 1) {
@@ -2392,12 +2424,13 @@ export default function Motos() {
                         {moto.lineup && moto.lineup.length > 0 ? (
                           (moto.lineup as LineupEntry[]).map((entry) => {
                             const cooldown = manualLapCooldown.has(`${moto.id}-${entry.riderId}`);
+                            const entryHasShortLap = shortLapSet.has(`${moto.id}-${entry.riderId}`);
                             return (
                               <TableRow key={entry.riderId} className="h-9">
                                 <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                                <TableCell className="font-medium">
+                                <TableCell className={`font-medium ${entryHasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
                                   {moto.status === "completed" ? (
-                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId })} className="flex items-center gap-1 hover:text-primary transition-colors group">
+                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: moto.raceClass ? (minLapTimes?.[moto.raceClass] ?? null) : null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
                                       {entry.riderName}
                                       <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
                                     </button>
