@@ -68,6 +68,13 @@ const router = Router();
 router.get("/events/:eventId/results", async (req, res) => {
   const eventId = Number(req.params.eventId);
 
+  // Unauthenticated requests (widgets, public pages) only see published events
+  if (!(req.session as any).userId) {
+    const [pub] = await db.select({ published: eventPublicationTable.published })
+      .from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
+    if (!pub?.published) return res.json([]);
+  }
+
   const results = await db.select({
     id: raceResultsTable.id,
     eventId: raceResultsTable.eventId,

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable, registrationsTable, pointsTablesTable, clubsTable } from "@workspace/db";
+import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable, registrationsTable, pointsTablesTable, clubsTable, eventPublicationTable } from "@workspace/db";
 import { eq, inArray, and } from "drizzle-orm";
 
 const router = Router();
@@ -236,7 +236,20 @@ router.get("/public/series/:seriesId", async (req, res) => {
   const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
   if (!series) return res.status(404).json({ error: "Not found" });
 
-  const eventIds = series.eventIds as number[];
+  const allEventIds = series.eventIds as number[];
+
+  // Only expose events that have been published
+  const publishedRows = allEventIds.length > 0
+    ? await db.select({ eventId: eventPublicationTable.eventId })
+        .from(eventPublicationTable)
+        .where(and(
+          inArray(eventPublicationTable.eventId, allEventIds),
+          eq(eventPublicationTable.published, true),
+        ))
+    : [];
+  const publishedIds = new Set(publishedRows.map(r => r.eventId));
+  const eventIds = allEventIds.filter(id => publishedIds.has(id));
+
   const eventsData = eventIds.length > 0
     ? await db.select({
         id: eventsTable.id,
@@ -267,7 +280,18 @@ router.get("/public/series/:seriesId/standings", async (req, res) => {
   const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
   if (!series) return res.status(404).json({ error: "Not found" });
 
-  const eventIds = series.eventIds as number[];
+  const allEventIds = series.eventIds as number[];
+  if (allEventIds.length === 0) return res.json([]);
+
+  // Only include events that have been published
+  const publishedRows = await db.select({ eventId: eventPublicationTable.eventId })
+    .from(eventPublicationTable)
+    .where(and(
+      inArray(eventPublicationTable.eventId, allEventIds),
+      eq(eventPublicationTable.published, true),
+    ));
+  const publishedIds = new Set(publishedRows.map(r => r.eventId));
+  const eventIds = allEventIds.filter(id => publishedIds.has(id));
   if (eventIds.length === 0) return res.json([]);
 
   const events = await db.select({ id: eventsTable.id, name: eventsTable.name })

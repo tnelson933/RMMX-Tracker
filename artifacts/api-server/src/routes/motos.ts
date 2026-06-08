@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable } from "@workspace/db";
+import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable } from "@workspace/db";
 import { eq, and, inArray, min } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 
@@ -101,6 +101,14 @@ async function autoAdvanceToMain(eventId: number, raceClass: string, topPerHeat:
 
 router.get("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
+
+  // Unauthenticated requests (widgets, public pages) only see published events
+  if (!(req.session as any).userId) {
+    const [pub] = await db.select({ published: eventPublicationTable.published })
+      .from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
+    if (!pub?.published) return res.json([]);
+  }
+
   const motos = await db.select().from(motosTable).where(eq(motosTable.eventId, eventId)).orderBy(motosTable.motoNumber);
   return res.json(motos.map(m => ({
     ...m,
