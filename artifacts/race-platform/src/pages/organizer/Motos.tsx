@@ -2035,7 +2035,7 @@ export default function Motos() {
               <CardContent className="p-0 flex-1 flex flex-col">
                 {/* Lineup table */}
                 {moto.type === "heat" ? (
-                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} disableDrop={!!activeMotoCardDrag}>
+                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === moto.id}>
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
@@ -2315,7 +2315,7 @@ export default function Motos() {
               <div className="flex-1 overflow-y-auto min-h-0">
                 {/* Lineup table */}
                 {moto.type === "heat" ? (
-                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} className="flex-1">
+                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} className="flex-1" disableDrop={activeDragMotoId === moto.id}>
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
