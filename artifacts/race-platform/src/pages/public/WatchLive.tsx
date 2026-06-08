@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRoute, Link } from "wouter";
-import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2 } from "lucide-react";
+import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useListMotos, useListResults } from "@workspace/api-client-react";
 import { SplitView360 } from "@/components/SplitView360";
@@ -33,6 +33,7 @@ export default function WatchLive() {
   const [viewerState, setViewerState] = useState<ViewerState>("connecting");
   const setViewerStateSynced = (s: ViewerState) => { viewerStateRef.current = s; setViewerState(s); };
 
+  const [viewerCount, setViewerCount] = useState<number | null>(null);
   const [is360, setIs360] = useState(false);
   const [isDualFisheye, setIsDualFisheye] = useState(false);
   const [videoNaturalDims, setVideoNaturalDims] = useState({ w: 0, h: 0 });
@@ -469,11 +470,11 @@ export default function WatchLive() {
         if (jsonMsg.type === "heartbeat") {
           // Server keep-alive frame — reply with a pong so the Replit proxy sees
           // bidirectional application-data flow from the CLIENT side too.
-          // The proxy has a per-direction idle timeout; heartbeats alone (server→client)
-          // are not enough — we must also send client→server data to prevent the proxy
-          // from closing the connection on the client's silent side.
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "pong" }));
+          }
+          if (typeof jsonMsg.viewers === "number") {
+            setViewerCount(jsonMsg.viewers);
           }
         } else if (jsonMsg.type === "offline") {
           setViewerStateSynced("offline");
@@ -623,6 +624,12 @@ export default function WatchLive() {
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-red-400" />
               </span>
               Live
+            </span>
+          )}
+          {viewerState === "playing" && viewerCount !== null && (
+            <span className="flex items-center gap-1 text-white/40 text-xs">
+              <Eye size={12} />
+              {viewerCount}
             </span>
           )}
           {(viewerState === "connecting" || viewerState === "buffering") && (

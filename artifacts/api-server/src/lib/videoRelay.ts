@@ -384,11 +384,13 @@ function handleViewer(ws: WebSocket, eventId: number) {
     firstHeartbeatTimer = setTimeout(() => {
       firstHeartbeatTimer = null;
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "heartbeat" }));
+        const count = state.viewers.size + state.pendingViewers.size;
+        ws.send(JSON.stringify({ type: "heartbeat", viewers: count }));
       }
       heartbeatInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "heartbeat" }));
+          const count = state.viewers.size + state.pendingViewers.size;
+          ws.send(JSON.stringify({ type: "heartbeat", viewers: count }));
         }
       }, 1_000);
     }, 150);

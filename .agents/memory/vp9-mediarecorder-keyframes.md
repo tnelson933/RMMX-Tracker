@@ -1,6 +1,6 @@
 ---
 name: VP9 MediaRecorder keyframe behavior + live stream graduation
-description: VP9 P-frames form a chain (not a star); late-joining viewers need initSegment + lastKeyframeChunk + gopTail to decode correctly.
+description: VP9 P-frames form a chain; correct EBML parsing required for keyframe detection; viewers need initSegment + lastKeyframeChunk + gopTail.
 ---
 
 ## VP9 keyframe emission
