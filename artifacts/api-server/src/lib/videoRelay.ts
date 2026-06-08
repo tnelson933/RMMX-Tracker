@@ -6,11 +6,19 @@ import { logger } from "./logger";
 interface StreamState {
   broadcasterWs: WebSocket | null;
   viewers: Set<WebSocket>;
-  // WebM initialization segment (first chunk from broadcaster — contains EBML header + Tracks).
+  // WebM initialization segment (first chunk from broadcaster — contains EBML header + Tracks
+  // element + first Cluster with the broadcast's very first I-frame).
   // Must be sent to every viewer before any cluster chunks so the decoder can initialize.
   initSegment: Buffer | null;
-  // Rolling buffer of the last N chunks for late-joiner catch-up
-  chunkBuffer: Buffer[];
+  // Most recent chunk that contained a VP8/VP9 keyframe (I-frame).
+  // Kept separate from initSegment because VP8 produces a new I-frame every ~2-4 seconds.
+  // Late joiners receive initSegment + lastKeyframeChunk + gopTail so their decoder
+  // always has a valid reference frame for the live P-frames that follow.
+  lastKeyframeChunk: Buffer | null;
+  // P-frame chunks since the last keyframe (current GOP tail).
+  // Combined with initSegment + lastKeyframeChunk these form a decodable "bootstrap bundle"
+  // for late joiners — all P-frames here reference the I-frame in lastKeyframeChunk.
+  gopTail: Buffer[];
   mimeType: string;
   live: boolean;
   startedAt: Date | null;
@@ -18,16 +26,58 @@ interface StreamState {
   isDualFisheye: boolean;
 }
 
-// Keep only the last few chunks — enough for a smooth late-join start without
-// overwhelming the Replit proxy with a large burst when a new viewer connects.
-// Keep 10 recent chunks (~5 s at 500 ms/chunk) so late-joining viewers have
-// enough context to find a keyframe and start decoding. Combined with
-// sb.mode="sequence" on the client side this prevents the timestamp-gap
-// decode errors that caused the viewer to cycle every 2-3 seconds.
-const MAX_BUFFER_CHUNKS = 10;
-
 // eventId → stream state
 const streams = new Map<number, StreamState>();
+
+/**
+ * Scan a WebM buffer for a SimpleBlock element (EBML ID 0xA3) with the
+ * keyframe flag set (flags byte bit 7 = 0x80).
+ *
+ * WebM SimpleBlock layout inside a Cluster:
+ *   [0xA3]                    — 1-byte element ID
+ *   [size VINT]               — variable-length encoded element size (1–4 bytes)
+ *   [track number VINT]       — variable-length track number (1–3 bytes, usually 0x81 for track 1)
+ *   [timecode]                — 2 bytes (signed, relative to cluster timecode)
+ *   [flags byte]              — bit 7 = keyframe, bits 5-4 = lacing, bit 0 = discardable
+ *   [frame payload]           — VP8/VP9 encoded frame data
+ */
+function containsKeyframe(buf: Buffer): boolean {
+  const SIMPLE_BLOCK_ID = 0xA3;
+
+  for (let i = 0; i < buf.length - 6; i++) {
+    if (buf[i] !== SIMPLE_BLOCK_ID) continue;
+
+    let pos = i + 1;
+
+    // Parse VINT-encoded element size (leading-one-bit determines width)
+    if (pos >= buf.length) continue;
+    const sb = buf[pos];
+    let sizeLen: number;
+    if      ((sb & 0x80) !== 0) sizeLen = 1;
+    else if ((sb & 0x40) !== 0) sizeLen = 2;
+    else if ((sb & 0x20) !== 0) sizeLen = 3;
+    else if ((sb & 0x10) !== 0) sizeLen = 4;
+    else continue; // wider VINT not expected in normal WebM
+    pos += sizeLen;
+
+    // Parse VINT-encoded track number (usually 1 byte: 0x81 = track 1)
+    if (pos >= buf.length) continue;
+    const tb = buf[pos];
+    if      ((tb & 0x80) !== 0) pos += 1;
+    else if ((tb & 0x40) !== 0) pos += 2;
+    else if ((tb & 0x20) !== 0) pos += 3;
+    else continue;
+
+    // Skip 2-byte timecode
+    pos += 2;
+
+    // Flags byte: bit 7 (0x80) = keyframe
+    if (pos < buf.length && (buf[pos] & 0x80) !== 0) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function getOrCreate(eventId: number): StreamState {
   if (!streams.has(eventId)) {
@@ -35,7 +85,8 @@ function getOrCreate(eventId: number): StreamState {
       broadcasterWs: null,
       viewers: new Set(),
       initSegment: null,
-      chunkBuffer: [],
+      lastKeyframeChunk: null,
+      gopTail: [],
       mimeType: 'video/webm; codecs="vp8,opus"',
       live: false,
       startedAt: null,
@@ -93,7 +144,8 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
   state.live = true;
   state.startedAt = new Date();
   state.initSegment = null;
-  state.chunkBuffer = [];
+  state.lastKeyframeChunk = null;
+  state.gopTail = [];
 
   logger.info({ eventId }, "Broadcaster connected");
 
@@ -127,7 +179,8 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
           state.isDualFisheye = msg.isDualFisheye === true;
           // Reset segments when broadcaster announces a new stream
           state.initSegment = null;
-          state.chunkBuffer = [];
+          state.lastKeyframeChunk = null;
+          state.gopTail = [];
           // Notify all current viewers of the new mime type and format flags
           const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye });
           for (const viewer of state.viewers) {
@@ -142,19 +195,32 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
       }
     }
 
-    // Binary frame = video chunk
+    // ── Binary frame = video chunk ────────────────────────────────────────────
 
-    // First binary chunk is the WebM initialization segment (EBML header + Tracks).
-    // Store it separately so late-joining viewers always receive it before cluster chunks.
+    // First binary chunk is the WebM initialization segment (EBML header + Tracks +
+    // first Cluster with the broadcast's first I-frame). Store it as both the
+    // initSegment AND as the initial lastKeyframeChunk.
     if (!state.initSegment) {
       state.initSegment = chunk;
-    }
-
-    // Buffer recent chunks for late joiners (skip re-buffering the init segment itself)
-    if (state.initSegment !== chunk) {
-      state.chunkBuffer.push(chunk);
-      if (state.chunkBuffer.length > MAX_BUFFER_CHUNKS) {
-        state.chunkBuffer.shift();
+      state.lastKeyframeChunk = chunk; // initSegment always contains the first I-frame
+      state.gopTail = [];
+    } else {
+      // Subsequent chunks: detect keyframes and maintain the current GOP window.
+      // A keyframe chunk starts a new GOP — reset gopTail and store as lastKeyframeChunk.
+      // P-frame chunks belong to the current GOP — append to gopTail.
+      //
+      // Late joiners receive: initSegment + lastKeyframeChunk + gopTail
+      // This guarantees their decoder has a valid I-frame reference for all
+      // the P-frames in the live stream, eliminating the "immediately frozen" symptom.
+      if (containsKeyframe(chunk)) {
+        state.lastKeyframeChunk = chunk;
+        state.gopTail = [];
+      } else {
+        // Cap GOP tail at 16 chunks (~8 s) as a safety valve against very long GOPs.
+        state.gopTail.push(chunk);
+        if (state.gopTail.length > 16) {
+          state.gopTail.shift();
+        }
       }
     }
 
@@ -236,28 +302,41 @@ function handleViewer(ws: WebSocket, eventId: number) {
 
     if (state.live) {
       ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye }));
-      // Always send the WebM init segment first — without it the decoder cannot
-      // parse any of the subsequent cluster chunks (video stays black).
+
       if (state.initSegment && ws.readyState === WebSocket.OPEN) {
+        // ── Late-joiner bootstrap bundle ────────────────────────────────────────
+        //
+        // The goal: give the viewer's VP8/VP9 decoder a valid I-frame that is as
+        // CLOSE to the current live edge as possible, so the P-frames in the live
+        // stream can be decoded correctly without error concealment (frozen frames).
+        //
+        // What we send:
+        //   1. initSegment       — WebM EBML header + Tracks + broadcast's first I-frame.
+        //                          Required for the decoder to understand the codec and
+        //                          initialise the MediaSource.
+        //   2. lastKeyframeChunk — The most recent chunk that contained an I-frame.
+        //                          Skipped if it's the same object as initSegment (stream
+        //                          is still in its first GOP, no more recent I-frame yet).
+        //   3. gopTail           — P-frame chunks that arrived after lastKeyframeChunk
+        //                          up to the current live edge.  These reference the I-frame
+        //                          in lastKeyframeChunk, so the live P-frames that follow
+        //                          are decodable immediately.
+        //
+        // With sb.mode="sequence" on the client the MSE assigns artificial sequential
+        // timestamps, so the decoder sees no gap even though initSegment is from t=0
+        // and lastKeyframeChunk may be from several minutes into the broadcast.
+
         ws.send(state.initSegment, { binary: true });
+
+        if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment && ws.readyState === WebSocket.OPEN) {
+          ws.send(state.lastKeyframeChunk, { binary: true });
+
+          for (const tail of state.gopTail) {
+            if (ws.readyState !== WebSocket.OPEN) break;
+            ws.send(tail, { binary: true });
+          }
+        }
       }
-      // Do NOT send buffered chunks to late-joining viewers.
-      //
-      // The buffered chunks are from broadcast time T-5s to T (the last 10 chunks
-      // at 500ms each). The initSegment is from broadcast time 0-500ms.  There is
-      // a large gap between them (potentially minutes of missing data).  VP8
-      // P-frames in the buffered chunks reference I-frames that exist in the
-      // middle of that gap — frames we never send.  Chrome's VP8 decoder uses
-      // error concealment (shows the last valid decoded frame) for every
-      // undecadable P-frame, so the video appears permanently frozen until the
-      // next I-frame arrives in the live stream.
-      //
-      // By sending ONLY the initSegment we give the decoder one valid I-frame
-      // (the very first frame of the broadcast) and then the NEXT live chunk from
-      // the broadcaster arrives within ≤500ms.  If that chunk starts with an
-      // I-frame the video plays immediately.  If not, error concealment lasts
-      // at most one VP8 GOP interval (typically ≤2 s) before the next I-frame
-      // recovers the decoder — far better than sending 5 s of undecodable data.
     } else {
       ws.send(JSON.stringify({ type: "offline" }));
     }
