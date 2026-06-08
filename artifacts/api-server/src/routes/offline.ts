@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateRawSync, crc32 as zlibCrc32 } from "node:zlib";
@@ -149,6 +149,13 @@ Self-contained offline race server for use at venues without internet access.
   return Buffer.from(text, "utf8");
 }
 
+// ── Zip cache ─────────────────────────────────────────────────────────────────
+// Cache the generated zip buffer keyed on the dist file's mtime (ms).
+// Re-reads and rebuilds only when the file changes on disk.
+
+let cachedZip: Buffer | null = null;
+let cachedMtimeMs = -1;
+
 // ── Route ─────────────────────────────────────────────────────────────────────
 
 router.get("/offline/package", (req, res) => {
@@ -169,9 +176,30 @@ router.get("/offline/package", (req, res) => {
     "index.mjs",
   );
 
-  let serverBundle: Buffer;
+  let zip: Buffer;
   try {
-    serverBundle = readFileSync(distFile);
+    const { mtimeMs } = statSync(distFile);
+    if (cachedZip && mtimeMs === cachedMtimeMs) {
+      zip = cachedZip;
+    } else {
+      const serverBundle = readFileSync(distFile);
+      zip = buildZip([
+        {
+          name: "rocky-mountain-local-server/dist/index.mjs",
+          data: serverBundle,
+        },
+        {
+          name: "rocky-mountain-local-server/package.json",
+          data: buildPackageJson(),
+        },
+        {
+          name: "rocky-mountain-local-server/README.md",
+          data: buildReadme(),
+        },
+      ]);
+      cachedZip = zip;
+      cachedMtimeMs = mtimeMs;
+    }
   } catch {
     res.status(503).json({
       error:
@@ -180,21 +208,6 @@ router.get("/offline/package", (req, res) => {
     });
     return;
   }
-
-  const zip = buildZip([
-    {
-      name: "rocky-mountain-local-server/dist/index.mjs",
-      data: serverBundle,
-    },
-    {
-      name: "rocky-mountain-local-server/package.json",
-      data: buildPackageJson(),
-    },
-    {
-      name: "rocky-mountain-local-server/README.md",
-      data: buildReadme(),
-    },
-  ]);
 
   res.setHeader(
     "Content-Disposition",
