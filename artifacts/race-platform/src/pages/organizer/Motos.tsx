@@ -910,7 +910,7 @@ export default function Motos() {
   };
 
   // Debounced save-on-change — single global timer reset on every keystroke.
-  // Fires 600 ms after the user stops typing, persisting values even when the
+  // Fires 300 ms after the user stops typing, persisting values even when the
   // organizer navigates away without touching blur.
   useEffect(() => {
     // Skip the cycle triggered by blur-normalization setState — blur already flushed.
@@ -922,21 +922,40 @@ export default function Motos() {
     const snapInputs = { ...minLapInputs }; // stable snapshot for this timer window
     minLapDebounceTimer.current = setTimeout(() => {
       saveMinLapRef.current(snapInputs, null);
-    }, 600);
+    }, 300);
     return () => {
       if (minLapDebounceTimer.current) clearTimeout(minLapDebounceTimer.current);
     };
   }, [minLapInputs]);
 
   // On unmount (navigate away): cancel any pending timer and flush immediately so
-  // values typed without blur are never lost.
+  // values typed without blur are never lost. Uses a direct fetch — useMutation
+  // observers are destroyed on unmount so .mutate() does not fire reliably after that.
   useEffect(() => {
     return () => {
       if (minLapDebounceTimer.current) {
         clearTimeout(minLapDebounceTimer.current);
         minLapDebounceTimer.current = null;
       }
-      saveMinLapRef.current(minLapInputsRef.current, null);
+      const inputs = minLapInputsRef.current;
+      const eid = currentEventIdRef.current;
+      if (!eid) return;
+      const newMinLapTimes: Record<string, number> = {};
+      for (const [cls, raw] of Object.entries(inputs)) {
+        const ms = parseMinLapTime(raw);
+        if (ms != null) newMinLapTimes[cls] = ms;
+      }
+      const committed = lastCommittedRef.current;
+      const hasChange =
+        Object.keys(newMinLapTimes).length !== Object.keys(committed).length ||
+        Object.entries(newMinLapTimes).some(([cls, ms]) => committed[cls] !== ms);
+      if (!hasChange) return;
+      fetch(`/api/events/${eid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minLapTimes: newMinLapTimes }),
+        credentials: "include",
+      }).catch(() => {});
     };
   }, []); // empty deps — cleanup runs only on unmount
 

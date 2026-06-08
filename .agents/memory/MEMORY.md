@@ -2,3 +2,4 @@
 - [Email delivery](email-delivery.md) — RESEND_API_KEY used directly (not connector SDK); domain must be verified for external sends.
 - [Replit proxy WebSocket frame conversion](replit-ws-proxy.md) — Replit proxy converts text WS frames to binary; always detect JSON by magic byte, never by typeof e.data.
 - [Anthropic AI integration pattern](anthropic-ai-pattern.md) — how to call Anthropic via Replit proxy; strip markdown fences from response before JSON.parse.
+- [useMutation unmount flush](mutation-unmount-flush.md) — TanStack Query v5 destroys mutation observer on unmount; use raw fetch for any save that runs in an unmount cleanup.
