@@ -321,17 +321,17 @@ ipconfig                    # Look for "IPv4 Address" under your adapter`}</Code
               <p className="font-semibold text-green-600 dark:text-green-400 text-xs uppercase tracking-wider mb-2.5">Works offline</p>
               <ul className="space-y-1.5">
                 <CheckItem ok={true}>Rider check-in &amp; sign-in</CheckItem>
+                <CheckItem ok={true}>RFID &amp; MyLaps live timing</CheckItem>
+                <CheckItem ok={true}>Moto scoring &amp; results entry</CheckItem>
                 <CheckItem ok={true}>RFID tag assignment</CheckItem>
                 <CheckItem ok={true}>Bib number management</CheckItem>
                 <CheckItem ok={true}>Walk-up registration management</CheckItem>
-                <CheckItem ok={true}>View event registrations</CheckItem>
               </ul>
             </div>
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
               <p className="font-semibold text-destructive text-xs uppercase tracking-wider mb-2.5">Not available offline</p>
               <ul className="space-y-1.5">
-                <CheckItem ok={false}>Live timing &amp; lap recording</CheckItem>
-                <CheckItem ok={false}>Moto scoring &amp; results entry</CheckItem>
+                <CheckItem ok={false}>Series points calculation</CheckItem>
                 <CheckItem ok={false}>Online pre-registration</CheckItem>
                 <CheckItem ok={false}>Public results page</CheckItem>
                 <CheckItem ok={false}>Email confirmations</CheckItem>

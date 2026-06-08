@@ -149,27 +149,51 @@ CREATE TABLE IF NOT EXISTS rfid_assignments (
 );
 
 CREATE TABLE IF NOT EXISTS motos (
-  id           INTEGER PRIMARY KEY,
-  event_id     INTEGER NOT NULL,
-  race_class   TEXT NOT NULL,
-  moto_number  INTEGER NOT NULL,
-  lineup       TEXT NOT NULL DEFAULT '[]',
-  status       TEXT NOT NULL DEFAULT 'pending',
-  started_at   TEXT,
-  completed_at TEXT,
-  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  id             INTEGER PRIMARY KEY,
+  event_id       INTEGER NOT NULL,
+  name           TEXT NOT NULL DEFAULT '',
+  type           TEXT NOT NULL DEFAULT 'moto',
+  race_class     TEXT NOT NULL DEFAULT '',
+  moto_number    INTEGER NOT NULL DEFAULT 0,
+  scheduled_time TEXT,
+  lineup         TEXT NOT NULL DEFAULT '[]',
+  lap_count      INTEGER,
+  status         TEXT NOT NULL DEFAULT 'scheduled',
+  started_at     TEXT,
+  completed_at   TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS race_results (
-  id              INTEGER PRIMARY KEY,
-  moto_id         INTEGER NOT NULL,
-  rider_id        INTEGER NOT NULL,
-  finish_position INTEGER,
-  lap_times       TEXT NOT NULL DEFAULT '[]',
-  dnf             INTEGER NOT NULL DEFAULT 0,
-  dns             INTEGER NOT NULL DEFAULT 0,
-  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  id         INTEGER PRIMARY KEY,
+  event_id   INTEGER,
+  moto_id    INTEGER NOT NULL,
+  rider_id   INTEGER NOT NULL,
+  race_class TEXT,
+  position   INTEGER,
+  bib_number TEXT,
+  lap_times  TEXT NOT NULL DEFAULT '[]',
+  total_time TEXT,
+  dnf        INTEGER NOT NULL DEFAULT 0,
+  dns        INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS lap_crossings (
+  id            INTEGER PRIMARY KEY,
+  event_id      INTEGER NOT NULL,
+  moto_id       INTEGER NOT NULL,
+  rider_id      INTEGER,
+  rfid_number   TEXT NOT NULL,
+  crossing_time TEXT NOT NULL,
+  lap_number    INTEGER NOT NULL,
+  lap_time_ms   INTEGER NOT NULL,
+  reader_id     TEXT,
+  antenna_id    INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_lap_crossings_moto_rfid
+  ON lap_crossings (moto_id, rfid_number);
 
 CREATE TABLE IF NOT EXISTS event_publication (
   id           INTEGER PRIMARY KEY,

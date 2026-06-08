@@ -3,6 +3,9 @@ import cors from "cors";
 import session from "express-session";
 import path from "path";
 import router from "./routes/index";
+import { initDb } from "./db-init";
+
+initDb();
 
 const app = express();
 
