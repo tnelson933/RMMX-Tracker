@@ -32,6 +32,7 @@ export const eventsTable = pgTable("events", {
   scoringTableId: integer("scoring_table_id"),
   minLapTimes: jsonb("min_lap_times").$type<Record<string, number>>().default({}),
   amaEventId: text("ama_event_id"),
+  defaultGateConfigId: text("default_gate_config_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

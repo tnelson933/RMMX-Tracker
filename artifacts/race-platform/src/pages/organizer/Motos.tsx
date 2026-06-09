@@ -1000,11 +1000,21 @@ export default function Motos() {
   // from Event A never bleed into Event B's inputs.
   useEffect(() => {
     setMinLapInputs({});
+    setSelectedGateConfigId("");
     seededForEventIdRef.current = null;
     lastCommittedRef.current = {};
     pendingSaveRef.current = null;
     isSavingRef.current = false;
   }, [eventId]);
+
+  // Pre-populate gate config from the event's default when event data loads.
+  useEffect(() => {
+    if (!event || gateConfigs.length === 0) return;
+    const defaultId = (event as any).defaultGateConfigId as string | null | undefined;
+    if (defaultId && gateConfigs.some(c => c.id === defaultId)) {
+      setSelectedGateConfigId(prev => prev || defaultId);
+    }
+  }, [event, gateConfigs]);
 
   // Seed min-lap inputs from saved event data exactly once per eventId.
   // Ref guard: fires on initial load only — not on refetches triggered by a successful

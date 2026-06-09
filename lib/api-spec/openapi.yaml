@@ -1687,6 +1687,9 @@ components:
           additionalProperties:
             type: integer
           description: Minimum lap time in milliseconds per race class
+        defaultGateConfigId:
+          type: ["string", "null"]
+          description: ID of the gate configuration to pre-select when generating lineups
         createdAt:
           type: string
 
@@ -1751,6 +1754,9 @@ components:
           additionalProperties:
             type: integer
           description: Minimum lap time in milliseconds per race class
+        defaultGateConfigId:
+          type: string
+          description: ID of the gate configuration to pre-select when generating lineups
 
     EventUpdate:
       type: object
@@ -1812,6 +1818,9 @@ components:
           additionalProperties:
             type: integer
           description: Minimum lap time in milliseconds per race class
+        defaultGateConfigId:
+          type: ["string", "null"]
+          description: ID of the gate configuration to pre-select when generating lineups
 
     Rider:
       type: object

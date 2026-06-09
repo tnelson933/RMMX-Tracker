@@ -127,7 +127,7 @@ router.post("/events", async (req, res) => {
     return "draft";
   })();
 
-  const { amaEventId } = req.body;
+  const { amaEventId, defaultGateConfigId } = req.body;
   const [event] = await db.insert(eventsTable).values({
     clubId, name, date, state, location, trackName,
     raceClasses: raceClasses || [],
@@ -144,6 +144,7 @@ router.post("/events", async (req, res) => {
     purchaseOptions: purchaseOptions || [],
     scoringTableId: scoringTableId ?? null,
     amaEventId: amaEventId ?? null,
+    defaultGateConfigId: defaultGateConfigId ?? null,
   }).returning();
 
   return res.status(201).json({
@@ -184,6 +185,7 @@ router.get("/events/:eventId", async (req, res) => {
     scoringTableId: eventsTable.scoringTableId,
     minLapTimes: eventsTable.minLapTimes,
     amaEventId: eventsTable.amaEventId,
+    defaultGateConfigId: eventsTable.defaultGateConfigId,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -209,7 +211,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const previousStatus = before?.status;
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "minLapTimes", "amaEventId"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "minLapTimes", "amaEventId", "defaultGateConfigId"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }

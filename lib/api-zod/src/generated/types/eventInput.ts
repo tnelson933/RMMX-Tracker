@@ -36,4 +36,6 @@ export interface EventInput {
   purchaseOptions?: PurchaseOption[];
   /** Minimum lap time in milliseconds per race class */
   minLapTimes?: EventInputMinLapTimes;
+  /** ID of the gate configuration to pre-select when generating lineups */
+  defaultGateConfigId?: string;
 }

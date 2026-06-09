@@ -160,6 +160,11 @@ export interface Event {
   purchaseOptions?: PurchaseOption[];
   /** Minimum lap time in milliseconds per race class */
   minLapTimes?: EventMinLapTimes;
+  /**
+     * ID of the gate configuration to pre-select when generating lineups
+     * @nullable
+     */
+  defaultGateConfigId?: string | null;
   createdAt?: string;
 }
 
@@ -204,6 +209,8 @@ export interface EventInput {
   purchaseOptions?: PurchaseOption[];
   /** Minimum lap time in milliseconds per race class */
   minLapTimes?: EventInputMinLapTimes;
+  /** ID of the gate configuration to pre-select when generating lineups */
+  defaultGateConfigId?: string;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -247,6 +254,11 @@ export interface EventUpdate {
   purchaseOptions?: PurchaseOption[];
   /** Minimum lap time in milliseconds per race class */
   minLapTimes?: EventUpdateMinLapTimes;
+  /**
+     * ID of the gate configuration to pre-select when generating lineups
+     * @nullable
+     */
+  defaultGateConfigId?: string | null;
 }
 
 export interface Rider {

@@ -103,6 +103,7 @@ const createEventSchema = z.object({
     amount: z.string().min(1, "Amount required"),
   })).default([]),
   amaEventId: z.string().optional(),
+  defaultGateConfigId: z.string().optional(),
 });
 
 export default function EventsList() {
@@ -147,6 +148,17 @@ export default function EventsList() {
   const createMutation = useCreateEvent();
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
 
+  const { data: gateConfigsData } = useQuery({
+    queryKey: ["gateConfigs"],
+    queryFn: async () => {
+      const res = await fetch("/api/clubs/gate-settings", { credentials: "include" });
+      if (!res.ok) return { gateConfigs: [] };
+      return res.json() as Promise<{ gateConfigs: Array<{ id: string; name: string; gateCount: number }> }>;
+    },
+    enabled: !isSuperAdmin,
+  });
+  const gateConfigs = gateConfigsData?.gateConfigs ?? [];
+
   const form = useForm<z.infer<typeof createEventSchema>>({
     resolver: zodResolver(createEventSchema),
     defaultValues: {
@@ -170,6 +182,7 @@ export default function EventsList() {
       transponderRentalFee: "",
       purchaseOptions: [],
       amaEventId: "",
+      defaultGateConfigId: "",
     }
   });
 
@@ -209,6 +222,7 @@ export default function EventsList() {
           transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
           purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
           amaEventId: data.amaEventId || undefined,
+          defaultGateConfigId: data.defaultGateConfigId || undefined,
         },
       } as any);
     } catch (err: any) {
@@ -514,6 +528,39 @@ export default function EventsList() {
                       </FormItem>
                     )}
                   />
+
+                  {gateConfigs.length > 0 && (
+                    <FormField
+                      control={form.control}
+                      name="defaultGateConfigId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Default Gate Configuration</FormLabel>
+                          <Select
+                            value={field.value || "none"}
+                            onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="None (select at lineup time)" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {gateConfigs.map(cfg => (
+                                <SelectItem key={cfg.id} value={cfg.id}>
+                                  {cfg.name} ({cfg.gateCount} gates)
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Pre-selects this gate layout when generating lineups on race day.
+                          </p>
+                        </FormItem>
+                      )}
+                    />
+                  )}
 
                   {/* Entry fee input (only when payment enabled) */}
                   {stripeReady && watchPaymentEnabled && (
