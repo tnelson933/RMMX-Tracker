@@ -61,30 +61,47 @@ type LeaderboardSnapshot = {
 
 const POLL_INTERVAL_MS = 3000;
 
-function playRfidPing(count: number) {
+// ── AudioContext singleton ─────────────────────────────────────────────────────
+// Re-creating AudioContext on every crossing adds 50-200ms of hardware init
+// latency. We create it once on first use and reuse it indefinitely.
+let _sharedAudioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext | null {
   try {
-    const ctx = new AudioContext();
-    const pings = Math.min(count, 4);
-    let lastOsc: OscillatorNode | null = null;
-    for (let i = 0; i < pings; i++) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = "sine";
-      osc.frequency.value = 1046;
-      const t = ctx.currentTime + i * 0.18;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.35, t + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-      osc.start(t);
-      osc.stop(t + 0.25);
-      lastOsc = osc;
+    if (!_sharedAudioCtx || _sharedAudioCtx.state === "closed") {
+      _sharedAudioCtx = new AudioContext();
     }
-    if (lastOsc) lastOsc.onended = () => ctx.close();
+    if (_sharedAudioCtx.state === "suspended") {
+      void _sharedAudioCtx.resume();
+    }
+    return _sharedAudioCtx;
   } catch {
-    // AudioContext may be blocked; ignore
+    return null;
   }
+}
+
+// Guard: timestamp of the last manual-lap optimistic ping.
+// Prevents the SSE handler from double-pinging when a manual lap was just clicked.
+let _lastManualPingAt = 0;
+
+function playRfidPing(count: number) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const pings = Math.min(count, 4);
+  for (let i = 0; i < pings; i++) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.value = 1046;
+    const t = ctx.currentTime + i * 0.18;
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.35, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    osc.start(t);
+    osc.stop(t + 0.25);
+  }
+  // Context stays open and warm for the next crossing.
 }
 
 function LiveLeaderboard({ motoId }: { motoId: number }) {
@@ -92,10 +109,14 @@ function LiveLeaderboard({ motoId }: { motoId: number }) {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const esRef = useRef<EventSource | null>(null);
+  // Track total laps across all riders so we know when a new crossing arrives.
+  // -1 on first load so we skip playing a sound for the initial snapshot.
+  const prevLapTotalRef = useRef<number>(-1);
 
   useEffect(() => {
     setLoading(true);
     setSnapshot(null);
+    prevLapTotalRef.current = -1;
 
     const es = new EventSource(`/api/timing/live/${motoId}`);
     esRef.current = es;
@@ -104,6 +125,18 @@ function LiveLeaderboard({ motoId }: { motoId: number }) {
       try {
         const data: LeaderboardSnapshot = JSON.parse(evt.data);
         if (!("error" in data)) {
+          // Sound fires here — driven by SSE, not the polling loop.
+          // This fires the instant the server broadcasts the crossing update.
+          const totalLaps = data.leaderboard.reduce((s, e) => s + e.laps, 0);
+          const prev = prevLapTotalRef.current;
+          if (prev >= 0 && totalLaps > prev) {
+            // Suppress if a manual lap button was just clicked (≤1.5 s ago)
+            // to avoid double-pinging alongside the optimistic click sound.
+            if (Date.now() - _lastManualPingAt > 1500) {
+              playRfidPing(totalLaps - prev);
+            }
+          }
+          prevLapTotalRef.current = totalLaps;
           setSnapshot(data);
           setLastUpdated(new Date());
           setLoading(false);
@@ -218,7 +251,8 @@ function LiveCrossingsFeed({ motoId, minLapTimeMs }: { motoId: number; minLapTim
       if (Array.isArray(data)) {
         const newOnes = data.filter((c) => !knownIdsRef.current.has(c.id));
         if (newOnes.length > 0 && knownIdsRef.current.size > 0) {
-          playRfidPing(newOnes.length);
+          // Sound is now driven by the SSE leaderboard push (instant).
+          // The poll only handles the visual flash here.
           setFlash(true);
           setTimeout(() => setFlash(false), 600);
         }
@@ -1592,6 +1626,10 @@ export default function Motos() {
 
   const handleManualLap = async (riderId: number, motoId: number) => {
     const key = `${motoId}-${riderId}`;
+    // Play the ping immediately on click — no waiting for the network round-trip.
+    // Set the guard so the SSE handler doesn't double-ping within 1.5s.
+    _lastManualPingAt = Date.now();
+    playRfidPing(1);
     setManualLapCooldown(prev => new Set(prev).add(key));
     try {
       const res = await fetch("/api/timing/manual-crossing", {
