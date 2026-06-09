@@ -124,6 +124,138 @@ logging.basicConfig(
 )
 log = logging.getLogger("rfid-bridge")
 
+# ── SSL context (skips cert verification — readers use self-signed certs) ──────
+import ssl as _ssl
+import base64 as _base64
+_SSL_CTX = _ssl.create_default_context()
+_SSL_CTX.check_hostname = False
+_SSL_CTX.verify_mode = _ssl.CERT_NONE
+
+
+# ── Reader auto-configuration ──────────────────────────────────────────────────
+# Called by the web app's Reader Setup page via POST /configure-reader.
+# The web app sends { readerType, readerIp, targetUrl } and this function
+# programs the reader via its REST API so the user never has to open the
+# reader's web interface.
+
+def _reader_request(url, data=None, method="POST", credentials=None):
+    """HTTP/HTTPS request to a reader, ignoring self-signed certificates."""
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    if credentials:
+        token = _base64.b64encode(credentials.encode()).decode()
+        req.add_header("Authorization", f"Basic {token}")
+    with urllib.request.urlopen(req, timeout=8, context=_SSL_CTX) as resp:
+        return resp.status, resp.read()
+
+
+def configure_reader(reader_type, reader_ip, target_url):
+    """Program an RFID reader to POST crossings to target_url."""
+    if not reader_ip:
+        return {"ok": False, "error": "No IP address entered."}
+    if not target_url:
+        return {"ok": False, "error": "No timing URL provided."}
+    try:
+        if reader_type == "impinj-r700":
+            return _configure_impinj(reader_ip, target_url)
+        elif reader_type == "zebra-fx7500":
+            return _configure_zebra(reader_ip, target_url)
+        else:
+            return {"ok": False, "error": f"Unknown reader type: {reader_type}"}
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", str(e))
+        return {
+            "ok": False,
+            "error": (
+                f"Could not reach the reader at {reader_ip}. "
+                f"Make sure it is powered on, connected via Ethernet, and the IP address is correct. ({reason})"
+            ),
+        }
+    except urllib.error.HTTPError as e:
+        return {
+            "ok": False,
+            "error": f"Reader rejected the request (HTTP {e.code}). Check the IP and that the reader firmware is up to date.",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _configure_impinj(ip, target_url):
+    """Configure Impinj R700 via IoT Connector REST API (firmware 7.x+).
+    Default credentials are admin / change#me — update if you have changed them."""
+    base = f"https://{ip}"
+    creds = "admin:change#me"
+
+    profile = {
+        "name": "RaceTimingProfile",
+        "placement": "reader",
+        "configuration": {
+            "antennaConfigurationGroups": [{
+                "antennaConfigurations": [{"antennaPort": 1, "isEnabled": True}]
+            }]
+        },
+        "eventHandlers": [{
+            "type": "tagInventoryEvent",
+            "actions": [{
+                "type": "http",
+                "url": target_url,
+                "verb": "POST",
+                "headers": [{"name": "Content-Type", "value": "application/json"}],
+            }]
+        }],
+    }
+    data = json.dumps(profile).encode()
+
+    try:
+        status, _ = _reader_request(f"{base}/api/v1/profiles", data=data, credentials=creds)
+        if status in (200, 201, 204):
+            return {"ok": True, "message": "Impinj R700 configured! Move it to your race network — it is ready to go."}
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            # Profile already exists — overwrite it
+            status, _ = _reader_request(
+                f"{base}/api/v1/profiles/RaceTimingProfile",
+                data=data, method="PUT", credentials=creds,
+            )
+            if status in (200, 204):
+                return {"ok": True, "message": "Impinj R700 updated! Move it to your race network — it is ready to go."}
+        raise
+    return {"ok": False, "error": "Reader did not accept the configuration. Check the IP address and try again."}
+
+
+def _configure_zebra(ip, target_url):
+    """Configure Zebra FX7500 via IoT Connector REST API.
+    Default credentials are admin / change#me — update if you have changed them."""
+    base = f"http://{ip}:8080"
+    creds = "admin:change#me"
+
+    profile = {
+        "name": "RaceTimingProfile",
+        "type": "LLRP",
+        "httpOutputs": [{
+            "url": target_url,
+            "method": "POST",
+            "headers": {"Content-Type": "application/json"},
+            "enabled": True,
+        }],
+    }
+    data = json.dumps(profile).encode()
+
+    try:
+        status, _ = _reader_request(f"{base}/api/v1/profiles", data=data, credentials=creds)
+        if status in (200, 201, 204):
+            return {"ok": True, "message": "Zebra FX7500 configured! Move it to your race network — it is ready to go."}
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            status, _ = _reader_request(
+                f"{base}/api/v1/profiles/RaceTimingProfile",
+                data=data, method="PUT", credentials=creds,
+            )
+            if status in (200, 204):
+                return {"ok": True, "message": "Zebra FX7500 updated! Move it to your race network — it is ready to go."}
+        raise
+    return {"ok": False, "error": "Reader did not accept the configuration. Check the IP address and try again."}
+
 
 # ── SQLite cache ───────────────────────────────────────────────────────────────
 def init_db(path: str) -> sqlite3.Connection:
@@ -244,10 +376,19 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # suppress default noisy access log
 
-    # ── GET /  or  GET /status ──────────────────────────────────────────────
+    # ── CORS preflight (browser calls from the Reader Setup page) ───────────
+    def do_OPTIONS(self):
+        self._json_reply(200, {})
+
+    # ── GET /  or  GET /status  or  GET /api-status ─────────────────────────
     def do_GET(self):
-        if self.path.split("?")[0] in ("/", "/status"):
+        path = self.path.split("?")[0]
+        if path in ("/", "/status"):
             self._status_page()
+        elif path == "/api-status":
+            # JSON endpoint used by the Reader Setup page to detect that the
+            # bridge is running.
+            self._json_reply(200, {"ok": True, "version": "1.0", "apiUrl": self.api_url})
         else:
             self._reply(404, {"error": "not found"})
 
@@ -255,7 +396,9 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?")[0].rstrip("/")
 
-        if path == "/timing/crossing" and self.reader_mode == "generic":
+        if path == "/configure-reader":
+            self._handle_configure()
+        elif path == "/timing/crossing" and self.reader_mode == "generic":
             self._handle_generic()
         elif path == "/timing/impinj-crossing" and self.reader_mode == "impinj-r700":
             self._handle_native("impinj-r700")
@@ -383,7 +526,34 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             self._reply(400, {"error": "invalid JSON"})
             return None
 
+    # ── Reader configuration endpoint ────────────────────────────────────────
+    def _handle_configure(self):
+        """Handle POST /configure-reader — programs an RFID reader via its REST API."""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length))
+            result = configure_reader(
+                reader_type=body.get("readerType", ""),
+                reader_ip=body.get("readerIp", "").strip(),
+                target_url=body.get("targetUrl", ""),
+            )
+            self._json_reply(200 if result["ok"] else 400, result)
+        except Exception as e:
+            self._json_reply(500, {"ok": False, "error": str(e)})
+
     # ── Helpers ─────────────────────────────────────────────────────────────
+    def _json_reply(self, code: int, body: dict):
+        """JSON reply with CORS headers — used by Reader Setup page calls."""
+        data = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _reply(self, code: int, body: dict):
         data = json.dumps(body).encode()
         self.send_response(code)
