@@ -333,7 +333,26 @@ export default function EventPractice() {
     es.onmessage = (e) => {
       try {
         const snapshot = JSON.parse(e.data);
-        setLiveData(snapshot);
+        if (!snapshot?.leaderboard) return;
+        // Map leaderboard entries → LiveRider[], sorted by fastest single lap
+        const sorted = [...snapshot.leaderboard].sort((a: any, b: any) => {
+          if (a.bestLapMs == null && b.bestLapMs == null) return 0;
+          if (a.bestLapMs == null) return 1;
+          if (b.bestLapMs == null) return -1;
+          return a.bestLapMs - b.bestLapMs;
+        });
+        setLiveData({
+          motoId: snapshot.motoId,
+          status: snapshot.status,
+          riders: sorted.map((r: any, i: number) => ({
+            position: i + 1,
+            riderName: r.riderName,
+            bibNumber: r.bibNumber ?? null,
+            laps: r.laps,
+            bestLapMs: r.bestLapMs ?? null,
+            lastLapMs: r.lastLapMs ?? null,
+          })),
+        });
         setSseConnected(true);
       } catch { }
     };

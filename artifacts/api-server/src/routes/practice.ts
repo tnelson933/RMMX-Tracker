@@ -68,8 +68,10 @@ function buildLiveBoard(crossings: (typeof practiceCrossingsTable.$inferSelect)[
   }
 
   riders.sort((a, b) => {
-    if (b.lapCount !== a.lapCount) return b.lapCount - a.lapCount;
-    return new Date(a.lastCrossingTime).getTime() - new Date(b.lastCrossingTime).getTime();
+    if (a.bestLapMs == null && b.bestLapMs == null) return 0;
+    if (a.bestLapMs == null) return 1;
+    if (b.bestLapMs == null) return -1;
+    return a.bestLapMs - b.bestLapMs;
   });
 
   return riders;
