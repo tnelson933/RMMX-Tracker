@@ -9,10 +9,12 @@ import {
   checkinsTable,
   eventsTable,
   usersTable,
+  practiceSessionsTable,
 } from "@workspace/db";
 import { eq, and, asc, desc, isNotNull, or } from "drizzle-orm";
 import type { Response } from "express";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
+import { processPracticeCrossing } from "./practice";
 
 const router = Router();
 
@@ -473,6 +475,15 @@ async function getActiveMotoForClub(clubId: number) {
   return rows[0]?.moto ?? null;
 }
 
+async function getActivePracticeSessionForClub(clubId: number) {
+  const [session] = await db
+    .select()
+    .from(practiceSessionsTable)
+    .where(and(eq(practiceSessionsTable.clubId, clubId), eq(practiceSessionsTable.status, "active")))
+    .limit(1);
+  return session ?? null;
+}
+
 // POST /timing/active/crossing?clubId=N — stable "facility" endpoint
 // ─────────────────────────────────────────────────────────────────────────────
 // Configure your hardware ONCE with this URL + your club ID, then never touch
@@ -503,7 +514,21 @@ router.post("/timing/active/crossing", async (req, res) => {
     }
     const moto = await getActiveMotoForClub(clubId);
     if (!moto) {
-      return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+      const session = await getActivePracticeSessionForClub(clubId);
+      if (!session) {
+        return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+      }
+      const results: unknown[] = [];
+      for (const tag of tagEvents) {
+        const rfidNumber = tag.epcHex.toUpperCase();
+        const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
+        if (isNaN(crossingTime.getTime())) { results.push({ rfidNumber, error: "Invalid firstSeenTime" }); continue; }
+        try {
+          const r = await processPracticeCrossing(session, rfidNumber, crossingTime);
+          results.push("skipped" in r ? { rfidNumber, skipped: true } : { rfidNumber, crossingId: r.crossing?.id });
+        } catch (err: any) { results.push({ rfidNumber, error: err.message }); }
+      }
+      return res.json({ ok: true, processed: tagEvents.length, practiceSessionId: session.id, results });
     }
     const results: unknown[] = [];
     for (const tag of tagEvents) {
@@ -524,7 +549,21 @@ router.post("/timing/active/crossing", async (req, res) => {
   if (zebraTags.length > 0) {
     const moto = await getActiveMotoForClub(clubId);
     if (!moto) {
-      return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+      const session = await getActivePracticeSessionForClub(clubId);
+      if (!session) {
+        return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+      }
+      const results: unknown[] = [];
+      for (const tag of zebraTags) {
+        const rfidNumber = ((tag.idHex || tag.epc) as string | undefined ?? "").toUpperCase();
+        if (!rfidNumber) { results.push({ error: "Tag missing idHex/epc field" }); continue; }
+        const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
+        try {
+          const r = await processPracticeCrossing(session, rfidNumber, crossingTime);
+          results.push("skipped" in r ? { rfidNumber, skipped: true } : { rfidNumber, crossingId: r.crossing?.id });
+        } catch (err: any) { results.push({ rfidNumber, error: err.message }); }
+      }
+      return res.json({ ok: true, processed: zebraTags.length, practiceSessionId: session.id, results });
     }
     const results: unknown[] = [];
     for (const tag of zebraTags) {
@@ -556,7 +595,17 @@ router.post("/timing/active/crossing", async (req, res) => {
 
   const moto = await getActiveMotoForClub(clubId);
   if (!moto) {
-    return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+    const session = await getActivePracticeSessionForClub(clubId);
+    if (!session) {
+      return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+    }
+    try {
+      const r = await processPracticeCrossing(session, String(rfidNumber), crossingTime);
+      if ("skipped" in r) return res.json({ ok: true, skipped: true, practiceSessionId: session.id });
+      return res.json({ ok: true, practiceSessionId: session.id, crossingId: r.crossing?.id });
+    } catch (err: any) {
+      return res.status(409).json({ error: err.message });
+    }
   }
   const readerId: string = body?.loopId ?? body?.readerId ?? body?.readername ?? "rfid";
 

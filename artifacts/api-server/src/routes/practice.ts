@@ -94,7 +94,7 @@ function broadcast(sessionId: number, payload: object) {
 }
 
 // ── Shared crossing processor ─────────────────────────────────────────────────
-async function processPracticeCrossing(
+export async function processPracticeCrossing(
   session: typeof practiceSessionsTable.$inferSelect,
   rfidNumber: string,
   crossingTime: Date,
