@@ -1085,6 +1085,12 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
             ) : null}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {moto.scheduledTime && !isLive && !isDone && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono hidden sm:inline-flex">
+                <Clock size={10} />
+                {moto.scheduledTime}
+              </span>
+            )}
             {(isLive || isNowUp) && (
               <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-500/15 border border-green-400/50 rounded-full px-2 py-0.5">
                 <Radio size={9} className={isLive ? "animate-pulse" : undefined} /> Now Up
@@ -1174,9 +1180,14 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
       {/* Gate highlight — one card per family member (or practice note) */}
       {moto.type === "practice" ? (
         <div className="px-4 py-3 bg-background border-b">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-sky-500/10 text-sky-600 border border-sky-400/30">Practice</span>
             <span className="text-sm text-muted-foreground">Open to all checked-in riders — no gate assignment</span>
+            {moto.scheduledTime && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono ml-auto">
+                <Clock size={11} /> {moto.scheduledTime}
+              </span>
+            )}
           </div>
         </div>
       ) : (

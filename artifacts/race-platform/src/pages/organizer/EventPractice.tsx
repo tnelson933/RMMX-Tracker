@@ -292,6 +292,7 @@ export default function EventPractice() {
   }>({ open: false, conflictMoto: null });
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [scheduleSessionName, setScheduleSessionName] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
   const esRef = useRef<EventSource | null>(null);
 
   const checkedInRiders = (checkins as any[]).filter((c: any) => c.checkedIn);
@@ -433,6 +434,7 @@ export default function EventPractice() {
               type: "practice",
               raceClass: selectedClass === ALL_CLASSES ? undefined : selectedClass,
               motoNumber: 0,
+              ...(scheduleTime.trim() ? { scheduledTime: scheduleTime.trim() } : {}),
             } as any,
           },
           {
@@ -446,6 +448,7 @@ export default function EventPractice() {
       });
       setIsScheduleDialogOpen(false);
       setScheduleSessionName("");
+      setScheduleTime("");
       toast({ title: "Practice added to schedule — go to Motos & Lineups to start it." });
     } catch {
       toast({ title: "Failed to add practice to schedule", variant: "destructive" });
@@ -849,7 +852,7 @@ export default function EventPractice() {
       </Dialog>
 
       {/* Add to Schedule dialog */}
-      <Dialog open={isScheduleDialogOpen} onOpenChange={open => { setIsScheduleDialogOpen(open); if (!open) setScheduleSessionName(""); }}>
+      <Dialog open={isScheduleDialogOpen} onOpenChange={open => { setIsScheduleDialogOpen(open); if (!open) { setScheduleSessionName(""); setScheduleTime(""); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="font-heading uppercase">Add Practice to Schedule</DialogTitle>
@@ -865,6 +868,21 @@ export default function EventPractice() {
                 onKeyDown={e => { if (e.key === "Enter") void addToSchedule(); }}
                 autoFocus
               />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                Start Time
+                <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+              </label>
+              <div className="relative">
+                <Clock size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <input
+                  type="time"
+                  value={scheduleTime}
+                  onChange={e => setScheduleTime(e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
+                />
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
               This creates a scheduled practice moto. Go to <span className="font-semibold">Motos &amp; Lineups</span> to start it when ready.

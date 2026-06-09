@@ -944,6 +944,7 @@ export default function Motos() {
   const [newMotoType, setNewMotoType] = useState<"heat" | "lcq" | "main" | "practice">("heat");
   const [newMotoClass, setNewMotoClass] = useState("");
   const [newMotoLapCount, setNewMotoLapCount] = useState("");
+  const [newMotoScheduledTime, setNewMotoScheduledTime] = useState("");
   const [selectedRiderIds, setSelectedRiderIds] = useState<Set<number>>(new Set());
 
   // Min lap times per class
@@ -1474,6 +1475,7 @@ export default function Motos() {
     setNewMotoType("heat");
     setNewMotoClass("");
     setNewMotoLapCount("");
+    setNewMotoScheduledTime("");
     setSelectedRiderIds(new Set());
   };
 
@@ -1492,7 +1494,7 @@ export default function Motos() {
 
     const lapCountNum = newMotoLapCount.trim() ? parseInt(newMotoLapCount.trim(), 10) : undefined;
     createMotoMutation.mutate(
-      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: (newMotoClass || undefined) as string, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum } },
+      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: (newMotoClass || undefined) as string, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum, ...(newMotoScheduledTime.trim() ? { scheduledTime: newMotoScheduledTime.trim() } : {}) } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -1844,6 +1846,23 @@ export default function Motos() {
                     onChange={e => setNewMotoLapCount(e.target.value)}
                     className="h-9 w-28"
                   />
+                </div>
+
+                {/* Scheduled start time — shown for all types, most useful for practice */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <Clock size={13} className="text-muted-foreground" />
+                    Start Time
+                    <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="time"
+                      value={newMotoScheduledTime}
+                      onChange={e => setNewMotoScheduledTime(e.target.value)}
+                      className="h-9 w-36 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
+                    />
+                  </div>
                 </div>
 
                 {/* Rider picker */}
