@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -908,6 +908,7 @@ export default function Motos() {
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
   const [lapEditTarget, setLapEditTarget] = useState<LapEditTarget | null>(null);
   const [poolSearch, setPoolSearch] = useState("");
+  const [poolOpen, setPoolOpen] = useState(true);
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
   const [classFilter, setClassFilter] = useState<string>("schedule");
   const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
@@ -2207,62 +2208,88 @@ export default function Motos() {
       <div className="flex gap-5 items-start">
 
         {/* ── Left: Rider Pool ─────────────────────────────────────────── */}
-        <div className="w-60 shrink-0 space-y-3 sticky top-4">
-          <div>
-            <h3 className="font-heading font-bold uppercase tracking-wider text-sm flex items-center gap-1.5">
-              <Users size={13} /> Rider Pool
-            </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Drag to trash to remove from check-in</p>
+        <div className={`shrink-0 sticky top-4 transition-[width] duration-200 ${poolOpen ? "w-56 space-y-3" : "w-8"}`}>
+
+          {/* Header — always visible */}
+          <div className="flex items-center gap-1.5">
+            {poolOpen && (
+              <h3 className="font-heading font-bold uppercase tracking-wider text-sm flex items-center gap-1.5 flex-1 min-w-0">
+                <Users size={13} /> Rider Pool
+              </h3>
+            )}
+            <button
+              onClick={() => setPoolOpen(v => !v)}
+              className="flex items-center justify-center w-7 h-7 rounded border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 ml-auto"
+              title={poolOpen ? "Collapse rider pool" : "Expand rider pool"}
+            >
+              {poolOpen ? <ChevronLeft size={13} /> : <ChevronRight size={13} />}
+            </button>
           </div>
-          {/* Search */}
-          <div className="relative">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-            <Input
-              value={poolSearch}
-              onChange={e => setPoolSearch(e.target.value)}
-              placeholder="Name or bib…"
-              className="h-8 pl-7 text-xs"
-            />
-          </div>
-          {(() => {
-            const q = poolSearch.trim().toLowerCase();
-            const byClass: Record<string, Array<{ riderId: number; riderName: string | null; bibNumber: string | null; raceClass: string | null }>> = {};
-            for (const c of (checkins ?? [])) {
-              if (!c.checkedIn) continue;
-              if (q) {
-                const name = (c.riderName ?? "").toLowerCase();
-                const bib  = (c.bibNumber ?? "").toLowerCase();
-                if (!name.includes(q) && !bib.includes(q)) continue;
-              }
-              const cls = c.raceClass ?? "Unknown";
-              if (!byClass[cls]) byClass[cls] = [];
-              byClass[cls].push(c as any);
-            }
-            const classes = Object.entries(byClass).sort(([a], [b]) => a.localeCompare(b));
-            if (!classes.length) return (
-              <Card><CardContent className="p-4 text-center text-xs text-muted-foreground">
-                {q ? "No riders match your search" : "No checked-in riders"}
-              </CardContent></Card>
-            );
-            return classes.map(([cls, riders]) => {
-              const sorted = [...riders].sort((a, b) =>
-                (a.riderName ?? "").localeCompare(b.riderName ?? "")
-              );
-              return (
-                <Card key={cls} className="overflow-hidden">
-                  <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
-                    <span className="font-heading font-bold text-xs uppercase tracking-wider truncate mr-2">{cls}</span>
-                    <Badge variant="secondary" className="text-xs h-5 shrink-0">{sorted.length}</Badge>
-                  </div>
-                  <div className="divide-y max-h-80 overflow-y-auto">
-                    {sorted.map(r => (
-                      <DraggablePoolRider key={r.riderId} riderId={r.riderId} riderName={r.riderName ?? "Rider"} bibNumber={r.bibNumber} />
-                    ))}
-                  </div>
-                </Card>
-              );
-            });
-          })()}
+
+          {poolOpen ? (
+            <>
+              <p className="text-xs text-muted-foreground -mt-1">Drag riders onto motos · drag to trash to remove</p>
+              {/* Search */}
+              <div className="relative">
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={poolSearch}
+                  onChange={e => setPoolSearch(e.target.value)}
+                  placeholder="Name or bib…"
+                  className="h-8 pl-7 text-xs"
+                />
+              </div>
+              {(() => {
+                const q = poolSearch.trim().toLowerCase();
+                const byClass: Record<string, Array<{ riderId: number; riderName: string | null; bibNumber: string | null; raceClass: string | null }>> = {};
+                for (const c of (checkins ?? [])) {
+                  if (!c.checkedIn) continue;
+                  if (q) {
+                    const name = (c.riderName ?? "").toLowerCase();
+                    const bib  = (c.bibNumber ?? "").toLowerCase();
+                    if (!name.includes(q) && !bib.includes(q)) continue;
+                  }
+                  const cls = c.raceClass ?? "Unknown";
+                  if (!byClass[cls]) byClass[cls] = [];
+                  byClass[cls].push(c as any);
+                }
+                const classes = Object.entries(byClass).sort(([a], [b]) => a.localeCompare(b));
+                if (!classes.length) return (
+                  <Card><CardContent className="p-4 text-center text-xs text-muted-foreground">
+                    {q ? "No riders match your search" : "No checked-in riders"}
+                  </CardContent></Card>
+                );
+                return classes.map(([cls, riders]) => {
+                  const sorted = [...riders].sort((a, b) =>
+                    (a.riderName ?? "").localeCompare(b.riderName ?? "")
+                  );
+                  return (
+                    <Card key={cls} className="overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
+                        <span className="font-heading font-bold text-xs uppercase tracking-wider truncate mr-2">{cls}</span>
+                        <Badge variant="secondary" className="text-xs h-5 shrink-0">{sorted.length}</Badge>
+                      </div>
+                      <div className="divide-y max-h-80 overflow-y-auto">
+                        {sorted.map(r => (
+                          <DraggablePoolRider key={r.riderId} riderId={r.riderId} riderName={r.riderName ?? "Rider"} bibNumber={r.bibNumber} />
+                        ))}
+                      </div>
+                    </Card>
+                  );
+                });
+              })()}
+            </>
+          ) : (
+            /* Collapsed: icon + total count */
+            <div className="flex flex-col items-center gap-2 mt-2">
+              <Users size={14} className="text-muted-foreground" />
+              {(checkins ?? []).filter(c => c.checkedIn).length > 0 && (
+                <Badge variant="secondary" className="text-[10px] h-5 px-1 font-mono tabular-nums">
+                  {(checkins ?? []).filter(c => c.checkedIn).length}
+                </Badge>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Right: motos grid / loading / empty state ─────────────── */}
