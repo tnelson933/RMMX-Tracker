@@ -10,7 +10,7 @@ import {
   eventsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, and, asc, isNotNull, or } from "drizzle-orm";
+import { eq, and, asc, desc, isNotNull, or } from "drizzle-orm";
 import type { Response } from "express";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 
@@ -454,7 +454,9 @@ async function getActiveMotoForClub(clubId: number) {
     .select({ moto: motosTable })
     .from(motosTable)
     .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
-    .where(and(eq(eventsTable.clubId, clubId), eq(motosTable.status, "in_progress")));
+    .where(and(eq(eventsTable.clubId, clubId), eq(motosTable.status, "in_progress")))
+    .orderBy(desc(motosTable.startedAt))
+    .limit(1);
   return rows[0]?.moto ?? null;
 }
 
