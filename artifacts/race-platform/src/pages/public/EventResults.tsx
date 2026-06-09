@@ -380,8 +380,9 @@ export default function EventResults() {
   const classResults = results?.filter(r => r.raceClass === activeClass) || [];
   const motosByClass = Array.from(new Set(classResults.map(r => r.motoName))).filter(Boolean) as string[];
 
-  // Group motos by class for schedule view
-  const motosByRaceClass = (motos ?? []).reduce<Record<string, Moto[]>>((acc, m) => {
+  // Group motos by class for schedule view — exclude practice sessions
+  const raceMotosList = (motos ?? []).filter(m => m.type !== "practice");
+  const motosByRaceClass = raceMotosList.reduce<Record<string, Moto[]>>((acc, m) => {
     const cls = m.raceClass ?? "Unknown";
     if (!acc[cls]) acc[cls] = [];
     acc[cls].push(m);
@@ -639,7 +640,7 @@ export default function EventResults() {
                   <div className="space-y-3">
                     {[...Array(4)].map((_, i) => <div key={i} className="h-14 bg-muted rounded-md animate-pulse" />)}
                   </div>
-                ) : !motos || motos.length === 0 ? (
+                ) : raceMotosList.length === 0 ? (
                   <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
                     <Clock className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} />
                     <h3 className="text-xl font-heading font-bold mb-2">Schedule Not Available</h3>
@@ -673,7 +674,7 @@ export default function EventResults() {
           </Tabs>
         ) : (
           /* RESULTS MODE (completed / upcoming non-live) */
-          (event.raceClasses && event.raceClasses.length > 0) || (motos && motos.length > 0) ? (
+          (event.raceClasses && event.raceClasses.length > 0) || raceMotosList.length > 0 ? (
             <Tabs value={activeClass} onValueChange={setActiveClass} className="w-full">
               <div className="bg-card rounded-t-lg border-x border-t p-2 overflow-x-auto hide-scrollbar">
                 <TabsList className="inline-flex h-auto w-auto p-1 bg-muted/50 rounded-md">
@@ -686,7 +687,7 @@ export default function EventResults() {
                       {cls}
                     </TabsTrigger>
                   ))}
-                  {motos && motos.length > 0 && (
+                  {raceMotosList.length > 0 && (
                     <TabsTrigger
                       value="__schedule__"
                       className="font-heading uppercase text-base px-6 py-3 rounded-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all whitespace-nowrap"
@@ -740,7 +741,7 @@ export default function EventResults() {
               })}
 
               {/* Race Schedule tab */}
-              {motos && motos.length > 0 && (
+              {raceMotosList.length > 0 && (
                 <TabsContent value="__schedule__" className="m-0 bg-card border rounded-b-lg shadow-sm">
                   <div className="p-6 md:p-8">
                     <h2 className="text-2xl font-heading font-bold uppercase mb-6 flex items-center gap-3">
