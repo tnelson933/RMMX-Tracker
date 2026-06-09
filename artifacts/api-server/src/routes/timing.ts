@@ -269,11 +269,22 @@ async function _processCrossing(opts: {
   // 2. Resolve rider — use override if provided (manual crossing), else look up from RFID assignment
   let riderId: number | null = overrideRiderId !== undefined ? overrideRiderId : null;
   if (riderId === null && overrideRiderId === undefined) {
+    // Primary: event-scoped RFID assignment (set via the Assignments tab)
     const assignments = await db
       .select({ riderId: rfidAssignmentsTable.riderId })
       .from(rfidAssignmentsTable)
       .where(and(eq(rfidAssignmentsTable.rfidNumber, rfidNumber), eq(rfidAssignmentsTable.eventId, moto.eventId)));
     riderId = assignments[0]?.riderId ?? null;
+
+    // Fallback: permanent rfid_number on the rider's profile
+    if (!riderId) {
+      const [directRider] = await db
+        .select({ id: ridersTable.id })
+        .from(ridersTable)
+        .where(eq(ridersTable.rfidNumber, rfidNumber))
+        .limit(1);
+      riderId = directRider?.id ?? null;
+    }
   }
 
   // 3. Previous crossings for this tag+moto
