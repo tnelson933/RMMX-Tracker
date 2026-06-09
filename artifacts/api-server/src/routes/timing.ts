@@ -182,7 +182,8 @@ export async function buildLeaderboard(motoId: number) {
     const lapMs = raw.map(normalizeLapMs);
     const totalMs = lapMs.reduce((s, t) => s + t, 0);
     const lastMs = lapMs.at(-1) ?? null;
-    const bestMs = lapMs.length ? Math.min(...lapMs) : null;
+    const validMs = lapMs.filter(t => t > 0);
+    const bestMs = validMs.length ? Math.min(...validMs) : null;
     return {
       position: r.position,
       riderId: r.riderId,
