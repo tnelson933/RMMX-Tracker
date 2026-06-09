@@ -557,7 +557,13 @@ function EventPracticeSessionCard({ session, riderId }: { session: EventPractice
     };
   }, [session.motoId, isLive, riderId]);
 
-  const displayLeaderboard = liveLeaderboard ?? session.leaderboard;
+  const rawLeaderboard = liveLeaderboard ?? session.leaderboard;
+  const displayLeaderboard = [...rawLeaderboard].sort((a, b) => {
+    if (a.bestLapMs == null && b.bestLapMs == null) return 0;
+    if (a.bestLapMs == null) return 1;
+    if (b.bestLapMs == null) return -1;
+    return a.bestLapMs - b.bestLapMs;
+  });
   const myEntry = displayLeaderboard.find(e => e.isMe);
   const myLapsWithTime = session.myLaps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
 
@@ -2072,7 +2078,12 @@ export default function RiderHistory() {
                         </CardContent>
                       </Card>
                     </div>
-                    {practiceSessions.map((session) => (
+                    {[...practiceSessions].sort((a, b) => {
+                      if (a.bestLapMs == null && b.bestLapMs == null) return 0;
+                      if (a.bestLapMs == null) return 1;
+                      if (b.bestLapMs == null) return -1;
+                      return a.bestLapMs - b.bestLapMs;
+                    }).map((session) => (
                       <PracticeSessionCard key={session.sessionId} session={session} />
                     ))}
                   </div>
