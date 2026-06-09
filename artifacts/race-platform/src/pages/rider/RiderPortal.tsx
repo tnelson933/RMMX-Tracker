@@ -79,7 +79,7 @@ export default function RiderPortal() {
   const [, navigate] = useLocation();
 
   const { data: profiles, isLoading } = useQuery<RiderProfile[]>({
-    queryKey: ["rider-profiles"],
+    queryKey: ["rider-profiles", account?.id],
     queryFn: () => riderApi.profiles(),
     enabled: !!account,
   } as any);

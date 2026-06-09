@@ -95,7 +95,8 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
-  const riders = await db.select().from(ridersTable).where(eq(ridersTable.email, account.email));
+  const riders = await db.select().from(ridersTable)
+    .where(sql`LOWER(${ridersTable.email}) = ${account.email}`);
 
   // For each rider, compute summary stats from race results
   const profilesWithStats = await Promise.all(

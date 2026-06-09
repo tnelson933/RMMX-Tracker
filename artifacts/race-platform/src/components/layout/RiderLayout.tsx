@@ -23,6 +23,7 @@ export function RiderLayout({ children, showBack, backTo = "/rider/portal", back
     // sees isAuthenticated=false before any refetch completes.
     queryClient.setQueryData(["rider-auth-me"], null);
     queryClient.removeQueries({ queryKey: ["rider-auth-me"] });
+    queryClient.removeQueries({ queryKey: ["rider-profiles"] });
     navigate("/");
   };
 

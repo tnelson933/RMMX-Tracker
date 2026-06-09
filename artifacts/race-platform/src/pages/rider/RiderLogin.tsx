@@ -44,6 +44,7 @@ export default function RiderLogin() {
   const loginMutation = useMutation({
     mutationFn: () => riderApi.login(loginEmail, loginPassword),
     onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ["rider-profiles"] });
       queryClient.invalidateQueries({ queryKey: ["rider-auth-me"] });
     },
   });
@@ -55,6 +56,7 @@ export default function RiderLogin() {
     },
     onSuccess: () => {
       setFromRegister(true);
+      queryClient.removeQueries({ queryKey: ["rider-profiles"] });
       queryClient.invalidateQueries({ queryKey: ["rider-auth-me"] });
     },
   });
