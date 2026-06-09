@@ -637,7 +637,7 @@ export default function EventPractice() {
                   <div className="flex items-center gap-2">
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="destructive"
                       onClick={() => {
                         setScheduleSessionName(
                           selectedClass === ALL_CLASSES ? "Open Practice" : `Practice – ${selectedClass}`
@@ -645,7 +645,7 @@ export default function EventPractice() {
                         setIsScheduleDialogOpen(true);
                       }}
                       disabled={isLoading}
-                      className="font-heading uppercase tracking-wider h-9 text-xs border-muted-foreground/40 text-muted-foreground hover:text-foreground"
+                      className="font-heading uppercase tracking-wider h-9 text-xs"
                       title="Add a scheduled practice session to Motos & Lineups"
                     >
                       <CalendarPlus size={13} className="mr-1" />
