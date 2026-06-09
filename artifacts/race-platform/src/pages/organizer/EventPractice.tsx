@@ -23,6 +23,14 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 const ALL_CLASSES = "All Classes";
 
@@ -277,6 +285,10 @@ export default function EventPractice() {
   const [sseConnected, setSseConnected] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string>(ALL_CLASSES);
   const [mobilePanel, setMobilePanel] = useState<"sidebar" | "board">("board");
+  const [conflictDialog, setConflictDialog] = useState<{
+    open: boolean;
+    conflictMoto: { id: number; name: string } | null;
+  }>({ open: false, conflictMoto: null });
   const esRef = useRef<EventSource | null>(null);
 
   const checkedInRiders = (checkins as any[]).filter((c: any) => c.checkedIn);
@@ -333,7 +345,7 @@ export default function EventPractice() {
     setLiveData(null);
   }, [selectedClass]);
 
-  async function startPractice() {
+  async function doStartPractice() {
     const sessionName = selectedClass === ALL_CLASSES
       ? "Practice – All Classes"
       : `Practice – ${selectedClass}`;
@@ -369,6 +381,39 @@ export default function EventPractice() {
       toast({ title: `Practice started — ${sessionName}` });
     } catch {
       toast({ title: "Failed to start practice", variant: "destructive" });
+    }
+  }
+
+  async function startPractice() {
+    const activeRaceMoto = motos.find((m: any) => m.status === "in_progress" && m.type !== "practice");
+    if (activeRaceMoto) {
+      setConflictDialog({ open: true, conflictMoto: { id: activeRaceMoto.id, name: activeRaceMoto.name } });
+      return;
+    }
+    await doStartPractice();
+  }
+
+  async function handleConflictConfirm() {
+    const { conflictMoto } = conflictDialog;
+    if (!conflictMoto) return;
+    setConflictDialog({ open: false, conflictMoto: null });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        updateMoto.mutate(
+          { motoId: conflictMoto.id, data: { status: "completed" } },
+          {
+            onSuccess: () => {
+              queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+              toast({ title: `Moto ended: ${conflictMoto.name}` });
+              resolve();
+            },
+            onError: reject,
+          }
+        );
+      });
+      await doStartPractice();
+    } catch {
+      toast({ title: "Failed to switch sessions", variant: "destructive" });
     }
   }
 
@@ -717,6 +762,38 @@ export default function EventPractice() {
           </Tabs>
         </div>
       </div>
+
+      {/* ── Conflict dialog: race moto is in progress ─────────────────────── */}
+      <Dialog open={conflictDialog.open} onOpenChange={open => !open && setConflictDialog({ open: false, conflictMoto: null })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase tracking-wider text-destructive">
+              Moto In Progress
+            </DialogTitle>
+            <DialogDescription className="pt-1">
+              You currently have a moto{" "}
+              <span className="font-semibold text-foreground">"{conflictDialog.conflictMoto?.name}"</span> open.
+              {" "}Would you like to end it and start this practice session?
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Only one session can be active at a time. Ending the moto will finalize its lap times and crossings.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConflictDialog({ open: false, conflictMoto: null })}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={updateMoto.isPending}
+              onClick={handleConflictConfirm}
+              className="font-heading uppercase tracking-wider"
+            >
+              {updateMoto.isPending ? "Switching..." : "End Moto & Start Practice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

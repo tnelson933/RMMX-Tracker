@@ -276,6 +276,17 @@ async function _processCrossing(opts: {
       .where(and(eq(rfidAssignmentsTable.rfidNumber, rfidNumber), eq(rfidAssignmentsTable.eventId, moto.eventId)));
     riderId = assignments[0]?.riderId ?? null;
 
+    // Practice fallback: for practice-type motos, search RFID assignments across ALL events
+    // so any rider registered in the system (any club/organizer) is recognized during practice.
+    if (!riderId && moto.type === "practice") {
+      const [anyEventAssignment] = await db
+        .select({ riderId: rfidAssignmentsTable.riderId })
+        .from(rfidAssignmentsTable)
+        .where(eq(rfidAssignmentsTable.rfidNumber, rfidNumber))
+        .limit(1);
+      riderId = anyEventAssignment?.riderId ?? null;
+    }
+
     // Fallback: permanent rfid_number or mylaps_transponder_id on the rider's profile
     if (!riderId) {
       const [directRider] = await db

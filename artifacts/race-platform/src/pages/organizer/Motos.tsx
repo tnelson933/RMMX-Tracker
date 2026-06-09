@@ -3170,21 +3170,26 @@ export default function Motos() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Conflict: moto already in progress ─────────────────────────── */}
+      {/* ── Conflict: moto or practice already in progress ──────────────── */}
       <Dialog open={conflictDialog.open} onOpenChange={open => !open && setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null })}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-heading uppercase tracking-wider text-destructive">Moto Already Running</DialogTitle>
+            <DialogTitle className="font-heading uppercase tracking-wider text-destructive">
+              {conflictDialog.existingMoto?.type === "practice" ? "Practice Session Running" : "Moto Already Running"}
+            </DialogTitle>
             <DialogDescription className="pt-1">
-              <span className="font-semibold text-foreground">"{conflictDialog.existingMoto?.name}"</span> is still in progress.
-              {" "}End it and start{" "}
+              You currently have{" "}
+              {conflictDialog.existingMoto?.type === "practice" ? "a practice session" : "a moto"}{" "}
+              <span className="font-semibold text-foreground">"{conflictDialog.existingMoto?.name}"</span> open.
+              {" "}Would you like to end it and start{" "}
               <span className="font-semibold text-foreground">
                 "{motos?.find(m => m.id === conflictDialog.pendingMotoId)?.name ?? "new moto"}"
               </span>?
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Only one moto can be active at a time. Ending the current moto will finalize its lap times and crossings.
+            Only one session can be active at a time. Ending the current{" "}
+            {conflictDialog.existingMoto?.type === "practice" ? "practice session" : "moto"} will finalize its lap times and crossings.
           </p>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null })}>
@@ -3196,7 +3201,11 @@ export default function Motos() {
               onClick={handleConflictConfirm}
               className="font-heading uppercase tracking-wider"
             >
-              {updateMutation.isPending ? "Switching..." : "End & Start New Moto"}
+              {updateMutation.isPending
+                ? "Switching..."
+                : conflictDialog.existingMoto?.type === "practice"
+                  ? "End Practice & Start Moto"
+                  : "End Moto & Start New Moto"}
             </Button>
           </DialogFooter>
         </DialogContent>
