@@ -10,12 +10,21 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getListMotosQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   Play, Square, Timer, Wifi, WifiOff, Users,
   Clock, Trophy, RefreshCw, ChevronDown, ChevronRight, History,
-  Flag, LayoutList, Activity,
+  Flag, LayoutList, Activity, CalendarPlus,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -289,6 +298,8 @@ export default function EventPractice() {
     open: boolean;
     conflictMoto: { id: number; name: string } | null;
   }>({ open: false, conflictMoto: null });
+  const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
+  const [scheduleSessionName, setScheduleSessionName] = useState("");
   const esRef = useRef<EventSource | null>(null);
 
   const checkedInRiders = (checkins as any[]).filter((c: any) => c.checkedIn);
@@ -414,6 +425,38 @@ export default function EventPractice() {
       await doStartPractice();
     } catch {
       toast({ title: "Failed to switch sessions", variant: "destructive" });
+    }
+  }
+
+  async function addToSchedule() {
+    const sessionName = scheduleSessionName.trim() ||
+      (selectedClass === ALL_CLASSES ? "Open Practice" : `Practice – ${selectedClass}`);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        createMoto.mutate(
+          {
+            eventId,
+            data: {
+              name: sessionName,
+              type: "practice",
+              raceClass: selectedClass === ALL_CLASSES ? undefined : selectedClass,
+              motoNumber: 0,
+            },
+          },
+          {
+            onSuccess: () => {
+              queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+              resolve();
+            },
+            onError: reject,
+          }
+        );
+      });
+      setIsScheduleDialogOpen(false);
+      setScheduleSessionName("");
+      toast({ title: "Practice added to schedule — go to Motos & Lineups to start it." });
+    } catch {
+      toast({ title: "Failed to add practice to schedule", variant: "destructive" });
     }
   }
 
@@ -599,18 +642,36 @@ export default function EventPractice() {
                   </Button>
                 )}
                 {!isActive && (
-                  <Button
-                    size="sm"
-                    onClick={startPractice}
-                    disabled={isLoading || visibleRiders.length === 0}
-                    className="font-heading uppercase tracking-wider h-9 min-w-[6rem] text-xs bg-primary hover:bg-primary/90"
-                    title={visibleRiders.length === 0 ? "No riders in this class are checked in" : undefined}
-                  >
-                    {isLoading
-                      ? <RefreshCw size={13} className="mr-1 animate-spin" />
-                      : <Play size={13} className="mr-1" />}
-                    Start
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setScheduleSessionName(
+                          selectedClass === ALL_CLASSES ? "Open Practice" : `Practice – ${selectedClass}`
+                        );
+                        setIsScheduleDialogOpen(true);
+                      }}
+                      disabled={isLoading}
+                      className="font-heading uppercase tracking-wider h-9 text-xs border-muted-foreground/40 text-muted-foreground hover:text-foreground"
+                      title="Add a scheduled practice session to Motos & Lineups"
+                    >
+                      <CalendarPlus size={13} className="mr-1" />
+                      Add to Schedule
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={startPractice}
+                      disabled={isLoading || visibleRiders.length === 0}
+                      className="font-heading uppercase tracking-wider h-9 min-w-[6rem] text-xs bg-primary hover:bg-primary/90"
+                      title={visibleRiders.length === 0 ? "No riders in this class are checked in" : undefined}
+                    >
+                      {isLoading
+                        ? <RefreshCw size={13} className="mr-1 animate-spin" />
+                        : <Play size={13} className="mr-1" />}
+                      Start
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
@@ -790,6 +851,42 @@ export default function EventPractice() {
               className="font-heading uppercase tracking-wider"
             >
               {updateMoto.isPending ? "Switching..." : "End Moto & Start Practice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add to Schedule dialog */}
+      <Dialog open={isScheduleDialogOpen} onOpenChange={open => { setIsScheduleDialogOpen(open); if (!open) setScheduleSessionName(""); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase">Add Practice to Schedule</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Session Name</label>
+              <Input
+                value={scheduleSessionName}
+                onChange={e => setScheduleSessionName(e.target.value)}
+                placeholder="e.g. Open Practice"
+                className="h-9"
+                onKeyDown={e => { if (e.key === "Enter") void addToSchedule(); }}
+                autoFocus
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This creates a scheduled practice moto. Go to <span className="font-semibold">Motos &amp; Lineups</span> to start it when ready.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsScheduleDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => void addToSchedule()}
+              disabled={isLoading}
+              className="font-heading uppercase tracking-wider"
+            >
+              {isLoading ? <RefreshCw size={13} className="mr-1.5 animate-spin" /> : <CalendarPlus size={13} className="mr-1.5" />}
+              Add to Schedule
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1478,7 +1478,7 @@ export default function Motos() {
   };
 
   const handleCreateMoto = () => {
-    if (!newMotoName.trim() || !newMotoClass) return;
+    if (!newMotoName.trim() || (newMotoType !== "practice" && !newMotoClass)) return;
     const nextMotoNumber = motos?.length ? Math.max(...motos.map(m => m.motoNumber ?? 0)) + 1 : 1;
     const lineup = classCheckins
       .filter(c => selectedRiderIds.has(c.riderId))
@@ -1492,7 +1492,7 @@ export default function Motos() {
 
     const lapCountNum = newMotoLapCount.trim() ? parseInt(newMotoLapCount.trim(), 10) : undefined;
     createMotoMutation.mutate(
-      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: newMotoClass, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum } },
+      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: newMotoClass || undefined, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -1801,23 +1801,30 @@ export default function Motos() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Type</label>
-                    <Select value={newMotoType} onValueChange={(v: any) => setNewMotoType(v)}>
+                    <Select value={newMotoType} onValueChange={(v: any) => { setNewMotoType(v); if (v === "practice") { setNewMotoClass(""); setSelectedRiderIds(new Set()); } }}>
                       <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="heat">Heat</SelectItem>
                         <SelectItem value="lcq">LCQ</SelectItem>
                         <SelectItem value="main">Main</SelectItem>
+                        <SelectItem value="practice">Practice</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Race Class</label>
+                    <label className="text-sm font-medium">
+                      Race Class
+                      {newMotoType === "practice" && <span className="ml-1 text-muted-foreground font-normal text-xs">(optional)</span>}
+                    </label>
                     <Select
                       value={newMotoClass}
-                      onValueChange={v => { setNewMotoClass(v); setSelectedRiderIds(new Set()); }}
+                      onValueChange={v => { setNewMotoClass(v === "__all__" ? "" : v); setSelectedRiderIds(new Set()); }}
                     >
-                      <SelectTrigger className="h-9"><SelectValue placeholder="Select class" /></SelectTrigger>
+                      <SelectTrigger className="h-9"><SelectValue placeholder={newMotoType === "practice" ? "All Classes / Open" : "Select class"} /></SelectTrigger>
                       <SelectContent>
+                        {newMotoType === "practice" && (
+                          <SelectItem value="__all__">All Classes / Open</SelectItem>
+                        )}
                         {(event?.raceClasses ?? []).map(cls => (
                           <SelectItem key={cls} value={cls}>{cls}</SelectItem>
                         ))}
@@ -1841,6 +1848,12 @@ export default function Motos() {
 
                 {/* Rider picker */}
                 <div className="space-y-2">
+                  {newMotoType === "practice" ? (
+                    <div className="border rounded-md bg-muted/30 py-4 px-4 text-center text-sm text-muted-foreground">
+                      Practice is open to all checked-in riders — no gate picks needed.
+                    </div>
+                  ) : (
+                  <>
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium flex items-center gap-1.5">
                       <Users size={14} /> Riders
@@ -1906,6 +1919,8 @@ export default function Motos() {
                       </div>
                     </ScrollArea>
                   )}
+                  </>
+                  )}
                 </div>
               </div>
 
@@ -1915,7 +1930,7 @@ export default function Motos() {
                 </Button>
                 <Button
                   onClick={handleCreateMoto}
-                  disabled={createMotoMutation.isPending || !newMotoName.trim() || !newMotoClass}
+                  disabled={createMotoMutation.isPending || !newMotoName.trim() || (newMotoType !== "practice" && !newMotoClass)}
                   className="font-heading uppercase tracking-wider"
                 >
                   {createMotoMutation.isPending ? "Creating..." : "Create Moto"}
@@ -2427,11 +2442,10 @@ export default function Motos() {
 
         {viewMode === "run-order" && !isLoading && (() => {
           const runOrderMotos = [...(motos ?? [])]
-            .filter(m => m.type !== "practice")
             .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
           if (!runOrderMotos.length) return null;
           const typeLabel = (type: string) =>
-            type === "main" ? "Main Event" : type === "lcq" ? "LCQ" : isSupercrossFormat ? "Heat" : "Moto";
+            type === "main" ? "Main Event" : type === "lcq" ? "LCQ" : type === "practice" ? "Practice" : isSupercrossFormat ? "Heat" : "Moto";
           return (
             <>
             <div id="heat-sheet-print" aria-hidden="true">
@@ -2571,9 +2585,11 @@ export default function Motos() {
                               ? "bg-primary/10 text-primary border-primary/30"
                               : moto.type === "lcq"
                               ? "bg-orange-500/10 text-orange-600 border-orange-500/30"
+                              : moto.type === "practice"
+                              ? "bg-sky-500/10 text-sky-600 border-sky-500/30"
                               : "bg-muted text-muted-foreground border-border"
                           }`}>
-                            {moto.type === "main" ? "Main" : moto.type === "lcq" ? "LCQ" : isSupercrossFormat ? "Heat" : "Moto"}
+                            {moto.type === "main" ? "Main" : moto.type === "lcq" ? "LCQ" : moto.type === "practice" ? "Practice" : isSupercrossFormat ? "Heat" : "Moto"}
                           </span>
                         </TableCell>
                         <TableCell className="text-center">
@@ -2610,9 +2626,9 @@ export default function Motos() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {[...Array(4)].map((_, i) => <Card key={i} className="h-64 animate-pulse" />)}
           </div>
-        ) : viewMode === "grid" && motos?.filter(m => m.type !== "practice").length ? (
+        ) : viewMode === "grid" && motos?.length ? (
         <div className="space-y-0">
-          {motos.filter(m => m.type !== "practice" && (classFilter === "schedule" || m.raceClass === classFilter)).sort((a, b) => {
+          {motos.filter(m => m.type === "practice" ? classFilter === "schedule" : (classFilter === "schedule" || m.raceClass === classFilter)).sort((a, b) => {
               const rank = (s: string) => s === "in_progress" ? 0 : s === "scheduled" ? 1 : s === "completed" ? 2 : 3;
               const rd = rank(a.status) - rank(b.status);
               if (rd !== 0) return rd;
@@ -2630,13 +2646,15 @@ export default function Motos() {
                   <div className="min-w-0">
                     <CardTitle className="font-heading uppercase text-lg text-white leading-tight truncate">{moto.name}</CardTitle>
                     <div className="flex items-center gap-2 text-xs text-sidebar-foreground/70 uppercase tracking-widest">
-                      <span className="truncate">{moto.raceClass}</span>
+                      <span className="truncate">{moto.raceClass || (moto.type === "practice" ? "All Classes / Open" : "")}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider border shrink-0 ${
                         moto.type === "main"
                           ? "bg-primary/30 text-primary border-primary/40"
+                          : moto.type === "practice"
+                          ? "bg-sky-500/20 text-sky-300 border-sky-400/40"
                           : "bg-white/10 text-sidebar-foreground/80 border-white/20"
                       }`}>
-                        {moto.type === "main" ? "Main Event" : isSupercrossFormat ? "Heat" : "Moto"}
+                        {moto.type === "main" ? "Main Event" : moto.type === "practice" ? "Practice" : isSupercrossFormat ? "Heat" : "Moto"}
                       </span>
                     </div>
                   </div>
@@ -2672,7 +2690,11 @@ export default function Motos() {
 
               <CardContent className="p-0 flex-1 flex flex-col">
                 {/* Lineup table */}
-                {moto.type === "heat" ? (
+                {moto.type === "practice" ? (
+                  <div className="flex-1 flex items-center justify-center px-4 py-6 text-center text-sm text-muted-foreground">
+                    Open to all checked-in riders — no gate assignment needed.
+                  </div>
+                ) : moto.type === "heat" ? (
                   <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === moto.id}>
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">

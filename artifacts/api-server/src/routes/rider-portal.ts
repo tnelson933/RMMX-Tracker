@@ -11,6 +11,7 @@ import {
   practiceSessionsTable,
   registrationsTable,
   lapCrossingsTable,
+  checkinsTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql } from "drizzle-orm";
 
@@ -664,7 +665,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 
   if (events.length === 0) return res.json({ familyRiderIds, events: [] });
 
-  // Fetch all non-practice motos for these events
+  // Fetch all race motos (non-practice) for these events
   const motos = await db
     .select()
     .from(motosTable)
@@ -673,6 +674,28 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       ne(motosTable.type, "practice"),
     ))
     .orderBy(asc(motosTable.motoNumber));
+
+  // Fetch practice motos for these events (shown for checked-in riders)
+  const practiceMotos = await db
+    .select()
+    .from(motosTable)
+    .where(and(
+      inArray(motosTable.eventId, eventIds),
+      eq(motosTable.type, "practice"),
+    ))
+    .orderBy(asc(motosTable.motoNumber));
+
+  // Fetch checkins to know which family riders are checked into each event
+  const familyCheckins = await db
+    .select({ riderId: checkinsTable.riderId, eventId: checkinsTable.eventId })
+    .from(checkinsTable)
+    .where(and(
+      inArray(checkinsTable.riderId, familyRiderIds),
+      inArray(checkinsTable.eventId, eventIds),
+      eq(checkinsTable.checkedIn, true),
+    ));
+
+  const checkedInEventIds = new Set(familyCheckins.map(c => c.eventId));
 
   // Build response grouped by event (one section per event regardless of how many family members)
   const results = events.map(event => {
@@ -684,6 +707,26 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     }));
 
     const eventMotos = motos.filter(m => m.eventId === event.id);
+    const isCheckedIn = checkedInEventIds.has(event.id);
+
+    // Practice motos — shown to any family member checked into this event
+    const eventPracticeMotos = practiceMotos
+      .filter(m => m.eventId === event.id)
+      .map(moto => ({
+        motoId: moto.id,
+        motoNumber: moto.motoNumber,
+        name: moto.name,
+        type: moto.type,
+        raceClass: moto.raceClass,
+        status: moto.status,
+        lapCount: moto.lapCount,
+        scheduledTime: moto.scheduledTime ?? null,
+        startedAt: moto.startedAt?.toISOString() ?? null,
+        completedAt: moto.completedAt?.toISOString() ?? null,
+        isAnyFamilyMemberInMoto: isCheckedIn,
+        familyGates: [] as { gate: number; riderId: number; riderName: string }[],
+        lineup: [] as { gate: number; riderId: number; riderName: string; bibNumber: string | null; isFamilyMember: boolean }[],
+      }));
 
     const motosWithFamily = eventMotos.map(moto => {
       const lineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{
@@ -718,6 +761,10 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       };
     });
 
+    // Combine race motos and practice motos, sorted by motoNumber
+    const allMotos = [...motosWithFamily, ...eventPracticeMotos]
+      .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+
     return {
       eventId: event.id,
       eventName: event.name,
@@ -726,7 +773,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       eventLocation: event.location ?? null,
       status: event.status,
       registrations,
-      motos: motosWithFamily,
+      motos: allMotos,
     };
   });
 

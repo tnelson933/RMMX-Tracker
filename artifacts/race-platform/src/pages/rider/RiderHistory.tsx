@@ -1042,6 +1042,7 @@ function motoTypeLabel(type: string) {
   if (type === "heat") return "Heat";
   if (type === "main") return "Main Event";
   if (type === "lcq") return "LCQ";
+  if (type === "practice") return "Practice";
   return type;
 }
 
@@ -1074,9 +1075,14 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
             <span className={`text-sm font-medium truncate block ${isDone ? "text-muted-foreground" : "text-foreground"}`}>
               {moto.name}
             </span>
-            {moto.raceClass && (
+            {moto.type === "practice" ? (
+              <span className="text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-600 border border-sky-400/30 mr-1">Practice</span>
+                {moto.raceClass ?? "All Classes"}
+              </span>
+            ) : moto.raceClass ? (
               <span className="text-xs text-muted-foreground">{moto.raceClass} · {motoTypeLabel(moto.type)}</span>
-            )}
+            ) : null}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {(isLive || isNowUp) && (
@@ -1165,7 +1171,15 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
         </button>
       </div>
 
-      {/* Gate highlight — one card per family member */}
+      {/* Gate highlight — one card per family member (or practice note) */}
+      {moto.type === "practice" ? (
+        <div className="px-4 py-3 bg-background border-b">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-sky-500/10 text-sky-600 border border-sky-400/30">Practice</span>
+            <span className="text-sm text-muted-foreground">Open to all checked-in riders — no gate assignment</span>
+          </div>
+        </div>
+      ) : (
       <div className="px-4 py-3 bg-background border-b">
         <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold mb-2">
           {moto.familyGates.length === 1 ? "Starting Gate" : "Your Gates"}
@@ -1194,6 +1208,7 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
           ))}
         </div>
       </div>
+      )}
 
       {/* Lineup (expandable) */}
       {open && moto.lineup.length > 0 && (
@@ -1236,7 +1251,7 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
         </div>
       )}
 
-      {!open && (
+      {!open && moto.type !== "practice" && (
         <button
           onClick={() => setOpen(true)}
           className="w-full text-xs text-muted-foreground hover:text-foreground py-2 transition-colors text-center border-t"
@@ -1498,12 +1513,17 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                               <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 shrink-0">Next</span>
                             )}
                           </div>
-                          {moto.raceClass && (
+                          {moto.type === "practice" ? (
+                            <span className="text-xs text-muted-foreground">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-600 border border-sky-400/30 mr-1">Practice</span>
+                              {moto.raceClass ?? "All Classes"}
+                            </span>
+                          ) : moto.raceClass ? (
                             <span className="text-xs text-muted-foreground">
                               {moto.raceClass} · {motoTypeLabel(moto.type)}
                               {riderCount > 0 && ` · ${riderCount} riders`}
                             </span>
-                          )}
+                          ) : null}
                         </div>
 
                         {/* Status */}
