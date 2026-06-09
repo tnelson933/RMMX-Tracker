@@ -508,6 +508,13 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
     crossingsByMoto.get(c.motoId)!.push(c);
   }
 
+  // Track which practice motos this specific rider has crossings in (by riderId or RFID)
+  const riderCrossingMotoIds = new Set<number>(
+    crossings
+      .filter(c => c.riderId === riderId || (rider.rfidNumber != null && c.rfidNumber === rider.rfidNumber))
+      .map(c => c.motoId)
+  );
+
   const result = [];
 
   for (const event of events) {
@@ -516,6 +523,9 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
 
     const eventMotos = practiceMotos.filter(m => {
       if (m.eventId !== event.id) return false;
+      // Always include motos where this rider has crossings, regardless of class tag
+      if (riderCrossingMotoIds.has(m.id)) return true;
+      // For motos without rider crossings (e.g. live sessions not yet started), apply class filter
       if (!riderClass) return true;
       const mc = (m.raceClass as string | null) ?? "";
       return mc === riderClass || mc === "" || mc === "All Classes";
