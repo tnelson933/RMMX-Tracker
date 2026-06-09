@@ -32,14 +32,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 
 const ALL_CLASSES = "All Classes";
 
@@ -441,7 +433,7 @@ export default function EventPractice() {
               type: "practice",
               raceClass: selectedClass === ALL_CLASSES ? undefined : selectedClass,
               motoNumber: 0,
-            },
+            } as any,
           },
           {
             onSuccess: () => {

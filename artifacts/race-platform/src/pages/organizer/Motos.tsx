@@ -1492,7 +1492,7 @@ export default function Motos() {
 
     const lapCountNum = newMotoLapCount.trim() ? parseInt(newMotoLapCount.trim(), 10) : undefined;
     createMotoMutation.mutate(
-      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: newMotoClass || undefined, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum } },
+      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: (newMotoClass || undefined) as string, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
