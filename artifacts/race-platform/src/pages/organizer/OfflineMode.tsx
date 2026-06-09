@@ -193,7 +193,7 @@ function PackageInfoBanner({ builtAt, version, etag, lastEtag }: { builtAt: stri
 }
 
 export default function OfflineMode() {
-  const { data: pkgInfo, isError: pkgError } = useGetOfflinePackageInfo({ query: { retry: false } as any });
+  const { data: pkgInfo, isError: pkgError } = useGetOfflinePackageInfo({ query: { staleTime: 60_000 } as any });
 
   const [lastDownloadedEtag, setLastDownloadedEtag] = useState<string | null>(() =>
     localStorage.getItem(LAST_DOWNLOAD_KEY),
