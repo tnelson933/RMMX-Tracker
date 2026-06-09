@@ -21,6 +21,7 @@ import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
   type DragEndEvent, type DragStartEvent,
+  pointerWithin,
 } from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { LiveBroadcast } from "./LiveBroadcast";
@@ -775,7 +776,7 @@ function DroppableTrashZone({ visible }: { visible: boolean }) {
   return (
     <div
       ref={setNodeRef}
-      className={`fixed right-6 top-1/2 -translate-y-1/2 z-50 flex flex-col items-center justify-center gap-2 w-20 h-20 rounded-2xl border-2 transition-all duration-150 pointer-events-auto ${
+      className={`fixed right-4 bottom-6 z-50 flex flex-col items-center justify-center gap-1 sm:gap-2 w-14 h-14 sm:w-20 sm:h-20 rounded-2xl border-2 transition-all duration-150 pointer-events-auto ${
         visible ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
       } ${
         isOver
@@ -783,9 +784,9 @@ function DroppableTrashZone({ visible }: { visible: boolean }) {
           : "bg-background border-destructive/40 text-destructive/60 shadow-lg"
       }`}
     >
-      <Trash2 size={isOver ? 28 : 22} className="transition-all" />
-      <span className="text-[10px] font-heading font-bold uppercase tracking-wider leading-none">
-        {isOver ? "Drop to Remove" : "Remove"}
+      <Trash2 size={isOver ? 22 : 18} className="transition-all sm:[--size:28px]" />
+      <span className="text-[9px] sm:text-[10px] font-heading font-bold uppercase tracking-wider leading-none text-center">
+        {isOver ? "Drop!" : "Remove"}
       </span>
     </div>
   );
@@ -2204,7 +2205,7 @@ export default function Motos() {
         </div>
       )}
 
-      <DndContext sensors={sensors} onDragStart={handleRiderDragStart} onDragEnd={handleRiderDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleRiderDragStart} onDragEnd={handleRiderDragEnd}>
       <div className="flex gap-5 items-start">
 
         {/* ── Left: Rider Pool ─────────────────────────────────────────── */}
