@@ -17,6 +17,19 @@ type BridgeStatus = "checking" | "running" | "offline";
 type SetupMethod  = "auto" | "manual";
 type ReaderType   = "impinj-r700" | "zebra-fx7500" | "generic";
 
+// ── Small presentational helpers — defined OUTSIDE so they're never remounted ──
+const StepBadge = ({ n }: { n: number }) => (
+  <div className="w-8 h-8 shrink-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-heading font-bold text-sm">
+    {n}
+  </div>
+);
+
+const MiniStep = ({ n }: { n: number }) => (
+  <div className="w-5 h-5 shrink-0 rounded-full bg-muted border text-xs font-bold flex items-center justify-center mt-0.5">
+    {n}
+  </div>
+);
+
 export default function ReaderSetup() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -31,22 +44,22 @@ export default function ReaderSetup() {
   const [tech,        setTech]        = useState<"rfid" | "mylaps">("rfid");
   const [setupMethod, setSetupMethod] = useState<SetupMethod>("auto");
 
-  // ── Shared reader fields (used by both auto and manual paths) ────────────
+  // ── Shared reader fields ──────────────────────────────────────────────────
   const [readerType, setReaderType] = useState<ReaderType>("impinj-r700");
   const [readerIp,   setReaderIp]   = useState("");
 
   // ── Copy states ──────────────────────────────────────────────────────────
-  const [copiedUrl,  setCopiedUrl]  = useState(false);
-  const [copiedBody, setCopiedBody] = useState(false);
-  const [copiedCmd,  setCopiedCmd]  = useState(false);
+  const [copiedUrl,       setCopiedUrl]       = useState(false);
+  const [copiedBody,      setCopiedBody]      = useState(false);
+  const [copiedCmd,       setCopiedCmd]       = useState(false);
+  const [copiedManualUrl, setCopiedManualUrl] = useState(false);
 
-  // ── Bridge detection (auto path only) ────────────────────────────────────
+  // ── Bridge detection ──────────────────────────────────────────────────────
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
 
   useEffect(() => {
     if (tech !== "rfid" || setupMethod !== "auto") return;
     setBridgeStatus("checking");
-
     const check = async () => {
       try {
         const res = await fetch(`${BRIDGE_URL}/api-status`);
@@ -55,13 +68,12 @@ export default function ReaderSetup() {
         setBridgeStatus("offline");
       }
     };
-
     check();
     const id = setInterval(check, 5000);
     return () => clearInterval(id);
   }, [tech, setupMethod]);
 
-  // ── Reader auto-configure ────────────────────────────────────────────────
+  // ── Reader auto-configure ─────────────────────────────────────────────────
   const [configuring,  setConfiguring]  = useState(false);
   const [configResult, setConfigResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -87,7 +99,7 @@ export default function ReaderSetup() {
     }
   };
 
-  // ── Test crossing ────────────────────────────────────────────────────────
+  // ── Test crossing ─────────────────────────────────────────────────────────
   const [testValue,   setTestValue]   = useState("");
   const [testResult,  setTestResult]  = useState<{ ok: boolean; message: string } | null>(null);
   const [testLoading, setTestLoading] = useState(false);
@@ -108,9 +120,8 @@ export default function ReaderSetup() {
       const data = await res.json();
       if (res.ok) {
         const lap = data.lapNumber ?? data.results?.[0]?.lapNumber;
-        const msg = lap ? `Lap ${lap} recorded` : "Crossing accepted";
-        setTestResult({ ok: true, message: msg });
-        toast({ title: "✅ Working!", description: msg });
+        setTestResult({ ok: true, message: lap ? `Lap ${lap} recorded` : "Crossing accepted" });
+        toast({ title: "✅ Working!" });
       } else {
         const raw = data.error ?? "Crossing rejected";
         const msg = raw === "No active moto" || raw.includes("no active")
@@ -130,158 +141,91 @@ export default function ReaderSetup() {
     }
   };
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  const copyUrl  = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedUrl(true);  setTimeout(() => setCopiedUrl(false),  2000); };
-  const copyBody = () => { navigator.clipboard.writeText(AMBRC_BODY);       setCopiedBody(true); setTimeout(() => setCopiedBody(false), 2000); };
-  const copyCmd  = () => { navigator.clipboard.writeText(bridgeCmd);        setCopiedCmd(true);  setTimeout(() => setCopiedCmd(false),  2000); };
+  // ── Copy helpers ──────────────────────────────────────────────────────────
+  const copyUrl       = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedUrl(true);       setTimeout(() => setCopiedUrl(false),       2000); };
+  const copyBody      = () => { navigator.clipboard.writeText(AMBRC_BODY);       setCopiedBody(true);      setTimeout(() => setCopiedBody(false),      2000); };
+  const copyCmd       = () => { navigator.clipboard.writeText(bridgeCmd);        setCopiedCmd(true);       setTimeout(() => setCopiedCmd(false),       2000); };
+  const copyManualUrl = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedManualUrl(true); setTimeout(() => setCopiedManualUrl(false), 2000); };
 
-  const Step = ({ n }: { n: number }) => (
-    <div className="w-8 h-8 shrink-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-heading font-bold text-sm">
-      {n}
-    </div>
-  );
+  // ── Bridge status dot ─────────────────────────────────────────────────────
+  const bridgeDot =
+    bridgeStatus === "checking" ? <RefreshCw size={12} className="animate-spin text-muted-foreground" /> :
+    bridgeStatus === "running"  ? <Circle size={10} className="fill-green-500 text-green-500" /> :
+                                  <Circle size={10} className="fill-amber-400 text-amber-400" />;
 
-  const BridgeDot = () => {
-    if (bridgeStatus === "checking") return <RefreshCw size={12} className="animate-spin text-muted-foreground" />;
-    if (bridgeStatus === "running")  return <Circle size={10} className="fill-green-500 text-green-500" />;
-    return <Circle size={10} className="fill-amber-400 text-amber-400" />;
-  };
-
-  // ── Manual setup instructions (reader-specific) ──────────────────────────
+  // ── Manual instructions rows (computed, not a component) ──────────────────
   const manualReaderUrl =
     readerType === "impinj-r700"  ? `https://${readerIp || "READER_IP"}` :
     readerType === "zebra-fx7500" ? `http://${readerIp || "READER_IP"}:8080` :
-    `http://${readerIp || "READER_IP"}`;
+                                    `http://${readerIp || "READER_IP"}`;
 
-  const ManualInstructions = () => {
-    const [copiedManualUrl, setCopiedManualUrl] = useState(false);
-    const copyManualUrl = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedManualUrl(true); setTimeout(() => setCopiedManualUrl(false), 2000); };
+  const urlCopyButton = (
+    <button onClick={copyManualUrl} className="shrink-0 flex items-center gap-1 rounded border bg-background px-2 py-1.5 text-xs font-medium hover:bg-muted transition-colors">
+      {copiedManualUrl ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
+      {copiedManualUrl ? "Copied" : "Copy"}
+    </button>
+  );
 
-    const rows: Array<{ step: number; label: string; content: React.ReactNode }> =
-      readerType === "impinj-r700" ? [
-        { step: 1, label: "Open the reader's web interface",
-          content: <a href={manualReaderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-mono text-xs text-primary underline underline-offset-2 break-all">{manualReaderUrl} <ExternalLink size={11} /></a> },
-        { step: 2, label: "Log in",
-          content: <span className="text-xs text-muted-foreground">Username <strong className="text-foreground font-mono">admin</strong> · Password <strong className="text-foreground font-mono">change#me</strong> (Impinj factory default — change this if you've updated it)</span> },
-        { step: 3, label: "Navigate to Profiles",
-          content: <span className="text-xs text-muted-foreground">In the left sidebar choose <strong className="text-foreground">Profiles</strong>, then click <strong className="text-foreground">New Profile</strong>.</span> },
-        { step: 4, label: "Set the HTTP destination",
-          content: <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Under <strong className="text-foreground">Event Handlers → Tag Inventory Event → Actions</strong>, choose <strong className="text-foreground">HTTP</strong> and paste this URL:</p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 font-mono text-xs bg-background border rounded px-2.5 py-1.5 break-all text-primary">{facilityEndpoint}</code>
-              <button onClick={copyManualUrl} className="shrink-0 flex items-center gap-1 rounded border bg-background px-2 py-1.5 text-xs font-medium hover:bg-muted transition-colors">
-                {copiedManualUrl ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
-                {copiedManualUrl ? "Copied" : "Copy"}
-              </button>
-            </div>
-          </div> },
-        { step: 5, label: "Set method and header",
-          content: <span className="text-xs text-muted-foreground">Method: <strong className="text-foreground">POST</strong> · Add header <strong className="text-foreground font-mono">Content-Type: application/json</strong></span> },
-        { step: 6, label: "Save and activate",
-          content: <span className="text-xs text-muted-foreground">Click <strong className="text-foreground">Save</strong>, then set this profile as <strong className="text-foreground">Active</strong>. The reader will start sending laps immediately.</span> },
-      ] : readerType === "zebra-fx7500" ? [
-        { step: 1, label: "Open the reader's web interface",
-          content: <a href={manualReaderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-mono text-xs text-primary underline underline-offset-2 break-all">{manualReaderUrl} <ExternalLink size={11} /></a> },
-        { step: 2, label: "Log in",
-          content: <span className="text-xs text-muted-foreground">Username <strong className="text-foreground font-mono">admin</strong> · Password <strong className="text-foreground font-mono">change#me</strong> (Zebra factory default — change this if you've updated it)</span> },
-        { step: 3, label: "Navigate to IoT Connector",
-          content: <span className="text-xs text-muted-foreground">In the top menu choose <strong className="text-foreground">IoT Connector</strong>, then click <strong className="text-foreground">Add Profile</strong>.</span> },
-        { step: 4, label: "Set the HTTP output URL",
-          content: <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Under <strong className="text-foreground">HTTP Output</strong>, enable it and paste this URL:</p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 font-mono text-xs bg-background border rounded px-2.5 py-1.5 break-all text-primary">{facilityEndpoint}</code>
-              <button onClick={copyManualUrl} className="shrink-0 flex items-center gap-1 rounded border bg-background px-2 py-1.5 text-xs font-medium hover:bg-muted transition-colors">
-                {copiedManualUrl ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
-                {copiedManualUrl ? "Copied" : "Copy"}
-              </button>
-            </div>
-          </div> },
-        { step: 5, label: "Set method and header",
-          content: <span className="text-xs text-muted-foreground">Method: <strong className="text-foreground">POST</strong> · Add header <strong className="text-foreground font-mono">Content-Type: application/json</strong></span> },
-        { step: 6, label: "Save and start the profile",
-          content: <span className="text-xs text-muted-foreground">Click <strong className="text-foreground">Save</strong> then <strong className="text-foreground">Start</strong>. The reader will start sending laps immediately.</span> },
-      ] : /* generic */ [
-        { step: 1, label: "Open your reader's web interface",
-          content: <span className="text-xs text-muted-foreground">In a browser on the same network, navigate to <strong className="text-foreground font-mono">{manualReaderUrl}</strong> or the IP shown on the reader's display.</span> },
-        { step: 2, label: "Find the HTTP output settings",
-          content: <span className="text-xs text-muted-foreground">Look for settings labelled <strong className="text-foreground">HTTP Output</strong>, <strong className="text-foreground">Webhook</strong>, <strong className="text-foreground">IoT Connector</strong>, or <strong className="text-foreground">Tag Event Action</strong>. Enable it.</span> },
-        { step: 3, label: "Enter the timing URL",
-          content: <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">Paste this URL into the destination / endpoint field:</p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 font-mono text-xs bg-background border rounded px-2.5 py-1.5 break-all text-primary">{facilityEndpoint}</code>
-              <button onClick={copyManualUrl} className="shrink-0 flex items-center gap-1 rounded border bg-background px-2 py-1.5 text-xs font-medium hover:bg-muted transition-colors">
-                {copiedManualUrl ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
-                {copiedManualUrl ? "Copied" : "Copy"}
-              </button>
-            </div>
-          </div> },
-        { step: 4, label: "Set method and content type",
-          content: <span className="text-xs text-muted-foreground">Method: <strong className="text-foreground">POST</strong> · Header: <strong className="text-foreground font-mono">Content-Type: application/json</strong>. The payload format varies by reader — check your reader's manual or contact us for help.</span> },
-        { step: 5, label: "Save",
-          content: <span className="text-xs text-muted-foreground">Save the settings. The reader will begin forwarding tag reads immediately.</span> },
-      ];
+  const urlField = (
+    <div className="flex items-center gap-2">
+      <code className="flex-1 font-mono text-xs bg-background border rounded px-2.5 py-1.5 break-all text-primary">{facilityEndpoint}</code>
+      {urlCopyButton}
+    </div>
+  );
 
-    return (
-      <div className="space-y-3">
-        {/* Reader type picker */}
-        <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground">Select your reader model:</p>
-          <div className="flex flex-wrap gap-2">
-            {(["impinj-r700", "zebra-fx7500", "generic"] as const).map(rt => (
-              <button key={rt} onClick={() => setReaderType(rt)}
-                className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${readerType === rt ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
-                {rt === "impinj-r700" ? "Impinj R700" : rt === "zebra-fx7500" ? "Zebra FX7500" : "Other / Generic"}
-              </button>
-            ))}
-          </div>
-        </div>
+  type Row = { step: number; label: string; content: React.ReactNode };
 
-        {/* IP field (optional for generic) */}
-        {readerType !== "generic" && (
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">
-              Reader's IP address <span className="text-muted-foreground/60">(check your router or the reader's display)</span>
-            </label>
-            <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
-              placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-xs" />
-          </div>
-        )}
+  const manualRows: Row[] =
+    readerType === "impinj-r700" ? [
+      { step: 1, label: "Open the reader's web interface",
+        content: <a href={manualReaderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-mono text-xs text-primary underline underline-offset-2 break-all">{manualReaderUrl} <ExternalLink size={11} /></a> },
+      { step: 2, label: "Log in",
+        content: <span className="text-xs text-muted-foreground">Username <strong className="text-foreground font-mono">admin</strong> · Password <strong className="text-foreground font-mono">change#me</strong> (Impinj factory default — update if you changed it)</span> },
+      { step: 3, label: "Navigate to Profiles",
+        content: <span className="text-xs text-muted-foreground">In the left sidebar choose <strong className="text-foreground">Profiles</strong>, then click <strong className="text-foreground">New Profile</strong>.</span> },
+      { step: 4, label: "Set the HTTP destination",
+        content: <div className="space-y-1.5"><p className="text-xs text-muted-foreground">Under <strong className="text-foreground">Event Handlers → Tag Inventory Event → Actions</strong>, choose <strong className="text-foreground">HTTP</strong> and paste:</p>{urlField}</div> },
+      { step: 5, label: "Set method and header",
+        content: <span className="text-xs text-muted-foreground">Method: <strong className="text-foreground">POST</strong> · Add header <strong className="text-foreground font-mono">Content-Type: application/json</strong></span> },
+      { step: 6, label: "Save and activate",
+        content: <span className="text-xs text-muted-foreground">Click <strong className="text-foreground">Save</strong>, then set this profile as <strong className="text-foreground">Active</strong>. The reader starts sending laps immediately.</span> },
+    ] : readerType === "zebra-fx7500" ? [
+      { step: 1, label: "Open the reader's web interface",
+        content: <a href={manualReaderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-mono text-xs text-primary underline underline-offset-2 break-all">{manualReaderUrl} <ExternalLink size={11} /></a> },
+      { step: 2, label: "Log in",
+        content: <span className="text-xs text-muted-foreground">Username <strong className="text-foreground font-mono">admin</strong> · Password <strong className="text-foreground font-mono">change#me</strong> (Zebra factory default — update if you changed it)</span> },
+      { step: 3, label: "Navigate to IoT Connector",
+        content: <span className="text-xs text-muted-foreground">In the top menu choose <strong className="text-foreground">IoT Connector</strong>, then click <strong className="text-foreground">Add Profile</strong>.</span> },
+      { step: 4, label: "Set the HTTP output URL",
+        content: <div className="space-y-1.5"><p className="text-xs text-muted-foreground">Under <strong className="text-foreground">HTTP Output</strong>, enable it and paste:</p>{urlField}</div> },
+      { step: 5, label: "Set method and header",
+        content: <span className="text-xs text-muted-foreground">Method: <strong className="text-foreground">POST</strong> · Add header <strong className="text-foreground font-mono">Content-Type: application/json</strong></span> },
+      { step: 6, label: "Save and start the profile",
+        content: <span className="text-xs text-muted-foreground">Click <strong className="text-foreground">Save</strong> then <strong className="text-foreground">Start</strong>. The reader starts sending laps immediately.</span> },
+    ] : [
+      { step: 1, label: "Open your reader's web interface",
+        content: <span className="text-xs text-muted-foreground">In a browser on the same network, navigate to <strong className="text-foreground font-mono">{manualReaderUrl}</strong> or the IP shown on the reader's display.</span> },
+      { step: 2, label: "Find the HTTP output settings",
+        content: <span className="text-xs text-muted-foreground">Look for settings labelled <strong className="text-foreground">HTTP Output</strong>, <strong className="text-foreground">Webhook</strong>, <strong className="text-foreground">IoT Connector</strong>, or <strong className="text-foreground">Tag Event Action</strong>. Enable it.</span> },
+      { step: 3, label: "Enter the timing URL",
+        content: <div className="space-y-1.5"><p className="text-xs text-muted-foreground">Paste this URL into the destination / endpoint field:</p>{urlField}</div> },
+      { step: 4, label: "Set method and content type",
+        content: <span className="text-xs text-muted-foreground">Method: <strong className="text-foreground">POST</strong> · Header: <strong className="text-foreground font-mono">Content-Type: application/json</strong>. Payload format varies by reader — check your reader's manual if needed.</span> },
+      { step: 5, label: "Save",
+        content: <span className="text-xs text-muted-foreground">Save the settings. The reader will begin forwarding tag reads immediately.</span> },
+    ];
 
-        {/* Step-by-step instructions */}
-        <div className="border rounded-lg divide-y overflow-hidden">
-          {rows.map(({ step, label, content }) => (
-            <div key={step} className="flex gap-3 px-4 py-3">
-              <div className="w-5 h-5 shrink-0 rounded-full bg-muted border text-xs font-bold flex items-center justify-center mt-0.5">
-                {step}
-              </div>
-              <div className="space-y-1.5 min-w-0">
-                <p className="text-sm font-medium">{label}</p>
-                <div>{content}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <p className="text-xs text-muted-foreground">
-          Settings are saved permanently on the reader — you only need to do this once. After saving, the reader will work on any network that has internet access.
-        </p>
-      </div>
-    );
-  };
-
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="p-8 max-w-2xl mx-auto space-y-8">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* Header */}
       <div>
         <h1 className="text-3xl font-heading font-bold uppercase tracking-tight">Reader Setup</h1>
         <p className="text-muted-foreground mt-1">Get your timing hardware connected in a few minutes.</p>
       </div>
 
-      {/* ── Your URL — always visible ───────────────────────────────────────── */}
+      {/* Timing URL */}
       <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-5 space-y-3">
         <div>
           <p className="font-heading font-bold uppercase tracking-wider text-sm">Your Timing URL</p>
@@ -300,7 +244,7 @@ export default function ReaderSetup() {
         </div>
       </div>
 
-      {/* ── Hardware type toggle ────────────────────────────────────────────── */}
+      {/* Hardware toggle */}
       <div className="space-y-3">
         <p className="text-sm font-medium">What timing hardware do you have?</p>
         <div className="grid grid-cols-2 gap-3">
@@ -327,7 +271,7 @@ export default function ReaderSetup() {
         </div>
       </div>
 
-      {/* ── Steps ──────────────────────────────────────────────────────────── */}
+      {/* Steps */}
       <div className="border rounded-xl bg-card overflow-hidden divide-y">
         <div className="px-5 py-3 bg-muted/30 border-b">
           <p className="font-heading font-bold uppercase tracking-wider text-sm">
@@ -337,9 +281,9 @@ export default function ReaderSetup() {
 
         {tech === "rfid" ? (
           <>
-            {/* Step 1 — Tag riders */}
+            {/* Step 1 */}
             <div className="flex gap-4 p-5">
-              <Step n={1} />
+              <StepBadge n={1} />
               <div className="space-y-2 min-w-0">
                 <p className="font-semibold">Attach a tag to each rider</p>
                 <p className="text-sm text-muted-foreground">
@@ -352,9 +296,9 @@ export default function ReaderSetup() {
               </div>
             </div>
 
-            {/* Step 2 — Configure reader */}
+            {/* Step 2 */}
             <div className="flex gap-4 p-5">
-              <Step n={2} />
+              <StepBadge n={2} />
               <div className="space-y-4 min-w-0 w-full">
                 <div>
                   <p className="font-semibold">Configure your reader</p>
@@ -363,7 +307,7 @@ export default function ReaderSetup() {
                   </p>
                 </div>
 
-                {/* Setup method toggle */}
+                {/* Method toggle */}
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => { setSetupMethod("auto"); setConfigResult(null); }}
@@ -381,13 +325,12 @@ export default function ReaderSetup() {
                   </button>
                 </div>
 
-                {/* ── Auto path ── */}
+                {/* ── Auto path ─────────────────────────────────────────────── */}
                 {setupMethod === "auto" && (
                   <div className="space-y-3">
-                    {/* Bridge status + download + command */}
                     <div className="border rounded-lg bg-muted/20 p-4 space-y-3">
                       <div className="flex items-center gap-2 text-sm">
-                        <BridgeDot />
+                        {bridgeDot}
                         <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
                           {bridgeStatus === "checking" && "Checking for bridge…"}
                           {bridgeStatus === "running"  && "Bridge is running — form unlocked below"}
@@ -403,9 +346,7 @@ export default function ReaderSetup() {
                           <Download size={13} /> Download rfid_bridge.py
                         </a>
                         <div className="flex items-center gap-2">
-                          <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2 truncate">
-                            {bridgeCmd}
-                          </code>
+                          <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2 truncate">{bridgeCmd}</code>
                           <button onClick={copyCmd} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-2.5 py-2 text-xs font-medium hover:bg-muted transition-colors">
                             {copiedCmd ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
                             {copiedCmd ? "Copied" : "Copy"}
@@ -415,7 +356,6 @@ export default function ReaderSetup() {
                       </div>
                     </div>
 
-                    {/* Configure form */}
                     <div className={`border rounded-lg p-4 space-y-3 transition-opacity ${bridgeStatus === "running" ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         {bridgeStatus === "running" ? "Configure your reader" : "Start the bridge above first"}
@@ -451,7 +391,7 @@ export default function ReaderSetup() {
                         <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${configResult.ok ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
                           {configResult.ok
                             ? <CheckCircle2 size={16} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
-                            : <XCircle    size={16} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />}
+                            : <XCircle size={16} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />}
                           <p className={`text-xs font-medium ${configResult.ok ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"}`}>
                             {configResult.message}
                           </p>
@@ -465,14 +405,57 @@ export default function ReaderSetup() {
                   </div>
                 )}
 
-                {/* ── Manual path ── */}
-                {setupMethod === "manual" && <ManualInstructions />}
+                {/* ── Manual path (inlined — no sub-component) ──────────────── */}
+                {setupMethod === "manual" && (
+                  <div className="space-y-3">
+                    {/* Reader type */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">Select your reader model:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(["impinj-r700", "zebra-fx7500", "generic"] as const).map(rt => (
+                          <button key={rt} onClick={() => setReaderType(rt)}
+                            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${readerType === rt ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
+                            {rt === "impinj-r700" ? "Impinj R700" : rt === "zebra-fx7500" ? "Zebra FX7500" : "Other / Generic"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* IP field */}
+                    {readerType !== "generic" && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground">
+                          Reader's IP address <span className="text-muted-foreground/60">(check your router or the reader's display)</span>
+                        </label>
+                        <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
+                          placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-xs" />
+                      </div>
+                    )}
+
+                    {/* Step-by-step instructions */}
+                    <div className="border rounded-lg divide-y overflow-hidden">
+                      {manualRows.map(({ step, label, content }) => (
+                        <div key={step} className="flex gap-3 px-4 py-3">
+                          <MiniStep n={step} />
+                          <div className="space-y-1.5 min-w-0">
+                            <p className="text-sm font-medium">{label}</p>
+                            <div>{content}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <p className="text-xs text-muted-foreground">
+                      Settings are saved permanently on the reader — you only need to do this once. After saving, the reader will work on any network that has internet access.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Step 3 — Test */}
+            {/* Step 3 */}
             <div className="flex gap-4 p-5">
-              <Step n={3} />
+              <StepBadge n={3} />
               <div className="space-y-2 min-w-0">
                 <p className="font-semibold">Test before race day</p>
                 <p className="text-sm text-muted-foreground">
@@ -483,9 +466,9 @@ export default function ReaderSetup() {
           </>
         ) : (
           <>
-            {/* MyLaps Step 1 — Link transponders */}
+            {/* MyLaps Step 1 */}
             <div className="flex gap-4 p-5">
-              <Step n={1} />
+              <StepBadge n={1} />
               <div className="space-y-2 min-w-0">
                 <p className="font-semibold">Link transponders to riders</p>
                 <p className="text-sm text-muted-foreground">
@@ -497,9 +480,9 @@ export default function ReaderSetup() {
               </div>
             </div>
 
-            {/* MyLaps Step 2 — AMBrc */}
+            {/* MyLaps Step 2 */}
             <div className="flex gap-4 p-5">
-              <Step n={2} />
+              <StepBadge n={2} />
               <div className="space-y-3 min-w-0">
                 <p className="font-semibold">Set up AMBrc to send data here</p>
                 <p className="text-sm text-muted-foreground">
@@ -538,9 +521,9 @@ export default function ReaderSetup() {
               </div>
             </div>
 
-            {/* MyLaps Step 3 — Test */}
+            {/* MyLaps Step 3 */}
             <div className="flex gap-4 p-5">
-              <Step n={3} />
+              <StepBadge n={3} />
               <div className="space-y-2 min-w-0">
                 <p className="font-semibold">Test before race day</p>
                 <p className="text-sm text-muted-foreground">
@@ -552,7 +535,7 @@ export default function ReaderSetup() {
         )}
       </div>
 
-      {/* ── Test Connection ─────────────────────────────────────────────────── */}
+      {/* Test Connection */}
       <div className="border rounded-xl bg-card overflow-hidden">
         <div className="px-5 py-3 bg-muted/30 border-b">
           <p className="font-heading font-bold uppercase tracking-wider text-sm">Test Your Connection</p>
@@ -580,7 +563,7 @@ export default function ReaderSetup() {
             <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 ${testResult.ok ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
               {testResult.ok
                 ? <CheckCircle2 size={18} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
-                : <XCircle     size={18} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />}
+                : <XCircle size={18} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />}
               <div>
                 <p className={`font-semibold text-sm ${testResult.ok ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"}`}>
                   {testResult.ok ? "Working!" : "Not working"}
