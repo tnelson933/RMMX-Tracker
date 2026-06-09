@@ -1,15 +1,63 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  WifiOff, Download, PlayCircle, UploadCloud, AlertTriangle,
+  WifiOff, Download, UploadCloud, AlertTriangle,
   CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
+  Wifi, Loader2,
 } from "lucide-react";
 import { useGetOfflinePackageInfo } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const LAST_DOWNLOAD_KEY = "offline_package_last_downloaded_etag";
+
+// ── Local IP detection via WebRTC ICE candidate probe ─────────────────────────
+// The browser opens a local peer connection to gather ICE candidates, which
+// includes the machine's LAN IP without any external request.
+// Falls back gracefully when the browser blocks local IP discovery
+// (Chrome with mDNS obfuscation, strict privacy mode, etc.).
+function useLocalIp(): { ip: string | null; loading: boolean } {
+  const [ip, setIp] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let done = false;
+    let pc: RTCPeerConnection | null = null;
+
+    const finish = (found: string | null) => {
+      if (done) return;
+      done = true;
+      setIp(found);
+      setLoading(false);
+      pc?.close();
+    };
+
+    const timer = setTimeout(() => finish(null), 2000);
+
+    try {
+      pc = new RTCPeerConnection({ iceServers: [] });
+      pc.createDataChannel("");
+      pc.onicecandidate = (e) => {
+        if (!e.candidate) { finish(null); return; }
+        // Parse IPv4 address from the candidate string
+        const m = /(\d{1,3}(?:\.\d{1,3}){3})/.exec(e.candidate.candidate);
+        if (m && !m[1].startsWith("127.")) {
+          clearTimeout(timer);
+          finish(m[1]);
+        }
+      };
+      void pc.createOffer().then((offer) => pc!.setLocalDescription(offer));
+    } catch {
+      finish(null);
+      clearTimeout(timer);
+    }
+
+    return () => { clearTimeout(timer); pc?.close(); };
+  }, []);
+
+  return { ip, loading };
+}
 
 function StepHeader({ n, title }: { n: number; title: string }) {
   return (
@@ -164,8 +212,11 @@ export default function OfflineMode() {
   const cloudDomain = window.location.origin;
   const clubId = user?.clubId ?? "<your-club-id>";
 
+  const { ip: localIp, loading: ipLoading } = useLocalIp();
+  const laptopIp = localIp ?? "<laptop-ip>";
+
   const cloudEndpoint = `${cloudDomain}/api/timing/active/crossing?clubId=${clubId}`;
-  const localEndpoint = `http://<laptop-ip>:8080/api/timing/active/crossing?clubId=${clubId}`;
+  const localEndpoint = `http://${laptopIp}:8080/api/timing/active/crossing?clubId=${clubId}`;
 
   const installCmdMac = `unzip rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
   const installCmdWindows = `tar -xf rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
@@ -281,24 +332,47 @@ export default function OfflineMode() {
           </div>
 
           {/* 2b — Point your reader at the laptop */}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-foreground font-semibold">Point your timing reader at your laptop</p>
             <p>
-              Your timing reader normally sends data to the cloud. For offline mode, you need to change
-              that address to your laptop instead. Your laptop's address on the local network will look
-              something like <span className="font-mono bg-muted rounded px-1 text-foreground">192.168.x.x</span>.
+              Your timing reader normally sends data to the cloud. For offline mode, change
+              that address to your laptop instead.
             </p>
+
+            {/* IP detection status */}
+            {ipLoading ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 size={13} className="animate-spin" />
+                Detecting your laptop's IP address…
+              </div>
+            ) : localIp ? (
+              <div className="flex items-center gap-2 rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs">
+                <Wifi size={13} className="text-green-500 shrink-0" />
+                <span className="text-foreground">
+                  Your laptop's IP address on this network is{" "}
+                  <span className="font-mono font-bold text-green-600 dark:text-green-400">{localIp}</span>
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                <Wifi size={13} className="shrink-0" />
+                <span>
+                  Couldn't auto-detect your IP — replace{" "}
+                  <span className="font-mono bg-background border rounded px-1">&lt;laptop-ip&gt;</span>{" "}
+                  below with your laptop's address on your hotspot network.
+                </span>
+              </div>
+            )}
+
             <div className="space-y-1">
               <p className="text-xs font-medium text-foreground">Use this address for your reader:</p>
               <CopyableCodeBlock>{localEndpoint}</CopyableCodeBlock>
             </div>
             <p className="text-xs">
-              Replace <span className="font-mono bg-muted rounded px-1">&lt;laptop-ip&gt;</span> with your
-              laptop's actual address on your hotspot network.{" "}
               <a href="/rfid/setup" className="text-primary underline underline-offset-2">
                 See the Reader Setup page
               </a>{" "}
-              for step-by-step screenshots.
+              for per-reader configuration screenshots.
             </p>
           </div>
 
