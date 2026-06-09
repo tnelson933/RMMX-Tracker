@@ -558,12 +558,14 @@ function EventPracticeSessionCard({ session, riderId }: { session: EventPractice
   }, [session.motoId, isLive, riderId]);
 
   const rawLeaderboard = liveLeaderboard ?? session.leaderboard;
-  const displayLeaderboard = [...rawLeaderboard].sort((a, b) => {
-    if (a.bestLapMs == null && b.bestLapMs == null) return 0;
-    if (a.bestLapMs == null) return 1;
-    if (b.bestLapMs == null) return -1;
-    return a.bestLapMs - b.bestLapMs;
-  });
+  const displayLeaderboard = [...rawLeaderboard]
+    .sort((a, b) => {
+      if (a.bestLapMs == null && b.bestLapMs == null) return 0;
+      if (a.bestLapMs == null) return 1;
+      if (b.bestLapMs == null) return -1;
+      return a.bestLapMs - b.bestLapMs;
+    })
+    .map((e, i) => ({ ...e, rank: i + 1 }));
   const myEntry = displayLeaderboard.find(e => e.isMe);
   const myLapsWithTime = session.myLaps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
 
