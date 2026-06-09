@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable } from "@workspace/db";
+import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable } from "@workspace/db";
 import { eq, and, inArray, min, ne } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 
@@ -191,6 +191,21 @@ router.patch("/motos/:motoId", async (req, res) => {
     startedAt: moto.startedAt?.toISOString() ?? null,
     completedAt: moto.completedAt?.toISOString() ?? null,
   });
+});
+
+// POST /motos/:motoId/restart — wipe all crossings and restart the clock
+router.post("/motos/:motoId/restart", async (req, res) => {
+  const id = Number(req.params.motoId);
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
+  if (!moto) return res.status(404).json({ error: "Not found" });
+  await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
+  const [updated] = await db
+    .update(motosTable)
+    .set({ status: "in_progress", startedAt: new Date() })
+    .where(eq(motosTable.id, id))
+    .returning();
+  buildLeaderboard(id).then(snap => { if (snap) sseBroadcast(id, snap); }).catch(() => {});
+  return res.json({ ok: true, moto: updated });
 });
 
 router.delete("/motos/:motoId", async (req, res) => {

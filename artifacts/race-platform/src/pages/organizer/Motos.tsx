@@ -920,6 +920,7 @@ export default function Motos() {
     existingMoto: Moto | null;
     pendingMotoId: number | null;
   }>({ open: false, existingMoto: null, pendingMotoId: null });
+  const [restartDialog, setRestartDialog] = useState<{ open: boolean; motoId: number | null; motoName: string }>({ open: false, motoId: null, motoName: "" });
 
   // Scroll expanded moto card into view when jumping from run-order
   useEffect(() => {
@@ -1637,6 +1638,20 @@ export default function Motos() {
       return;
     }
     doStartMoto(moto.id);
+  };
+
+  const handleRestartConfirm = async () => {
+    const { motoId, motoName } = restartDialog;
+    if (motoId === null) return;
+    setRestartDialog({ open: false, motoId: null, motoName: "" });
+    try {
+      const res = await fetch(`/api/motos/${motoId}/restart`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to restart moto");
+      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      toast({ title: `🔄 Moto restarted: ${motoName}` });
+    } catch {
+      toast({ title: "Failed to restart moto", variant: "destructive" });
+    }
   };
 
   const handleConflictConfirm = () => {
@@ -2790,9 +2805,9 @@ export default function Motos() {
                       <CheckCircle size={14} className="mr-1" /> Finish Moto
                     </Button>
                   )}
-                  {moto.status === "completed" && (
-                    <Button size="sm" variant="ghost" className="text-muted-foreground font-heading uppercase text-xs" onClick={() => handleStatusUpdate(moto.id, "in_progress")}>
-                      <RefreshCw size={14} className="mr-1" /> Reopen
+                  {moto.status === "in_progress" && (
+                    <Button size="sm" variant="ghost" className="text-muted-foreground font-heading uppercase text-xs" onClick={() => setRestartDialog({ open: true, motoId: moto.id, motoName: moto.name })}>
+                      <RefreshCw size={14} className="mr-1" /> Restart Moto
                     </Button>
                   )}
 
@@ -3069,9 +3084,9 @@ export default function Motos() {
                     <CheckCircle size={14} className="mr-1" /> Finish Moto
                   </Button>
                 )}
-                {moto.status === "completed" && (
-                  <Button size="sm" variant="ghost" className="text-muted-foreground font-heading uppercase text-xs" onClick={() => handleStatusUpdate(moto.id, "in_progress")}>
-                    <RefreshCw size={14} className="mr-1" /> Reopen
+                {moto.status === "in_progress" && (
+                  <Button size="sm" variant="ghost" className="text-muted-foreground font-heading uppercase text-xs" onClick={() => setRestartDialog({ open: true, motoId: moto.id, motoName: moto.name })}>
+                    <RefreshCw size={14} className="mr-1" /> Restart Moto
                   </Button>
                 )}
 
@@ -3118,6 +3133,33 @@ export default function Motos() {
       {lapEditTarget && <LapTimesDialog target={lapEditTarget} onClose={() => setLapEditTarget(null)} />}
 
       {/* Delete confirmation dialog */}
+      {/* ── Restart Moto confirmation ───────────────────────────────────── */}
+      <Dialog open={restartDialog.open} onOpenChange={open => !open && setRestartDialog({ open: false, motoId: null, motoName: "" })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase tracking-wider text-destructive">Restart Moto?</DialogTitle>
+            <DialogDescription className="pt-1">
+              This will clear all lap times and crossings for{" "}
+              <span className="font-semibold text-foreground">"{restartDialog.motoName}"</span>{" "}
+              and restart the clock from zero.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">This cannot be undone. All recorded laps will be permanently deleted.</p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRestartDialog({ open: false, motoId: null, motoName: "" })}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRestartConfirm}
+              className="font-heading uppercase tracking-wider"
+            >
+              Clear & Restart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Conflict: moto already in progress ─────────────────────────── */}
       <Dialog open={conflictDialog.open} onOpenChange={open => !open && setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null })}>
         <DialogContent className="max-w-md">
