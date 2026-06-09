@@ -546,6 +546,44 @@ router.post("/timing/active/crossing", async (req, res) => {
   }
 });
 
+// POST /timing/ping?clubId=N — connectivity test, no moto or session required
+// Accepts any tag format; just confirms the server received it.
+// Used by the Reader Setup page so organizers can test without starting a moto.
+router.post("/timing/ping", async (req, res) => {
+  const clubId = Number(req.query.clubId);
+  if (!clubId || isNaN(clubId)) {
+    return res.status(400).json({ error: "clubId query param is required" });
+  }
+
+  const body = req.body as any;
+
+  // Impinj R700 native format
+  if (Array.isArray(body?.events)) {
+    const tag = (body.events as any[]).find(
+      (e: any) => e?.type === "tagInventoryEvent" && e?.tagInventoryEvent?.epcHex,
+    );
+    const rfidNumber = tag?.tagInventoryEvent?.epcHex?.toUpperCase() ?? null;
+    return res.json({ ok: true, received: rfidNumber ?? "(impinj payload)", clubId });
+  }
+
+  // Zebra FX7500 format
+  const zebraTags: any[] = Array.isArray(body?.data?.tags) ? body.data.tags
+    : Array.isArray(body?.tags) ? body.tags : [];
+  if (zebraTags.length > 0) {
+    const rfidNumber = ((zebraTags[0]?.idHex || zebraTags[0]?.epc) as string | undefined ?? "").toUpperCase();
+    return res.json({ ok: true, received: rfidNumber || "(zebra payload)", clubId });
+  }
+
+  // Generic / AMBrc / MyLaps
+  const rfidNumber: string | undefined =
+    body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
+  if (!rfidNumber) {
+    return res.status(400).json({ error: "Cannot find tag/transponder ID in payload" });
+  }
+
+  return res.json({ ok: true, received: String(rfidNumber), clubId });
+});
+
 // POST /timing/impinj-crossing?eventId=N — Impinj R700 native IoT Connector format
 // Body: { events: [{ type: "tagInventoryEvent", tagInventoryEvent: { epcHex, antennaPort, firstSeenTime } }] }
 router.post("/timing/impinj-crossing", async (req, res) => {

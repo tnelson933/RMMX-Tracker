@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const BASE_URL = window.location.origin;
 const FACILITY_ENDPOINT_BASE = `${BASE_URL}/api/timing/active/crossing`;
+const PING_ENDPOINT_BASE = `${BASE_URL}/api/timing/ping`;
 const BRIDGE_URL = "http://localhost:5555";
 const AMBRC_BODY = `{\n  "transponder": "%TRANSPONDER%",\n  "passingTime": "%PASSTIME_ISO%"\n}`;
 
@@ -37,6 +38,10 @@ export default function ReaderSetup() {
   const facilityEndpoint = user?.clubId
     ? `${FACILITY_ENDPOINT_BASE}?clubId=${user.clubId}`
     : `${FACILITY_ENDPOINT_BASE}?clubId=YOUR_CLUB_ID`;
+
+  const pingEndpoint = user?.clubId
+    ? `${PING_ENDPOINT_BASE}?clubId=${user.clubId}`
+    : null;
 
   const bridgeCmd = `python rfid_bridge.py --api-url ${BASE_URL}`;
 
@@ -105,32 +110,26 @@ export default function ReaderSetup() {
   const [testLoading, setTestLoading] = useState(false);
 
   const sendTest = async () => {
-    if (!testValue) return;
+    if (!testValue || !pingEndpoint) return;
     setTestLoading(true);
     setTestResult(null);
     try {
       const body = tech === "mylaps"
         ? { transponder: testValue, passingTime: new Date().toISOString() }
         : { rfidNumber: testValue };
-      const res = await fetch(facilityEndpoint, {
+      const res = await fetch(pingEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (res.ok) {
-        const lap = data.lapNumber ?? data.results?.[0]?.lapNumber;
-        setTestResult({ ok: true, message: lap ? `Lap ${lap} recorded` : "Crossing accepted" });
-        toast({ title: "✅ Working!" });
+      if (res.ok && data.ok) {
+        setTestResult({ ok: true, message: `Server received tag "${data.received}" — your reader is connected.` });
+        toast({ title: "✅ Connected!" });
       } else {
-        const raw = data.error ?? "Crossing rejected";
-        const msg = raw === "No active moto" || raw.includes("no active")
-          ? "No moto is currently running — start a moto first, then test again."
-          : raw === "Rider not found"
-          ? "Tag not recognised — make sure it is saved on a rider profile first."
-          : raw;
+        const msg = data.error ?? "Server did not accept the ping";
         setTestResult({ ok: false, message: msg });
-        toast({ title: "Not accepted", description: msg, variant: "destructive" });
+        toast({ title: "Connection failed", description: msg, variant: "destructive" });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not reach the server";
@@ -459,7 +458,7 @@ export default function ReaderSetup() {
               <div className="space-y-2 min-w-0">
                 <p className="font-semibold">Test before race day</p>
                 <p className="text-sm text-muted-foreground">
-                  Go to the <strong className="text-foreground">Motos</strong> tab and start a moto, then use the test tool below to confirm laps are being received.
+                  Use the test tool below — enter any tag number and confirm the server receives it. No moto needs to be running.
                 </p>
               </div>
             </div>
@@ -527,7 +526,7 @@ export default function ReaderSetup() {
               <div className="space-y-2 min-w-0">
                 <p className="font-semibold">Test before race day</p>
                 <p className="text-sm text-muted-foreground">
-                  Go to the <strong className="text-foreground">Motos</strong> tab and start a moto, then use the test tool below to confirm crossings are being received.
+                  Use the test tool below — enter a transponder number and confirm the server receives it. No moto needs to be running.
                 </p>
               </div>
             </div>
@@ -539,7 +538,9 @@ export default function ReaderSetup() {
       <div className="border rounded-xl bg-card overflow-hidden">
         <div className="px-5 py-3 bg-muted/30 border-b">
           <p className="font-heading font-bold uppercase tracking-wider text-sm">Test Your Connection</p>
-          <p className="text-xs text-muted-foreground mt-0.5">A moto must be set to "In Progress" before testing.</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            No moto needed — just enter a tag number and confirm the server receives it.
+          </p>
         </div>
         <div className="p-5 space-y-4">
           <div className="flex gap-3 items-end max-w-sm">
@@ -552,7 +553,7 @@ export default function ReaderSetup() {
                 className="font-mono h-10"
                 onKeyDown={e => { if (e.key === "Enter") sendTest(); }} />
             </div>
-            <Button onClick={sendTest} disabled={testLoading || !testValue.trim()}
+            <Button onClick={sendTest} disabled={testLoading || !testValue.trim() || !pingEndpoint}
               className="font-heading uppercase tracking-wider h-10 px-5 gap-2 shrink-0">
               {testLoading ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
               {testLoading ? "Sending…" : "Test"}
