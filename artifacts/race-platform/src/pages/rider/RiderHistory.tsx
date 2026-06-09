@@ -1603,20 +1603,21 @@ export default function RiderHistory() {
     queryKey: ["rider-practice", riderId],
     queryFn: () => riderApi.practice(riderId),
     enabled: !!riderId,
+    refetchInterval: 5_000,
   } as any);
 
   const { data: eventPracticeData, isLoading: eventPracticeLoading } = useQuery<RiderEventPracticeResponse>({
     queryKey: ["rider-event-practice", riderId],
     queryFn: () => riderApi.eventPractice(riderId),
     enabled: !!riderId,
-    refetchInterval: 30_000,
+    refetchInterval: 5_000,
   } as any);
 
   const { data: scheduleData, isLoading: scheduleLoading } = useQuery<RiderScheduleResponse>({
     queryKey: ["rider-schedule", riderId],
     queryFn: () => riderApi.schedule(riderId),
     enabled: !!riderId,
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   } as any);
 
   const rider = data?.rider;
