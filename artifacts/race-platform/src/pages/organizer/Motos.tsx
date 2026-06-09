@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -915,6 +915,11 @@ export default function Motos() {
   const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
   const [bibInputs, setBibInputs] = useState<Record<number, string>>({});
   const [viewMode, setViewMode] = useState<"grid" | "run-order">("grid");
+  const [conflictDialog, setConflictDialog] = useState<{
+    open: boolean;
+    existingMoto: Moto | null;
+    pendingMotoId: number | null;
+  }>({ open: false, existingMoto: null, pendingMotoId: null });
 
   // Scroll expanded moto card into view when jumping from run-order
   useEffect(() => {
@@ -1573,7 +1578,26 @@ export default function Motos() {
     );
   };
 
+  const doStartMoto = (motoId: number, motoName?: string) => {
+    updateMutation.mutate(
+      { motoId, data: { status: "in_progress" } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          toast({ title: `🏁 Moto started — ${(event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID"} timing active` });
+        },
+      }
+    );
+  };
+
   const handleStatusUpdate = (motoId: number, status: string) => {
+    if (status === "in_progress") {
+      const existing = motos?.find(m => m.status === "in_progress" && m.id !== motoId);
+      if (existing) {
+        setConflictDialog({ open: true, existingMoto: existing, pendingMotoId: motoId });
+        return;
+      }
+    }
     updateMutation.mutate(
       { motoId, data: { status } },
       {
@@ -1607,12 +1631,28 @@ export default function Motos() {
   };
 
   const handleStartMoto = (moto: Moto) => {
+    const existing = motos?.find(m => m.status === "in_progress" && m.id !== moto.id);
+    if (existing) {
+      setConflictDialog({ open: true, existingMoto: existing, pendingMotoId: moto.id });
+      return;
+    }
+    doStartMoto(moto.id);
+  };
+
+  const handleConflictConfirm = () => {
+    const { existingMoto, pendingMotoId } = conflictDialog;
+    if (!existingMoto || pendingMotoId === null) return;
+    setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null });
     updateMutation.mutate(
-      { motoId: moto.id, data: { status: "in_progress" } },
+      { motoId: existingMoto.id, data: { status: "completed" } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-          toast({ title: `🏁 Moto started — ${(event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID"} timing active` });
+          toast({ title: `Moto ended: ${existingMoto.name}` });
+          doStartMoto(pendingMotoId);
+        },
+        onError: () => {
+          toast({ title: "Failed to end current moto", variant: "destructive" });
         },
       }
     );
@@ -3078,6 +3118,38 @@ export default function Motos() {
       {lapEditTarget && <LapTimesDialog target={lapEditTarget} onClose={() => setLapEditTarget(null)} />}
 
       {/* Delete confirmation dialog */}
+      {/* ── Conflict: moto already in progress ─────────────────────────── */}
+      <Dialog open={conflictDialog.open} onOpenChange={open => !open && setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase tracking-wider text-destructive">Moto Already Running</DialogTitle>
+            <DialogDescription className="pt-1">
+              <span className="font-semibold text-foreground">"{conflictDialog.existingMoto?.name}"</span> is still in progress.
+              {" "}End it and start{" "}
+              <span className="font-semibold text-foreground">
+                "{motos?.find(m => m.id === conflictDialog.pendingMotoId)?.name ?? "new moto"}"
+              </span>?
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Only one moto can be active at a time. Ending the current moto will finalize its lap times and crossings.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null })}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={updateMutation.isPending}
+              onClick={handleConflictConfirm}
+              className="font-heading uppercase tracking-wider"
+            >
+              {updateMutation.isPending ? "Switching..." : "End & Start New Moto"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={confirmDeleteId !== null} onOpenChange={open => { if (!open) setConfirmDeleteId(null); }}>
         <DialogContent>
           <DialogHeader>

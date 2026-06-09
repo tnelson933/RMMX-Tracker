@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable } from "@workspace/db";
-import { eq, and, inArray, min } from "drizzle-orm";
+import { eq, and, inArray, min, ne } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 
 const router = Router();
@@ -135,7 +135,20 @@ router.patch("/motos/:motoId", async (req, res) => {
   const updates: Record<string, unknown> = {};
   if (req.body.status !== undefined) {
     updates.status = req.body.status;
-    if (req.body.status === "in_progress") updates.startedAt = new Date();
+    if (req.body.status === "in_progress") {
+      // Guard: reject if another moto in the same event is already running
+      const [target] = await db.select({ eventId: motosTable.eventId }).from(motosTable).where(eq(motosTable.id, id));
+      if (target) {
+        const [conflict] = await db
+          .select({ id: motosTable.id, name: motosTable.name })
+          .from(motosTable)
+          .where(and(eq(motosTable.eventId, target.eventId), eq(motosTable.status, "in_progress"), ne(motosTable.id, id)));
+        if (conflict) {
+          return res.status(409).json({ error: "conflict", activeMoto: { id: conflict.id, name: conflict.name } });
+        }
+      }
+      updates.startedAt = new Date();
+    }
     if (req.body.status === "completed") updates.completedAt = new Date();
   }
   if (req.body.lineup !== undefined) updates.lineup = req.body.lineup;
