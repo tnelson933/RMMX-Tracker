@@ -453,6 +453,51 @@ router.get("/offline/package", (req, res) => {
   res.send(zip);
 });
 
+// POST /offline/package-rebuild — explicitly trigger a fresh build of the local server package.
+router.post("/offline/package-rebuild", (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  if (isRebuilding) {
+    res.status(503).json({ error: "A rebuild is already in progress — please try again in a moment." });
+    return;
+  }
+
+  const workspaceRoot = resolve(__dirname, "..", "..", "..");
+  const localServerDir = resolve(workspaceRoot, "artifacts", "local-server");
+  const distIndexFile = distFilePath();
+
+  isRebuilding = true;
+  try {
+    req.log.info({ userId }, "Manual offline package rebuild triggered");
+    rebuildLocalServer(localServerDir);
+    cachedZip = null;
+    cachedMtimeMs = -1;
+    req.log.info("Manual offline package rebuild complete.");
+  } catch (err) {
+    isRebuilding = false;
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "Manual offline package rebuild failed");
+    res.status(503).json({ error: `Rebuild failed: ${msg}` });
+    return;
+  }
+  isRebuilding = false;
+
+  try {
+    const mtimeMs = statSync(distIndexFile).mtimeMs;
+    res.json({
+      builtAt: new Date(mtimeMs).toISOString(),
+      version: buildVersion(mtimeMs),
+      etag: mtimeToETag(mtimeMs),
+    });
+  } catch {
+    res.status(503).json({ error: "Rebuild succeeded but dist file is unreadable." });
+  }
+});
+
 router.post("/offline/sync-upload", (req, res, next) => {
   const userId = (req.session as any).userId;
   if (!userId) {

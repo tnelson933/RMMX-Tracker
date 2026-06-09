@@ -79,6 +79,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
+  /offline/package-rebuild:
+    post:
+      operationId: rebuildOfflinePackage
+      tags: [offline]
+      summary: Rebuild the offline server package
+      description: Triggers a fresh build of the local server package. Requires authentication. Returns the new build metadata on success.
+      responses:
+        "200":
+          description: Rebuild succeeded — returns new package metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfflinePackageInfo"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Rebuild failed or already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   # AUTH
   /auth/login:
     post:

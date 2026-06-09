@@ -259,6 +259,77 @@ export function useGetOfflinePackageInfo<TData = Awaited<ReturnType<typeof getOf
 
 
 
+export const getRebuildOfflinePackageUrl = () => {
+
+
+
+
+  return `/api/offline/package-rebuild`
+}
+
+/**
+ * Triggers a fresh build of the local server package. Requires authentication. Returns the new build metadata on success.
+ * @summary Rebuild the offline server package
+ */
+export const rebuildOfflinePackage = async ( options?: RequestInit): Promise<OfflinePackageInfo> => {
+
+  return customFetch<OfflinePackageInfo>(getRebuildOfflinePackageUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRebuildOfflinePackageMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rebuildOfflinePackage>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rebuildOfflinePackage>>, TError,void, TContext> => {
+
+const mutationKey = ['rebuildOfflinePackage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rebuildOfflinePackage>>, void> = () => {
+
+
+          return  rebuildOfflinePackage(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RebuildOfflinePackageMutationResult = NonNullable<Awaited<ReturnType<typeof rebuildOfflinePackage>>>
+
+    export type RebuildOfflinePackageMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Rebuild the offline server package
+ */
+export const useRebuildOfflinePackage = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rebuildOfflinePackage>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rebuildOfflinePackage>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRebuildOfflinePackageMutationOptions(options));
+    }
+
 export const getLoginUrl = () => {
 
 

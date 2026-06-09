@@ -7,7 +7,7 @@ import {
   CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
   Wifi, Loader2,
 } from "lucide-react";
-import { useGetOfflinePackageInfo } from "@workspace/api-client-react";
+import { useGetOfflinePackageInfo, useRebuildOfflinePackage } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const LAST_DOWNLOAD_KEY = "offline_package_last_downloaded_etag";
@@ -193,7 +193,7 @@ function PackageInfoBanner({ builtAt, version, etag, lastEtag }: { builtAt: stri
 }
 
 export default function OfflineMode() {
-  const { data: pkgInfo, isError: pkgError } = useGetOfflinePackageInfo({ query: { staleTime: 60_000 } as any });
+  const { data: pkgInfo, isError: pkgError, refetch: refetchPkgInfo } = useGetOfflinePackageInfo({ query: { staleTime: 60_000 } as any });
 
   const [lastDownloadedEtag, setLastDownloadedEtag] = useState<string | null>(() =>
     localStorage.getItem(LAST_DOWNLOAD_KEY),
@@ -205,6 +205,19 @@ export default function OfflineMode() {
       setLastDownloadedEtag(pkgInfo.etag);
     }
   }, [pkgInfo?.etag]);
+
+  const { mutate: triggerRebuild, isPending: isRebuilding, isError: rebuildFailed, error: rebuildError, reset: resetRebuild } = useRebuildOfflinePackage({
+    mutation: {
+      onSuccess: () => {
+        refetchPkgInfo();
+      },
+    },
+  });
+
+  const handleRebuild = useCallback(() => {
+    resetRebuild();
+    triggerRebuild();
+  }, [resetRebuild, triggerRebuild]);
 
   const [os, setOs] = useState<"mac" | "windows">("mac");
 
@@ -252,17 +265,67 @@ export default function OfflineMode() {
             <p className="text-foreground font-semibold">Download the software to your laptop</p>
 
             {pkgInfo && (
-              <PackageInfoBanner
-                builtAt={pkgInfo.builtAt}
-                version={pkgInfo.version}
-                etag={pkgInfo.etag}
-                lastEtag={lastDownloadedEtag}
-              />
+              <div className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <PackageInfoBanner
+                    builtAt={pkgInfo.builtAt}
+                    version={pkgInfo.version}
+                    etag={pkgInfo.etag}
+                    lastEtag={lastDownloadedEtag}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRebuild}
+                  disabled={isRebuilding}
+                  className="shrink-0 flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-muted transition-colors px-3 py-1.5 text-xs font-medium text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isRebuilding ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      Rebuilding…
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={12} />
+                      Rebuild
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+            {!pkgInfo && !pkgError && (
+              <button
+                type="button"
+                onClick={handleRebuild}
+                disabled={isRebuilding}
+                className="flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-muted transition-colors px-3 py-1.5 text-xs font-medium text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isRebuilding ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" />
+                    Rebuilding…
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw size={12} />
+                    Rebuild Now
+                  </>
+                )}
+              </button>
             )}
             {pkgError && (
               <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
                 <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
                 <span className="text-muted-foreground">Download info unavailable — contact support if this persists.</span>
+              </div>
+            )}
+            {rebuildFailed && (
+              <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
+                <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
+                <span className="text-muted-foreground">
+                  Rebuild failed: {(rebuildError as any)?.response?.data?.error ?? (rebuildError as any)?.message ?? "Unknown error"}
+                </span>
               </div>
             )}
 

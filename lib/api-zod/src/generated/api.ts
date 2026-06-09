@@ -28,6 +28,17 @@ export const GetOfflinePackageInfoResponse = zod.object({
 
 
 /**
+ * Triggers a fresh build of the local server package. Requires authentication. Returns the new build metadata on success.
+ * @summary Rebuild the offline server package
+ */
+export const RebuildOfflinePackageResponse = zod.object({
+  "builtAt": zod.coerce.date().describe('ISO 8601 timestamp of when the offline package was last built'),
+  "version": zod.string().describe('Version string encoding the build timestamp (YYYY.MM.DD.HHmm)'),
+  "etag": zod.string().describe('ETag matching the Content-Disposition header on the download endpoint')
+})
+
+
+/**
  * @summary Login with email and password
  */
 export const LoginBody = zod.object({
