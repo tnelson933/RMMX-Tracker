@@ -10,7 +10,7 @@ import {
   eventsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, and, asc, isNotNull } from "drizzle-orm";
+import { eq, and, asc, isNotNull, or } from "drizzle-orm";
 import type { Response } from "express";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 
@@ -276,12 +276,15 @@ async function _processCrossing(opts: {
       .where(and(eq(rfidAssignmentsTable.rfidNumber, rfidNumber), eq(rfidAssignmentsTable.eventId, moto.eventId)));
     riderId = assignments[0]?.riderId ?? null;
 
-    // Fallback: permanent rfid_number on the rider's profile
+    // Fallback: permanent rfid_number or mylaps_transponder_id on the rider's profile
     if (!riderId) {
       const [directRider] = await db
         .select({ id: ridersTable.id })
         .from(ridersTable)
-        .where(eq(ridersTable.rfidNumber, rfidNumber))
+        .where(or(
+          eq(ridersTable.rfidNumber, rfidNumber),
+          eq(ridersTable.mylapsTransponderId, rfidNumber),
+        ))
         .limit(1);
       riderId = directRider?.id ?? null;
     }
