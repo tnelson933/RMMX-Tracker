@@ -443,7 +443,9 @@ async function getActiveMotoForEvent(eventId: number) {
   const rows = await db
     .select()
     .from(motosTable)
-    .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "in_progress")));
+    .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "in_progress")))
+    .orderBy(desc(motosTable.startedAt))
+    .limit(1);
   return rows[0] ?? null;
 }
 
