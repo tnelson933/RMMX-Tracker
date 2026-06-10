@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2 } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -1614,12 +1614,24 @@ export default function Motos() {
   }, [motos]);
 
   const doStartMoto = (motoId: number, motoName?: string) => {
+    const motoObj = (motos ?? []).find(m => m.id === motoId);
+    const partnerId: number | null =
+      (motoObj as any)?.staggeredOrder === 1 && (motoObj as any)?.staggeredWithMotoId
+        ? Number((motoObj as any).staggeredWithMotoId)
+        : null;
     updateMutation.mutate(
       { motoId, data: { status: "in_progress" } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-          toast({ title: `🏁 Moto started — ${(event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID"} timing active` });
+          const timingLabel = (event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID";
+          toast({ title: partnerId ? `🏁 Staggered start — both motos now live` : `🏁 Moto started — ${timingLabel} timing active` });
+          if (partnerId) {
+            updateMutation.mutate(
+              { motoId: partnerId, data: { status: "in_progress" } },
+              { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }) }
+            );
+          }
         },
       }
     );
@@ -1666,7 +1678,11 @@ export default function Motos() {
   };
 
   const handleStartMoto = (moto: Moto) => {
-    const existing = motos?.find(m => m.status === "in_progress" && m.id !== moto.id);
+    const partnerId: number | null =
+      (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
+        ? Number((moto as any).staggeredWithMotoId)
+        : null;
+    const existing = motos?.find(m => m.status === "in_progress" && m.id !== moto.id && m.id !== partnerId);
     if (existing) {
       setConflictDialog({ open: true, existingMoto: existing, pendingMotoId: moto.id });
       return;
@@ -2805,6 +2821,8 @@ export default function Motos() {
         ) : viewMode === "grid" && motos?.length ? (
         <div className="space-y-0">
           {motos.filter(m => {
+              // stagger order=2 motos are rendered inside their order=1 partner card
+              if ((m as any).staggeredOrder === 2) return false;
               if (m.type === "practice") return classFilter === "schedule" && roundFilter === "all";
               if (classFilter !== "schedule" && m.raceClass !== classFilter) return false;
               if (roundFilter !== "all" && roundMap.get(m.id) !== roundFilter) return false;
@@ -2862,6 +2880,12 @@ export default function Motos() {
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                       <Flag size={11} /> {Array.isArray(moto.lineup) ? moto.lineup.length : 0} riders
                     </span>
+                    {/* Staggered start badge */}
+                    {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId && (
+                      <span className="text-xs px-1.5 py-0.5 rounded border bg-primary/15 text-primary border-primary/30 flex items-center gap-1 font-semibold">
+                        <Link2 size={9} /> Staggered
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -2870,7 +2894,7 @@ export default function Motos() {
                   {/* Start/Finish/Restart — compact pill in header */}
                   {moto.status === "scheduled" && (
                     <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs h-7 px-2.5 gap-1">
-                      <Play size={12} /> Start
+                      <Play size={12} /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Start Both" : "Start"}
                     </Button>
                   )}
                   {moto.status === "in_progress" && (
@@ -2878,6 +2902,16 @@ export default function Motos() {
                       <CheckCircle size={12} /> Finish
                     </Button>
                   )}
+                  {/* Partner finish button — shown when this is a stagger order=1 card and partner is in_progress */}
+                  {(moto as any).staggeredOrder === 1 && (() => {
+                    const partner = (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId);
+                    if (!partner || partner.status !== "in_progress") return null;
+                    return (
+                      <Button key="partner-finish" size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs h-7 px-2.5 gap-1" onClick={() => handleStatusUpdate(partner.id, "completed")}>
+                        <CheckCircle size={12} /> Finish 2nd
+                      </Button>
+                    );
+                  })()}
                   {/* Icon buttons */}
                   <button
                     onClick={() => handleQuickAddHeat(moto)}
@@ -3060,6 +3094,50 @@ export default function Motos() {
                     </Table>
                   </div>
                 )}
+
+                {/* Stagger partner lineup — shown on order=1 card */}
+                {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId && (() => {
+                  const partner = (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId);
+                  if (!partner) return null;
+                  const partnerLineup = Array.isArray(partner.lineup)
+                    ? partner.lineup as { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber?: string | null }[]
+                    : [];
+                  return (
+                    <div className="border-t-2 border-primary/20">
+                      <div className="px-3 py-1.5 flex items-center gap-2 bg-primary/5 border-b border-primary/10">
+                        <Link2 size={11} className="text-primary shrink-0" />
+                        <span className="text-xs font-semibold text-primary flex-1 truncate">{partner.name} — starts 2nd</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-bold uppercase ${
+                          partner.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30" :
+                          partner.status === "completed"   ? "bg-muted text-muted-foreground border-border" :
+                                                             "bg-slate-500/20 text-slate-300 border-slate-500/30"
+                        }`}>
+                          {partner.status === "in_progress" ? "Running" : partner.status === "completed" ? "Done" : "Waiting"}
+                        </span>
+                      </div>
+                      {partnerLineup.length > 0 ? (
+                        <Table>
+                          <TableBody>
+                            {partnerLineup.map((entry, idx) => (
+                              <TableRow key={entry.riderId} className="h-7">
+                                <TableCell className="w-8 text-center text-xs font-mono text-muted-foreground py-1 pl-3">{idx + 1}</TableCell>
+                                <TableCell className="text-xs font-medium py-1">{entry.riderName}</TableCell>
+                                <TableCell className="w-14 text-center text-xs font-mono py-1">{entry.bibNumber ?? "—"}</TableCell>
+                                <TableCell className="w-10 text-center py-1">
+                                  {entry.rfidNumber
+                                    ? <span className="text-green-600 text-xs font-bold">●</span>
+                                    : <span className="text-muted-foreground/30 text-xs">—</span>}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : (
+                        <div className="py-2 text-center text-xs text-muted-foreground">No lineup assigned</div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Practice time limit countdown — banner (shown only for practice motos) */}
                 {moto.type === "practice" && moto.status === "in_progress" && expandedMotoId !== moto.id && (moto as any).timeLimitMs && (
@@ -3356,6 +3434,66 @@ export default function Motos() {
                   </div>
                 )}
 
+                {/* Stagger partner lineup — expanded dialog */}
+                {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId && (() => {
+                  const partner = (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId);
+                  if (!partner) return null;
+                  const partnerLineup = Array.isArray(partner.lineup)
+                    ? partner.lineup as { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber?: string | null }[]
+                    : [];
+                  return (
+                    <div className="border-t-2 border-primary/25">
+                      <div className="px-5 py-3 flex items-center gap-2 bg-primary/5 border-b border-primary/15">
+                        <Link2 size={13} className="text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-primary truncate">{partner.name} — starts 2nd</div>
+                          <div className="text-xs text-muted-foreground">{partner.raceClass ?? ""}</div>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded border font-bold uppercase ${
+                          partner.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30" :
+                          partner.status === "completed"   ? "bg-muted text-muted-foreground border-border" :
+                                                             "bg-slate-500/20 text-slate-300 border-slate-500/30"
+                        }`}>
+                          {partner.status === "in_progress" ? "Running" : partner.status === "completed" ? "Done" : "Waiting"}
+                        </span>
+                        {partner.status === "in_progress" && (
+                          <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs h-7 px-2.5 gap-1 ml-1" onClick={() => handleStatusUpdate(partner.id, "completed")}>
+                            <CheckCircle size={12} /> Finish
+                          </Button>
+                        )}
+                      </div>
+                      <Table>
+                        <TableHeader className="bg-muted/50">
+                          <TableRow>
+                            <TableHead className="w-12 text-center text-xs">Gate</TableHead>
+                            <TableHead className="text-xs">Rider</TableHead>
+                            <TableHead className="w-16 text-center text-xs">#</TableHead>
+                            <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {partnerLineup.length > 0 ? partnerLineup.map((entry, idx) => (
+                            <TableRow key={entry.riderId} className="h-9">
+                              <TableCell className="text-center font-heading font-bold">{entry.position ?? idx + 1}</TableCell>
+                              <TableCell className="font-medium">{entry.riderName}</TableCell>
+                              <TableCell className="text-center font-mono text-xs">{entry.bibNumber ?? "—"}</TableCell>
+                              <TableCell className="text-center">
+                                {entry.rfidNumber
+                                  ? <span className="inline-flex items-center gap-1 text-green-600"><Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span></span>
+                                  : <span className="text-muted-foreground text-xs">—</span>}
+                              </TableCell>
+                            </TableRow>
+                          )) : (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center py-4 text-muted-foreground text-sm">No lineup assigned</TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  );
+                })()}
+
                 {/* First place finish countdown */}
                 {moto.status === "in_progress" && (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
@@ -3374,7 +3512,7 @@ export default function Motos() {
               <div className="p-3 bg-muted/30 border-t flex gap-2 items-center flex-wrap shrink-0">
                 {moto.status === "scheduled" && (
                   <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs">
-                    <Play size={14} className="mr-1" /> Start Moto
+                    <Play size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Start Both Motos" : "Start Moto"}
                   </Button>
                 )}
                 {moto.status === "in_progress" && (
