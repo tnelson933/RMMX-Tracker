@@ -58,6 +58,20 @@ function getAppUrl(): string {
 
 router.get("/events/:eventId/registrations", async (req, res) => {
   const eventId = Number(req.params.eventId);
+
+  // Subquery: one RFID assignment per (riderId, eventId) — most recent wins.
+  // Using DISTINCT ON prevents fan-out when a rider has multiple RFID records
+  // for the same event, which would otherwise duplicate registration rows.
+  const latestRfid = db
+    .selectDistinctOn([rfidAssignmentsTable.riderId, rfidAssignmentsTable.eventId], {
+      riderId: rfidAssignmentsTable.riderId,
+      eventId: rfidAssignmentsTable.eventId,
+      rfidNumber: rfidAssignmentsTable.rfidNumber,
+    })
+    .from(rfidAssignmentsTable)
+    .orderBy(rfidAssignmentsTable.riderId, rfidAssignmentsTable.eventId, desc(rfidAssignmentsTable.id))
+    .as("latest_rfid");
+
   const regs = await db.select({
     id: registrationsTable.id,
     eventId: registrationsTable.eventId,
@@ -79,12 +93,12 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     dateOfBirth: ridersTable.dateOfBirth,
     emergencyContact: ridersTable.emergencyContact,
     emergencyPhone: ridersTable.emergencyPhone,
-    rfidNumber: rfidAssignmentsTable.rfidNumber,
+    rfidNumber: latestRfid.rfidNumber,
   }).from(registrationsTable)
     .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
-    .leftJoin(rfidAssignmentsTable, and(
-      eq(rfidAssignmentsTable.riderId, registrationsTable.riderId),
-      eq(rfidAssignmentsTable.eventId, registrationsTable.eventId),
+    .leftJoin(latestRfid, and(
+      eq(latestRfid.riderId, registrationsTable.riderId),
+      eq(latestRfid.eventId, registrationsTable.eventId),
     ))
     .where(eq(registrationsTable.eventId, eventId))
     .orderBy(registrationsTable.createdAt);
