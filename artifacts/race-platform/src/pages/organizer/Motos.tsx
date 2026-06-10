@@ -979,6 +979,14 @@ export default function Motos() {
   }>({ open: false, existingMoto: null, pendingMotoId: null });
   const [restartDialog, setRestartDialog] = useState<{ open: boolean; motoId: number | null; motoName: string }>({ open: false, motoId: null, motoName: "" });
   const [practiceStartDialog, setPracticeStartDialog] = useState<{ open: boolean; moto: Moto | null; timeLimitMinutes: string }>({ open: false, moto: null, timeLimitMinutes: "" });
+  const [poolDropMismatch, setPoolDropMismatch] = useState<{
+    open: boolean;
+    riderId: number | null;
+    riderName: string;
+    targetMotoId: number | null;
+    checkinClass: string | null;
+    motoClass: string | null;
+  }>({ open: false, riderId: null, riderName: "", targetMotoId: null, checkinClass: null, motoClass: null });
 
   // Scroll expanded moto card into view when jumping from run-order
   useEffect(() => {
@@ -1285,6 +1293,40 @@ export default function Motos() {
     }
   };
 
+  const addPoolRiderToMoto = (riderId: number, targetMotoId: number) => {
+    const targetMoto = motos?.find(m => m.id === targetMotoId);
+    const checkin = (checkins ?? []).find(c => c.riderId === riderId);
+    if (!targetMoto || !checkin || targetMoto.status === "completed") return;
+    const lineup = getLineup(targetMoto);
+    if (lineup.find(e => e.riderId === riderId)) {
+      toast({ title: `${(checkin as any).riderName ?? "Rider"} is already in this moto` });
+      return;
+    }
+    const newEntry: LineupEntry = {
+      position: lineup.length + 1,
+      riderId,
+      riderName: (checkin as any).riderName ?? "",
+      bibNumber: (checkin as any).bibNumber || (checkin as any).registrationBib || null,
+      rfidNumber: (checkin as any).rfidNumber || null,
+    };
+    const newLineup = [...lineup, newEntry];
+    setLineupDrafts(p => ({ ...p, [targetMotoId]: newLineup }));
+    updateMutation.mutate(
+      { motoId: targetMotoId, data: { lineup: newLineup as any } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+          setLineupDrafts(p => { const n = { ...p }; delete n[targetMotoId]; return n; });
+          toast({ title: `✅ ${(checkin as any).riderName ?? "Rider"} added to ${targetMoto.name}` });
+        },
+        onError: () => {
+          setLineupDrafts(p => { const n = { ...p }; delete n[targetMotoId]; return n; });
+          toast({ title: "Failed to add rider", variant: "destructive" });
+        },
+      }
+    );
+  };
+
   const handleRiderDragStart = (event: DragStartEvent) => {
     const idStr = String(event.active.id);
     if (idStr.startsWith("moto-card-")) {
@@ -1346,6 +1388,34 @@ export default function Motos() {
       }).catch(() => {
         toast({ title: "Failed to remove rider", variant: "destructive" });
       });
+      return;
+    }
+
+    // ── Pool rider → moto: add to lineup ─────────────────────────────────────
+    if (parts[0] === "pool") {
+      const riderId = parseInt(parts[1]);
+      const overId = String(over.id);
+      if (!overId.startsWith("drop-")) return;
+      const targetMotoId = parseInt(overId.replace("drop-", ""));
+      if (isNaN(targetMotoId)) return;
+      const targetMoto = motos?.find(m => m.id === targetMotoId);
+      if (!targetMoto || targetMoto.status === "completed") return;
+      const checkin = (checkins ?? []).find(c => c.riderId === riderId);
+      if (!checkin) return;
+      const checkinClass = (checkin as any).raceClass ?? null;
+      const motoClass = targetMoto.raceClass ?? null;
+      if (checkinClass && motoClass && checkinClass !== motoClass) {
+        setPoolDropMismatch({
+          open: true,
+          riderId,
+          riderName: (checkin as any).riderName ?? "Rider",
+          targetMotoId,
+          checkinClass,
+          motoClass,
+        });
+      } else {
+        addPoolRiderToMoto(riderId, targetMotoId);
+      }
       return;
     }
 
@@ -1688,6 +1758,13 @@ export default function Motos() {
         },
       }
     );
+  };
+
+  const handlePoolDropMismatchConfirm = () => {
+    const { riderId, targetMotoId } = poolDropMismatch;
+    setPoolDropMismatch(p => ({ ...p, open: false }));
+    if (riderId === null || targetMotoId === null) return;
+    addPoolRiderToMoto(riderId, targetMotoId);
   };
 
   const handleRestartConfirm = async () => {
@@ -3407,6 +3484,29 @@ export default function Motos() {
               className="font-heading uppercase tracking-wider"
             >
               Clear & Restart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Pool rider class mismatch confirmation ──────────────────────── */}
+      <Dialog open={poolDropMismatch.open} onOpenChange={open => !open && setPoolDropMismatch(p => ({ ...p, open: false }))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase tracking-wider">Class Mismatch</DialogTitle>
+            <DialogDescription className="pt-1">
+              <span className="font-semibold text-foreground">{poolDropMismatch.riderName}</span> is registered in{" "}
+              <span className="font-semibold text-foreground">{poolDropMismatch.checkinClass}</span>, but this moto is for{" "}
+              <span className="font-semibold text-foreground">{poolDropMismatch.motoClass}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Add them to this moto anyway?</p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPoolDropMismatch(p => ({ ...p, open: false }))}>
+              Cancel
+            </Button>
+            <Button onClick={handlePoolDropMismatchConfirm} className="font-heading uppercase tracking-wider">
+              Add Anyway
             </Button>
           </DialogFooter>
         </DialogContent>
