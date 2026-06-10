@@ -165,6 +165,8 @@ export default function EventDetail() {
   const [compLimitedCount, setCompLimitedCount] = useState("10");
   const [compHasExpiry, setCompHasExpiry] = useState(false);
   const [compExpiresAt, setCompExpiresAt] = useState("");
+  const [compCodeMode, setCompCodeMode] = useState<"auto" | "custom">("auto");
+  const [compCustomCode, setCompCustomCode] = useState("");
   const [compGenerating, setCompGenerating] = useState(false);
   const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
   const [generatedAmount, setGeneratedAmount] = useState(0);
@@ -234,35 +236,47 @@ export default function EventDetail() {
 
   const handleGenerateCompCodes = async () => {
     const amount = parseFloat(compAmount);
-    const count = parseInt(compCount, 10);
-    if (!amount || amount <= 0 || !count || count <= 0) return;
+    if (!amount || amount <= 0) return;
     if (compDiscountType === "percentage" && amount > 100) return;
+    if (compCodeMode === "custom" && !compCustomCode.trim()) return;
 
     let maxUses: number;
     if (compUsageType === "one_time") maxUses = 1;
     else if (compUsageType === "unlimited") maxUses = -1;
     else maxUses = Math.max(1, parseInt(compLimitedCount) || 1);
 
+    const count = compCodeMode === "custom" ? 1 : parseInt(compCount, 10);
+    if (!count || count <= 0) return;
+
     setCompGenerating(true);
     try {
+      const body: Record<string, unknown> = {
+        amount,
+        discountType: compDiscountType,
+        maxUses,
+        expiresAt: compHasExpiry && compExpiresAt ? new Date(compExpiresAt).toISOString() : null,
+      };
+      if (compCodeMode === "custom") {
+        body.code = compCustomCode.trim().toUpperCase();
+      } else {
+        body.count = count;
+      }
       const res = await fetch(`/api/events/${eventId}/comp-codes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          amount,
-          count,
-          discountType: compDiscountType,
-          maxUses,
-          expiresAt: compHasExpiry && compExpiresAt ? new Date(compExpiresAt).toISOString() : null,
-        }),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
         const data = await res.json();
         setGeneratedCodes(data.codes);
         setGeneratedAmount(amount);
         setGeneratedDiscountType(compDiscountType);
+        if (compCodeMode === "custom") setCompCustomCode("");
         await loadExistingCodes();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: err.error ?? "Failed to create code", variant: "destructive" });
       }
     } finally {
       setCompGenerating(false);
@@ -1254,7 +1268,40 @@ export default function EventDetail() {
               <CardTitle className="font-heading uppercase text-base">Discount Codes</CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-3">
-              <p className="text-xs text-muted-foreground">Generate codes to give riders a complimentary or discounted entry.</p>
+              <p className="text-xs text-muted-foreground">Create codes to give riders a complimentary or discounted entry.</p>
+
+              {/* Auto vs Custom mode */}
+              <div className="flex rounded-md border overflow-hidden text-xs">
+                <button
+                  type="button"
+                  className={`flex-1 py-1.5 font-medium transition-colors ${compCodeMode === "auto" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setCompCodeMode("auto")}
+                >
+                  Auto-generate
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 py-1.5 font-medium transition-colors ${compCodeMode === "custom" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setCompCodeMode("custom")}
+                >
+                  Custom code
+                </button>
+              </div>
+
+              {/* Custom code input */}
+              {compCodeMode === "custom" && (
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Code String</label>
+                  <Input
+                    placeholder="e.g. RMMX2026"
+                    value={compCustomCode}
+                    onChange={e => setCompCustomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                    className="h-9 text-sm font-mono uppercase"
+                    maxLength={20}
+                    autoFocus
+                  />
+                </div>
+              )}
 
               {/* Discount type toggle */}
               <div className="flex rounded-md border overflow-hidden text-xs">
@@ -1274,7 +1321,7 @@ export default function EventDetail() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className={`gap-2 ${compCodeMode === "auto" ? "grid grid-cols-2" : "flex flex-col"}`}>
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">
                     {compDiscountType === "percentage" ? "% Amount" : "$ Amount"}
@@ -1290,17 +1337,19 @@ export default function EventDetail() {
                     className="h-9 text-sm"
                   />
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1"># Codes</label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={compCount}
-                    onChange={e => setCompCount(e.target.value)}
-                    className="h-9 text-sm"
-                  />
-                </div>
+                {compCodeMode === "auto" && (
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1"># Codes</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={compCount}
+                      onChange={e => setCompCount(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Usage type */}
@@ -1352,13 +1401,13 @@ export default function EventDetail() {
 
               <Button
                 onClick={handleGenerateCompCodes}
-                disabled={compGenerating || !compAmount || parseFloat(compAmount) <= 0}
+                disabled={compGenerating || !compAmount || parseFloat(compAmount) <= 0 || (compCodeMode === "custom" && !compCustomCode.trim())}
                 className="w-full font-heading uppercase tracking-wider"
                 size="sm"
               >
                 {compGenerating
-                  ? <><Loader2 size={14} className="mr-2 animate-spin" /> Generating...</>
-                  : <><Plus size={14} className="mr-2" /> Generate Codes</>}
+                  ? <><Loader2 size={14} className="mr-2 animate-spin" /> {compCodeMode === "custom" ? "Creating..." : "Generating..."}</>
+                  : <><Plus size={14} className="mr-2" /> {compCodeMode === "custom" ? "Create Code" : "Generate Codes"}</>}
               </Button>
 
               {generatedCodes.length > 0 && (

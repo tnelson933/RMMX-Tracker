@@ -22,7 +22,7 @@ router.post("/events/:eventId/comp-codes", async (req, res) => {
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const eventId = Number(req.params.eventId);
-  const { amount, count, discountType = "fixed", maxUses, expiresAt } = req.body;
+  const { amount, count, discountType = "fixed", maxUses, expiresAt, code: customCode } = req.body;
 
   if (!amount || Number(amount) <= 0) {
     return res.status(400).json({ error: "amount required and must be > 0" });
@@ -31,7 +31,6 @@ router.post("/events/:eventId/comp-codes", async (req, res) => {
     return res.status(400).json({ error: "Percentage discount cannot exceed 100%" });
   }
 
-  const numCodes = Math.min(Math.max(Number(count) || 1, 1), 100);
   const maxUsesNum = maxUses === -1 ? 999999 : Math.max(1, Number(maxUses) || 1);
   const expiresAtDate = expiresAt ? new Date(expiresAt) : null;
 
@@ -41,6 +40,30 @@ router.post("/events/:eventId/comp-codes", async (req, res) => {
     .where(eq(eventsTable.id, eventId));
   if (!event) return res.status(404).json({ error: "Event not found" });
 
+  // Custom code — create exactly one with the specified string
+  if (customCode) {
+    const codeStr = String(customCode).trim().toUpperCase();
+    if (!codeStr) return res.status(400).json({ error: "Code string cannot be empty" });
+    try {
+      const [row] = await db.insert(compCodesTable).values({
+        eventId,
+        clubId: event.clubId,
+        code: codeStr,
+        discountType: discountType === "percentage" ? "percentage" : "fixed",
+        amount: String(amount),
+        maxUses: maxUsesNum,
+        usesCount: 0,
+        expiresAt: expiresAtDate,
+      }).returning({ code: compCodesTable.code });
+      return res.status(201).json({ codes: row ? [row.code] : [], amount: Number(amount), discountType });
+    } catch (err: any) {
+      if (err?.code === "23505") return res.status(409).json({ error: "A code with that string already exists" });
+      throw err;
+    }
+  }
+
+  // Auto-generate one or more codes
+  const numCodes = Math.min(Math.max(Number(count) || 1, 1), 100);
   const generated: string[] = [];
   let attempts = 0;
   while (generated.length < numCodes && attempts < numCodes * 10) {

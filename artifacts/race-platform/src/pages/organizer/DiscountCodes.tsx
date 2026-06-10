@@ -584,7 +584,7 @@ function DiscountCodesTable() {
             </SheetTitle>
           </SheetHeader>
           <div className="space-y-5 mt-6">
-            {/* Code string — read-only badge in edit mode, toggle+input in create mode */}
+            {/* Code string — read-only badge in edit mode, segment picker in create mode */}
             {editingCodeId ? (
               <div className="space-y-1.5">
                 <Label>Code String</Label>
@@ -596,13 +596,21 @@ function DiscountCodesTable() {
             ) : (
               <div className="space-y-2">
                 <Label>Code String</Label>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={form.autoGenerate}
-                    onCheckedChange={v => setForm(f => ({ ...f, autoGenerate: v, code: "" }))}
-                    id="auto-gen"
-                  />
-                  <label htmlFor="auto-gen" className="text-sm text-muted-foreground">Auto-generate</label>
+                <div className="flex rounded-md border overflow-hidden">
+                  <button
+                    type="button"
+                    className={`flex-1 py-2 text-sm font-medium transition-colors ${form.autoGenerate ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-muted"}`}
+                    onClick={() => setForm(f => ({ ...f, autoGenerate: true, code: "" }))}
+                  >
+                    Auto-generate
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 py-2 text-sm font-medium transition-colors ${!form.autoGenerate ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-muted"}`}
+                    onClick={() => setForm(f => ({ ...f, autoGenerate: false }))}
+                  >
+                    Custom code
+                  </button>
                 </div>
                 {!form.autoGenerate && (
                   <Input
@@ -611,6 +619,7 @@ function DiscountCodesTable() {
                     onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))}
                     className="font-mono uppercase"
                     maxLength={20}
+                    autoFocus
                   />
                 )}
               </div>
