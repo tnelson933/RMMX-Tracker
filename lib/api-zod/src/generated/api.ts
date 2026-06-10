@@ -1003,6 +1003,10 @@ export const GenerateLineupsParams = zod.object({
   "eventId": zod.coerce.number()
 })
 
+export const generateLineupsBodyMinRacesBetweenMax = 3;
+
+
+
 export const GenerateLineupsBody = zod.object({
   "raceFormat": zod.enum(['one_moto', 'two_moto', 'three_moto']),
   "classes": zod.array(zod.string()),
@@ -1011,7 +1015,8 @@ export const GenerateLineupsBody = zod.object({
   "gateSeedingMethod": zod.enum(['random', 'practice_fastest_lap', 'previous_round']).optional().describe('Controls how riders are ordered into gate positions. random = shuffle randomly (default); practice_fastest_lap = sort by best practice lap time (fastest gets best pick); previous_round = sort by finish position in the most recently completed round, tiebroken by fastest lap time in that round. When omitted, defaults to random (preserving backward compatibility).\n'),
   "rounds": zod.array(zod.number()).optional().describe('If provided, only generate motos for these round numbers (1-indexed). Omit or leave empty to regenerate all rounds. Motos from unspecified rounds are left untouched.\n'),
   "gatePickMethod": zod.enum(['random', 'practice', 'prior_round_finish', 'first_registered']).optional().describe('Controls gate number assignment. random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first; first_registered = sort by registration timestamp, earliest registered gets first gate pick. Supersedes gateSeedingMethod when both are present.\n'),
-  "lapCount": zod.number().optional().describe('Number of laps for each generated moto. When set, indicates this is a laps-based race (first to reach this many laps wins) and the value is stored on every created moto for display and timing purposes.\n')
+  "lapCount": zod.number().optional().describe('Number of laps for each generated moto. When set, indicates this is a laps-based race (first to reach this many laps wins) and the value is stored on every created moto for display and timing purposes.\n'),
+  "minRacesBetween": zod.number().min(1).max(generateLineupsBodyMinRacesBetweenMax).optional().describe('Minimum number of races that must separate a rider\'s consecutive motos when they are entered in multiple classes. The scheduler will try to reorder classes in the run order to satisfy this constraint. If it cannot fully satisfy the constraint, motos are still created and the remaining conflicts are surfaced in the response header.\n')
 })
 
 export const GenerateLineupsResponseItem = zod.object({

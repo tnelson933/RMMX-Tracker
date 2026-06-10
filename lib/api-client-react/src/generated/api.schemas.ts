@@ -708,6 +708,13 @@ export interface LineupGenerateInput {
   /** Number of laps for each generated moto. When set, indicates this is a laps-based race (first to reach this many laps wins) and the value is stored on every created moto for display and timing purposes.
    */
   lapCount?: number;
+  /**
+     * Minimum number of races that must separate a rider's consecutive motos when they are entered in multiple classes. The scheduler will try to reorder classes in the run order to satisfy this constraint. If it cannot fully satisfy the constraint, motos are still created and the remaining conflicts are surfaced in the response header.
+
+     * @minimum 1
+     * @maximum 3
+     */
+  minRacesBetween?: number;
 }
 
 /**

@@ -834,6 +834,106 @@ function getLineup(moto: Moto): LineupEntry[] {
   return raw as LineupEntry[];
 }
 
+// ── Multi-class conflict panel ─────────────────────────────────────────────────
+
+type ConflictEntry = {
+  riderId: number;
+  riderName: string;
+  pairs: { motoA: string; motoB: string; gap: number }[];
+  worstGap: number;
+};
+
+function useScheduleConflicts(rawMotos: Moto[]): ConflictEntry[] {
+  return useMemo(() => {
+    const raceMotos = [...rawMotos]
+      .filter(m => m.type !== "practice")
+      .sort((a, b) => ((a as any).motoNumber ?? 0) - ((b as any).motoNumber ?? 0));
+
+    const riderMap = new Map<number, { riderName: string; appearances: { pos: number; name: string }[] }>();
+    raceMotos.forEach((moto, pos) => {
+      const lineup = Array.isArray(moto.lineup) ? (moto.lineup as LineupEntry[]) : [];
+      for (const entry of lineup) {
+        if (!riderMap.has(entry.riderId)) {
+          riderMap.set(entry.riderId, { riderName: entry.riderName, appearances: [] });
+        }
+        riderMap.get(entry.riderId)!.appearances.push({
+          pos,
+          name: (moto.name ?? `Moto #${(moto as any).motoNumber}`),
+        });
+      }
+    });
+
+    const conflicts: ConflictEntry[] = [];
+    for (const [riderId, { riderName, appearances }] of riderMap) {
+      if (appearances.length < 2) continue;
+      const sorted = [...appearances].sort((a, b) => a.pos - b.pos);
+      const pairs: { motoA: string; motoB: string; gap: number }[] = [];
+      let worstGap = Infinity;
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const gap = sorted[i + 1].pos - sorted[i].pos - 1;
+        if (gap <= 2) {
+          pairs.push({ motoA: sorted[i].name, motoB: sorted[i + 1].name, gap });
+          worstGap = Math.min(worstGap, gap);
+        }
+      }
+      if (pairs.length > 0) {
+        conflicts.push({ riderId, riderName, pairs, worstGap });
+      }
+    }
+    return conflicts.sort((a, b) => a.worstGap - b.worstGap);
+  }, [rawMotos]);
+}
+
+function conflictColor(gap: number): { dot: string; text: string; bg: string; border: string; label: string } {
+  if (gap === 0) return { dot: "bg-red-500", text: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/30", label: "Back-to-back" };
+  if (gap === 1) return { dot: "bg-orange-500", text: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/30", label: "1 race between" };
+  return { dot: "bg-yellow-500", text: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/30", label: "2 races between" };
+}
+
+function ScheduleConflictPanel({ conflicts }: { conflicts: ConflictEntry[] }) {
+  const [open, setOpen] = useState(true);
+  if (conflicts.length === 0) return null;
+
+  const worstOverall = conflicts[0].worstGap;
+  const headerColor = conflictColor(worstOverall);
+
+  return (
+    <div className={`rounded-lg border ${headerColor.border} ${headerColor.bg} text-sm`}>
+      <button
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+        onClick={() => setOpen(v => !v)}
+      >
+        <span className={`inline-block w-2 h-2 rounded-full ${headerColor.dot} shrink-0`} />
+        <span className={`font-semibold text-xs uppercase tracking-wide ${headerColor.text}`}>
+          Multi-class conflicts — {conflicts.length} rider{conflicts.length !== 1 ? "s" : ""}
+        </span>
+        <ChevronDown size={13} className={`ml-auto ${headerColor.text} transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="border-t border-inherit px-3 pb-3 pt-2 space-y-2">
+          {conflicts.map(c => (
+            <div key={c.riderId} className="space-y-0.5">
+              <p className="font-semibold text-foreground text-xs">{c.riderName}</p>
+              {c.pairs.map((p, i) => {
+                const col = conflictColor(p.gap);
+                return (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className={`mt-1 inline-block w-1.5 h-1.5 rounded-full ${col.dot} shrink-0`} />
+                    <span className={`text-xs ${col.text}`}>
+                      {p.motoA} → {p.motoB}
+                      <span className="text-muted-foreground font-normal ml-1">({col.label})</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EventSchedule() {
   const params = useParams();
   const eventId = parseInt(params.eventId || "0");
@@ -882,6 +982,7 @@ export default function EventSchedule() {
   const [generateLapCount, setGenerateLapCount] = useState("");
   const [generateGateMethod, setGenerateGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
+  const [generateMinRacesBetween, setGenerateMinRacesBetween] = useState<number>(0);
 
   // Add moto dialog
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -1101,6 +1202,9 @@ export default function EventSchedule() {
     const map = new Map(motos.map(m => [m.id, m]));
     return localOrder.map(id => map.get(id)).filter(Boolean) as Moto[];
   })();
+
+  // ── Multi-class conflict detection ──
+  const scheduleConflicts = useScheduleConflicts(rawMotos);
 
   // ── Round derivation (mirrors Motos.tsx) ──
   const { roundMap, maxRounds } = useMemo(() => {
@@ -1435,6 +1539,7 @@ export default function EventSchedule() {
           lapCount: lapCountVal,
           gatePickMethod: generateGateMethod,
           rounds: roundsToSend,
+          ...(generateMinRacesBetween > 0 ? { minRacesBetween: generateMinRacesBetween } : {}),
         } as any,
       },
       {
@@ -1596,6 +1701,9 @@ export default function EventSchedule() {
         {/* ── Main content ── */}
         <div className="flex-1 min-w-0 overflow-y-auto">
           <div className="p-6 space-y-5 max-w-4xl">
+
+            {/* ── Multi-class conflict panel ── */}
+            <ScheduleConflictPanel conflicts={scheduleConflicts} />
 
             {/* ── Header toolbar ── */}
             <div className="flex flex-wrap items-end gap-3">
@@ -2124,6 +2232,35 @@ export default function EventSchedule() {
               <p className="text-xs text-muted-foreground">
                 For laps-based races. Sets the target lap count on every moto — shown to the timer and displayed on the race card.
               </p>
+            </div>
+
+            {/* Multi-class spacing */}
+            <div className="space-y-2">
+              <Label>Required Races Between Motos</Label>
+              <p className="text-xs text-muted-foreground">
+                For riders signed up in multiple classes, the scheduler will try to insert this many races between their back-to-back motos.
+              </p>
+              <div className="flex gap-2">
+                {([0, 1, 2, 3] as const).map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setGenerateMinRacesBetween(n)}
+                    className={`flex-1 py-2 rounded-lg border text-sm font-semibold transition-colors ${
+                      generateMinRacesBetween === n
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/50"
+                    }`}
+                  >
+                    {n === 0 ? "None" : n}
+                  </button>
+                ))}
+              </div>
+              {generateMinRacesBetween > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  The scheduler will do its best — if the class count is too small to satisfy this constraint, remaining conflicts will appear in the schedule panel above.
+                </p>
+              )}
             </div>
 
             {/* Gate Pick Method */}

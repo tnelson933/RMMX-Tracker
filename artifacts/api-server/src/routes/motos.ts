@@ -236,7 +236,9 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     gatePickMethod,        // "random" | "practice" | "prior_round_finish" | "first_registered"
     rounds: roundsFilter,  // new: number[] — if provided, only generate these round numbers
     lapCount,              // optional: target laps for laps-based races
+    minRacesBetween,       // optional: minimum motos between a rider's consecutive races
   } = req.body;
+  const minGap: number = minRacesBetween && Number(minRacesBetween) >= 1 ? Math.min(3, Number(minRacesBetween)) : 0;
   const motoLapCount: number | null = lapCount != null && Number(lapCount) > 0 ? Number(lapCount) : null;
 
   // Map gatePickMethod to internal seeding method + gate assignment flag.
@@ -615,6 +617,10 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     // Round-robin: all classes complete Moto 1 before any class runs Moto 2, etc.
     // If roundsFilter is provided, only generate the specified rounds.
     const roundsSet = roundsFilter && (roundsFilter as number[]).length > 0 ? new Set<number>(roundsFilter as number[]) : null;
+
+    // Build the flat list of tasks to insert (before scheduling)
+    type ScheduleTask = { cls: string; groupIdx: number; round: number; name: string; riders: CheckinRow[] };
+    const tasks: ScheduleTask[] = [];
     for (let d = 1; d <= divCount; d++) {
       if (roundsSet !== null && !roundsSet.has(d)) continue;
       for (const { cls, groups } of allClassGroups) {
@@ -622,16 +628,82 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         for (let h = 0; h < groups.length; h++) {
           const groupLabel = multiGroup ? ` Div ${h + 1}` : "";
           const motoLabel = divCount > 1 ? ` Moto ${d}` : " Moto";
-          const name = `${cls}${groupLabel}${motoLabel}`;
-          const lineup = buildLineup(groups[h], []);
-          const [moto] = await db.insert(motosTable).values({
-            eventId, name, type: "heat", raceClass: cls,
-            motoNumber: motoNumber++, status: "scheduled", lineup,
-            lapCount: motoLapCount,
-          }).returning();
-          motos.push(moto);
+          tasks.push({ cls, groupIdx: h, round: d, name: `${cls}${groupLabel}${motoLabel}`, riders: groups[h] });
         }
       }
+    }
+
+    // Greedy multi-class spacing scheduler (only when minGap > 0 and multiple classes exist)
+    let orderedTasks = tasks;
+    if (minGap > 0 && tasks.length > 1) {
+      // Build: riderId → set of task indices
+      const riderTaskIndices = new Map<number, number[]>();
+      for (let i = 0; i < tasks.length; i++) {
+        for (const r of tasks[i].riders) {
+          if (r.riderId == null) continue;
+          if (!riderTaskIndices.has(r.riderId)) riderTaskIndices.set(r.riderId, []);
+          riderTaskIndices.get(r.riderId)!.push(i);
+        }
+      }
+      // Only consider riders who appear in multiple tasks (multi-class riders)
+      const multiClassRiders = new Map<number, number[]>();
+      for (const [rid, idxs] of riderTaskIndices) {
+        if (idxs.length > 1) multiClassRiders.set(rid, idxs);
+      }
+
+      if (multiClassRiders.size > 0) {
+        // Greedy: at each position, pick the remaining task that causes fewest gap violations
+        const remaining = new Set<number>(tasks.map((_, i) => i));
+        const scheduled: number[] = []; // task indices in scheduled order
+        const riderLastPos = new Map<number, number>(); // riderId → last scheduled position (0-indexed)
+
+        while (remaining.size > 0) {
+          let bestIdx = -1;
+          let bestViolations = Infinity;
+          let bestMinGapForBest = -Infinity;
+
+          const pos = scheduled.length;
+          for (const taskIdx of remaining) {
+            const task = tasks[taskIdx];
+            let violations = 0;
+            let worstGap = Infinity; // worst (smallest) gap this task would create
+            for (const r of task.riders) {
+              if (r.riderId == null) continue;
+              const lastPos = riderLastPos.get(r.riderId);
+              if (lastPos == null) continue;
+              const gap = pos - lastPos - 1;
+              if (gap < minGap) violations++;
+              if (gap < worstGap) worstGap = gap;
+            }
+            // Primary: fewest violations; Secondary: largest worstGap (most breathing room)
+            const minGapForTask = worstGap === Infinity ? Infinity : worstGap;
+            if (violations < bestViolations || (violations === bestViolations && minGapForTask > bestMinGapForBest)) {
+              bestViolations = violations;
+              bestMinGapForBest = minGapForTask;
+              bestIdx = taskIdx;
+            }
+          }
+
+          scheduled.push(bestIdx);
+          remaining.delete(bestIdx);
+          for (const r of tasks[bestIdx].riders) {
+            if (r.riderId != null) riderLastPos.set(r.riderId, scheduled.length - 1);
+          }
+        }
+
+        orderedTasks = scheduled.map(i => tasks[i]);
+      }
+    }
+
+    // Insert motos in the final scheduled order
+    for (const task of orderedTasks) {
+      const lineup = buildLineup(task.riders, []);
+      const [moto] = await db.insert(motosTable).values({
+        eventId, name: task.name, type: "heat", raceClass: task.cls,
+        motoNumber: motoNumber++, status: "scheduled", lineup,
+        lapCount: motoLapCount,
+      }).returning();
+      motos.push(moto);
     }
   }
 
