@@ -3126,10 +3126,10 @@ export default function Motos() {
                 {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId && (() => {
                   const partner = (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId);
                   if (!partner) return null;
-                  const partnerLineup = Array.isArray(partner.lineup)
-                    ? partner.lineup as { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber?: string | null }[]
-                    : [];
                   const partnerRunning = partner.status === "in_progress";
+                  const isSorted = getMotoSort(partner.id) !== "gate";
+                  const isSlotActive = !isSorted && activeDragMotoId === partner.id && partner.status !== "completed";
+                  const slotColSpan = partnerRunning ? 6 : 5;
                   return (
                     <div className="border-t-2 border-primary/20">
                       <div className="px-3 py-1.5 flex items-center gap-2 bg-primary/5 border-b border-primary/10">
@@ -3143,45 +3143,43 @@ export default function Motos() {
                           {partner.status === "in_progress" ? "Running" : partner.status === "completed" ? "Done" : "Waiting"}
                         </span>
                       </div>
-                      {partnerLineup.length > 0 ? (
+                      <LineupSortBar sort={getMotoSort(partner.id)} onChange={s => setMotoSort(partner.id, s)} />
+                      <DroppableMotoLineup motoId={partner.id} locked={partner.status === "completed" || getMotoSort(partner.id) !== "gate"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === partner.id}>
                         <Table>
+                          <TableHeader className="bg-muted/50 sticky top-0">
+                            <TableRow>
+                              <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate Pick</TableHead>
+                              <TableHead className="w-8 text-center text-xs">
+                                <GripVertical size={12} className={`mx-auto ${partner.status === "completed" || getMotoSort(partner.id) !== "gate" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
+                              </TableHead>
+                              <TableHead className="text-xs">Rider</TableHead>
+                              <TableHead className="w-16 text-center text-xs">#</TableHead>
+                              <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                              {partnerRunning && <TableHead className="w-24" />}
+                            </TableRow>
+                          </TableHeader>
                           <TableBody>
-                            {partnerLineup.map((entry, idx) => {
-                              const cooldown = manualLapCooldown.has(`${partner.id}-${entry.riderId}`);
-                              return (
-                                <TableRow key={entry.riderId} className="h-7">
-                                  <TableCell className="w-8 text-center text-xs font-mono text-muted-foreground py-1 pl-3">{idx + 1}</TableCell>
-                                  <TableCell className="text-xs font-medium py-1">{entry.riderName}</TableCell>
-                                  <TableCell className="w-14 text-center text-xs font-mono py-1">{entry.bibNumber ?? "—"}</TableCell>
-                                  <TableCell className="w-10 text-center py-1">
-                                    {entry.rfidNumber
-                                      ? <span className="text-green-600 text-xs font-bold">●</span>
-                                      : <span className="text-muted-foreground/30 text-xs">—</span>}
-                                  </TableCell>
-                                  {partnerRunning && (
-                                    <TableCell className="pr-2 text-right py-1">
-                                      <button
-                                        onClick={() => handleManualLap(entry.riderId, partner.id)}
-                                        disabled={cooldown}
-                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-heading font-bold uppercase tracking-wide transition-all border ${
-                                          cooldown
-                                            ? "bg-green-100 border-green-300 text-green-600 opacity-60 cursor-not-allowed"
-                                            : "bg-background border-border text-muted-foreground hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50"
-                                        }`}
-                                      >
-                                        <Timer size={11} />
-                                        {cooldown ? "Recorded" : "Lap"}
-                                      </button>
-                                    </TableCell>
-                                  )}
-                                </TableRow>
-                              );
-                            })}
+                            {getLineup(partner).length > 0 ? (
+                              sortLineup(getLineup(partner), getMotoSort(partner.id)).flatMap((entry, idx, arr) => [
+                                ...(!isSorted ? [<GateDropSlotRow key={`slot-${partner.id}-${idx}`} id={`gate-slot-${partner.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
+                                <DraggableRiderRow
+                                  key={entry.riderId} entry={entry} motoId={partner.id} locked={partner.status === "completed" || isSorted}
+                                  onRecordLap={partnerRunning ? () => handleManualLap(entry.riderId, partner.id) : undefined}
+                                  lapCooldown={manualLapCooldown.has(`${partner.id}-${entry.riderId}`)}
+                                  rowNum={entry.position}
+                                  hasShortLap={shortLapSet.has(`${partner.id}-${entry.riderId}`)}
+                                  onViewLaps={partner.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: partner.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
+                                />,
+                                ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${partner.id}-${idx + 1}`} id={`gate-slot-${partner.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
+                              ])
+                            ) : (
+                              <TableRow>
+                                <TableCell colSpan={slotColSpan} className="text-center py-4 text-muted-foreground text-sm">No lineup assigned</TableCell>
+                              </TableRow>
+                            )}
                           </TableBody>
                         </Table>
-                      ) : (
-                        <div className="py-2 text-center text-xs text-muted-foreground">No lineup assigned</div>
-                      )}
+                      </DroppableMotoLineup>
                     </div>
                   );
                 })()}
@@ -3211,15 +3209,38 @@ export default function Motos() {
                 )}
 
                 {/* Live leaderboard + crossings — hidden when expanded dialog is open to prevent double pings */}
-                {moto.status === "in_progress" && expandedMotoId !== moto.id && (
-                  <div className="border-t grid grid-cols-2 divide-x">
-                    <LiveLeaderboard motoId={moto.id} />
-                    <LiveCrossingsFeed
-                      motoId={moto.id}
-                      minLapTimeMs={minLapMs ?? null}
-                    />
-                  </div>
-                )}
+                {expandedMotoId !== moto.id && (() => {
+                  const staggerPartner = (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
+                    ? (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId) ?? null
+                    : null;
+                  const showMoto1 = moto.status === "in_progress";
+                  const showMoto2 = staggerPartner?.status === "in_progress";
+                  if (!showMoto1 && !showMoto2) return null;
+                  return (
+                    <>
+                      {showMoto1 && (
+                        <div className="border-t">
+                          {staggerPartner && (
+                            <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
+                          )}
+                          <div className="grid grid-cols-2 divide-x">
+                            <LiveLeaderboard motoId={moto.id} />
+                            <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} />
+                          </div>
+                        </div>
+                      )}
+                      {showMoto2 && staggerPartner && (
+                        <div className="border-t">
+                          <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{staggerPartner.name}</div>
+                          <div className="grid grid-cols-2 divide-x">
+                            <LiveLeaderboard motoId={staggerPartner.id} />
+                            <LiveCrossingsFeed motoId={staggerPartner.id} minLapTimeMs={minLapMs ?? null} />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
                 {/* Action bar */}
                 <div className="p-3 bg-muted/30 flex gap-2 items-center flex-wrap">
@@ -3485,10 +3506,10 @@ export default function Motos() {
                 {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId && (() => {
                   const partner = (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId);
                   if (!partner) return null;
-                  const partnerLineup = Array.isArray(partner.lineup)
-                    ? partner.lineup as { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber?: string | null }[]
-                    : [];
                   const partnerRunning = partner.status === "in_progress";
+                  const isSorted = getMotoSort(partner.id) !== "gate";
+                  const isSlotActive = !isSorted && activeDragMotoId === partner.id && partner.status !== "completed";
+                  const slotColSpan = partnerRunning ? 6 : 5;
                   return (
                     <div className="border-t-2 border-primary/25">
                       <div className="px-5 py-3 flex items-center gap-2 bg-primary/5 border-b border-primary/15">
@@ -3505,54 +3526,43 @@ export default function Motos() {
                           {partner.status === "in_progress" ? "Running" : partner.status === "completed" ? "Done" : "Waiting"}
                         </span>
                       </div>
-                      <Table>
-                        <TableHeader className="bg-muted/50">
-                          <TableRow>
-                            <TableHead className="w-12 text-center text-xs">Gate</TableHead>
-                            <TableHead className="text-xs">Rider</TableHead>
-                            <TableHead className="w-16 text-center text-xs">#</TableHead>
-                            <TableHead className="w-20 text-center text-xs">RFID</TableHead>
-                            {partnerRunning && <TableHead className="w-24" />}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {partnerLineup.length > 0 ? partnerLineup.map((entry, idx) => {
-                            const cooldown = manualLapCooldown.has(`${partner.id}-${entry.riderId}`);
-                            return (
-                              <TableRow key={entry.riderId} className="h-9">
-                                <TableCell className="text-center font-heading font-bold">{entry.position ?? idx + 1}</TableCell>
-                                <TableCell className="font-medium">{entry.riderName}</TableCell>
-                                <TableCell className="text-center font-mono text-xs">{entry.bibNumber ?? "—"}</TableCell>
-                                <TableCell className="text-center">
-                                  {entry.rfidNumber
-                                    ? <span className="inline-flex items-center gap-1 text-green-600"><Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span></span>
-                                    : <span className="text-muted-foreground text-xs">—</span>}
-                                </TableCell>
-                                {partnerRunning && (
-                                  <TableCell className="pr-3 text-right">
-                                    <button
-                                      onClick={() => handleManualLap(entry.riderId, partner.id)}
-                                      disabled={cooldown}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-heading font-bold uppercase tracking-wide transition-all border ${
-                                        cooldown
-                                          ? "bg-green-100 border-green-300 text-green-600 opacity-60 cursor-not-allowed"
-                                          : "bg-background border-border text-muted-foreground hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50"
-                                      }`}
-                                    >
-                                      <Timer size={11} />
-                                      {cooldown ? "Recorded" : "Lap"}
-                                    </button>
-                                  </TableCell>
-                                )}
-                              </TableRow>
-                            );
-                          }) : (
+                      <LineupSortBar sort={getMotoSort(partner.id)} onChange={s => setMotoSort(partner.id, s)} />
+                      <DroppableMotoLineup motoId={partner.id} locked={partner.status === "completed" || getMotoSort(partner.id) !== "gate"} className="flex-1" disableDrop={activeDragMotoId === partner.id}>
+                        <Table>
+                          <TableHeader className="bg-muted/50 sticky top-0">
                             <TableRow>
-                              <TableCell colSpan={partnerRunning ? 5 : 4} className="text-center py-4 text-muted-foreground text-sm">No lineup assigned</TableCell>
+                              <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate Pick</TableHead>
+                              <TableHead className="w-8 text-center text-xs" title={partner.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
+                                <GripVertical size={12} className={`mx-auto ${partner.status === "completed" || getMotoSort(partner.id) !== "gate" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
+                              </TableHead>
+                              <TableHead className="text-xs">Rider</TableHead>
+                              <TableHead className="w-16 text-center text-xs">#</TableHead>
+                              <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                              {partnerRunning && <TableHead className="w-24" />}
                             </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {getLineup(partner).length > 0 ? (
+                              sortLineup(getLineup(partner), getMotoSort(partner.id)).flatMap((entry, idx, arr) => [
+                                ...(!isSorted ? [<GateDropSlotRow key={`slot-${partner.id}-${idx}`} id={`gate-slot-${partner.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
+                                <DraggableRiderRow
+                                  key={entry.riderId} entry={entry} motoId={partner.id} locked={partner.status === "completed" || isSorted}
+                                  onRecordLap={partnerRunning ? () => handleManualLap(entry.riderId, partner.id) : undefined}
+                                  lapCooldown={manualLapCooldown.has(`${partner.id}-${entry.riderId}`)}
+                                  rowNum={entry.position}
+                                  hasShortLap={shortLapSet.has(`${partner.id}-${entry.riderId}`)}
+                                  onViewLaps={partner.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: partner.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
+                                />,
+                                ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${partner.id}-${idx + 1}`} id={`gate-slot-${partner.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
+                              ])
+                            ) : (
+                              <TableRow>
+                                <TableCell colSpan={slotColSpan} className="text-center py-4 text-muted-foreground text-sm">No lineup assigned</TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </DroppableMotoLineup>
                     </div>
                   );
                 })()}
@@ -3562,13 +3572,33 @@ export default function Motos() {
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
                 )}
 
-                {/* Live crossing feed */}
-                {moto.status === "in_progress" && (
-                  <LiveCrossingsFeed
-                    motoId={moto.id}
-                    minLapTimeMs={minLapMs ?? null}
-                  />
-                )}
+                {/* Live crossing feed — for staggered pairs show both */}
+                {(() => {
+                  const staggerPartner = (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
+                    ? (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId) ?? null
+                    : null;
+                  const showMoto1 = moto.status === "in_progress";
+                  const showMoto2 = staggerPartner?.status === "in_progress";
+                  if (!showMoto1 && !showMoto2) return null;
+                  return (
+                    <>
+                      {showMoto1 && (
+                        <div className={staggerPartner ? "border-t" : ""}>
+                          {staggerPartner && (
+                            <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
+                          )}
+                          <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} />
+                        </div>
+                      )}
+                      {showMoto2 && staggerPartner && (
+                        <div className="border-t">
+                          <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{staggerPartner.name}</div>
+                          <LiveCrossingsFeed motoId={staggerPartner.id} minLapTimeMs={minLapMs ?? null} />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Action bar */}
