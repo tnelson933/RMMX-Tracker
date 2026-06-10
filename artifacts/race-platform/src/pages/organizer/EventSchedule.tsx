@@ -2080,8 +2080,10 @@ export default function EventSchedule() {
       </div>
 
       {/* ── DragOverlay: rider chip ── */}
+      {/* Lineup-within-moto reorders don't use an overlay — the sortable placeholder
+          is visible at 0.25 opacity in place, leaving the drop-indicator line unobstructed. */}
       <DragOverlay>
-        {activeDrag ? (
+        {activeDrag && activeDrag.source !== "lineup" ? (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-card border border-primary/40 rounded-lg shadow-lg text-sm opacity-95">
             <GripVertical size={12} className="text-muted-foreground/50" />
             {activeDrag.bibNumber && (
