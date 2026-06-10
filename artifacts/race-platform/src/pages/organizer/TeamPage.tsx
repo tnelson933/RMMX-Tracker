@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { UsersRound, Plus, Pencil, Trash2, MailCheck, RefreshCw, AlertCircle } from "lucide-react";
+import { UsersRound, Plus, Pencil, Trash2, MailCheck, RefreshCw, AlertCircle, Link2 } from "lucide-react";
 
 const ALL_PERMISSIONS: { key: string; label: string; description?: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -155,10 +155,10 @@ export default function TeamPage() {
             if ((result as any).setupUrl) {
               toast({
                 title: "Team member added",
-                description: `Email not sent — setup URL: ${(result as any).setupUrl}`,
+                description: `${data.name} was added. Invite email couldn't be sent — share their setup link manually from the team list.`,
               });
             } else {
-              toast({ title: "Invite sent!", description: `${data.name} will receive a setup email.` });
+              toast({ title: "Team member added", description: `An invite email has been sent to ${data.name}.` });
             }
           },
           onError: (err: any) => {
@@ -170,10 +170,15 @@ export default function TeamPage() {
       updateMutation.mutate(
         { userId: editing.id, data: { name: data.name, email: data.email, permissions: data.permissions, resendInvite: data.resendInvite } },
         {
-          onSuccess: () => {
+          onSuccess: (result) => {
             setDialogOpen(false);
             refetch();
-            toast({ title: data.resendInvite ? "Invite re-sent" : "Profile updated" });
+            if (data.resendInvite && (result as any).setupUrl) {
+              navigator.clipboard.writeText((result as any).setupUrl).catch(() => {});
+              toast({ title: "Setup link copied", description: "Email couldn't be sent — the setup link has been copied to your clipboard." });
+            } else {
+              toast({ title: data.resendInvite ? "Invite re-sent" : "Profile updated" });
+            }
           },
           onError: (err: any) => {
             toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to update team member", variant: "destructive" });
@@ -258,6 +263,34 @@ export default function TeamPage() {
                 </div>
               </div>
               <div className="flex gap-1.5 shrink-0">
+                {member.status === "invited" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title="Copy setup link"
+                    disabled={updateMutation.isPending}
+                    onClick={() => {
+                      updateMutation.mutate(
+                        { userId: member.id, data: { resendInvite: true } as any },
+                        {
+                          onSuccess: (result) => {
+                            if ((result as any).setupUrl) {
+                              navigator.clipboard.writeText((result as any).setupUrl).catch(() => {});
+                              toast({ title: "Setup link copied", description: "Email couldn't be sent — the setup link has been copied to your clipboard." });
+                            } else {
+                              toast({ title: "Invite re-sent", description: `A new invite email was sent to ${member.email}.` });
+                            }
+                          },
+                          onError: (err: any) => {
+                            toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to resend invite", variant: "destructive" });
+                          },
+                        }
+                      );
+                    }}
+                  >
+                    <Link2 size={14} />
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" onClick={() => openEdit(member)}>
                   <Pencil size={14} />
                 </Button>
