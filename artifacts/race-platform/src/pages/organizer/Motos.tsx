@@ -1454,7 +1454,7 @@ export default function Motos() {
           onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
             setLineupDrafts(p => { const n = { ...p }; delete n[sourceMotoId]; return n; });
-            toast({ title: `✅ Gate order updated` });
+            toast({ title: `✅ Gate pick order updated` });
           },
           onError: () => {
             setLineupDrafts(p => { const n = { ...p }; delete n[sourceMotoId]; return n; });
@@ -2679,7 +2679,7 @@ export default function Motos() {
                         <table className="heat-sheet-lineup-table">
                           <thead>
                             <tr>
-                              <th>Gate</th>
+                              <th>Gate Pick</th>
                               <th>Rider</th>
                               <th>#</th>
                             </tr>
@@ -2936,7 +2936,7 @@ export default function Motos() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
-                          <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate</TableHead>
+                          <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate Pick</TableHead>
                           <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
                             <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
@@ -2982,7 +2982,7 @@ export default function Motos() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
-                          <TableHead className="w-12 text-center text-xs">Gate</TableHead>
+                          <TableHead className="w-12 text-center text-xs">Gate Pick</TableHead>
                           <TableHead className="text-xs">Rider</TableHead>
                           <TableHead className="w-16 text-center text-xs">#</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
@@ -3246,7 +3246,7 @@ export default function Motos() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
-                          <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate</TableHead>
+                          <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate Pick</TableHead>
                           <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
                             <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
@@ -3290,7 +3290,7 @@ export default function Motos() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
-                          <TableHead className="w-12 text-center text-xs">Gate</TableHead>
+                          <TableHead className="w-12 text-center text-xs">Gate Pick</TableHead>
                           <TableHead className="text-xs">Rider</TableHead>
                           <TableHead className="w-16 text-center text-xs">#</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
