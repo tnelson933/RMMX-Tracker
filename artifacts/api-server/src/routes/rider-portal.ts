@@ -1,5 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import { formatLapTime } from "./timing";
 import { db } from "@workspace/db";
 import {
   riderAccountsTable,
@@ -230,7 +231,11 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       position: row.position,
       points: row.points,
       totalTime: row.totalTime,
-      lapTimes: ((row.lapTimes as { lap: number; time: string }[]) ?? []).map((lt) => lt.time),
+      lapTimes: ((row.lapTimes as unknown[]) ?? []).map((lt) => {
+        if (typeof lt === "number") return formatLapTime(lt);
+        if (lt && typeof lt === "object" && "time" in lt) return (lt as { time: string }).time;
+        return String(lt ?? "");
+      }).filter(Boolean),
       dnf: row.dnf,
       dns: row.dns,
       bibNumber: row.bibNumber,
