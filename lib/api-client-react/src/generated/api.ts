@@ -35,7 +35,14 @@ import type {
   CompleteSetupInput,
   CompleteTour200,
   CreateUserInput,
+  DeleteDiscountCategory200,
+  DeleteDiscountCode200,
   DisconnectStripeConnect200,
+  DiscountCategory,
+  DiscountCategoryInput,
+  DiscountCode,
+  DiscountCodeInput,
+  DiscountCodeUpdate,
   ErrorEnvelope,
   Event,
   EventInput,
@@ -5504,6 +5511,586 @@ export const useDisconnectStripeConnect = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDisconnectStripeConnectMutationOptions(options));
+    }
+
+export const getListDiscountCategoriesUrl = () => {
+
+
+
+
+  return `/api/discount-categories`
+}
+
+/**
+ * @summary List discount categories for the logged-in organizer's club
+ */
+export const listDiscountCategories = async ( options?: RequestInit): Promise<DiscountCategory[]> => {
+
+  return customFetch<DiscountCategory[]>(getListDiscountCategoriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDiscountCategoriesQueryKey = () => {
+    return [
+    `/api/discount-categories`
+    ] as const;
+    }
+
+
+export const getListDiscountCategoriesQueryOptions = <TData = Awaited<ReturnType<typeof listDiscountCategories>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDiscountCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDiscountCategoriesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDiscountCategories>>> = ({ signal }) => listDiscountCategories({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDiscountCategories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDiscountCategoriesQueryResult = NonNullable<Awaited<ReturnType<typeof listDiscountCategories>>>
+export type ListDiscountCategoriesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List discount categories for the logged-in organizer's club
+ */
+
+export function useListDiscountCategories<TData = Awaited<ReturnType<typeof listDiscountCategories>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDiscountCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDiscountCategoriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateDiscountCategoryUrl = () => {
+
+
+
+
+  return `/api/discount-categories`
+}
+
+/**
+ * @summary Create a new discount category
+ */
+export const createDiscountCategory = async (discountCategoryInput: DiscountCategoryInput, options?: RequestInit): Promise<DiscountCategory> => {
+
+  return customFetch<DiscountCategory>(getCreateDiscountCategoryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      discountCategoryInput,)
+  }
+);}
+
+
+
+
+export const getCreateDiscountCategoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDiscountCategory>>, TError,{data: BodyType<DiscountCategoryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDiscountCategory>>, TError,{data: BodyType<DiscountCategoryInput>}, TContext> => {
+
+const mutationKey = ['createDiscountCategory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDiscountCategory>>, {data: BodyType<DiscountCategoryInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDiscountCategory(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDiscountCategoryMutationResult = NonNullable<Awaited<ReturnType<typeof createDiscountCategory>>>
+    export type CreateDiscountCategoryMutationBody = BodyType<DiscountCategoryInput>
+    export type CreateDiscountCategoryMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a new discount category
+ */
+export const useCreateDiscountCategory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDiscountCategory>>, TError,{data: BodyType<DiscountCategoryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDiscountCategory>>,
+        TError,
+        {data: BodyType<DiscountCategoryInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDiscountCategoryMutationOptions(options));
+    }
+
+export const getUpdateDiscountCategoryUrl = (categoryId: number,) => {
+
+
+
+
+  return `/api/discount-categories/${categoryId}`
+}
+
+/**
+ * @summary Rename a discount category
+ */
+export const updateDiscountCategory = async (categoryId: number,
+    discountCategoryInput: DiscountCategoryInput, options?: RequestInit): Promise<DiscountCategory> => {
+
+  return customFetch<DiscountCategory>(getUpdateDiscountCategoryUrl(categoryId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      discountCategoryInput,)
+  }
+);}
+
+
+
+
+export const getUpdateDiscountCategoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDiscountCategory>>, TError,{categoryId: number;data: BodyType<DiscountCategoryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDiscountCategory>>, TError,{categoryId: number;data: BodyType<DiscountCategoryInput>}, TContext> => {
+
+const mutationKey = ['updateDiscountCategory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDiscountCategory>>, {categoryId: number;data: BodyType<DiscountCategoryInput>}> = (props) => {
+          const {categoryId,data} = props ?? {};
+
+          return  updateDiscountCategory(categoryId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDiscountCategoryMutationResult = NonNullable<Awaited<ReturnType<typeof updateDiscountCategory>>>
+    export type UpdateDiscountCategoryMutationBody = BodyType<DiscountCategoryInput>
+    export type UpdateDiscountCategoryMutationError = ErrorType<void>
+
+    /**
+ * @summary Rename a discount category
+ */
+export const useUpdateDiscountCategory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDiscountCategory>>, TError,{categoryId: number;data: BodyType<DiscountCategoryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDiscountCategory>>,
+        TError,
+        {categoryId: number;data: BodyType<DiscountCategoryInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateDiscountCategoryMutationOptions(options));
+    }
+
+export const getDeleteDiscountCategoryUrl = (categoryId: number,) => {
+
+
+
+
+  return `/api/discount-categories/${categoryId}`
+}
+
+/**
+ * @summary Delete a discount category
+ */
+export const deleteDiscountCategory = async (categoryId: number, options?: RequestInit): Promise<DeleteDiscountCategory200> => {
+
+  return customFetch<DeleteDiscountCategory200>(getDeleteDiscountCategoryUrl(categoryId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDiscountCategoryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDiscountCategory>>, TError,{categoryId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDiscountCategory>>, TError,{categoryId: number}, TContext> => {
+
+const mutationKey = ['deleteDiscountCategory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDiscountCategory>>, {categoryId: number}> = (props) => {
+          const {categoryId} = props ?? {};
+
+          return  deleteDiscountCategory(categoryId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDiscountCategoryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDiscountCategory>>>
+
+    export type DeleteDiscountCategoryMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a discount category
+ */
+export const useDeleteDiscountCategory = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDiscountCategory>>, TError,{categoryId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDiscountCategory>>,
+        TError,
+        {categoryId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDiscountCategoryMutationOptions(options));
+    }
+
+export const getListDiscountCodesUrl = () => {
+
+
+
+
+  return `/api/discount-codes`
+}
+
+/**
+ * @summary List club-level discount codes for the logged-in organizer's club
+ */
+export const listDiscountCodes = async ( options?: RequestInit): Promise<DiscountCode[]> => {
+
+  return customFetch<DiscountCode[]>(getListDiscountCodesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDiscountCodesQueryKey = () => {
+    return [
+    `/api/discount-codes`
+    ] as const;
+    }
+
+
+export const getListDiscountCodesQueryOptions = <TData = Awaited<ReturnType<typeof listDiscountCodes>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDiscountCodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDiscountCodesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDiscountCodes>>> = ({ signal }) => listDiscountCodes({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDiscountCodes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDiscountCodesQueryResult = NonNullable<Awaited<ReturnType<typeof listDiscountCodes>>>
+export type ListDiscountCodesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List club-level discount codes for the logged-in organizer's club
+ */
+
+export function useListDiscountCodes<TData = Awaited<ReturnType<typeof listDiscountCodes>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDiscountCodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDiscountCodesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateDiscountCodeUrl = () => {
+
+
+
+
+  return `/api/discount-codes`
+}
+
+/**
+ * @summary Create a new club-level discount code
+ */
+export const createDiscountCode = async (discountCodeInput: DiscountCodeInput, options?: RequestInit): Promise<DiscountCode> => {
+
+  return customFetch<DiscountCode>(getCreateDiscountCodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      discountCodeInput,)
+  }
+);}
+
+
+
+
+export const getCreateDiscountCodeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDiscountCode>>, TError,{data: BodyType<DiscountCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDiscountCode>>, TError,{data: BodyType<DiscountCodeInput>}, TContext> => {
+
+const mutationKey = ['createDiscountCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDiscountCode>>, {data: BodyType<DiscountCodeInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDiscountCode(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDiscountCodeMutationResult = NonNullable<Awaited<ReturnType<typeof createDiscountCode>>>
+    export type CreateDiscountCodeMutationBody = BodyType<DiscountCodeInput>
+    export type CreateDiscountCodeMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a new club-level discount code
+ */
+export const useCreateDiscountCode = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDiscountCode>>, TError,{data: BodyType<DiscountCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDiscountCode>>,
+        TError,
+        {data: BodyType<DiscountCodeInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDiscountCodeMutationOptions(options));
+    }
+
+export const getUpdateDiscountCodeUrl = (codeId: number,) => {
+
+
+
+
+  return `/api/discount-codes/${codeId}`
+}
+
+/**
+ * @summary Deactivate or update a discount code
+ */
+export const updateDiscountCode = async (codeId: number,
+    discountCodeUpdate: DiscountCodeUpdate, options?: RequestInit): Promise<DiscountCode> => {
+
+  return customFetch<DiscountCode>(getUpdateDiscountCodeUrl(codeId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      discountCodeUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateDiscountCodeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDiscountCode>>, TError,{codeId: number;data: BodyType<DiscountCodeUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDiscountCode>>, TError,{codeId: number;data: BodyType<DiscountCodeUpdate>}, TContext> => {
+
+const mutationKey = ['updateDiscountCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDiscountCode>>, {codeId: number;data: BodyType<DiscountCodeUpdate>}> = (props) => {
+          const {codeId,data} = props ?? {};
+
+          return  updateDiscountCode(codeId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateDiscountCodeMutationResult = NonNullable<Awaited<ReturnType<typeof updateDiscountCode>>>
+    export type UpdateDiscountCodeMutationBody = BodyType<DiscountCodeUpdate>
+    export type UpdateDiscountCodeMutationError = ErrorType<void>
+
+    /**
+ * @summary Deactivate or update a discount code
+ */
+export const useUpdateDiscountCode = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDiscountCode>>, TError,{codeId: number;data: BodyType<DiscountCodeUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateDiscountCode>>,
+        TError,
+        {codeId: number;data: BodyType<DiscountCodeUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateDiscountCodeMutationOptions(options));
+    }
+
+export const getDeleteDiscountCodeUrl = (codeId: number,) => {
+
+
+
+
+  return `/api/discount-codes/${codeId}`
+}
+
+/**
+ * @summary Delete a discount code
+ */
+export const deleteDiscountCode = async (codeId: number, options?: RequestInit): Promise<DeleteDiscountCode200> => {
+
+  return customFetch<DeleteDiscountCode200>(getDeleteDiscountCodeUrl(codeId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteDiscountCodeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDiscountCode>>, TError,{codeId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteDiscountCode>>, TError,{codeId: number}, TContext> => {
+
+const mutationKey = ['deleteDiscountCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDiscountCode>>, {codeId: number}> = (props) => {
+          const {codeId} = props ?? {};
+
+          return  deleteDiscountCode(codeId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteDiscountCodeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDiscountCode>>>
+
+    export type DeleteDiscountCodeMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a discount code
+ */
+export const useDeleteDiscountCode = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDiscountCode>>, TError,{codeId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteDiscountCode>>,
+        TError,
+        {codeId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteDiscountCodeMutationOptions(options));
     }
 
 export const getRequestUploadUrlUrl = () => {

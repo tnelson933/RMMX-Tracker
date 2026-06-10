@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable } from "@workspace/db";
-import { eq, and, sql, desc, ne } from "drizzle-orm";
+import { eq, and, sql, desc, ne, isNull } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 
 const router = Router();
@@ -435,7 +435,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, hometown, homeState, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, hometown, homeState, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode, categoryId } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -495,14 +495,48 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   let compDiscount = 0;
   let validatedCompCode: string | null = null;
   if (compCode) {
-    const [code] = await db.select().from(compCodesTable).where(
-      and(eq(compCodesTable.eventId, eventId), eq(compCodesTable.code, String(compCode).trim().toUpperCase()))
+    const codeStr = String(compCode).trim().toUpperCase();
+
+    // 1. Try event-scoped code first
+    let [codeRow] = await db.select().from(compCodesTable).where(
+      and(eq(compCodesTable.eventId, eventId), eq(compCodesTable.code, codeStr))
     );
-    if (!code || code.usesCount >= code.maxUses) {
+
+    // 2. Fall back to club-level code (event_id IS NULL) for this event's club
+    if (!codeRow) {
+      const eventClubId = events[0]?.clubId;
+      if (eventClubId) {
+        [codeRow] = await db.select().from(compCodesTable).where(
+          and(
+            eq(compCodesTable.clubId, eventClubId),
+            isNull(compCodesTable.eventId),
+            eq(compCodesTable.code, codeStr),
+          )
+        );
+      }
+    }
+
+    if (!codeRow) {
       return res.status(400).json({ error: "Invalid or already-used comp code" });
     }
-    compDiscount = Number(code.amount);
-    validatedCompCode = code.code;
+    if (codeRow.isActive === false) {
+      return res.status(400).json({ error: "This comp code is no longer active" });
+    }
+    if (codeRow.expiresAt && new Date() > codeRow.expiresAt) {
+      return res.status(400).json({ error: "This comp code has expired" });
+    }
+    if (codeRow.usesCount >= codeRow.maxUses) {
+      return res.status(400).json({ error: "Invalid or already-used comp code" });
+    }
+    // Category restriction: if code is restricted to categories, a matching categoryId must be provided
+    const codeCatIds = (codeRow.categoryIds as number[]) ?? [];
+    if (codeCatIds.length > 0) {
+      if (categoryId == null || !codeCatIds.includes(Number(categoryId))) {
+        return res.status(400).json({ error: "This comp code is not valid for the selected category" });
+      }
+    }
+    compDiscount = Number(codeRow.amount);
+    validatedCompCode = codeRow.code;
   }
 
   // Find or create rider by email

@@ -35,6 +35,7 @@ import SetPassword from "@/pages/public/SetPassword";
 import StripeConnect from "@/pages/organizer/StripeConnect";
 import StandalonePractice from "@/pages/organizer/StandalonePractice";
 import GateAssignments from "@/pages/organizer/GateAssignments";
+import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
 import RiderLogin from "@/pages/rider/RiderLogin";
 import RiderPortal from "@/pages/rider/RiderPortal";
 import RiderHistory from "@/pages/rider/RiderHistory";
@@ -157,6 +158,9 @@ function Router() {
       </Route>
       <Route path="/payments">
         <ProtectedRoute><StripeConnect /></ProtectedRoute>
+      </Route>
+      <Route path="/discount-codes">
+        <ProtectedRoute><DiscountCodesPage /></ProtectedRoute>
       </Route>
       <Route path="/practice">
         <ProtectedRoute><StandalonePractice /></ProtectedRoute>

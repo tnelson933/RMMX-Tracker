@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { compCodesTable, eventsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import crypto from "crypto";
 
 const router = Router();
@@ -69,20 +69,66 @@ router.get("/events/:eventId/comp-codes", async (req, res) => {
   })));
 });
 
+// ── Shared helper: validate a resolved comp code row ─────────────────────────
+function validateCodeRow(
+  row: typeof compCodesTable.$inferSelect,
+  categoryId: number | null | undefined,
+): { valid: false; error: string; status: number } | { valid: true; amount: number } {
+  if (row.isActive === false) {
+    return { valid: false, error: "This comp code is no longer active", status: 409 };
+  }
+  if (row.expiresAt && new Date() > row.expiresAt) {
+    return { valid: false, error: "This comp code has expired", status: 409 };
+  }
+  if (row.usesCount >= row.maxUses) {
+    return { valid: false, error: "This comp code has already been used", status: 409 };
+  }
+
+  // Category restriction: if the code restricts to specific categories, require a match
+  const catIds = (row.categoryIds as number[]) ?? [];
+  if (catIds.length > 0) {
+    if (categoryId == null || !catIds.includes(Number(categoryId))) {
+      return { valid: false, error: "This comp code is not valid for the selected category", status: 409 };
+    }
+  }
+
+  return { valid: true, amount: Number(row.amount) };
+}
+
 // ── Public: validate comp code ───────────────────────────────────────────────
 router.post("/public/events/:eventId/validate-comp-code", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { code } = req.body;
+  const { code, categoryId } = req.body;
   if (!code) return res.status(400).json({ error: "code required" });
 
-  const [row] = await db.select().from(compCodesTable).where(
-    and(eq(compCodesTable.eventId, eventId), eq(compCodesTable.code, String(code).trim().toUpperCase()))
+  const codeStr = String(code).trim().toUpperCase();
+
+  // 1. Look for event-scoped code first
+  let [row] = await db.select().from(compCodesTable).where(
+    and(eq(compCodesTable.eventId, eventId), eq(compCodesTable.code, codeStr))
   );
 
-  if (!row) return res.status(404).json({ valid: false, error: "Invalid comp code" });
-  if (row.usesCount >= row.maxUses) return res.status(409).json({ valid: false, error: "This comp code has already been used" });
+  // 2. Fall back to club-level code (no event_id) scoped to the event's club
+  if (!row) {
+    const [event] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (event?.clubId) {
+      [row] = await db.select().from(compCodesTable).where(
+        and(
+          eq(compCodesTable.clubId, event.clubId),
+          isNull(compCodesTable.eventId),
+          eq(compCodesTable.code, codeStr),
+        )
+      );
+    }
+  }
 
-  return res.json({ valid: true, amount: Number(row.amount) });
+  if (!row) return res.status(404).json({ valid: false, error: "Invalid comp code" });
+
+  const result = validateCodeRow(row, categoryId);
+  if (!result.valid) {
+    return res.status(result.status).json({ valid: false, error: result.error });
+  }
+  return res.json({ valid: true, amount: result.amount });
 });
 
 export default router;

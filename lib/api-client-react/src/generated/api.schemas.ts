@@ -950,6 +950,52 @@ export interface GeneratePracticeSessionsInput {
   scheduledTime?: string;
 }
 
+export interface DiscountCategory {
+  id: number;
+  clubId: number;
+  name: string;
+  createdAt: string;
+}
+
+export interface DiscountCategoryInput {
+  name: string;
+}
+
+export interface DiscountCode {
+  id: number;
+  /** @nullable */
+  clubId?: number | null;
+  /** @nullable */
+  eventId?: number | null;
+  code: string;
+  amount: number;
+  maxUses: number;
+  usesCount: number;
+  isActive: boolean;
+  /** @nullable */
+  expiresAt?: string | null;
+  categoryIds: number[];
+  createdAt: string;
+}
+
+export interface DiscountCodeInput {
+  /** Custom code string; omit to auto-generate */
+  code?: string;
+  amount: number;
+  /** Use -1 for unlimited */
+  maxUses: number;
+  /** @nullable */
+  expiresAt?: string | null;
+  categoryIds?: number[];
+}
+
+export interface DiscountCodeUpdate {
+  isActive?: boolean;
+  /** @nullable */
+  expiresAt?: string | null;
+  categoryIds?: number[];
+}
+
 export interface ErrorEnvelope {
   error: string;
 }
@@ -1002,6 +1048,14 @@ export type OfflineSyncUpload200 = {
 };
 
 export type DisconnectStripeConnect200 = {
+  ok?: boolean;
+};
+
+export type DeleteDiscountCategory200 = {
+  ok?: boolean;
+};
+
+export type DeleteDiscountCode200 = {
   ok?: boolean;
 };
 

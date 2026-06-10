@@ -24,6 +24,8 @@ import practiceRouter from "./practice";
 import exportRouter from "./export";
 import syncRouter from "./sync";
 import offlineRouter from "./offline";
+import discountCategoriesRouter from "./discount-categories";
+import discountCodesRouter from "./discount-codes";
 
 const router: IRouter = Router();
 
@@ -52,5 +54,7 @@ router.use(practiceRouter);
 router.use(exportRouter);
 router.use(syncRouter);
 router.use(offlineRouter);
+router.use(discountCategoriesRouter);
+router.use(discountCodesRouter);
 
 export default router;

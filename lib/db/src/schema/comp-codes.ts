@@ -1,14 +1,27 @@
-import { pgTable, serial, integer, text, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, numeric, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
 import { eventsTable } from "./events";
+import { clubsTable } from "./clubs";
+
+export const discountCategoriesTable = pgTable("discount_categories", {
+  id: serial("id").primaryKey(),
+  clubId: integer("club_id").notNull().references(() => clubsTable.id),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 export const compCodesTable = pgTable("comp_codes", {
   id: serial("id").primaryKey(),
-  eventId: integer("event_id").notNull().references(() => eventsTable.id),
+  eventId: integer("event_id").references(() => eventsTable.id),
+  clubId: integer("club_id").references(() => clubsTable.id),
   code: text("code").notNull().unique(),
   amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
   maxUses: integer("max_uses").notNull().default(1),
   usesCount: integer("uses_count").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  expiresAt: timestamp("expires_at"),
+  categoryIds: jsonb("category_ids").$type<number[]>().notNull().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type CompCode = typeof compCodesTable.$inferSelect;
+export type DiscountCategory = typeof discountCategoriesTable.$inferSelect;

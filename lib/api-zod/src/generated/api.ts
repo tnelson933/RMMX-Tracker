@@ -1533,6 +1533,128 @@ export const DisconnectStripeConnectResponse = zod.object({
 
 
 /**
+ * @summary List discount categories for the logged-in organizer's club
+ */
+export const ListDiscountCategoriesResponseItem = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number(),
+  "name": zod.string(),
+  "createdAt": zod.string()
+})
+export const ListDiscountCategoriesResponse = zod.array(ListDiscountCategoriesResponseItem)
+
+
+/**
+ * @summary Create a new discount category
+ */
+export const CreateDiscountCategoryBody = zod.object({
+  "name": zod.string()
+})
+
+
+/**
+ * @summary Rename a discount category
+ */
+export const UpdateDiscountCategoryParams = zod.object({
+  "categoryId": zod.coerce.number()
+})
+
+export const UpdateDiscountCategoryBody = zod.object({
+  "name": zod.string()
+})
+
+export const UpdateDiscountCategoryResponse = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number(),
+  "name": zod.string(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a discount category
+ */
+export const DeleteDiscountCategoryParams = zod.object({
+  "categoryId": zod.coerce.number()
+})
+
+export const DeleteDiscountCategoryResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
+ * @summary List club-level discount codes for the logged-in organizer's club
+ */
+export const ListDiscountCodesResponseItem = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number().nullish(),
+  "eventId": zod.number().nullish(),
+  "code": zod.string(),
+  "amount": zod.number(),
+  "maxUses": zod.number(),
+  "usesCount": zod.number(),
+  "isActive": zod.boolean(),
+  "expiresAt": zod.string().nullish(),
+  "categoryIds": zod.array(zod.number()),
+  "createdAt": zod.string()
+})
+export const ListDiscountCodesResponse = zod.array(ListDiscountCodesResponseItem)
+
+
+/**
+ * @summary Create a new club-level discount code
+ */
+export const CreateDiscountCodeBody = zod.object({
+  "code": zod.string().optional().describe('Custom code string; omit to auto-generate'),
+  "amount": zod.number(),
+  "maxUses": zod.number().describe('Use -1 for unlimited'),
+  "expiresAt": zod.string().nullish(),
+  "categoryIds": zod.array(zod.number()).optional()
+})
+
+
+/**
+ * @summary Deactivate or update a discount code
+ */
+export const UpdateDiscountCodeParams = zod.object({
+  "codeId": zod.coerce.number()
+})
+
+export const UpdateDiscountCodeBody = zod.object({
+  "isActive": zod.boolean().optional(),
+  "expiresAt": zod.string().nullish(),
+  "categoryIds": zod.array(zod.number()).optional()
+})
+
+export const UpdateDiscountCodeResponse = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number().nullish(),
+  "eventId": zod.number().nullish(),
+  "code": zod.string(),
+  "amount": zod.number(),
+  "maxUses": zod.number(),
+  "usesCount": zod.number(),
+  "isActive": zod.boolean(),
+  "expiresAt": zod.string().nullish(),
+  "categoryIds": zod.array(zod.number()),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a discount code
+ */
+export const DeleteDiscountCodeParams = zod.object({
+  "codeId": zod.coerce.number()
+})
+
+export const DeleteDiscountCodeResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
  * @summary Request a presigned URL for file upload
  */
 

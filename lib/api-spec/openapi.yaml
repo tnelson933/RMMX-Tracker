@@ -38,6 +38,8 @@ tags:
     description: Object storage upload and serving endpoints.
   - name: offline
     description: Offline mode package management
+  - name: discounts
+    description: Discount codes and categories
 
 paths:
   /healthz:
@@ -1505,6 +1507,188 @@ paths:
                   ok:
                     type: boolean
 
+  # DISCOUNT CATEGORIES
+  /discount-categories:
+    get:
+      operationId: listDiscountCategories
+      tags: [discounts]
+      summary: List discount categories for the logged-in organizer's club
+      responses:
+        "200":
+          description: List of discount categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DiscountCategory"
+        "401":
+          description: Not authenticated
+    post:
+      operationId: createDiscountCategory
+      tags: [discounts]
+      summary: Create a new discount category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscountCategoryInput"
+      responses:
+        "201":
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscountCategory"
+        "401":
+          description: Not authenticated
+
+  /discount-categories/{categoryId}:
+    patch:
+      operationId: updateDiscountCategory
+      tags: [discounts]
+      summary: Rename a discount category
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscountCategoryInput"
+      responses:
+        "200":
+          description: Updated category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscountCategory"
+        "401":
+          description: Not authenticated
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDiscountCategory
+      tags: [discounts]
+      summary: Delete a discount category
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          description: Not authenticated
+        "404":
+          description: Not found
+
+  # DISCOUNT CODES (club-level)
+  /discount-codes:
+    get:
+      operationId: listDiscountCodes
+      tags: [discounts]
+      summary: List club-level discount codes for the logged-in organizer's club
+      responses:
+        "200":
+          description: List of discount codes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DiscountCode"
+        "401":
+          description: Not authenticated
+    post:
+      operationId: createDiscountCode
+      tags: [discounts]
+      summary: Create a new club-level discount code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscountCodeInput"
+      responses:
+        "201":
+          description: Code created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscountCode"
+        "401":
+          description: Not authenticated
+        "409":
+          description: Code string already exists
+
+  /discount-codes/{codeId}:
+    patch:
+      operationId: updateDiscountCode
+      tags: [discounts]
+      summary: Deactivate or update a discount code
+      parameters:
+        - name: codeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscountCodeUpdate"
+      responses:
+        "200":
+          description: Updated discount code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscountCode"
+        "401":
+          description: Not authenticated
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDiscountCode
+      tags: [discounts]
+      summary: Delete a discount code
+      parameters:
+        - name: codeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          description: Not authenticated
+        "404":
+          description: Not found
+
   /storage/uploads/request-url:
     post:
       tags: [Storage]
@@ -2930,6 +3114,86 @@ components:
         scheduledTime:
           type: string
           description: Optional scheduled start time for the first session
+
+    DiscountCategory:
+      type: object
+      required: [id, clubId, name, createdAt]
+      properties:
+        id:
+          type: integer
+        clubId:
+          type: integer
+        name:
+          type: string
+        createdAt:
+          type: string
+
+    DiscountCategoryInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    DiscountCode:
+      type: object
+      required: [id, code, amount, maxUses, usesCount, isActive, categoryIds, createdAt]
+      properties:
+        id:
+          type: integer
+        clubId:
+          type: ["integer", "null"]
+        eventId:
+          type: ["integer", "null"]
+        code:
+          type: string
+        amount:
+          type: number
+        maxUses:
+          type: integer
+        usesCount:
+          type: integer
+        isActive:
+          type: boolean
+        expiresAt:
+          type: ["string", "null"]
+        categoryIds:
+          type: array
+          items:
+            type: integer
+        createdAt:
+          type: string
+
+    DiscountCodeInput:
+      type: object
+      required: [amount, maxUses]
+      properties:
+        code:
+          type: string
+          description: Custom code string; omit to auto-generate
+        amount:
+          type: number
+        maxUses:
+          type: integer
+          description: Use -1 for unlimited
+        expiresAt:
+          type: ["string", "null"]
+        categoryIds:
+          type: array
+          items:
+            type: integer
+
+    DiscountCodeUpdate:
+      type: object
+      properties:
+        isActive:
+          type: boolean
+        expiresAt:
+          type: ["string", "null"]
+        categoryIds:
+          type: array
+          items:
+            type: integer
 
     ErrorEnvelope:
       type: object
