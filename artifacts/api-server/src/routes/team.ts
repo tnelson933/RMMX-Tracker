@@ -85,7 +85,16 @@ router.post("/organizer/team", async (req, res) => {
   const trimmedEmail = String(email).toLowerCase().trim();
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, trimmedEmail));
   if (existing) {
-    return res.status(409).json({ error: "An account with this email already exists" });
+    if (existing.role === "super_admin") {
+      return res.status(409).json({ error: "This email belongs to a platform admin — they already have full access and don't need a staff account." });
+    }
+    if (existing.role === "club_organizer" && existing.clubId === auth.clubId) {
+      return res.status(409).json({ error: "This email belongs to your club's organizer account — they already have full access." });
+    }
+    if (existing.role === "staff" && existing.clubId === auth.clubId) {
+      return res.status(409).json({ error: "This person is already a team member for your club." });
+    }
+    return res.status(409).json({ error: "This email is already associated with another account on the platform." });
   }
 
   const perms = sanitizePermissions(permissions);
