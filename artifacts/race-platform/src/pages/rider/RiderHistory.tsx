@@ -1193,7 +1193,7 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
             {moto.lineup.length > 0 ? (
               <>
                 <div className="px-4 pt-2 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
-                  Gate Assignment
+                  Gate Pick
                 </div>
                 <div className="divide-y">
                   {moto.lineup.map(entry => (
@@ -1342,7 +1342,7 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
       ) : (
       <div className="px-4 py-3 bg-background border-b">
         <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold mb-2">
-          {moto.familyGates.length === 1 ? "Starting Gate" : "Your Gates"}
+          {moto.familyGates.length === 1 ? "Gate Pick" : "Gate Picks"}
         </div>
         <div className="flex flex-wrap gap-3">
           {moto.familyGates.map(fg => (
@@ -1350,7 +1350,7 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
               <div className="flex flex-col items-center justify-center w-16 h-16 rounded-xl bg-foreground text-background shrink-0">
                 <DoorOpen size={18} className="mb-0.5 opacity-70" />
                 <span className="font-heading font-black text-2xl leading-none">{fg.gate}</span>
-                <span className="text-[9px] font-bold uppercase tracking-wider opacity-60 mt-0.5">Gate</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider opacity-60 mt-0.5">Gate Pick</span>
               </div>
               <div>
                 <div className="text-sm font-bold text-primary leading-tight">{fg.riderName}</div>
@@ -1434,7 +1434,7 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
           {open && moto.lineup.length > 0 && (
             <div className="bg-background">
               <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
-                Gate Assignment
+                Gate Pick
               </div>
               <div className="divide-y">
                 {moto.lineup.map(entry => (
@@ -1591,7 +1591,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                     {nowUpMoto && nowUpMoto.familyGates.length > 0 && (
                       nowUpMoto.familyGates.length === 1 ? (
                         <div className="flex items-baseline gap-1 justify-end mt-0.5">
-                          <span className={`text-xs ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>Gate</span>
+                          <span className={`text-xs ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>Gate Pick</span>
                           <span className={`font-heading font-black text-2xl leading-none ${isRaceDay ? "text-white" : "text-foreground"}`}>{nowUpMoto.familyGates[0].gate}</span>
                         </div>
                       ) : (
