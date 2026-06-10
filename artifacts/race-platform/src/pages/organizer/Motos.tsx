@@ -2892,45 +2892,73 @@ export default function Motos() {
             }).map((moto) => (
             <div key={moto.id} id={`moto-card-${moto.id}`}>
               <DroppableMotoSlot id={`moto-slot-${moto.id}`} active={!!activeMotoCardDrag && activeMotoCardDrag.motoId !== moto.id} />
-            <Card className="flex flex-col h-full border-sidebar-border overflow-hidden">
-              <CardHeader className="bg-sidebar text-sidebar-foreground py-3 border-b flex flex-row items-center justify-between gap-2">
+            <Card className="flex flex-col h-full border-border overflow-hidden">
+              <CardHeader className="bg-card py-3 border-b flex flex-row items-center gap-3 px-4">
                 <DraggableMotoGrip motoId={moto.id} disabled={classFilter !== "schedule" || moto.status === "in_progress" || moto.status === "completed"} />
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="bg-sidebar-accent text-white w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-lg shrink-0">
-                    {moto.motoNumber}
-                  </div>
-                  <div className="min-w-0">
-                    <CardTitle className="font-heading uppercase text-lg text-white leading-tight truncate">{moto.name}</CardTitle>
-                    <div className="flex items-center gap-2 text-xs text-sidebar-foreground/70 uppercase tracking-widest">
-                      <span className="truncate">{moto.raceClass || (moto.type === "practice" ? "All Classes / Open" : "")}</span>
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider border shrink-0 ${
-                        moto.type === "main"
-                          ? "bg-primary/30 text-primary border-primary/40"
-                          : moto.type === "practice"
-                          ? "bg-sky-500/20 text-sky-300 border-sky-400/40"
-                          : "bg-white/10 text-sidebar-foreground/80 border-white/20"
-                      }`}>
-                        {moto.type === "main" ? "Main Event" : moto.type === "practice" ? "Practice" : isSupercrossFormat ? "Heat" : "Moto"}
+
+                {/* Moto number */}
+                <span className="text-xs text-muted-foreground w-6 shrink-0 text-center font-mono tabular-nums">
+                  {moto.motoNumber}
+                </span>
+
+                {/* Name + class + badges */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {(moto.raceClass || moto.type === "practice") && (
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0 truncate">
+                        {moto.raceClass || "All Classes"}
                       </span>
-                    </div>
+                    )}
+                    <span className="font-medium text-sm truncate">{moto.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {/* Type badge — same variants as Schedule page */}
+                    <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${
+                      moto.type === "practice" ? "bg-blue-500/20 text-blue-300 border-blue-500/30" :
+                      moto.type === "heat"     ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30" :
+                      moto.type === "lcq"      ? "bg-orange-500/20 text-orange-300 border-orange-500/30" :
+                      moto.type === "main"     ? "bg-primary/20 text-primary border-primary/30" :
+                                                 "bg-muted text-muted-foreground border-border"
+                    }`}>
+                      {moto.type === "main" ? "Main" : moto.type === "practice" ? "Practice" : moto.type === "lcq" ? "LCQ" : isSupercrossFormat ? "Heat" : "Heat"}
+                    </span>
+                    {/* Status badge */}
+                    <span className={`text-xs px-2 py-0.5 rounded border flex items-center gap-1 ${
+                      moto.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30 animate-pulse" :
+                      moto.status === "completed"   ? "bg-muted text-muted-foreground border-border" :
+                                                      "bg-slate-500/20 text-slate-300 border-slate-500/30"
+                    }`}>
+                      {moto.status === "in_progress" && (
+                        <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full animate-ping shrink-0" />
+                      )}
+                      {moto.status === "in_progress" ? "In Progress" : moto.status === "completed" ? "Completed" : "Scheduled"}
+                    </span>
+                    {/* Rider count */}
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Flag size={11} /> {Array.isArray(moto.lineup) ? moto.lineup.length : 0} riders
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
-                    moto.status === "in_progress" ? "bg-primary/20 text-primary border-primary/30 animate-pulse" :
-                    moto.status === "completed" ? "bg-secondary/20 text-secondary border-secondary/30" :
-                    "bg-sidebar-accent text-sidebar-foreground/80 border-transparent"
-                  }`}>
-                    {moto.status === "in_progress" && (
-                      <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full mr-1 animate-ping" />
-                    )}
-                    {moto.status.replace("_", " ")}
-                  </span>
+
+                {/* Actions: primary status action + icon buttons */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {/* Start/Finish/Restart — compact pill in header */}
+                  {moto.status === "scheduled" && (
+                    <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs h-7 px-2.5 gap-1">
+                      <Play size={12} /> Start
+                    </Button>
+                  )}
+                  {moto.status === "in_progress" && (
+                    <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs h-7 px-2.5 gap-1" onClick={() => handleStatusUpdate(moto.id, "completed")}>
+                      <CheckCircle size={12} /> Finish
+                    </Button>
+                  )}
+                  {/* Icon buttons */}
                   <button
                     onClick={() => handleQuickAddHeat(moto)}
                     disabled={createMotoMutation.isPending}
-                    className="text-sidebar-foreground/50 hover:text-green-400 transition-colors p-1 rounded hover:bg-white/10 disabled:opacity-40"
-                    title={`Add another ${moto.type === "main" ? "main" : isSupercrossFormat ? "heat" : "division"} for ${moto.raceClass}`}
+                    className="text-muted-foreground hover:text-green-400 transition-colors p-1 rounded hover:bg-muted disabled:opacity-40"
+                    title={`Add another ${moto.type === "main" ? "main" : isSupercrossFormat ? "heat" : "heat"} for ${moto.raceClass}`}
                   >
                     <Plus size={14} />
                   </button>
@@ -2941,7 +2969,7 @@ export default function Motos() {
                         setPerMotoGateMethod("random");
                         setPerMotoGateConfigId("");
                       }}
-                      className="text-sidebar-foreground/50 hover:text-violet-400 transition-colors p-1 rounded hover:bg-white/10"
+                      className="text-muted-foreground hover:text-violet-400 transition-colors p-1 rounded hover:bg-muted"
                       title="Regenerate lineup"
                     >
                       <Wand2 size={14} />
@@ -2949,7 +2977,7 @@ export default function Motos() {
                   )}
                   <button
                     onClick={() => setExpandedMotoId(moto.id)}
-                    className="text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors p-1 rounded hover:bg-white/10"
+                    className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted"
                     title="Expand view"
                   >
                     <Maximize2 size={14} />
@@ -3146,16 +3174,6 @@ export default function Motos() {
 
                 {/* Action bar */}
                 <div className="p-3 bg-muted/30 flex gap-2 items-center flex-wrap">
-                  {moto.status === "scheduled" && (
-                    <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs">
-                      <Play size={14} className="mr-1" /> Start Moto
-                    </Button>
-                  )}
-                  {moto.status === "in_progress" && (
-                    <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs" onClick={() => handleStatusUpdate(moto.id, "completed")}>
-                      <CheckCircle size={14} className="mr-1" /> Finish Moto
-                    </Button>
-                  )}
                   {moto.status === "in_progress" && (
                     <Button size="sm" variant="ghost" className="text-muted-foreground font-heading uppercase text-xs" onClick={() => setRestartDialog({ open: true, motoId: moto.id, motoName: moto.name })}>
                       <RefreshCw size={14} className="mr-1" /> Restart Moto
