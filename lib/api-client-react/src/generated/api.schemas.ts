@@ -521,6 +521,18 @@ export const MotoStatus = {
   cancelled: 'cancelled',
 } as const;
 
+/**
+ * Timer mode for practice motos — lap_count (default) or countdown
+ * @nullable
+ */
+export type MotoPracticeMode = typeof MotoPracticeMode[keyof typeof MotoPracticeMode] | null;
+
+
+export const MotoPracticeMode = {
+  lap_count: 'lap_count',
+  countdown: 'countdown',
+} as const;
+
 export interface LineupEntry {
   position: number;
   riderId: number;
@@ -551,9 +563,23 @@ export interface Moto {
      * @nullable
      */
   timeLimitMs?: number | null;
+  /**
+     * Timer mode for practice motos — lap_count (default) or countdown
+     * @nullable
+     */
+  practiceMode?: MotoPracticeMode;
+  /**
+     * Duration in seconds for countdown mode (practice motos only)
+     * @nullable
+     */
+  countdownSeconds?: number | null;
   /** @nullable */
   scheduledTime?: string | null;
   lineup?: LineupEntry[];
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
 }
 
 export type MotoInputType = typeof MotoInputType[keyof typeof MotoInputType];
@@ -564,6 +590,17 @@ export const MotoInputType = {
   lcq: 'lcq',
   main: 'main',
   practice: 'practice',
+} as const;
+
+/**
+ * Timer mode for practice motos — lap_count (default) or countdown
+ */
+export type MotoInputPracticeMode = typeof MotoInputPracticeMode[keyof typeof MotoInputPracticeMode];
+
+
+export const MotoInputPracticeMode = {
+  lap_count: 'lap_count',
+  countdown: 'countdown',
 } as const;
 
 export interface MotoInput {
@@ -577,9 +614,24 @@ export interface MotoInput {
   lapCount?: number;
   /** Time limit in milliseconds (practice sessions only, optional) */
   timeLimitMs?: number;
+  /** Timer mode for practice motos — lap_count (default) or countdown */
+  practiceMode?: MotoInputPracticeMode;
+  /** Duration in seconds for countdown mode (practice motos only) */
+  countdownSeconds?: number;
   scheduledTime?: string;
   lineup?: number[];
 }
+
+/**
+ * @nullable
+ */
+export type MotoUpdatePracticeMode = typeof MotoUpdatePracticeMode[keyof typeof MotoUpdatePracticeMode] | null;
+
+
+export const MotoUpdatePracticeMode = {
+  lap_count: 'lap_count',
+  countdown: 'countdown',
+} as const;
 
 export interface MotoUpdate {
   status?: string;
@@ -589,6 +641,10 @@ export interface MotoUpdate {
   lapCount?: number | null;
   /** @nullable */
   timeLimitMs?: number | null;
+  /** @nullable */
+  practiceMode?: MotoUpdatePracticeMode;
+  /** @nullable */
+  countdownSeconds?: number | null;
   motoNumber?: number;
   name?: string;
 }

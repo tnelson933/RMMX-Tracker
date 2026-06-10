@@ -5,6 +5,7 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { MotoInputPracticeMode } from './motoInputPracticeMode';
 import type { MotoInputType } from './motoInputType';
 
 export interface MotoInput {
@@ -18,6 +19,10 @@ export interface MotoInput {
   lapCount?: number;
   /** Time limit in milliseconds (practice sessions only, optional) */
   timeLimitMs?: number;
+  /** Timer mode for practice motos — lap_count (default) or countdown */
+  practiceMode?: MotoInputPracticeMode;
+  /** Duration in seconds for countdown mode (practice motos only) */
+  countdownSeconds?: number;
   scheduledTime?: string;
   lineup?: number[];
 }

@@ -331,6 +331,67 @@ function InlineName({ motoId, name, isEditing, editValue, onEditStart, onChange,
   );
 }
 
+// ── Practice countdown timer ──────────────────────────────────────────────────
+
+interface PracticeCountdownTimerProps {
+  motoId: number;
+  startedAt: string | null;
+  countdownSeconds: number;
+  onExpire: () => void;
+}
+
+function PracticeCountdownTimer({ motoId, startedAt, countdownSeconds, onExpire }: PracticeCountdownTimerProps) {
+  const [remaining, setRemaining] = useState<number>(() => {
+    if (!startedAt) return countdownSeconds;
+    const elapsed = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
+    return Math.max(0, countdownSeconds - elapsed);
+  });
+  const expiredRef = useRef(false);
+
+  useEffect(() => {
+    expiredRef.current = false;
+    const tick = () => {
+      if (!startedAt) return;
+      const elapsed = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
+      const rem = Math.max(0, countdownSeconds - elapsed);
+      setRemaining(rem);
+      if (rem === 0 && !expiredRef.current) {
+        expiredRef.current = true;
+        fetch(`/api/motos/${motoId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ status: "completed" }),
+        }).then(() => onExpire()).catch(() => {});
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [motoId, startedAt, countdownSeconds, onExpire]);
+
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  const display = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  const isExpired = remaining === 0;
+  const isLow = remaining > 0 && remaining <= 60;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 font-mono text-sm font-bold tabular-nums ${
+        isExpired
+          ? "text-muted-foreground"
+          : isLow
+          ? "text-red-400"
+          : "text-green-400"
+      }`}
+    >
+      <Timer size={13} className="shrink-0" />
+      {display}
+    </span>
+  );
+}
+
 // ── Sortable lineup row (within an expanded moto) ──────────────────────────────
 
 // LineupEntry is forward-referenced from below — TS hoists type aliases
@@ -400,12 +461,13 @@ interface MotoCardProps {
   isExpanded: boolean;
   onToggleExpand: () => void;
   onRemoveRider: (riderId: number) => void;
+  onCountdownExpire?: () => void;
 }
 
 function SortableMotoCard({
   moto, index, eventId, isPoolDropTarget,
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
-  isExpanded, onToggleExpand, onRemoveRider,
+  isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire,
 }: MotoCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: moto.id });
 
@@ -419,17 +481,31 @@ function SortableMotoCard({
   const lineup = Array.isArray(moto.lineup) ? (moto.lineup as Array<{ position: number; riderId: number; riderName: string; bibNumber: string | null }>) : [];
   const riderCount = lineup.length;
   const isCompleted = moto.status === "completed";
+  const isCountdownMode = moto.type === "practice" && (moto as any).practiceMode === "countdown";
+  const countdownSeconds = (moto as any).countdownSeconds as number | null;
+  const isCountdownActive = isCountdownMode && moto.status === "in_progress" && countdownSeconds != null;
+  const isCountdownComplete = isCountdownMode && isCompleted && (moto as any).startedAt != null;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={`bg-card border rounded-lg group transition-colors ${
-        isPoolDropTarget
+        isCountdownComplete
+          ? "border-muted bg-muted/10"
+          : isPoolDropTarget
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
           : "border-border hover:border-primary/40"
       }`}
     >
+      {/* ── Countdown complete banner ── */}
+      {isCountdownComplete && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/30 border-b border-border/60 rounded-t-lg">
+          <Check size={13} className="text-muted-foreground shrink-0" />
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Practice Complete</span>
+        </div>
+      )}
+
       {/* ── Header row ── */}
       <div className="flex items-center gap-3 px-4 py-3">
         <span className="text-xs text-muted-foreground w-6 shrink-0 text-center font-mono">
@@ -486,8 +562,21 @@ function SortableMotoCard({
               <Flag size={11} /> {riderCount} riders
               <ChevronDown size={11} className={`transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} />
             </button>
-            {moto.lapCount != null && (
+            {moto.lapCount != null && !isCountdownMode && (
               <span className="text-xs text-muted-foreground">{moto.lapCount} laps</span>
+            )}
+            {isCountdownActive && onCountdownExpire && (
+              <PracticeCountdownTimer
+                motoId={moto.id}
+                startedAt={(moto as any).startedAt as string | null}
+                countdownSeconds={countdownSeconds!}
+                onExpire={onCountdownExpire}
+              />
+            )}
+            {isCountdownMode && !isCountdownActive && countdownSeconds != null && !isCompleted && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Timer size={11} /> {Math.floor(countdownSeconds / 60)}m countdown
+              </span>
             )}
           </div>
         </div>
@@ -537,20 +626,34 @@ function SortableMotoCard({
 function StaticMotoCard({
   moto, eventId, isPoolDropTarget,
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
-  isExpanded, onToggleExpand, onRemoveRider,
+  isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire,
 }: Omit<MotoCardProps, "index">) {
   const lineup = Array.isArray(moto.lineup) ? (moto.lineup as Array<{ position: number; riderId: number; riderName: string; bibNumber: string | null }>) : [];
   const riderCount = lineup.length;
   const isCompleted = moto.status === "completed";
+  const isCountdownMode = moto.type === "practice" && (moto as any).practiceMode === "countdown";
+  const countdownSeconds = (moto as any).countdownSeconds as number | null;
+  const isCountdownActive = isCountdownMode && moto.status === "in_progress" && countdownSeconds != null;
+  const isCountdownComplete = isCountdownMode && isCompleted && (moto as any).startedAt != null;
 
   return (
     <div
       className={`bg-card border rounded-lg transition-colors ${
-        isPoolDropTarget
+        isCountdownComplete
+          ? "border-muted bg-muted/10"
+          : isPoolDropTarget
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
           : "border-border hover:border-primary/40"
       }`}
     >
+      {/* ── Countdown complete banner ── */}
+      {isCountdownComplete && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/30 border-b border-border/60 rounded-t-lg">
+          <Check size={13} className="text-muted-foreground shrink-0" />
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Practice Complete</span>
+        </div>
+      )}
+
       {/* ── Header row ── */}
       <div className="flex items-center gap-3 px-4 py-3">
         <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: "hsl(var(--primary) / 0.3)" }} />
@@ -596,8 +699,21 @@ function StaticMotoCard({
               <Flag size={11} /> {riderCount} riders
               <ChevronDown size={11} className={`transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} />
             </button>
-            {moto.lapCount != null && (
+            {moto.lapCount != null && !isCountdownMode && (
               <span className="text-xs text-muted-foreground">{moto.lapCount} laps</span>
+            )}
+            {isCountdownActive && onCountdownExpire && (
+              <PracticeCountdownTimer
+                motoId={moto.id}
+                startedAt={(moto as any).startedAt as string | null}
+                countdownSeconds={countdownSeconds!}
+                onExpire={onCountdownExpire}
+              />
+            )}
+            {isCountdownMode && !isCountdownActive && countdownSeconds != null && !isCompleted && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Timer size={11} /> {Math.floor(countdownSeconds / 60)}m countdown
+              </span>
             )}
           </div>
         </div>
@@ -737,7 +853,9 @@ export default function EventSchedule() {
   const [practiceForm, setPracticeForm] = useState({
     name: "",
     selectedClasses: [] as string[],
+    mode: "lap_count" as "lap_count" | "countdown",
     lapCount: "3",
+    countdownMinutes: "15",
   });
 
   // ── Event rules data ──
@@ -1311,20 +1429,31 @@ export default function EventSchedule() {
     setPracticeForm({
       name: `Practice ${practiceCount + 1}`,
       selectedClasses: [],
+      mode: "lap_count",
       lapCount: "3",
+      countdownMinutes: "15",
     });
     setShowPracticeDialog(true);
   }
 
   function handleAddPractice() {
-    const { name, selectedClasses, lapCount } = practiceForm;
+    const { name, selectedClasses, mode, lapCount, countdownMinutes } = practiceForm;
     if (selectedClasses.length === 0) {
       toast({ title: "Select at least one class", variant: "destructive" });
       return;
     }
+    if (mode === "countdown") {
+      const mins = parseInt(countdownMinutes, 10);
+      if (!mins || mins < 1 || mins > 120) {
+        toast({ title: "Duration must be between 1 and 120 minutes", variant: "destructive" });
+        return;
+      }
+    }
     const motoNumber = (rawMotos.length > 0
       ? Math.max(...rawMotos.map(m => m.motoNumber ?? 0))
       : 0) + 1;
+
+    const countdownSecs = mode === "countdown" ? parseInt(countdownMinutes, 10) * 60 : undefined;
 
     createMutation.mutate(
       {
@@ -1335,7 +1464,9 @@ export default function EventSchedule() {
           raceClass: selectedClasses[0],
           raceClasses: selectedClasses,
           motoNumber,
-          lapCount: lapCount ? parseInt(lapCount, 10) : undefined,
+          lapCount: mode === "lap_count" && lapCount ? parseInt(lapCount, 10) : undefined,
+          practiceMode: mode,
+          countdownSeconds: countdownSecs,
         } as any,
       },
       {
@@ -1674,6 +1805,7 @@ export default function EventSchedule() {
                             isExpanded={expandedMotos.has(moto.id)}
                             onToggleExpand={() => toggleMotoExpand(moto.id)}
                             onRemoveRider={(riderId) => handleRemoveRider(moto.id, riderId)}
+                            onCountdownExpire={() => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) })}
                           />
                         </div>
                       );
@@ -1709,6 +1841,7 @@ export default function EventSchedule() {
                           isExpanded={expandedMotos.has(moto.id)}
                           onToggleExpand={() => toggleMotoExpand(moto.id)}
                           onRemoveRider={(riderId) => handleRemoveRider(moto.id, riderId)}
+                          onCountdownExpire={() => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) })}
                         />
                       ))}
                     </div>
@@ -2064,17 +2197,67 @@ export default function EventSchedule() {
               )}
             </div>
 
-            {/* Lap count */}
+            {/* Mode toggle */}
             <div className="space-y-1.5">
-              <Label>Lap Count</Label>
-              <Input
-                type="number"
-                min={1}
-                value={practiceForm.lapCount}
-                onChange={e => setPracticeForm(f => ({ ...f, lapCount: e.target.value }))}
-                className="h-9"
-              />
+              <Label>Mode</Label>
+              <div className="flex rounded-md border overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setPracticeForm(f => ({ ...f, mode: "lap_count" }))}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${
+                    practiceForm.mode === "lap_count"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Flag size={13} /> Lap Count
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPracticeForm(f => ({ ...f, mode: "countdown" }))}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors border-l ${
+                    practiceForm.mode === "countdown"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Timer size={13} /> Countdown
+                </button>
+              </div>
             </div>
+
+            {/* Lap count (shown only in lap_count mode) */}
+            {practiceForm.mode === "lap_count" && (
+              <div className="space-y-1.5">
+                <Label>Lap Count</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={practiceForm.lapCount}
+                  onChange={e => setPracticeForm(f => ({ ...f, lapCount: e.target.value }))}
+                  className="h-9"
+                />
+              </div>
+            )}
+
+            {/* Countdown duration (shown only in countdown mode) */}
+            {practiceForm.mode === "countdown" && (
+              <div className="space-y-1.5">
+                <Label>Duration (minutes)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={practiceForm.countdownMinutes}
+                  onChange={e => setPracticeForm(f => ({ ...f, countdownMinutes: e.target.value }))}
+                  className="h-9"
+                  placeholder="e.g. 15"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Timer starts when the moto is set to In Progress and auto-completes at zero.
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

@@ -5,6 +5,7 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { MotoUpdatePracticeMode } from './motoUpdatePracticeMode';
 
 export interface MotoUpdate {
   status?: string;
@@ -14,6 +15,10 @@ export interface MotoUpdate {
   lapCount?: number | null;
   /** @nullable */
   timeLimitMs?: number | null;
+  /** @nullable */
+  practiceMode?: MotoUpdatePracticeMode;
+  /** @nullable */
+  countdownSeconds?: number | null;
   motoNumber?: number;
   name?: string;
 }

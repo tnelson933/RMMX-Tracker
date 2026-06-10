@@ -902,6 +902,8 @@ export const ListMotosResponseItem = zod.object({
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
+  "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -909,7 +911,9 @@ export const ListMotosResponseItem = zod.object({
   "riderName": zod.string(),
   "bibNumber": zod.string().nullish(),
   "rfidNumber": zod.string().nullish()
-})).optional()
+})).optional(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish()
 })
 export const ListMotosResponse = zod.array(ListMotosResponseItem)
 
@@ -929,6 +933,8 @@ export const CreateMotoBody = zod.object({
   "motoNumber": zod.number(),
   "lapCount": zod.number().optional().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().optional().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "practiceMode": zod.enum(['lap_count', 'countdown']).optional().describe('Timer mode for practice motos — lap_count (default) or countdown'),
+  "countdownSeconds": zod.number().optional().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().optional(),
   "lineup": zod.array(zod.number()).optional()
 })
@@ -947,6 +953,8 @@ export const UpdateMotoBody = zod.object({
   "scheduledTime": zod.string().optional(),
   "lapCount": zod.number().nullish(),
   "timeLimitMs": zod.number().nullish(),
+  "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish(),
+  "countdownSeconds": zod.number().nullish(),
   "motoNumber": zod.number().optional(),
   "name": zod.string().optional()
 })
@@ -962,6 +970,8 @@ export const UpdateMotoResponse = zod.object({
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
+  "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -969,7 +979,9 @@ export const UpdateMotoResponse = zod.object({
   "riderName": zod.string(),
   "bibNumber": zod.string().nullish(),
   "rfidNumber": zod.string().nullish()
-})).optional()
+})).optional(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish()
 })
 
 
@@ -1003,6 +1015,8 @@ export const ReorderMotosResponseItem = zod.object({
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
+  "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -1010,7 +1024,9 @@ export const ReorderMotosResponseItem = zod.object({
   "riderName": zod.string(),
   "bibNumber": zod.string().nullish(),
   "rfidNumber": zod.string().nullish()
-})).optional()
+})).optional(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish()
 })
 export const ReorderMotosResponse = zod.array(ReorderMotosResponseItem)
 
@@ -1044,6 +1060,8 @@ export const GenerateLineupsResponseItem = zod.object({
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
+  "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -1051,7 +1069,9 @@ export const GenerateLineupsResponseItem = zod.object({
   "riderName": zod.string(),
   "bibNumber": zod.string().nullish(),
   "rfidNumber": zod.string().nullish()
-})).optional()
+})).optional(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish()
 })
 export const GenerateLineupsResponse = zod.array(GenerateLineupsResponseItem)
 
@@ -1080,6 +1100,8 @@ export const GenerateMotoLineupResponse = zod.object({
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
+  "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -1087,7 +1109,9 @@ export const GenerateMotoLineupResponse = zod.object({
   "riderName": zod.string(),
   "bibNumber": zod.string().nullish(),
   "rfidNumber": zod.string().nullish()
-})).optional()
+})).optional(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish()
 })
 
 
@@ -1298,6 +1322,8 @@ export const AdvanceToMainResponse = zod.object({
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
+  "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -1305,7 +1331,9 @@ export const AdvanceToMainResponse = zod.object({
   "riderName": zod.string(),
   "bibNumber": zod.string().nullish(),
   "rfidNumber": zod.string().nullish()
-})).optional()
+})).optional(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish()
 })
 
 

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { LineupEntry } from './lineupEntry';
+import type { MotoPracticeMode } from './motoPracticeMode';
 import type { MotoStatus } from './motoStatus';
 import type { MotoType } from './motoType';
 
@@ -29,7 +30,21 @@ export interface Moto {
      * @nullable
      */
   timeLimitMs?: number | null;
+  /**
+     * Timer mode for practice motos — lap_count (default) or countdown
+     * @nullable
+     */
+  practiceMode?: MotoPracticeMode;
+  /**
+     * Duration in seconds for countdown mode (practice motos only)
+     * @nullable
+     */
+  countdownSeconds?: number | null;
   /** @nullable */
   scheduledTime?: string | null;
   lineup?: LineupEntry[];
+  /** @nullable */
+  startedAt?: Date | null;
+  /** @nullable */
+  completedAt?: Date | null;
 }

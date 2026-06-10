@@ -114,12 +114,14 @@ router.get("/events/:eventId/motos", async (req, res) => {
     ...m,
     lineup: Array.isArray(m.lineup) ? m.lineup : [],
     createdAt: m.createdAt.toISOString(),
+    startedAt: m.startedAt?.toISOString() ?? null,
+    completedAt: m.completedAt?.toISOString() ?? null,
   })));
 });
 
 router.post("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs } = req.body;
+  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, practiceMode, countdownSeconds } = req.body;
 
   // raceClasses (multi-class practice): raceClass can be derived from first entry
   const resolvedRaceClass = raceClass || (Array.isArray(raceClasses) && raceClasses.length > 0 ? raceClasses[0] : null);
@@ -132,6 +134,8 @@ router.post("/events/:eventId/motos", async (req, res) => {
     motoNumber, scheduledTime, lineup: lineup || [], status: "scheduled",
     lapCount: lapCount ? Number(lapCount) : null,
     timeLimitMs: timeLimitMs ? Number(timeLimitMs) : null,
+    practiceMode: practiceMode ?? "lap_count",
+    countdownSeconds: countdownSeconds ? Number(countdownSeconds) : null,
   }).returning();
 
   return res.status(201).json({ ...moto, lineup: Array.isArray(moto.lineup) ? moto.lineup : [], createdAt: moto.createdAt.toISOString() });
@@ -162,6 +166,8 @@ router.patch("/motos/:motoId", async (req, res) => {
   if (req.body.scheduledTime !== undefined) updates.scheduledTime = req.body.scheduledTime;
   if (req.body.lapCount !== undefined) updates.lapCount = req.body.lapCount !== null ? Number(req.body.lapCount) : null;
   if (req.body.timeLimitMs !== undefined) updates.timeLimitMs = req.body.timeLimitMs !== null ? Number(req.body.timeLimitMs) : null;
+  if (req.body.practiceMode !== undefined) updates.practiceMode = req.body.practiceMode !== null ? String(req.body.practiceMode) : null;
+  if (req.body.countdownSeconds !== undefined) updates.countdownSeconds = req.body.countdownSeconds !== null ? Number(req.body.countdownSeconds) : null;
   if (req.body.motoNumber !== undefined) updates.motoNumber = Number(req.body.motoNumber);
   if (req.body.name !== undefined) updates.name = String(req.body.name);
 

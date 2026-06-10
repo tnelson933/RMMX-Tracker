@@ -2572,12 +2572,25 @@ components:
         timeLimitMs:
           type: ["integer", "null"]
           description: Time limit in milliseconds (practice sessions only, optional)
+        practiceMode:
+          type: ["string", "null"]
+          enum: [lap_count, countdown, null]
+          description: Timer mode for practice motos — lap_count (default) or countdown
+        countdownSeconds:
+          type: ["integer", "null"]
+          description: Duration in seconds for countdown mode (practice motos only)
         scheduledTime:
           type: ["string", "null"]
         lineup:
           type: array
           items:
             $ref: "#/components/schemas/LineupEntry"
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
 
     MotoInput:
       type: object
@@ -2603,6 +2616,13 @@ components:
         timeLimitMs:
           type: integer
           description: Time limit in milliseconds (practice sessions only, optional)
+        practiceMode:
+          type: string
+          enum: [lap_count, countdown]
+          description: Timer mode for practice motos — lap_count (default) or countdown
+        countdownSeconds:
+          type: integer
+          description: Duration in seconds for countdown mode (practice motos only)
         scheduledTime:
           type: string
         lineup:
@@ -2624,6 +2644,11 @@ components:
         lapCount:
           type: ["integer", "null"]
         timeLimitMs:
+          type: ["integer", "null"]
+        practiceMode:
+          type: ["string", "null"]
+          enum: [lap_count, countdown, null]
+        countdownSeconds:
           type: ["integer", "null"]
         motoNumber:
           type: integer
