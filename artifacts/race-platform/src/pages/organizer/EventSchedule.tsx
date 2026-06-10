@@ -1,14 +1,14 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import {
-  useListMotos, useReorderMotos, useUpdateMoto, useCreateMoto,
+  useListMotos, useReorderMotos, useUpdateMoto, useCreateMoto, useDeleteMoto,
   useListCheckins, useGenerateLineups, useGetEvent, useListPointsTables,
   useUpdateEvent, useAdvanceToMain,
   getListMotosQueryKey, getListCheckinsQueryKey, type Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
-  DndContext, DragOverlay, closestCenter,
+  DndContext, DragOverlay, pointerWithin,
   PointerSensor, useSensor, useSensors,
   useDraggable, useDroppable,
   type DragEndEvent, type DragStartEvent, type DragOverEvent,
@@ -26,13 +26,17 @@ import {
   DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   GripVertical, Plus, Clock, LayoutList, LayoutGrid, Flag, ExternalLink,
-  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown,
+  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown, Trash2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -493,12 +497,13 @@ interface MotoCardProps {
   onToggleExpand: () => void;
   onRemoveRider: (riderId: number) => void;
   onCountdownExpire?: () => void;
+  onDelete?: () => void;
 }
 
 function SortableMotoCard({
   moto, index, eventId, isPoolDropTarget,
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
-  isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire,
+  isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire, onDelete,
 }: MotoCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: moto.id });
 
@@ -612,6 +617,15 @@ function SortableMotoCard({
           </div>
         </div>
 
+        {!isCompleted && onDelete && (
+          <button
+            onClick={onDelete}
+            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5 rounded"
+            title="Delete moto"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
         <Link
           href={`/events/${eventId}/motos?motoId=${moto.id}`}
           className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
@@ -657,8 +671,9 @@ function SortableMotoCard({
 function StaticMotoCard({
   moto, eventId, isPoolDropTarget,
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
-  isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire,
+  isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire, onDelete,
 }: Omit<MotoCardProps, "index">) {
+  const { setNodeRef, isOver } = useDroppable({ id: moto.id });
   const lineup = Array.isArray(moto.lineup) ? (moto.lineup as Array<{ position: number; riderId: number; riderName: string; bibNumber: string | null }>) : [];
   const riderCount = lineup.length;
   const isCompleted = moto.status === "completed";
@@ -666,13 +681,15 @@ function StaticMotoCard({
   const countdownSeconds = (moto as any).countdownSeconds as number | null;
   const isCountdownActive = isCountdownMode && moto.status === "in_progress" && countdownSeconds != null;
   const isCountdownComplete = isCountdownMode && isCompleted && (moto as any).startedAt != null;
+  const showDropHighlight = isPoolDropTarget || isOver;
 
   return (
     <div
+      ref={setNodeRef}
       className={`bg-card border rounded-lg transition-colors ${
         isCountdownComplete
           ? "border-muted bg-muted/10"
-          : isPoolDropTarget
+          : showDropHighlight
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
           : "border-border hover:border-primary/40"
       }`}
@@ -749,6 +766,15 @@ function StaticMotoCard({
           </div>
         </div>
 
+        {!isCompleted && onDelete && (
+          <button
+            onClick={onDelete}
+            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5 rounded"
+            title="Delete moto"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
         <Link
           href={`/events/${eventId}/motos?motoId=${moto.id}`}
           className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
@@ -897,6 +923,9 @@ export default function EventSchedule() {
   // ── Advance to Main state ──
   const [topPerHeatByClass, setTopPerHeatByClass] = useState<Record<string, number>>({});
 
+  // ── Delete confirm state ──
+  const [deleteConfirmMotoId, setDeleteConfirmMotoId] = useState<number | null>(null);
+
   // ── Mutations ──
   const reorderMutation = useReorderMotos();
   const updateMutation = useUpdateMoto();
@@ -904,6 +933,7 @@ export default function EventSchedule() {
   const generateMutation = useGenerateLineups();
   const updateEventMutation = useUpdateEvent();
   const advanceToMainMutation = useAdvanceToMain();
+  const deleteMutation = useDeleteMoto();
 
   // ── defaultTopPerHeat (Advance to Main) ──
   const defaultTopPerHeat = useMemo(() => {
@@ -1206,8 +1236,13 @@ export default function EventSchedule() {
       setActivePoolOverMotoId(null);
       return;
     }
-    if (over && typeof over.id === "number") {
+    if (!over) { setActivePoolOverMotoId(null); return; }
+    if (typeof over.id === "number") {
       setActivePoolOverMotoId(over.id as number);
+    } else if (String(over.id).startsWith("lrider-")) {
+      // Hovering over a lineup row inside a moto — highlight that moto card
+      const motoId = parseInt(String(over.id).split("-")[1]);
+      setActivePoolOverMotoId(isNaN(motoId) ? null : motoId);
     } else {
       setActivePoolOverMotoId(null);
     }
@@ -1264,11 +1299,19 @@ export default function EventSchedule() {
       return;
     }
 
-    // Pool rider dropped onto a moto card
+    // Pool rider dropped onto a moto card (or a lineup row inside it)
     if (idStr.startsWith("pool-")) {
-      if (typeof over.id !== "number") return;
       const riderId = parseInt(idStr.replace("pool-", ""));
-      const targetMotoId = over.id as number;
+      // Resolve target moto id: direct card drop (numeric) or hover over lineup row (lrider-{motoId}-...)
+      let targetMotoId: number;
+      if (typeof over.id === "number") {
+        targetMotoId = over.id;
+      } else if (String(over.id).startsWith("lrider-")) {
+        targetMotoId = parseInt(String(over.id).split("-")[1]);
+        if (isNaN(targetMotoId)) return;
+      } else {
+        return;
+      }
       const targetMoto = rawMotos.find(m => m.id === targetMotoId);
       const checkin = checkins.find(c => c.riderId === riderId);
       if (!targetMoto || !checkin || targetMoto.status === "completed") return;
@@ -1536,7 +1579,7 @@ export default function EventSchedule() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -1832,6 +1875,7 @@ export default function EventSchedule() {
                             onToggleExpand={() => toggleMotoExpand(moto.id)}
                             onRemoveRider={(riderId) => handleRemoveRider(moto.id, riderId)}
                             onCountdownExpire={() => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) })}
+                            onDelete={() => setDeleteConfirmMotoId(moto.id)}
                           />
                         </div>
                       );
@@ -1868,6 +1912,7 @@ export default function EventSchedule() {
                           onToggleExpand={() => toggleMotoExpand(moto.id)}
                           onRemoveRider={(riderId) => handleRemoveRider(moto.id, riderId)}
                           onCountdownExpire={() => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) })}
+                          onDelete={() => setDeleteConfirmMotoId(moto.id)}
                         />
                       ))}
                     </div>
@@ -1892,6 +1937,41 @@ export default function EventSchedule() {
           </div>
         ) : null}
       </DragOverlay>
+
+      {/* ── Delete moto confirmation ── */}
+      <AlertDialog open={deleteConfirmMotoId !== null} onOpenChange={open => { if (!open) setDeleteConfirmMotoId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete moto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the moto and all its lineup assignments. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteConfirmMotoId == null) return;
+                const id = deleteConfirmMotoId;
+                setDeleteConfirmMotoId(null);
+                deleteMutation.mutate(
+                  { motoId: id } as any,
+                  {
+                    onSuccess: () => {
+                      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+                      toast({ title: "Moto deleted" });
+                    },
+                    onError: () => toast({ title: "Failed to delete moto", variant: "destructive" }),
+                  }
+                );
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Generate Lineups dialog ── */}
       <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>
