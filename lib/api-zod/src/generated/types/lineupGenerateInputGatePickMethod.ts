@@ -7,15 +7,15 @@
  */
 
 /**
- * Controls gate number assignment. none = positions only, no gate numbers assigned; random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first. Supersedes gateSeedingMethod when both are present.
+ * Controls gate number assignment. random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first; first_registered = sort by registration timestamp, earliest registered gets first gate pick. Supersedes gateSeedingMethod when both are present.
 
  */
 export type LineupGenerateInputGatePickMethod = typeof LineupGenerateInputGatePickMethod[keyof typeof LineupGenerateInputGatePickMethod];
 
 
 export const LineupGenerateInputGatePickMethod = {
-  none: 'none',
   random: 'random',
   practice: 'practice',
   prior_round_finish: 'prior_round_finish',
+  first_registered: 'first_registered',
 } as const;

@@ -1007,11 +1007,11 @@ export default function Motos() {
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
-  const [gatePickMethod, setGatePickMethod] = useState<"none" | "random" | "practice" | "prior_round_finish">("random");
+  const [gatePickMethod, setGatePickMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [selectedGateConfigId, setSelectedGateConfigId] = useState<string>("");
   const [selectedRounds, setSelectedRounds] = useState<number[]>([]);
   const [perMotoDialog, setPerMotoDialog] = useState<{ open: boolean; motoId: number | null; motoName: string; motoClass: string }>({ open: false, motoId: null, motoName: "", motoClass: "" });
-  const [perMotoGateMethod, setPerMotoGateMethod] = useState<"none" | "random" | "practice" | "prior_round_finish">("random");
+  const [perMotoGateMethod, setPerMotoGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [perMotoGateConfigId, setPerMotoGateConfigId] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -2241,16 +2241,16 @@ export default function Motos() {
               {/* Gate Pick Method */}
               {(() => {
                 const hasCompletedRaceMotos = (motos ?? []).some(m => m.status === "completed" && m.type !== "practice");
-                const methods: { value: "none" | "random" | "practice" | "prior_round_finish"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
-                  {
-                    value: "none",
-                    label: "No Gate Assignment",
-                    description: "Riders are ordered randomly. No gate numbers assigned.",
-                  },
+                const methods: { value: "random" | "practice" | "prior_round_finish" | "first_registered"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
                   {
                     value: "random",
                     label: "Random Draw",
                     description: "Riders are shuffled randomly into gate positions.",
+                  },
+                  {
+                    value: "first_registered",
+                    label: "First Registered",
+                    description: "Riders are ordered by registration date — earliest registration gets first gate pick.",
                   },
                   {
                     value: "practice",
@@ -2385,16 +2385,16 @@ export default function Motos() {
             {/* Gate pick method */}
             {(() => {
               const hasCompletedRaceMotos = (motos ?? []).some(m => m.status === "completed" && m.type !== "practice");
-              const methods: { value: "none" | "random" | "practice" | "prior_round_finish"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
-                {
-                  value: "none",
-                  label: "No Gate Assignment",
-                  description: "Riders are ordered randomly. No gate numbers assigned.",
-                },
+              const methods: { value: "random" | "practice" | "prior_round_finish" | "first_registered"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
                 {
                   value: "random",
                   label: "Random Draw",
                   description: "Riders are shuffled randomly into gate positions.",
+                },
+                {
+                  value: "first_registered",
+                  label: "First Registered",
+                  description: "Riders are ordered by registration date — earliest registration gets first gate pick.",
                 },
                 {
                   value: "practice",
@@ -2457,7 +2457,7 @@ export default function Motos() {
               );
             })()}
             {/* Gate config */}
-            {perMotoGateMethod !== "none" && gateConfigs.length > 1 && (
+            {gateConfigs.length > 1 && (
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Gate Config</label>
                 <Select
@@ -2475,7 +2475,7 @@ export default function Motos() {
                 </Select>
               </div>
             )}
-            {perMotoGateMethod !== "none" && gateConfigs.length === 0 && (
+            {gateConfigs.length === 0 && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
                 No gate configs found — set them up on the Gate Assignments page to assign gate numbers.
               </p>

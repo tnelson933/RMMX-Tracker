@@ -866,7 +866,7 @@ export default function EventSchedule() {
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
   const [generateFormat, setGenerateFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState("");
-  const [generateGateMethod, setGenerateGateMethod] = useState<"none" | "random" | "practice" | "prior_round_finish">("random");
+  const [generateGateMethod, setGenerateGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [selectedGateConfigId, setSelectedGateConfigId] = useState("");
 
@@ -1388,7 +1388,7 @@ export default function EventSchedule() {
     const lockedClasses = generateGateMethod === "prior_round_finish"
       ? []
       : allClasses.filter(cls => rawMotos.some(m => m.raceClass === cls && m.status === "completed"));
-    const gateConfigId = generateGateMethod !== "none" && selectedGateConfigId ? selectedGateConfigId : undefined;
+    const gateConfigId = selectedGateConfigId ? selectedGateConfigId : undefined;
     const divCount = generateFormat === "three_moto" ? 3 : generateFormat === "two_moto" ? 2 : 1;
     const roundsToSend = generateSelectedRounds.length > 0 && generateSelectedRounds.length < divCount
       ? generateSelectedRounds
@@ -2044,16 +2044,16 @@ export default function EventSchedule() {
             {/* Gate Pick Method */}
             {(() => {
               const hasCompletedRaceMotos = rawMotos.some(m => m.status === "completed" && m.type !== "practice");
-              const methods: { value: "none" | "random" | "practice" | "prior_round_finish"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
-                {
-                  value: "none",
-                  label: "No Gate Assignment",
-                  description: "Riders are ordered randomly. No gate numbers assigned.",
-                },
+              const methods: { value: "random" | "practice" | "prior_round_finish" | "first_registered"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
                 {
                   value: "random",
                   label: "Random Draw",
                   description: "Riders are shuffled randomly into gate positions.",
+                },
+                {
+                  value: "first_registered",
+                  label: "First Registered",
+                  description: "Riders are ordered by registration date — earliest registration gets first gate pick.",
                 },
                 {
                   value: "practice",
@@ -2113,12 +2113,12 @@ export default function EventSchedule() {
                     </div>
                   </TooltipProvider>
                   {/* Gate Config selector */}
-                  {generateGateMethod !== "none" && gateConfigs.length === 0 && (
+                  {gateConfigs.length === 0 && (
                     <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
                       No gate configs found — set them up on the Gate Assignments page to assign gate numbers.
                     </p>
                   )}
-                  {generateGateMethod !== "none" && gateConfigs.length > 1 && (
+                  {gateConfigs.length > 1 && (
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground uppercase tracking-wider">Gate Config</Label>
                       <Select
@@ -2139,7 +2139,7 @@ export default function EventSchedule() {
                       </Select>
                     </div>
                   )}
-                  {generateGateMethod !== "none" && gateConfigs.length === 1 && (
+                  {gateConfigs.length === 1 && (
                     <p className="text-xs text-muted-foreground">Gate config: <span className="font-medium">{gateConfigs[0].name}</span> ({gateConfigs[0].gateCount} gates)</p>
                   )}
                 </div>

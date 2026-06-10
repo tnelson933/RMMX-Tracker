@@ -7,15 +7,15 @@
  */
 
 /**
- * Gate pick method for this specific moto. none = positions only, no gate numbers; random = random gate draw; practice = by practice lap time; prior_round_finish = by prior round finish position.
+ * Gate pick method for this specific moto. random = random gate draw; practice = by practice lap time; prior_round_finish = by prior round finish position; first_registered = earliest registered rider gets first gate pick.
 
  */
 export type GenerateMotoLineupInputGatePickMethod = typeof GenerateMotoLineupInputGatePickMethod[keyof typeof GenerateMotoLineupInputGatePickMethod];
 
 
 export const GenerateMotoLineupInputGatePickMethod = {
-  none: 'none',
   random: 'random',
   practice: 'practice',
   prior_round_finish: 'prior_round_finish',
+  first_registered: 'first_registered',
 } as const;

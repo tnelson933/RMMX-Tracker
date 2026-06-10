@@ -2735,13 +2735,13 @@ components:
             Motos from unspecified rounds are left untouched.
         gatePickMethod:
           type: string
-          enum: [none, random, practice, prior_round_finish]
+          enum: [random, practice, prior_round_finish, first_registered]
           description: >
             Controls gate number assignment.
-            none = positions only, no gate numbers assigned;
             random = riders shuffled randomly, gates assigned in configured priority order;
             practice = sort by best practice lap time (fastest gets first gate pick);
-            prior_round_finish = sort by prior round finish position, best finisher picks first.
+            prior_round_finish = sort by prior round finish position, best finisher picks first;
+            first_registered = sort by registration timestamp, earliest registered gets first gate pick.
             Supersedes gateSeedingMethod when both are present.
         gateConfigId:
           type: string
@@ -2752,13 +2752,13 @@ components:
       properties:
         gatePickMethod:
           type: string
-          enum: [none, random, practice, prior_round_finish]
+          enum: [random, practice, prior_round_finish, first_registered]
           description: >
             Gate pick method for this specific moto.
-            none = positions only, no gate numbers;
             random = random gate draw;
             practice = by practice lap time;
-            prior_round_finish = by prior round finish position.
+            prior_round_finish = by prior round finish position;
+            first_registered = earliest registered rider gets first gate pick.
         gateConfigId:
           type: string
           description: ID of the gate configuration. Falls back to club default when omitted.

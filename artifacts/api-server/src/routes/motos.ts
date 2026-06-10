@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable } from "@workspace/db";
+import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable } from "@workspace/db";
 import { eq, and, inArray, min, ne, gt } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 
@@ -244,19 +244,18 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const {
     raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateSeedingMethod: rawMethod, gateConfigId,
-    gatePickMethod,        // new: "none" | "random" | "practice" | "prior_round_finish"
+    gatePickMethod,        // "random" | "practice" | "prior_round_finish" | "first_registered"
     rounds: roundsFilter,  // new: number[] — if provided, only generate these round numbers
   } = req.body;
 
   // Map gatePickMethod to internal seeding method + gate assignment flag.
   // gatePickMethod supersedes gateSeedingMethod when both are present.
-  let assignGates = true;
-  let seedingMethod: "random" | "practice_fastest_lap" | "previous_round";
+  let seedingMethod: "random" | "practice_fastest_lap" | "previous_round" | "registration_order";
   if (gatePickMethod) {
-    assignGates = gatePickMethod !== "none";
     seedingMethod = gatePickMethod === "practice" ? "practice_fastest_lap"
       : gatePickMethod === "prior_round_finish" ? "previous_round"
-      : "random"; // covers both "random" and "none"
+      : gatePickMethod === "first_registered" ? "registration_order"
+      : "random";
   } else {
     // Backward compat: legacy gateSeedingMethod / usePracticeSeeding fields
     seedingMethod = rawMethod ?? (usePracticeSeeding ? "practice_fastest_lap" : "random");
@@ -335,6 +334,22 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         gateCountFromClub = selectedConfig.gateCount ?? null;
       }
     }
+  }
+
+  // --- Registration order (registration_order method) ---
+  // riderId → position (1 = first registered, higher = later)
+  let registrationOrderByRider: Map<number, number> = new Map();
+
+  if (seedingMethod === "registration_order") {
+    const regs = await db.select({
+      riderId: registrationsTable.riderId,
+      createdAt: registrationsTable.createdAt,
+    }).from(registrationsTable)
+      .where(eq(registrationsTable.eventId, eventId))
+      .orderBy(registrationsTable.createdAt);
+    regs.forEach((r, idx) => {
+      if (r.riderId != null) registrationOrderByRider.set(r.riderId, idx + 1);
+    });
   }
 
   // --- Practice lap times (practice_fastest_lap method) ---
@@ -513,6 +528,13 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
 
   // Helper: sort riders for a class according to the chosen seeding method
   function sortRidersForClass(riders: CheckinRow[], cls: string): CheckinRow[] {
+    if (seedingMethod === "registration_order") {
+      return [...riders].sort((a, b) => {
+        const ra = a.riderId != null ? (registrationOrderByRider.get(a.riderId) ?? Infinity) : Infinity;
+        const rb = b.riderId != null ? (registrationOrderByRider.get(b.riderId) ?? Infinity) : Infinity;
+        return ra - rb;
+      });
+    }
     if (seedingMethod === "practice_fastest_lap") {
       return [...riders].sort((a, b) => {
         const la = a.riderId != null ? (bestLapByRider.get(a.riderId) ?? Infinity) : Infinity;
@@ -559,7 +581,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     const numGroups = effectiveMax === Infinity ? 1 : Math.ceil(classRiders.length / effectiveMax);
     const groups: CheckinRow[][] = Array.from({ length: numGroups }, () => []);
 
-    const useSerp = (seedingMethod === "practice_fastest_lap" || seedingMethod === "previous_round") && numGroups > 1;
+    const useSerp = (seedingMethod === "registration_order" || seedingMethod === "practice_fastest_lap" || seedingMethod === "previous_round") && numGroups > 1;
     if (useSerp) {
       // Serpentine (snake) distribution: ensures balanced competition across groups
       classRiders.forEach((rider, idx) => {
@@ -583,8 +605,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     allClassGroups.push({ cls, groups });
   }
 
-  // Effective gate seeding: use configured order unless gatePickMethod is "none"
-  const effectiveGateSeeding = assignGates ? gateSeeding : [];
+  const effectiveGateSeeding = gateSeeding;
 
   if (isSupercrossFormat) {
     // Supercross: all heats across all classes run before any main events
@@ -779,15 +800,15 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
   if (!moto.raceClass) return res.status(400).json({ error: "Moto has no race class" });
 
   const raceClass = moto.raceClass;
-  const assignGates = gatePickMethod !== "none";
-  const seedingMethod: "random" | "practice_fastest_lap" | "previous_round" =
+  const seedingMethod: "random" | "practice_fastest_lap" | "previous_round" | "registration_order" =
     gatePickMethod === "practice" ? "practice_fastest_lap"
     : gatePickMethod === "prior_round_finish" ? "previous_round"
+    : gatePickMethod === "first_registered" ? "registration_order"
     : "random";
 
   // Load gate config
   let gateSeeding: number[] = [];
-  if (assignGates) {
+  {
     const [eventRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
     if (eventRow?.clubId) {
       const [club] = await db.select({ gateSeeding: clubsTable.gateSeeding })
@@ -820,6 +841,20 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
 
   if (checkins.length === 0) {
     return res.status(400).json({ error: `No checked-in riders found for ${raceClass}` });
+  }
+
+  // Load registration order if needed
+  const registrationOrderByRiderPerMoto = new Map<number, number>();
+  if (seedingMethod === "registration_order") {
+    const regs = await db.select({
+      riderId: registrationsTable.riderId,
+      createdAt: registrationsTable.createdAt,
+    }).from(registrationsTable)
+      .where(eq(registrationsTable.eventId, eventId))
+      .orderBy(registrationsTable.createdAt);
+    regs.forEach((r, idx) => {
+      if (r.riderId != null) registrationOrderByRiderPerMoto.set(r.riderId, idx + 1);
+    });
   }
 
   // Load practice laps if needed
@@ -897,7 +932,13 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
 
   // Sort riders according to seeding method
   let sortedRiders = [...checkins];
-  if (seedingMethod === "practice_fastest_lap") {
+  if (seedingMethod === "registration_order") {
+    sortedRiders.sort((a, b) => {
+      const ra = a.riderId != null ? (registrationOrderByRiderPerMoto.get(a.riderId) ?? Infinity) : Infinity;
+      const rb = b.riderId != null ? (registrationOrderByRiderPerMoto.get(b.riderId) ?? Infinity) : Infinity;
+      return ra - rb;
+    });
+  } else if (seedingMethod === "practice_fastest_lap") {
     sortedRiders.sort((a, b) => {
       const la = a.riderId != null ? (bestLapByRider.get(a.riderId) ?? Infinity) : Infinity;
       const lb = b.riderId != null ? (bestLapByRider.get(b.riderId) ?? Infinity) : Infinity;
@@ -920,7 +961,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
   }
 
   // Build lineup
-  const lineup = (assignGates && gateSeeding.length > 0)
+  const lineup = (gateSeeding.length > 0)
     ? sortedRiders.map((r, i) => ({
         position: i + 1,
         gate: gateSeeding[i] ?? null,
