@@ -2895,7 +2895,7 @@ export default function Motos() {
                     {/* Type badge — same variants as Schedule page */}
                     <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${
                       moto.type === "practice" ? "bg-blue-500/20 text-blue-300 border-blue-500/30" :
-                      moto.type === "heat"     ? "bg-amber-500/25 text-amber-300 border-amber-400/70" :
+                      moto.type === "heat"     ? "bg-zinc-900 text-white border-zinc-600" :
                       moto.type === "lcq"      ? "bg-orange-500/20 text-orange-300 border-orange-500/30" :
                       moto.type === "main"     ? "bg-primary/20 text-primary border-primary/30" :
                       moto.type === "moto"     ? "bg-teal-500/20 text-teal-300 border-teal-500/30" :
@@ -2907,7 +2907,7 @@ export default function Motos() {
                     <span className={`text-xs px-2 py-0.5 rounded border flex items-center gap-1 ${
                       moto.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30 animate-pulse" :
                       moto.status === "completed"   ? "bg-muted text-muted-foreground border-border" :
-                                                      "bg-zinc-600/50 text-zinc-300 border-zinc-400/70"
+                                                      "bg-zinc-900 text-white border-zinc-600"
                     }`}>
                       {moto.status === "in_progress" && (
                         <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full animate-ping shrink-0" />
@@ -3139,7 +3139,7 @@ export default function Motos() {
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border font-bold uppercase ${
                           partner.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30" :
                           partner.status === "completed"   ? "bg-muted text-muted-foreground border-border" :
-                                                             "bg-zinc-600/70 text-zinc-100 border-zinc-400/60"
+                                                             "bg-zinc-900 text-white border-zinc-600"
                         }`}>
                           {partner.status === "in_progress" ? "Running" : partner.status === "completed" ? "Done" : "Waiting"}
                         </span>
@@ -3522,7 +3522,7 @@ export default function Motos() {
                         <span className={`text-xs px-2 py-0.5 rounded border font-bold uppercase ${
                           partner.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30" :
                           partner.status === "completed"   ? "bg-muted text-muted-foreground border-border" :
-                                                             "bg-zinc-600/70 text-zinc-100 border-zinc-400/60"
+                                                             "bg-zinc-900 text-white border-zinc-600"
                         }`}>
                           {partner.status === "in_progress" ? "Running" : partner.status === "completed" ? "Done" : "Waiting"}
                         </span>
