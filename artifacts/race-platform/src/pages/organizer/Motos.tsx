@@ -2194,7 +2194,7 @@ export default function Motos() {
               {/* Div Size */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  {isSupercrossFormat ? "Max Riders per Heat" : "Div Size (optional)"}
+                  Max Riders per Moto <span className="text-muted-foreground font-normal">(optional)</span>
                 </label>
                 <Input
                   type="number"
@@ -2205,9 +2205,7 @@ export default function Motos() {
                   className="h-9"
                 />
                 <p className="text-xs text-muted-foreground">
-                  {isSupercrossFormat
-                    ? "If a class exceeds this number, additional heats are created automatically."
-                    : "If a class exceeds this number, riders are split into separate divs."}
+                  If a class exceeds this number, riders are split into separate motos. Leave blank for no limit.
                 </p>
               </div>
 

@@ -2011,7 +2011,7 @@ export default function EventSchedule() {
             {/* Riders per heat */}
             <div className="space-y-2">
               <Label>
-                {isSupercrossFormat ? "Max Riders per Heat" : "Div Size"}{" "}
+                Max Riders per Moto{" "}
                 <span className="text-muted-foreground font-normal">(optional)</span>
               </Label>
               <Input
@@ -2023,9 +2023,7 @@ export default function EventSchedule() {
                 className="h-9"
               />
               <p className="text-xs text-muted-foreground">
-                {isSupercrossFormat
-                  ? "If a class exceeds this number, additional heats are created automatically."
-                  : "If a class exceeds this number, riders are split into separate divs."}
+                If a class exceeds this number, riders are split into separate motos. Leave blank for no limit.
               </p>
             </div>
 
