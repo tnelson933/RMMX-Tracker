@@ -20,6 +20,8 @@ export const motosTable = pgTable("motos", {
   countdownSeconds: integer("countdown_seconds"), // duration in seconds for countdown mode
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  staggeredWithMotoId: integer("staggered_with_moto_id"),
+  staggeredOrder: integer("staggered_order"), // 1 = starts first, 2 = starts second
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

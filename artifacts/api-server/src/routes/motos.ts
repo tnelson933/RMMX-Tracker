@@ -229,6 +229,32 @@ router.delete("/motos/:motoId", async (req, res) => {
   return res.status(204).send();
 });
 
+// Link two motos as a staggered start pair
+router.post("/events/:eventId/stagger", async (req, res) => {
+  const { motoId1, motoId2, firstMotoId } = req.body;
+  if (!motoId1 || !motoId2 || !firstMotoId) return res.status(400).json({ error: "motoId1, motoId2, firstMotoId required" });
+  const id1 = Number(motoId1);
+  const id2 = Number(motoId2);
+  const firstId = Number(firstMotoId);
+  if (id1 === id2) return res.status(400).json({ error: "Cannot stagger a moto with itself" });
+  const secondId = firstId === id1 ? id2 : id1;
+  await db.update(motosTable).set({ staggeredWithMotoId: secondId, staggeredOrder: 1 }).where(eq(motosTable.id, firstId));
+  await db.update(motosTable).set({ staggeredWithMotoId: firstId, staggeredOrder: 2 }).where(eq(motosTable.id, secondId));
+  return res.json({ ok: true });
+});
+
+// Unlink stagger for a moto (also unlinks partner)
+router.delete("/motos/:motoId/stagger", async (req, res) => {
+  const id = Number(req.params.motoId);
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
+  if (!moto) return res.status(404).json({ error: "Not found" });
+  await db.update(motosTable).set({ staggeredWithMotoId: null, staggeredOrder: null }).where(eq(motosTable.id, id));
+  if (moto.staggeredWithMotoId) {
+    await db.update(motosTable).set({ staggeredWithMotoId: null, staggeredOrder: null }).where(eq(motosTable.id, moto.staggeredWithMotoId));
+  }
+  return res.json({ ok: true });
+});
+
 // Bulk-delete all non-completed motos for an event
 router.delete("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);

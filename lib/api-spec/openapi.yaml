@@ -877,6 +877,42 @@ paths:
         "204":
           description: All non-completed motos deleted
 
+  /events/{eventId}/stagger:
+    post:
+      operationId: linkStagger
+      tags: [motos]
+      summary: Link two motos as a staggered start pair
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaggerLinkInput"
+      responses:
+        "200":
+          description: Stagger linked
+
+  /motos/{motoId}/stagger:
+    delete:
+      operationId: unlinkStagger
+      tags: [motos]
+      summary: Unlink a staggered start pair for a moto
+      parameters:
+        - name: motoId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Stagger unlinked
+
   /motos/{motoId}:
     patch:
       operationId: updateMoto
@@ -2574,6 +2610,12 @@ components:
         completedAt:
           type: ["string", "null"]
           format: date-time
+        staggeredWithMotoId:
+          type: ["integer", "null"]
+          description: ID of the paired moto in a staggered start
+        staggeredOrder:
+          type: ["integer", "null"]
+          description: 1 = starts first, 2 = starts second in a staggered pair
 
     MotoInput:
       type: object
@@ -2637,6 +2679,18 @@ components:
           type: integer
         name:
           type: string
+
+    StaggerLinkInput:
+      type: object
+      required: [motoId1, motoId2, firstMotoId]
+      properties:
+        motoId1:
+          type: integer
+        motoId2:
+          type: integer
+        firstMotoId:
+          type: integer
+          description: Which of the two motos starts first
 
     MotoReorderInput:
       type: object

@@ -114,6 +114,7 @@ export * from './seriesInput';
 export * from './seriesStanding';
 export * from './seriesUpdateInput';
 export * from './setupRequest';
+export * from './staggerLinkInput';
 export * from './stateInfo';
 export * from './stripeConnectDashboardLink';
 export * from './stripeConnectStartResult';

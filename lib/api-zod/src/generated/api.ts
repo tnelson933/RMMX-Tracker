@@ -878,7 +878,9 @@ export const ListMotosResponseItem = zod.object({
   "rfidNumber": zod.string().nullish()
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
-  "completedAt": zod.coerce.date().nullish()
+  "completedAt": zod.coerce.date().nullish(),
+  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
 })
 export const ListMotosResponse = zod.array(ListMotosResponseItem)
 
@@ -910,6 +912,28 @@ export const CreateMotoBody = zod.object({
  */
 export const DeleteAllMotosParams = zod.object({
   "eventId": zod.coerce.number()
+})
+
+
+/**
+ * @summary Link two motos as a staggered start pair
+ */
+export const LinkStaggerParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const LinkStaggerBody = zod.object({
+  "motoId1": zod.number(),
+  "motoId2": zod.number(),
+  "firstMotoId": zod.number().describe('Which of the two motos starts first')
+})
+
+
+/**
+ * @summary Unlink a staggered start pair for a moto
+ */
+export const UnlinkStaggerParams = zod.object({
+  "motoId": zod.coerce.number()
 })
 
 
@@ -954,7 +978,9 @@ export const UpdateMotoResponse = zod.object({
   "rfidNumber": zod.string().nullish()
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
-  "completedAt": zod.coerce.date().nullish()
+  "completedAt": zod.coerce.date().nullish(),
+  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
 })
 
 
@@ -999,7 +1025,9 @@ export const ReorderMotosResponseItem = zod.object({
   "rfidNumber": zod.string().nullish()
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
-  "completedAt": zod.coerce.date().nullish()
+  "completedAt": zod.coerce.date().nullish(),
+  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
 })
 export const ReorderMotosResponse = zod.array(ReorderMotosResponseItem)
 
@@ -1049,7 +1077,9 @@ export const GenerateLineupsResponseItem = zod.object({
   "rfidNumber": zod.string().nullish()
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
-  "completedAt": zod.coerce.date().nullish()
+  "completedAt": zod.coerce.date().nullish(),
+  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
 })
 export const GenerateLineupsResponse = zod.array(GenerateLineupsResponseItem)
 
@@ -1088,7 +1118,9 @@ export const GenerateMotoLineupResponse = zod.object({
   "rfidNumber": zod.string().nullish()
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
-  "completedAt": zod.coerce.date().nullish()
+  "completedAt": zod.coerce.date().nullish(),
+  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
 })
 
 
@@ -1310,7 +1342,9 @@ export const AdvanceToMainResponse = zod.object({
   "rfidNumber": zod.string().nullish()
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
-  "completedAt": zod.coerce.date().nullish()
+  "completedAt": zod.coerce.date().nullish(),
+  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
 })
 
 

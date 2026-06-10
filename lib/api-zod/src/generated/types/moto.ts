@@ -47,4 +47,14 @@ export interface Moto {
   startedAt?: Date | null;
   /** @nullable */
   completedAt?: Date | null;
+  /**
+     * ID of the paired moto in a staggered start
+     * @nullable
+     */
+  staggeredWithMotoId?: number | null;
+  /**
+     * 1 = starts first, 2 = starts second in a staggered pair
+     * @nullable
+     */
+  staggeredOrder?: number | null;
 }

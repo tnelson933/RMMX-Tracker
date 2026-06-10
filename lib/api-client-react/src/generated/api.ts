@@ -93,6 +93,7 @@ import type {
   SeriesStanding,
   SeriesUpdateInput,
   SetupRequest,
+  StaggerLinkInput,
   StateInfo,
   StripeConnectDashboardLink,
   StripeConnectStartResult,
@@ -3148,6 +3149,148 @@ export const useDeleteAllMotos = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteAllMotosMutationOptions(options));
+    }
+
+export const getLinkStaggerUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/stagger`
+}
+
+/**
+ * @summary Link two motos as a staggered start pair
+ */
+export const linkStagger = async (eventId: number,
+    staggerLinkInput: StaggerLinkInput, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getLinkStaggerUrl(eventId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      staggerLinkInput,)
+  }
+);}
+
+
+
+
+export const getLinkStaggerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkStagger>>, TError,{eventId: number;data: BodyType<StaggerLinkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof linkStagger>>, TError,{eventId: number;data: BodyType<StaggerLinkInput>}, TContext> => {
+
+const mutationKey = ['linkStagger'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof linkStagger>>, {eventId: number;data: BodyType<StaggerLinkInput>}> = (props) => {
+          const {eventId,data} = props ?? {};
+
+          return  linkStagger(eventId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LinkStaggerMutationResult = NonNullable<Awaited<ReturnType<typeof linkStagger>>>
+    export type LinkStaggerMutationBody = BodyType<StaggerLinkInput>
+    export type LinkStaggerMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Link two motos as a staggered start pair
+ */
+export const useLinkStagger = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkStagger>>, TError,{eventId: number;data: BodyType<StaggerLinkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof linkStagger>>,
+        TError,
+        {eventId: number;data: BodyType<StaggerLinkInput>},
+        TContext
+      > => {
+      return useMutation(getLinkStaggerMutationOptions(options));
+    }
+
+export const getUnlinkStaggerUrl = (motoId: number,) => {
+
+
+
+
+  return `/api/motos/${motoId}/stagger`
+}
+
+/**
+ * @summary Unlink a staggered start pair for a moto
+ */
+export const unlinkStagger = async (motoId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getUnlinkStaggerUrl(motoId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getUnlinkStaggerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkStagger>>, TError,{motoId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unlinkStagger>>, TError,{motoId: number}, TContext> => {
+
+const mutationKey = ['unlinkStagger'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unlinkStagger>>, {motoId: number}> = (props) => {
+          const {motoId} = props ?? {};
+
+          return  unlinkStagger(motoId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnlinkStaggerMutationResult = NonNullable<Awaited<ReturnType<typeof unlinkStagger>>>
+
+    export type UnlinkStaggerMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Unlink a staggered start pair for a moto
+ */
+export const useUnlinkStagger = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkStagger>>, TError,{motoId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unlinkStagger>>,
+        TError,
+        {motoId: number},
+        TContext
+      > => {
+      return useMutation(getUnlinkStaggerMutationOptions(options));
     }
 
 export const getUpdateMotoUrl = (motoId: number,) => {

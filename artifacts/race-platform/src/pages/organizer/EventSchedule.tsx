@@ -3,7 +3,7 @@ import { useParams, Link } from "wouter";
 import {
   useListMotos, useReorderMotos, useUpdateMoto, useCreateMoto, useDeleteMoto, useDeleteAllMotos,
   useListCheckins, useGenerateLineups, useGetEvent, useListPointsTables,
-  useUpdateEvent, useAdvanceToMain,
+  useUpdateEvent, useAdvanceToMain, useLinkStagger, useUnlinkStagger,
   getListMotosQueryKey, getListCheckinsQueryKey, type Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -36,7 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   GripVertical, Plus, Clock, LayoutList, LayoutGrid, Flag, ExternalLink,
-  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown, Trash2,
+  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown, Trash2, Link2, Unlink2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -505,6 +505,25 @@ function SortableLineupRow({ entry, motoId, isCompleted, onRemove, allIds }: Lin
   );
 }
 
+// ── Stagger drop zone (inside a card when another moto is being dragged) ──────
+
+function StaggerDropZone({ motoId }: { motoId: number }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `stagger-${motoId}` });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`absolute inset-x-3 top-[18%] bottom-[18%] z-20 flex items-center justify-center rounded-lg border-2 border-dashed pointer-events-auto transition-all ${
+        isOver ? "border-primary bg-primary/20" : "border-primary/50 bg-primary/5"
+      }`}
+    >
+      <div className="flex items-center gap-1.5 text-primary text-xs font-semibold select-none">
+        <Link2 size={13} />
+        <span>{isOver ? "Release to stagger" : "Drop here to stagger"}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Sortable moto card ────────────────────────────────────────────────────────
 
 interface MotoCardProps {
@@ -523,12 +542,16 @@ interface MotoCardProps {
   onRemoveRider: (riderId: number) => void;
   onCountdownExpire?: () => void;
   onDelete?: () => void;
+  isMotoCardDragging?: boolean;
+  staggerPartner?: Moto | null;
+  onUnstagger?: () => void;
 }
 
 function SortableMotoCard({
   moto, index, eventId, isPoolDropTarget,
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
   isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire, onDelete,
+  isMotoCardDragging, staggerPartner, onUnstagger,
 }: MotoCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: moto.id });
 
@@ -547,18 +570,46 @@ function SortableMotoCard({
   const isCountdownActive = isCountdownMode && moto.status === "in_progress" && countdownSeconds != null;
   const isCountdownComplete = isCountdownMode && isCompleted && (moto as any).startedAt != null;
 
+  const isAlreadyStaggered = !!(moto as any).staggeredWithMotoId;
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`bg-card border rounded-lg group transition-colors ${
+      className={`relative bg-card border rounded-lg group transition-colors ${
         isCountdownComplete
           ? "border-muted bg-muted/10"
           : isPoolDropTarget
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
+          : staggerPartner
+          ? "border-primary/40 ring-1 ring-primary/20"
           : "border-border hover:border-primary/40"
       }`}
     >
+      {/* ── Stagger drop zone (shown when another moto card is being dragged) ── */}
+      {isMotoCardDragging && !isDragging && !isAlreadyStaggered && (
+        <StaggerDropZone motoId={moto.id} />
+      )}
+
+      {/* ── Stagger partner banner ── */}
+      {staggerPartner && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-primary/5 border-b border-primary/20 rounded-t-lg">
+          <Link2 size={12} className="text-primary shrink-0" />
+          <span className="text-xs font-semibold text-primary">Staggered start with {staggerPartner.name}</span>
+          <span className="text-[10px] text-muted-foreground">(starts first)</span>
+          {onUnstagger && (
+            <button
+              onClick={onUnstagger}
+              className="ml-auto shrink-0 text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1 text-[10px]"
+              title="Remove stagger link"
+            >
+              <Unlink2 size={11} />
+              Unlink
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Countdown complete banner ── */}
       {isCountdownComplete && (
         <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/30 border-b border-border/60 rounded-t-lg">
@@ -688,6 +739,38 @@ function SortableMotoCard({
           )}
         </div>
       )}
+
+      {/* ── Partner moto lineup (stagger order=1 card shows partner riders) ── */}
+      {staggerPartner && isExpanded && (() => {
+        const partnerLineup = Array.isArray(staggerPartner.lineup)
+          ? (staggerPartner.lineup as LineupEntry[])
+          : [];
+        return (
+          <div className="border-t-2 border-primary/30 px-4 py-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Link2 size={10} className="text-primary" />
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                {staggerPartner.name} — starts second
+              </span>
+            </div>
+            {partnerLineup.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-1">No riders in partner moto yet</p>
+            ) : (
+              <div className="space-y-0.5 opacity-80">
+                {partnerLineup.map((entry, i) => (
+                  <div key={entry.riderId} className="flex items-center gap-2 text-xs py-0.5">
+                    <span className="w-4 text-muted-foreground font-mono text-center text-[10px]">{i + 1}</span>
+                    <span className="font-medium">{entry.riderName}</span>
+                    {entry.bibNumber && (
+                      <span className="text-muted-foreground font-mono">#{entry.bibNumber}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -997,7 +1080,7 @@ export default function EventSchedule() {
   // Rider pool
   const [poolOpen, setPoolOpen] = useState(true);
   const [activePoolOverMotoId, setActivePoolOverMotoId] = useState<number | null>(null);
-  const [activeDrag, setActiveDrag] = useState<{ riderName: string; bibNumber?: string | null; source: "pool" | "lineup" } | null>(null);
+  const [activeDrag, setActiveDrag] = useState<{ riderName: string; bibNumber?: string | null; source: "pool" | "lineup" | "moto"; motoId?: number } | null>(null);
 
   // Expanded moto state
   const [expandedMotos, setExpandedMotos] = useState<Set<number>>(new Set());
@@ -1055,6 +1138,7 @@ export default function EventSchedule() {
   // ── Delete confirm state ──
   const [deleteConfirmMotoId, setDeleteConfirmMotoId] = useState<number | null>(null);
   const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
+  const [staggerPendingPair, setStaggerPendingPair] = useState<{ motoId1: number; motoId2: number } | null>(null);
 
   // ── Mutations ──
   const reorderMutation = useReorderMotos();
@@ -1065,6 +1149,8 @@ export default function EventSchedule() {
   const advanceToMainMutation = useAdvanceToMain();
   const deleteMutation = useDeleteMoto();
   const deleteAllMutation = useDeleteAllMotos();
+  const linkStaggerMutation = useLinkStagger();
+  const unlinkStaggerMutation = useUnlinkStagger();
 
   // ── defaultTopPerHeat (Advance to Main) ──
   const defaultTopPerHeat = useMemo(() => {
@@ -1359,6 +1445,12 @@ export default function EventSchedule() {
         const e = lu.find(x => x.riderId === riderId);
         if (e) setActiveDrag({ riderName: e.riderName, bibNumber: e.bibNumber, source: "lineup" });
       }
+      return;
+    }
+    // Moto card drag (numeric id)
+    const numId = Number(event.active.id);
+    if (!isNaN(numId)) {
+      setActiveDrag({ riderName: "", source: "moto", motoId: numId });
     }
   }, [checkins, rawMotos]);
 
@@ -1478,6 +1570,16 @@ export default function EventSchedule() {
         }
       );
       return;
+    }
+
+    // Stagger drop — moto dragged onto another moto's stagger zone
+    const overStr2 = String(over.id);
+    if (overStr2.startsWith("stagger-") && typeof active.id === "number") {
+      const targetMotoId = parseInt(overStr2.replace("stagger-", ""));
+      if (!isNaN(targetMotoId) && active.id !== targetMotoId) {
+        setStaggerPendingPair({ motoId1: active.id, motoId2: targetMotoId });
+        return;
+      }
     }
 
     // Moto reorder — round-filter-aware
@@ -1991,48 +2093,64 @@ export default function EventSchedule() {
             )}
 
             {/* ── Run-order view ── */}
-            {viewMode === "run-order" && filteredMotos.length > 0 && (
-              <SortableContext items={filteredMotos.map(m => m.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-2">
-                  {(() => {
-                    let lastType: string | null = null;
-                    return filteredMotos.map((moto, index) => {
-                      const showSection = moto.type !== lastType;
-                      lastType = moto.type;
-                      return (
-                        <div key={moto.id}>
-                          {showSection && (
-                            <div className="flex items-center gap-2 mt-4 mb-2 first:mt-0">
-                              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                                {sectionLabel(moto.type)}
-                              </span>
-                              <div className="flex-1 h-px bg-border" />
-                            </div>
-                          )}
-                          <SortableMotoCard
-                            moto={moto}
-                            index={index}
-                            eventId={eventId}
-                            isPoolDropTarget={activePoolOverMotoId === moto.id}
-                            isEditing={editingNameId === moto.id}
-                            editValue={nameEditValue}
-                            onEditStart={() => startEditName(moto)}
-                            onEditChange={setNameEditValue}
-                            onEditSave={() => saveName(moto.id)}
-                            onEditCancel={cancelEditName}
-                            isExpanded={expandedMotos.has(moto.id)}
-                            onToggleExpand={() => toggleMotoExpand(moto.id)}
-                            onRemoveRider={(riderId) => handleRemoveRider(moto.id, riderId)}
-                            onCountdownExpire={() => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) })}
-                            onDelete={() => setDeleteConfirmMotoId(moto.id)}
-                          />
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </SortableContext>
-            )}
+            {viewMode === "run-order" && filteredMotos.length > 0 && (() => {
+              // Stagger order=2 motos are rendered inside their order=1 partner; exclude them
+              const visibleMotos = filteredMotos.filter(m => (m as any).staggeredOrder !== 2);
+              const isMotoBeingDragged = activeDrag?.source === "moto";
+              return (
+                <SortableContext items={visibleMotos.map(m => m.id)} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-2">
+                    {(() => {
+                      let lastType: string | null = null;
+                      return visibleMotos.map((moto, index) => {
+                        const showSection = moto.type !== lastType;
+                        lastType = moto.type;
+                        const staggerPartner = (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
+                          ? (rawMotos.find(m => m.id === (moto as any).staggeredWithMotoId) ?? null)
+                          : null;
+                        return (
+                          <div key={moto.id}>
+                            {showSection && (
+                              <div className="flex items-center gap-2 mt-4 mb-2 first:mt-0">
+                                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                  {sectionLabel(moto.type)}
+                                </span>
+                                <div className="flex-1 h-px bg-border" />
+                              </div>
+                            )}
+                            <SortableMotoCard
+                              moto={moto}
+                              index={index}
+                              eventId={eventId}
+                              isPoolDropTarget={activePoolOverMotoId === moto.id}
+                              isEditing={editingNameId === moto.id}
+                              editValue={nameEditValue}
+                              onEditStart={() => startEditName(moto)}
+                              onEditChange={setNameEditValue}
+                              onEditSave={() => saveName(moto.id)}
+                              onEditCancel={cancelEditName}
+                              isExpanded={expandedMotos.has(moto.id)}
+                              onToggleExpand={() => toggleMotoExpand(moto.id)}
+                              onRemoveRider={(riderId) => handleRemoveRider(moto.id, riderId)}
+                              onCountdownExpire={() => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) })}
+                              onDelete={() => setDeleteConfirmMotoId(moto.id)}
+                              isMotoCardDragging={isMotoBeingDragged && activeDrag?.motoId !== moto.id}
+                              staggerPartner={staggerPartner}
+                              onUnstagger={staggerPartner ? () => {
+                                unlinkStaggerMutation.mutate(
+                                  { motoId: moto.id },
+                                  { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any }) }
+                                );
+                              } : undefined}
+                            />
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </SortableContext>
+              );
+            })()}
 
             {/* ── By-class view ── */}
             {viewMode === "by-class" && filteredMotos.length > 0 && (
@@ -2081,11 +2199,11 @@ export default function EventSchedule() {
         </div>
       </div>
 
-      {/* ── DragOverlay: rider chip ── */}
+      {/* ── DragOverlay: rider chip only (not for moto-card drags) ── */}
       {/* Lineup-within-moto reorders don't use an overlay — the sortable placeholder
           is visible at 0.25 opacity in place, leaving the drop-indicator line unobstructed. */}
       <DragOverlay>
-        {activeDrag && activeDrag.source !== "lineup" ? (
+        {activeDrag && activeDrag.source !== "lineup" && activeDrag.source !== "moto" ? (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-card border border-primary/40 rounded-lg shadow-lg text-sm opacity-95">
             <GripVertical size={12} className="text-muted-foreground/50" />
             {activeDrag.bibNumber && (
@@ -2095,6 +2213,59 @@ export default function EventSchedule() {
           </div>
         ) : null}
       </DragOverlay>
+
+      {/* ── Stagger "which starts first?" dialog ── */}
+      {staggerPendingPair && (() => {
+        const m1 = rawMotos.find(m => m.id === staggerPendingPair.motoId1);
+        const m2 = rawMotos.find(m => m.id === staggerPendingPair.motoId2);
+        if (!m1 || !m2) return null;
+        return (
+          <AlertDialog open onOpenChange={open => { if (!open) setStaggerPendingPair(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <Link2 size={16} className="text-primary" />
+                  Link staggered start
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  These two motos will run simultaneously but be scored independently. Which one starts first?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="flex flex-col gap-2 py-2">
+                {[m1, m2].map(m => (
+                  <button
+                    key={m.id}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:border-primary/60 hover:bg-primary/5 transition-colors text-left"
+                    onClick={() => {
+                      const otherId = m.id === m1.id ? m2.id : m1.id;
+                      linkStaggerMutation.mutate(
+                        { eventId, data: { motoId1: m.id, motoId2: otherId, firstMotoId: m.id } },
+                        {
+                          onSuccess: () => {
+                            queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+                            toast({ title: `${m.name} starts first — stagger linked` });
+                          },
+                          onError: () => toast({ title: "Failed to link stagger", variant: "destructive" }),
+                        }
+                      );
+                      setStaggerPendingPair(null);
+                    }}
+                  >
+                    <Flag size={14} className="text-primary shrink-0" />
+                    <div>
+                      <div className="font-semibold text-sm">{m.name}</div>
+                      <div className="text-xs text-muted-foreground">{m.raceClass} · {typeLabel(m.type)}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        );
+      })()}
 
       {/* ── Delete moto confirmation ── */}
       <AlertDialog open={deleteConfirmMotoId !== null} onOpenChange={open => { if (!open) setDeleteConfirmMotoId(null); }}>

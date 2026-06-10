@@ -580,6 +580,16 @@ export interface Moto {
   startedAt?: string | null;
   /** @nullable */
   completedAt?: string | null;
+  /**
+     * ID of the paired moto in a staggered start
+     * @nullable
+     */
+  staggeredWithMotoId?: number | null;
+  /**
+     * 1 = starts first, 2 = starts second in a staggered pair
+     * @nullable
+     */
+  staggeredOrder?: number | null;
 }
 
 export type MotoInputType = typeof MotoInputType[keyof typeof MotoInputType];
@@ -647,6 +657,13 @@ export interface MotoUpdate {
   countdownSeconds?: number | null;
   motoNumber?: number;
   name?: string;
+}
+
+export interface StaggerLinkInput {
+  motoId1: number;
+  motoId2: number;
+  /** Which of the two motos starts first */
+  firstMotoId: number;
 }
 
 export interface MotoReorderInput {
