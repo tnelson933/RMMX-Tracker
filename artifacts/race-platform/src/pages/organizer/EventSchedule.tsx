@@ -1700,10 +1700,8 @@ export default function EventSchedule() {
 
         {/* ── Main content ── */}
         <div className="flex-1 min-w-0 overflow-y-auto">
-          <div className="p-6 space-y-5 max-w-4xl">
-
-            {/* ── Multi-class conflict panel ── */}
-            <ScheduleConflictPanel conflicts={scheduleConflicts} />
+          <div className="p-6 flex gap-5 items-start">
+          <div className="flex-1 min-w-0 space-y-5 min-w-0">
 
             {/* ── Header toolbar ── */}
             <div className="flex flex-wrap items-end gap-3">
@@ -2029,6 +2027,13 @@ export default function EventSchedule() {
               </div>
             )}
 
+          </div>
+          {/* ── Multi-class conflict panel (sticky top-right) ── */}
+          {scheduleConflicts.length > 0 && (
+            <div className="w-72 shrink-0 sticky top-6 self-start">
+              <ScheduleConflictPanel conflicts={scheduleConflicts} />
+            </div>
+          )}
           </div>
         </div>
       </div>
