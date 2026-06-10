@@ -4,27 +4,39 @@ import { sql } from "drizzle-orm";
 async function main() {
   console.log("Running entry_fee_category migration...");
 
-  // 1. Ensure entry_fee_category_id column exists (drizzle push-force handles this,
-  //    but this is a safe fallback for environments where push hasn't run yet)
+  // 1. Ensure entry_fee_category_id column exists
   await db.execute(sql`
     ALTER TABLE events ADD COLUMN IF NOT EXISTS entry_fee_category_id integer
   `);
   console.log("Column ensured");
 
-  // 2. Seed Entry Fees category for all clubs.
-  //    ON CONFLICT (club_id, name) is safe because drizzle push-force already
-  //    creates the unique index on (club_id, name) before this script runs.
+  // 2. Ensure the unique index on discount_categories(club_id, name) exists.
+  //    drizzle push-force should create this, but we guard here so that the
+  //    INSERT below (which uses WHERE NOT EXISTS, not ON CONFLICT) is safe
+  //    regardless of whether push-force ran successfully.
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS discount_categories_club_id_name_unique
+    ON discount_categories (club_id, name)
+  `);
+  console.log("Unique index ensured");
+
+  // 3. Seed "Entry Fees" category for all clubs.
+  //    Use WHERE NOT EXISTS instead of ON CONFLICT so this works even before
+  //    the unique index exists (avoids 42P10 infer_arbiter_indexes error).
   const clubs = await db.execute(sql`SELECT id FROM clubs`);
   for (const club of clubs.rows as { id: number }[]) {
     await db.execute(sql`
       INSERT INTO discount_categories (club_id, name)
-      VALUES (${club.id}, 'Entry Fees')
-      ON CONFLICT (club_id, name) DO NOTHING
+      SELECT ${club.id}, 'Entry Fees'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM discount_categories
+        WHERE club_id = ${club.id} AND name = 'Entry Fees'
+      )
     `);
   }
   console.log(`Entry Fees seeded for ${clubs.rows.length} clubs`);
 
-  // 3. Backfill existing events entry_fee_category_id where missing
+  // 4. Backfill existing events entry_fee_category_id where missing
   const updated = await db.execute(sql`
     UPDATE events e
     SET entry_fee_category_id = dc.id
@@ -35,8 +47,7 @@ async function main() {
   `);
   console.log(`Events backfilled: ${(updated as any).rowCount ?? 0}`);
 
-  // 4. Add FK constraint on events.entry_fee_category_id if not present
-  //    (drizzle push-force manages this via schema, but guard for safety)
+  // 5. Add FK constraint on events.entry_fee_category_id if not present
   await db.execute(sql`
     DO $$
     BEGIN
