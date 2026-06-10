@@ -10,7 +10,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   DndContext, DragOverlay, pointerWithin,
   PointerSensor, useSensor, useSensors,
-  useDraggable, useDroppable,
+  useDraggable, useDroppable, useDndContext,
   type DragEndEvent, type DragStartEvent, type DragOverEvent,
 } from "@dnd-kit/core";
 import {
@@ -435,46 +435,71 @@ interface LineupRowProps {
   motoId: number;
   isCompleted: boolean;
   onRemove: () => void;
+  allIds: string[];
 }
 
-function SortableLineupRow({ entry, motoId, isCompleted, onRemove }: LineupRowProps) {
+function SortableLineupRow({ entry, motoId, isCompleted, onRemove, allIds }: LineupRowProps) {
+  const myId = `lrider-${motoId}-${entry.riderId}`;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: `lrider-${motoId}-${entry.riderId}`,
+    id: myId,
     disabled: isCompleted,
   });
+  const { active, over } = useDndContext();
+
+  // Compute drop-indicator position
+  let showLineAbove = false;
+  let showLineBelow = false;
+  const isOverMe = over?.id === myId;
+  const activeId = String(active?.id ?? "");
+  const draggingWithinSameMoto = activeId.startsWith(`lrider-${motoId}-`);
+  if (isOverMe && draggingWithinSameMoto && activeId !== myId) {
+    const activeIdx = allIds.indexOf(activeId);
+    const myIdx = allIds.indexOf(myId);
+    if (activeIdx > myIdx) showLineAbove = true;  // coming from below → lands above me
+    else showLineBelow = true;                      // coming from above → lands below me
+  }
+
   return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 }}
-      className="flex items-center gap-1.5 px-2 py-1 rounded-md group/lr hover:bg-muted/40 transition-colors select-none"
-    >
-      {!isCompleted ? (
-        <button
-          className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground shrink-0"
-          {...attributes}
-          {...listeners}
-          aria-label="Drag to reorder gate"
-        >
-          <GripVertical size={12} />
-        </button>
-      ) : (
-        <span className="w-[18px] shrink-0" />
+    <div className="relative">
+      {showLineAbove && (
+        <div className="absolute -top-px left-2 right-2 h-0.5 bg-primary rounded-full z-10 pointer-events-none" />
       )}
-      <span className="text-[11px] font-mono text-muted-foreground w-14 shrink-0 tabular-nums">
-        Gate {entry.position}
-      </span>
-      {entry.bibNumber && (
-        <span className="font-mono text-[11px] text-muted-foreground w-9 shrink-0">#{entry.bibNumber}</span>
-      )}
-      <span className="text-xs flex-1 truncate font-medium">{entry.riderName}</span>
-      {!isCompleted && (
-        <button
-          onClick={onRemove}
-          className="opacity-0 group-hover/lr:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0 p-0.5 rounded"
-          title="Remove from moto"
-        >
-          <X size={11} />
-        </button>
+      <div
+        ref={setNodeRef}
+        style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.25 : 1 }}
+        className="flex items-center gap-1.5 px-2 py-1 rounded-md group/lr hover:bg-muted/40 transition-colors select-none"
+      >
+        {!isCompleted ? (
+          <button
+            className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground shrink-0"
+            {...attributes}
+            {...listeners}
+            aria-label="Drag to reorder gate"
+          >
+            <GripVertical size={12} />
+          </button>
+        ) : (
+          <span className="w-[18px] shrink-0" />
+        )}
+        <span className="text-[11px] font-mono text-muted-foreground w-14 shrink-0 tabular-nums">
+          Gate {entry.position}
+        </span>
+        {entry.bibNumber && (
+          <span className="font-mono text-[11px] text-muted-foreground w-9 shrink-0">#{entry.bibNumber}</span>
+        )}
+        <span className="text-xs flex-1 truncate font-medium">{entry.riderName}</span>
+        {!isCompleted && (
+          <button
+            onClick={onRemove}
+            className="opacity-0 group-hover/lr:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0 p-0.5 rounded"
+            title="Remove from moto"
+          >
+            <X size={11} />
+          </button>
+        )}
+      </div>
+      {showLineBelow && (
+        <div className="absolute -bottom-px left-2 right-2 h-0.5 bg-primary rounded-full z-10 pointer-events-none" />
       )}
     </div>
   );
@@ -655,6 +680,7 @@ function SortableMotoCard({
                     motoId={moto.id}
                     isCompleted={isCompleted}
                     onRemove={() => onRemoveRider(entry.riderId)}
+                    allIds={lineup.map(e => `lrider-${moto.id}-${e.riderId}`)}
                   />
                 ))}
               </div>
@@ -804,6 +830,7 @@ function StaticMotoCard({
                     motoId={moto.id}
                     isCompleted={isCompleted}
                     onRemove={() => onRemoveRider(entry.riderId)}
+                    allIds={lineup.map(e => `lrider-${moto.id}-${e.riderId}`)}
                   />
                 ))}
               </div>
