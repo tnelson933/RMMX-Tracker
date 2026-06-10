@@ -5,7 +5,6 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
-import type { EventUpdateMinLapTimes } from './eventUpdateMinLapTimes';
 import type { EventUpdateRaceClassLimits } from './eventUpdateRaceClassLimits';
 import type { EventUpdateTimingTechnology } from './eventUpdateTimingTechnology';
 import type { PurchaseOption } from './purchaseOption';
@@ -34,8 +33,11 @@ export interface EventUpdate {
   /** @nullable */
   scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
-  /** Minimum lap time in milliseconds per race class */
-  minLapTimes?: EventUpdateMinLapTimes;
+  /**
+     * Minimum lap time in milliseconds (event-wide)
+     * @nullable
+     */
+  minLapMs?: number | null;
   /**
      * ID of the gate configuration to pre-select when generating lineups
      * @nullable

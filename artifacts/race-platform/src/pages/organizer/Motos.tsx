@@ -1007,32 +1007,18 @@ export default function Motos() {
   const [newMotoMaxRiders, setNewMotoMaxRiders] = useState("");
   const [selectedRiderIds, setSelectedRiderIds] = useState<Set<number>>(new Set());
 
-  // Min lap times per class
-  const [minLapInputs, setMinLapInputs] = useState<Record<string, string>>({});
-  const [minLapSavedClass, setMinLapSavedClass] = useState<string | null>(null);
+  // Minimum lap time — single value for the whole event
+  const [minLapInput, setMinLapInput] = useState("");
   const [minLapSaveStatus, setMinLapSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  // Timer ref so we can cancel the "Saved ✓" auto-dismiss on a rapid follow-up save.
   const minLapSavedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Tracks which eventId the inputs have been seeded for — prevents the seed effect
-  // from overwriting user input when the event query refetches after a save.
   const seededForEventIdRef = useRef<number | null>(null);
-  // Single global debounce timer — one timer for ALL classes eliminates the per-class
-  // concurrent-partial-payload race condition.
   const minLapDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Always-current snapshot of minLapInputs so the unmount-flush can read it synchronously.
-  const minLapInputsRef = useRef(minLapInputs);
-  minLapInputsRef.current = minLapInputs;
-  // Set before a blur-normalization setState so the debounce effect skips the cycle
-  // triggered by that state change (the blur already flushed the save immediately).
+  const minLapInputRef = useRef(minLapInput);
+  minLapInputRef.current = minLapInput;
   const isBlurFlushingRef = useRef(false);
-  // True while a mutation is in-flight — prevents concurrent overlapping saves.
   const isSavingRef = useRef(false);
-  // Holds the latest snapshot queued while a save is in-flight; flushed when it settles.
-  const pendingSaveRef = useRef<{ inputs: Record<string, string>; triggerClass: string | null } | null>(null);
-  // Last snapshot successfully committed to the server. Used for change-detection instead
-  // of event.minLapTimes, which may be stale before the invalidated query refetches.
-  const lastCommittedRef = useRef<Record<string, number>>({});
-  // Always-current eventId — used in async callbacks to detect stale cross-event saves.
+  const pendingSaveRef = useRef<{ input: string } | null>(null);
+  const lastCommittedRef = useRef<number | null>(null);
   const currentEventIdRef = useRef(eventId);
   currentEventIdRef.current = eventId;
 
@@ -1061,10 +1047,10 @@ export default function Motos() {
   // Reset local state when the organizer navigates between events so stale values
   // from Event A never bleed into Event B's inputs.
   useEffect(() => {
-    setMinLapInputs({});
+    setMinLapInput("");
     setSelectedGateConfigId("");
     seededForEventIdRef.current = null;
-    lastCommittedRef.current = {};
+    lastCommittedRef.current = null;
     pendingSaveRef.current = null;
     isSavingRef.current = false;
   }, [eventId]);
@@ -1078,83 +1064,49 @@ export default function Motos() {
     }
   }, [event, gateConfigs]);
 
-  // Seed min-lap inputs from saved event data exactly once per eventId.
-  // Ref guard: fires on initial load only — not on refetches triggered by a successful
-  // save — so user input still in the debounce window is never overwritten.
+  // Seed min-lap input from saved event data exactly once per eventId.
   useEffect(() => {
     if (!event) return;
     const currentEventId = (event as any).id as number;
     if (seededForEventIdRef.current === currentEventId) return;
     seededForEventIdRef.current = currentEventId;
-    const saved = (event as any)?.minLapTimes as Record<string, number> | undefined;
-    if (!saved) return;
-    // Sync the committed baseline so change-detection works from day one.
-    lastCommittedRef.current = { ...saved };
-    setMinLapInputs(() => {
-      const next: Record<string, string> = {};
-      for (const [cls, ms] of Object.entries(saved)) {
-        next[cls] = formatMinLapTime(ms as number);
-      }
-      return next;
-    });
+    const saved = (event as any)?.minLapMs as number | null | undefined;
+    lastCommittedRef.current = saved ?? null;
+    setMinLapInput(saved != null ? formatMinLapTime(saved) : "");
   }, [event]);
 
   // Always-current save function stored in a ref so timer/unmount callbacks call the
   // latest version regardless of when they fire — eliminates stale-closure risk.
-  // Payload is built from ALL current inputs (never a partial per-class merge), and
-  // an isUnchanged check avoids unnecessary round-trips.
-  const saveMinLapRef = useRef<(inputs: Record<string, string>, triggerClass: string | null) => void>(() => {});
-  saveMinLapRef.current = (inputs: Record<string, string>, triggerClass: string | null): void => {
-    const newMinLapTimes: Record<string, number> = {};
-    for (const [cls, raw] of Object.entries(inputs)) {
-      const ms = parseMinLapTime(raw);
-      if (ms != null) newMinLapTimes[cls] = ms;
-    }
-    // Compare against the locally-tracked committed baseline, not the query cache —
-    // event.minLapTimes may still be stale before the invalidated query refetches.
-    const committed = lastCommittedRef.current;
-    const hasChange =
-      Object.keys(newMinLapTimes).length !== Object.keys(committed).length ||
-      Object.entries(newMinLapTimes).some(([cls, ms]) => committed[cls] !== ms);
-    if (!hasChange) return;
-    // Serialise: if a mutation is already in-flight, queue the latest snapshot and
-    // return — the onSuccess/onError handler will flush it once the current one settles.
+  const saveMinLapRef = useRef<(input: string) => void>(() => {});
+  saveMinLapRef.current = (input: string): void => {
+    const newMs = parseMinLapTime(input) ?? null;
+    if (newMs === lastCommittedRef.current) return;
     if (isSavingRef.current) {
-      pendingSaveRef.current = { inputs, triggerClass };
+      pendingSaveRef.current = { input };
       return;
     }
     isSavingRef.current = true;
-    // Show "Saving…" in the card header badge; cancel any pending "Saved ✓" dismiss.
     if (minLapSavedTimer.current) {
       clearTimeout(minLapSavedTimer.current);
       minLapSavedTimer.current = null;
     }
     setMinLapSaveStatus('saving');
-    // Capture the event this mutation belongs to — used in callbacks to discard
-    // stale results if the organizer navigated to a different event before it settled.
     const saveEventId = eventId;
-    const displayClass = triggerClass ?? Object.keys(inputs)[0] ?? null;
     const flushPending = () => {
       isSavingRef.current = false;
       if (pendingSaveRef.current) {
         const pending = pendingSaveRef.current;
         pendingSaveRef.current = null;
-        saveMinLapRef.current(pending.inputs, pending.triggerClass);
+        saveMinLapRef.current(pending.input);
       }
     };
     updateEventMutation.mutate(
-      { eventId, data: { minLapTimes: newMinLapTimes } },
+      { eventId, data: { minLapMs: newMs } as any },
       {
         onSuccess: () => {
-          // Guard: if the user navigated to a different event before this settled,
-          // discard all side-effects (refs already reset by the eventId change effect).
           if (saveEventId !== currentEventIdRef.current) return;
-          lastCommittedRef.current = { ...newMinLapTimes };
+          lastCommittedRef.current = newMs;
           queryClient.invalidateQueries({ queryKey: ["getEvent", eventId] as any });
-          if (displayClass) {
-            setMinLapSavedClass(displayClass);
-            setTimeout(() => setMinLapSavedClass(null), 2000);
-          }
           setMinLapSaveStatus('saved');
           minLapSavedTimer.current = setTimeout(() => {
             setMinLapSaveStatus('idle');
@@ -1172,78 +1124,56 @@ export default function Motos() {
   };
 
   // On blur: normalize display, cancel debounce, flush save immediately.
-  // Using isBlurFlushingRef to signal the debounce effect so the re-render caused
-  // by the normalization setState doesn't re-arm a second timer (no double-send).
-  const handleMinLapBlur = (cls: string) => {
-    const raw = minLapInputs[cls] ?? "";
-    const ms = parseMinLapTime(raw);
-    const formatted = ms != null ? formatMinLapTime(ms) : raw;
-    const normalizedInputs = { ...minLapInputs, [cls]: formatted };
-    // Only update state if the string actually changes (avoids a spurious debounce
-    // cycle when the display value is already in normalized form).
-    if (formatted !== raw) {
+  const handleMinLapBlur = () => {
+    const ms = parseMinLapTime(minLapInput);
+    const formatted = ms != null ? formatMinLapTime(ms) : minLapInput;
+    if (formatted !== minLapInput) {
       isBlurFlushingRef.current = true;
-      setMinLapInputs(normalizedInputs);
+      setMinLapInput(formatted);
     }
     if (minLapDebounceTimer.current) {
       clearTimeout(minLapDebounceTimer.current);
       minLapDebounceTimer.current = null;
     }
-    saveMinLapRef.current(normalizedInputs, cls);
+    saveMinLapRef.current(formatted);
   };
 
-  // Debounced save-on-change — single global timer reset on every keystroke.
-  // Fires 300 ms after the user stops typing, persisting values even when the
-  // organizer navigates away without touching blur.
+  // Debounced save-on-change.
   useEffect(() => {
-    // Skip the cycle triggered by blur-normalization setState — blur already flushed.
     if (isBlurFlushingRef.current) {
       isBlurFlushingRef.current = false;
       return;
     }
     if (minLapDebounceTimer.current) clearTimeout(minLapDebounceTimer.current);
-    const snapInputs = { ...minLapInputs }; // stable snapshot for this timer window
+    const snap = minLapInput;
     minLapDebounceTimer.current = setTimeout(() => {
-      saveMinLapRef.current(snapInputs, null);
+      saveMinLapRef.current(snap);
     }, 300);
     return () => {
       if (minLapDebounceTimer.current) clearTimeout(minLapDebounceTimer.current);
     };
-  }, [minLapInputs]);
+  }, [minLapInput]);
 
-  // On unmount (navigate away): cancel any pending timer and flush immediately so
-  // values typed without blur are never lost. Uses a direct fetch — useMutation
-  // observers are destroyed on unmount so .mutate() does not fire reliably after that.
+  // On unmount: flush any unsaved value immediately via fetch.
   useEffect(() => {
     return () => {
       if (minLapDebounceTimer.current) {
         clearTimeout(minLapDebounceTimer.current);
         minLapDebounceTimer.current = null;
       }
-      const inputs = minLapInputsRef.current;
+      const raw = minLapInputRef.current;
       const eid = currentEventIdRef.current;
       if (!eid) return;
-      const newMinLapTimes: Record<string, number> = {};
-      for (const [cls, raw] of Object.entries(inputs)) {
-        const ms = parseMinLapTime(raw);
-        if (ms != null) newMinLapTimes[cls] = ms;
-      }
-      const committed = lastCommittedRef.current;
-      const hasChange =
-        Object.keys(newMinLapTimes).length !== Object.keys(committed).length ||
-        Object.entries(newMinLapTimes).some(([cls, ms]) => committed[cls] !== ms);
-      if (!hasChange) return;
-      // Fire-and-forget: no save indicator here by design. The component is
-      // unmounting (user navigated away), so React state updates would be
-      // discarded immediately. The value is still persisted on the server.
+      const newMs = parseMinLapTime(raw) ?? null;
+      if (newMs === lastCommittedRef.current) return;
       fetch(`/api/events/${eid}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ minLapTimes: newMinLapTimes }),
+        body: JSON.stringify({ minLapMs: newMs }),
         credentials: "include",
       }).catch(() => {});
     };
-  }, []); // empty deps — cleanup runs only on unmount
+  }, []);
 
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const eventScoringTable = (pointsTables ?? []).find(t => t.id === (event as any)?.scoringTableId);
@@ -1251,20 +1181,16 @@ export default function Motos() {
 
   // Build a set of "motoId-riderId" keys for riders who have at least one lap under
   // the minimum lap time for their class — used to highlight names red in the lineup.
-  const minLapTimes = (event as any)?.minLapTimes as Record<string, number> | undefined;
+  const minLapMs = (event as any)?.minLapMs as number | null | undefined;
   const shortLapSet = useMemo(() => {
     const set = new Set<string>();
-    if (!results || !minLapTimes) return set;
+    if (!results || !minLapMs) return set;
     for (const r of results) {
-      const moto = (motos ?? []).find(m => m.id === (r as any).motoId);
-      if (!moto?.raceClass) continue;
-      const minMs = minLapTimes[moto.raceClass];
-      if (minMs == null) continue;
       const laps = Array.isArray((r as any).lapTimes) ? (r as any).lapTimes as number[] : [];
-      if (laps.some(t => t > 0 && t < minMs)) set.add(`${(r as any).motoId}-${(r as any).riderId}`);
+      if (laps.some(t => t > 0 && t < minLapMs)) set.add(`${(r as any).motoId}-${(r as any).riderId}`);
     }
     return set;
-  }, [results, motos, minLapTimes]);
+  }, [results, minLapMs]);
 
   // Checked-in riders for the currently selected class in the create dialog
   const classCheckins = (checkins ?? []).filter(c => c.checkedIn && c.raceClass === newMotoClass);
@@ -2292,67 +2218,56 @@ export default function Motos() {
       {(((event as any)?.raceClasses as string[] | undefined)?.length || (isSupercrossFormat && (motos ?? []).some(m => m.type === "main"))) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
 
-          {/* Minimum Lap Times — compact */}
-          {((event as any)?.raceClasses as string[] | undefined)?.length ? (
-            <div className="border rounded-lg bg-card overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
-                <Timer size={13} className="text-muted-foreground shrink-0" />
-                <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Minimum Lap Times</h3>
-                <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">— flags short laps red</span>
-                <div className="ml-auto shrink-0">
-                  {minLapSaveStatus === 'saving' && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground animate-pulse">
-                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 inline-block" />
-                      Saving…
-                    </span>
-                  )}
-                  {minLapSaveStatus === 'saved' && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
-                      <Check size={10} />
-                      Saved
-                    </span>
-                  )}
-                  {minLapSaveStatus === 'error' && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-destructive">
-                      <span>!</span>
-                      Error — retry?
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="px-3 py-2 grid grid-cols-2 gap-2">
-                {((event as any)?.raceClasses as string[]).map(cls => {
-                  const saved = ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[cls];
-                  const isSaved = minLapSavedClass === cls;
-                  return (
-                    <div key={cls} className="space-y-1">
-                      <label className="text-[10px] font-medium text-muted-foreground truncate block" title={cls}>{cls}</label>
-                      <div className="relative">
-                        <Input
-                          value={minLapInputs[cls] ?? ""}
-                          onChange={e => setMinLapInputs(prev => ({ ...prev, [cls]: e.target.value }))}
-                          onBlur={() => handleMinLapBlur(cls)}
-                          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                          placeholder={saved ? formatMinLapTime(saved) : "m:ss"}
-                          className="h-7 text-xs font-mono pr-7"
-                        />
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                          {isSaved ? (
-                            <Check size={11} className="text-green-500" />
-                          ) : (minLapInputs[cls] ?? "").trim() === "" && !saved ? null : (
-                            <span className="text-[9px] text-muted-foreground">m:ss</span>
-                          )}
-                        </div>
-                      </div>
-                      {saved && (
-                        <div className="text-[9px] text-muted-foreground">✓ {formatMinLapTime(saved)}</div>
-                      )}
-                    </div>
-                  );
-                })}
+          {/* Minimum Lap Time — single event-wide value */}
+          <div className="border rounded-lg bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
+              <Timer size={13} className="text-muted-foreground shrink-0" />
+              <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Minimum Lap Time</h3>
+              <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">— flags short laps red</span>
+              <div className="ml-auto shrink-0">
+                {minLapSaveStatus === 'saving' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground animate-pulse">
+                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 inline-block" />
+                    Saving…
+                  </span>
+                )}
+                {minLapSaveStatus === 'saved' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
+                    <Check size={10} />
+                    Saved
+                  </span>
+                )}
+                {minLapSaveStatus === 'error' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-destructive">
+                    <span>!</span>
+                    Error — retry?
+                  </span>
+                )}
               </div>
             </div>
-          ) : <div />}
+            <div className="px-3 py-2.5 flex items-center gap-3">
+              <div className="relative">
+                <Input
+                  value={minLapInput}
+                  onChange={e => setMinLapInput(e.target.value)}
+                  onBlur={handleMinLapBlur}
+                  onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  placeholder="m:ss"
+                  className="h-7 text-xs font-mono w-20 pr-6"
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                  {minLapSaveStatus === 'saved' ? (
+                    <Check size={11} className="text-green-500" />
+                  ) : minLapInput.trim() ? (
+                    <span className="text-[9px] text-muted-foreground">m:ss</span>
+                  ) : null}
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                Applies to all classes.<br />Leave blank to disable.
+              </p>
+            </div>
+          </div>
 
           {/* Advance to Main — compact, Supercross only */}
           {isSupercrossFormat && (motos ?? []).some(m => m.type === "main") ? (
@@ -2939,7 +2854,7 @@ export default function Motos() {
                                 lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
                                 rowNum={idx + 1}
                                 hasShortLap={shortLapSet.has(`${moto.id}-${entry.riderId}`)}
-                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: moto.raceClass ? (minLapTimes?.[moto.raceClass] ?? null) : null }) : undefined}
+                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
                               />,
                             ];
                             if (idx === arr.length - 1) {
@@ -2979,7 +2894,7 @@ export default function Motos() {
                                 <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
                                 <TableCell className={`font-medium ${entryHasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
                                   {moto.status === "completed" ? (
-                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: moto.raceClass ? (minLapTimes?.[moto.raceClass] ?? null) : null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
+                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
                                       {entry.riderName}
                                       <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
                                     </button>
@@ -3056,7 +2971,7 @@ export default function Motos() {
                     <LiveLeaderboard motoId={moto.id} />
                     <LiveCrossingsFeed
                       motoId={moto.id}
-                      minLapTimeMs={moto.raceClass ? ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[moto.raceClass] ?? null : null}
+                      minLapTimeMs={minLapMs ?? null}
                     />
                   </div>
                 )}
@@ -3249,7 +3164,7 @@ export default function Motos() {
                                 lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
                                 rowNum={idx + 1}
                                 hasShortLap={shortLapSet.has(`${moto.id}-${entry.riderId}`)}
-                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: moto.raceClass ? (minLapTimes?.[moto.raceClass] ?? null) : null }) : undefined}
+                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
                               />,
                             ];
                             if (idx === arr.length - 1) {
@@ -3287,7 +3202,7 @@ export default function Motos() {
                                 <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
                                 <TableCell className={`font-medium ${entryHasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
                                   {moto.status === "completed" ? (
-                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: moto.raceClass ? (minLapTimes?.[moto.raceClass] ?? null) : null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
+                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
                                       {entry.riderName}
                                       <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
                                     </button>
@@ -3341,7 +3256,7 @@ export default function Motos() {
                 {moto.status === "in_progress" && (
                   <LiveCrossingsFeed
                     motoId={moto.id}
-                    minLapTimeMs={moto.raceClass ? ((event as any)?.minLapTimes as Record<string, number> | undefined)?.[moto.raceClass] ?? null : null}
+                    minLapTimeMs={minLapMs ?? null}
                   />
                 )}
               </div>

@@ -323,7 +323,7 @@ export const ListEventsResponseItem = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
-  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
+  "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
   "createdAt": zod.string().optional()
 })
@@ -362,7 +362,7 @@ export const CreateEventBody = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
-  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
+  "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().optional().describe('ID of the gate configuration to pre-select when generating lineups')
 })
 
@@ -407,7 +407,7 @@ export const GetEventResponse = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
-  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
+  "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
   "createdAt": zod.string().optional()
 })
@@ -449,7 +449,7 @@ export const UpdateEventBody = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
-  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
+  "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups')
 })
 
@@ -486,7 +486,7 @@ export const UpdateEventResponse = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
-  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
+  "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
   "createdAt": zod.string().optional()
 })
@@ -1326,7 +1326,7 @@ export const GetClubDashboardResponse = zod.object({
   "name": zod.string(),
   "amount": zod.number()
 })).optional(),
-  "minLapTimes": zod.record(zod.string(), zod.number()).optional().describe('Minimum lap time in milliseconds per race class'),
+  "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
   "createdAt": zod.string().optional()
 })).optional()

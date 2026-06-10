@@ -115,11 +115,6 @@ export const EventTimingTechnology = {
   mylaps: 'mylaps',
 } as const;
 
-/**
- * Minimum lap time in milliseconds per race class
- */
-export type EventMinLapTimes = {[key: string]: number};
-
 export interface Event {
   id: number;
   clubId: number;
@@ -158,8 +153,11 @@ export interface Event {
   /** @nullable */
   scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
-  /** Minimum lap time in milliseconds per race class */
-  minLapTimes?: EventMinLapTimes;
+  /**
+     * Minimum lap time in milliseconds (event-wide)
+     * @nullable
+     */
+  minLapMs?: number | null;
   /**
      * ID of the gate configuration to pre-select when generating lineups
      * @nullable
@@ -177,11 +175,6 @@ export const EventInputTimingTechnology = {
   rfid: 'rfid',
   mylaps: 'mylaps',
 } as const;
-
-/**
- * Minimum lap time in milliseconds per race class
- */
-export type EventInputMinLapTimes = {[key: string]: number};
 
 export interface EventInput {
   clubId: number;
@@ -207,8 +200,11 @@ export interface EventInput {
   /** @nullable */
   scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
-  /** Minimum lap time in milliseconds per race class */
-  minLapTimes?: EventInputMinLapTimes;
+  /**
+     * Minimum lap time in milliseconds (event-wide)
+     * @nullable
+     */
+  minLapMs?: number | null;
   /** ID of the gate configuration to pre-select when generating lineups */
   defaultGateConfigId?: string;
 }
@@ -222,11 +218,6 @@ export const EventUpdateTimingTechnology = {
   rfid: 'rfid',
   mylaps: 'mylaps',
 } as const;
-
-/**
- * Minimum lap time in milliseconds per race class
- */
-export type EventUpdateMinLapTimes = {[key: string]: number};
 
 export interface EventUpdate {
   name?: string;
@@ -252,8 +243,11 @@ export interface EventUpdate {
   /** @nullable */
   scoringTableId?: number | null;
   purchaseOptions?: PurchaseOption[];
-  /** Minimum lap time in milliseconds per race class */
-  minLapTimes?: EventUpdateMinLapTimes;
+  /**
+     * Minimum lap time in milliseconds (event-wide)
+     * @nullable
+     */
+  minLapMs?: number | null;
   /**
      * ID of the gate configuration to pre-select when generating lineups
      * @nullable

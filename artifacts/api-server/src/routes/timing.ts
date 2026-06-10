@@ -228,7 +228,7 @@ export async function buildLeaderboard(motoId: number) {
 
 // Default minimum milliseconds between two valid crossings for the same tag in the same moto.
 // Prevents a single antenna burst (50+ reads in 0.2 s) from being recorded as 50 laps.
-// Per-class overrides come from event.minLapTimes (set on the event edit page).
+// Event-wide minimum lap time comes from event.minLapMs (set on the Motos page).
 const DEBOUNCE_MS = 30_000;
 
 // ── Per-moto async lock ────────────────────────────────────────────────────────
@@ -263,11 +263,10 @@ async function _processCrossing(opts: {
   if (moto.status !== "in_progress") throw new Error("Moto is not in progress");
   if (!moto.startedAt) throw new Error("Moto has no start time");
 
-  // 1b. Per-class debounce threshold — use event's minLapTimes if configured, else DEBOUNCE_MS
-  const [eventRow] = await db.select({ minLapTimes: eventsTable.minLapTimes })
+  // 1b. Event-wide debounce threshold — use event's minLapMs if configured, else DEBOUNCE_MS
+  const [eventRow] = await db.select({ minLapMs: eventsTable.minLapMs })
     .from(eventsTable).where(eq(eventsTable.id, moto.eventId));
-  const classMinMs = (eventRow?.minLapTimes as Record<string, number> | null)?.[moto.raceClass ?? ""] ?? null;
-  const debounceMs = classMinMs ?? DEBOUNCE_MS;
+  const debounceMs = eventRow?.minLapMs ?? DEBOUNCE_MS;
 
   // 2. Resolve rider — use override if provided (manual crossing), else look up from RFID assignment
   let riderId: number | null = overrideRiderId !== undefined ? overrideRiderId : null;

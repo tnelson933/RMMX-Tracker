@@ -1735,11 +1735,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PurchaseOption'
-        minLapTimes:
-          type: object
-          additionalProperties:
-            type: integer
-          description: Minimum lap time in milliseconds per race class
+        minLapMs:
+          type: ["integer", "null"]
+          description: Minimum lap time in milliseconds (event-wide)
         defaultGateConfigId:
           type: ["string", "null"]
           description: ID of the gate configuration to pre-select when generating lineups
@@ -1802,11 +1800,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PurchaseOption'
-        minLapTimes:
-          type: object
-          additionalProperties:
-            type: integer
-          description: Minimum lap time in milliseconds per race class
+        minLapMs:
+          type: ["integer", "null"]
+          description: Minimum lap time in milliseconds (event-wide)
         defaultGateConfigId:
           type: string
           description: ID of the gate configuration to pre-select when generating lineups
@@ -1866,11 +1862,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PurchaseOption'
-        minLapTimes:
-          type: object
-          additionalProperties:
-            type: integer
-          description: Minimum lap time in milliseconds per race class
+        minLapMs:
+          type: ["integer", "null"]
+          description: Minimum lap time in milliseconds (event-wide)
         defaultGateConfigId:
           type: ["string", "null"]
           description: ID of the gate configuration to pre-select when generating lineups

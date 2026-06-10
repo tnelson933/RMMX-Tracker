@@ -30,7 +30,7 @@ export const eventsTable = pgTable("events", {
   noDuplicateBibs: boolean("no_duplicate_bibs").notNull().default(false),
   requireClubId: boolean("require_club_id").notNull().default(false),
   scoringTableId: integer("scoring_table_id"),
-  minLapTimes: jsonb("min_lap_times").$type<Record<string, number>>().default({}),
+  minLapMs: integer("min_lap_ms"),
   amaEventId: text("ama_event_id"),
   defaultGateConfigId: text("default_gate_config_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

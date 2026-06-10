@@ -87,7 +87,7 @@ router.get("/events", async (req, res) => {
     transponderRentalFee: eventsTable.transponderRentalFee,
     purchaseOptions: eventsTable.purchaseOptions,
     scoringTableId: eventsTable.scoringTableId,
-    minLapTimes: eventsTable.minLapTimes,
+    minLapMs: eventsTable.minLapMs,
     amaEventId: eventsTable.amaEventId,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
@@ -183,7 +183,7 @@ router.get("/events/:eventId", async (req, res) => {
     transponderRentalFee: eventsTable.transponderRentalFee,
     purchaseOptions: eventsTable.purchaseOptions,
     scoringTableId: eventsTable.scoringTableId,
-    minLapTimes: eventsTable.minLapTimes,
+    minLapMs: eventsTable.minLapMs,
     amaEventId: eventsTable.amaEventId,
     defaultGateConfigId: eventsTable.defaultGateConfigId,
     createdAt: eventsTable.createdAt,
@@ -211,7 +211,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const previousStatus = before?.status;
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "minLapTimes", "amaEventId", "defaultGateConfigId"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "minLapMs", "amaEventId", "defaultGateConfigId"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
