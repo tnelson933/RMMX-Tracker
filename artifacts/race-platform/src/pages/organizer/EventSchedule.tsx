@@ -491,12 +491,6 @@ function StaticMotoCard({
   );
 }
 
-// ── Droppable moto zone (wraps a card for pool-rider drop) ────────────────────
-
-// We detect "pool rider is over this moto" via the DndContext's onDragOver
-// and pass isPoolDropTarget down as a prop. No separate useDroppable needed
-// since useSortable already makes each card a droppable zone.
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 type ViewMode = "run-order" | "by-class";
@@ -555,6 +549,7 @@ export default function EventSchedule() {
   // ── Local state ──
   const [viewMode, setViewMode] = useState<ViewMode>("run-order");
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
+  const [roundFilter, setRoundFilter] = useState<"all" | number>("all");
 
   // Inline name editing
   const [editingNameId, setEditingNameId] = useState<number | null>(null);
@@ -777,6 +772,33 @@ export default function EventSchedule() {
     return localOrder.map(id => map.get(id)).filter(Boolean) as Moto[];
   })();
 
+  // ── Round derivation (mirrors Motos.tsx) ──
+  const { roundMap, maxRounds } = useMemo(() => {
+    const raceMotos = rawMotos.filter(m => m.type !== "practice");
+    const classBuckets: Record<string, number[]> = {};
+    for (const m of raceMotos) {
+      const cls = m.raceClass ?? "__none__";
+      if (!classBuckets[cls]) classBuckets[cls] = [];
+      classBuckets[cls].push(m.id);
+    }
+    const map = new Map<number, number>();
+    for (const ids of Object.values(classBuckets)) {
+      const sorted = ids.slice().sort((a, b) => {
+        const ma = raceMotos.find(m => m.id === a)?.motoNumber ?? 0;
+        const mb = raceMotos.find(m => m.id === b)?.motoNumber ?? 0;
+        return ma - mb;
+      });
+      sorted.forEach((id, i) => map.set(id, i + 1));
+    }
+    const max = map.size ? Math.max(...map.values()) : 0;
+    return { roundMap: map, maxRounds: max };
+  }, [rawMotos]);
+
+  // ── Filtered motos (by round) ──
+  const filteredMotos: Moto[] = roundFilter === "all"
+    ? sortedMotos
+    : sortedMotos.filter(m => m.type === "practice" || roundMap.get(m.id) === roundFilter);
+
   // ── DnD sensors ──
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -854,17 +876,25 @@ export default function EventSchedule() {
       return;
     }
 
-    // Moto reorder
+    // Moto reorder — round-filter-aware
     if (active.id === over.id) return;
-    const ids = sortedMotos.map(m => m.id);
-    const oldIndex = ids.indexOf(active.id as number);
-    const newIndex = ids.indexOf(over.id as number);
+    const filteredIds = filteredMotos.map(m => m.id);
+    const oldIndex = filteredIds.indexOf(active.id as number);
+    const newIndex = filteredIds.indexOf(over.id as number);
     if (oldIndex === -1 || newIndex === -1) return;
-    const newIds = arrayMove(ids, oldIndex, newIndex);
-    setLocalOrder(newIds);
+    const newFilteredIds = arrayMove(filteredIds, oldIndex, newIndex);
+
+    // Merge new filtered order back into full sorted order, preserving hidden moto positions
+    const filteredSet = new Set(filteredIds);
+    let filteredCursor = 0;
+    const newFullOrder = sortedMotos.map(m =>
+      filteredSet.has(m.id) ? newFilteredIds[filteredCursor++] : m.id
+    );
+
+    setLocalOrder(newFullOrder);
 
     reorderMutation.mutate(
-      { eventId, data: { motoIds: newIds } },
+      { eventId, data: { motoIds: newFullOrder } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -876,7 +906,7 @@ export default function EventSchedule() {
         },
       }
     );
-  }, [rawMotos, sortedMotos, checkins, eventId, updateMutation, reorderMutation, queryClient, toast]);
+  }, [rawMotos, filteredMotos, sortedMotos, checkins, eventId, updateMutation, reorderMutation, queryClient, toast]);
 
   // ── Inline name editing ──
   function startEditName(moto: Moto) {
@@ -983,10 +1013,10 @@ export default function EventSchedule() {
     );
   }
 
-  // ── By-class grouping ──
+  // ── By-class grouping (on filtered set) ──
   const byClass = (() => {
     const map = new Map<string, Moto[]>();
-    for (const m of sortedMotos) {
+    for (const m of filteredMotos) {
       const cls = m.raceClass || "(No Class)";
       if (!map.has(cls)) map.set(cls, []);
       map.get(cls)!.push(m);
@@ -994,7 +1024,7 @@ export default function EventSchedule() {
     return map;
   })();
 
-  // ── Event start time display ──
+  // ── Event start date display ──
   const eventStartDisplay = (() => {
     const raw = (event as any)?.startDate as string | undefined;
     if (!raw) return null;
@@ -1034,10 +1064,17 @@ export default function EventSchedule() {
               <div>
                 <h2 className="text-xl font-heading font-bold uppercase tracking-tight">Event Schedule</h2>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  {sortedMotos.length} sessions in run order
-                  {eventStartDisplay && (
-                    <span className="ml-2 text-muted-foreground/60">· {eventStartDisplay}</span>
-                  )}
+                  {roundFilter === "all"
+                    ? (
+                      <>
+                        {sortedMotos.length} sessions in run order
+                        {eventStartDisplay && (
+                          <span className="ml-2 text-muted-foreground/60">· {eventStartDisplay}</span>
+                        )}
+                      </>
+                    ) : (
+                      `${sortedMotos.length} sessions · Round ${roundFilter} (${filteredMotos.length} sessions)`
+                    )}
                 </p>
               </div>
 
@@ -1082,6 +1119,34 @@ export default function EventSchedule() {
               </Button>
             </div>
 
+            {/* ── Round filter pills ── */}
+            {maxRounds > 1 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setRoundFilter("all")}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                    roundFilter === "all"
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-transparent text-muted-foreground border-border hover:text-foreground hover:border-foreground/40"
+                  }`}
+                >
+                  All
+                </button>
+                {Array.from({ length: maxRounds }, (_, i) => i + 1).map(round => (
+                  <button
+                    key={round}
+                    onClick={() => setRoundFilter(round)}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                      roundFilter === round
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-transparent text-muted-foreground border-border hover:text-foreground hover:border-foreground/40"
+                    }`}
+                  >
+                    Round {round}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* ── Event Rules cards ── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
 
@@ -1234,12 +1299,12 @@ export default function EventSchedule() {
             )}
 
             {/* ── Run-order view ── */}
-            {viewMode === "run-order" && sortedMotos.length > 0 && (
-              <SortableContext items={sortedMotos.map(m => m.id)} strategy={verticalListSortingStrategy}>
+            {viewMode === "run-order" && filteredMotos.length > 0 && (
+              <SortableContext items={filteredMotos.map(m => m.id)} strategy={verticalListSortingStrategy}>
                 <div className="space-y-2">
                   {(() => {
                     let lastType: string | null = null;
-                    return sortedMotos.map((moto, index) => {
+                    return filteredMotos.map((moto, index) => {
                       const showSection = moto.type !== lastType;
                       lastType = moto.type;
                       return (
@@ -1273,7 +1338,7 @@ export default function EventSchedule() {
             )}
 
             {/* ── By-class view ── */}
-            {viewMode === "by-class" && sortedMotos.length > 0 && (
+            {viewMode === "by-class" && filteredMotos.length > 0 && (
               <div className="space-y-6">
                 {Array.from(byClass.entries()).map(([cls, motos]) => (
                   <div key={cls}>
