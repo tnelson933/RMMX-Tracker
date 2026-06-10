@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { useState, useMemo } from "react";
 import { useListEvents, useListMotos } from "@workspace/api-client-react";
 import type { Moto, Event } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
@@ -132,8 +131,12 @@ function MotoCard({ moto, index }: { moto: Moto; index: number }) {
 }
 
 export default function GateSchedulePage() {
-  const { user } = useAuth();
-  const clubId = user?.clubId;
+  // Read clubId from the URL query string — e.g. /gate?club=1
+  const clubId = useMemo(() => {
+    const p = new URLSearchParams(window.location.search);
+    const c = p.get("club");
+    return c ? Number(c) : null;
+  }, []);
 
   const { data: events = [] } = useListEvents(
     { clubId: clubId ?? undefined, status: "race_day" } as any,
@@ -154,6 +157,18 @@ export default function GateSchedulePage() {
   const upcomingAndActive = sortedMotos.filter((m) => m.status !== "completed" && m.status !== "cancelled");
   const completed = sortedMotos.filter((m) => m.status === "completed" || m.status === "cancelled");
 
+  if (!clubId) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center px-6">
+          <Flag size={40} className="mx-auto mb-3 text-muted-foreground/30" />
+          <p className="font-heading font-semibold text-lg mb-1">Invalid gate link</p>
+          <p className="text-sm text-muted-foreground">Ask your promoter for the correct gate schedule link.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -162,7 +177,7 @@ export default function GateSchedulePage() {
           <div className="flex items-center gap-2 mb-3">
             <Flag size={18} className="text-primary" />
             <h1 className="font-heading font-bold text-lg uppercase tracking-widest">Gate Schedule</h1>
-            <span className="ml-auto text-xs text-sidebar-foreground/50 uppercase tracking-wider animate-pulse">Live</span>
+            <span className="ml-auto text-xs text-sidebar-foreground/50 uppercase tracking-wider animate-pulse">Live · 5s</span>
           </div>
 
           {raceDayEvents.length > 1 && (

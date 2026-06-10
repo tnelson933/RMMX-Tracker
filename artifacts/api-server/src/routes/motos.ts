@@ -125,11 +125,15 @@ async function autoAdvanceToMain(eventId: number, raceClass: string, topPerHeat:
 router.get("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
 
-  // Unauthenticated requests (widgets, public pages) only see published events
+  // Unauthenticated requests: allow published events and active race-day events (gate page)
   if (!(req.session as any).userId) {
-    const [pub] = await db.select({ published: eventPublicationTable.published })
-      .from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
-    if (!pub?.published) return res.json([]);
+    const [[pub], [evt]] = await Promise.all([
+      db.select({ published: eventPublicationTable.published })
+        .from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId)),
+      db.select({ status: eventsTable.status })
+        .from(eventsTable).where(eq(eventsTable.id, eventId)),
+    ]);
+    if (!pub?.published && evt?.status !== "race_day") return res.json([]);
   }
 
   // Staff club scoping: reject if event belongs to a different club

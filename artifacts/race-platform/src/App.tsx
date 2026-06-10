@@ -87,16 +87,6 @@ function OrganizerOnlyRoute({ children }: { children: React.ReactNode }) {
   return <OrganizerLayout>{children}</OrganizerLayout>;
 }
 
-/** GateRoute — accessible to organizers and staff with gate_schedule permission. */
-function GateRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, user, permissions } = useAuth();
-  if (isLoading) return <Loading />;
-  if (!isAuthenticated) return <Redirect to="/login" />;
-  if (user?.role === "staff" && !permissions.includes("gate_schedule")) {
-    return <Redirect to="/no-access" />;
-  }
-  return <>{children}</>;
-}
 
 function RiderProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useRiderAuth();
@@ -161,9 +151,9 @@ function Router() {
         <RiderProtectedRoute><RiderPortal /></RiderProtectedRoute>
       </Route>
 
-      {/* ── Gate Schedule — no OrganizerLayout shell (mobile optimized) ── */}
+      {/* ── Gate Schedule — public shareable link, no login required ── */}
       <Route path="/gate">
-        <GateRoute><GateSchedulePage /></GateRoute>
+        <GateSchedulePage />
       </Route>
 
       {/* ── No-access landing for restricted staff ── */}

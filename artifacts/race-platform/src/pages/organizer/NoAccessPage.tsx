@@ -1,7 +1,6 @@
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { ShieldOff, Flag, LayoutDashboard, CalendarDays, Users, Trophy, ListOrdered, CreditCard, Tag, Wifi, WifiOff, Timer } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ShieldOff, LayoutDashboard, CalendarDays, Users, Trophy, ListOrdered, CreditCard, Tag, Wifi, WifiOff, Timer } from "lucide-react";
 
 const PAGE_ICONS: Record<string, React.ElementType> = {
   dashboard: LayoutDashboard,
@@ -46,7 +45,6 @@ export default function NoAccessPage() {
   const { user, permissions } = useAuth();
 
   const portalPerms = permissions.filter((p) => p !== "gate_schedule");
-  const hasGate = permissions.includes("gate_schedule");
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
@@ -81,16 +79,7 @@ export default function NoAccessPage() {
           </div>
         )}
 
-        {hasGate && (
-          <Link href="/gate">
-            <Button className="w-full mb-3" variant="outline">
-              <Flag size={16} className="mr-2" />
-              Open Gate Schedule
-            </Button>
-          </Link>
-        )}
-
-        {portalPerms.length === 0 && !hasGate && (
+        {portalPerms.length === 0 && (
           <p className="text-sm text-muted-foreground italic mb-4">
             No pages have been assigned yet. Please contact your organizer.
           </p>

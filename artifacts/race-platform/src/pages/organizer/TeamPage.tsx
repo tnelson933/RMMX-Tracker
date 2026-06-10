@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { UsersRound, Plus, Pencil, Trash2, MailCheck, RefreshCw, AlertCircle, Link2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { UsersRound, Plus, Pencil, Trash2, MailCheck, RefreshCw, AlertCircle, Link2, Flag, Copy, Check } from "lucide-react";
 
 const ALL_PERMISSIONS: { key: string; label: string; description?: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -21,7 +22,6 @@ const ALL_PERMISSIONS: { key: string; label: string; description?: string }[] = 
   { key: "discount_codes", label: "Discount Codes" },
   { key: "reader_setup", label: "Reader Setup" },
   { key: "offline_mode", label: "Offline Mode" },
-  { key: "gate_schedule", label: "Gate Schedule (read-only mobile view)", description: "Grants access to a mobile-optimized gate view only, not the full portal" },
 ];
 
 type DialogMode = "create" | "edit";
@@ -122,7 +122,21 @@ function EmployeeDialog({ open, mode, initial, onClose, onSave, isPending }: Emp
 
 export default function TeamPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { data: members = [], isLoading, refetch } = useListTeamMembers({ query: {} as any });
+  const [gateLinkCopied, setGateLinkCopied] = useState(false);
+
+  const gateUrl = user?.clubId
+    ? `${window.location.origin}/gate?club=${user.clubId}`
+    : null;
+
+  const copyGateLink = () => {
+    if (!gateUrl) return;
+    navigator.clipboard.writeText(gateUrl).then(() => {
+      setGateLinkCopied(true);
+      setTimeout(() => setGateLinkCopied(false), 2500);
+    });
+  };
   const createMutation = useCreateTeamMember();
   const updateMutation = useUpdateTeamMember();
   const deleteMutation = useDeleteTeamMember();
@@ -221,6 +235,36 @@ export default function TeamPage() {
           Add Member
         </Button>
       </div>
+
+      {/* Gate Schedule link — no login required, just share the URL */}
+      {gateUrl && (
+        <div className="rounded-xl border bg-card p-4 mb-6 flex items-start gap-4">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+            <Flag size={18} className="text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-heading font-semibold text-sm uppercase tracking-wider">Gate Schedule Link</p>
+            <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+              Share this link with anyone helping at the gates — no login needed. Updates every 5 seconds on race day.
+            </p>
+            <div className="flex items-center gap-2 bg-muted/60 border rounded-lg px-3 py-1.5">
+              <span className="text-xs text-muted-foreground font-mono truncate flex-1">{gateUrl}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 shrink-0 gap-1.5 text-xs"
+                onClick={copyGateLink}
+              >
+                {gateLinkCopied ? (
+                  <><Check size={12} className="text-green-500" /> Copied</>
+                ) : (
+                  <><Copy size={12} /> Copy</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="text-center py-16 text-muted-foreground">Loading…</div>
