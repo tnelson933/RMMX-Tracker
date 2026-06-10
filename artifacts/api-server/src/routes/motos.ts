@@ -203,7 +203,7 @@ router.post("/motos/:motoId/restart", async (req, res) => {
   await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
   const [updated] = await db
     .update(motosTable)
-    .set({ status: "in_progress", startedAt: new Date() })
+    .set({ status: "scheduled", startedAt: null })
     .where(eq(motosTable.id, id))
     .returning();
   buildLeaderboard(id).then(snap => { if (snap) sseBroadcast(id, snap); }).catch(() => {});
