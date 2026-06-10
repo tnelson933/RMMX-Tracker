@@ -1695,6 +1695,12 @@ paths:
       operationId: listDiscountCodes
       tags: [discounts]
       summary: List club-level discount codes for the logged-in organizer's club
+      parameters:
+        - name: riderId
+          in: query
+          description: Filter codes assigned to a specific rider
+          schema:
+            type: integer
       responses:
         "200":
           description: List of discount codes
@@ -3276,6 +3282,10 @@ components:
           type: ["integer", "null"]
         eventName:
           type: ["string", "null"]
+        riderId:
+          type: ["integer", "null"]
+        riderName:
+          type: ["string", "null"]
         code:
           type: string
         discountType:
@@ -3320,6 +3330,9 @@ components:
           type: array
           items:
             type: integer
+        riderId:
+          type: integer
+          description: Optional rider ID to lock this code to a specific rider
 
     DiscountCodeUpdate:
       type: object

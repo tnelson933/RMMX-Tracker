@@ -55,6 +55,7 @@ import type {
   GenerateRiderDiscountCodeInput,
   HealthStatus,
   LineupGenerateInput,
+  ListDiscountCodesParams,
   ListEventsParams,
   ListPublicSeriesParams,
   ListRecentResultsParams,
@@ -6035,20 +6036,27 @@ export const useDeleteDiscountCategory = <TError = ErrorType<void>,
       return useMutation(getDeleteDiscountCategoryMutationOptions(options));
     }
 
-export const getListDiscountCodesUrl = () => {
+export const getListDiscountCodesUrl = (params?: ListDiscountCodesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/discount-codes`
+  return stringifiedParams.length > 0 ? `/api/discount-codes?${stringifiedParams}` : `/api/discount-codes`
 }
 
 /**
  * @summary List club-level discount codes for the logged-in organizer's club
  */
-export const listDiscountCodes = async ( options?: RequestInit): Promise<DiscountCode[]> => {
+export const listDiscountCodes = async (params?: ListDiscountCodesParams, options?: RequestInit): Promise<DiscountCode[]> => {
 
-  return customFetch<DiscountCode[]>(getListDiscountCodesUrl(),
+  return customFetch<DiscountCode[]>(getListDiscountCodesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -6061,23 +6069,23 @@ export const listDiscountCodes = async ( options?: RequestInit): Promise<Discoun
 
 
 
-export const getListDiscountCodesQueryKey = () => {
+export const getListDiscountCodesQueryKey = (params?: ListDiscountCodesParams,) => {
     return [
-    `/api/discount-codes`
+    `/api/discount-codes`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListDiscountCodesQueryOptions = <TData = Awaited<ReturnType<typeof listDiscountCodes>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDiscountCodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListDiscountCodesQueryOptions = <TData = Awaited<ReturnType<typeof listDiscountCodes>>, TError = ErrorType<void>>(params?: ListDiscountCodesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDiscountCodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListDiscountCodesQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListDiscountCodesQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDiscountCodes>>> = ({ signal }) => listDiscountCodes({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDiscountCodes>>> = ({ signal }) => listDiscountCodes(params, { signal, ...requestOptions });
 
 
 
@@ -6095,11 +6103,11 @@ export type ListDiscountCodesQueryError = ErrorType<void>
  */
 
 export function useListDiscountCodes<TData = Awaited<ReturnType<typeof listDiscountCodes>>, TError = ErrorType<void>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDiscountCodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListDiscountCodesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDiscountCodes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListDiscountCodesQueryOptions(options)
+  const queryOptions = getListDiscountCodesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

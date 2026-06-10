@@ -981,6 +981,10 @@ export interface DiscountCode {
   eventId?: number | null;
   /** @nullable */
   eventName?: string | null;
+  /** @nullable */
+  riderId?: number | null;
+  /** @nullable */
+  riderName?: string | null;
   code: string;
   discountType: DiscountCodeDiscountType;
   amount: number;
@@ -1015,6 +1019,8 @@ export interface DiscountCodeInput {
   /** @nullable */
   expiresAt?: string | null;
   categoryIds?: number[];
+  /** Optional rider ID to lock this code to a specific rider */
+  riderId?: number;
 }
 
 export type DiscountCodeUpdateDiscountType = typeof DiscountCodeUpdateDiscountType[keyof typeof DiscountCodeUpdateDiscountType];
@@ -1122,6 +1128,13 @@ export type DisconnectStripeConnect200 = {
 
 export type DeleteDiscountCategory200 = {
   ok?: boolean;
+};
+
+export type ListDiscountCodesParams = {
+/**
+ * Filter codes assigned to a specific rider
+ */
+riderId?: number;
 };
 
 export type DeleteDiscountCode200 = {

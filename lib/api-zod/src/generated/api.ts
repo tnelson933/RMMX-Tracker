@@ -1638,11 +1638,17 @@ export const DeleteDiscountCategoryResponse = zod.object({
 /**
  * @summary List club-level discount codes for the logged-in organizer's club
  */
+export const ListDiscountCodesQueryParams = zod.object({
+  "riderId": zod.coerce.number().optional().describe('Filter codes assigned to a specific rider')
+})
+
 export const ListDiscountCodesResponseItem = zod.object({
   "id": zod.number(),
   "clubId": zod.number().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
+  "riderId": zod.number().nullish(),
+  "riderName": zod.string().nullish(),
   "code": zod.string(),
   "discountType": zod.enum(['fixed', 'percentage']),
   "amount": zod.number(),
@@ -1665,7 +1671,8 @@ export const CreateDiscountCodeBody = zod.object({
   "amount": zod.number(),
   "maxUses": zod.number().describe('Use -1 for unlimited'),
   "expiresAt": zod.string().nullish(),
-  "categoryIds": zod.array(zod.number()).optional()
+  "categoryIds": zod.array(zod.number()).optional(),
+  "riderId": zod.number().optional().describe('Optional rider ID to lock this code to a specific rider')
 })
 
 
@@ -1709,6 +1716,8 @@ export const UpdateDiscountCodeResponse = zod.object({
   "clubId": zod.number().nullish(),
   "eventId": zod.number().nullish(),
   "eventName": zod.string().nullish(),
+  "riderId": zod.number().nullish(),
+  "riderName": zod.string().nullish(),
   "code": zod.string(),
   "discountType": zod.enum(['fixed', 'percentage']),
   "amount": zod.number(),

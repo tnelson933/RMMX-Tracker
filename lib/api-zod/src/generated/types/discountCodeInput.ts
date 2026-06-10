@@ -18,4 +18,6 @@ export interface DiscountCodeInput {
   /** @nullable */
   expiresAt?: string | null;
   categoryIds?: number[];
+  /** Optional rider ID to lock this code to a specific rider */
+  riderId?: number;
 }

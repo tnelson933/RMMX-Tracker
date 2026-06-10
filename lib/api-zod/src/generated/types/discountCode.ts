@@ -15,6 +15,10 @@ export interface DiscountCode {
   eventId?: number | null;
   /** @nullable */
   eventName?: string | null;
+  /** @nullable */
+  riderId?: number | null;
+  /** @nullable */
+  riderName?: string | null;
   code: string;
   discountType: DiscountCodeDiscountType;
   amount: number;

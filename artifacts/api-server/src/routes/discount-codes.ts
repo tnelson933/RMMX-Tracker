@@ -28,11 +28,18 @@ router.get("/discount-codes", async (req, res) => {
   const clubId = await getClubId(userId);
   if (!clubId) return res.status(403).json({ error: "No club associated with account" });
 
+  const filterRiderId = req.query.riderId ? Number(req.query.riderId) : null;
+
+  const whereCondition = filterRiderId
+    ? and(eq(compCodesTable.clubId, clubId), eq(compCodesTable.riderId, filterRiderId))
+    : eq(compCodesTable.clubId, clubId);
+
   const rows = await db
     .select({
       id: compCodesTable.id,
       clubId: compCodesTable.clubId,
       eventId: compCodesTable.eventId,
+      riderId: compCodesTable.riderId,
       code: compCodesTable.code,
       discountType: compCodesTable.discountType,
       amount: compCodesTable.amount,
@@ -43,10 +50,13 @@ router.get("/discount-codes", async (req, res) => {
       categoryIds: compCodesTable.categoryIds,
       createdAt: compCodesTable.createdAt,
       eventName: eventsTable.name,
+      riderFirstName: ridersTable.firstName,
+      riderLastName: ridersTable.lastName,
     })
     .from(compCodesTable)
     .leftJoin(eventsTable, eq(compCodesTable.eventId, eventsTable.id))
-    .where(eq(compCodesTable.clubId, clubId))
+    .leftJoin(ridersTable, eq(compCodesTable.riderId, ridersTable.id))
+    .where(whereCondition)
     .orderBy(compCodesTable.createdAt);
 
   return res.json(rows.map(r => ({
@@ -54,6 +64,8 @@ router.get("/discount-codes", async (req, res) => {
     clubId: r.clubId,
     eventId: r.eventId,
     eventName: r.eventName ?? null,
+    riderId: r.riderId ?? null,
+    riderName: r.riderFirstName && r.riderLastName ? `${r.riderFirstName} ${r.riderLastName}` : null,
     code: r.code,
     discountType: r.discountType,
     amount: Number(r.amount),
@@ -73,7 +85,7 @@ router.post("/discount-codes", async (req, res) => {
   const clubId = await getClubId(userId);
   if (!clubId) return res.status(403).json({ error: "No club associated with account" });
 
-  const { code: customCode, discountType = "fixed", amount, maxUses, expiresAt, categoryIds } = req.body;
+  const { code: customCode, discountType = "fixed", amount, maxUses, expiresAt, categoryIds, riderId } = req.body;
 
   if (amount == null || Number(amount) <= 0) {
     return res.status(400).json({ error: "Amount required and must be greater than 0" });
@@ -81,6 +93,8 @@ router.post("/discount-codes", async (req, res) => {
   if (discountType === "percentage" && Number(amount) > 100) {
     return res.status(400).json({ error: "Percentage discount cannot exceed 100%" });
   }
+
+  const riderIdNum = riderId ? Number(riderId) : null;
 
   const maxUsesNum = maxUses === -1 ? 999999 : Math.max(1, Number(maxUses) || 1);
 
@@ -99,6 +113,13 @@ router.post("/discount-codes", async (req, res) => {
     }
   }
 
+  let riderName: string | null = null;
+  if (riderIdNum) {
+    const [riderRow] = await db.select({ firstName: ridersTable.firstName, lastName: ridersTable.lastName })
+      .from(ridersTable).where(eq(ridersTable.id, riderIdNum));
+    if (riderRow) riderName = `${riderRow.firstName} ${riderRow.lastName}`;
+  }
+
   try {
     const [row] = await db.insert(compCodesTable).values({
       clubId,
@@ -110,6 +131,7 @@ router.post("/discount-codes", async (req, res) => {
       isActive: true,
       expiresAt: expiresAt ? new Date(expiresAt) : null,
       categoryIds: Array.isArray(categoryIds) ? categoryIds : [],
+      riderId: riderIdNum,
     }).returning();
 
     return res.status(201).json({
@@ -117,6 +139,8 @@ router.post("/discount-codes", async (req, res) => {
       clubId: row.clubId,
       eventId: row.eventId,
       eventName: null,
+      riderId: row.riderId ?? null,
+      riderName,
       code: row.code,
       discountType: row.discountType,
       amount: Number(row.amount),
@@ -161,6 +185,8 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
     clubId: row.clubId,
     eventId: row.eventId,
     eventName: null,
+    riderId: row.riderId ?? null,
+    riderName: null,
     code: row.code,
     discountType: row.discountType,
     amount: Number(row.amount),

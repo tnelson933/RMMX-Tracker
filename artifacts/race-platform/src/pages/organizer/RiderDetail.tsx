@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
-import { useGetRider, useUpdateRider, useAssignRfid, getGetRiderQueryKey } from "@workspace/api-client-react";
+import { useGetRider, useUpdateRider, useAssignRfid, useListDiscountCodes, getGetRiderQueryKey } from "@workspace/api-client-react";
+import type { DiscountCode as DiscountCodeType } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -39,7 +41,7 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-interface DiscountCode {
+interface DiscountCodeLegacy {
   id: number;
   code: string;
   amount: number;
@@ -53,7 +55,7 @@ interface DiscountCode {
 function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [code, setCode] = useState<DiscountCode | null | undefined>(undefined);
+  const [code, setCode] = useState<DiscountCodeLegacy | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
@@ -255,6 +257,92 @@ function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "No expiry";
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function isExpired(code: DiscountCodeType): boolean {
+  return !!code.expiresAt && new Date() > new Date(code.expiresAt);
+}
+
+function RiderAssignedCodesSection({ riderId }: { riderId: number }) {
+  const { toast } = useToast();
+  const { data: codes = [], isLoading } = useListDiscountCodes(
+    { riderId },
+    { query: {} as any }
+  );
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  const handleCopy = (code: DiscountCodeType) => {
+    navigator.clipboard.writeText(code.code);
+    setCopiedId(code.id);
+    setTimeout(() => setCopiedId(null), 2000);
+    toast({ title: "Code copied!" });
+  };
+
+  const getStatusBadge = (code: DiscountCodeType) => {
+    if (!code.isActive) return <Badge variant="destructive" className="text-xs">Inactive</Badge>;
+    if (isExpired(code)) return <Badge variant="destructive" className="text-xs">Expired</Badge>;
+    if (code.usesCount >= code.maxUses) return <Badge variant="secondary" className="text-xs">Used</Badge>;
+    return <Badge variant="default" className="text-xs bg-green-600">Active</Badge>;
+  };
+
+  return (
+    <Card>
+      <CardHeader className="border-b pb-4">
+        <CardTitle className="font-heading uppercase text-xl flex items-center gap-2">
+          <Tag className="text-primary" size={20} />
+          Discount Codes
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 size={18} className="animate-spin text-muted-foreground" />
+          </div>
+        ) : (codes as DiscountCodeType[]).length === 0 ? (
+          <div className="p-6 text-center text-muted-foreground">
+            <Tag size={24} className="mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No discount codes assigned.</p>
+          </div>
+        ) : (
+          <div className="divide-y">
+            {(codes as DiscountCodeType[]).map(code => (
+              <div key={code.id} className="px-4 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold tracking-wider text-sm">{code.code}</span>
+                    <button
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => handleCopy(code)}
+                      title="Copy code"
+                    >
+                      {copiedId === code.id ? <Check size={12} className="text-green-600" /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                    <span className="font-medium text-foreground">
+                      {code.discountType === "percentage"
+                        ? `${Number(code.amount).toFixed(0)}% off`
+                        : `$${Number(code.amount).toFixed(2)} off`}
+                    </span>
+                    <span>·</span>
+                    <span>Expires: {formatDate(code.expiresAt)}</span>
+                    <span>·</span>
+                    <span>{code.usesCount}/{code.maxUses >= 999999 ? "∞" : code.maxUses} uses</span>
+                  </div>
+                </div>
+                <div className="shrink-0">{getStatusBadge(code)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -510,6 +598,9 @@ export default function RiderDetail() {
               )}
             </CardContent>
           </Card>
+
+          {/* Assigned Discount Codes */}
+          <RiderAssignedCodesSection riderId={riderId} />
 
           {/* Sponsors callout (read view) */}
           {!isEditing && r.sponsors && (

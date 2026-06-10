@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListDiscountCategories,
@@ -10,10 +10,11 @@ import {
   useUpdateDiscountCode,
   useDeleteDiscountCode,
   useGetDiscountCodeUsage,
+  useListRiders,
   getListDiscountCategoriesQueryKey,
   getListDiscountCodesQueryKey,
 } from "@workspace/api-client-react";
-import type { DiscountCategory, DiscountCode, DiscountCodeUsageEntry } from "@workspace/api-client-react";
+import type { DiscountCategory, DiscountCode, DiscountCodeUsageEntry, Rider } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,9 @@ import {
   RefreshCw,
   Copy,
   History,
+  User,
+  X,
+  ChevronDown,
 } from "lucide-react";
 
 function formatDate(iso: string | null | undefined): string {
@@ -242,6 +246,8 @@ interface CreateForm {
   hasExpiry: boolean;
   expiresAt: string;
   categoryIds: number[];
+  riderId: number | null;
+  riderSearch: string;
 }
 
 const DEFAULT_FORM: CreateForm = {
@@ -254,13 +260,16 @@ const DEFAULT_FORM: CreateForm = {
   hasExpiry: false,
   expiresAt: "",
   categoryIds: [],
+  riderId: null,
+  riderSearch: "",
 };
 
 function DiscountCodesTable() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: codes = [], isLoading } = useListDiscountCodes({ query: {} as any });
+  const { data: codes = [], isLoading } = useListDiscountCodes(undefined, { query: {} as any });
   const { data: categories = [] } = useListDiscountCategories({ query: {} as any });
+  const { data: allRiders = [] } = useListRiders({}, { query: {} as any });
   const createMut = useCreateDiscountCode();
   const updateMut = useUpdateDiscountCode();
   const deleteMut = useDeleteDiscountCode();
@@ -269,6 +278,18 @@ function DiscountCodesTable() {
   const [form, setForm] = useState<CreateForm>(DEFAULT_FORM);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [usagePanelCode, setUsagePanelCode] = useState<DiscountCode | null>(null);
+  const [riderDropdownOpen, setRiderDropdownOpen] = useState(false);
+  const riderDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (riderDropdownRef.current && !riderDropdownRef.current.contains(e.target as Node)) {
+        setRiderDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const catMap = Object.fromEntries((categories as DiscountCategory[]).map(c => [c.id, c.name]));
 
@@ -297,6 +318,9 @@ function DiscountCodesTable() {
     };
     if (!form.autoGenerate && form.code.trim()) {
       payload.code = form.code.trim().toUpperCase();
+    }
+    if (form.riderId !== null) {
+      payload.riderId = form.riderId;
     }
 
     createMut.mutate({ data: payload }, {
@@ -383,7 +407,7 @@ function DiscountCodesTable() {
               <TableRow>
                 <TableHead>Code</TableHead>
                 <TableHead>Discount</TableHead>
-                <TableHead>Event</TableHead>
+                <TableHead>Assigned To</TableHead>
                 <TableHead>Usage</TableHead>
                 <TableHead>Uses</TableHead>
                 <TableHead>Expires</TableHead>
@@ -414,9 +438,11 @@ function DiscountCodesTable() {
                     }
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {(code as any).eventName
-                      ? <span className="truncate max-w-[140px] block" title={(code as any).eventName}>{(code as any).eventName}</span>
-                      : <span className="text-xs italic">Club-level</span>
+                    {code.riderName
+                      ? <span className="flex items-center gap-1"><User size={12} className="shrink-0" /><span className="truncate max-w-[120px]" title={code.riderName}>{code.riderName}</span></span>
+                      : code.eventName
+                        ? <span className="truncate max-w-[120px] block" title={code.eventName}>{code.eventName}</span>
+                        : <span className="text-xs italic">Club-level</span>
                     }
                   </TableCell>
                   <TableCell>{getUsageBadge(code)}</TableCell>
@@ -625,6 +651,90 @@ function DiscountCodesTable() {
                 </div>
               </div>
             )}
+
+            <Separator />
+
+            {/* Assign to rider */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <User size={14} />
+                Assign to Rider <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Lock this code to a specific rider. Only that rider can use it at registration.
+              </p>
+
+              {form.riderId !== null ? (
+                <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+                  <User size={14} className="text-primary shrink-0" />
+                  <span className="flex-1 text-sm font-medium text-primary">
+                    {(allRiders as Rider[]).find(r => r.id === form.riderId)
+                      ? `${(allRiders as Rider[]).find(r => r.id === form.riderId)!.firstName} ${(allRiders as Rider[]).find(r => r.id === form.riderId)!.lastName}`
+                      : `Rider #${form.riderId}`}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => setForm(f => ({ ...f, riderId: null, riderSearch: "" }))}
+                    title="Remove assignment"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative" ref={riderDropdownRef}>
+                  <div className="relative">
+                    <Input
+                      placeholder="Search by name or email…"
+                      value={form.riderSearch}
+                      onChange={e => {
+                        setForm(f => ({ ...f, riderSearch: e.target.value }));
+                        setRiderDropdownOpen(true);
+                      }}
+                      onFocus={() => setRiderDropdownOpen(true)}
+                      className="pr-8"
+                    />
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  </div>
+                  {riderDropdownOpen && (
+                    <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      {(() => {
+                        const search = form.riderSearch.toLowerCase();
+                        const filtered = (allRiders as Rider[]).filter(r =>
+                          !search ||
+                          `${r.firstName} ${r.lastName}`.toLowerCase().includes(search) ||
+                          (r.email ?? "").toLowerCase().includes(search)
+                        ).slice(0, 20);
+                        if (filtered.length === 0) {
+                          return <div className="px-3 py-2 text-sm text-muted-foreground">No riders found</div>;
+                        }
+                        return filtered.map(r => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex flex-col"
+                            onClick={() => {
+                              setForm(f => ({ ...f, riderId: r.id, riderSearch: "" }));
+                              setRiderDropdownOpen(false);
+                            }}
+                          >
+                            <span className="font-medium">{r.firstName} {r.lastName}</span>
+                            {r.email && <span className="text-xs text-muted-foreground">{r.email}</span>}
+                          </button>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {form.riderId !== null && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1 bg-amber-50 dark:bg-amber-950/30 rounded-md px-2 py-1.5">
+                  <span>⚠</span>
+                  <span>This code will be locked to the selected rider. Only they can use it at registration.</span>
+                </p>
+              )}
+            </div>
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setDrawerOpen(false)}>Cancel</Button>

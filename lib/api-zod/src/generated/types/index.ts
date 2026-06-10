@@ -59,6 +59,7 @@ export * from './healthStatus';
 export * from './lineupEntry';
 export * from './lineupGenerateInput';
 export * from './lineupGenerateInputRaceFormat';
+export * from './listDiscountCodesParams';
 export * from './listEventsParams';
 export * from './listPublicSeriesParams';
 export * from './listRecentResultsParams';
