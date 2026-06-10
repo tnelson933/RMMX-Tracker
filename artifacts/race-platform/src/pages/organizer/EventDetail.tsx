@@ -158,10 +158,16 @@ export default function EventDetail() {
 
   const [compAmount, setCompAmount] = useState("");
   const [compCount, setCompCount] = useState("1");
+  const [compDiscountType, setCompDiscountType] = useState<"fixed" | "percentage">("fixed");
+  const [compUsageType, setCompUsageType] = useState<"one_time" | "limited" | "unlimited">("one_time");
+  const [compLimitedCount, setCompLimitedCount] = useState("10");
+  const [compHasExpiry, setCompHasExpiry] = useState(false);
+  const [compExpiresAt, setCompExpiresAt] = useState("");
   const [compGenerating, setCompGenerating] = useState(false);
   const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
   const [generatedAmount, setGeneratedAmount] = useState(0);
-  const [existingCodes, setExistingCodes] = useState<Array<{ code: string; amount: number; usesCount: number; maxUses: number }>>([]);
+  const [generatedDiscountType, setGeneratedDiscountType] = useState<"fixed" | "percentage">("fixed");
+  const [existingCodes, setExistingCodes] = useState<Array<{ code: string; discountType: string; amount: number; usesCount: number; maxUses: number }>>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const handleImageUpload = async (file: File) => {
@@ -228,18 +234,32 @@ export default function EventDetail() {
     const amount = parseFloat(compAmount);
     const count = parseInt(compCount, 10);
     if (!amount || amount <= 0 || !count || count <= 0) return;
+    if (compDiscountType === "percentage" && amount > 100) return;
+
+    let maxUses: number;
+    if (compUsageType === "one_time") maxUses = 1;
+    else if (compUsageType === "unlimited") maxUses = -1;
+    else maxUses = Math.max(1, parseInt(compLimitedCount) || 1);
+
     setCompGenerating(true);
     try {
       const res = await fetch(`/api/events/${eventId}/comp-codes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ amount, count }),
+        body: JSON.stringify({
+          amount,
+          count,
+          discountType: compDiscountType,
+          maxUses,
+          expiresAt: compHasExpiry && compExpiresAt ? new Date(compExpiresAt).toISOString() : null,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
         setGeneratedCodes(data.codes);
         setGeneratedAmount(amount);
+        setGeneratedDiscountType(compDiscountType);
         await loadExistingCodes();
       }
     } finally {
@@ -1200,24 +1220,46 @@ export default function EventDetail() {
             </CardContent>
           </Card>
 
-          {/* Comp Code Generator */}
+          {/* Discount Code Generator */}
           <Card>
             <CardHeader className="flex flex-row items-center gap-2 pb-3 border-b">
               <Ticket size={18} className="text-primary" />
-              <CardTitle className="font-heading uppercase text-base">Comp Codes</CardTitle>
+              <CardTitle className="font-heading uppercase text-base">Discount Codes</CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-3">
               <p className="text-xs text-muted-foreground">Generate codes to give riders a complimentary or discounted entry.</p>
+
+              {/* Discount type toggle */}
+              <div className="flex rounded-md border overflow-hidden text-xs">
+                <button
+                  type="button"
+                  className={`flex-1 py-1.5 font-medium transition-colors ${compDiscountType === "fixed" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setCompDiscountType("fixed")}
+                >
+                  $ Fixed
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 py-1.5 font-medium transition-colors ${compDiscountType === "percentage" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setCompDiscountType("percentage")}
+                >
+                  % Off
+                </button>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">$ Amount</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">
+                    {compDiscountType === "percentage" ? "% Amount" : "$ Amount"}
+                  </label>
                   <Input
                     type="number"
                     min="0"
-                    step="0.01"
+                    max={compDiscountType === "percentage" ? "100" : undefined}
+                    step={compDiscountType === "percentage" ? "1" : "0.01"}
                     value={compAmount}
                     onChange={e => setCompAmount(e.target.value)}
-                    placeholder="45.00"
+                    placeholder={compDiscountType === "percentage" ? "10" : "45.00"}
                     className="h-9 text-sm"
                   />
                 </div>
@@ -1233,6 +1275,54 @@ export default function EventDetail() {
                   />
                 </div>
               </div>
+
+              {/* Usage type */}
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Usage</label>
+                <Select value={compUsageType} onValueChange={(v: any) => setCompUsageType(v)}>
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="one_time">One-time use</SelectItem>
+                    <SelectItem value="limited">Limited uses</SelectItem>
+                    <SelectItem value="unlimited">Unlimited</SelectItem>
+                  </SelectContent>
+                </Select>
+                {compUsageType === "limited" && (
+                  <Input
+                    type="number"
+                    min="2"
+                    value={compLimitedCount}
+                    onChange={e => setCompLimitedCount(e.target.value)}
+                    placeholder="Number of uses"
+                    className="h-9 text-sm mt-1.5"
+                  />
+                )}
+              </div>
+
+              {/* Expiry */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <input
+                    type="checkbox"
+                    id="comp-has-expiry"
+                    checked={compHasExpiry}
+                    onChange={e => { setCompHasExpiry(e.target.checked); setCompExpiresAt(""); }}
+                    className="h-3.5 w-3.5"
+                  />
+                  <label htmlFor="comp-has-expiry" className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground cursor-pointer">Set expiry date</label>
+                </div>
+                {compHasExpiry && (
+                  <Input
+                    type="datetime-local"
+                    value={compExpiresAt}
+                    onChange={e => setCompExpiresAt(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                )}
+              </div>
+
               <Button
                 onClick={handleGenerateCompCodes}
                 disabled={compGenerating || !compAmount || parseFloat(compAmount) <= 0}
@@ -1248,7 +1338,7 @@ export default function EventDetail() {
                 <div className="border-t pt-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      New — ${generatedAmount.toFixed(2)} each
+                      New — {generatedDiscountType === "percentage" ? `${generatedAmount.toFixed(0)}% off` : `$${generatedAmount.toFixed(2)}`} each
                     </p>
                     <button
                       onClick={() => {
@@ -1289,9 +1379,11 @@ export default function EventDetail() {
                       <div key={c.code} className="flex items-center justify-between text-xs py-1.5 border-b last:border-0">
                         <span className="font-mono font-bold tracking-widest">{c.code}</span>
                         <div className="flex items-center gap-3 text-muted-foreground">
-                          <span>${c.amount.toFixed(2)}</span>
+                          <span className="font-medium">
+                            {c.discountType === "percentage" ? `${c.amount.toFixed(0)}% off` : `$${c.amount.toFixed(2)}`}
+                          </span>
                           <span className={c.usesCount >= c.maxUses ? "text-red-500 font-medium" : "text-green-600 font-medium"}>
-                            {c.usesCount >= c.maxUses ? "Used" : "Available"}
+                            {c.usesCount >= c.maxUses ? "Used" : `${c.usesCount}/${c.maxUses === 999999 ? "∞" : c.maxUses}`}
                           </span>
                         </div>
                       </div>

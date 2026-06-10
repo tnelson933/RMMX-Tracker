@@ -14,6 +14,7 @@ export const compCodesTable = pgTable("comp_codes", {
   eventId: integer("event_id").references(() => eventsTable.id),
   clubId: integer("club_id").references(() => clubsTable.id),
   code: text("code").notNull().unique(),
+  discountType: text("discount_type").$type<"fixed" | "percentage">().notNull().default("fixed"),
   amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
   maxUses: integer("max_uses").notNull().default(1),
   usesCount: integer("uses_count").notNull().default(0),

@@ -106,7 +106,7 @@ export default function Register() {
   const [lookedUpName, setLookedUpName] = useState<string>("");
 
   const [compCodeInput, setCompCodeInput] = useState("");
-  const [appliedComp, setAppliedComp] = useState<{ code: string; amount: number } | null>(null);
+  const [appliedComp, setAppliedComp] = useState<{ code: string; amount: number; discountType: "fixed" | "percentage" } | null>(null);
   const [compApplying, setCompApplying] = useState(false);
   const [compError, setCompError] = useState<string | null>(null);
 
@@ -125,10 +125,10 @@ export default function Register() {
       });
       const json = await res.json();
       if (!res.ok || !json.valid) {
-        setCompError(json.error || "Invalid comp code");
+        setCompError(json.error || "Invalid discount code");
         setAppliedComp(null);
       } else {
-        setAppliedComp({ code, amount: json.amount });
+        setAppliedComp({ code, amount: json.amount, discountType: json.discountType ?? "fixed" });
         setCompError(null);
       }
     } catch {
@@ -166,8 +166,13 @@ export default function Register() {
   const rentalTotal = (watchedRentTransponder && event?.transponderRentalEnabled && event?.transponderRentalFee != null)
     ? Number(event.transponderRentalFee)
     : 0;
+  const compDiscountDollars = appliedComp && event?.entryFee
+    ? (appliedComp.discountType === "percentage"
+      ? event.entryFee * appliedComp.amount / 100
+      : appliedComp.amount)
+    : 0;
   const totalDue = event?.paymentEnabled && event?.entryFee
-    ? Math.max(0, event.entryFee + selectedPurchasesTotal + rentalTotal - (appliedComp?.amount ?? 0))
+    ? Math.max(0, event.entryFee + selectedPurchasesTotal + rentalTotal - compDiscountDollars)
     : 0;
 
   useEffect(() => {
@@ -1018,18 +1023,18 @@ export default function Register() {
                   )}
                 />
 
-                {/* Comp Code */}
+                {/* Discount Code */}
                 {event.paymentEnabled && event.entryFee && (
                   <div className="rounded-lg border bg-muted/40 px-4 py-3.5 space-y-2">
                     <p className="text-sm font-semibold flex items-center gap-1.5">
                       <Tag size={14} className="text-primary shrink-0" />
-                      Have a comp code?
+                      Have a discount code?
                     </p>
                     {appliedComp ? (
                       <div className="flex items-center justify-between rounded bg-green-50 border border-green-200 px-3 py-2">
                         <div className="text-sm text-green-700">
                           <span className="font-mono font-bold tracking-widest">{appliedComp.code}</span>
-                          <span className="ml-2">— ${appliedComp.amount.toFixed(2)} off</span>
+                          <span className="ml-2">— {appliedComp.discountType === "percentage" ? `${appliedComp.amount.toFixed(0)}% off` : `$${appliedComp.amount.toFixed(2)} off`}</span>
                         </div>
                         <button
                           type="button"
@@ -1045,7 +1050,7 @@ export default function Register() {
                           value={compCodeInput}
                           onChange={e => { setCompCodeInput(e.target.value.toUpperCase()); setCompError(null); }}
                           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleApplyComp(); } }}
-                          placeholder="Enter code…"
+                          placeholder="Enter discount code…"
                           className="h-9 text-sm font-mono tracking-widest flex-1"
                           disabled={compApplying}
                         />
@@ -1078,7 +1083,11 @@ export default function Register() {
                         )}
                         {appliedComp && (
                           <div className="text-xs text-green-700 flex justify-between">
-                            <span>Comp code ({appliedComp.code})</span><span>−${appliedComp.amount.toFixed(2)}</span>
+                            <span>Discount code ({appliedComp.code})</span>
+                            <span>−{appliedComp.discountType === "percentage"
+                              ? `${appliedComp.amount.toFixed(0)}% ($${compDiscountDollars.toFixed(2)})`
+                              : `$${compDiscountDollars.toFixed(2)}`
+                            }</span>
                           </div>
                         )}
                         <div className="text-sm font-bold flex justify-between border-t pt-1.5">

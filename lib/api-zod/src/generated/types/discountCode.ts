@@ -5,6 +5,7 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { DiscountCodeDiscountType } from './discountCodeDiscountType';
 
 export interface DiscountCode {
   id: number;
@@ -12,7 +13,10 @@ export interface DiscountCode {
   clubId?: number | null;
   /** @nullable */
   eventId?: number | null;
+  /** @nullable */
+  eventName?: string | null;
   code: string;
+  discountType: DiscountCodeDiscountType;
   amount: number;
   maxUses: number;
   usesCount: number;

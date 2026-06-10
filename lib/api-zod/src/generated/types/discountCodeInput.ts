@@ -5,10 +5,13 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { DiscountCodeInputDiscountType } from './discountCodeInputDiscountType';
 
 export interface DiscountCodeInput {
   /** Custom code string; omit to auto-generate */
   code?: string;
+  /** fixed = dollar amount off; percentage = percent off (1-100) */
+  discountType?: DiscountCodeInputDiscountType;
   amount: number;
   /** Use -1 for unlimited */
   maxUses: number;

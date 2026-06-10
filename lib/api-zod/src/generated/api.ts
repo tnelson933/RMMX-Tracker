@@ -1590,7 +1590,9 @@ export const ListDiscountCodesResponseItem = zod.object({
   "id": zod.number(),
   "clubId": zod.number().nullish(),
   "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
   "code": zod.string(),
+  "discountType": zod.enum(['fixed', 'percentage']),
   "amount": zod.number(),
   "maxUses": zod.number(),
   "usesCount": zod.number(),
@@ -1607,6 +1609,7 @@ export const ListDiscountCodesResponse = zod.array(ListDiscountCodesResponseItem
  */
 export const CreateDiscountCodeBody = zod.object({
   "code": zod.string().optional().describe('Custom code string; omit to auto-generate'),
+  "discountType": zod.enum(['fixed', 'percentage']).optional().describe('fixed = dollar amount off; percentage = percent off (1-100)'),
   "amount": zod.number(),
   "maxUses": zod.number().describe('Use -1 for unlimited'),
   "expiresAt": zod.string().nullish(),
@@ -1623,6 +1626,7 @@ export const UpdateDiscountCodeParams = zod.object({
 
 export const UpdateDiscountCodeBody = zod.object({
   "isActive": zod.boolean().optional(),
+  "discountType": zod.enum(['fixed', 'percentage']).optional(),
   "expiresAt": zod.string().nullish(),
   "categoryIds": zod.array(zod.number()).optional()
 })
@@ -1631,7 +1635,9 @@ export const UpdateDiscountCodeResponse = zod.object({
   "id": zod.number(),
   "clubId": zod.number().nullish(),
   "eventId": zod.number().nullish(),
+  "eventName": zod.string().nullish(),
   "code": zod.string(),
+  "discountType": zod.enum(['fixed', 'percentage']),
   "amount": zod.number(),
   "maxUses": zod.number(),
   "usesCount": zod.number(),

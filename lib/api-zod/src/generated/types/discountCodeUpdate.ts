@@ -5,9 +5,11 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { DiscountCodeUpdateDiscountType } from './discountCodeUpdateDiscountType';
 
 export interface DiscountCodeUpdate {
   isActive?: boolean;
+  discountType?: DiscountCodeUpdateDiscountType;
   /** @nullable */
   expiresAt?: string | null;
   categoryIds?: number[];

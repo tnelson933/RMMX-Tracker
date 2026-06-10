@@ -961,13 +961,24 @@ export interface DiscountCategoryInput {
   name: string;
 }
 
+export type DiscountCodeDiscountType = typeof DiscountCodeDiscountType[keyof typeof DiscountCodeDiscountType];
+
+
+export const DiscountCodeDiscountType = {
+  fixed: 'fixed',
+  percentage: 'percentage',
+} as const;
+
 export interface DiscountCode {
   id: number;
   /** @nullable */
   clubId?: number | null;
   /** @nullable */
   eventId?: number | null;
+  /** @nullable */
+  eventName?: string | null;
   code: string;
+  discountType: DiscountCodeDiscountType;
   amount: number;
   maxUses: number;
   usesCount: number;
@@ -978,9 +989,22 @@ export interface DiscountCode {
   createdAt: string;
 }
 
+/**
+ * fixed = dollar amount off; percentage = percent off (1-100)
+ */
+export type DiscountCodeInputDiscountType = typeof DiscountCodeInputDiscountType[keyof typeof DiscountCodeInputDiscountType];
+
+
+export const DiscountCodeInputDiscountType = {
+  fixed: 'fixed',
+  percentage: 'percentage',
+} as const;
+
 export interface DiscountCodeInput {
   /** Custom code string; omit to auto-generate */
   code?: string;
+  /** fixed = dollar amount off; percentage = percent off (1-100) */
+  discountType?: DiscountCodeInputDiscountType;
   amount: number;
   /** Use -1 for unlimited */
   maxUses: number;
@@ -989,8 +1013,17 @@ export interface DiscountCodeInput {
   categoryIds?: number[];
 }
 
+export type DiscountCodeUpdateDiscountType = typeof DiscountCodeUpdateDiscountType[keyof typeof DiscountCodeUpdateDiscountType];
+
+
+export const DiscountCodeUpdateDiscountType = {
+  fixed: 'fixed',
+  percentage: 'percentage',
+} as const;
+
 export interface DiscountCodeUpdate {
   isActive?: boolean;
+  discountType?: DiscountCodeUpdateDiscountType;
   /** @nullable */
   expiresAt?: string | null;
   categoryIds?: number[];

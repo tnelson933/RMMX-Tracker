@@ -491,8 +491,10 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     }
   }
 
-  // Validate comp code if provided
+  // Validate discount code if provided
   let compDiscount = 0;
+  let compDiscountType: "fixed" | "percentage" = "fixed";
+  let compDiscountRaw = 0;
   let validatedCompCode: string | null = null;
   if (compCode) {
     const codeStr = String(compCode).trim().toUpperCase();
@@ -517,25 +519,26 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     }
 
     if (!codeRow) {
-      return res.status(400).json({ error: "Invalid or already-used comp code" });
+      return res.status(400).json({ error: "Invalid or already-used discount code" });
     }
     if (codeRow.isActive === false) {
-      return res.status(400).json({ error: "This comp code is no longer active" });
+      return res.status(400).json({ error: "This discount code is no longer active" });
     }
     if (codeRow.expiresAt && new Date() > codeRow.expiresAt) {
-      return res.status(400).json({ error: "This comp code has expired" });
+      return res.status(400).json({ error: "This discount code has expired" });
     }
     if (codeRow.usesCount >= codeRow.maxUses) {
-      return res.status(400).json({ error: "Invalid or already-used comp code" });
+      return res.status(400).json({ error: "Invalid or already-used discount code" });
     }
     // Category restriction: if code is restricted to categories, a matching categoryId must be provided
     const codeCatIds = (codeRow.categoryIds as number[]) ?? [];
     if (codeCatIds.length > 0) {
       if (categoryId == null || !codeCatIds.includes(Number(categoryId))) {
-        return res.status(400).json({ error: "This comp code is not valid for the selected category" });
+        return res.status(400).json({ error: "This discount code is not valid for the selected category" });
       }
     }
-    compDiscount = Number(codeRow.amount);
+    compDiscountType = (codeRow.discountType as "fixed" | "percentage") ?? "fixed";
+    compDiscountRaw = Number(codeRow.amount);
     validatedCompCode = codeRow.code;
   }
 
@@ -565,6 +568,11 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     ? (selectedPurchaseOptions as Array<{ id: string; name: string; amount: number }>)
     : [];
   const purchaseOptionsTotal = purchaseOptsList.reduce((sum, o) => sum + Number(o.amount), 0);
+  if (validatedCompCode) {
+    compDiscount = compDiscountType === "percentage"
+      ? entryFeeNum * compDiscountRaw / 100
+      : compDiscountRaw;
+  }
   const netFee = Math.max(0, entryFeeNum + rentalFeeNum + purchaseOptionsTotal - compDiscount);
   const needsPayment = !!events[0].paymentEnabled && netFee > 0;
   const regStatus = needsPayment ? "pending" : "confirmed";

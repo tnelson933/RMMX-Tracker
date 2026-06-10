@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { compCodesTable, usersTable } from "@workspace/db";
-import { eq, and, isNull } from "drizzle-orm";
+import { compCodesTable, eventsTable, usersTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 
 const router = Router();
@@ -21,22 +21,6 @@ async function getClubId(userId: number): Promise<number | null> {
   return user?.clubId ?? null;
 }
 
-function formatCode(c: typeof compCodesTable.$inferSelect) {
-  return {
-    id: c.id,
-    clubId: c.clubId,
-    eventId: c.eventId,
-    code: c.code,
-    amount: Number(c.amount),
-    maxUses: c.maxUses,
-    usesCount: c.usesCount,
-    isActive: c.isActive,
-    expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null,
-    categoryIds: (c.categoryIds as number[]) ?? [],
-    createdAt: c.createdAt.toISOString(),
-  };
-}
-
 router.get("/discount-codes", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -44,11 +28,42 @@ router.get("/discount-codes", async (req, res) => {
   const clubId = await getClubId(userId);
   if (!clubId) return res.status(403).json({ error: "No club associated with account" });
 
-  const codes = await db.select().from(compCodesTable)
-    .where(and(eq(compCodesTable.clubId, clubId), isNull(compCodesTable.eventId)))
+  const rows = await db
+    .select({
+      id: compCodesTable.id,
+      clubId: compCodesTable.clubId,
+      eventId: compCodesTable.eventId,
+      code: compCodesTable.code,
+      discountType: compCodesTable.discountType,
+      amount: compCodesTable.amount,
+      maxUses: compCodesTable.maxUses,
+      usesCount: compCodesTable.usesCount,
+      isActive: compCodesTable.isActive,
+      expiresAt: compCodesTable.expiresAt,
+      categoryIds: compCodesTable.categoryIds,
+      createdAt: compCodesTable.createdAt,
+      eventName: eventsTable.name,
+    })
+    .from(compCodesTable)
+    .leftJoin(eventsTable, eq(compCodesTable.eventId, eventsTable.id))
+    .where(eq(compCodesTable.clubId, clubId))
     .orderBy(compCodesTable.createdAt);
 
-  return res.json(codes.map(formatCode));
+  return res.json(rows.map(r => ({
+    id: r.id,
+    clubId: r.clubId,
+    eventId: r.eventId,
+    eventName: r.eventName ?? null,
+    code: r.code,
+    discountType: r.discountType,
+    amount: Number(r.amount),
+    maxUses: r.maxUses,
+    usesCount: r.usesCount,
+    isActive: r.isActive,
+    expiresAt: r.expiresAt ? r.expiresAt.toISOString() : null,
+    categoryIds: (r.categoryIds as number[]) ?? [],
+    createdAt: r.createdAt.toISOString(),
+  })));
 });
 
 router.post("/discount-codes", async (req, res) => {
@@ -58,10 +73,13 @@ router.post("/discount-codes", async (req, res) => {
   const clubId = await getClubId(userId);
   if (!clubId) return res.status(403).json({ error: "No club associated with account" });
 
-  const { code: customCode, amount, maxUses, expiresAt, categoryIds } = req.body;
+  const { code: customCode, discountType = "fixed", amount, maxUses, expiresAt, categoryIds } = req.body;
 
   if (amount == null || Number(amount) <= 0) {
-    return res.status(400).json({ error: "amount required and must be > 0" });
+    return res.status(400).json({ error: "Amount required and must be greater than 0" });
+  }
+  if (discountType === "percentage" && Number(amount) > 100) {
+    return res.status(400).json({ error: "Percentage discount cannot exceed 100%" });
   }
 
   const maxUsesNum = maxUses === -1 ? 999999 : Math.max(1, Number(maxUses) || 1);
@@ -85,6 +103,7 @@ router.post("/discount-codes", async (req, res) => {
     const [row] = await db.insert(compCodesTable).values({
       clubId,
       code: codeStr,
+      discountType: discountType === "percentage" ? "percentage" : "fixed",
       amount: String(amount),
       maxUses: maxUsesNum,
       usesCount: 0,
@@ -93,7 +112,21 @@ router.post("/discount-codes", async (req, res) => {
       categoryIds: Array.isArray(categoryIds) ? categoryIds : [],
     }).returning();
 
-    return res.status(201).json(formatCode(row));
+    return res.status(201).json({
+      id: row.id,
+      clubId: row.clubId,
+      eventId: row.eventId,
+      eventName: null,
+      code: row.code,
+      discountType: row.discountType,
+      amount: Number(row.amount),
+      maxUses: row.maxUses,
+      usesCount: row.usesCount,
+      isActive: row.isActive,
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+      categoryIds: (row.categoryIds as number[]) ?? [],
+      createdAt: row.createdAt.toISOString(),
+    });
   } catch (err: any) {
     if (err?.code === "23505") {
       return res.status(409).json({ error: "A code with that string already exists" });
@@ -112,6 +145,7 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
   const codeId = Number(req.params.codeId);
   const updates: Record<string, unknown> = {};
   if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
+  if (req.body.discountType !== undefined) updates.discountType = req.body.discountType;
   if (req.body.expiresAt !== undefined) updates.expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
   if (req.body.categoryIds !== undefined) updates.categoryIds = Array.isArray(req.body.categoryIds) ? req.body.categoryIds : [];
 
@@ -121,7 +155,22 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
     .returning();
 
   if (!row) return res.status(404).json({ error: "Discount code not found" });
-  return res.json(formatCode(row));
+
+  return res.json({
+    id: row.id,
+    clubId: row.clubId,
+    eventId: row.eventId,
+    eventName: null,
+    code: row.code,
+    discountType: row.discountType,
+    amount: Number(row.amount),
+    maxUses: row.maxUses,
+    usesCount: row.usesCount,
+    isActive: row.isActive,
+    expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+    categoryIds: (row.categoryIds as number[]) ?? [],
+    createdAt: row.createdAt.toISOString(),
+  });
 });
 
 router.delete("/discount-codes/:codeId", async (req, res) => {

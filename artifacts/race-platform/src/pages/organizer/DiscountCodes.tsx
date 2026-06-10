@@ -228,10 +228,12 @@ function DiscountCodeCategories() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type UsageType = "one_time" | "limited" | "unlimited";
+type DiscountTypeVal = "fixed" | "percentage";
 
 interface CreateForm {
   code: string;
   autoGenerate: boolean;
+  discountType: DiscountTypeVal;
   amount: string;
   usageType: UsageType;
   limitedCount: string;
@@ -243,6 +245,7 @@ interface CreateForm {
 const DEFAULT_FORM: CreateForm = {
   code: "",
   autoGenerate: true,
+  discountType: "fixed",
   amount: "",
   usageType: "one_time",
   limitedCount: "10",
@@ -272,6 +275,10 @@ function DiscountCodesTable() {
       toast({ title: "Amount must be greater than 0", variant: "destructive" });
       return;
     }
+    if (form.discountType === "percentage" && amount > 100) {
+      toast({ title: "Percentage cannot exceed 100%", variant: "destructive" });
+      return;
+    }
 
     let maxUses: number;
     if (form.usageType === "one_time") maxUses = 1;
@@ -279,6 +286,7 @@ function DiscountCodesTable() {
     else maxUses = Math.max(1, parseInt(form.limitedCount) || 1);
 
     const payload: any = {
+      discountType: form.discountType,
       amount,
       maxUses,
       expiresAt: form.hasExpiry && form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
@@ -371,7 +379,8 @@ function DiscountCodesTable() {
             <TableHeader>
               <TableRow>
                 <TableHead>Code</TableHead>
-                <TableHead>Amount</TableHead>
+                <TableHead>Discount</TableHead>
+                <TableHead>Event</TableHead>
                 <TableHead>Usage</TableHead>
                 <TableHead>Uses</TableHead>
                 <TableHead>Expires</TableHead>
@@ -395,7 +404,18 @@ function DiscountCodesTable() {
                       </button>
                     </div>
                   </TableCell>
-                  <TableCell className="font-semibold">${Number(code.amount).toFixed(2)}</TableCell>
+                  <TableCell className="font-semibold">
+                    {code.discountType === "percentage"
+                      ? <><span className="text-blue-600">{Number(code.amount).toFixed(0)}%</span> <span className="text-xs font-normal text-muted-foreground">off</span></>
+                      : <>${Number(code.amount).toFixed(2)}</>
+                    }
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {(code as any).eventName
+                      ? <span className="truncate max-w-[140px] block" title={(code as any).eventName}>{(code as any).eventName}</span>
+                      : <span className="text-xs italic">Club-level</span>
+                    }
+                  </TableCell>
                   <TableCell>{getUsageBadge(code)}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {code.maxUses >= 999999 ? `${code.usesCount} used` : `${code.usesCount} / ${code.maxUses}`}
@@ -476,17 +496,48 @@ function DiscountCodesTable() {
 
             <Separator />
 
+            {/* Discount Type */}
+            <div className="space-y-1.5">
+              <Label>Discount Type</Label>
+              <div className="flex rounded-md border overflow-hidden">
+                <button
+                  type="button"
+                  className={`flex-1 py-2 text-sm font-medium transition-colors ${form.discountType === "fixed" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setForm(f => ({ ...f, discountType: "fixed" }))}
+                >
+                  $ Fixed Amount
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 py-2 text-sm font-medium transition-colors ${form.discountType === "percentage" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setForm(f => ({ ...f, discountType: "percentage" }))}
+                >
+                  % Percentage
+                </button>
+              </div>
+            </div>
+
             {/* Amount */}
             <div className="space-y-1.5">
-              <Label>Discount Amount ($)</Label>
-              <Input
-                type="number"
-                placeholder="0.00"
-                min="0.01"
-                step="0.01"
-                value={form.amount}
-                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
-              />
+              <Label>{form.discountType === "percentage" ? "Discount Percentage (1–100)" : "Discount Amount ($)"}</Label>
+              <div className="relative">
+                {form.discountType === "fixed" && (
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                )}
+                <Input
+                  type="number"
+                  placeholder={form.discountType === "percentage" ? "10" : "0.00"}
+                  min="0.01"
+                  max={form.discountType === "percentage" ? "100" : undefined}
+                  step={form.discountType === "percentage" ? "1" : "0.01"}
+                  value={form.amount}
+                  onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                  className={form.discountType === "fixed" ? "pl-7" : ""}
+                />
+                {form.discountType === "percentage" && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
+                )}
+              </div>
             </div>
 
             {/* Usage type */}

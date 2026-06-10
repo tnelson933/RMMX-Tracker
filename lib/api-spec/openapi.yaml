@@ -3137,7 +3137,7 @@ components:
 
     DiscountCode:
       type: object
-      required: [id, code, amount, maxUses, usesCount, isActive, categoryIds, createdAt]
+      required: [id, code, discountType, amount, maxUses, usesCount, isActive, categoryIds, createdAt]
       properties:
         id:
           type: integer
@@ -3145,8 +3145,13 @@ components:
           type: ["integer", "null"]
         eventId:
           type: ["integer", "null"]
+        eventName:
+          type: ["string", "null"]
         code:
           type: string
+        discountType:
+          type: string
+          enum: [fixed, percentage]
         amount:
           type: number
         maxUses:
@@ -3171,6 +3176,10 @@ components:
         code:
           type: string
           description: Custom code string; omit to auto-generate
+        discountType:
+          type: string
+          enum: [fixed, percentage]
+          description: fixed = dollar amount off; percentage = percent off (1-100)
         amount:
           type: number
         maxUses:
@@ -3188,6 +3197,9 @@ components:
       properties:
         isActive:
           type: boolean
+        discountType:
+          type: string
+          enum: [fixed, percentage]
         expiresAt:
           type: ["string", "null"]
         categoryIds:
