@@ -65,6 +65,17 @@ async function main() {
   `);
   console.log("FK constraint ensured");
 
+  // 6. Ensure practice_mode and countdown_seconds columns on motos table
+  //    (added by countdown timer task; drizzle push-force may be blocked by
+  //    interactive TTY in CI so we guard them here unconditionally)
+  await db.execute(sql`
+    ALTER TABLE motos ADD COLUMN IF NOT EXISTS practice_mode text NOT NULL DEFAULT 'lap_count'
+  `);
+  await db.execute(sql`
+    ALTER TABLE motos ADD COLUMN IF NOT EXISTS countdown_seconds integer
+  `);
+  console.log("Motos countdown columns ensured");
+
   console.log("Migration complete.");
 }
 
