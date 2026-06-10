@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import {
   useListMotos, useReorderMotos, useUpdateMoto, useCreateMoto,
   useListCheckins, useGenerateLineups, useGetEvent, useListPointsTables,
+  useUpdateEvent, useAdvanceToMain,
   getListMotosQueryKey, getListCheckinsQueryKey, type Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -30,11 +31,42 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
-  GripVertical, Plus, Clock, LayoutList, LayoutGrid, Flag, ExternalLink,
-  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Check, X,
+  GripVertical, Plus, Clock, LayoutList, LayoutGrid, Zap, Flag, ExternalLink,
+  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X,
 } from "lucide-react";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+function parseMinLapTime(str: string): number | null {
+  const s = str.trim();
+  if (!s) return null;
+  const colonIdx = s.indexOf(":");
+  if (colonIdx >= 0) {
+    const m = parseInt(s.slice(0, colonIdx), 10);
+    const sec = parseFloat(s.slice(colonIdx + 1));
+    if (isNaN(m) || isNaN(sec) || sec < 0 || sec >= 60) return null;
+    const ms = (m * 60 + sec) * 1000;
+    return ms > 0 ? ms : null;
+  }
+  const sec = parseFloat(s);
+  if (isNaN(sec) || sec <= 0) return null;
+  return sec * 1000;
+}
+
+function formatMinLapTime(ms: number): string {
+  const totalSec = ms / 1000;
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m > 0) {
+    const sInt = Math.floor(s);
+    const frac = Math.round((s - sInt) * 10);
+    const sStr = frac > 0
+      ? `${sInt.toString().padStart(2, "0")}.${frac}`
+      : sInt.toString().padStart(2, "0");
+    return `${m}:${sStr}`;
+  }
+  return s === Math.floor(s) ? String(Math.floor(s)) : s.toFixed(1);
+}
 
 function typeBadgeVariant(type: string): string {
   switch (type) {
@@ -549,11 +581,193 @@ export default function EventSchedule() {
     lapCount: "5",
   });
 
+  // ── Event rules data ──
+  // Already computed above as isSupercrossFormat
+
+  // ── Minimum lap time state ──
+  const [minLapInput, setMinLapInput] = useState("");
+  const [minLapSaveStatus, setMinLapSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const minLapSavedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seededForEventIdRef = useRef<number | null>(null);
+  const minLapDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const minLapInputRef = useRef(minLapInput);
+  minLapInputRef.current = minLapInput;
+  const isBlurFlushingRef = useRef(false);
+  const isSavingRef = useRef(false);
+  const pendingSaveRef = useRef<{ input: string } | null>(null);
+  const lastCommittedRef = useRef<number | null>(null);
+  const currentEventIdRef = useRef(eventId);
+  currentEventIdRef.current = eventId;
+
+  // ── Advance to Main state ──
+  const [topPerHeatByClass, setTopPerHeatByClass] = useState<Record<string, number>>({});
+
   // ── Mutations ──
   const reorderMutation = useReorderMotos();
   const updateMutation = useUpdateMoto();
   const createMutation = useCreateMoto();
   const generateMutation = useGenerateLineups();
+  const updateEventMutation = useUpdateEvent();
+  const advanceToMainMutation = useAdvanceToMain();
+
+  // ── defaultTopPerHeat (Advance to Main) ──
+  const defaultTopPerHeat = useMemo(() => {
+    const result: Record<string, number> = {};
+    const mainClasses = [...new Set(rawMotos.filter(m => m.type === "main").map(m => m.raceClass).filter((c): c is string => !!c))];
+    for (const cls of mainClasses) {
+      const heats = rawMotos.filter(m => m.type === "heat" && m.raceClass === cls);
+      const totalRiders = heats.reduce((sum, h) => sum + ((h.lineup as any[])?.length ?? 0), 0);
+      const avg = heats.length > 0 ? totalRiders / heats.length : 0;
+      result[cls] = Math.max(1, Math.round(avg * 0.3));
+    }
+    return result;
+  }, [rawMotos]);
+
+  useEffect(() => {
+    setTopPerHeatByClass(prev => {
+      const next = { ...prev };
+      for (const [cls, val] of Object.entries(defaultTopPerHeat)) {
+        if (next[cls] === undefined) next[cls] = val;
+      }
+      return next;
+    });
+  }, [defaultTopPerHeat]);
+
+  // ── Reset min-lap state when navigating between events ──
+  useEffect(() => {
+    setMinLapInput("");
+    seededForEventIdRef.current = null;
+    lastCommittedRef.current = null;
+    pendingSaveRef.current = null;
+    isSavingRef.current = false;
+  }, [eventId]);
+
+  // ── Seed min-lap input from saved event data exactly once per eventId ──
+  useEffect(() => {
+    if (!event) return;
+    const currentEventId = (event as any).id as number;
+    if (seededForEventIdRef.current === currentEventId) return;
+    seededForEventIdRef.current = currentEventId;
+    const saved = (event as any)?.minLapMs as number | null | undefined;
+    lastCommittedRef.current = saved ?? null;
+    setMinLapInput(saved != null ? formatMinLapTime(saved) : "");
+  }, [event]);
+
+  // ── Always-current save function stored in a ref ──
+  const saveMinLapRef = useRef<(input: string) => void>(() => {});
+  saveMinLapRef.current = (input: string): void => {
+    const newMs = parseMinLapTime(input) ?? null;
+    if (newMs === lastCommittedRef.current) return;
+    if (isSavingRef.current) {
+      pendingSaveRef.current = { input };
+      return;
+    }
+    isSavingRef.current = true;
+    if (minLapSavedTimer.current) {
+      clearTimeout(minLapSavedTimer.current);
+      minLapSavedTimer.current = null;
+    }
+    setMinLapSaveStatus('saving');
+    const saveEventId = eventId;
+    const flushPending = () => {
+      isSavingRef.current = false;
+      if (pendingSaveRef.current) {
+        const pending = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        saveMinLapRef.current(pending.input);
+      }
+    };
+    updateEventMutation.mutate(
+      { eventId, data: { minLapMs: newMs } as any },
+      {
+        onSuccess: () => {
+          if (saveEventId !== currentEventIdRef.current) return;
+          lastCommittedRef.current = newMs;
+          queryClient.invalidateQueries({ queryKey: ["getEvent", eventId] as any });
+          setMinLapSaveStatus('saved');
+          minLapSavedTimer.current = setTimeout(() => {
+            setMinLapSaveStatus('idle');
+            minLapSavedTimer.current = null;
+          }, 2500);
+          flushPending();
+        },
+        onError: () => {
+          if (saveEventId !== currentEventIdRef.current) return;
+          setMinLapSaveStatus('error');
+          flushPending();
+        },
+      }
+    );
+  };
+
+  // ── On blur: normalize, cancel debounce, flush save ──
+  const handleMinLapBlur = () => {
+    const ms = parseMinLapTime(minLapInput);
+    const formatted = ms != null ? formatMinLapTime(ms) : minLapInput;
+    if (formatted !== minLapInput) {
+      isBlurFlushingRef.current = true;
+      setMinLapInput(formatted);
+    }
+    if (minLapDebounceTimer.current) {
+      clearTimeout(minLapDebounceTimer.current);
+      minLapDebounceTimer.current = null;
+    }
+    saveMinLapRef.current(formatted);
+  };
+
+  // ── Debounced save-on-change ──
+  useEffect(() => {
+    if (isBlurFlushingRef.current) {
+      isBlurFlushingRef.current = false;
+      return;
+    }
+    if (minLapDebounceTimer.current) clearTimeout(minLapDebounceTimer.current);
+    const snap = minLapInput;
+    minLapDebounceTimer.current = setTimeout(() => {
+      saveMinLapRef.current(snap);
+    }, 300);
+    return () => {
+      if (minLapDebounceTimer.current) clearTimeout(minLapDebounceTimer.current);
+    };
+  }, [minLapInput]);
+
+  // ── Unmount flush ──
+  useEffect(() => {
+    return () => {
+      if (minLapDebounceTimer.current) {
+        clearTimeout(minLapDebounceTimer.current);
+        minLapDebounceTimer.current = null;
+      }
+      const raw = minLapInputRef.current;
+      const eid = currentEventIdRef.current;
+      if (!eid) return;
+      const newMs = parseMinLapTime(raw) ?? null;
+      if (newMs === lastCommittedRef.current) return;
+      fetch(`/api/events/${eid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minLapMs: newMs }),
+        credentials: "include",
+      }).catch(() => {});
+    };
+  }, []);
+
+  // ── Advance to Main handler ──
+  const handleAdvanceToMain = (raceClass: string) => {
+    const topPerHeat = topPerHeatByClass[raceClass] ?? defaultTopPerHeat[raceClass] ?? 3;
+    advanceToMainMutation.mutate(
+      { eventId, data: { raceClass, topPerHeat } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          toast({ title: `✅ Riders advanced to ${raceClass} Main Event` });
+        },
+        onError: (err) => {
+          toast({ title: "Failed to advance riders", description: err.message, variant: "destructive" });
+        },
+      }
+    );
+  };
 
   // ── Derived sorted list ──
   const sortedMotos: Moto[] = (() => {
@@ -866,6 +1080,180 @@ export default function EventSchedule() {
               <Button size="sm" onClick={() => setShowAddDialog(true)}>
                 <Plus size={15} className="mr-1" /> Add Moto
               </Button>
+            </div>
+
+            {/* ── Auto-fill toolbar ── */}
+            <div className="flex flex-wrap items-center gap-3 p-4 bg-muted/40 border border-border rounded-lg">
+              <Clock size={16} className="text-muted-foreground shrink-0" />
+              <div className="flex items-center gap-2">
+                <Label htmlFor="start-time" className="text-sm whitespace-nowrap">Event start</Label>
+                <Input
+                  id="start-time"
+                  type="time"
+                  value={(event as any)?.startTime || ""}
+                  onChange={e => {
+                    const newTime = e.target.value;
+                    updateEventMutation.mutate({
+                      eventId,
+                      data: { startTime: newTime },
+                    });
+                  }}
+                  className="h-8 w-28 text-sm bg-background"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="gap-min" className="text-sm whitespace-nowrap">Gap between sessions</Label>
+                <Input
+                  id="gap-min"
+                  type="number"
+                  min={0}
+                  max={30}
+                  defaultValue={5}
+                  className="h-8 w-16 text-sm bg-background"
+                />
+                <span className="text-sm text-muted-foreground">min</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {}}
+                disabled={sortedMotos.length === 0}
+                className="ml-auto"
+              >
+                <Zap size={14} className="mr-1" /> Auto-fill times
+              </Button>
+            </div>
+
+            {/* ── Event Rules cards ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+
+              {/* Minimum Lap Time */}
+              <div className="border rounded-lg bg-card overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
+                  <Timer size={13} className="text-muted-foreground shrink-0" />
+                  <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Minimum Lap Time</h3>
+                  <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">— flags short laps red</span>
+                  <div className="ml-auto shrink-0">
+                    {minLapSaveStatus === 'saving' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground animate-pulse">
+                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 inline-block" />
+                        Saving…
+                      </span>
+                    )}
+                    {minLapSaveStatus === 'saved' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
+                        <Check size={10} />
+                        Saved
+                      </span>
+                    )}
+                    {minLapSaveStatus === 'error' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-destructive">
+                        <span>!</span>
+                        Error — retry?
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="px-3 py-2.5 flex items-center gap-3">
+                  <div className="relative">
+                    <input
+                      value={minLapInput}
+                      onChange={e => setMinLapInput(e.target.value)}
+                      onBlur={() => handleMinLapBlur()}
+                      onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                      placeholder="m:ss"
+                      className="h-7 text-xs font-mono w-20 pr-6 rounded-md border border-input bg-background px-3 py-1 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                      {minLapSaveStatus === 'saved' ? (
+                        <Check size={11} className="text-green-500" />
+                      ) : minLapInput.trim() ? (
+                        <span className="text-[9px] text-muted-foreground">m:ss</span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground leading-tight">
+                    Applies to all classes.<br />Leave blank to disable.
+                  </p>
+                </div>
+              </div>
+
+              {/* Advance to Main — Supercross only */}
+              {isSupercrossFormat && rawMotos.some(m => m.type === "main") ? (
+                <div className="border rounded-lg bg-card overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
+                    <Flag size={13} className="text-primary shrink-0" />
+                    <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Advance to Main Event</h3>
+                  </div>
+                  <div className="px-3 py-2 space-y-1.5">
+                    {[...new Set(rawMotos.filter(m => m.type === "main").map(m => m.raceClass).filter((c): c is string => !!c))].map(cls => {
+                      const heats = rawMotos.filter(m => m.type === "heat" && m.raceClass === cls);
+                      const completedHeats = heats.filter(m => m.status === "completed");
+                      const allHeatsComplete = heats.length > 0 && completedHeats.length === heats.length;
+                      const totalInHeats = heats.reduce((s, h) => s + ((h.lineup as any[])?.length ?? 0), 0);
+                      const currentVal = topPerHeatByClass[cls] ?? defaultTopPerHeat[cls] ?? 1;
+                      return (
+                        <div key={cls} className={`rounded-md border px-2.5 py-2 ${allHeatsComplete ? "bg-muted/30" : "bg-muted/10 opacity-75"}`}>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-heading font-semibold text-xs uppercase tracking-wide truncate">{cls}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {completedHeats.length}/{heats.length} heats · {totalInHeats} riders
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="text-[10px] text-muted-foreground">Top</span>
+                              <div className="flex items-center border rounded overflow-hidden bg-background">
+                                <button
+                                  type="button"
+                                  className="px-1.5 py-1 text-xs font-bold hover:bg-muted transition-colors disabled:opacity-40"
+                                  disabled={currentVal <= 1}
+                                  onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: Math.max(1, currentVal - 1) }))}
+                                >−</button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={totalInHeats || 99}
+                                  value={currentVal}
+                                  onChange={e => {
+                                    const v = parseInt(e.target.value, 10);
+                                    if (!isNaN(v) && v >= 1) setTopPerHeatByClass(p => ({ ...p, [cls]: v }));
+                                  }}
+                                  className="w-8 text-center text-xs font-mono font-bold bg-transparent border-x py-1 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <button
+                                  type="button"
+                                  className="px-1.5 py-1 text-xs font-bold hover:bg-muted transition-colors"
+                                  onClick={() => setTopPerHeatByClass(p => ({ ...p, [cls]: currentVal + 1 }))}
+                                >+</button>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">/ heat</span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="font-heading uppercase tracking-wider gap-1 shrink-0 h-7 text-xs px-2"
+                              disabled={!allHeatsComplete || advanceToMainMutation.isPending}
+                              title={!allHeatsComplete ? `${heats.length - completedHeats.length} heat(s) must be completed first` : undefined}
+                              onClick={() => handleAdvanceToMain(cls)}
+                            >
+                              <Flag size={11} />
+                              Go
+                            </Button>
+                          </div>
+                          {!allHeatsComplete && (
+                            <div className="mt-1 text-[10px] text-amber-600 flex items-center gap-1">
+                              <span>⏳</span>
+                              <span>{heats.length - completedHeats.length} heat(s) must finish first</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : <div />}
+
             </div>
 
             {/* ── Empty state ── */}
