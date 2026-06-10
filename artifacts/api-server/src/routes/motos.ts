@@ -285,24 +285,35 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   // Only generate for classes that have no completed motos (or all classes for previous_round)
   const classesToGenerate: string[] = ((classes as string[]) || []).filter(c => !lockedClasses.has(c));
 
-  // Delete existing non-completed motos for the classes we will regenerate (avoid duplicates).
-  // If a rounds filter is provided, only delete motos belonging to those rounds.
-  // Track deleted IDs at outer scope so motoNumber can be based on surviving motos.
+  // Compute divCount early so the deletion step can use it for locked-class cleanup.
+  const divCount = raceFormat === "three_moto" ? 3 : raceFormat === "two_moto" ? 2 : 1;
+
+  // Delete existing non-completed motos:
+  //  - For unlocked classes being regenerated: delete all scheduled motos (or only the
+  //    specified rounds if a roundsFilter was provided).
+  //  - For locked classes (have ≥1 completed moto): delete scheduled motos in rounds
+  //    BEYOND divCount so stale future rounds are cleaned up when the user switches formats
+  //    (e.g. switching from 3-moto to 1-moto removes the scheduled rounds 2 and 3).
+  // Completed motos are always preserved.
   const deletedMotoIds = new Set<number>();
-  if (classesToGenerate.length > 0) {
-    const roundsSet = roundsFilter && (roundsFilter as number[]).length > 0 ? new Set<number>(roundsFilter as number[]) : null;
-    const idsToDelete = existingMotos
-      .filter(m => {
-        if (m.raceClass == null || !classesToGenerate.includes(m.raceClass)) return false;
-        if (m.status === "completed") return false;
-        if (roundsSet !== null && !roundsSet.has(getRoundFromMoto(m))) return false;
-        return true;
-      })
-      .map(m => m.id);
-    if (idsToDelete.length > 0) {
-      idsToDelete.forEach(id => deletedMotoIds.add(id));
-      await db.delete(motosTable).where(inArray(motosTable.id, idsToDelete));
-    }
+  const roundsSet = roundsFilter && (roundsFilter as number[]).length > 0 ? new Set<number>(roundsFilter as number[]) : null;
+  const idsToDelete = existingMotos
+    .filter(m => {
+      if (m.raceClass == null) return false;
+      if (m.status === "completed") return false;
+      if (lockedClasses.has(m.raceClass)) {
+        // Locked class: only prune rounds beyond what was requested.
+        return getRoundFromMoto(m) > divCount;
+      }
+      // Unlocked class: only touch classes being regenerated.
+      if (!classesToGenerate.includes(m.raceClass)) return false;
+      if (roundsSet !== null && !roundsSet.has(getRoundFromMoto(m))) return false;
+      return true;
+    })
+    .map(m => m.id);
+  if (idsToDelete.length > 0) {
+    idsToDelete.forEach(id => deletedMotoIds.add(id));
+    await db.delete(motosTable).where(inArray(motosTable.id, idsToDelete));
   }
 
   // Determine if this is a Supercross-style event (main event only, heats feed into main)
@@ -474,8 +485,6 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     .filter(m => !deletedMotoIds.has(m.id))
     .reduce((max, m) => Math.max(max, m.motoNumber ?? 0), 0);
   let motoNumber = maxExistingMotoNumber + 1;
-
-  const divCount = raceFormat === "three_moto" ? 3 : raceFormat === "two_moto" ? 2 : 1;
 
   type CheckinRow = typeof checkins[0];
 
