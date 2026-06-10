@@ -162,7 +162,7 @@ export default function TeamPage() {
             }
           },
           onError: (err: any) => {
-            toast({ title: "Error", description: err?.response?.data?.error ?? "Failed to create team member", variant: "destructive" });
+            toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to create team member", variant: "destructive" });
           },
         }
       );
@@ -176,7 +176,7 @@ export default function TeamPage() {
             toast({ title: data.resendInvite ? "Invite re-sent" : "Profile updated" });
           },
           onError: (err: any) => {
-            toast({ title: "Error", description: err?.response?.data?.error ?? "Failed to update team member", variant: "destructive" });
+            toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to update team member", variant: "destructive" });
           },
         }
       );
@@ -193,7 +193,7 @@ export default function TeamPage() {
           toast({ title: "Team member removed" });
         },
         onError: (err: any) => {
-          toast({ title: "Error", description: err?.response?.data?.error ?? "Failed to remove team member", variant: "destructive" });
+          toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to remove team member", variant: "destructive" });
         },
       }
     );
