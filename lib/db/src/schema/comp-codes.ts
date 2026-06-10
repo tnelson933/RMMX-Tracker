@@ -3,13 +3,6 @@ import { eventsTable } from "./events";
 import { clubsTable } from "./clubs";
 import { ridersTable } from "./riders";
 
-export const discountCategoriesTable = pgTable("discount_categories", {
-  id: serial("id").primaryKey(),
-  clubId: integer("club_id").notNull().references(() => clubsTable.id),
-  name: text("name").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
 export const compCodesTable = pgTable("comp_codes", {
   id: serial("id").primaryKey(),
   eventId: integer("event_id").references(() => eventsTable.id),
@@ -27,4 +20,3 @@ export const compCodesTable = pgTable("comp_codes", {
 });
 
 export type CompCode = typeof compCodesTable.$inferSelect;
-export type DiscountCategory = typeof discountCategoriesTable.$inferSelect;

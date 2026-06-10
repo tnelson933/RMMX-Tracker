@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable } from "@workspace/db";
+import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { sendStatsEmail } from "../lib/email";
 
@@ -87,6 +87,7 @@ router.get("/events", async (req, res) => {
     transponderRentalFee: eventsTable.transponderRentalFee,
     purchaseOptions: eventsTable.purchaseOptions,
     scoringTableId: eventsTable.scoringTableId,
+    entryFeeCategoryId: eventsTable.entryFeeCategoryId,
     minLapMs: eventsTable.minLapMs,
     amaEventId: eventsTable.amaEventId,
     createdAt: eventsTable.createdAt,
@@ -127,6 +128,11 @@ router.post("/events", async (req, res) => {
     return "draft";
   })();
 
+  // Auto-assign the club's "Entry Fees" category to the entry fee
+  const [entryFeeCat] = await db.select({ id: discountCategoriesTable.id })
+    .from(discountCategoriesTable)
+    .where(and(eq(discountCategoriesTable.clubId, clubId), eq(discountCategoriesTable.name, "Entry Fees")));
+
   const { amaEventId, defaultGateConfigId } = req.body;
   const [event] = await db.insert(eventsTable).values({
     clubId, name, date, state, location, trackName,
@@ -143,6 +149,7 @@ router.post("/events", async (req, res) => {
     transponderRentalFee: transponderRentalFee ? String(transponderRentalFee) : null,
     purchaseOptions: purchaseOptions || [],
     scoringTableId: scoringTableId ?? null,
+    entryFeeCategoryId: entryFeeCat?.id ?? null,
     amaEventId: amaEventId ?? null,
     defaultGateConfigId: defaultGateConfigId ?? null,
   }).returning();
@@ -183,6 +190,7 @@ router.get("/events/:eventId", async (req, res) => {
     transponderRentalFee: eventsTable.transponderRentalFee,
     purchaseOptions: eventsTable.purchaseOptions,
     scoringTableId: eventsTable.scoringTableId,
+    entryFeeCategoryId: eventsTable.entryFeeCategoryId,
     minLapMs: eventsTable.minLapMs,
     amaEventId: eventsTable.amaEventId,
     defaultGateConfigId: eventsTable.defaultGateConfigId,
@@ -211,7 +219,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const previousStatus = before?.status;
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "minLapMs", "amaEventId", "defaultGateConfigId"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }

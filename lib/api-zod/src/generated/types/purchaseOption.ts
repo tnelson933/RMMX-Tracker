@@ -10,4 +10,9 @@ export interface PurchaseOption {
   id: string;
   name: string;
   amount: number;
+  /**
+     * ID of the discount category this purchase option belongs to
+     * @nullable
+     */
+  categoryId?: number | null;
 }

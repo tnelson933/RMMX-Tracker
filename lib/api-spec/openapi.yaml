@@ -1980,6 +1980,9 @@ components:
           type: string
         amount:
           type: number
+        categoryId:
+          type: ["integer", "null"]
+          description: ID of the discount category this purchase option belongs to
 
     Club:
       type: object
@@ -2102,6 +2105,9 @@ components:
           type: boolean
         scoringTableId:
           type: ["integer", "null"]
+        entryFeeCategoryId:
+          type: ["integer", "null"]
+          description: Discount category ID assigned to the base entry fee
         purchaseOptions:
           type: array
           items:
@@ -2167,6 +2173,9 @@ components:
           type: boolean
         scoringTableId:
           type: ["integer", "null"]
+        entryFeeCategoryId:
+          type: ["integer", "null"]
+          description: Discount category ID assigned to the base entry fee
         purchaseOptions:
           type: array
           items:
@@ -2229,6 +2238,9 @@ components:
           type: boolean
         scoringTableId:
           type: ["integer", "null"]
+        entryFeeCategoryId:
+          type: ["integer", "null"]
+          description: Discount category ID assigned to the base entry fee
         purchaseOptions:
           type: array
           items:

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, useListPointsTables, getListEventsQueryKey } from "@workspace/api-client-react";
+import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, useListPointsTables, getListEventsQueryKey, useListDiscountCategories } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -101,6 +101,7 @@ const createEventSchema = z.object({
   purchaseOptions: z.array(z.object({
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
+    categoryId: z.number().nullable().optional(),
   })).default([]),
   amaEventId: z.string().optional(),
   defaultGateConfigId: z.string().optional(),
@@ -147,6 +148,7 @@ export default function EventsList() {
 
   const createMutation = useCreateEvent();
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
+  const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
 
   const { data: gateConfigsData } = useQuery({
     queryKey: ["gateConfigs"],
@@ -220,7 +222,7 @@ export default function EventsList() {
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
           transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
           transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
-          purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
+          purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
           amaEventId: data.amaEventId || undefined,
           defaultGateConfigId: data.defaultGateConfigId || undefined,
         },
@@ -662,6 +664,31 @@ export default function EventsList() {
                                       <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" {...field} />
                                     </div>
                                   </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name={`purchaseOptions.${idx}.categoryId`}
+                              render={({ field }) => (
+                                <FormItem className="w-36">
+                                  <Select
+                                    value={field.value != null ? String(field.value) : "none"}
+                                    onValueChange={(v) => field.onChange(v === "none" ? null : Number(v))}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Category" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      <SelectItem value="none">No category</SelectItem>
+                                      {discountCategories.map((cat) => (
+                                        <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                   <FormMessage />
                                 </FormItem>
                               )}

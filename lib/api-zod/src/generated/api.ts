@@ -330,10 +330,12 @@ export const ListEventsResponseItem = zod.object({
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
   "scoringTableId": zod.number().nullish(),
+  "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "amount": zod.number()
+  "amount": zod.number(),
+  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
@@ -369,10 +371,12 @@ export const CreateEventBody = zod.object({
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
   "scoringTableId": zod.number().nullish(),
+  "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "amount": zod.number()
+  "amount": zod.number(),
+  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().optional().describe('ID of the gate configuration to pre-select when generating lineups')
@@ -414,10 +418,12 @@ export const GetEventResponse = zod.object({
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
   "scoringTableId": zod.number().nullish(),
+  "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "amount": zod.number()
+  "amount": zod.number(),
+  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
@@ -456,10 +462,12 @@ export const UpdateEventBody = zod.object({
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
   "scoringTableId": zod.number().nullish(),
+  "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "amount": zod.number()
+  "amount": zod.number(),
+  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups')
@@ -493,10 +501,12 @@ export const UpdateEventResponse = zod.object({
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
   "scoringTableId": zod.number().nullish(),
+  "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "amount": zod.number()
+  "amount": zod.number(),
+  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
@@ -721,7 +731,8 @@ export const ListRegistrationsResponseItem = zod.object({
   "selectedPurchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "amount": zod.number()
+  "amount": zod.number(),
+  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "createdAt": zod.string().optional()
 })
@@ -743,7 +754,8 @@ export const CreateRegistrationBody = zod.object({
   "selectedPurchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "amount": zod.number()
+  "amount": zod.number(),
+  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional()
 })
 
@@ -778,7 +790,8 @@ export const UpdateRegistrationResponse = zod.object({
   "selectedPurchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "amount": zod.number()
+  "amount": zod.number(),
+  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "createdAt": zod.string().optional()
 })
@@ -1457,10 +1470,12 @@ export const GetClubDashboardResponse = zod.object({
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
   "scoringTableId": zod.number().nullish(),
+  "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "amount": zod.number()
+  "amount": zod.number(),
+  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),

@@ -1,5 +1,6 @@
 export * from "./clubs";
 export * from "./users";
+export * from "./discount-categories";
 export * from "./events";
 export * from "./riders";
 export * from "./registrations";

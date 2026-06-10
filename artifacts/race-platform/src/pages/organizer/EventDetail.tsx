@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRoute } from "wouter";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
-import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey } from "@workspace/api-client-react";
+import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, useListDiscountCategories } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,6 +105,7 @@ const updateEventSchema = z.object({
   purchaseOptions: z.array(z.object({
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
+    categoryId: z.number().nullable().optional(),
   })).default([]),
   amaEventId: z.string().optional(),
   defaultGateConfigId: z.string().optional(),
@@ -126,6 +127,7 @@ export default function EventDetail() {
   const updateMutation = useUpdateEvent();
   const updateSeriesMutation = useUpdateSeries();
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
+  const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
 
   const [editSeriesId, setEditSeriesId] = useState<string>("none");
 
@@ -344,7 +346,7 @@ export default function EventDetail() {
       noDuplicateBibs: (evt as any).noDuplicateBibs ?? false,
       requireClubId: (evt as any).requireClubId ?? false,
       scoringTableId: (evt as any).scoringTableId ?? undefined,
-      purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number }) => ({ name: o.name, amount: String(o.amount) })),
+      purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number; categoryId?: number | null }) => ({ name: o.name, amount: String(o.amount), categoryId: o.categoryId ?? null })),
       amaEventId: (evt as any).amaEventId ?? "",
       defaultGateConfigId: (evt as any).defaultGateConfigId ?? "",
     });
@@ -383,7 +385,7 @@ export default function EventDetail() {
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
         transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
         transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
-        purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
+        purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
         amaEventId: data.amaEventId || undefined,
         defaultGateConfigId: data.defaultGateConfigId || null,
       } as any
@@ -992,6 +994,31 @@ export default function EventDetail() {
                                         <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" {...field} />
                                       </div>
                                     </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={form.control}
+                                name={`purchaseOptions.${idx}.categoryId`}
+                                render={({ field }) => (
+                                  <FormItem className="w-36">
+                                    <Select
+                                      value={field.value != null ? String(field.value) : "none"}
+                                      onValueChange={(v) => field.onChange(v === "none" ? null : Number(v))}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Category" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value="none">No category</SelectItem>
+                                        {discountCategories.map((cat) => (
+                                          <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                     <FormMessage />
                                   </FormItem>
                                 )}

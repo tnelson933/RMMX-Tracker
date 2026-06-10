@@ -8,6 +8,7 @@
     "import-data": "tsx ./src/import-event-data.ts",
     "sync-to-cloud": "tsx ./src/sync-to-cloud.ts",
     "seed:rmmx": "tsx ./src/seed-rmmx-riders.ts",
+    "migrate:entry-fee-category": "tsx ./src/migrate-entry-fee-category.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

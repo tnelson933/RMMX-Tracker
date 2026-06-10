@@ -32,6 +32,11 @@ export interface EventInput {
   requireClubId?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
+  /**
+     * Discount category ID assigned to the base entry fee
+     * @nullable
+     */
+  entryFeeCategoryId?: number | null;
   purchaseOptions?: PurchaseOption[];
   /**
      * Minimum lap time in milliseconds (event-wide)

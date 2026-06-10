@@ -2,8 +2,9 @@ import { pgTable, serial, text, integer, boolean, numeric, timestamp, jsonb } fr
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clubsTable } from "./clubs";
+import { discountCategoriesTable } from "./discount-categories";
 
-export type PurchaseOption = { id: string; name: string; amount: number };
+export type PurchaseOption = { id: string; name: string; amount: number; categoryId?: number | null };
 
 export const eventsTable = pgTable("events", {
   id: serial("id").primaryKey(),
@@ -30,6 +31,7 @@ export const eventsTable = pgTable("events", {
   noDuplicateBibs: boolean("no_duplicate_bibs").notNull().default(false),
   requireClubId: boolean("require_club_id").notNull().default(false),
   scoringTableId: integer("scoring_table_id"),
+  entryFeeCategoryId: integer("entry_fee_category_id").references(() => discountCategoriesTable.id),
   minLapMs: integer("min_lap_ms"),
   amaEventId: text("ama_event_id"),
   defaultGateConfigId: text("default_gate_config_id"),

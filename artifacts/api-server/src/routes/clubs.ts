@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable } from "@workspace/db";
+import { clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, discountCategoriesTable } from "@workspace/db";
 import type { GateConfig } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -25,6 +25,10 @@ router.post("/clubs", async (req, res) => {
   if (!name || !state) return res.status(400).json({ error: "name and state required" });
 
   const [club] = await db.insert(clubsTable).values({ name, state, contactEmail, contactPhone, logoUrl, website, description }).returning();
+
+  // Seed the built-in "Entry Fees" category for every new club
+  await db.insert(discountCategoriesTable).values({ clubId: club.id, name: "Entry Fees" }).onConflictDoNothing();
+
   return res.status(201).json({ ...club, createdAt: club.createdAt.toISOString() });
 });
 

@@ -54,6 +54,11 @@ export interface PurchaseOption {
   id: string;
   name: string;
   amount: number;
+  /**
+     * ID of the discount category this purchase option belongs to
+     * @nullable
+     */
+  categoryId?: number | null;
 }
 
 export interface Club {
@@ -152,6 +157,11 @@ export interface Event {
   requireClubId?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
+  /**
+     * Discount category ID assigned to the base entry fee
+     * @nullable
+     */
+  entryFeeCategoryId?: number | null;
   purchaseOptions?: PurchaseOption[];
   /**
      * Minimum lap time in milliseconds (event-wide)
@@ -199,6 +209,11 @@ export interface EventInput {
   requireClubId?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
+  /**
+     * Discount category ID assigned to the base entry fee
+     * @nullable
+     */
+  entryFeeCategoryId?: number | null;
   purchaseOptions?: PurchaseOption[];
   /**
      * Minimum lap time in milliseconds (event-wide)
@@ -242,6 +257,11 @@ export interface EventUpdate {
   requireClubId?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
+  /**
+     * Discount category ID assigned to the base entry fee
+     * @nullable
+     */
+  entryFeeCategoryId?: number | null;
   purchaseOptions?: PurchaseOption[];
   /**
      * Minimum lap time in milliseconds (event-wide)
