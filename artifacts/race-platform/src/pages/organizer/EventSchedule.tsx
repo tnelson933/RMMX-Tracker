@@ -10,7 +10,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   DndContext, DragOverlay, closestCenter,
   PointerSensor, useSensor, useSensors,
-  useDraggable,
+  useDraggable, useDroppable,
   type DragEndEvent, type DragStartEvent, type DragOverEvent,
 } from "@dnd-kit/core";
 import {
@@ -153,9 +153,11 @@ interface RiderPoolProps {
   }>;
   poolOpen: boolean;
   setPoolOpen: (v: boolean) => void;
+  isRiderDragging?: boolean;
 }
 
-function RiderPool({ checkins, poolOpen, setPoolOpen }: RiderPoolProps) {
+function RiderPool({ checkins, poolOpen, setPoolOpen, isRiderDragging }: RiderPoolProps) {
+  const { setNodeRef: setPoolDropRef, isOver: isOverPool } = useDroppable({ id: "pool-drop-zone" });
   const [search, setSearch] = useState("");
 
   const byClass: Record<string, Array<{ riderId: number; riderName: string; bibNumber: string | null; raceClass: string }>> = {};
@@ -179,10 +181,19 @@ function RiderPool({ checkins, poolOpen, setPoolOpen }: RiderPoolProps) {
   const classes = Object.entries(byClass).sort(([a], [b]) => a.localeCompare(b));
   const totalCheckedIn = checkins.filter(c => c.checkedIn).length;
 
+  const showDropHint = isRiderDragging;
+  const activeDropStyle = showDropHint && isOverPool;
+
   return (
     <div
-      className={`shrink-0 border-r border-border bg-card/50 flex flex-col gap-3 p-3 transition-all duration-200 ${
+      ref={setPoolDropRef}
+      className={`shrink-0 border-r flex flex-col gap-3 p-3 transition-all duration-200 ${
         poolOpen ? "w-64" : "w-12"
+      } ${activeDropStyle
+        ? "bg-destructive/10 border-destructive/50"
+        : showDropHint
+        ? "bg-amber-500/5 border-amber-500/40"
+        : "border-border bg-card/50"
       }`}
     >
       {/* Header */}
@@ -203,9 +214,20 @@ function RiderPool({ checkins, poolOpen, setPoolOpen }: RiderPoolProps) {
 
       {poolOpen ? (
         <>
-          <p className="text-xs text-muted-foreground -mt-1">
-            Drag riders onto motos to add them to the lineup
-          </p>
+          {/* Drop-to-remove hint banner */}
+          {showDropHint ? (
+            <div className={`-mt-1 rounded-md border px-2.5 py-2 text-xs text-center font-medium transition-all ${
+              activeDropStyle
+                ? "bg-destructive/20 border-destructive/50 text-destructive"
+                : "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400"
+            }`}>
+              {activeDropStyle ? "↩ Release to remove from moto" : "Drop here to remove from moto"}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground -mt-1">
+              Drag riders onto motos to add them to the lineup
+            </p>
+          )}
 
           {/* Search */}
           <div className="relative">
@@ -258,10 +280,14 @@ function RiderPool({ checkins, poolOpen, setPoolOpen }: RiderPoolProps) {
           </div>
         </>
       ) : (
-        /* Collapsed: icon + count */
+        /* Collapsed: icon + count, plus visual when dragging */
         <div className="flex flex-col items-center gap-2 mt-1">
-          <Users size={14} className="text-muted-foreground" />
-          {totalCheckedIn > 0 && (
+          {activeDropStyle ? (
+            <X size={14} className="text-destructive" />
+          ) : (
+            <Users size={14} className={showDropHint ? "text-amber-500" : "text-muted-foreground"} />
+          )}
+          {totalCheckedIn > 0 && !showDropHint && (
             <Badge variant="secondary" className="text-[10px] h-5 px-1 font-mono tabular-nums">
               {totalCheckedIn}
             </Badge>
@@ -1205,12 +1231,18 @@ export default function EventSchedule() {
 
     const idStr = String(active.id);
 
-    // ── Lineup rider: within-moto reorder or cross-moto move ──
+    // ── Lineup rider: within-moto reorder, cross-moto move, or return to pool ──
     if (idStr.startsWith("lrider-")) {
       const parts = idStr.split("-");
       const sourceMotoId = parseInt(parts[1]);
       const riderId = parseInt(parts[2]);
       const overStr = String(over.id);
+
+      // Dropped on pool → remove from moto
+      if (overStr === "pool-drop-zone") {
+        handleRemoveRider(sourceMotoId, riderId);
+        return;
+      }
 
       if (overStr.startsWith("lrider-")) {
         const targetMotoId = parseInt(overStr.split("-")[1]);
@@ -1309,7 +1341,7 @@ export default function EventSchedule() {
         },
       }
     );
-  }, [rawMotos, filteredMotos, sortedMotos, checkins, eventId, updateMutation, reorderMutation, queryClient, toast, moveRiderBetweenMotos]);
+  }, [rawMotos, filteredMotos, sortedMotos, checkins, eventId, updateMutation, reorderMutation, queryClient, toast, moveRiderBetweenMotos, handleRemoveRider]);
 
   // ── Inline name editing ──
   function startEditName(moto: Moto) {
@@ -1522,6 +1554,7 @@ export default function EventSchedule() {
           checkins={checkins as any}
           poolOpen={poolOpen}
           setPoolOpen={setPoolOpen}
+          isRiderDragging={activeDrag?.source === "lineup"}
         />
 
         {/* ── Main content ── */}
