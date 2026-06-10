@@ -1101,8 +1101,9 @@ export default function EventSchedule() {
     name: "",
     raceClass: "",
     type: "heat" as typeof MOTO_TYPES[number],
-    lapCount: "5",
+    lapCount: "",
   });
+  const [addSelectedRiders, setAddSelectedRiders] = useState<number[]>([]);
 
   // Add practice dialog
   const [showPracticeDialog, setShowPracticeDialog] = useState(false);
@@ -1704,6 +1705,15 @@ export default function EventSchedule() {
       ? Math.max(...rawMotos.map(m => m.motoNumber ?? 0))
       : 0) + 1;
 
+    const selectedCheckins = (checkins as any[]).filter((c: any) => addSelectedRiders.includes(c.riderId));
+    const lineup = selectedCheckins.map((c: any, i: number) => ({
+      position: i + 1,
+      riderId: c.riderId,
+      riderName: c.riderName ?? "",
+      bibNumber: c.bibNumber ?? null,
+      rfidNumber: c.rfidNumber ?? null,
+    }));
+
     createMutation.mutate(
       {
         eventId,
@@ -1713,13 +1723,15 @@ export default function EventSchedule() {
           raceClass: addForm.raceClass,
           motoNumber,
           lapCount: addForm.lapCount ? parseInt(addForm.lapCount) : undefined,
+          lineup: lineup.length > 0 ? (lineup as any) : undefined,
         },
       },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           setShowAddDialog(false);
-          setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "5" });
+          setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "" });
+          setAddSelectedRiders([]);
           toast({ title: "Moto added" });
         },
         onError: () => {
@@ -2784,67 +2796,201 @@ export default function EventSchedule() {
       </Dialog>
 
       {/* ── Add Moto dialog ── */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+      <Dialog open={showAddDialog} onOpenChange={open => {
+        setShowAddDialog(open);
+        if (!open) { setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "" }); setAddSelectedRiders([]); }
+      }}>
+        <DialogContent className="sm:max-w-lg flex flex-col max-h-[90vh]">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Add Moto</DialogTitle>
             <DialogDescription>Create a new moto and append it to the end of the run order.</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Class Name</Label>
-              <Input
-                placeholder="e.g. 250 Amateur"
-                value={addForm.raceClass}
-                onChange={e => setAddForm(f => ({ ...f, raceClass: e.target.value }))}
-              />
+          <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1">
+            {/* ── Class ── */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Class</Label>
+                {(() => {
+                  const eventClasses: string[] = Array.isArray((event as any)?.raceClasses) ? (event as any).raceClasses : [];
+                  const checkinClasses = Array.from(new Set((checkins as any[]).map((c: any) => c.raceClass).filter(Boolean)));
+                  const allClasses = Array.from(new Set([...eventClasses, ...checkinClasses])).sort();
+                  return allClasses.length > 0 ? (
+                    <Select
+                      value={addForm.raceClass}
+                      onValueChange={v => {
+                        setAddForm(f => ({ ...f, raceClass: v }));
+                        // Pre-select checked-in riders for this class
+                        const checkedIn = (checkins as any[]).filter((c: any) => c.raceClass === v && c.checkedIn).map((c: any) => c.riderId);
+                        setAddSelectedRiders(checkedIn);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pick a class…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allClasses.map(cls => (
+                          <SelectItem key={cls} value={cls}>{cls}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      placeholder="e.g. 250 Amateur"
+                      value={addForm.raceClass}
+                      onChange={e => setAddForm(f => ({ ...f, raceClass: e.target.value }))}
+                    />
+                  );
+                })()}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select
+                  value={addForm.type}
+                  onValueChange={v => setAddForm(f => ({ ...f, type: v as typeof MOTO_TYPES[number] }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MOTO_TYPES.map(t => (
+                      <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Type</Label>
-              <Select
-                value={addForm.type}
-                onValueChange={v => setAddForm(f => ({ ...f, type: v as typeof MOTO_TYPES[number] }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MOTO_TYPES.map(t => (
-                    <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Custom Name <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                <Input
+                  placeholder="Auto-generated if empty"
+                  value={addForm.name}
+                  onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Lap Count <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="e.g. 5"
+                  value={addForm.lapCount}
+                  onChange={e => setAddForm(f => ({ ...f, lapCount: e.target.value }))}
+                />
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Custom Name <span className="text-muted-foreground">(optional)</span></Label>
-              <Input
-                placeholder="Auto-generated from class + type if empty"
-                value={addForm.name}
-                onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Lap Count</Label>
-              <Input
-                type="number"
-                min={1}
-                value={addForm.lapCount}
-                onChange={e => setAddForm(f => ({ ...f, lapCount: e.target.value }))}
-              />
-            </div>
+            {/* ── Rider picker ── */}
+            {addForm.raceClass && (() => {
+              const classRiders = (checkins as any[])
+                .filter((c: any) => c.raceClass === addForm.raceClass)
+                .sort((a: any, b: any) => {
+                  // Checked-in first, then by name
+                  if (a.checkedIn !== b.checkedIn) return a.checkedIn ? -1 : 1;
+                  return (a.riderName ?? "").localeCompare(b.riderName ?? "");
+                });
+              if (classRiders.length === 0) return (
+                <div className="border border-dashed border-border rounded-lg px-4 py-6 text-center text-sm text-muted-foreground">
+                  No registered riders found for {addForm.raceClass}
+                </div>
+              );
+              const checkedInCount = classRiders.filter((c: any) => c.checkedIn).length;
+              const toggleAll = () => {
+                const allIds = classRiders.map((c: any) => c.riderId);
+                const allSelected = allIds.every((id: number) => addSelectedRiders.includes(id));
+                setAddSelectedRiders(allSelected ? [] : allIds);
+              };
+              const toggleCheckedIn = () => {
+                const checkedInIds = classRiders.filter((c: any) => c.checkedIn).map((c: any) => c.riderId);
+                const allCheckedInSelected = checkedInIds.every((id: number) => addSelectedRiders.includes(id));
+                setAddSelectedRiders(prev =>
+                  allCheckedInSelected
+                    ? prev.filter(id => !checkedInIds.includes(id))
+                    : Array.from(new Set([...prev, ...checkedInIds]))
+                );
+              };
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-1.5">
+                      <Users size={12} />
+                      Riders in {addForm.raceClass}
+                      <span className="text-muted-foreground font-normal">
+                        ({classRiders.length} registered, {checkedInCount} checked in)
+                      </span>
+                    </Label>
+                    <div className="flex gap-2 text-[11px]">
+                      <button
+                        type="button"
+                        className="text-primary hover:underline"
+                        onClick={toggleCheckedIn}
+                      >
+                        {classRiders.filter((c: any) => c.checkedIn).every((c: any) => addSelectedRiders.includes(c.riderId))
+                          ? "Deselect checked-in"
+                          : "Select checked-in"}
+                      </button>
+                      <span className="text-muted-foreground">·</span>
+                      <button
+                        type="button"
+                        className="text-primary hover:underline"
+                        onClick={toggleAll}
+                      >
+                        {classRiders.every((c: any) => addSelectedRiders.includes(c.riderId)) ? "Deselect all" : "Select all"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="border border-border rounded-lg divide-y divide-border max-h-52 overflow-y-auto">
+                    {classRiders.map((c: any) => {
+                      const isSelected = addSelectedRiders.includes(c.riderId);
+                      return (
+                        <button
+                          key={c.riderId}
+                          type="button"
+                          onClick={() => setAddSelectedRiders(prev =>
+                            isSelected ? prev.filter(id => id !== c.riderId) : [...prev, c.riderId]
+                          )}
+                          className={`w-full flex items-center gap-3 px-3 py-2 text-sm text-left transition-colors ${
+                            isSelected ? "bg-primary/8 hover:bg-primary/12" : "hover:bg-muted/50"
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                            isSelected ? "bg-primary border-primary" : "border-border"
+                          }`}>
+                            {isSelected && <Check size={10} className="text-primary-foreground" />}
+                          </div>
+                          {c.bibNumber && (
+                            <span className="font-mono text-xs text-muted-foreground w-10 shrink-0">#{c.bibNumber}</span>
+                          )}
+                          <span className="flex-1 font-medium">{c.riderName ?? "Unknown"}</span>
+                          {c.checkedIn ? (
+                            <span className="text-[10px] text-green-600 dark:text-green-400 font-medium shrink-0">✓ Checked in</span>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground shrink-0">Not checked in</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {addSelectedRiders.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {addSelectedRiders.length} rider{addSelectedRiders.length !== 1 ? "s" : ""} will be added to this moto's lineup
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 pt-2 border-t border-border">
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancel</Button>
             <Button
               onClick={handleAddMoto}
               disabled={!addForm.raceClass || createMutation.isPending}
             >
-              {createMutation.isPending ? "Adding…" : "Add Moto"}
+              {createMutation.isPending ? "Adding…" : `Add Moto${addSelectedRiders.length > 0 ? ` (${addSelectedRiders.length} riders)` : ""}`}
             </Button>
           </DialogFooter>
         </DialogContent>
