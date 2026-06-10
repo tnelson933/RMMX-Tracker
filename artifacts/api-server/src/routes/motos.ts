@@ -236,11 +236,34 @@ function gateConfigToSeedingOrder(config: { gateCount: number; gatePriorities: n
 
 router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateSeedingMethod: rawMethod, gateConfigId } = req.body;
+  const {
+    raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateSeedingMethod: rawMethod, gateConfigId,
+    gatePickMethod,        // new: "none" | "random" | "practice" | "prior_round_finish"
+    rounds: roundsFilter,  // new: number[] — if provided, only generate these round numbers
+  } = req.body;
 
-  // Determine seeding method — backward compat: usePracticeSeeding:true → practice_fastest_lap
-  const seedingMethod: "random" | "practice_fastest_lap" | "previous_round" =
-    rawMethod ?? (usePracticeSeeding ? "practice_fastest_lap" : "random");
+  // Map gatePickMethod to internal seeding method + gate assignment flag.
+  // gatePickMethod supersedes gateSeedingMethod when both are present.
+  let assignGates = true;
+  let seedingMethod: "random" | "practice_fastest_lap" | "previous_round";
+  if (gatePickMethod) {
+    assignGates = gatePickMethod !== "none";
+    seedingMethod = gatePickMethod === "practice" ? "practice_fastest_lap"
+      : gatePickMethod === "prior_round_finish" ? "previous_round"
+      : "random"; // covers both "random" and "none"
+  } else {
+    // Backward compat: legacy gateSeedingMethod / usePracticeSeeding fields
+    seedingMethod = rawMethod ?? (usePracticeSeeding ? "practice_fastest_lap" : "random");
+  }
+
+  // Helper: infer round number from moto name/type.
+  // Used for both round-filtered deletion and previous_round seeding.
+  function getRoundFromMoto(m: { name: string | null; type: string | null }): number {
+    const nameMatch = (m.name ?? "").match(/\bMoto\s+(\d+)\b/i);
+    if (nameMatch) return parseInt(nameMatch[1]);
+    if (m.type === "main") return 2;
+    return 1; // heat / lcq / unknown → qualifying round
+  }
 
   // --- Guard: skip classes that already have completed motos to preserve results ---
   // Exception: previous_round intentionally uses completed motos for seeding, so those classes
@@ -266,10 +289,17 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   // Only generate for classes that have no completed motos (or all classes for previous_round)
   const classesToGenerate: string[] = ((classes as string[]) || []).filter(c => !lockedClasses.has(c));
 
-  // Delete existing non-completed motos for the classes we will regenerate (avoid duplicates)
+  // Delete existing non-completed motos for the classes we will regenerate (avoid duplicates).
+  // If a rounds filter is provided, only delete motos belonging to those rounds.
   if (classesToGenerate.length > 0) {
+    const roundsSet = roundsFilter && (roundsFilter as number[]).length > 0 ? new Set<number>(roundsFilter as number[]) : null;
     const idsToDelete = existingMotos
-      .filter(m => m.raceClass != null && classesToGenerate.includes(m.raceClass) && m.status !== "completed")
+      .filter(m => {
+        if (m.raceClass == null || !classesToGenerate.includes(m.raceClass)) return false;
+        if (m.status === "completed") return false;
+        if (roundsSet !== null && !roundsSet.has(getRoundFromMoto(m))) return false;
+        return true;
+      })
       .map(m => m.id);
     if (idsToDelete.length > 0) {
       await db.delete(motosTable).where(inArray(motosTable.id, idsToDelete));
@@ -346,20 +376,11 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       completedByClass.get(cls)!.push(m);
     }
 
-    // Assign round numbers using a tiered strategy:
-    //  1. "Moto N" in name (e.g. "450 Pro Moto 1") → use N; handles standard multi-round formats and
-    //     multi-div classes ("Div 1 Moto 1" and "Div 2 Moto 1" both yield round 1).
-    //  2. moto type signal (no "Moto N" in name, i.e. Supercross-style naming):
-    //       heat / lcq  → round 1  (qualifying; all heats are the same round)
-    //       main        → round 2  (final; always higher than heats/lcq)
-    //  Never use sequential index — it incorrectly splits "Heat 1" and "Heat 2" into different rounds.
-    function getRoundFromMoto(m: { name: string | null; type: string | null }): number {
-      const nameMatch = (m.name ?? "").match(/\bMoto\s+(\d+)\b/i);
-      if (nameMatch) return parseInt(nameMatch[1]);
-      if (m.type === "main") return 2;
-      return 1; // heat / lcq / unknown → qualifying round
-    }
-
+    // Assign round numbers using the shared getRoundFromMoto helper defined at handler scope.
+    // Strategy:
+    //  1. "Moto N" in name -> use N (covers standard multi-round and multi-div classes,
+    //     e.g. "Div 1 Moto 1" and "Div 2 Moto 1" both yield round 1).
+    //  2. No "Moto N" (Supercross-style): heat/lcq -> round 1, main -> round 2.
     const motoRoundNumber = new Map<number, number>(); // motoId → round number
     for (const [, motos] of completedByClass) {
       for (const m of motos) {
@@ -556,13 +577,16 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     allClassGroups.push({ cls, groups });
   }
 
+  // Effective gate seeding: use configured order unless gatePickMethod is "none"
+  const effectiveGateSeeding = assignGates ? gateSeeding : [];
+
   if (isSupercrossFormat) {
     // Supercross: all heats across all classes run before any main events
     for (const { cls, groups } of allClassGroups) {
       const multiGroup = groups.length > 1;
       for (let h = 0; h < groups.length; h++) {
         const heatName = multiGroup ? `${cls} Heat ${h + 1}` : `${cls} Heat`;
-        const lineup = buildLineup(groups[h], gateSeeding);
+        const lineup = buildLineup(groups[h], effectiveGateSeeding);
         const [moto] = await db.insert(motosTable).values({
           eventId, name: heatName, type: "heat", raceClass: cls,
           motoNumber: motoNumber++, status: "scheduled", lineup,
@@ -579,14 +603,17 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     }
   } else {
     // Round-robin: all classes complete Moto 1 before any class runs Moto 2, etc.
+    // If roundsFilter is provided, only generate the specified rounds.
+    const roundsSet = roundsFilter && (roundsFilter as number[]).length > 0 ? new Set<number>(roundsFilter as number[]) : null;
     for (let d = 1; d <= divCount; d++) {
+      if (roundsSet !== null && !roundsSet.has(d)) continue;
       for (const { cls, groups } of allClassGroups) {
         const multiGroup = groups.length > 1;
         for (let h = 0; h < groups.length; h++) {
           const groupLabel = multiGroup ? ` Div ${h + 1}` : "";
           const motoLabel = divCount > 1 ? ` Moto ${d}` : " Moto";
           const name = `${cls}${groupLabel}${motoLabel}`;
-          const lineup = buildLineup(groups[h], gateSeeding);
+          const lineup = buildLineup(groups[h], effectiveGateSeeding);
           const [moto] = await db.insert(motosTable).values({
             eventId, name, type: "heat", raceClass: cls,
             motoNumber: motoNumber++, status: "scheduled", lineup,
@@ -730,6 +757,192 @@ router.post("/events/:eventId/motos/reorder", async (req, res) => {
     startedAt: m.startedAt?.toISOString() ?? null,
     completedAt: m.completedAt?.toISOString() ?? null,
   })));
+});
+
+// Regenerate lineup for a single moto
+router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const motoId = Number(req.params.motoId);
+  const { gatePickMethod = "random", gateConfigId } = req.body;
+
+  const [moto] = await db.select().from(motosTable).where(
+    and(eq(motosTable.id, motoId), eq(motosTable.eventId, eventId))
+  );
+  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (moto.status === "completed") return res.status(409).json({ error: "Moto is completed — lineup is locked" });
+  if (!moto.raceClass) return res.status(400).json({ error: "Moto has no race class" });
+
+  const raceClass = moto.raceClass;
+  const assignGates = gatePickMethod !== "none";
+  const seedingMethod: "random" | "practice_fastest_lap" | "previous_round" =
+    gatePickMethod === "practice" ? "practice_fastest_lap"
+    : gatePickMethod === "prior_round_finish" ? "previous_round"
+    : "random";
+
+  // Load gate config
+  let gateSeeding: number[] = [];
+  if (assignGates) {
+    const [eventRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (eventRow?.clubId) {
+      const [club] = await db.select({ gateSeeding: clubsTable.gateSeeding })
+        .from(clubsTable).where(eq(clubsTable.id, eventRow.clubId));
+      const gateConfigs = (club?.gateSeeding as any[] | null) ?? [];
+      const selectedConfig = gateConfigId
+        ? gateConfigs.find((c: any) => c.id === gateConfigId)
+        : gateConfigs[0];
+      if (selectedConfig?.gatePriorities) {
+        gateSeeding = gateConfigToSeedingOrder(selectedConfig);
+      }
+    }
+  }
+
+  // Load checked-in riders for this class
+  const checkins = await db.select({
+    riderId: checkinsTable.riderId,
+    raceClass: checkinsTable.raceClass,
+    bibNumber: checkinsTable.bibNumber,
+    rfidNumber: checkinsTable.rfidNumber,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+  }).from(checkinsTable)
+    .leftJoin(ridersTable, eq(checkinsTable.riderId, ridersTable.id))
+    .where(and(
+      eq(checkinsTable.eventId, eventId),
+      eq(checkinsTable.checkedIn, true),
+      eq(checkinsTable.raceClass, raceClass),
+    ));
+
+  if (checkins.length === 0) {
+    return res.status(400).json({ error: `No checked-in riders found for ${raceClass}` });
+  }
+
+  // Load practice laps if needed
+  const bestLapByRider = new Map<number, number>();
+  if (seedingMethod === "practice_fastest_lap") {
+    const [eventRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (eventRow?.clubId) {
+      const sessions = await db.select({ id: practiceSessionsTable.id })
+        .from(practiceSessionsTable).where(eq(practiceSessionsTable.clubId, eventRow.clubId));
+      if (sessions.length > 0) {
+        const sessionIds = sessions.map(s => s.id);
+        const bestLaps = await db.select({
+          riderId: practiceCrossingsTable.riderId,
+          bestLap: min(practiceCrossingsTable.lapTimeMs),
+        }).from(practiceCrossingsTable)
+          .where(inArray(practiceCrossingsTable.sessionId, sessionIds))
+          .groupBy(practiceCrossingsTable.riderId);
+        for (const row of bestLaps) {
+          if (row.riderId != null && row.bestLap != null && row.bestLap > 0) {
+            bestLapByRider.set(row.riderId, Number(row.bestLap));
+          }
+        }
+      }
+    }
+  }
+
+  // Load previous round data if needed
+  const prevRoundSeedMap = new Map<number, { position: number; bestLapMs: number | null }>();
+  if (seedingMethod === "previous_round") {
+    function getPerMotoRound(m: { name: string | null; type: string | null }): number {
+      const nameMatch = (m.name ?? "").match(/\bMoto\s+(\d+)\b/i);
+      if (nameMatch) return parseInt(nameMatch[1]);
+      if (m.type === "main") return 2;
+      return 1;
+    }
+    const completedMotos = await db.select({
+      id: motosTable.id, name: motosTable.name, type: motosTable.type,
+    }).from(motosTable).where(and(
+      eq(motosTable.eventId, eventId),
+      eq(motosTable.raceClass, raceClass),
+      eq(motosTable.status, "completed"),
+    ));
+    const maxRound = completedMotos.reduce((mx, m) => Math.max(mx, getPerMotoRound(m)), 0);
+    const prevRoundMotoIds = completedMotos.filter(m => getPerMotoRound(m) === maxRound).map(m => m.id);
+    if (prevRoundMotoIds.length > 0) {
+      const results = await db.select({
+        riderId: raceResultsTable.riderId,
+        position: raceResultsTable.position,
+        dnf: raceResultsTable.dnf,
+        dns: raceResultsTable.dns,
+      }).from(raceResultsTable).where(inArray(raceResultsTable.motoId, prevRoundMotoIds));
+      const bestLapsRound = await db.select({
+        riderId: lapCrossingsTable.riderId,
+        bestLap: min(lapCrossingsTable.lapTimeMs),
+      }).from(lapCrossingsTable)
+        .where(and(inArray(lapCrossingsTable.motoId, prevRoundMotoIds), gt(lapCrossingsTable.lapTimeMs, 0)))
+        .groupBy(lapCrossingsTable.riderId);
+      const bestLapInRound = new Map<number, number>();
+      for (const row of bestLapsRound) {
+        if (row.riderId != null && row.bestLap != null && row.bestLap > 0) {
+          bestLapInRound.set(row.riderId, Number(row.bestLap));
+        }
+      }
+      const HIGH_POS = 9999;
+      for (const r of results) {
+        if (r.riderId == null) continue;
+        const pos = (r.dnf || r.dns) ? HIGH_POS : r.position;
+        const existing = prevRoundSeedMap.get(r.riderId);
+        if (!existing || pos < existing.position) {
+          prevRoundSeedMap.set(r.riderId, { position: pos, bestLapMs: bestLapInRound.get(r.riderId) ?? null });
+        }
+      }
+    }
+  }
+
+  // Sort riders according to seeding method
+  let sortedRiders = [...checkins];
+  if (seedingMethod === "practice_fastest_lap") {
+    sortedRiders.sort((a, b) => {
+      const la = a.riderId != null ? (bestLapByRider.get(a.riderId) ?? Infinity) : Infinity;
+      const lb = b.riderId != null ? (bestLapByRider.get(b.riderId) ?? Infinity) : Infinity;
+      return la - lb;
+    });
+  } else if (seedingMethod === "previous_round") {
+    sortedRiders.sort((a, b) => {
+      const da = a.riderId != null ? prevRoundSeedMap.get(a.riderId) : undefined;
+      const db_ = b.riderId != null ? prevRoundSeedMap.get(b.riderId) : undefined;
+      const posA = da?.position ?? Infinity;
+      const posB = db_?.position ?? Infinity;
+      if (posA !== posB) return posA - posB;
+      return (da?.bestLapMs ?? Infinity) - (db_?.bestLapMs ?? Infinity);
+    });
+  } else {
+    for (let i = sortedRiders.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sortedRiders[i], sortedRiders[j]] = [sortedRiders[j], sortedRiders[i]];
+    }
+  }
+
+  // Build lineup
+  const lineup = (assignGates && gateSeeding.length > 0)
+    ? sortedRiders.map((r, i) => ({
+        position: i + 1,
+        gate: gateSeeding[i] ?? null,
+        riderId: r.riderId,
+        riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
+        bibNumber: r.bibNumber,
+        rfidNumber: r.rfidNumber,
+      }))
+    : sortedRiders.map((r, i) => ({
+        position: i + 1,
+        riderId: r.riderId,
+        riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
+        bibNumber: r.bibNumber,
+        rfidNumber: r.rfidNumber,
+      }));
+
+  const [updated] = await db.update(motosTable)
+    .set({ lineup })
+    .where(eq(motosTable.id, motoId))
+    .returning();
+
+  return res.json({
+    ...updated,
+    lineup: Array.isArray(updated.lineup) ? updated.lineup : [],
+    createdAt: updated.createdAt.toISOString(),
+    startedAt: updated.startedAt?.toISOString() ?? null,
+    completedAt: updated.completedAt?.toISOString() ?? null,
+  });
 });
 
 // Advance top heat finishers into the Main Event lineup (manual trigger)

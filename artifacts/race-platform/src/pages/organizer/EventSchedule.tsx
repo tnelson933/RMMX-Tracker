@@ -34,6 +34,7 @@ import {
   GripVertical, Plus, Clock, LayoutList, LayoutGrid, Flag, ExternalLink,
   Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -683,9 +684,10 @@ export default function EventSchedule() {
     queryKey: ["gateConfigs"],
     queryFn: async () => {
       const res = await fetch("/api/clubs/gate-settings", { credentials: "include" });
-      if (!res.ok) return { gateConfigs: [] };
+      if (!res.ok) return { gateConfigs: [], hasPracticeData: false };
       return res.json() as Promise<{
         gateConfigs: Array<{ id: string; name: string; gateCount: number; gatePriorities: number[] }>;
+        hasPracticeData: boolean;
       }>;
     },
   });
@@ -717,7 +719,8 @@ export default function EventSchedule() {
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
   const [generateFormat, setGenerateFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState("");
-  const [usePracticeSeeding, setUsePracticeSeeding] = useState(false);
+  const [generateGateMethod, setGenerateGateMethod] = useState<"none" | "random" | "practice" | "prior_round_finish">("random");
+  const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [selectedGateConfigId, setSelectedGateConfigId] = useState("");
 
   // Add moto dialog
@@ -1227,10 +1230,14 @@ export default function EventSchedule() {
   // ── Generate lineups ──
   function handleGenerate() {
     const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
-    const lockedClasses = allClasses.filter(cls =>
-      rawMotos.some(m => m.raceClass === cls && m.status === "completed")
-    );
-    const gateConfigId = usePracticeSeeding && selectedGateConfigId ? selectedGateConfigId : undefined;
+    const lockedClasses = generateGateMethod === "prior_round_finish"
+      ? []
+      : allClasses.filter(cls => rawMotos.some(m => m.raceClass === cls && m.status === "completed"));
+    const gateConfigId = generateGateMethod !== "none" && selectedGateConfigId ? selectedGateConfigId : undefined;
+    const divCount = generateFormat === "three_moto" ? 3 : generateFormat === "two_moto" ? 2 : 1;
+    const roundsToSend = generateSelectedRounds.length > 0 && generateSelectedRounds.length < divCount
+      ? generateSelectedRounds
+      : undefined;
 
     generateMutation.mutate(
       {
@@ -1239,8 +1246,9 @@ export default function EventSchedule() {
           raceFormat: generateFormat,
           classes: allClasses,
           ridersPerHeat: ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined,
-          usePracticeSeeding,
+          gatePickMethod: generateGateMethod,
           gateConfigId,
+          rounds: roundsToSend,
         } as any,
       },
       {
@@ -1248,7 +1256,9 @@ export default function EventSchedule() {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) as any });
           setIsGenerateOpen(false);
-          if (lockedClasses.length > 0) {
+          if (generateGateMethod === "prior_round_finish") {
+            toast({ title: "Lineups generated", description: "Gate picks seeded from prior round finish order." });
+          } else if (lockedClasses.length > 0) {
             toast({
               title: "Lineups generated",
               description: `Skipped ${lockedClasses.length} class${lockedClasses.length > 1 ? "es" : ""} with completed motos: ${lockedClasses.join(", ")}`,
@@ -1772,19 +1782,71 @@ export default function EventSchedule() {
                 <span className="font-semibold text-foreground">Supercross format:</span> Heat motos and an empty Main Event will be created per class.
               </p>
             ) : (
-              <div className="space-y-2">
-                <Label>Motos per Class</Label>
-                <Select value={generateFormat} onValueChange={(v: any) => setGenerateFormat(v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Format" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="one_moto">1 Moto</SelectItem>
-                    <SelectItem value="two_moto">2 Motos</SelectItem>
-                    <SelectItem value="three_moto">3 Motos</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label>Motos per Class</Label>
+                  <Select value={generateFormat} onValueChange={(v: any) => { setGenerateFormat(v); setGenerateSelectedRounds([]); }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Format" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="one_moto">1 Moto</SelectItem>
+                      <SelectItem value="two_moto">2 Motos</SelectItem>
+                      <SelectItem value="three_moto">3 Motos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Round selection — only shown for multi-round formats */}
+                {(() => {
+                  const divCount = generateFormat === "three_moto" ? 3 : generateFormat === "two_moto" ? 2 : 1;
+                  if (divCount <= 1) return null;
+                  const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+                  const isRoundDone = (r: number) => allClasses.length > 0 && allClasses.every(cls =>
+                    rawMotos.some(m =>
+                      m.raceClass === cls && m.type !== "practice" &&
+                      m.status === "completed" && roundMap.get(m.id) === r
+                    )
+                  );
+                  return (
+                    <div className="space-y-2">
+                      <Label>Generate Round(s)</Label>
+                      <div className="flex gap-2 flex-wrap">
+                        {Array.from({ length: divCount }, (_, i) => i + 1).map(r => {
+                          const done = isRoundDone(r);
+                          const checked = generateSelectedRounds.length === 0 ? true : generateSelectedRounds.includes(r);
+                          return (
+                            <button key={r} type="button"
+                              onClick={() => {
+                                if (generateSelectedRounds.length === 0) {
+                                  setGenerateSelectedRounds(Array.from({ length: divCount }, (_, i) => i + 1).filter(x => x !== r));
+                                } else {
+                                  setGenerateSelectedRounds(prev =>
+                                    checked ? prev.filter(x => x !== r) : [...prev, r].sort((a, b) => a - b)
+                                  );
+                                }
+                              }}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                                checked
+                                  ? "bg-primary/10 border-primary text-primary"
+                                  : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/50"
+                              }`}
+                            >
+                              <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                                checked ? "border-primary bg-primary" : "border-muted-foreground/40"
+                              }`}>
+                                {checked && <Check size={10} className="text-white" />}
+                              </div>
+                              Round {r}
+                              {done && <span className="text-[10px] font-normal text-muted-foreground ml-1">done</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-muted-foreground">Uncheck a round to leave its existing motos untouched.</p>
+                    </div>
+                  );
+                })()}
+              </>
             )}
 
             {/* Riders per heat */}
@@ -1808,64 +1870,117 @@ export default function EventSchedule() {
               </p>
             </div>
 
-            {/* Practice seeding */}
-            <div className="rounded-lg border bg-muted/30 px-4 py-3 space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={usePracticeSeeding}
-                  onChange={e => {
-                    setUsePracticeSeeding(e.target.checked);
-                    if (!e.target.checked) setSelectedGateConfigId("");
-                    else if (gateConfigs.length > 0 && !selectedGateConfigId) {
-                      setSelectedGateConfigId(gateConfigs[0].id);
-                    }
-                  }}
-                  className="h-4 w-4 rounded accent-primary"
-                />
-                <span className="text-sm font-medium">Use practice lap seeding</span>
-              </label>
-              <p className="text-xs text-muted-foreground pl-7">
-                Distributes riders by best practice lap time (serpentine seeding) and assigns starting gates.
-              </p>
-              {usePracticeSeeding && gateConfigs.length === 0 && (
-                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 ml-7">
-                  No gate configs found — set them up on the Gate Assignments page first.
-                </p>
-              )}
-              {usePracticeSeeding && gateConfigs.length > 1 && (
-                <div className="pl-7 space-y-1">
-                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Gate Config</Label>
-                  <Select
-                    value={selectedGateConfigId || gateConfigs[0]?.id || ""}
-                    onValueChange={setSelectedGateConfigId}
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="Select gate config…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {gateConfigs.map(cfg => (
-                        <SelectItem key={cfg.id} value={cfg.id}>
-                          {cfg.name}{" "}
-                          <span className="text-muted-foreground ml-1">({cfg.gateCount} gates)</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {/* Gate Pick Method */}
+            {(() => {
+              const hasCompletedRaceMotos = rawMotos.some(m => m.status === "completed" && m.type !== "practice");
+              const methods: { value: "none" | "random" | "practice" | "prior_round_finish"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
+                {
+                  value: "none",
+                  label: "No Gate Assignment",
+                  description: "Riders are ordered randomly. No gate numbers assigned.",
+                },
+                {
+                  value: "random",
+                  label: "Random Draw",
+                  description: "Riders are shuffled randomly into gate positions.",
+                },
+                {
+                  value: "practice",
+                  label: "Practice Fastest Lap",
+                  description: "Riders are seeded by best practice lap time — fastest gets first gate pick.",
+                  disabled: !gateConfigsData?.hasPracticeData,
+                  disabledReason: "No practice lap data recorded for this club yet.",
+                },
+                {
+                  value: "prior_round_finish",
+                  label: "Prior Round Finish",
+                  description: "Riders are seeded by their finish position in the most recently completed round.",
+                  disabled: !hasCompletedRaceMotos,
+                  disabledReason: "No completed race motos yet — run Round 1 first.",
+                },
+              ];
+              return (
+                <div className="space-y-2">
+                  <Label>Gate Pick Method</Label>
+                  <TooltipProvider>
+                    <div className="rounded-lg border divide-y overflow-hidden">
+                      {methods.map((m) => {
+                        const isSelected = generateGateMethod === m.value;
+                        const btn = (
+                          <button key={m.value} type="button" disabled={m.disabled}
+                            onClick={() => { if (!m.disabled) setGenerateGateMethod(m.value); }}
+                            className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors ${
+                              m.disabled ? "opacity-50 cursor-not-allowed bg-muted/20"
+                              : isSelected ? "bg-primary/5"
+                              : "hover:bg-muted/30"
+                            }`}
+                          >
+                            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                              isSelected ? "border-primary bg-primary" : "border-muted-foreground/40"
+                            }`}>
+                              {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                            </span>
+                            <span className="flex flex-col gap-0.5 min-w-0">
+                              <span className={`text-sm font-medium leading-tight ${m.disabled ? "text-muted-foreground" : ""}`}>
+                                {m.label}
+                                {m.disabled && <span className="ml-2 text-[10px] font-normal text-muted-foreground uppercase tracking-wide">Unavailable</span>}
+                              </span>
+                              <span className="text-xs text-muted-foreground leading-snug">{m.description}</span>
+                            </span>
+                          </button>
+                        );
+                        if (m.disabled && m.disabledReason) {
+                          return (
+                            <Tooltip key={m.value}>
+                              <TooltipTrigger asChild>{btn}</TooltipTrigger>
+                              <TooltipContent side="top">{m.disabledReason}</TooltipContent>
+                            </Tooltip>
+                          );
+                        }
+                        return btn;
+                      })}
+                    </div>
+                  </TooltipProvider>
+                  {/* Gate Config selector */}
+                  {generateGateMethod !== "none" && gateConfigs.length === 0 && (
+                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+                      No gate configs found — set them up on the Gate Assignments page to assign gate numbers.
+                    </p>
+                  )}
+                  {generateGateMethod !== "none" && gateConfigs.length > 1 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wider">Gate Config</Label>
+                      <Select
+                        value={selectedGateConfigId || gateConfigs[0]?.id || ""}
+                        onValueChange={setSelectedGateConfigId}
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="Select gate config…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {gateConfigs.map(cfg => (
+                            <SelectItem key={cfg.id} value={cfg.id}>
+                              {cfg.name}{" "}
+                              <span className="text-muted-foreground ml-1">({cfg.gateCount} gates)</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {generateGateMethod !== "none" && gateConfigs.length === 1 && (
+                    <p className="text-xs text-muted-foreground">Gate config: <span className="font-medium">{gateConfigs[0].name}</span> ({gateConfigs[0].gateCount} gates)</p>
+                  )}
                 </div>
-              )}
-              {usePracticeSeeding && gateConfigs.length === 1 && (
-                <p className="text-xs text-muted-foreground pl-7">
-                  Using: <span className="font-medium">{gateConfigs[0].name}</span> ({gateConfigs[0].gateCount} gates)
-                </p>
-              )}
-            </div>
+              );
+            })()}
 
             <Button
               onClick={handleGenerate}
               disabled={
                 generateMutation.isPending ||
                 (() => {
+                  if (generateGateMethod === "prior_round_finish") return false;
                   const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
                   return allClasses.length > 0 && allClasses.every(cls =>
                     rawMotos.some(m => m.raceClass === cls && m.status === "completed")

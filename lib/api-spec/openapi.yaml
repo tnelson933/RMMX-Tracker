@@ -986,6 +986,42 @@ paths:
                 items:
                   $ref: "#/components/schemas/Moto"
 
+  /events/{eventId}/motos/{motoId}/generate-lineup:
+    post:
+      operationId: generateMotoLineup
+      tags: [motos]
+      summary: Regenerate the lineup for a single moto
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: motoId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateMotoLineupInput"
+      responses:
+        "200":
+          description: Lineup updated, returns the updated moto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Moto"
+        "400":
+          description: No checked-in riders or moto has no race class
+        "404":
+          description: Moto not found
+        "409":
+          description: Moto is completed — lineup is locked
+
   /events/{eventId}/generate-practice-sessions:
     post:
       operationId: generatePracticeSessions
@@ -2652,9 +2688,43 @@ components:
             previous_round = sort by finish position in the most recently completed round,
             tiebroken by fastest lap time in that round.
             When omitted, defaults to random (preserving backward compatibility).
+        rounds:
+          type: array
+          items:
+            type: integer
+          description: >
+            If provided, only generate motos for these round numbers (1-indexed).
+            Omit or leave empty to regenerate all rounds.
+            Motos from unspecified rounds are left untouched.
+        gatePickMethod:
+          type: string
+          enum: [none, random, practice, prior_round_finish]
+          description: >
+            Controls gate number assignment.
+            none = positions only, no gate numbers assigned;
+            random = riders shuffled randomly, gates assigned in configured priority order;
+            practice = sort by best practice lap time (fastest gets first gate pick);
+            prior_round_finish = sort by prior round finish position, best finisher picks first.
+            Supersedes gateSeedingMethod when both are present.
         gateConfigId:
           type: string
           description: ID of the gate configuration to use for gate assignments. Applies to all seeding methods.
+
+    GenerateMotoLineupInput:
+      type: object
+      properties:
+        gatePickMethod:
+          type: string
+          enum: [none, random, practice, prior_round_finish]
+          description: >
+            Gate pick method for this specific moto.
+            none = positions only, no gate numbers;
+            random = random gate draw;
+            practice = by practice lap time;
+            prior_round_finish = by prior round finish position.
+        gateConfigId:
+          type: string
+          description: ID of the gate configuration. Falls back to club default when omitted.
 
     RaceResult:
       type: object

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRoute, Link } from "wouter";
 import {
-  useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
+  useListMotos, useGenerateLineups, useGenerateMotoLineup, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables,
   useUpdateResultLaps, useListResults, useGeneratePracticeSessions,
   getListMotosQueryKey, getListCheckinsQueryKey, Moto,
@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -1007,8 +1007,12 @@ export default function Motos() {
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
-  const [gateSeedingMethod, setGateSeedingMethod] = useState<"random" | "practice_fastest_lap" | "previous_round">("random");
+  const [gatePickMethod, setGatePickMethod] = useState<"none" | "random" | "practice" | "prior_round_finish">("random");
   const [selectedGateConfigId, setSelectedGateConfigId] = useState<string>("");
+  const [selectedRounds, setSelectedRounds] = useState<number[]>([]);
+  const [perMotoDialog, setPerMotoDialog] = useState<{ open: boolean; motoId: number | null; motoName: string; motoClass: string }>({ open: false, motoId: null, motoName: "", motoClass: "" });
+  const [perMotoGateMethod, setPerMotoGateMethod] = useState<"none" | "random" | "practice" | "prior_round_finish">("random");
+  const [perMotoGateConfigId, setPerMotoGateConfigId] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
@@ -1083,6 +1087,7 @@ export default function Motos() {
   const hasPracticeData = gateConfigsData?.hasPracticeData ?? false;
 
   const generateMutation = useGenerateLineups();
+  const perMotoGenerateMutation = useGenerateMotoLineup();
   const createMotoMutation = useCreateMoto();
   const generatePracticeSessionsMutation = useGeneratePracticeSessions();
   const updateMutation = useUpdateMoto();
@@ -1092,6 +1097,25 @@ export default function Motos() {
   useEffect(() => {
     setSelectedGateConfigId("");
   }, [eventId]);
+
+  // When the generate dialog opens (or format changes), pre-select the lowest non-done round(s).
+  useEffect(() => {
+    if (!isGenerateOpen) return;
+    const divCount = format === "three_moto" ? 3 : format === "two_moto" ? 2 : 1;
+    if (divCount <= 1) { setSelectedRounds([1]); return; }
+    const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+    const nonDoneRounds: number[] = [];
+    for (let r = 1; r <= divCount; r++) {
+      const isDone = allClasses.length > 0 && allClasses.every(cls =>
+        (motos ?? []).some(m =>
+          m.raceClass === cls && m.type !== "practice" &&
+          m.status === "completed" && roundMap.get(m.id) === r
+        )
+      );
+      if (!isDone) nonDoneRounds.push(r);
+    }
+    setSelectedRounds(nonDoneRounds.length > 0 ? nonDoneRounds : [1]);
+  }, [isGenerateOpen, format]);
 
   // Deep-link from Schedule tab: if ?motoId=X is in the URL, expand and scroll to that card.
   useEffect(() => {
@@ -1528,23 +1552,26 @@ export default function Motos() {
   const handleGenerate = () => {
     if (!event?.raceClasses) return;
     const allClasses: string[] = event.raceClasses as string[];
-    // Classes with completed race motos — only relevant for random/practice methods where they are skipped.
-    // For previous_round those classes are intentionally regenerated using prior results as seed.
-    const lockedClasses = gateSeedingMethod === "previous_round"
+    const lockedClasses = gatePickMethod === "prior_round_finish"
       ? []
       : allClasses.filter(cls =>
           (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
         );
     const perHeat = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
     const gateConfigId = selectedGateConfigId || undefined;
+    const divCount = format === "three_moto" ? 3 : format === "two_moto" ? 2 : 1;
+    const allRoundsSet = new Set(Array.from({ length: divCount }, (_, i) => i + 1));
+    const roundsToSend = selectedRounds.length > 0 && !selectedRounds.every(r => allRoundsSet.has(r) && selectedRounds.length === divCount)
+      ? selectedRounds
+      : undefined;
     generateMutation.mutate(
-      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, gateSeedingMethod, gateConfigId } as any },
+      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, gatePickMethod, gateConfigId, rounds: roundsToSend } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           setIsGenerateOpen(false);
-          if (gateSeedingMethod === "previous_round") {
-            toast({ title: "Lineups generated", description: "Gate picks seeded from previous round finish order." });
+          if (gatePickMethod === "prior_round_finish") {
+            toast({ title: "Lineups generated", description: "Gate picks seeded from prior round finish order." });
           } else if (lockedClasses.length > 0) {
             toast({
               title: "Lineups generated",
@@ -1556,6 +1583,24 @@ export default function Motos() {
         },
         onError: (err) => {
           toast({ title: "Failed to generate", description: err.message, variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  const handlePerMotoGenerate = () => {
+    if (!perMotoDialog.motoId) return;
+    const gateConfigId = perMotoGateConfigId || undefined;
+    perMotoGenerateMutation.mutate(
+      { eventId, motoId: perMotoDialog.motoId, data: { gatePickMethod: perMotoGateMethod, gateConfigId } as any },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          setPerMotoDialog(p => ({ ...p, open: false }));
+          toast({ title: "Lineup regenerated", description: perMotoDialog.motoName });
+        },
+        onError: (err: any) => {
+          toast({ title: "Failed to regenerate", description: err.message, variant: "destructive" });
         },
       }
     );
@@ -2056,8 +2101,9 @@ export default function Motos() {
           <Dialog open={isGenerateOpen} onOpenChange={(open) => {
             setIsGenerateOpen(open);
             if (!open) {
-              setGateSeedingMethod("random");
+              setGatePickMethod("random");
               setSelectedGateConfigId("");
+              setSelectedRounds([]);
             }
           }}>
             <DialogTrigger asChild>
@@ -2133,6 +2179,50 @@ export default function Motos() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {/* Round selection — only shown for multi-round formats */}
+                  {(() => {
+                    const divCount = format === "three_moto" ? 3 : format === "two_moto" ? 2 : 1;
+                    if (divCount <= 1) return null;
+                    const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+                    const isRoundDone = (r: number) => allClasses.length > 0 && allClasses.every(cls =>
+                      (motos ?? []).some(m =>
+                        m.raceClass === cls && m.type !== "practice" &&
+                        m.status === "completed" && roundMap.get(m.id) === r
+                      )
+                    );
+                    return (
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Generate Round(s)</label>
+                        <div className="flex gap-2 flex-wrap">
+                          {Array.from({ length: divCount }, (_, i) => i + 1).map(r => {
+                            const done = isRoundDone(r);
+                            const checked = selectedRounds.includes(r);
+                            return (
+                              <button key={r} type="button"
+                                onClick={() => setSelectedRounds(prev =>
+                                  checked ? prev.filter(x => x !== r) : [...prev, r].sort((a, b) => a - b)
+                                )}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                                  checked
+                                    ? "bg-primary/10 border-primary text-primary"
+                                    : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/50"
+                                }`}
+                              >
+                                <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                                  checked ? "border-primary bg-primary" : "border-muted-foreground/40"
+                                }`}>
+                                  {checked && <Check size={10} className="text-white" />}
+                                </div>
+                                Round {r}
+                                {done && <span className="text-[10px] font-normal text-muted-foreground ml-1">done</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-xs text-muted-foreground">Select which round(s) to generate. Uncheck to leave existing motos for that round untouched.</p>
+                      </div>
+                    );
+                  })()}
                 </>
               )}
               <div className="space-y-2">
@@ -2155,24 +2245,28 @@ export default function Motos() {
               </div>
               {/* Gate Pick Method */}
               {(() => {
-                // Only completed race motos (not practice) count as a valid "previous round" seed source
                 const hasCompletedRaceMotos = (motos ?? []).some(m => m.status === "completed" && m.type !== "practice");
-                const methods: { value: "random" | "practice_fastest_lap" | "previous_round"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
+                const methods: { value: "none" | "random" | "practice" | "prior_round_finish"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
+                  {
+                    value: "none",
+                    label: "No Gate Assignment",
+                    description: "Riders are ordered randomly. No gate numbers assigned.",
+                  },
                   {
                     value: "random",
-                    label: "Random",
+                    label: "Random Draw",
                     description: "Riders are shuffled randomly into gate positions.",
                   },
                   {
-                    value: "practice_fastest_lap",
+                    value: "practice",
                     label: "Practice Fastest Lap",
                     description: "Riders are seeded by best practice lap time — fastest gets first gate pick.",
                     disabled: !hasPracticeData,
                     disabledReason: "No practice lap data recorded for this club yet.",
                   },
                   {
-                    value: "previous_round",
-                    label: "Previous Round",
+                    value: "prior_round_finish",
+                    label: "Prior Round Finish",
                     description: "Riders are seeded by their finish position in the most recently completed round. Ties broken by fastest lap.",
                     disabled: !hasCompletedRaceMotos,
                     disabledReason: "No completed race motos yet — run Round 1 first.",
@@ -2184,16 +2278,13 @@ export default function Motos() {
                     <TooltipProvider>
                       <div className="rounded-lg border divide-y overflow-hidden">
                         {methods.map((m) => {
-                          const isSelected = gateSeedingMethod === m.value;
+                          const isSelected = gatePickMethod === m.value;
                           const btn = (
                             <button
                               key={m.value}
                               type="button"
                               disabled={m.disabled}
-                              onClick={() => {
-                                if (m.disabled) return;
-                                setGateSeedingMethod(m.value);
-                              }}
+                              onClick={() => { if (!m.disabled) setGatePickMethod(m.value); }}
                               className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors ${
                                 m.disabled
                                   ? "opacity-50 cursor-not-allowed bg-muted/20"
@@ -2268,9 +2359,7 @@ export default function Motos() {
               <Button
                 onClick={handleGenerate}
                 disabled={generateMutation.isPending || (() => {
-                  // previous_round is always allowed to generate — completed motos are its seed source
-                  if (gateSeedingMethod === "previous_round") return false;
-                  // For other methods, disable if every class already has a completed moto (nothing to generate)
+                  if (gatePickMethod === "prior_round_finish") return false;
                   const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
                   return allClasses.length > 0 && allClasses.every(cls =>
                     (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
@@ -2285,6 +2374,127 @@ export default function Motos() {
           </Dialog>
         </div>
       </div>
+
+      {/* Per-moto regenerate lineup dialog */}
+      <Dialog open={perMotoDialog.open} onOpenChange={(open) => {
+        if (!open) setPerMotoDialog(p => ({ ...p, open: false }));
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase text-xl">Regenerate Lineup</DialogTitle>
+            <DialogDescription>
+              Replace the current lineup for <span className="font-semibold text-foreground">{perMotoDialog.motoName}</span> with a fresh one from checked-in riders.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            {/* Gate pick method */}
+            {(() => {
+              const hasCompletedRaceMotos = (motos ?? []).some(m => m.status === "completed" && m.type !== "practice");
+              const methods: { value: "none" | "random" | "practice" | "prior_round_finish"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
+                {
+                  value: "none",
+                  label: "No Gate Assignment",
+                  description: "Riders are ordered randomly. No gate numbers assigned.",
+                },
+                {
+                  value: "random",
+                  label: "Random Draw",
+                  description: "Riders are shuffled randomly into gate positions.",
+                },
+                {
+                  value: "practice",
+                  label: "Practice Fastest Lap",
+                  description: "Riders are seeded by best practice lap time — fastest gets first gate pick.",
+                  disabled: !hasPracticeData,
+                  disabledReason: "No practice lap data recorded for this club yet.",
+                },
+                {
+                  value: "prior_round_finish",
+                  label: "Prior Round Finish",
+                  description: "Riders are seeded by their finish position in the most recently completed round.",
+                  disabled: !hasCompletedRaceMotos,
+                  disabledReason: "No completed race motos yet — run Round 1 first.",
+                },
+              ];
+              return (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Gate Pick Method</label>
+                  <TooltipProvider>
+                    <div className="rounded-lg border divide-y overflow-hidden">
+                      {methods.map((m) => {
+                        const isSelected = perMotoGateMethod === m.value;
+                        const btn = (
+                          <button key={m.value} type="button" disabled={m.disabled}
+                            onClick={() => { if (!m.disabled) setPerMotoGateMethod(m.value); }}
+                            className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors ${
+                              m.disabled ? "opacity-50 cursor-not-allowed bg-muted/20"
+                              : isSelected ? "bg-primary/5"
+                              : "hover:bg-muted/30"
+                            }`}
+                          >
+                            <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                              isSelected ? "border-primary bg-primary" : "border-muted-foreground/40"
+                            }`}>
+                              {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                            </span>
+                            <span className="flex flex-col gap-0.5 min-w-0">
+                              <span className={`text-sm font-medium leading-tight ${m.disabled ? "text-muted-foreground" : ""}`}>
+                                {m.label}
+                                {m.disabled && <span className="ml-2 text-[10px] font-normal text-muted-foreground uppercase tracking-wide">Unavailable</span>}
+                              </span>
+                              <span className="text-xs text-muted-foreground leading-snug">{m.description}</span>
+                            </span>
+                          </button>
+                        );
+                        if (m.disabled && m.disabledReason) {
+                          return (
+                            <Tooltip key={m.value}>
+                              <TooltipTrigger asChild>{btn}</TooltipTrigger>
+                              <TooltipContent side="top">{m.disabledReason}</TooltipContent>
+                            </Tooltip>
+                          );
+                        }
+                        return btn;
+                      })}
+                    </div>
+                  </TooltipProvider>
+                </div>
+              );
+            })()}
+            {/* Gate config */}
+            {perMotoGateMethod !== "none" && gateConfigs.length > 1 && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Gate Config</label>
+                <Select
+                  value={perMotoGateConfigId || gateConfigs[0]?.id || ""}
+                  onValueChange={setPerMotoGateConfigId}
+                >
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {gateConfigs.map(cfg => (
+                      <SelectItem key={cfg.id} value={cfg.id}>
+                        {cfg.name} <span className="text-muted-foreground ml-1">({cfg.gateCount} gates)</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {perMotoGateMethod !== "none" && gateConfigs.length === 0 && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+                No gate configs found — set them up on the Gate Assignments page to assign gate numbers.
+              </p>
+            )}
+            <Button
+              onClick={handlePerMotoGenerate}
+              disabled={perMotoGenerateMutation.isPending}
+              className="w-full font-heading uppercase"
+            >
+              {perMotoGenerateMutation.isPending ? "Regenerating..." : "Regenerate Lineup"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Live Video Feed panel */}
       {showBroadcast && (
@@ -2724,6 +2934,19 @@ export default function Motos() {
                   >
                     <Plus size={14} />
                   </button>
+                  {moto.type !== "practice" && moto.status !== "completed" && (
+                    <button
+                      onClick={() => {
+                        setPerMotoDialog({ open: true, motoId: moto.id, motoName: moto.name, motoClass: moto.raceClass ?? "" });
+                        setPerMotoGateMethod("random");
+                        setPerMotoGateConfigId("");
+                      }}
+                      className="text-sidebar-foreground/50 hover:text-violet-400 transition-colors p-1 rounded hover:bg-white/10"
+                      title="Regenerate lineup"
+                    >
+                      <Wand2 size={14} />
+                    </button>
+                  )}
                   <button
                     onClick={() => setExpandedMotoId(moto.id)}
                     className="text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors p-1 rounded hover:bg-white/10"

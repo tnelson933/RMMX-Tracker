@@ -611,6 +611,20 @@ export const LineupGenerateInputGateSeedingMethod = {
   previous_round: 'previous_round',
 } as const;
 
+/**
+ * Controls gate number assignment. none = positions only, no gate numbers assigned; random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first. Supersedes gateSeedingMethod when both are present.
+
+ */
+export type LineupGenerateInputGatePickMethod = typeof LineupGenerateInputGatePickMethod[keyof typeof LineupGenerateInputGatePickMethod];
+
+
+export const LineupGenerateInputGatePickMethod = {
+  none: 'none',
+  random: 'random',
+  practice: 'practice',
+  prior_round_finish: 'prior_round_finish',
+} as const;
+
 export interface LineupGenerateInput {
   raceFormat: LineupGenerateInputRaceFormat;
   classes: string[];
@@ -620,7 +634,35 @@ export interface LineupGenerateInput {
   /** Controls how riders are ordered into gate positions. random = shuffle randomly (default); practice_fastest_lap = sort by best practice lap time (fastest gets best pick); previous_round = sort by finish position in the most recently completed round, tiebroken by fastest lap time in that round. When omitted, defaults to random (preserving backward compatibility).
    */
   gateSeedingMethod?: LineupGenerateInputGateSeedingMethod;
+  /** If provided, only generate motos for these round numbers (1-indexed). Omit or leave empty to regenerate all rounds. Motos from unspecified rounds are left untouched.
+   */
+  rounds?: number[];
+  /** Controls gate number assignment. none = positions only, no gate numbers assigned; random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first. Supersedes gateSeedingMethod when both are present.
+   */
+  gatePickMethod?: LineupGenerateInputGatePickMethod;
   /** ID of the gate configuration to use for gate assignments. Applies to all seeding methods. */
+  gateConfigId?: string;
+}
+
+/**
+ * Gate pick method for this specific moto. none = positions only, no gate numbers; random = random gate draw; practice = by practice lap time; prior_round_finish = by prior round finish position.
+
+ */
+export type GenerateMotoLineupInputGatePickMethod = typeof GenerateMotoLineupInputGatePickMethod[keyof typeof GenerateMotoLineupInputGatePickMethod];
+
+
+export const GenerateMotoLineupInputGatePickMethod = {
+  none: 'none',
+  random: 'random',
+  practice: 'practice',
+  prior_round_finish: 'prior_round_finish',
+} as const;
+
+export interface GenerateMotoLineupInput {
+  /** Gate pick method for this specific moto. none = positions only, no gate numbers; random = random gate draw; practice = by practice lap time; prior_round_finish = by prior round finish position.
+   */
+  gatePickMethod?: GenerateMotoLineupInputGatePickMethod;
+  /** ID of the gate configuration. Falls back to club default when omitted. */
   gateConfigId?: string;
 }
 

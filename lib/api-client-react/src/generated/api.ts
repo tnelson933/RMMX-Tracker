@@ -51,6 +51,7 @@ import type {
   EventReport,
   EventUpdate,
   GateSettings,
+  GenerateMotoLineupInput,
   GeneratePracticeSessionsInput,
   GenerateRiderDiscountCodeInput,
   HealthStatus,
@@ -3512,6 +3513,80 @@ export const useGenerateLineups = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getGenerateLineupsMutationOptions(options));
+    }
+
+export const getGenerateMotoLineupUrl = (eventId: number,
+    motoId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/motos/${motoId}/generate-lineup`
+}
+
+/**
+ * @summary Regenerate the lineup for a single moto
+ */
+export const generateMotoLineup = async (eventId: number,
+    motoId: number,
+    generateMotoLineupInput: GenerateMotoLineupInput, options?: RequestInit): Promise<Moto> => {
+
+  return customFetch<Moto>(getGenerateMotoLineupUrl(eventId,motoId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      generateMotoLineupInput,)
+  }
+);}
+
+
+
+
+export const getGenerateMotoLineupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateMotoLineup>>, TError,{eventId: number;motoId: number;data: BodyType<GenerateMotoLineupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateMotoLineup>>, TError,{eventId: number;motoId: number;data: BodyType<GenerateMotoLineupInput>}, TContext> => {
+
+const mutationKey = ['generateMotoLineup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateMotoLineup>>, {eventId: number;motoId: number;data: BodyType<GenerateMotoLineupInput>}> = (props) => {
+          const {eventId,motoId,data} = props ?? {};
+
+          return  generateMotoLineup(eventId,motoId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateMotoLineupMutationResult = NonNullable<Awaited<ReturnType<typeof generateMotoLineup>>>
+    export type GenerateMotoLineupMutationBody = BodyType<GenerateMotoLineupInput>
+    export type GenerateMotoLineupMutationError = ErrorType<void>
+
+    /**
+ * @summary Regenerate the lineup for a single moto
+ */
+export const useGenerateMotoLineup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateMotoLineup>>, TError,{eventId: number;motoId: number;data: BodyType<GenerateMotoLineupInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateMotoLineup>>,
+        TError,
+        {eventId: number;motoId: number;data: BodyType<GenerateMotoLineupInput>},
+        TContext
+      > => {
+      return useMutation(getGenerateMotoLineupMutationOptions(options));
     }
 
 export const getGeneratePracticeSessionsUrl = (eventId: number,) => {
