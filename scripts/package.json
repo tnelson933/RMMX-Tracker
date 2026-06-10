@@ -7,10 +7,13 @@
     "hello": "tsx ./src/hello.ts",
     "import-data": "tsx ./src/import-event-data.ts",
     "sync-to-cloud": "tsx ./src/sync-to-cloud.ts",
+    "seed:rmmx": "tsx ./src/seed-rmmx-riders.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "better-sqlite3": "^11.5.0"
+    "@workspace/db": "workspace:*",
+    "better-sqlite3": "^11.5.0",
+    "drizzle-orm": "catalog:"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
