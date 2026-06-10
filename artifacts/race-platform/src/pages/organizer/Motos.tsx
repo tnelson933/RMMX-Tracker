@@ -2877,8 +2877,8 @@ export default function Motos() {
               <CardHeader className="bg-card py-3 border-b flex flex-row items-center gap-3 px-4">
                 {/* Race number corner block */}
                 <div className="shrink-0 self-stretch -my-3 -ml-4 mr-0 flex flex-col items-center justify-center bg-primary border-r border-primary/70 w-14">
-                  <span className="text-[8px] font-bold uppercase tracking-widest text-black leading-none mb-0.5">RACE</span>
-                  <span className="font-heading font-bold text-2xl leading-none tabular-nums text-black">{moto.motoNumber}</span>
+                  <span className="text-[8px] font-bold uppercase tracking-widest text-white leading-none mb-0.5">RACE</span>
+                  <span className="font-heading font-bold text-2xl leading-none tabular-nums text-white">{moto.motoNumber}</span>
                 </div>
 
                 <DraggableMotoGrip motoId={moto.id} disabled={classFilter !== "schedule" || moto.status === "in_progress" || moto.status === "completed"} />
