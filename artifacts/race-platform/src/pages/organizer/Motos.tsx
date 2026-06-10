@@ -1676,6 +1676,34 @@ export default function Motos() {
     );
   };
 
+  // Finish a moto — if it's a stagger order=1 card, also finish the partner simultaneously.
+  const doFinishMoto = async (motoId: number) => {
+    const motoObj = (motos ?? []).find(m => m.id === motoId);
+    const partnerId: number | null =
+      (motoObj as any)?.staggeredOrder === 1 && (motoObj as any)?.staggeredWithMotoId
+        ? Number((motoObj as any).staggeredWithMotoId)
+        : null;
+    try {
+      await Promise.all([
+        updateMoto(motoId, { status: "completed" } as any),
+        ...(partnerId ? [updateMoto(partnerId, { status: "completed" } as any)] : []),
+      ]);
+      await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      toast({ title: partnerId ? "🏁 Both motos finished" : "Moto finished" });
+      if (autoStartEnabled) {
+        const sorted = [...(motos ?? [])].sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+        const finishedIdx = sorted.findIndex(m => m.id === motoId);
+        const next = sorted.slice(finishedIdx + 1).find(m => m.status === "scheduled");
+        if (next) {
+          setTimeout(() => doStartMoto(next.id), 800);
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not finish moto";
+      toast({ title: "Failed to finish moto", description: msg, variant: "destructive" });
+    }
+  };
+
   const handleStartMoto = (moto: Moto) => {
     const partnerId: number | null =
       (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
@@ -2898,20 +2926,10 @@ export default function Motos() {
                     </Button>
                   )}
                   {moto.status === "in_progress" && (
-                    <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs h-7 px-2.5 gap-1" onClick={() => handleStatusUpdate(moto.id, "completed")}>
-                      <CheckCircle size={12} /> Finish
+                    <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs h-7 px-2.5 gap-1" onClick={() => doFinishMoto(moto.id)}>
+                      <CheckCircle size={12} /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Finish Both" : "Finish"}
                     </Button>
                   )}
-                  {/* Partner finish button — shown when this is a stagger order=1 card and partner is in_progress */}
-                  {(moto as any).staggeredOrder === 1 && (() => {
-                    const partner = (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId);
-                    if (!partner || partner.status !== "in_progress") return null;
-                    return (
-                      <Button key="partner-finish" size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs h-7 px-2.5 gap-1" onClick={() => handleStatusUpdate(partner.id, "completed")}>
-                        <CheckCircle size={12} /> Finish 2nd
-                      </Button>
-                    );
-                  })()}
                   {/* Icon buttons */}
                   <button
                     onClick={() => handleQuickAddHeat(moto)}
@@ -3102,6 +3120,7 @@ export default function Motos() {
                   const partnerLineup = Array.isArray(partner.lineup)
                     ? partner.lineup as { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber?: string | null }[]
                     : [];
+                  const partnerRunning = partner.status === "in_progress";
                   return (
                     <div className="border-t-2 border-primary/20">
                       <div className="px-3 py-1.5 flex items-center gap-2 bg-primary/5 border-b border-primary/10">
@@ -3118,18 +3137,37 @@ export default function Motos() {
                       {partnerLineup.length > 0 ? (
                         <Table>
                           <TableBody>
-                            {partnerLineup.map((entry, idx) => (
-                              <TableRow key={entry.riderId} className="h-7">
-                                <TableCell className="w-8 text-center text-xs font-mono text-muted-foreground py-1 pl-3">{idx + 1}</TableCell>
-                                <TableCell className="text-xs font-medium py-1">{entry.riderName}</TableCell>
-                                <TableCell className="w-14 text-center text-xs font-mono py-1">{entry.bibNumber ?? "—"}</TableCell>
-                                <TableCell className="w-10 text-center py-1">
-                                  {entry.rfidNumber
-                                    ? <span className="text-green-600 text-xs font-bold">●</span>
-                                    : <span className="text-muted-foreground/30 text-xs">—</span>}
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {partnerLineup.map((entry, idx) => {
+                              const cooldown = manualLapCooldown.has(`${partner.id}-${entry.riderId}`);
+                              return (
+                                <TableRow key={entry.riderId} className="h-7">
+                                  <TableCell className="w-8 text-center text-xs font-mono text-muted-foreground py-1 pl-3">{idx + 1}</TableCell>
+                                  <TableCell className="text-xs font-medium py-1">{entry.riderName}</TableCell>
+                                  <TableCell className="w-14 text-center text-xs font-mono py-1">{entry.bibNumber ?? "—"}</TableCell>
+                                  <TableCell className="w-10 text-center py-1">
+                                    {entry.rfidNumber
+                                      ? <span className="text-green-600 text-xs font-bold">●</span>
+                                      : <span className="text-muted-foreground/30 text-xs">—</span>}
+                                  </TableCell>
+                                  {partnerRunning && (
+                                    <TableCell className="pr-2 text-right py-1">
+                                      <button
+                                        onClick={() => handleManualLap(entry.riderId, partner.id)}
+                                        disabled={cooldown}
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-heading font-bold uppercase tracking-wide transition-all border ${
+                                          cooldown
+                                            ? "bg-green-100 border-green-300 text-green-600 opacity-60 cursor-not-allowed"
+                                            : "bg-background border-border text-muted-foreground hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50"
+                                        }`}
+                                      >
+                                        <Timer size={11} />
+                                        {cooldown ? "Recorded" : "Lap"}
+                                      </button>
+                                    </TableCell>
+                                  )}
+                                </TableRow>
+                              );
+                            })}
                           </TableBody>
                         </Table>
                       ) : (
@@ -3441,6 +3479,7 @@ export default function Motos() {
                   const partnerLineup = Array.isArray(partner.lineup)
                     ? partner.lineup as { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber?: string | null }[]
                     : [];
+                  const partnerRunning = partner.status === "in_progress";
                   return (
                     <div className="border-t-2 border-primary/25">
                       <div className="px-5 py-3 flex items-center gap-2 bg-primary/5 border-b border-primary/15">
@@ -3456,11 +3495,6 @@ export default function Motos() {
                         }`}>
                           {partner.status === "in_progress" ? "Running" : partner.status === "completed" ? "Done" : "Waiting"}
                         </span>
-                        {partner.status === "in_progress" && (
-                          <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs h-7 px-2.5 gap-1 ml-1" onClick={() => handleStatusUpdate(partner.id, "completed")}>
-                            <CheckCircle size={12} /> Finish
-                          </Button>
-                        )}
                       </div>
                       <Table>
                         <TableHeader className="bg-muted/50">
@@ -3469,23 +3503,43 @@ export default function Motos() {
                             <TableHead className="text-xs">Rider</TableHead>
                             <TableHead className="w-16 text-center text-xs">#</TableHead>
                             <TableHead className="w-20 text-center text-xs">RFID</TableHead>
+                            {partnerRunning && <TableHead className="w-24" />}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {partnerLineup.length > 0 ? partnerLineup.map((entry, idx) => (
-                            <TableRow key={entry.riderId} className="h-9">
-                              <TableCell className="text-center font-heading font-bold">{entry.position ?? idx + 1}</TableCell>
-                              <TableCell className="font-medium">{entry.riderName}</TableCell>
-                              <TableCell className="text-center font-mono text-xs">{entry.bibNumber ?? "—"}</TableCell>
-                              <TableCell className="text-center">
-                                {entry.rfidNumber
-                                  ? <span className="inline-flex items-center gap-1 text-green-600"><Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span></span>
-                                  : <span className="text-muted-foreground text-xs">—</span>}
-                              </TableCell>
-                            </TableRow>
-                          )) : (
+                          {partnerLineup.length > 0 ? partnerLineup.map((entry, idx) => {
+                            const cooldown = manualLapCooldown.has(`${partner.id}-${entry.riderId}`);
+                            return (
+                              <TableRow key={entry.riderId} className="h-9">
+                                <TableCell className="text-center font-heading font-bold">{entry.position ?? idx + 1}</TableCell>
+                                <TableCell className="font-medium">{entry.riderName}</TableCell>
+                                <TableCell className="text-center font-mono text-xs">{entry.bibNumber ?? "—"}</TableCell>
+                                <TableCell className="text-center">
+                                  {entry.rfidNumber
+                                    ? <span className="inline-flex items-center gap-1 text-green-600"><Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span></span>
+                                    : <span className="text-muted-foreground text-xs">—</span>}
+                                </TableCell>
+                                {partnerRunning && (
+                                  <TableCell className="pr-3 text-right">
+                                    <button
+                                      onClick={() => handleManualLap(entry.riderId, partner.id)}
+                                      disabled={cooldown}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-heading font-bold uppercase tracking-wide transition-all border ${
+                                        cooldown
+                                          ? "bg-green-100 border-green-300 text-green-600 opacity-60 cursor-not-allowed"
+                                          : "bg-background border-border text-muted-foreground hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50"
+                                      }`}
+                                    >
+                                      <Timer size={11} />
+                                      {cooldown ? "Recorded" : "Lap"}
+                                    </button>
+                                  </TableCell>
+                                )}
+                              </TableRow>
+                            );
+                          }) : (
                             <TableRow>
-                              <TableCell colSpan={4} className="text-center py-4 text-muted-foreground text-sm">No lineup assigned</TableCell>
+                              <TableCell colSpan={partnerRunning ? 5 : 4} className="text-center py-4 text-muted-foreground text-sm">No lineup assigned</TableCell>
                             </TableRow>
                           )}
                         </TableBody>
@@ -3516,8 +3570,8 @@ export default function Motos() {
                   </Button>
                 )}
                 {moto.status === "in_progress" && (
-                  <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs" onClick={() => handleStatusUpdate(moto.id, "completed")}>
-                    <CheckCircle size={14} className="mr-1" /> Finish Moto
+                  <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs" onClick={() => doFinishMoto(moto.id)}>
+                    <CheckCircle size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Finish Both Motos" : "Finish Moto"}
                   </Button>
                 )}
                 {moto.status === "in_progress" && (
