@@ -15,6 +15,8 @@ export interface Moto {
   name: string;
   type: MotoType;
   raceClass?: string;
+  /** For multi-class practice motos; when set overrides raceClass for display */
+  raceClasses?: string[] | null;
   status: MotoStatus;
   motoNumber?: number;
   /**

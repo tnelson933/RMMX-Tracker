@@ -11,6 +11,8 @@ export interface MotoInput {
   name: string;
   type: MotoInputType;
   raceClass: string;
+  /** For multi-class practice motos; when set overrides raceClass for display */
+  raceClasses?: string[];
   motoNumber: number;
   /** Number of laps in this moto */
   lapCount?: number;

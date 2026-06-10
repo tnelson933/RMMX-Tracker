@@ -119,11 +119,17 @@ router.get("/events/:eventId/motos", async (req, res) => {
 
 router.post("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { name, type, raceClass, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs } = req.body;
-  if (!name || !type || !raceClass || motoNumber === undefined) return res.status(400).json({ error: "name, type, raceClass, motoNumber required" });
+  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs } = req.body;
+
+  // raceClasses (multi-class practice): raceClass can be derived from first entry
+  const resolvedRaceClass = raceClass || (Array.isArray(raceClasses) && raceClasses.length > 0 ? raceClasses[0] : null);
+  if (!name || !type || !resolvedRaceClass || motoNumber === undefined) return res.status(400).json({ error: "name, type, raceClass (or raceClasses), motoNumber required" });
 
   const [moto] = await db.insert(motosTable).values({
-    eventId, name, type, raceClass, motoNumber, scheduledTime, lineup: lineup || [], status: "scheduled",
+    eventId, name, type,
+    raceClass: resolvedRaceClass,
+    raceClasses: Array.isArray(raceClasses) && raceClasses.length > 0 ? raceClasses : null,
+    motoNumber, scheduledTime, lineup: lineup || [], status: "scheduled",
     lapCount: lapCount ? Number(lapCount) : null,
     timeLimitMs: timeLimitMs ? Number(timeLimitMs) : null,
   }).returning();

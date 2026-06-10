@@ -9,6 +9,7 @@ export const motosTable = pgTable("motos", {
   name: text("name").notNull(),
   type: text("type").notNull(), // heat | lcq | main | practice
   raceClass: text("race_class").notNull(),
+  raceClasses: text("race_classes").array(),
   status: text("status").notNull().default("scheduled"), // scheduled | in_progress | completed | cancelled
   motoNumber: integer("moto_number").notNull(),
   scheduledTime: text("scheduled_time"),

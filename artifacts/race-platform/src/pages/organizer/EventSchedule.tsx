@@ -385,7 +385,7 @@ function SortableMotoCard({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          {moto.raceClass && (
+          {moto.raceClass && !(moto as any).raceClasses && (
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
               {moto.raceClass}
             </span>
@@ -401,6 +401,15 @@ function SortableMotoCard({
             onCancel={onEditCancel}
           />
         </div>
+        {Array.isArray((moto as any).raceClasses) && (moto as any).raceClasses.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {((moto as any).raceClasses as string[]).map((cls: string) => (
+              <span key={cls} className="text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-medium">
+                {cls}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${typeBadgeVariant(moto.type)}`}>
             {typeLabel(moto.type)}
@@ -448,7 +457,7 @@ function StaticMotoCard({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          {moto.raceClass && (
+          {moto.raceClass && !(moto as any).raceClasses && (
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
               {moto.raceClass}
             </span>
@@ -464,6 +473,15 @@ function StaticMotoCard({
             onCancel={onEditCancel}
           />
         </div>
+        {Array.isArray((moto as any).raceClasses) && (moto as any).raceClasses.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {((moto as any).raceClasses as string[]).map((cls: string) => (
+              <span key={cls} className="text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-medium">
+                {cls}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${typeBadgeVariant(moto.type)}`}>
             {typeLabel(moto.type)}
@@ -574,6 +592,14 @@ export default function EventSchedule() {
     raceClass: "",
     type: "heat" as typeof MOTO_TYPES[number],
     lapCount: "5",
+  });
+
+  // Add practice dialog
+  const [showPracticeDialog, setShowPracticeDialog] = useState(false);
+  const [practiceForm, setPracticeForm] = useState({
+    name: "",
+    selectedClasses: [] as string[],
+    lapCount: "3",
   });
 
   // ── Event rules data ──
@@ -1013,6 +1039,52 @@ export default function EventSchedule() {
     );
   }
 
+  // ── Add practice ──
+  function openPracticeDialog() {
+    const practiceCount = rawMotos.filter(m => m.type === "practice").length;
+    setPracticeForm({
+      name: `Practice ${practiceCount + 1}`,
+      selectedClasses: [],
+      lapCount: "3",
+    });
+    setShowPracticeDialog(true);
+  }
+
+  function handleAddPractice() {
+    const { name, selectedClasses, lapCount } = practiceForm;
+    if (selectedClasses.length === 0) {
+      toast({ title: "Select at least one class", variant: "destructive" });
+      return;
+    }
+    const motoNumber = (rawMotos.length > 0
+      ? Math.max(...rawMotos.map(m => m.motoNumber ?? 0))
+      : 0) + 1;
+
+    createMutation.mutate(
+      {
+        eventId,
+        data: {
+          name: name.trim() || `Practice ${rawMotos.filter(m => m.type === "practice").length + 1}`,
+          type: "practice",
+          raceClass: selectedClasses[0],
+          raceClasses: selectedClasses,
+          motoNumber,
+          lapCount: lapCount ? parseInt(lapCount, 10) : undefined,
+        } as any,
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          setShowPracticeDialog(false);
+          toast({ title: "Practice added" });
+        },
+        onError: () => {
+          toast({ title: "Failed to add practice", variant: "destructive" });
+        },
+      }
+    );
+  }
+
   // ── By-class grouping (on filtered set) ──
   const byClass = (() => {
     const map = new Map<string, Moto[]>();
@@ -1112,6 +1184,11 @@ export default function EventSchedule() {
                   <LayoutGrid size={14} /> By Class
                 </button>
               </div>
+
+              {/* Add practice */}
+              <Button size="sm" variant="outline" onClick={openPracticeDialog}>
+                <Plus size={15} className="mr-1" /> Add Practice
+              </Button>
 
               {/* Add moto */}
               <Button size="sm" onClick={() => setShowAddDialog(true)}>
@@ -1538,6 +1615,100 @@ export default function EventSchedule() {
               {generateMutation.isPending ? "Generating…" : "Generate Lineups"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add Practice dialog ── */}
+      <Dialog open={showPracticeDialog} onOpenChange={setShowPracticeDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase text-xl">Add Practice</DialogTitle>
+            <DialogDescription>
+              Create a multi-class practice session. Select the classes that will ride together.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Name */}
+            <div className="space-y-1.5">
+              <Label>Name</Label>
+              <Input
+                value={practiceForm.name}
+                onChange={e => setPracticeForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Practice 1"
+              />
+            </div>
+
+            {/* Class checkboxes */}
+            <div className="space-y-2">
+              <Label>Classes</Label>
+              {(() => {
+                const eventClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+                if (eventClasses.length === 0) {
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      No classes defined on this event yet.
+                    </p>
+                  );
+                }
+                return (
+                  <div className="rounded-md border divide-y max-h-52 overflow-y-auto">
+                    {eventClasses.map(cls => {
+                      const checked = practiceForm.selectedClasses.includes(cls);
+                      return (
+                        <label
+                          key={cls}
+                          className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setPracticeForm(f => ({
+                                ...f,
+                                selectedClasses: checked
+                                  ? f.selectedClasses.filter(c => c !== cls)
+                                  : [...f.selectedClasses, cls],
+                              }));
+                            }}
+                            className="h-4 w-4 rounded accent-primary"
+                          />
+                          <span className="text-sm font-medium">{cls}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              {practiceForm.selectedClasses.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {practiceForm.selectedClasses.length} class{practiceForm.selectedClasses.length > 1 ? "es" : ""} selected
+                </p>
+              )}
+            </div>
+
+            {/* Lap count */}
+            <div className="space-y-1.5">
+              <Label>Lap Count</Label>
+              <Input
+                type="number"
+                min={1}
+                value={practiceForm.lapCount}
+                onChange={e => setPracticeForm(f => ({ ...f, lapCount: e.target.value }))}
+                className="h-9"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPracticeDialog(false)}>Cancel</Button>
+            <Button
+              onClick={handleAddPractice}
+              disabled={practiceForm.selectedClasses.length === 0 || createMutation.isPending}
+            >
+              {createMutation.isPending ? "Adding…" : "Add Practice"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

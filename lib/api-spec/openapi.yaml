@@ -2501,6 +2501,12 @@ components:
           enum: [heat, lcq, main, practice]
         raceClass:
           type: string
+        raceClasses:
+          type: array
+          items:
+            type: string
+          description: For multi-class practice motos; when set overrides raceClass for display
+          nullable: true
         status:
           type: string
           enum: [scheduled, in_progress, completed, cancelled]
@@ -2530,6 +2536,11 @@ components:
           enum: [heat, lcq, main, practice]
         raceClass:
           type: string
+        raceClasses:
+          type: array
+          items:
+            type: string
+          description: For multi-class practice motos; when set overrides raceClass for display
         motoNumber:
           type: integer
         lapCount:
