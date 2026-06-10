@@ -1121,6 +1121,10 @@ export const DiscountCodeUpdateDiscountType = {
 export interface DiscountCodeUpdate {
   isActive?: boolean;
   discountType?: DiscountCodeUpdateDiscountType;
+  amount?: number;
+  maxUses?: number;
+  /** @nullable */
+  riderId?: number | null;
   /** @nullable */
   expiresAt?: string | null;
   categoryIds?: number[];

@@ -170,6 +170,17 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
   const updates: Record<string, unknown> = {};
   if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
   if (req.body.discountType !== undefined) updates.discountType = req.body.discountType;
+  if (req.body.amount !== undefined) {
+    const amt = Number(req.body.amount);
+    if (isNaN(amt) || amt <= 0) return res.status(400).json({ error: "Amount must be greater than 0" });
+    if (req.body.discountType === "percentage" && amt > 100) return res.status(400).json({ error: "Percentage cannot exceed 100%" });
+    updates.amount = String(amt);
+  }
+  if (req.body.maxUses !== undefined) {
+    const raw = Number(req.body.maxUses);
+    updates.maxUses = raw === -1 ? 999999 : Math.max(1, raw);
+  }
+  if ("riderId" in req.body) updates.riderId = req.body.riderId ? Number(req.body.riderId) : null;
   if (req.body.expiresAt !== undefined) updates.expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
   if (req.body.categoryIds !== undefined) updates.categoryIds = Array.isArray(req.body.categoryIds) ? req.body.categoryIds : [];
 
@@ -180,13 +191,20 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
 
   if (!row) return res.status(404).json({ error: "Discount code not found" });
 
+  let riderName: string | null = null;
+  if (row.riderId) {
+    const [riderRow] = await db.select({ firstName: ridersTable.firstName, lastName: ridersTable.lastName })
+      .from(ridersTable).where(eq(ridersTable.id, row.riderId));
+    if (riderRow) riderName = `${riderRow.firstName} ${riderRow.lastName}`;
+  }
+
   return res.json({
     id: row.id,
     clubId: row.clubId,
     eventId: row.eventId,
     eventName: null,
     riderId: row.riderId ?? null,
-    riderName: null,
+    riderName,
     code: row.code,
     discountType: row.discountType,
     amount: Number(row.amount),

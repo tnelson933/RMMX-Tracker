@@ -275,6 +275,7 @@ function DiscountCodesTable() {
   const deleteMut = useDeleteDiscountCode();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingCodeId, setEditingCodeId] = useState<number | null>(null);
   const [form, setForm] = useState<CreateForm>(DEFAULT_FORM);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [usagePanelCode, setUsagePanelCode] = useState<DiscountCode | null>(null);
@@ -337,6 +338,65 @@ function DiscountCodesTable() {
     });
   };
 
+  const handleOpenEdit = (code: DiscountCode) => {
+    const usageType: UsageType =
+      code.maxUses >= 999999 ? "unlimited" :
+      code.maxUses === 1 ? "one_time" : "limited";
+    setForm({
+      code: code.code,
+      autoGenerate: false,
+      discountType: code.discountType as DiscountTypeVal,
+      amount: String(code.amount),
+      usageType,
+      limitedCount: code.maxUses > 1 && code.maxUses < 999999 ? String(code.maxUses) : "10",
+      hasExpiry: !!code.expiresAt,
+      expiresAt: code.expiresAt ? new Date(code.expiresAt).toISOString().slice(0, 16) : "",
+      categoryIds: (code.categoryIds as number[]) ?? [],
+      riderId: code.riderId ?? null,
+      riderSearch: "",
+    });
+    setEditingCodeId(code.id);
+    setDrawerOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingCodeId) return;
+    const amount = parseFloat(form.amount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: "Amount must be greater than 0", variant: "destructive" });
+      return;
+    }
+    if (form.discountType === "percentage" && amount > 100) {
+      toast({ title: "Percentage cannot exceed 100%", variant: "destructive" });
+      return;
+    }
+    let maxUses: number;
+    if (form.usageType === "one_time") maxUses = 1;
+    else if (form.usageType === "unlimited") maxUses = -1;
+    else maxUses = Math.max(1, parseInt(form.limitedCount) || 1);
+
+    updateMut.mutate({
+      codeId: editingCodeId,
+      data: {
+        discountType: form.discountType,
+        amount,
+        maxUses,
+        expiresAt: form.hasExpiry && form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
+        categoryIds: form.categoryIds,
+        riderId: form.riderId ?? null,
+      } as any,
+    }, {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListDiscountCodesQueryKey() });
+        setDrawerOpen(false);
+        setEditingCodeId(null);
+        setForm(DEFAULT_FORM);
+        toast({ title: "Discount code updated" });
+      },
+      onError: () => toast({ title: "Failed to update code", variant: "destructive" }),
+    });
+  };
+
   const handleToggleActive = (code: DiscountCode) => {
     updateMut.mutate({ codeId: code.id, data: { isActive: !code.isActive } }, {
       onSuccess: () => {
@@ -384,7 +444,7 @@ function DiscountCodesTable() {
               Create and manage discount codes for your club. Codes can be one-time use, limited, or unlimited.
             </p>
           </div>
-          <Button size="sm" onClick={() => { setForm(DEFAULT_FORM); setDrawerOpen(true); }}>
+          <Button size="sm" onClick={() => { setForm(DEFAULT_FORM); setEditingCodeId(null); setDrawerOpen(true); }}>
             <Plus size={14} className="mr-1" />
             New Code
           </Button>
@@ -470,6 +530,15 @@ function DiscountCodesTable() {
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7 text-muted-foreground"
+                        title="Edit code"
+                        onClick={() => handleOpenEdit(code)}
+                      >
+                        <Pencil size={13} />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground"
                         title="View usage history"
                         onClick={() => setUsagePanelCode(code)}
                       >
@@ -503,34 +572,49 @@ function DiscountCodesTable() {
         )}
       </CardContent>
 
-      {/* Create drawer */}
-      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+      {/* Create / Edit drawer */}
+      <Sheet open={drawerOpen} onOpenChange={open => { setDrawerOpen(open); if (!open) { setEditingCodeId(null); setForm(DEFAULT_FORM); } }}>
         <SheetContent className="sm:max-w-md overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>New Discount Code</SheetTitle>
+            <SheetTitle>
+              {editingCodeId
+                ? <span className="flex items-center gap-2">Edit Code <span className="font-mono text-primary">{form.code}</span></span>
+                : "New Discount Code"
+              }
+            </SheetTitle>
           </SheetHeader>
           <div className="space-y-5 mt-6">
-            {/* Code string */}
-            <div className="space-y-2">
-              <Label>Code String</Label>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={form.autoGenerate}
-                  onCheckedChange={v => setForm(f => ({ ...f, autoGenerate: v, code: "" }))}
-                  id="auto-gen"
-                />
-                <label htmlFor="auto-gen" className="text-sm text-muted-foreground">Auto-generate</label>
+            {/* Code string — read-only badge in edit mode, toggle+input in create mode */}
+            {editingCodeId ? (
+              <div className="space-y-1.5">
+                <Label>Code String</Label>
+                <div className="flex items-center gap-2 rounded-md border border-dashed bg-muted/40 px-3 py-2">
+                  <span className="font-mono font-bold tracking-wider text-sm flex-1">{form.code}</span>
+                  <span className="text-xs text-muted-foreground">Cannot be changed</span>
+                </div>
               </div>
-              {!form.autoGenerate && (
-                <Input
-                  placeholder="e.g. SUMMER25"
-                  value={form.code}
-                  onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))}
-                  className="font-mono uppercase"
-                  maxLength={20}
-                />
-              )}
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Code String</Label>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={form.autoGenerate}
+                    onCheckedChange={v => setForm(f => ({ ...f, autoGenerate: v, code: "" }))}
+                    id="auto-gen"
+                  />
+                  <label htmlFor="auto-gen" className="text-sm text-muted-foreground">Auto-generate</label>
+                </div>
+                {!form.autoGenerate && (
+                  <Input
+                    placeholder="e.g. SUMMER25"
+                    value={form.code}
+                    onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))}
+                    className="font-mono uppercase"
+                    maxLength={20}
+                  />
+                )}
+              </div>
+            )}
 
             <Separator />
 
@@ -738,11 +822,19 @@ function DiscountCodesTable() {
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setDrawerOpen(false)}>Cancel</Button>
-              <Button onClick={handleCreate} disabled={createMut.isPending}>
-                {createMut.isPending ? (
-                  <><RefreshCw size={14} className="mr-1.5 animate-spin" /> Creating…</>
-                ) : "Create Code"}
-              </Button>
+              {editingCodeId ? (
+                <Button onClick={handleSaveEdit} disabled={updateMut.isPending}>
+                  {updateMut.isPending ? (
+                    <><RefreshCw size={14} className="mr-1.5 animate-spin" /> Saving…</>
+                  ) : "Save Changes"}
+                </Button>
+              ) : (
+                <Button onClick={handleCreate} disabled={createMut.isPending}>
+                  {createMut.isPending ? (
+                    <><RefreshCw size={14} className="mr-1.5 animate-spin" /> Creating…</>
+                  ) : "Create Code"}
+                </Button>
+              )}
             </div>
           </div>
         </SheetContent>

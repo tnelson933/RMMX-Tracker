@@ -1773,6 +1773,9 @@ export const UpdateDiscountCodeParams = zod.object({
 export const UpdateDiscountCodeBody = zod.object({
   "isActive": zod.boolean().optional(),
   "discountType": zod.enum(['fixed', 'percentage']).optional(),
+  "amount": zod.number().optional(),
+  "maxUses": zod.number().optional(),
+  "riderId": zod.number().nullish(),
   "expiresAt": zod.string().nullish(),
   "categoryIds": zod.array(zod.number()).optional()
 })

@@ -3446,6 +3446,12 @@ components:
         discountType:
           type: string
           enum: [fixed, percentage]
+        amount:
+          type: number
+        maxUses:
+          type: integer
+        riderId:
+          type: ["integer", "null"]
         expiresAt:
           type: ["string", "null"]
         categoryIds:
