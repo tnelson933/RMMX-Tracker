@@ -75,21 +75,21 @@ function formatMinLapTime(ms: number): string {
 
 function typeBadgeVariant(type: string): string {
   switch (type) {
-    case "practice": return "bg-blue-500/25 text-blue-200 border-blue-400/60";
-    case "heat":     return "bg-yellow-400/30 text-yellow-100 border-yellow-400/70";
-    case "lcq":      return "bg-orange-500/30 text-orange-200 border-orange-400/60";
+    case "practice": return "bg-blue-500/25 text-blue-300 border-blue-400/70";
+    case "heat":     return "bg-yellow-400/25 text-yellow-300 border-yellow-400/80";
+    case "lcq":      return "bg-orange-500/30 text-orange-300 border-orange-400/70";
     case "main":     return "bg-primary/30 text-primary border-primary/60";
-    case "moto":     return "bg-teal-500/25 text-teal-200 border-teal-400/60";
+    case "moto":     return "bg-teal-500/25 text-teal-300 border-teal-400/70";
     default:         return "bg-muted text-muted-foreground";
   }
 }
 
 function statusBadgeVariant(status: string): string {
   switch (status) {
-    case "in_progress": return "bg-green-500/30 text-green-200 border-green-400/60";
+    case "in_progress": return "bg-green-500/30 text-green-300 border-green-400/70";
     case "completed":   return "bg-muted text-muted-foreground border-border";
-    case "cancelled":   return "bg-red-500/30 text-red-200 border-red-400/60";
-    default:            return "bg-slate-500/40 text-slate-100 border-slate-400/70";
+    case "cancelled":   return "bg-red-500/30 text-red-300 border-red-400/70";
+    default:            return "bg-slate-600/50 text-slate-200 border-slate-400/80";
   }
 }
 
@@ -585,7 +585,7 @@ function SortableMotoCard({
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
           : staggerPartner
           ? "border-primary/40 ring-1 ring-primary/20"
-          : "border-border hover:border-primary/40"
+          : "border-zinc-600 hover:border-primary/40"
       }`}
     >
       {/* ── Stagger drop zone (shown when another moto card is being dragged) ── */}
@@ -802,7 +802,7 @@ function StaticMotoCard({
           ? "border-muted bg-muted/10"
           : showDropHighlight
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
-          : "border-border hover:border-primary/40"
+          : "border-zinc-600 hover:border-primary/40"
       }`}
     >
       {/* ── Countdown complete banner ── */}
