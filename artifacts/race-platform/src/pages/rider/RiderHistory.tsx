@@ -1508,12 +1508,17 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   // Strictly by motoNumber for the run order view
   const runOrderMotos = [...event.motos].sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
 
-  // "Now Up" = rider's first upcoming moto in run order; "Up Next" = their second
+  // "Now Up" = rider's first upcoming moto in run order; "Up Next" = their second.
+  // If the rider is currently in an in_progress moto (e.g. staggered start running),
+  // their next scheduled moto shows as "Up Next", not "Now Up".
+  const myInProgress = event.motos.filter(m => m.isAnyFamilyMemberInMoto && m.status === "in_progress");
   const myScheduled = event.motos
     .filter(m => m.isAnyFamilyMemberInMoto && !["completed", "cancelled", "in_progress"].includes(m.status))
     .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
-  const nowUpMotoId = myScheduled[0]?.motoId ?? null;
-  const upNextMotoId = myScheduled[1]?.motoId ?? null;
+  const nowUpMotoId = myInProgress.length > 0 ? null : (myScheduled[0]?.motoId ?? null);
+  const upNextMotoId = myInProgress.length > 0
+    ? (myScheduled[0]?.motoId ?? null)
+    : (myScheduled[1]?.motoId ?? null);
 
   // How many scheduled motos (by motoNumber) come before the rider's next moto.
   // in_progress motos don't count — they're already running and don't delay the rider.

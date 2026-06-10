@@ -2873,12 +2873,13 @@ export default function Motos() {
               <DroppableMotoSlot id={`moto-slot-${moto.id}`} active={!!activeMotoCardDrag && activeMotoCardDrag.motoId !== moto.id} />
             <Card className="flex flex-col h-full border-zinc-600 overflow-hidden">
               <CardHeader className="bg-card py-3 border-b flex flex-row items-center gap-3 px-4">
-                <DraggableMotoGrip motoId={moto.id} disabled={classFilter !== "schedule" || moto.status === "in_progress" || moto.status === "completed"} />
+                {/* Race number corner block */}
+                <div className="shrink-0 self-stretch -my-3 -ml-4 mr-0 flex flex-col items-center justify-center bg-zinc-800/80 border-r border-zinc-600 w-14">
+                  <span className="text-[8px] font-bold uppercase tracking-widest text-zinc-500 leading-none mb-0.5">RACE</span>
+                  <span className="font-heading font-bold text-2xl leading-none tabular-nums text-foreground">{moto.motoNumber}</span>
+                </div>
 
-                {/* Moto number */}
-                <span className="text-xs text-muted-foreground w-6 shrink-0 text-center font-mono tabular-nums">
-                  {moto.motoNumber}
-                </span>
+                <DraggableMotoGrip motoId={moto.id} disabled={classFilter !== "schedule" || moto.status === "in_progress" || moto.status === "completed"} />
 
                 {/* Name + class + badges */}
                 <div className="flex-1 min-w-0">
@@ -2894,7 +2895,7 @@ export default function Motos() {
                     {/* Type badge — same variants as Schedule page */}
                     <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${
                       moto.type === "practice" ? "bg-blue-500/20 text-blue-300 border-blue-500/30" :
-                      moto.type === "heat"     ? "bg-amber-500/30 text-amber-100 border-amber-400/60" :
+                      moto.type === "heat"     ? "bg-amber-500/25 text-amber-300 border-amber-400/70" :
                       moto.type === "lcq"      ? "bg-orange-500/20 text-orange-300 border-orange-500/30" :
                       moto.type === "main"     ? "bg-primary/20 text-primary border-primary/30" :
                       moto.type === "moto"     ? "bg-teal-500/20 text-teal-300 border-teal-500/30" :
@@ -2906,7 +2907,7 @@ export default function Motos() {
                     <span className={`text-xs px-2 py-0.5 rounded border flex items-center gap-1 ${
                       moto.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30 animate-pulse" :
                       moto.status === "completed"   ? "bg-muted text-muted-foreground border-border" :
-                                                      "bg-zinc-600/70 text-zinc-100 border-zinc-400/60"
+                                                      "bg-zinc-600/50 text-zinc-300 border-zinc-400/70"
                     }`}>
                       {moto.status === "in_progress" && (
                         <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full animate-ping shrink-0" />
