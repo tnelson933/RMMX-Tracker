@@ -205,7 +205,11 @@ export const CreateClubBody = zod.object({
  */
 export const GetGateSettingsResponse = zod.object({
   "gateCount": zod.number().nullish(),
-  "gateSeeding": zod.array(zod.number()).optional()
+  "gateSeeding": zod.array(zod.number()).optional(),
+  "gateConfigs": zod.array(zod.object({
+
+}).passthrough()).optional().describe('Full gate configuration objects for multi-config support.'),
+  "hasPracticeData": zod.boolean().optional().describe('True when the club has at least one practice session with recorded lap times.')
 })
 
 
@@ -214,12 +218,20 @@ export const GetGateSettingsResponse = zod.object({
  */
 export const UpdateGateSettingsBody = zod.object({
   "gateCount": zod.number().nullish(),
-  "gateSeeding": zod.array(zod.number()).optional()
+  "gateSeeding": zod.array(zod.number()).optional(),
+  "gateConfigs": zod.array(zod.object({
+
+}).passthrough()).optional().describe('Full gate configuration objects for multi-config support.'),
+  "hasPracticeData": zod.boolean().optional().describe('True when the club has at least one practice session with recorded lap times.')
 })
 
 export const UpdateGateSettingsResponse = zod.object({
   "gateCount": zod.number().nullish(),
-  "gateSeeding": zod.array(zod.number()).optional()
+  "gateSeeding": zod.array(zod.number()).optional(),
+  "gateConfigs": zod.array(zod.object({
+
+}).passthrough()).optional().describe('Full gate configuration objects for multi-config support.'),
+  "hasPracticeData": zod.boolean().optional().describe('True when the club has at least one practice session with recorded lap times.')
 })
 
 
@@ -1001,7 +1013,9 @@ export const GenerateLineupsBody = zod.object({
   "raceFormat": zod.enum(['one_moto', 'two_moto', 'three_moto']),
   "classes": zod.array(zod.string()),
   "ridersPerHeat": zod.number().optional(),
-  "usePracticeSeeding": zod.boolean().optional()
+  "usePracticeSeeding": zod.boolean().optional().describe('Deprecated: use gateSeedingMethod instead. Still accepted for backward compatibility.'),
+  "gateSeedingMethod": zod.enum(['random', 'practice_fastest_lap', 'previous_round']).optional().describe('Controls how riders are ordered into gate positions. random = shuffle randomly (default); practice_fastest_lap = sort by best practice lap time (fastest gets best pick); previous_round = sort by finish position in the most recently completed round, tiebroken by fastest lap time in that round. When omitted, defaults to random (preserving backward compatibility).\n'),
+  "gateConfigId": zod.string().optional().describe('ID of the gate configuration to use for gate assignments. Applies to all seeding methods.')
 })
 
 export const GenerateLineupsResponseItem = zod.object({

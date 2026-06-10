@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable } from "@workspace/db";
-import { eq, and, inArray, min, ne } from "drizzle-orm";
+import { eq, and, inArray, min, ne, gt } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 
 const router = Router();
@@ -236,24 +236,34 @@ function gateConfigToSeedingOrder(config: { gateCount: number; gatePriorities: n
 
 router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateConfigId } = req.body;
+  const { raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateSeedingMethod: rawMethod, gateConfigId } = req.body;
+
+  // Determine seeding method — backward compat: usePracticeSeeding:true → practice_fastest_lap
+  const seedingMethod: "random" | "practice_fastest_lap" | "previous_round" =
+    rawMethod ?? (usePracticeSeeding ? "practice_fastest_lap" : "random");
 
   // --- Guard: skip classes that already have completed motos to preserve results ---
+  // Exception: previous_round intentionally uses completed motos for seeding, so those classes
+  // are NOT locked — we keep completed motos and only delete/replace the scheduled ones.
   const existingMotos = await db.select({
     id: motosTable.id,
     raceClass: motosTable.raceClass,
     status: motosTable.status,
     motoNumber: motosTable.motoNumber,
+    name: motosTable.name,
+    type: motosTable.type,
   }).from(motosTable).where(eq(motosTable.eventId, eventId));
 
-  const lockedClasses = new Set(
-    existingMotos
-      .filter(m => m.status === "completed")
-      .map(m => m.raceClass)
-      .filter((c): c is string => c != null)
-  );
+  const lockedClasses = seedingMethod === "previous_round"
+    ? new Set<string>()  // previous_round: no locking — completed motos are needed for seeding
+    : new Set(
+        existingMotos
+          .filter(m => m.status === "completed")
+          .map(m => m.raceClass)
+          .filter((c): c is string => c != null)
+      );
 
-  // Only generate for classes that have no completed motos
+  // Only generate for classes that have no completed motos (or all classes for previous_round)
   const classesToGenerate: string[] = ((classes as string[]) || []).filter(c => !lockedClasses.has(c));
 
   // Delete existing non-completed motos for the classes we will regenerate (avoid duplicates)
@@ -269,47 +279,46 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   // Determine if this is a Supercross-style event (main event only, heats feed into main)
   const { isSupercross: isSupercrossFormat } = await getEventFormat(eventId);
 
-  // --- Practice seeding: load gate settings + best lap times ---
+  // --- Load gate config (applies to all seeding methods when gateConfigId is provided) ---
   let gateSeeding: number[] = [];
   let gateCountFromClub: number | null = null;
-  let bestLapByRider: Map<number, number> = new Map(); // riderId → best lap ms
 
-  if (usePracticeSeeding) {
-    // Get the club for this event
+  // Always resolve a gate config: selected id → event default → first config.
+  // This ensures gate assignments are applied regardless of seeding method.
+  if (true) {
     const [eventRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
     if (eventRow?.clubId) {
       const [club] = await db.select({ gateSeeding: clubsTable.gateSeeding })
         .from(clubsTable).where(eq(clubsTable.id, eventRow.clubId));
-
-      // Support new multi-config format (GateConfig[]) or empty
       const gateConfigs = (club?.gateSeeding as any[] | null) ?? [];
       const selectedConfig = gateConfigId
         ? gateConfigs.find((c: any) => c.id === gateConfigId)
         : gateConfigs[0];
-
       if (selectedConfig?.gatePriorities) {
         gateSeeding = gateConfigToSeedingOrder(selectedConfig);
         gateCountFromClub = selectedConfig.gateCount ?? null;
       }
+    }
+  }
 
-      // Get all practice sessions for this club
+  // --- Practice lap times (practice_fastest_lap method) ---
+  let bestLapByRider: Map<number, number> = new Map(); // riderId → best lap ms
+
+  if (seedingMethod === "practice_fastest_lap") {
+    const [eventRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (eventRow?.clubId) {
       const sessions = await db.select({ id: practiceSessionsTable.id })
         .from(practiceSessionsTable)
         .where(eq(practiceSessionsTable.clubId, eventRow.clubId));
-
       if (sessions.length > 0) {
         const sessionIds = sessions.map(s => s.id);
-        // Best lap time per rider across all practice sessions for this club
         const bestLaps = await db.select({
           riderId: practiceCrossingsTable.riderId,
           bestLap: min(practiceCrossingsTable.lapTimeMs),
         })
           .from(practiceCrossingsTable)
-          .where(and(
-            inArray(practiceCrossingsTable.sessionId, sessionIds),
-          ))
+          .where(inArray(practiceCrossingsTable.sessionId, sessionIds))
           .groupBy(practiceCrossingsTable.riderId);
-
         for (const row of bestLaps) {
           if (row.riderId != null && row.bestLap != null && row.bestLap > 0) {
             bestLapByRider.set(row.riderId, Number(row.bestLap));
@@ -319,10 +328,120 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     }
   }
 
-  // Effective max per heat: explicit input OR gate count (if practice seeding) OR unlimited
+  // --- Previous round data (previous_round method) ---
+  // Key: class → Map<riderId, { position: number; bestLapMs: number | null }>
+  const prevRoundByClass = new Map<string, Map<number, { position: number; bestLapMs: number | null }>>();
+
+  if (seedingMethod === "previous_round") {
+    // Only race motos (heat/main/lcq) carry race_results — exclude practice motos
+    const completedMotos = existingMotos.filter(m =>
+      m.status === "completed" && m.raceClass != null && m.type !== "practice"
+    );
+
+    // Group completed motos by class for round detection
+    const completedByClass = new Map<string, { id: number; motoNumber: number; name: string | null; type: string | null }[]>();
+    for (const m of completedMotos) {
+      const cls = m.raceClass as string;
+      if (!completedByClass.has(cls)) completedByClass.set(cls, []);
+      completedByClass.get(cls)!.push(m);
+    }
+
+    // Assign round numbers using a tiered strategy:
+    //  1. "Moto N" in name (e.g. "450 Pro Moto 1") → use N; handles standard multi-round formats and
+    //     multi-group classes ("Group 1 Moto 1" and "Group 2 Moto 1" both yield round 1).
+    //  2. moto type signal (no "Moto N" in name, i.e. Supercross-style naming):
+    //       heat / lcq  → round 1  (qualifying; all heats are the same round)
+    //       main        → round 2  (final; always higher than heats/lcq)
+    //  Never use sequential index — it incorrectly splits "Heat 1" and "Heat 2" into different rounds.
+    function getRoundFromMoto(m: { name: string | null; type: string | null }): number {
+      const nameMatch = (m.name ?? "").match(/\bMoto\s+(\d+)\b/i);
+      if (nameMatch) return parseInt(nameMatch[1]);
+      if (m.type === "main") return 2;
+      return 1; // heat / lcq / unknown → qualifying round
+    }
+
+    const motoRoundNumber = new Map<number, number>(); // motoId → round number
+    for (const [, motos] of completedByClass) {
+      for (const m of motos) {
+        motoRoundNumber.set(m.id, getRoundFromMoto(m));
+      }
+    }
+
+    // For each class, find the maximum (most recent) round number
+    const maxRoundByClass = new Map<string, number>();
+    for (const m of completedMotos) {
+      const cls = m.raceClass as string;
+      const rn = motoRoundNumber.get(m.id) ?? 1;
+      maxRoundByClass.set(cls, Math.max(maxRoundByClass.get(cls) ?? 0, rn));
+    }
+
+    // Collect moto IDs that belong to the most recent round for each class
+    const prevRoundMotoIds: number[] = [];
+    for (const m of completedMotos) {
+      const cls = m.raceClass as string;
+      if ((motoRoundNumber.get(m.id) ?? 1) === maxRoundByClass.get(cls)) {
+        prevRoundMotoIds.push(m.id);
+      }
+    }
+
+    if (prevRoundMotoIds.length > 0) {
+      // Load race results for those motos
+      const results = await db.select({
+        motoId: raceResultsTable.motoId,
+        riderId: raceResultsTable.riderId,
+        raceClass: raceResultsTable.raceClass,
+        position: raceResultsTable.position,
+        dnf: raceResultsTable.dnf,
+        dns: raceResultsTable.dns,
+      }).from(raceResultsTable).where(inArray(raceResultsTable.motoId, prevRoundMotoIds));
+
+      // Load best lap time per rider from those motos (for tiebreaking)
+      const bestLapsForRound = await db.select({
+        motoId: lapCrossingsTable.motoId,
+        riderId: lapCrossingsTable.riderId,
+        bestLap: min(lapCrossingsTable.lapTimeMs),
+      })
+        .from(lapCrossingsTable)
+        .where(and(
+          inArray(lapCrossingsTable.motoId, prevRoundMotoIds),
+          gt(lapCrossingsTable.lapTimeMs, 0),
+        ))
+        .groupBy(lapCrossingsTable.motoId, lapCrossingsTable.riderId);
+
+      // Build riderId → best lap ms across all prev-round motos
+      const bestLapInRound = new Map<number, number>(); // riderId → best lap ms
+      for (const row of bestLapsForRound) {
+        if (row.riderId != null && row.bestLap != null && row.bestLap > 0) {
+          const existing = bestLapInRound.get(row.riderId);
+          const lap = Number(row.bestLap);
+          bestLapInRound.set(row.riderId, existing != null ? Math.min(existing, lap) : lap);
+        }
+      }
+
+      // Build per-class seed map: riderId → { position, bestLapMs }
+      // DNF/DNS riders get a high synthetic position so they seed last
+      const HIGH_POS = 9999;
+      for (const r of results) {
+        const cls = r.raceClass;
+        if (!prevRoundByClass.has(cls)) prevRoundByClass.set(cls, new Map());
+        const classMap = prevRoundByClass.get(cls)!;
+        const pos = (r.dnf || r.dns) ? HIGH_POS : r.position;
+        const existing = classMap.get(r.riderId);
+        // Keep best (lowest) position if a rider appeared in multiple motos this round
+        if (!existing || pos < existing.position) {
+          classMap.set(r.riderId, {
+            position: pos,
+            bestLapMs: bestLapInRound.get(r.riderId) ?? null,
+          });
+        }
+      }
+    }
+  }
+
+  // Effective max per heat: explicit input OR gate count (when gate config loaded) OR unlimited
   const effectiveMax: number = ridersPerHeat && ridersPerHeat > 0
     ? ridersPerHeat
-    : (usePracticeSeeding && gateCountFromClub ? gateCountFromClub : Infinity);
+    : (gateCountFromClub ? gateCountFromClub : Infinity);
 
   const checkins = await db.select({
     riderId: checkinsTable.riderId,
@@ -342,10 +461,11 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
 
   const divCount = raceFormat === "three_moto" ? 3 : raceFormat === "two_moto" ? 2 : 1;
 
-  // Helper: build a lineup entry, optionally assigning a gate from the seeding order
   type CheckinRow = typeof checkins[0];
+
+  // Helper: assign gate positions to a pre-ordered group of riders
   function buildLineup(groupRiders: CheckinRow[], seedingOrder: number[]): Array<Record<string, unknown>> {
-    if (!usePracticeSeeding || seedingOrder.length === 0) {
+    if (seedingOrder.length === 0) {
       return groupRiders.map((r, i) => ({
         position: i + 1,
         riderId: r.riderId,
@@ -354,20 +474,47 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         rfidNumber: r.rfidNumber,
       }));
     }
-    // Sort riders within this group by best practice lap (fastest first, unranked last)
-    const sorted = [...groupRiders].sort((a, b) => {
-      const la = a.riderId != null ? (bestLapByRider.get(a.riderId) ?? Infinity) : Infinity;
-      const lb = b.riderId != null ? (bestLapByRider.get(b.riderId) ?? Infinity) : Infinity;
-      return la - lb;
-    });
-    return sorted.map((r, i) => ({
+    return groupRiders.map((r, i) => ({
       position: i + 1,
-      gate: seedingOrder[i] ?? null, // null if more riders than gate seeds defined
+      gate: seedingOrder[i] ?? null,
       riderId: r.riderId,
       riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
       bibNumber: r.bibNumber,
       rfidNumber: r.rfidNumber,
     }));
+  }
+
+  // Helper: sort riders for a class according to the chosen seeding method
+  function sortRidersForClass(riders: CheckinRow[], cls: string): CheckinRow[] {
+    if (seedingMethod === "practice_fastest_lap") {
+      return [...riders].sort((a, b) => {
+        const la = a.riderId != null ? (bestLapByRider.get(a.riderId) ?? Infinity) : Infinity;
+        const lb = b.riderId != null ? (bestLapByRider.get(b.riderId) ?? Infinity) : Infinity;
+        return la - lb;
+      });
+    }
+    if (seedingMethod === "previous_round") {
+      const classMap = prevRoundByClass.get(cls);
+      return [...riders].sort((a, b) => {
+        const da = a.riderId != null ? classMap?.get(a.riderId) : undefined;
+        const db_ = b.riderId != null ? classMap?.get(b.riderId) : undefined;
+        // Riders with no prior result go last
+        const posA = da?.position ?? Infinity;
+        const posB = db_?.position ?? Infinity;
+        if (posA !== posB) return posA - posB;
+        // Tiebreak: fastest lap (ascending, nulls last)
+        const lapA = da?.bestLapMs ?? Infinity;
+        const lapB = db_?.bestLapMs ?? Infinity;
+        return lapA - lapB;
+      });
+    }
+    // random: shuffle
+    const arr = [...riders];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
   }
 
   // Pre-compute groups for every class before inserting any motos so we can
@@ -379,20 +526,15 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     let classRiders = checkins.filter(c => c.raceClass === cls);
     if (classRiders.length === 0) continue;
 
-    // --- Serpentine seeding: sort by practice lap time, then snake-distribute into groups ---
-    if (usePracticeSeeding) {
-      classRiders = [...classRiders].sort((a, b) => {
-        const la = a.riderId != null ? (bestLapByRider.get(a.riderId) ?? Infinity) : Infinity;
-        const lb = b.riderId != null ? (bestLapByRider.get(b.riderId) ?? Infinity) : Infinity;
-        return la - lb;
-      });
-    }
+    // Sort riders according to chosen method before group distribution
+    classRiders = sortRidersForClass(classRiders, cls);
 
     const numGroups = effectiveMax === Infinity ? 1 : Math.ceil(classRiders.length / effectiveMax);
     const groups: CheckinRow[][] = Array.from({ length: numGroups }, () => []);
 
-    if (usePracticeSeeding && numGroups > 1) {
-      // Serpentine (snake) distribution: ensures balanced competition
+    const useSerp = (seedingMethod === "practice_fastest_lap" || seedingMethod === "previous_round") && numGroups > 1;
+    if (useSerp) {
+      // Serpentine (snake) distribution: ensures balanced competition across groups
       classRiders.forEach((rider, idx) => {
         const round = Math.floor(idx / numGroups);
         const posInRound = idx % numGroups;
@@ -400,7 +542,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         groups[groupIdx].push(rider);
       });
     } else {
-      // Default: sequential fill
+      // Default: sequential fill (also used for random — each group is already shuffled)
       const baseSize = Math.floor(classRiders.length / numGroups);
       const extras = classRiders.length % numGroups;
       let offset = 0;

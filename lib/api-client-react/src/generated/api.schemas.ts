@@ -578,9 +578,15 @@ export interface MotoReorderInput {
   motoIds: number[];
 }
 
+export type GateSettingsGateConfigsItem = { [key: string]: unknown };
+
 export interface GateSettings {
   gateCount?: number | null;
   gateSeeding?: number[];
+  /** Full gate configuration objects for multi-config support. */
+  gateConfigs?: GateSettingsGateConfigsItem[];
+  /** True when the club has at least one practice session with recorded lap times. */
+  hasPracticeData?: boolean;
 }
 
 export type LineupGenerateInputRaceFormat = typeof LineupGenerateInputRaceFormat[keyof typeof LineupGenerateInputRaceFormat];
@@ -592,11 +598,30 @@ export const LineupGenerateInputRaceFormat = {
   three_moto: 'three_moto',
 } as const;
 
+/**
+ * Controls how riders are ordered into gate positions. random = shuffle randomly (default); practice_fastest_lap = sort by best practice lap time (fastest gets best pick); previous_round = sort by finish position in the most recently completed round, tiebroken by fastest lap time in that round. When omitted, defaults to random (preserving backward compatibility).
+
+ */
+export type LineupGenerateInputGateSeedingMethod = typeof LineupGenerateInputGateSeedingMethod[keyof typeof LineupGenerateInputGateSeedingMethod];
+
+
+export const LineupGenerateInputGateSeedingMethod = {
+  random: 'random',
+  practice_fastest_lap: 'practice_fastest_lap',
+  previous_round: 'previous_round',
+} as const;
+
 export interface LineupGenerateInput {
   raceFormat: LineupGenerateInputRaceFormat;
   classes: string[];
   ridersPerHeat?: number;
+  /** Deprecated: use gateSeedingMethod instead. Still accepted for backward compatibility. */
   usePracticeSeeding?: boolean;
+  /** Controls how riders are ordered into gate positions. random = shuffle randomly (default); practice_fastest_lap = sort by best practice lap time (fastest gets best pick); previous_round = sort by finish position in the most recently completed round, tiebroken by fastest lap time in that round. When omitted, defaults to random (preserving backward compatibility).
+   */
+  gateSeedingMethod?: LineupGenerateInputGateSeedingMethod;
+  /** ID of the gate configuration to use for gate assignments. Applies to all seeding methods. */
+  gateConfigId?: string;
 }
 
 export interface RiderResultInput {

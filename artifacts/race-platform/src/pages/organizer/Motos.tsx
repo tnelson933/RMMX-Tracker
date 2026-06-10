@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -1006,7 +1007,7 @@ export default function Motos() {
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
-  const [usePracticeSeeding, setUsePracticeSeeding] = useState(false);
+  const [gateSeedingMethod, setGateSeedingMethod] = useState<"random" | "practice_fastest_lap" | "previous_round">("random");
   const [selectedGateConfigId, setSelectedGateConfigId] = useState<string>("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -1074,11 +1075,12 @@ export default function Motos() {
     queryKey: ["gateConfigs"],
     queryFn: async () => {
       const res = await fetch("/api/clubs/gate-settings", { credentials: "include" });
-      if (!res.ok) return { gateConfigs: [] };
-      return res.json() as Promise<{ gateConfigs: Array<{ id: string; name: string; gateCount: number; gatePriorities: number[] }> }>;
+      if (!res.ok) return { gateConfigs: [], hasPracticeData: false };
+      return res.json() as Promise<{ gateConfigs: Array<{ id: string; name: string; gateCount: number; gatePriorities: number[] }>; hasPracticeData: boolean }>;
     },
   });
   const gateConfigs = gateConfigsData?.gateConfigs ?? [];
+  const hasPracticeData = gateConfigsData?.hasPracticeData ?? false;
 
   const generateMutation = useGenerateLineups();
   const createMotoMutation = useCreateMoto();
@@ -1102,13 +1104,16 @@ export default function Motos() {
     setExpandedMotoId(id);
   }, []);
 
-  // Pre-populate gate config from the event's default when event data loads.
+  // Pre-populate gate config: prefer event default, fall back to first available config.
+  // This ensures selectedGateConfigId is always set when configs exist so the request payload
+  // matches what is visually displayed in the dialog.
   useEffect(() => {
-    if (!event || gateConfigs.length === 0) return;
-    const defaultId = (event as any).defaultGateConfigId as string | null | undefined;
-    if (defaultId && gateConfigs.some(c => c.id === defaultId)) {
-      setSelectedGateConfigId(prev => prev || defaultId);
-    }
+    if (gateConfigs.length === 0) return;
+    const defaultId = (event as any)?.defaultGateConfigId as string | null | undefined;
+    const initId = (defaultId && gateConfigs.some(c => c.id === defaultId))
+      ? defaultId
+      : gateConfigs[0]?.id;
+    if (initId) setSelectedGateConfigId(prev => prev || initId);
   }, [event, gateConfigs]);
 
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
@@ -1523,18 +1528,24 @@ export default function Motos() {
   const handleGenerate = () => {
     if (!event?.raceClasses) return;
     const allClasses: string[] = event.raceClasses as string[];
-    const lockedClasses = allClasses.filter(cls =>
-      (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
-    );
+    // Classes with completed race motos — only relevant for random/practice methods where they are skipped.
+    // For previous_round those classes are intentionally regenerated using prior results as seed.
+    const lockedClasses = gateSeedingMethod === "previous_round"
+      ? []
+      : allClasses.filter(cls =>
+          (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
+        );
     const perHeat = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
-    const gateConfigId = usePracticeSeeding && selectedGateConfigId ? selectedGateConfigId : undefined;
+    const gateConfigId = selectedGateConfigId || undefined;
     generateMutation.mutate(
-      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, usePracticeSeeding, gateConfigId } as any },
+      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, gateSeedingMethod, gateConfigId } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           setIsGenerateOpen(false);
-          if (lockedClasses.length > 0) {
+          if (gateSeedingMethod === "previous_round") {
+            toast({ title: "Lineups generated", description: "Gate picks seeded from previous round finish order." });
+          } else if (lockedClasses.length > 0) {
             toast({
               title: "Lineups generated",
               description: `Skipped ${lockedClasses.length} class${lockedClasses.length > 1 ? "es" : ""} with completed motos: ${lockedClasses.join(", ")}`,
@@ -2042,7 +2053,13 @@ export default function Motos() {
           </Dialog>
 
           {/* Auto generate */}
-          <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>
+          <Dialog open={isGenerateOpen} onOpenChange={(open) => {
+            setIsGenerateOpen(open);
+            if (!open) {
+              setGateSeedingMethod("random");
+              setSelectedGateConfigId("");
+            }
+          }}>
             <DialogTrigger asChild>
               <Button className="font-heading uppercase tracking-wider">
                 <Settings size={16} className="mr-2" /> Generate Lineups
@@ -2136,57 +2153,124 @@ export default function Motos() {
                     : "If a class exceeds this number, riders are split into separate groups."}
                 </p>
               </div>
-              <div className="rounded-lg border bg-muted/30 px-4 py-3 space-y-3">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={usePracticeSeeding}
-                    onChange={e => {
-                      setUsePracticeSeeding(e.target.checked);
-                      if (!e.target.checked) setSelectedGateConfigId("");
-                      else if (gateConfigs.length > 0 && !selectedGateConfigId) setSelectedGateConfigId(gateConfigs[0].id);
-                    }}
-                    className="h-4 w-4 rounded accent-primary"
-                  />
-                  <span className="text-sm font-medium">Use practice lap seeding</span>
-                </label>
-                <p className="text-xs text-muted-foreground pl-7">
-                  Distributes riders into groups by best practice lap time (serpentine seeding) and assigns starting gates in order of speed. Requires gate settings to be configured.
-                </p>
-                {usePracticeSeeding && gateConfigs.length === 0 && (
-                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 ml-7">
-                    No gate configs found — set them up on the Gate Assignments page first.
-                  </p>
-                )}
-                {usePracticeSeeding && gateConfigs.length > 1 && (
-                  <div className="pl-7 space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Gate Config</label>
-                    <Select
-                      value={selectedGateConfigId || gateConfigs[0]?.id || ""}
-                      onValueChange={setSelectedGateConfigId}
-                    >
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue placeholder="Select gate config…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {gateConfigs.map(cfg => (
-                          <SelectItem key={cfg.id} value={cfg.id}>
-                            {cfg.name} <span className="text-muted-foreground ml-1">({cfg.gateCount} gates)</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+              {/* Gate Pick Method */}
+              {(() => {
+                // Only completed race motos (not practice) count as a valid "previous round" seed source
+                const hasCompletedRaceMotos = (motos ?? []).some(m => m.status === "completed" && m.type !== "practice");
+                const methods: { value: "random" | "practice_fastest_lap" | "previous_round"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
+                  {
+                    value: "random",
+                    label: "Random",
+                    description: "Riders are shuffled randomly into gate positions.",
+                  },
+                  {
+                    value: "practice_fastest_lap",
+                    label: "Practice Fastest Lap",
+                    description: "Riders are seeded by best practice lap time — fastest gets first gate pick.",
+                    disabled: !hasPracticeData,
+                    disabledReason: "No practice lap data recorded for this club yet.",
+                  },
+                  {
+                    value: "previous_round",
+                    label: "Previous Round",
+                    description: "Riders are seeded by their finish position in the most recently completed round. Ties broken by fastest lap.",
+                    disabled: !hasCompletedRaceMotos,
+                    disabledReason: "No completed race motos yet — run Round 1 first.",
+                  },
+                ];
+                return (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Gate Pick Method</label>
+                    <TooltipProvider>
+                      <div className="rounded-lg border divide-y overflow-hidden">
+                        {methods.map((m) => {
+                          const isSelected = gateSeedingMethod === m.value;
+                          const btn = (
+                            <button
+                              key={m.value}
+                              type="button"
+                              disabled={m.disabled}
+                              onClick={() => {
+                                if (m.disabled) return;
+                                setGateSeedingMethod(m.value);
+                              }}
+                              className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors ${
+                                m.disabled
+                                  ? "opacity-50 cursor-not-allowed bg-muted/20"
+                                  : isSelected
+                                  ? "bg-primary/5"
+                                  : "hover:bg-muted/30"
+                              }`}
+                            >
+                              <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                                isSelected ? "border-primary bg-primary" : "border-muted-foreground/40"
+                              }`}>
+                                {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                              </span>
+                              <span className="flex flex-col gap-0.5 min-w-0">
+                                <span className={`text-sm font-medium leading-tight ${m.disabled ? "text-muted-foreground" : ""}`}>
+                                  {m.label}
+                                  {m.disabled && (
+                                    <span className="ml-2 text-[10px] font-normal text-muted-foreground uppercase tracking-wide">Unavailable</span>
+                                  )}
+                                </span>
+                                <span className="text-xs text-muted-foreground leading-snug">{m.description}</span>
+                              </span>
+                            </button>
+                          );
+                          if (m.disabled && m.disabledReason) {
+                            return (
+                              <Tooltip key={m.value}>
+                                <TooltipTrigger asChild>{btn}</TooltipTrigger>
+                                <TooltipContent side="top">{m.disabledReason}</TooltipContent>
+                              </Tooltip>
+                            );
+                          }
+                          return btn;
+                        })}
+                      </div>
+                    </TooltipProvider>
                   </div>
-                )}
-                {usePracticeSeeding && gateConfigs.length === 1 && (
-                  <p className="text-xs text-muted-foreground pl-7">
-                    Using: <span className="font-medium">{gateConfigs[0].name}</span> ({gateConfigs[0].gateCount} gates)
-                  </p>
-                )}
-              </div>
+                );
+              })()}
+              {/* Gate Config — visible for all methods */}
+              {gateConfigs.length === 0 ? (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+                  No gate configs found — set them up on the Gate Assignments page to assign gate numbers.
+                </p>
+              ) : gateConfigs.length === 1 ? (
+                <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Gate Config</p>
+                    <p className="text-sm font-medium">{gateConfigs[0].name} <span className="text-muted-foreground font-normal">({gateConfigs[0].gateCount} gates)</span></p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Gate Config</label>
+                  <Select
+                    value={selectedGateConfigId || gateConfigs[0]?.id || ""}
+                    onValueChange={setSelectedGateConfigId}
+                  >
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Select gate config…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {gateConfigs.map(cfg => (
+                        <SelectItem key={cfg.id} value={cfg.id}>
+                          {cfg.name} <span className="text-muted-foreground ml-1">({cfg.gateCount} gates)</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Button
                 onClick={handleGenerate}
                 disabled={generateMutation.isPending || (() => {
+                  // previous_round is always allowed to generate — completed motos are its seed source
+                  if (gateSeedingMethod === "previous_round") return false;
+                  // For other methods, disable if every class already has a completed moto (nothing to generate)
                   const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
                   return allClasses.length > 0 && allClasses.every(cls =>
                     (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")

@@ -2617,6 +2617,14 @@ components:
           type: array
           items:
             type: integer
+        gateConfigs:
+          type: array
+          items:
+            type: object
+          description: Full gate configuration objects for multi-config support.
+        hasPracticeData:
+          type: boolean
+          description: True when the club has at least one practice session with recorded lap times.
 
     LineupGenerateInput:
       type: object
@@ -2633,6 +2641,20 @@ components:
           type: integer
         usePracticeSeeding:
           type: boolean
+          description: "Deprecated: use gateSeedingMethod instead. Still accepted for backward compatibility."
+        gateSeedingMethod:
+          type: string
+          enum: [random, practice_fastest_lap, previous_round]
+          description: >
+            Controls how riders are ordered into gate positions.
+            random = shuffle randomly (default);
+            practice_fastest_lap = sort by best practice lap time (fastest gets best pick);
+            previous_round = sort by finish position in the most recently completed round,
+            tiebroken by fastest lap time in that round.
+            When omitted, defaults to random (preserving backward compatibility).
+        gateConfigId:
+          type: string
+          description: ID of the gate configuration to use for gate assignments. Applies to all seeding methods.
 
     RaceResult:
       type: object

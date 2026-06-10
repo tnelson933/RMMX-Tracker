@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clubsTable, usersTable } from "@workspace/db";
+import { clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable } from "@workspace/db";
 import type { GateConfig } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -41,7 +41,38 @@ router.get("/clubs/gate-settings", async (req, res) => {
   if (!club) return res.status(404).json({ error: "Club not found" });
 
   const gateConfigs = (club.gateSeeding as GateConfig[] | null) ?? [];
-  return res.json({ gateConfigs });
+
+  // Check if club has any practice sessions with recorded lap times
+  const sessions = await db
+    .select({ id: practiceSessionsTable.id })
+    .from(practiceSessionsTable)
+    .where(eq(practiceSessionsTable.clubId, user.clubId));
+
+  let hasPracticeData = false;
+  if (sessions.length > 0) {
+    const sessionIds = sessions.map(s => s.id);
+    const [crossing] = await db
+      .select({ id: practiceCrossingsTable.id })
+      .from(practiceCrossingsTable)
+      .where(eq(practiceCrossingsTable.sessionId, sessionIds[0]))
+      .limit(1);
+    // Quick check: if any crossing with valid lap time exists, there's practice data
+    if (!crossing) {
+      // Check all sessions
+      for (const s of sessions) {
+        const [c] = await db
+          .select({ id: practiceCrossingsTable.id })
+          .from(practiceCrossingsTable)
+          .where(eq(practiceCrossingsTable.sessionId, s.id))
+          .limit(1);
+        if (c) { hasPracticeData = true; break; }
+      }
+    } else {
+      hasPracticeData = true;
+    }
+  }
+
+  return res.json({ gateConfigs, hasPracticeData });
 });
 
 // PATCH /clubs/gate-settings — MUST be before /clubs/:clubId

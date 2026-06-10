@@ -5,11 +5,18 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
+import type { LineupGenerateInputGateSeedingMethod } from './lineupGenerateInputGateSeedingMethod';
 import type { LineupGenerateInputRaceFormat } from './lineupGenerateInputRaceFormat';
 
 export interface LineupGenerateInput {
   raceFormat: LineupGenerateInputRaceFormat;
   classes: string[];
   ridersPerHeat?: number;
+  /** Deprecated: use gateSeedingMethod instead. Still accepted for backward compatibility. */
   usePracticeSeeding?: boolean;
+  /** Controls how riders are ordered into gate positions. random = shuffle randomly (default); practice_fastest_lap = sort by best practice lap time (fastest gets best pick); previous_round = sort by finish position in the most recently completed round, tiebroken by fastest lap time in that round. When omitted, defaults to random (preserving backward compatibility).
+   */
+  gateSeedingMethod?: LineupGenerateInputGateSeedingMethod;
+  /** ID of the gate configuration to use for gate assignments. Applies to all seeding methods. */
+  gateConfigId?: string;
 }
