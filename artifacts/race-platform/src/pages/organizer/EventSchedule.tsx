@@ -638,7 +638,7 @@ function SortableMotoCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {moto.raceClass && !(moto as any).raceClasses && (
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+              <span className="text-xs font-bold uppercase tracking-wider text-sidebar-foreground/60 shrink-0">
                 {moto.raceClass}
               </span>
             )}
@@ -671,13 +671,13 @@ function SortableMotoCard({
             </span>
             <button
               onClick={onToggleExpand}
-              className="text-xs text-muted-foreground flex items-center gap-1 hover:text-foreground transition-colors"
+              className="text-xs text-sidebar-foreground/50 flex items-center gap-1 hover:text-sidebar-foreground transition-colors"
             >
               <Flag size={11} /> {riderCount} riders
               <ChevronDown size={11} className={`transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} />
             </button>
             {moto.lapCount != null && !isCountdownMode && (
-              <span className="text-xs text-muted-foreground">{moto.lapCount} laps</span>
+              <span className="text-xs text-sidebar-foreground/60">{moto.lapCount} laps</span>
             )}
             {isCountdownActive && onCountdownExpire && (
               <PracticeCountdownTimer
@@ -688,7 +688,7 @@ function SortableMotoCard({
               />
             )}
             {isCountdownMode && !isCountdownActive && countdownSeconds != null && !isCompleted && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <span className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
                 <Timer size={11} /> {Math.floor(countdownSeconds / 60)}m countdown
               </span>
             )}
@@ -698,7 +698,7 @@ function SortableMotoCard({
         {!isCompleted && onDelete && (
           <button
             onClick={onDelete}
-            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5 rounded"
+            className="shrink-0 text-sidebar-foreground/50 hover:text-destructive transition-colors p-0.5 rounded"
             title="Delete moto"
           >
             <Trash2 size={14} />
@@ -706,7 +706,7 @@ function SortableMotoCard({
         )}
         <Link
           href={`/events/${eventId}/motos?motoId=${moto.id}`}
-          className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+          className="shrink-0 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors"
           title="Open in Motos & Lineups"
         >
           <ExternalLink size={15} />
@@ -820,7 +820,7 @@ function StaticMotoCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {moto.raceClass && !(moto as any).raceClasses && (
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+              <span className="text-xs font-bold uppercase tracking-wider text-sidebar-foreground/60 shrink-0">
                 {moto.raceClass}
               </span>
             )}
@@ -853,13 +853,13 @@ function StaticMotoCard({
             </span>
             <button
               onClick={onToggleExpand}
-              className="text-xs text-muted-foreground flex items-center gap-1 hover:text-foreground transition-colors"
+              className="text-xs text-sidebar-foreground/50 flex items-center gap-1 hover:text-sidebar-foreground transition-colors"
             >
               <Flag size={11} /> {riderCount} riders
               <ChevronDown size={11} className={`transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} />
             </button>
             {moto.lapCount != null && !isCountdownMode && (
-              <span className="text-xs text-muted-foreground">{moto.lapCount} laps</span>
+              <span className="text-xs text-sidebar-foreground/60">{moto.lapCount} laps</span>
             )}
             {isCountdownActive && onCountdownExpire && (
               <PracticeCountdownTimer
@@ -870,7 +870,7 @@ function StaticMotoCard({
               />
             )}
             {isCountdownMode && !isCountdownActive && countdownSeconds != null && !isCompleted && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <span className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
                 <Timer size={11} /> {Math.floor(countdownSeconds / 60)}m countdown
               </span>
             )}
@@ -880,7 +880,7 @@ function StaticMotoCard({
         {!isCompleted && onDelete && (
           <button
             onClick={onDelete}
-            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-0.5 rounded"
+            className="shrink-0 text-sidebar-foreground/50 hover:text-destructive transition-colors p-0.5 rounded"
             title="Delete moto"
           >
             <Trash2 size={14} />
@@ -888,7 +888,7 @@ function StaticMotoCard({
         )}
         <Link
           href={`/events/${eventId}/motos?motoId=${moto.id}`}
-          className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+          className="shrink-0 text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors"
           title="Open in Motos & Lineups"
         >
           <ExternalLink size={15} />

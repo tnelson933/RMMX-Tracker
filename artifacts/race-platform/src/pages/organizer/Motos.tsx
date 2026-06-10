@@ -2887,7 +2887,7 @@ export default function Motos() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     {(moto.raceClass || moto.type === "practice") && (
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0 truncate">
+                      <span className="text-xs font-bold uppercase tracking-wider text-sidebar-foreground/60 shrink-0 truncate">
                         {moto.raceClass || "All Classes"}
                       </span>
                     )}
@@ -2897,7 +2897,7 @@ export default function Motos() {
                     {/* Type badge — same variants as Schedule page */}
                     <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${
                       moto.type === "practice" ? "bg-blue-500/20 text-blue-300 border-blue-500/30" :
-                      moto.type === "heat"     ? "bg-zinc-900 text-white border-zinc-600" :
+                      moto.type === "heat"     ? "bg-white/15 text-white border-white/25" :
                       moto.type === "lcq"      ? "bg-orange-500/20 text-orange-300 border-orange-500/30" :
                       moto.type === "main"     ? "bg-primary/20 text-primary border-primary/30" :
                       moto.type === "moto"     ? "bg-teal-500/20 text-teal-300 border-teal-500/30" :
@@ -2908,8 +2908,8 @@ export default function Motos() {
                     {/* Status badge */}
                     <span className={`text-xs px-2 py-0.5 rounded border flex items-center gap-1 ${
                       moto.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30 animate-pulse" :
-                      moto.status === "completed"   ? "bg-muted text-muted-foreground border-border" :
-                                                      "bg-zinc-900 text-white border-zinc-600"
+                      moto.status === "completed"   ? "bg-white/10 text-white/60 border-white/15" :
+                                                      "bg-white/10 text-white/75 border-white/20"
                     }`}>
                       {moto.status === "in_progress" && (
                         <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full animate-ping shrink-0" />
@@ -2917,7 +2917,7 @@ export default function Motos() {
                       {moto.status === "in_progress" ? "In Progress" : moto.status === "completed" ? "Completed" : "Scheduled"}
                     </span>
                     {/* Rider count */}
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <span className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
                       <Flag size={11} /> {Array.isArray(moto.lineup) ? moto.lineup.length : 0} riders
                     </span>
                     {/* Staggered start badge */}
@@ -2946,7 +2946,7 @@ export default function Motos() {
                   <button
                     onClick={() => handleQuickAddHeat(moto)}
                     disabled={createMotoMutation.isPending}
-                    className="text-muted-foreground hover:text-green-400 transition-colors p-1 rounded hover:bg-muted disabled:opacity-40"
+                    className="text-sidebar-foreground/50 hover:text-green-400 transition-colors p-1 rounded hover:bg-white/10 disabled:opacity-40"
                     title={`Add another ${moto.type === "main" ? "main" : isSupercrossFormat ? "heat" : "heat"} for ${moto.raceClass}`}
                   >
                     <Plus size={14} />
@@ -2957,7 +2957,7 @@ export default function Motos() {
                         setPerMotoDialog({ open: true, motoId: moto.id, motoName: moto.name, motoClass: moto.raceClass ?? "" });
                         setPerMotoGateMethod("random");
                       }}
-                      className="text-muted-foreground hover:text-violet-400 transition-colors p-1 rounded hover:bg-muted"
+                      className="text-sidebar-foreground/50 hover:text-violet-400 transition-colors p-1 rounded hover:bg-white/10"
                       title="Regenerate lineup"
                     >
                       <Wand2 size={14} />
@@ -2965,7 +2965,7 @@ export default function Motos() {
                   )}
                   <button
                     onClick={() => setExpandedMotoId(moto.id)}
-                    className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted"
+                    className="text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors p-1 rounded hover:bg-white/10"
                     title="Expand view"
                   >
                     <Maximize2 size={14} />

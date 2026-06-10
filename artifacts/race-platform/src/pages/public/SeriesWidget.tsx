@@ -132,15 +132,28 @@ export default function SeriesWidget() {
     setEventLoading(true);
     setEventResults([]);
     setEventMotos([]);
-    Promise.all([
-      fetch(`/api/events/${selectedEventId}/results`).then(r => r.json()),
-      fetch(`/api/events/${selectedEventId}/motos`).then(r => r.json()),
-    ]).then(([results, motos]) => {
-      setEventResults(Array.isArray(results) ? results : []);
-      setEventMotos(Array.isArray(motos) ? motos : []);
-      setEventLoading(false);
-    }).catch(() => setEventLoading(false));
-  }, [selectedEventId]);
+
+    const doFetch = (showLoader = false) => {
+      if (showLoader) setEventLoading(true);
+      return Promise.all([
+        fetch(`/api/events/${selectedEventId}/results`).then(r => r.json()),
+        fetch(`/api/events/${selectedEventId}/motos`).then(r => r.json()),
+      ]).then(([results, motos]) => {
+        setEventResults(Array.isArray(results) ? results : []);
+        setEventMotos(Array.isArray(motos) ? motos : []);
+        setEventLoading(false);
+      }).catch(() => setEventLoading(false));
+    };
+
+    doFetch(true);
+
+    // Auto-refresh every 30s when the selected event is live (race_day status)
+    const selectedEvent = series?.events.find(e => e.id === selectedEventId);
+    const isLive = selectedEvent?.status === "race_day";
+    if (!isLive) return;
+    const interval = setInterval(() => doFetch(false), 30_000);
+    return () => clearInterval(interval);
+  }, [selectedEventId, series]);
 
   const riderInfoMap = new Map<number, { amaNumber: string | null; bikeBrand: string | null }>(
     standings.map(s => [s.riderId, { amaNumber: s.amaNumber, bikeBrand: s.bikeBrand }])
