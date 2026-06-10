@@ -1010,6 +1010,7 @@ export default function EventSchedule() {
   const [generateGateMethod, setGenerateGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [generateMinRacesBetween, setGenerateMinRacesBetween] = useState<number>(0);
+  const [generateClass, setGenerateClass] = useState<string>("all");
 
   // Add moto dialog
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -1548,9 +1549,10 @@ export default function EventSchedule() {
   // ── Generate lineups ──
   function handleGenerate() {
     const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+    const classesToUse = generateClass === "all" ? allClasses : [generateClass];
     const lockedClasses = generateGateMethod === "prior_round_finish"
       ? []
-      : allClasses.filter(cls => rawMotos.some(m => m.raceClass === cls && m.status === "completed"));
+      : classesToUse.filter(cls => rawMotos.some(m => m.raceClass === cls && m.status === "completed"));
     const ridersPerHeatVal = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
     const lapCountVal = generateLapCount.trim() ? parseInt(generateLapCount, 10) : undefined;
     const divCount = generateFormat === "three_moto" ? 3 : generateFormat === "two_moto" ? 2 : 1;
@@ -1563,7 +1565,7 @@ export default function EventSchedule() {
         eventId,
         data: {
           raceFormat: generateFormat,
-          classes: allClasses,
+          classes: classesToUse,
           ridersPerHeat: ridersPerHeatVal,
           lapCount: lapCountVal,
           gatePickMethod: generateGateMethod,
@@ -2164,7 +2166,7 @@ export default function EventSchedule() {
       </AlertDialog>
 
       {/* ── Generate Lineups dialog ── */}
-      <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>
+      <Dialog open={isGenerateOpen} onOpenChange={open => { setIsGenerateOpen(open); if (open) { setGenerateClass("all"); setGenerateSelectedRounds([]); } }}>
         <DialogContent className="sm:max-w-md flex flex-col max-h-[90vh]">
           <DialogHeader className="shrink-0">
             <DialogTitle className="font-heading uppercase text-xl">Generate Lineups</DialogTitle>
@@ -2174,18 +2176,43 @@ export default function EventSchedule() {
           </DialogHeader>
 
           <div className="space-y-5 py-2 overflow-y-auto flex-1 min-h-0 pr-1">
+            {/* Class selector */}
+            {(() => {
+              const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+              return (
+                <div className="space-y-2">
+                  <Label>Class</Label>
+                  <Select
+                    value={generateClass}
+                    onValueChange={v => { setGenerateClass(v); setGenerateSelectedRounds([]); }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Classes</SelectItem>
+                      {allClasses.map(cls => (
+                        <SelectItem key={cls} value={cls}>{cls}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })()}
+
             {/* Locked classes warning */}
             {(() => {
               const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
-              const lockedClasses = allClasses.filter(cls =>
+              const classesToCheck = generateClass === "all" ? allClasses : [generateClass];
+              const lockedClasses = classesToCheck.filter(cls =>
                 rawMotos.some(m => m.raceClass === cls && m.status === "completed")
               );
-              const regenerableClasses = allClasses.filter(cls => !lockedClasses.includes(cls));
+              const regenerableClasses = classesToCheck.filter(cls => !lockedClasses.includes(cls));
               if (lockedClasses.length === 0) return null;
               return (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-3 py-2.5 space-y-1.5">
                   <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                    <span>⚠️</span> Some classes have completed motos
+                    <span>⚠️</span> {lockedClasses.length === 1 ? "This class has" : "Some classes have"} completed motos
                   </p>
                   <p className="text-xs text-amber-700 dark:text-amber-400">
                     Completed motos and their results are never overwritten.
@@ -2199,7 +2226,9 @@ export default function EventSchedule() {
                     ))}
                   </div>
                   {regenerableClasses.length === 0 && (
-                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">All classes are locked — nothing to regenerate.</p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                      {generateClass === "all" ? "All classes are locked" : "This class is locked"} — nothing to regenerate.
+                    </p>
                   )}
                 </div>
               );
