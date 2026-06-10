@@ -13,7 +13,7 @@ import {
   getListDiscountCategoriesQueryKey,
   getListDiscountCodesQueryKey,
 } from "@workspace/api-client-react";
-import type { DiscountCategory, DiscountCode } from "@workspace/api-client-react";
+import type { DiscountCategory, DiscountCode, DiscountCodeUsageEntry } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -699,7 +699,7 @@ function UsageHistoryPanel({ code }: { code: DiscountCode }) {
         </div>
       ) : (
         <div className="divide-y rounded-md border">
-          {entries.map(entry => (
+          {entries.map((entry: DiscountCodeUsageEntry) => (
             <div key={entry.registrationId} className="px-4 py-3 space-y-0.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium text-sm">{entry.riderName}</span>

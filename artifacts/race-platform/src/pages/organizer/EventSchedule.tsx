@@ -31,7 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
-  GripVertical, Plus, Clock, LayoutList, LayoutGrid, Zap, Flag, ExternalLink,
+  GripVertical, Plus, Clock, LayoutList, LayoutGrid, Flag, ExternalLink,
   Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X,
 } from "lucide-react";
 
@@ -1079,48 +1079,6 @@ export default function EventSchedule() {
               {/* Add moto */}
               <Button size="sm" onClick={() => setShowAddDialog(true)}>
                 <Plus size={15} className="mr-1" /> Add Moto
-              </Button>
-            </div>
-
-            {/* ── Auto-fill toolbar ── */}
-            <div className="flex flex-wrap items-center gap-3 p-4 bg-muted/40 border border-border rounded-lg">
-              <Clock size={16} className="text-muted-foreground shrink-0" />
-              <div className="flex items-center gap-2">
-                <Label htmlFor="start-time" className="text-sm whitespace-nowrap">Event start</Label>
-                <Input
-                  id="start-time"
-                  type="time"
-                  value={(event as any)?.startTime || ""}
-                  onChange={e => {
-                    const newTime = e.target.value;
-                    updateEventMutation.mutate({
-                      eventId,
-                      data: { startTime: newTime },
-                    });
-                  }}
-                  className="h-8 w-28 text-sm bg-background"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="gap-min" className="text-sm whitespace-nowrap">Gap between sessions</Label>
-                <Input
-                  id="gap-min"
-                  type="number"
-                  min={0}
-                  max={30}
-                  defaultValue={5}
-                  className="h-8 w-16 text-sm bg-background"
-                />
-                <span className="text-sm text-muted-foreground">min</span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {}}
-                disabled={sortedMotos.length === 0}
-                className="ml-auto"
-              >
-                <Zap size={14} className="mr-1" /> Auto-fill times
               </Button>
             </div>
 
