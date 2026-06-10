@@ -34,7 +34,6 @@ export const eventsTable = pgTable("events", {
   entryFeeCategoryId: integer("entry_fee_category_id").references(() => discountCategoriesTable.id),
   minLapMs: integer("min_lap_ms"),
   amaEventId: text("ama_event_id"),
-  defaultGateConfigId: text("default_gate_config_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

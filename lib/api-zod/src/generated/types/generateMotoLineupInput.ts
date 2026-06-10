@@ -11,6 +11,4 @@ export interface GenerateMotoLineupInput {
   /** Gate pick method for this specific moto. random = random gate draw; practice = by practice lap time; prior_round_finish = by prior round finish position; first_registered = earliest registered rider gets first gate pick.
    */
   gatePickMethod?: GenerateMotoLineupInputGatePickMethod;
-  /** ID of the gate configuration. Falls back to club default when omitted. */
-  gateConfigId?: string;
 }

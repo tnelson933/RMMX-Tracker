@@ -133,7 +133,7 @@ router.post("/events", async (req, res) => {
     .from(discountCategoriesTable)
     .where(and(eq(discountCategoriesTable.clubId, clubId), eq(discountCategoriesTable.name, "Entry Fees")));
 
-  const { amaEventId, defaultGateConfigId } = req.body;
+  const { amaEventId } = req.body;
   const [event] = await db.insert(eventsTable).values({
     clubId, name, date, state, location, trackName,
     raceClasses: raceClasses || [],
@@ -151,7 +151,6 @@ router.post("/events", async (req, res) => {
     scoringTableId: scoringTableId ?? null,
     entryFeeCategoryId: entryFeeCat?.id ?? null,
     amaEventId: amaEventId ?? null,
-    defaultGateConfigId: defaultGateConfigId ?? null,
   }).returning();
 
   return res.status(201).json({
@@ -193,7 +192,6 @@ router.get("/events/:eventId", async (req, res) => {
     entryFeeCategoryId: eventsTable.entryFeeCategoryId,
     minLapMs: eventsTable.minLapMs,
     amaEventId: eventsTable.amaEventId,
-    defaultGateConfigId: eventsTable.defaultGateConfigId,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,

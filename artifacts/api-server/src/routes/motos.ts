@@ -229,21 +229,10 @@ router.delete("/motos/:motoId", async (req, res) => {
   return res.status(204).send();
 });
 
-// Helper: convert a GateConfig's gatePriorities to the seeding order array used by lineup builder
-// seedingOrder[seedPos] = gate number for that seed position
-function gateConfigToSeedingOrder(config: { gateCount: number; gatePriorities: number[] }): number[] {
-  const order: number[] = [];
-  for (let seed = 1; seed <= config.gateCount; seed++) {
-    const gateIdx = config.gatePriorities.indexOf(seed);
-    if (gateIdx !== -1) order.push(gateIdx + 1); // 1-indexed gate number
-  }
-  return order;
-}
-
 router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const {
-    raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateSeedingMethod: rawMethod, gateConfigId,
+    raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateSeedingMethod: rawMethod,
     gatePickMethod,        // "random" | "practice" | "prior_round_finish" | "first_registered"
     rounds: roundsFilter,  // new: number[] — if provided, only generate these round numbers
   } = req.body;
@@ -316,28 +305,6 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
 
   // Determine if this is a Supercross-style event (main event only, heats feed into main)
   const { isSupercross: isSupercrossFormat } = await getEventFormat(eventId);
-
-  // --- Load gate config (applies to all seeding methods when gateConfigId is provided) ---
-  let gateSeeding: number[] = [];
-  let gateCountFromClub: number | null = null;
-
-  // Always resolve a gate config: selected id → event default → first config.
-  // This ensures gate assignments are applied regardless of seeding method.
-  if (true) {
-    const [eventRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-    if (eventRow?.clubId) {
-      const [club] = await db.select({ gateSeeding: clubsTable.gateSeeding })
-        .from(clubsTable).where(eq(clubsTable.id, eventRow.clubId));
-      const gateConfigs = (club?.gateSeeding as any[] | null) ?? [];
-      const selectedConfig = gateConfigId
-        ? gateConfigs.find((c: any) => c.id === gateConfigId)
-        : gateConfigs[0];
-      if (selectedConfig?.gatePriorities) {
-        gateSeeding = gateConfigToSeedingOrder(selectedConfig);
-        gateCountFromClub = selectedConfig.gateCount ?? null;
-      }
-    }
-  }
 
   // --- Registration order (registration_order method) ---
   // riderId → position (1 = first registered, higher = later)
@@ -483,10 +450,8 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     }
   }
 
-  // Effective max per heat: explicit input OR gate count (when gate config loaded) OR unlimited
-  const effectiveMax: number = ridersPerHeat && ridersPerHeat > 0
-    ? ridersPerHeat
-    : (gateCountFromClub ? gateCountFromClub : Infinity);
+  // Effective max per heat: explicit input OR unlimited
+  const effectiveMax: number = ridersPerHeat && ridersPerHeat > 0 ? ridersPerHeat : Infinity;
 
   const checkins = await db.select({
     riderId: checkinsTable.riderId,
@@ -612,15 +577,13 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     allClassGroups.push({ cls, groups });
   }
 
-  const effectiveGateSeeding = gateSeeding;
-
   if (isSupercrossFormat) {
     // Supercross: all heats across all classes run before any main events
     for (const { cls, groups } of allClassGroups) {
       const multiGroup = groups.length > 1;
       for (let h = 0; h < groups.length; h++) {
         const heatName = multiGroup ? `${cls} Heat ${h + 1}` : `${cls} Heat`;
-        const lineup = buildLineup(groups[h], effectiveGateSeeding);
+        const lineup = buildLineup(groups[h], []);
         const [moto] = await db.insert(motosTable).values({
           eventId, name: heatName, type: "heat", raceClass: cls,
           motoNumber: motoNumber++, status: "scheduled", lineup,
@@ -647,7 +610,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
           const groupLabel = multiGroup ? ` Div ${h + 1}` : "";
           const motoLabel = divCount > 1 ? ` Moto ${d}` : " Moto";
           const name = `${cls}${groupLabel}${motoLabel}`;
-          const lineup = buildLineup(groups[h], effectiveGateSeeding);
+          const lineup = buildLineup(groups[h], []);
           const [moto] = await db.insert(motosTable).values({
             eventId, name, type: "heat", raceClass: cls,
             motoNumber: motoNumber++, status: "scheduled", lineup,
@@ -797,7 +760,7 @@ router.post("/events/:eventId/motos/reorder", async (req, res) => {
 router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const motoId = Number(req.params.motoId);
-  const { gatePickMethod = "random", gateConfigId } = req.body;
+  const { gatePickMethod = "random" } = req.body;
 
   const [moto] = await db.select().from(motosTable).where(
     and(eq(motosTable.id, motoId), eq(motosTable.eventId, eventId))
@@ -812,23 +775,6 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
     : gatePickMethod === "prior_round_finish" ? "previous_round"
     : gatePickMethod === "first_registered" ? "registration_order"
     : "random";
-
-  // Load gate config
-  let gateSeeding: number[] = [];
-  {
-    const [eventRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-    if (eventRow?.clubId) {
-      const [club] = await db.select({ gateSeeding: clubsTable.gateSeeding })
-        .from(clubsTable).where(eq(clubsTable.id, eventRow.clubId));
-      const gateConfigs = (club?.gateSeeding as any[] | null) ?? [];
-      const selectedConfig = gateConfigId
-        ? gateConfigs.find((c: any) => c.id === gateConfigId)
-        : gateConfigs[0];
-      if (selectedConfig?.gatePriorities) {
-        gateSeeding = gateConfigToSeedingOrder(selectedConfig);
-      }
-    }
-  }
 
   // Load checked-in riders for this class
   const checkins = await db.select({
@@ -968,22 +914,13 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
   }
 
   // Build lineup
-  const lineup = (gateSeeding.length > 0)
-    ? sortedRiders.map((r, i) => ({
-        position: i + 1,
-        gate: gateSeeding[i] ?? null,
-        riderId: r.riderId,
-        riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
-        bibNumber: r.bibNumber,
-        rfidNumber: r.rfidNumber,
-      }))
-    : sortedRiders.map((r, i) => ({
-        position: i + 1,
-        riderId: r.riderId,
-        riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
-        bibNumber: r.bibNumber,
-        rfidNumber: r.rfidNumber,
-      }));
+  const lineup = sortedRiders.map((r, i) => ({
+    position: i + 1,
+    riderId: r.riderId,
+    riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
+    bibNumber: r.bibNumber,
+    rfidNumber: r.rfidNumber,
+  }));
 
   const [updated] = await db.update(motosTable)
     .set({ lineup })

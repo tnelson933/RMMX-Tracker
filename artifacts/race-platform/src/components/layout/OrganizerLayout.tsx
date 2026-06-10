@@ -69,7 +69,6 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
     { href: "/riders", label: "Riders", icon: Users, exact: false },
     { href: "/series", label: "Series", icon: Trophy, exact: false },
     { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, exact: false },
-    { href: "/gate-assignments", label: "Gate Assignments", icon: GitFork, exact: false },
     { href: "/payments", label: "Payments", icon: CreditCard, exact: false },
     { href: "/discount-codes", label: "Discount Codes", icon: Tag, exact: false },
     { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, exact: false },

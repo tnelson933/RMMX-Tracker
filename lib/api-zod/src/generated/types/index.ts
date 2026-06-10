@@ -52,8 +52,6 @@ export * from './eventTimingTechnology';
 export * from './eventUpdate';
 export * from './eventUpdateRaceClassLimits';
 export * from './eventUpdateTimingTechnology';
-export * from './gateSettings';
-export * from './gateSettingsGateConfigsItem';
 export * from './generateMotoLineupInput';
 export * from './generateMotoLineupInputGatePickMethod';
 export * from './generatePracticeSessionsInput';

@@ -108,7 +108,6 @@ const updateEventSchema = z.object({
     categoryId: z.number().nullable().optional(),
   })).default([]),
   amaEventId: z.string().optional(),
-  defaultGateConfigId: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof updateEventSchema>;
@@ -142,16 +141,6 @@ export default function EventDetail() {
   });
   const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
 
-  const { data: gateConfigsData } = useQuery({
-    queryKey: ["gateConfigs"],
-    queryFn: async () => {
-      const res = await fetch("/api/clubs/gate-settings", { credentials: "include" });
-      if (!res.ok) return { gateConfigs: [] };
-      return res.json() as Promise<{ gateConfigs: Array<{ id: string; name: string; gateCount: number }> }>;
-    },
-    enabled: !isSuperAdmin,
-  });
-  const gateConfigs = gateConfigsData?.gateConfigs ?? [];
 
   const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -315,7 +304,6 @@ export default function EventDetail() {
       scoringTableId: undefined,
       purchaseOptions: [],
       amaEventId: "",
-      defaultGateConfigId: "",
     }
   });
 
@@ -362,7 +350,6 @@ export default function EventDetail() {
       scoringTableId: (evt as any).scoringTableId ?? undefined,
       purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number; categoryId?: number | null }) => ({ name: o.name, amount: String(o.amount), categoryId: o.categoryId ?? null })),
       amaEventId: (evt as any).amaEventId ?? "",
-      defaultGateConfigId: (evt as any).defaultGateConfigId ?? "",
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
     setEditSeriesId(currentSeries ? String(currentSeries.id) : "none");
@@ -401,7 +388,6 @@ export default function EventDetail() {
         transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
         purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
         amaEventId: data.amaEventId || undefined,
-        defaultGateConfigId: data.defaultGateConfigId || null,
       } as any
     }, {
       onSuccess: () => {
@@ -834,38 +820,6 @@ export default function EventDetail() {
                         )}
                       />
 
-                      {gateConfigs.length > 0 && (
-                        <FormField
-                          control={form.control}
-                          name="defaultGateConfigId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Default Gate Configuration</FormLabel>
-                              <Select
-                                value={field.value || "none"}
-                                onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
-                              >
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="None (select at lineup time)" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="none">None</SelectItem>
-                                  {gateConfigs.map(cfg => (
-                                    <SelectItem key={cfg.id} value={cfg.id}>
-                                      {cfg.name} ({cfg.gateCount} gates)
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <p className="text-xs text-muted-foreground">
-                                Pre-selects this gate layout when generating lineups on race day.
-                              </p>
-                            </FormItem>
-                          )}
-                        />
-                      )}
 
                       {/* Collect Payments toggle */}
                       {!isSuperAdmin && (

@@ -654,17 +654,6 @@ export interface MotoReorderInput {
   motoIds: number[];
 }
 
-export type GateSettingsGateConfigsItem = { [key: string]: unknown };
-
-export interface GateSettings {
-  gateCount?: number | null;
-  gateSeeding?: number[];
-  /** Full gate configuration objects for multi-config support. */
-  gateConfigs?: GateSettingsGateConfigsItem[];
-  /** True when the club has at least one practice session with recorded lap times. */
-  hasPracticeData?: boolean;
-}
-
 export type LineupGenerateInputRaceFormat = typeof LineupGenerateInputRaceFormat[keyof typeof LineupGenerateInputRaceFormat];
 
 
@@ -716,8 +705,6 @@ export interface LineupGenerateInput {
   /** Controls gate number assignment. random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first; first_registered = sort by registration timestamp, earliest registered gets first gate pick. Supersedes gateSeedingMethod when both are present.
    */
   gatePickMethod?: LineupGenerateInputGatePickMethod;
-  /** ID of the gate configuration to use for gate assignments. Applies to all seeding methods. */
-  gateConfigId?: string;
 }
 
 /**
@@ -738,8 +725,6 @@ export interface GenerateMotoLineupInput {
   /** Gate pick method for this specific moto. random = random gate draw; practice = by practice lap time; prior_round_finish = by prior round finish position; first_registered = earliest registered rider gets first gate pick.
    */
   gatePickMethod?: GenerateMotoLineupInputGatePickMethod;
-  /** ID of the gate configuration. Falls back to club default when omitted. */
-  gateConfigId?: string;
 }
 
 export interface RiderResultInput {

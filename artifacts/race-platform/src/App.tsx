@@ -34,7 +34,6 @@ import UsersAdmin from "@/pages/organizer/UsersAdmin";
 import SetPassword from "@/pages/public/SetPassword";
 import StripeConnect from "@/pages/organizer/StripeConnect";
 import StandalonePractice from "@/pages/organizer/StandalonePractice";
-import GateAssignments from "@/pages/organizer/GateAssignments";
 import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
 import RiderLogin from "@/pages/rider/RiderLogin";
 import RiderPortal from "@/pages/rider/RiderPortal";
@@ -164,9 +163,6 @@ function Router() {
       </Route>
       <Route path="/practice">
         <ProtectedRoute><StandalonePractice /></ProtectedRoute>
-      </Route>
-      <Route path="/gate-assignments">
-        <ProtectedRoute><GateAssignments /></ProtectedRoute>
       </Route>
 
       <Route component={NotFound} />
