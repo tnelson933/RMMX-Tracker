@@ -3,7 +3,7 @@ import { useRoute, Link } from "wouter";
 import {
   useListMotos, useGenerateLineups, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables, useAdvanceToMain,
-  useUpdateEvent, useUpdateResultLaps, useListResults,
+  useUpdateEvent, useUpdateResultLaps, useListResults, useGeneratePracticeSessions,
   getListMotosQueryKey, getListCheckinsQueryKey, Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -978,6 +978,7 @@ export default function Motos() {
     pendingMotoId: number | null;
   }>({ open: false, existingMoto: null, pendingMotoId: null });
   const [restartDialog, setRestartDialog] = useState<{ open: boolean; motoId: number | null; motoName: string }>({ open: false, motoId: null, motoName: "" });
+  const [practiceStartDialog, setPracticeStartDialog] = useState<{ open: boolean; moto: Moto | null; timeLimitMinutes: string }>({ open: false, moto: null, timeLimitMinutes: "" });
 
   // Scroll expanded moto card into view when jumping from run-order
   useEffect(() => {
@@ -1002,6 +1003,8 @@ export default function Motos() {
   const [newMotoClass, setNewMotoClass] = useState("");
   const [newMotoLapCount, setNewMotoLapCount] = useState("");
   const [newMotoScheduledTime, setNewMotoScheduledTime] = useState("");
+  const [newMotoTimeLimitMinutes, setNewMotoTimeLimitMinutes] = useState("");
+  const [newMotoMaxRiders, setNewMotoMaxRiders] = useState("");
   const [selectedRiderIds, setSelectedRiderIds] = useState<Set<number>>(new Set());
 
   // Min lap times per class
@@ -1049,6 +1052,7 @@ export default function Motos() {
 
   const generateMutation = useGenerateLineups();
   const createMotoMutation = useCreateMoto();
+  const generatePracticeSessionsMutation = useGeneratePracticeSessions();
   const updateMutation = useUpdateMoto();
   const deleteMutation = useDeleteMoto();
   const advanceToMainMutation = useAdvanceToMain();
@@ -1533,12 +1537,39 @@ export default function Motos() {
     setNewMotoClass("");
     setNewMotoLapCount("");
     setNewMotoScheduledTime("");
+    setNewMotoTimeLimitMinutes("");
+    setNewMotoMaxRiders("");
     setSelectedRiderIds(new Set());
   };
 
   const handleCreateMoto = () => {
     if (!newMotoName.trim() || (newMotoType !== "practice" && !newMotoClass)) return;
     const nextMotoNumber = motos?.length ? Math.max(...motos.map(m => m.motoNumber ?? 0)) + 1 : 1;
+    const lapCountNum = newMotoLapCount.trim() ? parseInt(newMotoLapCount.trim(), 10) : undefined;
+    const timeLimitMs = newMotoTimeLimitMinutes.trim() && parseFloat(newMotoTimeLimitMinutes) > 0
+      ? Math.round(parseFloat(newMotoTimeLimitMinutes) * 60 * 1000)
+      : undefined;
+    const maxRiders = newMotoMaxRiders.trim() ? parseInt(newMotoMaxRiders, 10) : 0;
+
+    // Practice + max riders → auto-generate sessions via generate endpoint
+    if (newMotoType === "practice" && maxRiders > 0) {
+      generatePracticeSessionsMutation.mutate(
+        { eventId, data: { raceClass: newMotoClass || undefined, maxRidersPerSession: maxRiders, ...(timeLimitMs ? { timeLimitMs } : {}), ...(newMotoScheduledTime.trim() ? { scheduledTime: newMotoScheduledTime.trim() } : {}) } as any },
+        {
+          onSuccess: (sessions) => {
+            queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+            setIsCreateOpen(false);
+            resetCreateDialog();
+            toast({ title: `${sessions.length} practice session${sessions.length !== 1 ? "s" : ""} created` });
+          },
+          onError: (err) => {
+            toast({ title: "Failed to create sessions", description: err.message, variant: "destructive" });
+          },
+        }
+      );
+      return;
+    }
+
     const lineup = classCheckins
       .filter(c => selectedRiderIds.has(c.riderId))
       .map((c, i) => ({
@@ -1549,9 +1580,8 @@ export default function Motos() {
         rfidNumber: c.rfidNumber || null,
       }));
 
-    const lapCountNum = newMotoLapCount.trim() ? parseInt(newMotoLapCount.trim(), 10) : undefined;
     createMotoMutation.mutate(
-      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: (newMotoClass || undefined) as string, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum, ...(newMotoScheduledTime.trim() ? { scheduledTime: newMotoScheduledTime.trim() } : {}) } },
+      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: (newMotoClass || undefined) as string, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum, ...(timeLimitMs ? { timeLimitMs } : {}), ...(newMotoScheduledTime.trim() ? { scheduledTime: newMotoScheduledTime.trim() } : {}) } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -1706,7 +1736,32 @@ export default function Motos() {
       setConflictDialog({ open: true, existingMoto: existing, pendingMotoId: moto.id });
       return;
     }
+    if (moto.type === "practice") {
+      const existingMinutes = (moto as any).timeLimitMs
+        ? String(Math.round((moto as any).timeLimitMs / 60000))
+        : "";
+      setPracticeStartDialog({ open: true, moto, timeLimitMinutes: existingMinutes });
+      return;
+    }
     doStartMoto(moto.id);
+  };
+
+  const doStartPractice = () => {
+    const { moto, timeLimitMinutes } = practiceStartDialog;
+    if (!moto) return;
+    const timeLimitMs = timeLimitMinutes.trim() && parseFloat(timeLimitMinutes) > 0
+      ? Math.round(parseFloat(timeLimitMinutes) * 60 * 1000)
+      : null;
+    setPracticeStartDialog({ open: false, moto: null, timeLimitMinutes: "" });
+    updateMutation.mutate(
+      { motoId: moto.id, data: { status: "in_progress", ...(timeLimitMs ? { timeLimitMs } : {}) } as any },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          toast({ title: `🏁 Practice started${timeLimitMs ? ` — ${Math.round(timeLimitMs / 60000)} min timer` : ""}` });
+        },
+      }
+    );
   };
 
   const handleRestartConfirm = async () => {
@@ -1892,20 +1947,75 @@ export default function Motos() {
                   </div>
                 </div>
 
-                {/* Lap count */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Number of Laps <span className="text-muted-foreground font-normal text-xs">(optional — enables finish countdown)</span></label>
-                  <Input
-                    type="number"
-                    min={1}
-                    placeholder="e.g. 5"
-                    value={newMotoLapCount}
-                    onChange={e => setNewMotoLapCount(e.target.value)}
-                    className="h-9 w-28"
-                  />
-                </div>
+                {/* Practice-specific settings */}
+                {newMotoType === "practice" ? (
+                  <div className="space-y-3 rounded-lg border border-sky-400/30 bg-sky-500/5 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-sky-600 flex items-center gap-1.5">
+                      <Timer size={12} /> Practice Settings
+                    </p>
 
-                {/* Scheduled start time — shown for all types, most useful for practice */}
+                    {/* Time limit */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium flex items-center gap-1.5">
+                        Time Limit
+                        <span className="text-muted-foreground font-normal text-xs">(optional — minutes)</span>
+                      </label>
+                      <div className="relative w-36">
+                        <Timer size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="e.g. 15"
+                          value={newMotoTimeLimitMinutes}
+                          onChange={e => setNewMotoTimeLimitMinutes(e.target.value)}
+                          className="h-9 pl-8"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Max riders */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium flex items-center gap-1.5">
+                        Max Riders Per Session
+                        <span className="text-muted-foreground font-normal text-xs">(optional — auto-assigns riders)</span>
+                      </label>
+                      <Input
+                        type="number"
+                        min={1}
+                        placeholder="e.g. 20"
+                        value={newMotoMaxRiders}
+                        onChange={e => setNewMotoMaxRiders(e.target.value)}
+                        className="h-9 w-36"
+                      />
+                      {newMotoMaxRiders.trim() && parseInt(newMotoMaxRiders) > 0 && (() => {
+                        const classRiders = newMotoClass
+                          ? (checkins ?? []).filter(c => c.checkedIn && c.raceClass === newMotoClass).length
+                          : (checkins ?? []).filter(c => c.checkedIn).length;
+                        const sessions = Math.ceil(classRiders / parseInt(newMotoMaxRiders));
+                        return (
+                          <p className="text-xs text-primary">
+                            {classRiders} riders → {sessions} session{sessions !== 1 ? "s" : ""}
+                          </p>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                ) : (
+                  /* Lap count — non-practice only */
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Number of Laps <span className="text-muted-foreground font-normal text-xs">(optional — enables finish countdown)</span></label>
+                    <Input
+                      type="number"
+                      min={1}
+                      placeholder="e.g. 5"
+                      value={newMotoLapCount}
+                      onChange={e => setNewMotoLapCount(e.target.value)}
+                      className="h-9 w-28"
+                    />
+                  </div>
+                )}
+
+                {/* Scheduled start time — shown for all types */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium flex items-center gap-1.5">
                     <Clock size={13} className="text-muted-foreground" />
@@ -1925,8 +2035,10 @@ export default function Motos() {
                 {/* Rider picker */}
                 <div className="space-y-2">
                   {newMotoType === "practice" ? (
-                    <div className="border rounded-md bg-muted/30 py-4 px-4 text-center text-sm text-muted-foreground">
-                      Practice is open to all checked-in riders — no gate picks needed.
+                    <div className="border rounded-md bg-muted/30 py-3 px-4 text-sm text-muted-foreground text-center">
+                      {newMotoMaxRiders.trim() && parseInt(newMotoMaxRiders) > 0
+                        ? "Riders will be auto-assigned from the checked-in list when sessions are created."
+                        : "Practice is open to all checked-in riders — no gate picks needed."}
                     </div>
                   ) : (
                   <>
@@ -3293,6 +3405,69 @@ export default function Motos() {
 
       {/* Lap times editor */}
       {lapEditTarget && <LapTimesDialog target={lapEditTarget} onClose={() => setLapEditTarget(null)} />}
+
+      {/* ── Start Practice Session settings ─────────────────────────────── */}
+      <Dialog
+        open={practiceStartDialog.open}
+        onOpenChange={open => !open && setPracticeStartDialog({ open: false, moto: null, timeLimitMinutes: "" })}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase tracking-wider flex items-center gap-2">
+              <Timer size={16} className="text-sky-500" />
+              Start Practice Session
+            </DialogTitle>
+            {practiceStartDialog.moto && (
+              <DialogDescription className="pt-1">
+                <span className="font-semibold text-foreground">{practiceStartDialog.moto.name}</span>
+                {practiceStartDialog.moto.raceClass ? ` · ${practiceStartDialog.moto.raceClass}` : ""}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                Time Limit
+                <span className="text-muted-foreground font-normal text-xs">(optional — minutes)</span>
+              </label>
+              <div className="relative">
+                <Timer size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="e.g. 15"
+                  value={practiceStartDialog.timeLimitMinutes}
+                  onChange={e => setPracticeStartDialog(d => ({ ...d, timeLimitMinutes: e.target.value }))}
+                  onKeyDown={e => { if (e.key === "Enter") doStartPractice(); }}
+                  className="h-9 pl-8 w-36"
+                  autoFocus
+                />
+              </div>
+              {practiceStartDialog.timeLimitMinutes.trim() && parseFloat(practiceStartDialog.timeLimitMinutes) > 0 && (
+                <p className="text-xs text-sky-600 font-medium">
+                  Countdown timer: {practiceStartDialog.timeLimitMinutes} min — session auto-completes when time expires.
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Leave blank to run without a timer. You can end the session manually at any time.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPracticeStartDialog({ open: false, moto: null, timeLimitMinutes: "" })}>
+              Cancel
+            </Button>
+            <Button
+              onClick={doStartPractice}
+              disabled={updateMutation.isPending}
+              className="font-heading uppercase tracking-wider bg-sky-600 hover:bg-sky-700 text-white"
+            >
+              <Play size={13} className="mr-1.5" />
+              {updateMutation.isPending ? "Starting…" : "Start Practice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation dialog */}
       {/* ── Restart Moto confirmation ───────────────────────────────────── */}
