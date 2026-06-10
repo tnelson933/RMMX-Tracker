@@ -227,9 +227,14 @@ export async function buildLeaderboard(motoId: number) {
 }
 
 // Default minimum milliseconds between two valid crossings for the same tag in the same moto.
-// Prevents a single antenna burst (50+ reads in 0.2 s) from being recorded as 50 laps.
-// Event-wide minimum lap time comes from event.minLapMs (set on the Motos page).
-const DEBOUNCE_MS = 30_000;
+// Rejects burst duplicates from the same antenna pass (a single tag read triggers
+// 50+ identical events in ~0.2 s on most readers).  3 s is short enough to never
+// drop a real lap yet long enough to swallow any realistic burst window.
+//
+// NOTE: event.minLapMs is a SCORING threshold (flags suspiciously fast laps in the
+// results UI) — it is intentionally NOT used here so short-track laps < minLapMs
+// are still recorded rather than silently dropped.
+const BURST_DEBOUNCE_MS = 3_000;
 
 // ── Per-moto async lock ────────────────────────────────────────────────────────
 // Node.js yields at every `await`, so two simultaneous requests can interleave:
@@ -263,10 +268,9 @@ async function _processCrossing(opts: {
   if (moto.status !== "in_progress") throw new Error("Moto is not in progress");
   if (!moto.startedAt) throw new Error("Moto has no start time");
 
-  // 1b. Event-wide debounce threshold — use event's minLapMs if configured, else DEBOUNCE_MS
-  const [eventRow] = await db.select({ minLapMs: eventsTable.minLapMs })
-    .from(eventsTable).where(eq(eventsTable.id, moto.eventId));
-  const debounceMs = eventRow?.minLapMs ?? DEBOUNCE_MS;
+  // 1b. Burst-debounce threshold — fixed short window to reject duplicate hardware reads.
+  //     minLapMs is a scoring/flagging field only; it must NOT gate crossing acceptance.
+  const debounceMs = BURST_DEBOUNCE_MS;
 
   // 2. Resolve rider — use override if provided (manual crossing), else look up from RFID assignment
   let riderId: number | null = overrideRiderId !== undefined ? overrideRiderId : null;
