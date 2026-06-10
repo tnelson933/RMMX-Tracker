@@ -79,6 +79,7 @@ function typeBadgeVariant(type: string): string {
     case "heat":     return "bg-yellow-400/30 text-yellow-100 border-yellow-400/70";
     case "lcq":      return "bg-orange-500/30 text-orange-200 border-orange-400/60";
     case "main":     return "bg-primary/30 text-primary border-primary/60";
+    case "moto":     return "bg-teal-500/25 text-teal-200 border-teal-400/60";
     default:         return "bg-muted text-muted-foreground";
   }
 }
@@ -98,6 +99,7 @@ function typeLabel(type: string): string {
     case "heat":     return "Heat";
     case "lcq":      return "LCQ";
     case "main":     return "Main";
+    case "moto":     return "Moto";
     default:         return type;
   }
 }
@@ -928,7 +930,7 @@ function StaticMotoCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 type ViewMode = "run-order" | "by-class";
-const MOTO_TYPES = ["practice", "heat", "lcq", "main"] as const;
+const MOTO_TYPES = ["practice", "heat", "lcq", "main", "moto"] as const;
 
 type LineupEntry = {
   position: number;

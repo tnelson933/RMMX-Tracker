@@ -2861,9 +2861,10 @@ export default function Motos() {
                       moto.type === "heat"     ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30" :
                       moto.type === "lcq"      ? "bg-orange-500/20 text-orange-300 border-orange-500/30" :
                       moto.type === "main"     ? "bg-primary/20 text-primary border-primary/30" :
+                      moto.type === "moto"     ? "bg-teal-500/20 text-teal-300 border-teal-500/30" :
                                                  "bg-muted text-muted-foreground border-border"
                     }`}>
-                      {moto.type === "main" ? "Main" : moto.type === "practice" ? "Practice" : moto.type === "lcq" ? "LCQ" : isSupercrossFormat ? "Heat" : "Heat"}
+                      {moto.type === "main" ? "Main" : moto.type === "practice" ? "Practice" : moto.type === "lcq" ? "LCQ" : moto.type === "moto" ? "Moto" : "Heat"}
                     </span>
                     {/* Status badge */}
                     <span className={`text-xs px-2 py-0.5 rounded border flex items-center gap-1 ${

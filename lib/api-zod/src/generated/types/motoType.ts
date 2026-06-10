@@ -14,4 +14,5 @@ export const MotoType = {
   lcq: 'lcq',
   main: 'main',
   practice: 'practice',
+  moto: 'moto',
 } as const;

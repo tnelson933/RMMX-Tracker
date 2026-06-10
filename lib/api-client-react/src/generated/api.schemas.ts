@@ -509,6 +509,7 @@ export const MotoType = {
   lcq: 'lcq',
   main: 'main',
   practice: 'practice',
+  moto: 'moto',
 } as const;
 
 export type MotoStatus = typeof MotoStatus[keyof typeof MotoStatus];
@@ -600,6 +601,7 @@ export const MotoInputType = {
   lcq: 'lcq',
   main: 'main',
   practice: 'practice',
+  moto: 'moto',
 } as const;
 
 /**
