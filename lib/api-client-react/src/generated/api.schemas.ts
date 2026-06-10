@@ -530,6 +530,11 @@ export interface Moto {
      * @nullable
      */
   lapCount?: number | null;
+  /**
+     * Time limit in milliseconds (practice sessions only, optional)
+     * @nullable
+     */
+  timeLimitMs?: number | null;
   /** @nullable */
   scheduledTime?: string | null;
   lineup?: LineupEntry[];
@@ -552,6 +557,8 @@ export interface MotoInput {
   motoNumber: number;
   /** Number of laps in this moto */
   lapCount?: number;
+  /** Time limit in milliseconds (practice sessions only, optional) */
+  timeLimitMs?: number;
   scheduledTime?: string;
   lineup?: number[];
 }
@@ -562,6 +569,8 @@ export interface MotoUpdate {
   scheduledTime?: string;
   /** @nullable */
   lapCount?: number | null;
+  /** @nullable */
+  timeLimitMs?: number | null;
   motoNumber?: number;
   name?: string;
 }
@@ -929,6 +938,17 @@ export interface OfflinePackageInfo {
   version: string;
   /** ETag matching the Content-Disposition header on the download endpoint */
   etag: string;
+}
+
+export interface GeneratePracticeSessionsInput {
+  /** Class to filter riders by (use "All Classes" for open/multi-class) */
+  raceClass: string;
+  /** Maximum number of riders per practice session */
+  maxRidersPerSession: number;
+  /** Time limit per session in milliseconds (optional) */
+  timeLimitMs?: number;
+  /** Optional scheduled start time for the first session */
+  scheduledTime?: string;
 }
 
 export interface ErrorEnvelope {

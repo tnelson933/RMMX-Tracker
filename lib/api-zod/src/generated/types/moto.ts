@@ -22,6 +22,11 @@ export interface Moto {
      * @nullable
      */
   lapCount?: number | null;
+  /**
+     * Time limit in milliseconds (practice sessions only, optional)
+     * @nullable
+     */
+  timeLimitMs?: number | null;
   /** @nullable */
   scheduledTime?: string | null;
   lineup?: LineupEntry[];

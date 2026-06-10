@@ -119,12 +119,13 @@ router.get("/events/:eventId/motos", async (req, res) => {
 
 router.post("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { name, type, raceClass, motoNumber, scheduledTime, lineup, lapCount } = req.body;
+  const { name, type, raceClass, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs } = req.body;
   if (!name || !type || !raceClass || motoNumber === undefined) return res.status(400).json({ error: "name, type, raceClass, motoNumber required" });
 
   const [moto] = await db.insert(motosTable).values({
     eventId, name, type, raceClass, motoNumber, scheduledTime, lineup: lineup || [], status: "scheduled",
     lapCount: lapCount ? Number(lapCount) : null,
+    timeLimitMs: timeLimitMs ? Number(timeLimitMs) : null,
   }).returning();
 
   return res.status(201).json({ ...moto, lineup: Array.isArray(moto.lineup) ? moto.lineup : [], createdAt: moto.createdAt.toISOString() });
@@ -154,6 +155,7 @@ router.patch("/motos/:motoId", async (req, res) => {
   if (req.body.lineup !== undefined) updates.lineup = req.body.lineup;
   if (req.body.scheduledTime !== undefined) updates.scheduledTime = req.body.scheduledTime;
   if (req.body.lapCount !== undefined) updates.lapCount = req.body.lapCount !== null ? Number(req.body.lapCount) : null;
+  if (req.body.timeLimitMs !== undefined) updates.timeLimitMs = req.body.timeLimitMs !== null ? Number(req.body.timeLimitMs) : null;
   if (req.body.motoNumber !== undefined) updates.motoNumber = Number(req.body.motoNumber);
   if (req.body.name !== undefined) updates.name = String(req.body.name);
 
@@ -452,6 +454,85 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     lineup: Array.isArray(m.lineup) ? m.lineup : [],
     createdAt: m.createdAt.toISOString(),
   })));
+});
+
+// Auto-assign checked-in riders to scheduled practice sessions
+router.post("/events/:eventId/generate-practice-sessions", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const { raceClass, maxRidersPerSession, timeLimitMs, scheduledTime } = req.body;
+
+  if (!raceClass || !maxRidersPerSession) {
+    return res.status(400).json({ error: "raceClass and maxRidersPerSession required" });
+  }
+
+  const max = Number(maxRidersPerSession);
+  if (isNaN(max) || max < 1) return res.status(400).json({ error: "maxRidersPerSession must be a positive integer" });
+
+  const checkins = await db.select({
+    riderId: checkinsTable.riderId,
+    raceClass: checkinsTable.raceClass,
+    bibNumber: checkinsTable.bibNumber,
+    rfidNumber: checkinsTable.rfidNumber,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+  }).from(checkinsTable)
+    .leftJoin(ridersTable, eq(checkinsTable.riderId, ridersTable.id))
+    .where(and(
+      eq(checkinsTable.eventId, eventId),
+      eq(checkinsTable.checkedIn, true),
+      ...(raceClass !== "All Classes" ? [eq(checkinsTable.raceClass, raceClass)] : []),
+    ));
+
+  if (checkins.length === 0) {
+    return res.status(400).json({ error: "No checked-in riders found for the selected class" });
+  }
+
+  const existingMotos = await db.select({ motoNumber: motosTable.motoNumber })
+    .from(motosTable).where(eq(motosTable.eventId, eventId));
+  const maxMotoNumber = existingMotos.reduce((mx, m) => Math.max(mx, m.motoNumber ?? 0), 0);
+  let nextMotoNumber = maxMotoNumber + 1;
+
+  type LineupEntry = { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber: string | null };
+
+  const sessionCount = Math.ceil(checkins.length / max);
+  const created = [];
+
+  for (let i = 0; i < checkins.length; i += max) {
+    const group = checkins.slice(i, i + max);
+    const sessionNum = Math.floor(i / max) + 1;
+    const suffix = sessionCount > 1 ? ` – Group ${sessionNum}` : "";
+    const name = raceClass === "All Classes"
+      ? `Open Practice${suffix}`
+      : `${raceClass} Practice${suffix}`;
+
+    const lineup: LineupEntry[] = group.map((r, idx) => ({
+      position: idx + 1,
+      riderId: r.riderId,
+      riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || `Rider #${r.riderId}`,
+      bibNumber: r.bibNumber ?? null,
+      rfidNumber: r.rfidNumber ?? null,
+    }));
+
+    const [moto] = await db.insert(motosTable).values({
+      eventId,
+      name,
+      type: "practice",
+      raceClass: raceClass === "All Classes" ? "" : raceClass,
+      motoNumber: nextMotoNumber++,
+      status: "scheduled",
+      lineup,
+      timeLimitMs: timeLimitMs ? Number(timeLimitMs) : null,
+      scheduledTime: scheduledTime ?? null,
+    }).returning();
+
+    created.push({
+      ...moto,
+      lineup: Array.isArray(moto.lineup) ? moto.lineup : [],
+      createdAt: moto.createdAt.toISOString(),
+    });
+  }
+
+  return res.status(201).json(created);
 });
 
 // Advance top heat finishers into the Main Event lineup (manual trigger)

@@ -44,6 +44,7 @@ export * from './eventUpdateMinLapTimes';
 export * from './eventUpdateRaceClassLimits';
 export * from './eventUpdateTimingTechnology';
 export * from './gateSettings';
+export * from './generatePracticeSessionsInput';
 export * from './healthStatus';
 export * from './lineupEntry';
 export * from './lineupGenerateInput';

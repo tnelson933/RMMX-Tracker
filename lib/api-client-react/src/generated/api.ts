@@ -42,6 +42,7 @@ import type {
   EventReport,
   EventUpdate,
   GateSettings,
+  GeneratePracticeSessionsInput,
   HealthStatus,
   LineupGenerateInput,
   ListEventsParams,
@@ -3198,6 +3199,78 @@ export const useGenerateLineups = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getGenerateLineupsMutationOptions(options));
+    }
+
+export const getGeneratePracticeSessionsUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/generate-practice-sessions`
+}
+
+/**
+ * @summary Auto-assign checked-in riders to scheduled practice sessions
+ */
+export const generatePracticeSessions = async (eventId: number,
+    generatePracticeSessionsInput: GeneratePracticeSessionsInput, options?: RequestInit): Promise<Moto[]> => {
+
+  return customFetch<Moto[]>(getGeneratePracticeSessionsUrl(eventId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      generatePracticeSessionsInput,)
+  }
+);}
+
+
+
+
+export const getGeneratePracticeSessionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generatePracticeSessions>>, TError,{eventId: number;data: BodyType<GeneratePracticeSessionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generatePracticeSessions>>, TError,{eventId: number;data: BodyType<GeneratePracticeSessionsInput>}, TContext> => {
+
+const mutationKey = ['generatePracticeSessions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generatePracticeSessions>>, {eventId: number;data: BodyType<GeneratePracticeSessionsInput>}> = (props) => {
+          const {eventId,data} = props ?? {};
+
+          return  generatePracticeSessions(eventId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GeneratePracticeSessionsMutationResult = NonNullable<Awaited<ReturnType<typeof generatePracticeSessions>>>
+    export type GeneratePracticeSessionsMutationBody = BodyType<GeneratePracticeSessionsInput>
+    export type GeneratePracticeSessionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Auto-assign checked-in riders to scheduled practice sessions
+ */
+export const useGeneratePracticeSessions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generatePracticeSessions>>, TError,{eventId: number;data: BodyType<GeneratePracticeSessionsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generatePracticeSessions>>,
+        TError,
+        {eventId: number;data: BodyType<GeneratePracticeSessionsInput>},
+        TContext
+      > => {
+      return useMutation(getGeneratePracticeSessionsMutationOptions(options));
     }
 
 export const getListResultsUrl = (eventId: number,) => {

@@ -12,6 +12,8 @@ export interface MotoUpdate {
   scheduledTime?: string;
   /** @nullable */
   lapCount?: number | null;
+  /** @nullable */
+  timeLimitMs?: number | null;
   motoNumber?: number;
   name?: string;
 }

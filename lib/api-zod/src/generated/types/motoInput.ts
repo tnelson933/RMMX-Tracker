@@ -14,6 +14,8 @@ export interface MotoInput {
   motoNumber: number;
   /** Number of laps in this moto */
   lapCount?: number;
+  /** Time limit in milliseconds (practice sessions only, optional) */
+  timeLimitMs?: number;
   scheduledTime?: string;
   lineup?: number[];
 }

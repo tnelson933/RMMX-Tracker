@@ -5,6 +5,7 @@ import {
   useListMotos,
   useCreateMoto,
   useUpdateMoto,
+  useGeneratePracticeSessions,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListMotosQueryKey } from "@workspace/api-client-react";
@@ -281,6 +282,7 @@ export default function EventPractice() {
 
   const createMoto = useCreateMoto();
   const updateMoto = useUpdateMoto();
+  const generatePracticeSessionsMutation = useGeneratePracticeSessions();
 
   const [liveData, setLiveData] = useState<LiveSnapshot | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
@@ -293,6 +295,9 @@ export default function EventPractice() {
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [scheduleSessionName, setScheduleSessionName] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleClass, setScheduleClass] = useState<string>(ALL_CLASSES);
+  const [scheduleMaxRiders, setScheduleMaxRiders] = useState<string>("");
+  const [scheduleTimeLimitMinutes, setScheduleTimeLimitMinutes] = useState<string>("");
   const esRef = useRef<EventSource | null>(null);
 
   const checkedInRiders = (checkins as any[]).filter((c: any) => c.checkedIn);
@@ -440,37 +445,82 @@ export default function EventPractice() {
     }
   }
 
+  function resetScheduleDialog() {
+    setScheduleSessionName("");
+    setScheduleTime("");
+    setScheduleMaxRiders("");
+    setScheduleTimeLimitMinutes("");
+  }
+
   async function addToSchedule() {
-    const sessionName = scheduleSessionName.trim() ||
-      (selectedClass === ALL_CLASSES ? "Open Practice" : `Practice – ${selectedClass}`);
-    try {
-      await new Promise<void>((resolve, reject) => {
-        createMoto.mutate(
-          {
-            eventId,
-            data: {
-              name: sessionName,
-              type: "practice",
-              raceClass: selectedClass === ALL_CLASSES ? undefined : selectedClass,
-              motoNumber: 0,
-              ...(scheduleTime.trim() ? { scheduledTime: scheduleTime.trim() } : {}),
-            } as any,
-          },
-          {
-            onSuccess: () => {
-              queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-              resolve();
+    const timeLimitMs = scheduleTimeLimitMinutes.trim() && parseFloat(scheduleTimeLimitMinutes) > 0
+      ? Math.round(parseFloat(scheduleTimeLimitMinutes) * 60 * 1000)
+      : undefined;
+    const maxRiders = scheduleMaxRiders.trim() ? parseInt(scheduleMaxRiders, 10) : 0;
+
+    if (maxRiders > 0) {
+      // Auto-assign all checked-in class riders into sessions of maxRiders
+      try {
+        await new Promise<void>((resolve, reject) => {
+          generatePracticeSessionsMutation.mutate(
+            {
+              eventId,
+              data: {
+                raceClass: scheduleClass,
+                maxRidersPerSession: maxRiders,
+                ...(timeLimitMs ? { timeLimitMs } : {}),
+                ...(scheduleTime.trim() ? { scheduledTime: scheduleTime.trim() } : {}),
+              },
             },
-            onError: reject,
-          }
-        );
-      });
-      setIsScheduleDialogOpen(false);
-      setScheduleSessionName("");
-      setScheduleTime("");
-      toast({ title: "Practice added to schedule — go to Motos & Lineups to start it." });
-    } catch {
-      toast({ title: "Failed to add practice to schedule", variant: "destructive" });
+            {
+              onSuccess: () => {
+                queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+                resolve();
+              },
+              onError: reject,
+            }
+          );
+        });
+        setIsScheduleDialogOpen(false);
+        resetScheduleDialog();
+        toast({ title: "Practice sessions added to schedule — go to Motos & Lineups to start them." });
+      } catch (err: any) {
+        const msg = err?.response?.data?.error ?? err?.message ?? "Failed to add practice sessions";
+        toast({ title: msg, variant: "destructive" });
+      }
+    } else {
+      // Single unassigned session (open practice)
+      const sessionName = scheduleSessionName.trim() ||
+        (scheduleClass === ALL_CLASSES ? "Open Practice" : `Practice – ${scheduleClass}`);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          createMoto.mutate(
+            {
+              eventId,
+              data: {
+                name: sessionName,
+                type: "practice",
+                raceClass: scheduleClass === ALL_CLASSES ? "" : scheduleClass,
+                motoNumber: 0,
+                ...(timeLimitMs ? { timeLimitMs } : {}),
+                ...(scheduleTime.trim() ? { scheduledTime: scheduleTime.trim() } : {}),
+              } as any,
+            },
+            {
+              onSuccess: () => {
+                queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+                resolve();
+              },
+              onError: reject,
+            }
+          );
+        });
+        setIsScheduleDialogOpen(false);
+        resetScheduleDialog();
+        toast({ title: "Practice added to schedule — go to Motos & Lineups to start it." });
+      } catch {
+        toast({ title: "Failed to add practice to schedule", variant: "destructive" });
+      }
     }
   }
 
@@ -871,23 +921,96 @@ export default function EventPractice() {
       </Dialog>
 
       {/* Add to Schedule dialog */}
-      <Dialog open={isScheduleDialogOpen} onOpenChange={open => { setIsScheduleDialogOpen(open); if (!open) { setScheduleSessionName(""); setScheduleTime(""); } }}>
+      <Dialog open={isScheduleDialogOpen} onOpenChange={open => {
+        setIsScheduleDialogOpen(open);
+        if (open) setScheduleClass(selectedClass);
+        if (!open) resetScheduleDialog();
+      }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="font-heading uppercase">Add Practice to Schedule</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
+
+            {/* Class */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Session Name</label>
-              <Input
-                value={scheduleSessionName}
-                onChange={e => setScheduleSessionName(e.target.value)}
-                placeholder="e.g. Open Practice"
-                className="h-9"
-                onKeyDown={e => { if (e.key === "Enter") void addToSchedule(); }}
-                autoFocus
-              />
+              <label className="text-sm font-medium">Class</label>
+              <select
+                value={scheduleClass}
+                onChange={e => setScheduleClass(e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value={ALL_CLASSES}>All Classes (open practice)</option>
+                {availableClasses.map(cls => (
+                  <option key={cls} value={cls}>{cls}</option>
+                ))}
+              </select>
             </div>
+
+            {/* Max riders */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                Max Riders Per Session
+                <span className="text-muted-foreground font-normal text-xs">(optional — auto-assigns riders)</span>
+              </label>
+              <Input
+                type="number"
+                min={1}
+                value={scheduleMaxRiders}
+                onChange={e => setScheduleMaxRiders(e.target.value)}
+                placeholder="e.g. 20"
+                className="h-9"
+              />
+              {scheduleMaxRiders.trim() && parseInt(scheduleMaxRiders) > 0 && (
+                <p className="text-xs text-primary">
+                  {(() => {
+                    const classRiders = scheduleClass === ALL_CLASSES
+                      ? checkedInRiders.length
+                      : checkedInRiders.filter((r: any) => r.raceClass === scheduleClass).length;
+                    const sessions = Math.ceil(classRiders / parseInt(scheduleMaxRiders));
+                    return `${classRiders} riders → ${sessions} session${sessions !== 1 ? "s" : ""}`;
+                  })()}
+                </p>
+              )}
+            </div>
+
+            {/* Time limit */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                Time Limit
+                <span className="text-muted-foreground font-normal text-xs">(optional — minutes)</span>
+              </label>
+              <div className="relative">
+                <Timer size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="number"
+                  min={1}
+                  value={scheduleTimeLimitMinutes}
+                  onChange={e => setScheduleTimeLimitMinutes(e.target.value)}
+                  placeholder="e.g. 15"
+                  className="h-9 pl-8"
+                />
+              </div>
+            </div>
+
+            {/* Session name — only shown when NOT auto-assigning */}
+            {(!scheduleMaxRiders.trim() || parseInt(scheduleMaxRiders) <= 0) && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium flex items-center gap-1.5">
+                  Session Name
+                  <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+                </label>
+                <Input
+                  value={scheduleSessionName}
+                  onChange={e => setScheduleSessionName(e.target.value)}
+                  placeholder={scheduleClass === ALL_CLASSES ? "Open Practice" : `Practice – ${scheduleClass}`}
+                  className="h-9"
+                  onKeyDown={e => { if (e.key === "Enter") void addToSchedule(); }}
+                />
+              </div>
+            )}
+
+            {/* Start time */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium flex items-center gap-1.5">
                 Start Time
@@ -903,18 +1026,24 @@ export default function EventPractice() {
                 />
               </div>
             </div>
+
             <p className="text-xs text-muted-foreground">
-              This creates a scheduled practice moto. Go to <span className="font-semibold">Motos &amp; Lineups</span> to start it when ready.
+              {scheduleMaxRiders.trim() && parseInt(scheduleMaxRiders) > 0
+                ? "Riders are auto-assigned from the checked-in list. Go to "
+                : "Creates a scheduled practice moto. Go to "}
+              <span className="font-semibold">Motos &amp; Lineups</span> to start when ready.
             </p>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsScheduleDialogOpen(false)}>Cancel</Button>
             <Button
               onClick={() => void addToSchedule()}
-              disabled={isLoading}
+              disabled={isLoading || generatePracticeSessionsMutation.isPending}
               className="font-heading uppercase tracking-wider"
             >
-              {isLoading ? <RefreshCw size={13} className="mr-1.5 animate-spin" /> : <CalendarPlus size={13} className="mr-1.5" />}
+              {(isLoading || generatePracticeSessionsMutation.isPending)
+                ? <RefreshCw size={13} className="mr-1.5 animate-spin" />
+                : <CalendarPlus size={13} className="mr-1.5" />}
               Add to Schedule
             </Button>
           </DialogFooter>

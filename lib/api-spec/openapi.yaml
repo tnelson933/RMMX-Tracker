@@ -865,6 +865,33 @@ paths:
                 items:
                   $ref: "#/components/schemas/Moto"
 
+  /events/{eventId}/generate-practice-sessions:
+    post:
+      operationId: generatePracticeSessions
+      tags: [motos]
+      summary: Auto-assign checked-in riders to scheduled practice sessions
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeneratePracticeSessionsInput"
+      responses:
+        "201":
+          description: Practice sessions created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Moto"
+
   # RESULTS
   /events/{eventId}/results:
     get:
@@ -2159,6 +2186,9 @@ components:
         lapCount:
           type: ["integer", "null"]
           description: Number of laps in this moto
+        timeLimitMs:
+          type: ["integer", "null"]
+          description: Time limit in milliseconds (practice sessions only, optional)
         scheduledTime:
           type: ["string", "null"]
         lineup:
@@ -2182,6 +2212,9 @@ components:
         lapCount:
           type: integer
           description: Number of laps in this moto
+        timeLimitMs:
+          type: integer
+          description: Time limit in milliseconds (practice sessions only, optional)
         scheduledTime:
           type: string
         lineup:
@@ -2201,6 +2234,8 @@ components:
         scheduledTime:
           type: string
         lapCount:
+          type: ["integer", "null"]
+        timeLimitMs:
           type: ["integer", "null"]
         motoNumber:
           type: integer
@@ -2847,6 +2882,23 @@ components:
         etag:
           type: string
           description: ETag matching the Content-Disposition header on the download endpoint
+
+    GeneratePracticeSessionsInput:
+      type: object
+      required: [raceClass, maxRidersPerSession]
+      properties:
+        raceClass:
+          type: string
+          description: Class to filter riders by (use "All Classes" for open/multi-class)
+        maxRidersPerSession:
+          type: integer
+          description: Maximum number of riders per practice session
+        timeLimitMs:
+          type: integer
+          description: Time limit per session in milliseconds (optional)
+        scheduledTime:
+          type: string
+          description: Optional scheduled start time for the first session
 
     ErrorEnvelope:
       type: object

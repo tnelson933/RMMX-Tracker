@@ -530,6 +530,63 @@ function FirstPlaceCountdown({ motoId, lapCount, variant = "banner" }: { motoId:
   );
 }
 
+// ── Practice Time Limit Countdown ────────────────────────────────────────────
+
+function PracticeTimeLimitCountdown({
+  startedAt,
+  timeLimitMs,
+  onExpire,
+}: {
+  startedAt: string | null;
+  timeLimitMs: number | null;
+  onExpire?: () => void;
+}) {
+  const [now, setNow] = useState(Date.now());
+  const expiredRef = useRef(false);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    expiredRef.current = false;
+  }, [startedAt, timeLimitMs]);
+
+  if (!startedAt || !timeLimitMs) return null;
+
+  const endMs = new Date(startedAt).getTime() + timeLimitMs;
+  const remaining = endMs - now;
+  const isExpired = remaining <= 0;
+
+  if (isExpired && !expiredRef.current) {
+    expiredRef.current = true;
+    onExpire?.();
+  }
+
+  if (isExpired) {
+    return (
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-bold bg-destructive/10 border-destructive/30 text-destructive animate-pulse shrink-0">
+        <Timer size={11} />
+        Time&apos;s Up!
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium shrink-0 transition-all ${
+      remaining < 60000
+        ? "bg-destructive/10 border-destructive/30 text-destructive animate-pulse"
+        : remaining < 120000
+        ? "bg-primary/10 border-primary/30 text-primary"
+        : "bg-sky-500/5 border-sky-500/20 text-sky-600 dark:text-sky-400"
+    }`}>
+      <Timer size={11} className="shrink-0" />
+      <span className="font-mono font-bold tabular-nums">{formatCountdown(remaining)}</span>
+    </div>
+  );
+}
+
 // ── Drag-and-drop sub-components ───────────────────────────────────────────
 
 type LineupEntry = { riderId: number; riderName: string; position: number; bibNumber?: string | null; rfidNumber?: string | null };
@@ -2710,9 +2767,38 @@ export default function Motos() {
               <CardContent className="p-0 flex-1 flex flex-col">
                 {/* Lineup table */}
                 {moto.type === "practice" ? (
-                  <div className="flex-1 flex items-center justify-center px-4 py-6 text-center text-sm text-muted-foreground">
-                    Open to all checked-in riders — no gate assignment needed.
-                  </div>
+                  getLineup(moto).length > 0 ? (
+                    <div className="flex-1 overflow-y-auto max-h-52 border-b">
+                      <Table>
+                        <TableHeader className="bg-muted/50 sticky top-0">
+                          <TableRow>
+                            <TableHead className="w-10 text-center text-xs">#</TableHead>
+                            <TableHead className="text-xs">Rider</TableHead>
+                            <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                            <TableHead className="w-14 text-center text-xs">RFID</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {getLineup(moto).map((entry, idx) => (
+                            <TableRow key={entry.riderId}>
+                              <TableCell className="text-center text-xs font-mono text-muted-foreground">{idx + 1}</TableCell>
+                              <TableCell className="text-xs font-medium">{entry.riderName}</TableCell>
+                              <TableCell className="text-center text-xs font-mono">{entry.bibNumber ?? "—"}</TableCell>
+                              <TableCell className="text-center text-xs">
+                                {entry.rfidNumber
+                                  ? <span className="text-green-600 font-bold">●</span>
+                                  : <span className="text-muted-foreground/30">—</span>}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center px-4 py-6 text-center text-sm text-muted-foreground">
+                      Open to all checked-in riders — no gate assignment needed.
+                    </div>
+                  )
                 ) : moto.type === "heat" ? (
                   <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === moto.id}>
                     <Table>
@@ -2828,8 +2914,27 @@ export default function Motos() {
                   </div>
                 )}
 
-                {/* First place finish countdown — hidden when expanded dialog is open (dialog has its own instance) */}
-                {moto.status === "in_progress" && expandedMotoId !== moto.id && (
+                {/* Practice time limit countdown — banner (shown only for practice motos) */}
+                {moto.type === "practice" && moto.status === "in_progress" && expandedMotoId !== moto.id && (moto as any).timeLimitMs && (
+                  <div className={`border-t flex items-center gap-3 px-4 py-2.5 transition-all ${
+                    (() => {
+                      const r = new Date((moto as any).startedAt ?? Date.now()).getTime() + (moto as any).timeLimitMs - Date.now();
+                      return r <= 0 ? "bg-destructive/10 border-destructive/30" : r < 60000 ? "bg-destructive/10" : r < 120000 ? "bg-primary/10" : "bg-sky-500/5";
+                    })()
+                  }`}>
+                    <Timer size={15} className="shrink-0 text-sky-500" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-none mb-0.5">Practice Time Limit</div>
+                    </div>
+                    <PracticeTimeLimitCountdown
+                      startedAt={(moto as any).startedAt ?? null}
+                      timeLimitMs={(moto as any).timeLimitMs ?? null}
+                      onExpire={() => handleStatusUpdate(moto.id, "completed")}
+                    />
+                  </div>
+                )}
+                {/* First place finish countdown — hidden when expanded dialog is open, not shown for practice */}
+                {moto.type !== "practice" && moto.status === "in_progress" && expandedMotoId !== moto.id && (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
                 )}
 
@@ -2881,9 +2986,15 @@ export default function Motos() {
                     </form>
                   )}
 
-                  {moto.status === "in_progress" && (
+                  {moto.type === "practice" && moto.status === "in_progress" && (moto as any).timeLimitMs ? (
+                    <PracticeTimeLimitCountdown
+                      startedAt={(moto as any).startedAt ?? null}
+                      timeLimitMs={(moto as any).timeLimitMs ?? null}
+                      onExpire={() => handleStatusUpdate(moto.id, "completed")}
+                    />
+                  ) : moto.type !== "practice" && moto.status === "in_progress" ? (
                     <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />
-                  )}
+                  ) : null}
 
                   <div className="ml-auto flex gap-1.5">
                     {/* Live timing link — always available */}

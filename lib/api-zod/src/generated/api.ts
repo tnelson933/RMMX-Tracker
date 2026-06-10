@@ -829,6 +829,7 @@ export const ListMotosResponseItem = zod.object({
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
+  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -854,6 +855,7 @@ export const CreateMotoBody = zod.object({
   "raceClass": zod.string(),
   "motoNumber": zod.number(),
   "lapCount": zod.number().optional().describe('Number of laps in this moto'),
+  "timeLimitMs": zod.number().optional().describe('Time limit in milliseconds (practice sessions only, optional)'),
   "scheduledTime": zod.string().optional(),
   "lineup": zod.array(zod.number()).optional()
 })
@@ -871,6 +873,7 @@ export const UpdateMotoBody = zod.object({
   "lineup": zod.array(zod.number()).optional(),
   "scheduledTime": zod.string().optional(),
   "lapCount": zod.number().nullish(),
+  "timeLimitMs": zod.number().nullish(),
   "motoNumber": zod.number().optional(),
   "name": zod.string().optional()
 })
@@ -884,6 +887,7 @@ export const UpdateMotoResponse = zod.object({
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
+  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -926,6 +930,7 @@ export const GenerateLineupsResponseItem = zod.object({
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
+  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),
@@ -936,6 +941,21 @@ export const GenerateLineupsResponseItem = zod.object({
 })).optional()
 })
 export const GenerateLineupsResponse = zod.array(GenerateLineupsResponseItem)
+
+
+/**
+ * @summary Auto-assign checked-in riders to scheduled practice sessions
+ */
+export const GeneratePracticeSessionsParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const GeneratePracticeSessionsBody = zod.object({
+  "raceClass": zod.string().describe('Class to filter riders by (use \"All Classes\" for open\/multi-class)'),
+  "maxRidersPerSession": zod.number().describe('Maximum number of riders per practice session'),
+  "timeLimitMs": zod.number().optional().describe('Time limit per session in milliseconds (optional)'),
+  "scheduledTime": zod.string().optional().describe('Optional scheduled start time for the first session')
+})
 
 
 /**
@@ -1128,6 +1148,7 @@ export const AdvanceToMainResponse = zod.object({
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
+  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
   "scheduledTime": zod.string().nullish(),
   "lineup": zod.array(zod.object({
   "position": zod.number(),

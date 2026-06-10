@@ -14,6 +14,7 @@ export const motosTable = pgTable("motos", {
   scheduledTime: text("scheduled_time"),
   lineup: jsonb("lineup").notNull().default([]),
   lapCount: integer("lap_count"),
+  timeLimitMs: integer("time_limit_ms"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
