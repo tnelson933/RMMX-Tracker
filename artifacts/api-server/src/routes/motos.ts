@@ -296,6 +296,8 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
 
   // Delete existing non-completed motos for the classes we will regenerate (avoid duplicates).
   // If a rounds filter is provided, only delete motos belonging to those rounds.
+  // Track deleted IDs at outer scope so motoNumber can be based on surviving motos.
+  const deletedMotoIds = new Set<number>();
   if (classesToGenerate.length > 0) {
     const roundsSet = roundsFilter && (roundsFilter as number[]).length > 0 ? new Set<number>(roundsFilter as number[]) : null;
     const idsToDelete = existingMotos
@@ -307,6 +309,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       })
       .map(m => m.id);
     if (idsToDelete.length > 0) {
+      idsToDelete.forEach(id => deletedMotoIds.add(id));
       await db.delete(motosTable).where(inArray(motosTable.id, idsToDelete));
     }
   }
@@ -497,8 +500,12 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.checkedIn, true)));
 
   const motos: typeof motosTable.$inferSelect[] = [];
-  // Start numbering after the highest existing moto number so new motos don't collide with preserved ones
-  const maxExistingMotoNumber = existingMotos.reduce((max, m) => Math.max(max, m.motoNumber ?? 0), 0);
+  // Start numbering after the highest surviving moto number (excluding deleted ones).
+  // If all motos were deleted (full re-generation), this resets to 1.
+  // If some completed motos survive, numbering continues from their max.
+  const maxExistingMotoNumber = existingMotos
+    .filter(m => !deletedMotoIds.has(m.id))
+    .reduce((max, m) => Math.max(max, m.motoNumber ?? 0), 0);
   let motoNumber = maxExistingMotoNumber + 1;
 
   const divCount = raceFormat === "three_moto" ? 3 : raceFormat === "two_moto" ? 2 : 1;
