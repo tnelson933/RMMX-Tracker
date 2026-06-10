@@ -1013,6 +1013,7 @@ export default function Motos() {
   const [perMotoDialog, setPerMotoDialog] = useState<{ open: boolean; motoId: number | null; motoName: string; motoClass: string }>({ open: false, motoId: null, motoName: "", motoClass: "" });
   const [perMotoGateMethod, setPerMotoGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [perMotoGateConfigId, setPerMotoGateConfigId] = useState<string>("");
+  const [sizeMode, setSizeMode] = useState<"manual" | "gate_config">("manual");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
@@ -1128,17 +1129,6 @@ export default function Motos() {
     setExpandedMotoId(id);
   }, []);
 
-  // Pre-populate gate config: prefer event default, fall back to first available config.
-  // This ensures selectedGateConfigId is always set when configs exist so the request payload
-  // matches what is visually displayed in the dialog.
-  useEffect(() => {
-    if (gateConfigs.length === 0) return;
-    const defaultId = (event as any)?.defaultGateConfigId as string | null | undefined;
-    const initId = (defaultId && gateConfigs.some(c => c.id === defaultId))
-      ? defaultId
-      : gateConfigs[0]?.id;
-    if (initId) setSelectedGateConfigId(prev => prev || initId);
-  }, [event, gateConfigs]);
 
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const eventScoringTable = (pointsTables ?? []).find(t => t.id === (event as any)?.scoringTableId);
@@ -1557,8 +1547,8 @@ export default function Motos() {
       : allClasses.filter(cls =>
           (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
         );
-    const perHeat = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
-    const gateConfigId = selectedGateConfigId || undefined;
+    const perHeat = sizeMode === "manual" && ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
+    const gateConfigId = sizeMode === "gate_config" ? (selectedGateConfigId || gateConfigs[0]?.id || undefined) : undefined;
     const divCount = format === "three_moto" ? 3 : format === "two_moto" ? 2 : 1;
     const allRoundsSet = new Set(Array.from({ length: divCount }, (_, i) => i + 1));
     const roundsToSend = selectedRounds.length > 0 && !selectedRounds.every(r => allRoundsSet.has(r) && selectedRounds.length === divCount)
@@ -2220,23 +2210,71 @@ export default function Motos() {
                   })()}
                 </>
               )}
+              {/* Race Size */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  {isSupercrossFormat ? "Max Riders per Heat" : "Div Size (optional)"}
-                </label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={ridersPerHeat}
-                  onChange={e => setRidersPerHeat(e.target.value)}
-                  placeholder="No limit (all in one div)"
-                  className="h-9"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {isSupercrossFormat
-                    ? "If a class exceeds this number, additional heats are created automatically."
-                    : "If a class exceeds this number, riders are split into separate divs."}
-                </p>
+                <label className="text-sm font-medium">Race Size</label>
+                <div className="rounded-lg border divide-y overflow-hidden">
+                  <div
+                    onClick={() => setSizeMode("manual")}
+                    className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors ${sizeMode === "manual" ? "bg-primary/5" : "hover:bg-muted/30"}`}
+                  >
+                    <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${sizeMode === "manual" ? "border-primary bg-primary" : "border-muted-foreground/40"}`}>
+                      {sizeMode === "manual" && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                    </span>
+                    <span className="flex flex-col gap-1.5 min-w-0 flex-1">
+                      <span className="text-sm font-medium leading-tight">Max riders per race</span>
+                      <span className="text-xs text-muted-foreground leading-snug">
+                        {isSupercrossFormat ? "If a class exceeds this number, additional heats are created automatically." : "If a class exceeds this number, riders are split into separate divs. Leave blank for no limit."}
+                      </span>
+                      {sizeMode === "manual" && (
+                        <Input
+                          type="number"
+                          min={1}
+                          value={ridersPerHeat}
+                          onChange={e => setRidersPerHeat(e.target.value)}
+                          placeholder="No limit (all in one div)"
+                          className="h-8 mt-0.5"
+                          onClick={e => e.stopPropagation()}
+                        />
+                      )}
+                    </span>
+                  </div>
+                  <div
+                    onClick={() => { if (gateConfigs.length > 0) setSizeMode("gate_config"); }}
+                    className={`flex items-start gap-3 px-4 py-3 transition-colors ${gateConfigs.length === 0 ? "opacity-50 cursor-not-allowed bg-muted/20" : sizeMode === "gate_config" ? "bg-primary/5 cursor-pointer" : "hover:bg-muted/30 cursor-pointer"}`}
+                  >
+                    <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${sizeMode === "gate_config" ? "border-primary bg-primary" : "border-muted-foreground/40"}`}>
+                      {sizeMode === "gate_config" && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                    </span>
+                    <span className="flex flex-col gap-1.5 min-w-0 flex-1">
+                      <span className="text-sm font-medium leading-tight">
+                        Use gate config
+                        {gateConfigs.length === 0 && <span className="ml-2 text-[10px] font-normal text-muted-foreground uppercase tracking-wide">Unavailable</span>}
+                      </span>
+                      <span className="text-xs text-muted-foreground leading-snug">Race size matches the gate count in your gate configuration.</span>
+                      {sizeMode === "gate_config" && gateConfigs.length === 1 && (
+                        <span className="text-xs font-medium text-foreground">{gateConfigs[0].name} <span className="text-muted-foreground font-normal">({gateConfigs[0].gateCount} gates)</span></span>
+                      )}
+                      {sizeMode === "gate_config" && gateConfigs.length > 1 && (
+                        <Select value={selectedGateConfigId || gateConfigs[0]?.id || ""} onValueChange={setSelectedGateConfigId}>
+                          <SelectTrigger className="h-8 text-sm mt-0.5" onClick={e => e.stopPropagation()}>
+                            <SelectValue placeholder="Select gate config…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {gateConfigs.map(cfg => (
+                              <SelectItem key={cfg.id} value={cfg.id}>{cfg.name} ({cfg.gateCount} gates)</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                {gateConfigs.length === 0 && (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+                    No gate configs found — set them up on the Gate Assignments page to assign gate numbers.
+                  </p>
+                )}
               </div>
               {/* Gate Pick Method */}
               {(() => {
@@ -2319,38 +2357,6 @@ export default function Motos() {
                   </div>
                 );
               })()}
-              {/* Gate Config — visible for all methods */}
-              {gateConfigs.length === 0 ? (
-                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
-                  No gate configs found — set them up on the Gate Assignments page to assign gate numbers.
-                </p>
-              ) : gateConfigs.length === 1 ? (
-                <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Gate Config</p>
-                    <p className="text-sm font-medium">{gateConfigs[0].name} <span className="text-muted-foreground font-normal">({gateConfigs[0].gateCount} gates)</span></p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Gate Config</label>
-                  <Select
-                    value={selectedGateConfigId || gateConfigs[0]?.id || ""}
-                    onValueChange={setSelectedGateConfigId}
-                  >
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue placeholder="Select gate config…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {gateConfigs.map(cfg => (
-                        <SelectItem key={cfg.id} value={cfg.id}>
-                          {cfg.name} <span className="text-muted-foreground ml-1">({cfg.gateCount} gates)</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
               <Button
                 onClick={handleGenerate}
                 disabled={generateMutation.isPending || (() => {

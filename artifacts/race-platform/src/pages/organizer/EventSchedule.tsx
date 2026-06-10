@@ -869,6 +869,7 @@ export default function EventSchedule() {
   const [generateGateMethod, setGenerateGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [selectedGateConfigId, setSelectedGateConfigId] = useState("");
+  const [sizeMode, setSizeMode] = useState<"manual" | "gate_config">("manual");
 
   // Add moto dialog
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -1388,7 +1389,8 @@ export default function EventSchedule() {
     const lockedClasses = generateGateMethod === "prior_round_finish"
       ? []
       : allClasses.filter(cls => rawMotos.some(m => m.raceClass === cls && m.status === "completed"));
-    const gateConfigId = selectedGateConfigId ? selectedGateConfigId : undefined;
+    const gateConfigId = sizeMode === "gate_config" ? (selectedGateConfigId || gateConfigs[0]?.id || undefined) : undefined;
+    const ridersPerHeatVal = sizeMode === "manual" && ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
     const divCount = generateFormat === "three_moto" ? 3 : generateFormat === "two_moto" ? 2 : 1;
     const roundsToSend = generateSelectedRounds.length > 0 && generateSelectedRounds.length < divCount
       ? generateSelectedRounds
@@ -1400,7 +1402,7 @@ export default function EventSchedule() {
         data: {
           raceFormat: generateFormat,
           classes: allClasses,
-          ridersPerHeat: ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined,
+          ridersPerHeat: ridersPerHeatVal,
           gatePickMethod: generateGateMethod,
           gateConfigId,
           rounds: roundsToSend,
@@ -2020,25 +2022,73 @@ export default function EventSchedule() {
               </>
             )}
 
-            {/* Riders per heat */}
+            {/* Race Size */}
             <div className="space-y-2">
-              <Label>
-                {isSupercrossFormat ? "Max Riders per Heat" : "Div Size"}{" "}
-                <span className="text-muted-foreground font-normal">(optional)</span>
-              </Label>
-              <Input
-                type="number"
-                min={1}
-                value={ridersPerHeat}
-                onChange={e => setRidersPerHeat(e.target.value)}
-                placeholder="No limit (all in one div)"
-                className="h-9"
-              />
-              <p className="text-xs text-muted-foreground">
-                {isSupercrossFormat
-                  ? "If a class exceeds this number, additional heats are created automatically."
-                  : "If a class exceeds this number, riders are split into separate divs."}
-              </p>
+              <Label>Race Size</Label>
+              <div className="rounded-lg border divide-y overflow-hidden">
+                {/* Manual */}
+                <div
+                  onClick={() => setSizeMode("manual")}
+                  className={`flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors ${sizeMode === "manual" ? "bg-primary/5" : "hover:bg-muted/30"}`}
+                >
+                  <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${sizeMode === "manual" ? "border-primary bg-primary" : "border-muted-foreground/40"}`}>
+                    {sizeMode === "manual" && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                  </span>
+                  <span className="flex flex-col gap-1.5 min-w-0 flex-1">
+                    <span className="text-sm font-medium leading-tight">Max riders per race</span>
+                    <span className="text-xs text-muted-foreground leading-snug">
+                      {isSupercrossFormat ? "If a class exceeds this number, additional heats are created automatically." : "If a class exceeds this number, riders are split into separate divs. Leave blank for no limit."}
+                    </span>
+                    {sizeMode === "manual" && (
+                      <Input
+                        type="number"
+                        min={1}
+                        value={ridersPerHeat}
+                        onChange={e => setRidersPerHeat(e.target.value)}
+                        placeholder="No limit (all in one div)"
+                        className="h-8 mt-0.5"
+                        onClick={e => e.stopPropagation()}
+                      />
+                    )}
+                  </span>
+                </div>
+                {/* Gate config */}
+                <div
+                  onClick={() => { if (gateConfigs.length > 0) setSizeMode("gate_config"); }}
+                  className={`flex items-start gap-3 px-4 py-3 transition-colors ${gateConfigs.length === 0 ? "opacity-50 cursor-not-allowed bg-muted/20" : sizeMode === "gate_config" ? "bg-primary/5 cursor-pointer" : "hover:bg-muted/30 cursor-pointer"}`}
+                >
+                  <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${sizeMode === "gate_config" ? "border-primary bg-primary" : "border-muted-foreground/40"}`}>
+                    {sizeMode === "gate_config" && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                  </span>
+                  <span className="flex flex-col gap-1.5 min-w-0 flex-1">
+                    <span className="text-sm font-medium leading-tight">
+                      Use gate config
+                      {gateConfigs.length === 0 && <span className="ml-2 text-[10px] font-normal text-muted-foreground uppercase tracking-wide">Unavailable</span>}
+                    </span>
+                    <span className="text-xs text-muted-foreground leading-snug">Race size matches the gate count in your gate configuration.</span>
+                    {sizeMode === "gate_config" && gateConfigs.length === 1 && (
+                      <span className="text-xs font-medium text-foreground">{gateConfigs[0].name} <span className="text-muted-foreground font-normal">({gateConfigs[0].gateCount} gates)</span></span>
+                    )}
+                    {sizeMode === "gate_config" && gateConfigs.length > 1 && (
+                      <Select value={selectedGateConfigId || gateConfigs[0]?.id || ""} onValueChange={setSelectedGateConfigId}>
+                        <SelectTrigger className="h-8 text-sm mt-0.5" onClick={e => e.stopPropagation()}>
+                          <SelectValue placeholder="Select gate config…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {gateConfigs.map(cfg => (
+                            <SelectItem key={cfg.id} value={cfg.id}>{cfg.name} ({cfg.gateCount} gates)</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </span>
+                </div>
+              </div>
+              {gateConfigs.length === 0 && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+                  No gate configs found — set them up on the Gate Assignments page to assign gate numbers.
+                </p>
+              )}
             </div>
 
             {/* Gate Pick Method */}
@@ -2112,36 +2162,6 @@ export default function EventSchedule() {
                       })}
                     </div>
                   </TooltipProvider>
-                  {/* Gate Config selector */}
-                  {gateConfigs.length === 0 && (
-                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
-                      No gate configs found — set them up on the Gate Assignments page to assign gate numbers.
-                    </p>
-                  )}
-                  {gateConfigs.length > 1 && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-wider">Gate Config</Label>
-                      <Select
-                        value={selectedGateConfigId || gateConfigs[0]?.id || ""}
-                        onValueChange={setSelectedGateConfigId}
-                      >
-                        <SelectTrigger className="h-8 text-sm">
-                          <SelectValue placeholder="Select gate config…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {gateConfigs.map(cfg => (
-                            <SelectItem key={cfg.id} value={cfg.id}>
-                              {cfg.name}{" "}
-                              <span className="text-muted-foreground ml-1">({cfg.gateCount} gates)</span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  {gateConfigs.length === 1 && (
-                    <p className="text-xs text-muted-foreground">Gate config: <span className="font-medium">{gateConfigs[0].name}</span> ({gateConfigs[0].gateCount} gates)</p>
-                  )}
                 </div>
               );
             })()}
