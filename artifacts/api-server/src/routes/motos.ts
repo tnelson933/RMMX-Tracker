@@ -267,6 +267,11 @@ router.post("/motos/:motoId/restart", async (req, res) => {
     if (evClubId !== staffCIdRestart) return res.status(403).json({ error: "Forbidden" });
   }
   await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
+  // Clear timing data from race_results so short-lap flags reset correctly
+  await db
+    .update(raceResultsTable)
+    .set({ lapTimes: [], totalTime: null })
+    .where(eq(raceResultsTable.motoId, id));
   const [updated] = await db
     .update(motosTable)
     .set({ status: "scheduled", startedAt: null })
