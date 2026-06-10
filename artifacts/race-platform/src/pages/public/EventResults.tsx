@@ -123,7 +123,7 @@ function ResultTable({
         <TableHeader className="bg-sidebar text-sidebar-foreground">
           <TableRow className="hover:bg-sidebar">
             <TableHead className="w-16 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Pos</TableHead>
-            <TableHead className="w-24 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Bib</TableHead>
+            <TableHead className="w-24 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">#</TableHead>
             <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Rider</TableHead>
             <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
               <span className="flex items-center justify-end gap-1"><Clock size={14} /> Time</span>
@@ -255,7 +255,7 @@ function MotoScheduleRow({
                   <TableHeader className="bg-green-900/90 dark:bg-green-950/80">
                     <TableRow className="hover:bg-green-900/90 dark:hover:bg-green-950/80 border-0">
                       <TableHead className="w-12 text-center text-white/80 font-heading font-bold uppercase tracking-wider py-3 text-xs">Pos</TableHead>
-                      <TableHead className="w-16 text-center text-white/80 font-heading font-bold uppercase tracking-wider py-3 text-xs">Bib</TableHead>
+                      <TableHead className="w-16 text-center text-white/80 font-heading font-bold uppercase tracking-wider py-3 text-xs">#</TableHead>
                       <TableHead className="text-white/80 font-heading font-bold uppercase tracking-wider py-3 text-xs">Rider</TableHead>
                       <TableHead className="text-right text-white/80 font-heading font-bold uppercase tracking-wider py-3 text-xs">Time</TableHead>
                     </TableRow>

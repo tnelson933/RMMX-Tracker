@@ -1846,7 +1846,7 @@ export default function Motos() {
     if (!raw) return;
     const entry = lineup.find(e => e.bibNumber && e.bibNumber.replace(/^#/, "") === raw);
     if (!entry) {
-      toast({ title: `Bib #${raw} not found in this lineup`, variant: "destructive" });
+      toast({ title: `#${raw} not found in this lineup`, variant: "destructive" });
       return;
     }
     setBibInputs(prev => ({ ...prev, [motoId]: "" }));
@@ -2666,7 +2666,7 @@ export default function Motos() {
                             <tr>
                               <th>Gate</th>
                               <th>Rider</th>
-                              <th>Bib</th>
+                              <th>#</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2886,7 +2886,7 @@ export default function Motos() {
                           <TableRow>
                             <TableHead className="w-10 text-center text-xs">#</TableHead>
                             <TableHead className="text-xs">Rider</TableHead>
-                            <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                            <TableHead className="w-16 text-center text-xs">#</TableHead>
                             <TableHead className="w-14 text-center text-xs">RFID</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -2921,7 +2921,7 @@ export default function Motos() {
                             <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
                           <TableHead className="text-xs">Rider</TableHead>
-                          <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                          <TableHead className="w-16 text-center text-xs">#</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
                           {moto.status === "in_progress" && <TableHead className="w-24" />}
                         </TableRow>
@@ -2964,7 +2964,7 @@ export default function Motos() {
                         <TableRow>
                           <TableHead className="w-12 text-center text-xs">Gate</TableHead>
                           <TableHead className="text-xs">Rider</TableHead>
-                          <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                          <TableHead className="w-16 text-center text-xs">#</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
                           {moto.status === "in_progress" && <TableHead className="w-24" />}
                         </TableRow>
@@ -3089,7 +3089,7 @@ export default function Motos() {
                         <input
                           type="text"
                           inputMode="numeric"
-                          placeholder="Bib #"
+                          placeholder="#"
                           value={bibInputs[moto.id] ?? ""}
                           onChange={e => setBibInputs(prev => ({ ...prev, [moto.id]: e.target.value }))}
                           className="h-7 w-20 pl-6 pr-2 rounded border border-border bg-background text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/60"
@@ -3231,7 +3231,7 @@ export default function Motos() {
                             <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
                           <TableHead className="text-xs">Rider</TableHead>
-                          <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                          <TableHead className="w-16 text-center text-xs">#</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
                           {moto.status === "in_progress" && <TableHead className="w-28 text-xs text-right pr-3">Manual Lap</TableHead>}
                         </TableRow>
@@ -3272,7 +3272,7 @@ export default function Motos() {
                         <TableRow>
                           <TableHead className="w-12 text-center text-xs">Gate</TableHead>
                           <TableHead className="text-xs">Rider</TableHead>
-                          <TableHead className="w-16 text-center text-xs">Bib</TableHead>
+                          <TableHead className="w-16 text-center text-xs">#</TableHead>
                           <TableHead className="w-20 text-center text-xs">RFID</TableHead>
                           {moto.status === "in_progress" && <TableHead className="w-28 text-xs text-right pr-3">Manual Lap</TableHead>}
                         </TableRow>
@@ -3374,7 +3374,7 @@ export default function Motos() {
                       <input
                         type="text"
                         inputMode="numeric"
-                        placeholder="Bib # + Enter"
+                        placeholder="# + Enter"
                         value={bibInputs[moto.id] ?? ""}
                         onChange={e => setBibInputs(prev => ({ ...prev, [moto.id]: e.target.value }))}
                         className="h-8 w-36 pl-7 pr-2 rounded border border-border bg-background text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50"

@@ -251,7 +251,7 @@ export default function LiveLeaderboard() {
                   <tr className="text-white/30 text-xs uppercase tracking-widest border-b border-white/10">
                     <th className="text-center w-12 py-3 px-3 font-bold">Pos</th>
                     <th className="text-left py-3 px-3 font-bold">Rider</th>
-                    <th className="text-center w-16 py-3 px-2 font-bold hidden sm:table-cell">Bib</th>
+                    <th className="text-center w-16 py-3 px-2 font-bold hidden sm:table-cell">#</th>
                     <th className="text-center w-16 py-3 px-2 font-bold">Laps</th>
                     <th className="text-right py-3 px-3 font-bold">Total</th>
                     <th className="text-right py-3 px-3 font-bold hidden md:table-cell">Last Lap</th>

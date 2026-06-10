@@ -53,7 +53,7 @@ function toExportRows(riders: ExportRider[]) {
     ID: r.id,
     "First Name": r.firstName,
     "Last Name": r.lastName,
-    "Bib #": r.bibNumber ?? "",
+    "#": r.bibNumber ?? "",
     Hometown: r.hometown ?? "",
     "Bike Manufacturer": r.bikeManufacturer ?? "",
     "AMA #": r.amaNumber ?? "",
@@ -265,7 +265,7 @@ export default function RidersList() {
 
                   <div className="grid grid-cols-3 gap-4">
                     <FormField control={form.control} name="bibNumber" render={({ field }) => (
-                      <FormItem><FormLabel>Bib #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>#</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={form.control} name="amaNumber" render={({ field }) => (
                       <FormItem><FormLabel>AMA #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
@@ -312,7 +312,7 @@ export default function RidersList() {
             <TableHeader className="bg-sidebar text-sidebar-foreground">
               <TableRow className="hover:bg-sidebar">
                 <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">Name</TableHead>
-                <TableHead className="w-20 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">Bib</TableHead>
+                <TableHead className="w-20 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">#</TableHead>
                 <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">Hometown</TableHead>
                 <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">Bike</TableHead>
                 <TableHead className="w-28 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">AMA #</TableHead>

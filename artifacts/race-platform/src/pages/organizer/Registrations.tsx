@@ -566,7 +566,7 @@ export default function Registrations() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
         setEditingBibId(null);
-        toast({ title: "Bib number saved" });
+        toast({ title: "# saved" });
       },
       onError: (err) => {
         toast({ title: "Failed to save bib", description: err.message, variant: "destructive" });
@@ -579,8 +579,8 @@ export default function Registrations() {
       "Registration ID": r.id,
       "Rider Name": r.riderName,
       "Race Class": r.raceClass,
-      "Bib #": r.bibNumber ?? suggestions.get(r.id) ?? "",
-      "Bib Status": r.bibNumber ? "confirmed" : "suggested",
+      "#": r.bibNumber ?? suggestions.get(r.id) ?? "",
+      "# Status": r.bibNumber ? "confirmed" : "suggested",
       "Status": r.status,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -790,7 +790,7 @@ export default function Registrations() {
               <FormField control={form.control} name="bibNumber" render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Preferred Bib #
+                    Preferred #
                     {noDuplicateBibs && <span className="text-destructive ml-1">*</span>}
                   </FormLabel>
                   <FormControl>
@@ -801,8 +801,8 @@ export default function Registrations() {
                       {bibCheckState === "available" && <Check size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500" />}
                     </div>
                   </FormControl>
-                  {bibCheckState === "taken" && <p className="text-xs text-destructive">Bib #{field.value} is already taken for this event</p>}
-                  {bibCheckState === "available" && <p className="text-xs text-green-600">Bib #{field.value} is available</p>}
+                  {bibCheckState === "taken" && <p className="text-xs text-destructive">#{field.value} is already taken for this event</p>}
+                  {bibCheckState === "available" && <p className="text-xs text-green-600">#{field.value} is available</p>}
                   <FormMessage />
                 </FormItem>
               )} />
@@ -1418,7 +1418,7 @@ export default function Registrations() {
                 <TableHead className="w-16">ID</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Rider</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Class</TableHead>
-                <TableHead className="font-heading font-bold uppercase tracking-wider">Bib</TableHead>
+                <TableHead className="font-heading font-bold uppercase tracking-wider">#</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">{isMyLaps ? "Transponder" : "RFID"}</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Status</TableHead>
                 <TableHead className="text-right font-heading font-bold uppercase tracking-wider">Actions</TableHead>

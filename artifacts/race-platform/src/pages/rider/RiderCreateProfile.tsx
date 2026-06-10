@@ -127,7 +127,7 @@ export default function RiderCreateProfile() {
           </CardHeader>
           <CardContent className="px-5 pb-5 space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              {field("Bib / Race #", "bibNumber", "e.g. 42")}
+              {field("#", "bibNumber", "e.g. 42")}
               {field("AMA Number", "amaNumber", "AMA membership #")}
               {field("MyLaps Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
             </div>

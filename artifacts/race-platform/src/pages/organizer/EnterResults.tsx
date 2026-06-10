@@ -219,7 +219,7 @@ export default function EnterResults() {
               <Table>
                 <TableHeader className="bg-muted/50">
                   <TableRow>
-                    <TableHead className="w-16">Bib</TableHead>
+                    <TableHead className="w-16">#</TableHead>
                     <TableHead>Rider</TableHead>
                     <TableHead className="w-24 text-center">Position</TableHead>
                     <TableHead className="w-32">Total Time</TableHead>

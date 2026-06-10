@@ -717,7 +717,7 @@ export default function WatchLive() {
                 <div className="flex items-center px-3 py-1 text-white/20 text-[10px] uppercase tracking-wider border-b border-white/5 shrink-0">
                   <span className="w-5 text-right mr-2.5 shrink-0">#</span>
                   <span className="flex-1">Rider</span>
-                  <span className="text-[10px] shrink-0">Bib</span>
+                  <span className="text-[10px] shrink-0">#</span>
                 </div>
               )}
 

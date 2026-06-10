@@ -905,7 +905,7 @@ export default function Register() {
                     <FormField control={form.control} name="bibNumber" render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          Preferred Bib Number
+                          Preferred #
                           {event?.noDuplicateBibs && <span className="text-destructive ml-1">*</span>}
                         </FormLabel>
                         <FormControl>
@@ -916,8 +916,8 @@ export default function Register() {
                             {bibCheckState === "available" && <CheckCircle2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500" />}
                           </div>
                         </FormControl>
-                        {bibCheckState === "taken" && <p className="text-xs text-destructive">Bib #{field.value} is already taken for this event</p>}
-                        {bibCheckState === "available" && <p className="text-xs text-green-600">Bib #{field.value} is available</p>}
+                        {bibCheckState === "taken" && <p className="text-xs text-destructive">#{field.value} is already taken for this event</p>}
+                        {bibCheckState === "available" && <p className="text-xs text-green-600">#{field.value} is available</p>}
                         <FormMessage />
                       </FormItem>
                     )} />
