@@ -707,6 +707,29 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 
   const checkedInEventIds = new Set(familyCheckins.map(c => c.eventId));
 
+  // Fetch lap crossings for practice motos (for lap time / rank display in schedule)
+  const practiceMotoIds = practiceMotos.map(m => m.id);
+  type PracticeCrossing = { motoId: number; riderId: number | null; rfidNumber: string; lapNumber: number | null; lapTimeMs: number | null };
+  const practiceAllCrossings: PracticeCrossing[] = practiceMotoIds.length > 0
+    ? await db
+      .select({
+        motoId: lapCrossingsTable.motoId,
+        riderId: lapCrossingsTable.riderId,
+        rfidNumber: lapCrossingsTable.rfidNumber,
+        lapNumber: lapCrossingsTable.lapNumber,
+        lapTimeMs: lapCrossingsTable.lapTimeMs,
+      })
+      .from(lapCrossingsTable)
+      .where(inArray(lapCrossingsTable.motoId, practiceMotoIds))
+      .orderBy(asc(lapCrossingsTable.motoId), asc(lapCrossingsTable.crossingTime))
+    : [];
+
+  const crossingsByMoto = new Map<number, PracticeCrossing[]>();
+  for (const c of practiceAllCrossings) {
+    if (!crossingsByMoto.has(c.motoId)) crossingsByMoto.set(c.motoId, []);
+    crossingsByMoto.get(c.motoId)!.push(c);
+  }
+
   // Build response grouped by event (one section per event regardless of how many family members)
   const results = events.map(event => {
     const eventRegs = regs.filter(r => r.eventId === event.id);
@@ -722,21 +745,73 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     // Practice motos — shown to any family member checked into this event
     const eventPracticeMotos = practiceMotos
       .filter(m => m.eventId === event.id)
-      .map(moto => ({
-        motoId: moto.id,
-        motoNumber: moto.motoNumber,
-        name: moto.name,
-        type: moto.type,
-        raceClass: moto.raceClass,
-        status: moto.status,
-        lapCount: moto.lapCount,
-        scheduledTime: moto.scheduledTime ?? null,
-        startedAt: moto.startedAt?.toISOString() ?? null,
-        completedAt: moto.completedAt?.toISOString() ?? null,
-        isAnyFamilyMemberInMoto: isCheckedIn,
-        familyGates: [] as { gate: number; riderId: number; riderName: string }[],
-        lineup: [] as { gate: number; riderId: number; riderName: string; bibNumber: string | null; isFamilyMember: boolean }[],
-      }));
+      .map(moto => {
+        const motoLineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{
+          position: number; riderId: number; riderName: string; bibNumber?: string | null;
+        }>;
+        const familyInLineup = motoLineup.filter(e => familyRiderIds.includes(e.riderId));
+        // If the moto has an assigned lineup, only family riders IN the lineup see it as "their" moto
+        const hasAssignedLineup = motoLineup.length > 0;
+        const isAnyFamilyMemberInMoto = hasAssignedLineup ? familyInLineup.length > 0 : isCheckedIn;
+
+        // Build leaderboard from lap crossings
+        const motoCrossings = crossingsByMoto.get(moto.id) ?? [];
+        const validCrossings = motoCrossings.filter(c => (c.lapTimeMs ?? 0) > 0);
+        const riderBestMap = new Map<string, { riderId: number | null; riderName: string; bestLapMs: number }>();
+        for (const c of validCrossings) {
+          const key = c.riderId != null ? `rider:${c.riderId}` : `rfid:${c.rfidNumber}`;
+          const lineupEntry = motoLineup.find(e => e.riderId === c.riderId);
+          const riderName = lineupEntry?.riderName ?? (c.riderId != null ? `Rider #${c.riderId}` : `Transponder ${c.rfidNumber}`);
+          const existing = riderBestMap.get(key);
+          if (!existing || c.lapTimeMs! < existing.bestLapMs) {
+            riderBestMap.set(key, { riderId: c.riderId, riderName, bestLapMs: c.lapTimeMs! });
+          }
+        }
+        const practiceLeaderboard = [...riderBestMap.values()]
+          .sort((a, b) => a.bestLapMs - b.bestLapMs)
+          .map((e, i) => ({
+            rank: i + 1,
+            riderId: e.riderId,
+            riderName: e.riderName,
+            bestLapMs: e.bestLapMs,
+            isMe: e.riderId != null && familyRiderIds.includes(e.riderId),
+          }));
+
+        // My lap times
+        const practiceLaps = validCrossings
+          .filter(c => c.riderId != null && familyRiderIds.includes(c.riderId))
+          .map(c => ({ riderId: c.riderId!, lapNumber: c.lapNumber ?? 0, lapTimeMs: c.lapTimeMs }))
+          .sort((a, b) => a.lapNumber - b.lapNumber);
+
+        return {
+          motoId: moto.id,
+          motoNumber: moto.motoNumber,
+          name: moto.name,
+          type: moto.type,
+          raceClass: moto.raceClass,
+          status: moto.status,
+          lapCount: moto.lapCount,
+          timeLimitMs: (moto as any).timeLimitMs ?? null,
+          scheduledTime: moto.scheduledTime ?? null,
+          startedAt: moto.startedAt?.toISOString() ?? null,
+          completedAt: moto.completedAt?.toISOString() ?? null,
+          isAnyFamilyMemberInMoto,
+          familyGates: familyInLineup
+            .sort((a, b) => a.position - b.position)
+            .map(e => ({ gate: e.position, riderId: e.riderId, riderName: e.riderName })),
+          lineup: motoLineup
+            .sort((a, b) => a.position - b.position)
+            .map(e => ({
+              gate: e.position,
+              riderId: e.riderId,
+              riderName: e.riderName,
+              bibNumber: e.bibNumber ?? null,
+              isFamilyMember: familyRiderIds.includes(e.riderId),
+            })),
+          practiceLaps,
+          practiceLeaderboard,
+        };
+      });
 
     const motosWithFamily = eventMotos.map(moto => {
       const lineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{

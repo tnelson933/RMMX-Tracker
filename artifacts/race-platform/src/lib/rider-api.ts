@@ -190,6 +190,20 @@ export interface ScheduleFamilyGate {
   riderName: string;
 }
 
+export interface PracticeLeaderboardEntry {
+  rank: number;
+  riderId: number | null;
+  riderName: string;
+  bestLapMs: number | null;
+  isMe: boolean;
+}
+
+export interface PracticeLapEntry {
+  riderId: number;
+  lapNumber: number;
+  lapTimeMs: number | null;
+}
+
 export interface ScheduleMoto {
   motoId: number;
   motoNumber: number;
@@ -198,12 +212,15 @@ export interface ScheduleMoto {
   raceClass: string | null;
   status: string;
   lapCount: number | null;
+  timeLimitMs?: number | null;
   scheduledTime: string | null;
   startedAt: string | null;
   completedAt: string | null;
   isAnyFamilyMemberInMoto: boolean;
   familyGates: ScheduleFamilyGate[];
   lineup: ScheduleMotoLineupEntry[];
+  practiceLaps?: PracticeLapEntry[];
+  practiceLeaderboard?: PracticeLeaderboardEntry[];
 }
 
 export interface ScheduleRegistration {

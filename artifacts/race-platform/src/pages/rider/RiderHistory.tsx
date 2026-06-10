@@ -33,6 +33,7 @@ import {
   type EventPracticeEvent,
   type EventPracticeSession,
   type EventPracticeLeaderboardEntry,
+  type PracticeLeaderboardEntry,
 } from "@/lib/rider-api";
 
 function positionBadge(pos: number) {
@@ -1040,6 +1041,74 @@ function NearMeTab() {
 
 // ─── Schedule components ──────────────────────────────────────────────────────
 
+function formatCountdownMs(ms: number): string {
+  if (ms <= 0) return "0s";
+  const totalSec = Math.ceil(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m > 0 ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`;
+}
+
+function PracticeCountdown({ startedAt, timeLimitMs, variant = "badge" }: {
+  startedAt: string | null;
+  timeLimitMs: number | null;
+  variant?: "badge" | "banner";
+}) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!startedAt || !timeLimitMs) return null;
+  const endMs = new Date(startedAt).getTime() + timeLimitMs;
+  const remaining = endMs - now;
+  const isExpired = remaining <= 0;
+
+  if (variant === "badge") {
+    if (isExpired) {
+      return (
+        <span className="flex items-center gap-1 text-xs font-bold text-destructive bg-destructive/10 border border-destructive/20 rounded-full px-2 py-0.5 animate-pulse shrink-0">
+          <Timer size={9} /> Time&apos;s Up!
+        </span>
+      );
+    }
+    return (
+      <span className={`flex items-center gap-1 text-xs font-bold rounded-full px-2 py-0.5 border shrink-0 ${
+        remaining < 60000
+          ? "text-destructive bg-destructive/10 border-destructive/20 animate-pulse"
+          : remaining < 120000
+          ? "text-primary bg-primary/10 border-primary/20"
+          : "text-sky-600 bg-sky-500/10 border-sky-400/20"
+      }`}>
+        <Timer size={9} />
+        <span className="font-mono tabular-nums">{formatCountdownMs(remaining)}</span>
+      </span>
+    );
+  }
+
+  // banner variant
+  return (
+    <div className={`flex items-center gap-2 rounded-lg px-3 py-2 border text-sm font-medium ${
+      isExpired
+        ? "bg-destructive/10 border-destructive/30 text-destructive animate-pulse"
+        : remaining < 60000
+        ? "bg-destructive/10 border-destructive/30 text-destructive animate-pulse"
+        : remaining < 120000
+        ? "bg-primary/10 border-primary/30 text-primary"
+        : "bg-sky-500/5 border-sky-400/20 text-sky-700 dark:text-sky-400"
+    }`}>
+      <Timer size={14} className="shrink-0" />
+      <span className="flex-1 text-xs font-bold uppercase tracking-wider">
+        {isExpired ? "Time's Up!" : "Time Remaining"}
+      </span>
+      {!isExpired && (
+        <span className="font-mono font-bold tabular-nums text-base">{formatCountdownMs(remaining)}</span>
+      )}
+    </div>
+  );
+}
+
 function motoStatusBadge(status: string) {
   if (status === "in_progress") return "bg-green-500/20 text-green-700 border-green-400/50";
   if (status === "completed") return "bg-muted text-muted-foreground border-border";
@@ -1098,6 +1167,9 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
                 <Clock size={10} />
                 {moto.scheduledTime}
               </span>
+            )}
+            {isLive && moto.type === "practice" && moto.timeLimitMs && (
+              <PracticeCountdown startedAt={moto.startedAt} timeLimitMs={moto.timeLimitMs} variant="badge" />
             )}
             {(isLive || isNowUp) && (
               <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-500/15 border border-green-400/50 rounded-full px-2 py-0.5">
@@ -1185,19 +1257,88 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
         </button>
       </div>
 
-      {/* Gate highlight — one card per family member (or practice note) */}
+      {/* Gate highlight — one card per family member (or practice slot) */}
       {moto.type === "practice" ? (
-        <div className="px-4 py-3 bg-background border-b">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-sky-500/10 text-sky-600 border border-sky-400/30">Practice</span>
-            <span className="text-sm text-muted-foreground">Open to all checked-in riders — no gate assignment</span>
-            {moto.scheduledTime && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono ml-auto">
-                <Clock size={11} /> {moto.scheduledTime}
-              </span>
+        <>
+          {/* Slot assignment or open practice */}
+          <div className="px-4 py-3 bg-background border-b space-y-3">
+            {moto.familyGates.length > 0 ? (
+              <div className="space-y-3">
+                {moto.familyGates.map(fg => {
+                  const myEntry = (moto.practiceLeaderboard ?? []).find(e => e.isMe && e.riderId === fg.riderId);
+                  return (
+                    <div key={fg.riderId} className="flex items-center gap-3">
+                      <div className="flex flex-col items-center justify-center w-14 h-14 rounded-xl bg-sky-500 text-white shrink-0">
+                        <Timer size={12} className="mb-0.5 opacity-70" />
+                        <span className="font-heading font-black text-xl leading-none">{fg.gate}</span>
+                        <span className="text-[8px] font-bold uppercase tracking-wider opacity-70 mt-0.5">Slot</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold text-primary leading-tight">{fg.riderName}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {moto.raceClass ? <span className="font-medium text-foreground">{moto.raceClass} · </span> : null}
+                          Practice Session{moto.lineup.length > 0 ? ` · ${moto.lineup.length} riders` : ""}
+                        </div>
+                        {myEntry && myEntry.bestLapMs ? (
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <span className={`inline-flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded border ${positionBadge(myEntry.rank)}`}>
+                              P{myEntry.rank}
+                            </span>
+                            <span className="text-xs font-mono text-muted-foreground">
+                              Best: <span className="font-bold text-foreground">{formatMs(myEntry.bestLapMs)}</span>
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-sky-500/10 text-sky-600 border border-sky-400/30">Practice</span>
+                <span className="text-sm text-muted-foreground">Open to all checked-in riders</span>
+                {moto.scheduledTime && !isLive && (
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono ml-auto">
+                    <Clock size={11} /> {moto.scheduledTime}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Time limit countdown */}
+            {isLive && moto.timeLimitMs && (
+              <PracticeCountdown startedAt={moto.startedAt} timeLimitMs={moto.timeLimitMs} variant="banner" />
             )}
           </div>
-        </div>
+
+          {/* My lap times */}
+          {(moto.practiceLaps?.length ?? 0) > 0 && (() => {
+            const laps = moto.practiceLaps!;
+            const bestMs = Math.min(...laps.map(l => l.lapTimeMs ?? Infinity));
+            return (
+              <div className="px-4 py-3 bg-background border-b">
+                <div className="text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground mb-2">My Laps</div>
+                <div className="flex flex-wrap gap-2">
+                  {laps.map((lap, i) => {
+                    const isPB = lap.lapTimeMs != null && lap.lapTimeMs === bestMs;
+                    return (
+                      <div key={i} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs border ${
+                        isPB
+                          ? "bg-yellow-400/10 border-yellow-400/30 text-yellow-700 dark:text-yellow-400 font-bold"
+                          : "bg-muted/50 border-border text-muted-foreground"
+                      }`}>
+                        <span className="text-[10px] uppercase tracking-wide opacity-60">L{lap.lapNumber}</span>
+                        <span className="font-mono">{formatMs(lap.lapTimeMs)}</span>
+                        {isPB && <span className="text-[9px] font-black uppercase text-yellow-600">PB</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+        </>
       ) : (
       <div className="px-4 py-3 bg-background border-b">
         <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold mb-2">
@@ -1229,54 +1370,115 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
       </div>
       )}
 
-      {/* Lineup (expandable) */}
-      {open && moto.lineup.length > 0 && (
-        <div className="bg-background">
-          <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
-            Gate Assignment
-          </div>
-          <div className="divide-y">
-            {moto.lineup.map(entry => (
-              <div
-                key={entry.gate}
-                className={`flex items-center gap-3 px-4 py-2.5 ${
-                  entry.isFamilyMember ? "bg-primary/5" : ""
-                }`}
-              >
-                <span className={`w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-sm shrink-0 ${
-                  entry.isFamilyMember
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground"
-                }`}>
-                  {entry.gate}
-                </span>
-                <span className={`flex-1 text-sm ${
-                  entry.isFamilyMember
-                    ? "font-bold text-primary"
-                    : "font-medium text-foreground"
-                }`}>
-                  {entry.riderName}
-                </span>
-                {entry.bibNumber && (
-                  <span className={`text-xs font-mono shrink-0 ${
-                    entry.isFamilyMember ? "text-primary font-bold" : "text-muted-foreground"
-                  }`}>
-                    #{entry.bibNumber}
-                  </span>
-                )}
+      {/* Expandable section */}
+      {moto.type === "practice" ? (
+        <>
+          {open && (moto.practiceLeaderboard?.length ?? 0) > 0 && (
+            <div className="bg-background">
+              <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
+                Session Leaderboard
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!open && moto.type !== "practice" && (
-        <button
-          onClick={() => setOpen(true)}
-          className="w-full text-xs text-muted-foreground hover:text-foreground py-2 transition-colors text-center border-t"
-        >
-          Show all {moto.lineup.length} riders · tap to expand
-        </button>
+              <div className="divide-y">
+                {(moto.practiceLeaderboard ?? []).map(entry => (
+                  <div key={`${entry.riderId}-${entry.rank}`} className={`flex items-center gap-3 px-4 py-2.5 ${entry.isMe ? "bg-primary/5" : ""}`}>
+                    <span className={`w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-xs shrink-0 border ${positionBadge(entry.rank)}`}>
+                      {entry.rank}
+                    </span>
+                    <span className={`flex-1 text-sm ${entry.isMe ? "font-bold text-primary" : "font-medium text-foreground"}`}>
+                      {entry.riderName}
+                      {entry.isMe && <span className="text-[10px] text-primary ml-1.5 font-normal opacity-70">You</span>}
+                    </span>
+                    <span className={`text-xs font-mono shrink-0 ${entry.isMe ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                      {formatMs(entry.bestLapMs)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {open && (moto.practiceLeaderboard?.length ?? 0) === 0 && moto.lineup.length > 0 && (
+            <div className="bg-background">
+              <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
+                Session Lineup
+              </div>
+              <div className="divide-y">
+                {moto.lineup.map(entry => (
+                  <div key={entry.gate} className={`flex items-center gap-3 px-4 py-2.5 ${entry.isFamilyMember ? "bg-primary/5" : ""}`}>
+                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                      entry.isFamilyMember ? "bg-sky-500 text-white" : "bg-muted text-muted-foreground"
+                    }`}>{entry.gate}</span>
+                    <span className={`flex-1 text-sm ${entry.isFamilyMember ? "font-bold text-primary" : "font-medium text-foreground"}`}>
+                      {entry.riderName}
+                    </span>
+                    {entry.bibNumber && (
+                      <span className="text-xs font-mono text-muted-foreground">#{entry.bibNumber}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {!open && ((moto.practiceLeaderboard?.length ?? 0) > 0 || moto.lineup.length > 0) && (
+            <button
+              onClick={() => setOpen(true)}
+              className="w-full text-xs text-muted-foreground hover:text-foreground py-2 transition-colors text-center border-t"
+            >
+              {(moto.practiceLeaderboard?.length ?? 0) > 0
+                ? `${moto.practiceLeaderboard!.length} riders · tap to see leaderboard`
+                : `${moto.lineup.length} riders · tap to expand`}
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          {open && moto.lineup.length > 0 && (
+            <div className="bg-background">
+              <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
+                Gate Assignment
+              </div>
+              <div className="divide-y">
+                {moto.lineup.map(entry => (
+                  <div
+                    key={entry.gate}
+                    className={`flex items-center gap-3 px-4 py-2.5 ${
+                      entry.isFamilyMember ? "bg-primary/5" : ""
+                    }`}
+                  >
+                    <span className={`w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-sm shrink-0 ${
+                      entry.isFamilyMember
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
+                    }`}>
+                      {entry.gate}
+                    </span>
+                    <span className={`flex-1 text-sm ${
+                      entry.isFamilyMember
+                        ? "font-bold text-primary"
+                        : "font-medium text-foreground"
+                    }`}>
+                      {entry.riderName}
+                    </span>
+                    {entry.bibNumber && (
+                      <span className={`text-xs font-mono shrink-0 ${
+                        entry.isFamilyMember ? "text-primary font-bold" : "text-muted-foreground"
+                      }`}>
+                        #{entry.bibNumber}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {!open && (
+            <button
+              onClick={() => setOpen(true)}
+              className="w-full text-xs text-muted-foreground hover:text-foreground py-2 transition-colors text-center border-t"
+            >
+              Show all {moto.lineup.length} riders · tap to expand
+            </button>
+          )}
+        </>
       )}
     </div>
   );
