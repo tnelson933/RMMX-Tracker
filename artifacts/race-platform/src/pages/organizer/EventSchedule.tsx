@@ -1,61 +1,40 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import {
-  useListMotos,
-  useReorderMotos,
-  useUpdateMoto,
-  useCreateMoto,
-  getListMotosQueryKey,
-  type Moto,
+  useListMotos, useReorderMotos, useUpdateMoto, useCreateMoto,
+  useListCheckins, useGenerateLineups, useGetEvent, useListPointsTables,
+  getListMotosQueryKey, getListCheckinsQueryKey, type Moto,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
+  DndContext, DragOverlay, closestCenter,
+  PointerSensor, useSensor, useSensors,
+  useDraggable,
+  type DragEndEvent, type DragStartEvent, type DragOverEvent,
 } from "@dnd-kit/core";
 import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-  arrayMove,
+  SortableContext, verticalListSortingStrategy, useSortable, arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
-  GripVertical,
-  Plus,
-  Clock,
-  LayoutList,
-  LayoutGrid,
-  Zap,
-  Flag,
-  ExternalLink,
+  GripVertical, Plus, Clock, LayoutList, LayoutGrid, Flag, ExternalLink,
+  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Check, X,
 } from "lucide-react";
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function typeBadgeVariant(type: string): string {
   switch (type) {
@@ -95,17 +74,228 @@ function statusLabel(status: string): string {
   }
 }
 
-function addMinutes(time: string, minutes: number): string {
-  const [h, m] = time.split(":").map(Number);
-  const total = h * 60 + m + minutes;
-  const nh = Math.floor(total / 60) % 24;
-  const nm = total % 60;
-  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+function sectionLabel(type: string): string {
+  switch (type) {
+    case "practice": return "Practice Sessions";
+    case "heat":     return "Heat Races";
+    case "lcq":      return "Last Chance Qualifier";
+    case "main":     return "Main Events";
+    default:         return type;
+  }
 }
 
-function estimateDurationMin(moto: Moto): number {
-  if (moto.type === "practice") return 15;
-  return (moto.lapCount ?? 5) * 2;
+// ── Draggable pool rider ──────────────────────────────────────────────────────
+
+function DraggablePoolRider({
+  riderId, riderName, bibNumber,
+}: { riderId: number; riderName: string; bibNumber?: string | null }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `pool-${riderId}`,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`flex items-center gap-2 px-3 py-2 cursor-grab active:cursor-grabbing select-none hover:bg-muted/60 transition-opacity touch-none ${isDragging ? "opacity-20" : ""}`}
+    >
+      <GripVertical size={12} className="text-muted-foreground/50 shrink-0" />
+      {bibNumber && (
+        <span className="font-mono text-xs text-muted-foreground w-9 shrink-0">#{bibNumber}</span>
+      )}
+      <span className="text-sm truncate">{riderName}</span>
+    </div>
+  );
+}
+
+// ── Rider pool sidebar ────────────────────────────────────────────────────────
+
+interface RiderPoolProps {
+  checkins: Array<{
+    riderId: number;
+    riderName: string | null;
+    bibNumber: string | null;
+    raceClass: string | null;
+    checkedIn: boolean;
+  }>;
+  poolOpen: boolean;
+  setPoolOpen: (v: boolean) => void;
+}
+
+function RiderPool({ checkins, poolOpen, setPoolOpen }: RiderPoolProps) {
+  const [search, setSearch] = useState("");
+
+  const byClass: Record<string, Array<{ riderId: number; riderName: string; bibNumber: string | null; raceClass: string }>> = {};
+  for (const c of checkins) {
+    if (!c.checkedIn) continue;
+    const q = search.trim().toLowerCase();
+    if (q) {
+      const name = (c.riderName ?? "").toLowerCase();
+      const bib = (c.bibNumber ?? "").toLowerCase();
+      if (!name.includes(q) && !bib.includes(q)) continue;
+    }
+    const cls = c.raceClass ?? "Unknown";
+    if (!byClass[cls]) byClass[cls] = [];
+    byClass[cls].push({
+      riderId: c.riderId,
+      riderName: c.riderName ?? "Rider",
+      bibNumber: c.bibNumber,
+      raceClass: cls,
+    });
+  }
+  const classes = Object.entries(byClass).sort(([a], [b]) => a.localeCompare(b));
+  const totalCheckedIn = checkins.filter(c => c.checkedIn).length;
+
+  return (
+    <div
+      className={`shrink-0 border-r border-border bg-card/50 flex flex-col gap-3 p-3 transition-all duration-200 ${
+        poolOpen ? "w-64" : "w-12"
+      }`}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-1.5">
+        {poolOpen && (
+          <h3 className="font-heading font-bold uppercase tracking-wider text-sm flex items-center gap-1.5 flex-1 min-w-0">
+            <Users size={13} /> Rider Pool
+          </h3>
+        )}
+        <button
+          onClick={() => setPoolOpen(!poolOpen)}
+          className="flex items-center justify-center w-7 h-7 rounded border bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 ml-auto"
+          title={poolOpen ? "Collapse rider pool" : "Expand rider pool"}
+        >
+          {poolOpen ? <ChevronLeft size={13} /> : <ChevronRight size={13} />}
+        </button>
+      </div>
+
+      {poolOpen ? (
+        <>
+          <p className="text-xs text-muted-foreground -mt-1">
+            Drag riders onto motos to add them to the lineup
+          </p>
+
+          {/* Search */}
+          <div className="relative">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Name or bib…"
+              className="h-8 pl-7 text-xs"
+            />
+          </div>
+
+          {/* By class */}
+          <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
+            {classes.length === 0 ? (
+              <Card>
+                <CardContent className="p-4 text-center text-xs text-muted-foreground">
+                  {search.trim() ? "No riders match your search" : "No checked-in riders"}
+                </CardContent>
+              </Card>
+            ) : (
+              classes.map(([cls, riders]) => {
+                const sorted = [...riders].sort((a, b) =>
+                  a.riderName.localeCompare(b.riderName)
+                );
+                return (
+                  <Card key={cls} className="overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
+                      <span className="font-heading font-bold text-xs uppercase tracking-wider truncate mr-2">
+                        {cls}
+                      </span>
+                      <Badge variant="secondary" className="text-xs h-5 shrink-0">
+                        {sorted.length}
+                      </Badge>
+                    </div>
+                    <div className="divide-y">
+                      {sorted.map(r => (
+                        <DraggablePoolRider
+                          key={r.riderId}
+                          riderId={r.riderId}
+                          riderName={r.riderName}
+                          bibNumber={r.bibNumber}
+                        />
+                      ))}
+                    </div>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </>
+      ) : (
+        /* Collapsed: icon + count */
+        <div className="flex flex-col items-center gap-2 mt-1">
+          <Users size={14} className="text-muted-foreground" />
+          {totalCheckedIn > 0 && (
+            <Badge variant="secondary" className="text-[10px] h-5 px-1 font-mono tabular-nums">
+              {totalCheckedIn}
+            </Badge>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Inline name editor ────────────────────────────────────────────────────────
+
+interface InlineNameProps {
+  motoId: number;
+  name: string;
+  isEditing: boolean;
+  editValue: string;
+  onEditStart: () => void;
+  onChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}
+
+function InlineName({ motoId, name, isEditing, editValue, onEditStart, onChange, onSave, onCancel }: InlineNameProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing]);
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <Input
+          ref={inputRef}
+          value={editValue}
+          onChange={e => onChange(e.target.value)}
+          onBlur={onSave}
+          onKeyDown={e => {
+            if (e.key === "Enter") { e.preventDefault(); onSave(); }
+            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+          }}
+          className="h-6 text-sm font-medium py-0 px-1 w-48 bg-background border-primary"
+        />
+        <button onClick={onSave} className="text-green-400 hover:text-green-300 shrink-0">
+          <Check size={14} />
+        </button>
+        <button onClick={onCancel} className="text-muted-foreground hover:text-foreground shrink-0">
+          <X size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={onEditStart}
+      className="group/name flex items-center gap-1.5 text-left hover:text-primary transition-colors"
+      title="Click to rename"
+    >
+      <span className="font-medium text-sm">{name}</span>
+      <Pencil size={11} className="opacity-0 group-hover/name:opacity-60 text-muted-foreground shrink-0 transition-opacity" />
+    </button>
+  );
 }
 
 // ── Sortable moto card ────────────────────────────────────────────────────────
@@ -114,12 +304,19 @@ interface MotoCardProps {
   moto: Moto;
   index: number;
   eventId: number;
-  onTimeBlur: (motoId: number, value: string) => void;
-  timeValue: string;
-  onTimeChange: (motoId: number, value: string) => void;
+  isPoolDropTarget: boolean;
+  isEditing: boolean;
+  editValue: string;
+  onEditStart: () => void;
+  onEditChange: (v: string) => void;
+  onEditSave: () => void;
+  onEditCancel: () => void;
 }
 
-function SortableMotoCard({ moto, index, eventId, onTimeBlur, timeValue, onTimeChange }: MotoCardProps) {
+function SortableMotoCard({
+  moto, index, eventId, isPoolDropTarget,
+  isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
+}: MotoCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: moto.id });
 
   const style: React.CSSProperties = {
@@ -135,12 +332,16 @@ function SortableMotoCard({ moto, index, eventId, onTimeBlur, timeValue, onTimeC
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-3 group hover:border-primary/40 transition-colors"
+      className={`flex items-center gap-3 bg-card border rounded-lg px-4 py-3 group transition-colors ${
+        isPoolDropTarget
+          ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
+          : "border-border hover:border-primary/40"
+      }`}
     >
-      {/* Run-order index */}
-      <span className="text-xs text-muted-foreground w-6 shrink-0 text-center font-mono">{index + 1}</span>
+      <span className="text-xs text-muted-foreground w-6 shrink-0 text-center font-mono">
+        {index + 1}
+      </span>
 
-      {/* Drag handle */}
       <button
         className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0"
         {...attributes}
@@ -150,13 +351,23 @@ function SortableMotoCard({ moto, index, eventId, onTimeBlur, timeValue, onTimeC
         <GripVertical size={18} />
       </button>
 
-      {/* Class + type */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {moto.raceClass && (
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{moto.raceClass}</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+              {moto.raceClass}
+            </span>
           )}
-          <p className="font-medium text-sm truncate">{moto.name}</p>
+          <InlineName
+            motoId={moto.id}
+            name={moto.name}
+            isEditing={isEditing}
+            editValue={editValue}
+            onEditStart={onEditStart}
+            onChange={onEditChange}
+            onSave={onEditSave}
+            onCancel={onEditCancel}
+          />
         </div>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${typeBadgeVariant(moto.type)}`}>
@@ -174,19 +385,6 @@ function SortableMotoCard({ moto, index, eventId, onTimeBlur, timeValue, onTimeC
         </div>
       </div>
 
-      {/* Scheduled time input */}
-      <div className="flex items-center gap-2 shrink-0">
-        <Clock size={14} className="text-muted-foreground" />
-        <Input
-          type="time"
-          value={timeValue}
-          onChange={e => onTimeChange(moto.id, e.target.value)}
-          onBlur={e => onTimeBlur(moto.id, e.target.value)}
-          className="h-7 w-28 text-xs bg-background border-border"
-        />
-      </div>
-
-      {/* Deep-link to this moto in Motos & Lineups */}
       <Link
         href={`/events/${eventId}/motos?motoId=${moto.id}`}
         className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
@@ -198,21 +396,41 @@ function SortableMotoCard({ moto, index, eventId, onTimeBlur, timeValue, onTimeC
   );
 }
 
-// ── Static card (by-class view, no DnD) ────────────────────────────────────────
+// ── Static card (by-class view) ───────────────────────────────────────────────
 
-function StaticMotoCard({ moto, eventId, onTimeBlur, timeValue, onTimeChange }: Omit<MotoCardProps, "index"> & { index?: number }) {
+function StaticMotoCard({
+  moto, eventId, isPoolDropTarget,
+  isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
+}: Omit<MotoCardProps, "index">) {
   const riderCount = Array.isArray(moto.lineup) ? moto.lineup.length : 0;
 
   return (
-    <div className="flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-3 hover:border-primary/40 transition-colors">
+    <div
+      className={`flex items-center gap-3 bg-card border rounded-lg px-4 py-3 transition-colors ${
+        isPoolDropTarget
+          ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
+          : "border-border hover:border-primary/40"
+      }`}
+    >
       <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: "hsl(var(--primary) / 0.3)" }} />
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {moto.raceClass && (
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{moto.raceClass}</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+              {moto.raceClass}
+            </span>
           )}
-          <p className="font-medium text-sm truncate">{moto.name}</p>
+          <InlineName
+            motoId={moto.id}
+            name={moto.name}
+            isEditing={isEditing}
+            editValue={editValue}
+            onEditStart={onEditStart}
+            onChange={onEditChange}
+            onSave={onEditSave}
+            onCancel={onEditCancel}
+          />
         </div>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${typeBadgeVariant(moto.type)}`}>
@@ -230,17 +448,6 @@ function StaticMotoCard({ moto, eventId, onTimeBlur, timeValue, onTimeChange }: 
         </div>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
-        <Clock size={14} className="text-muted-foreground" />
-        <Input
-          type="time"
-          value={timeValue}
-          onChange={e => onTimeChange(moto.id, e.target.value)}
-          onBlur={e => onTimeBlur(moto.id, e.target.value)}
-          className="h-7 w-28 text-xs bg-background border-border"
-        />
-      </div>
-
       <Link
         href={`/events/${eventId}/motos?motoId=${moto.id}`}
         className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
@@ -252,11 +459,30 @@ function StaticMotoCard({ moto, eventId, onTimeBlur, timeValue, onTimeChange }: 
   );
 }
 
-// ── Main page ────────────────────────────────────────────────────────────────
+// ── Droppable moto zone (wraps a card for pool-rider drop) ────────────────────
+
+// We detect "pool rider is over this moto" via the DndContext's onDragOver
+// and pass isPoolDropTarget down as a prop. No separate useDroppable needed
+// since useSortable already makes each card a droppable zone.
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 type ViewMode = "run-order" | "by-class";
-
 const MOTO_TYPES = ["practice", "heat", "lcq", "main"] as const;
+
+type LineupEntry = {
+  position: number;
+  riderId: number;
+  riderName: string;
+  bibNumber: string | null;
+  rfidNumber: string | null;
+};
+
+function getLineup(moto: Moto): LineupEntry[] {
+  const raw = moto.lineup;
+  if (!Array.isArray(raw)) return [];
+  return raw as LineupEntry[];
+}
 
 export default function EventSchedule() {
   const params = useParams();
@@ -268,28 +494,66 @@ export default function EventSchedule() {
   const { data: rawMotos = [], isLoading } = useListMotos(eventId, {
     query: { enabled: !!eventId } as any,
   });
+  const { data: checkins = [] } = useListCheckins(eventId, {
+    query: { enabled: !!eventId } as any,
+  });
+  const { data: event } = useGetEvent(eventId, {
+    query: { enabled: !!eventId } as any,
+  });
+  const { data: pointsTables } = useListPointsTables({ query: {} as any });
+
+  // Gate configs for generate dialog
+  const { data: gateConfigsData } = useQuery({
+    queryKey: ["gateConfigs"],
+    queryFn: async () => {
+      const res = await fetch("/api/clubs/gate-settings", { credentials: "include" });
+      if (!res.ok) return { gateConfigs: [] };
+      return res.json() as Promise<{
+        gateConfigs: Array<{ id: string; name: string; gateCount: number; gatePriorities: number[] }>;
+      }>;
+    },
+  });
+  const gateConfigs = gateConfigsData?.gateConfigs ?? [];
+
+  const eventScoringTable = (pointsTables ?? []).find(
+    pt => pt.id === (event as any)?.pointsTableId
+  );
+  const isSupercrossFormat = (eventScoringTable as any)?.mainEventOnly === true;
 
   // ── Local state ──
   const [viewMode, setViewMode] = useState<ViewMode>("run-order");
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
-  const [timeEdits, setTimeEdits] = useState<Record<number, string>>({});
-  const [startTime, setStartTime] = useState("08:00");
-  const [gapMin, setGapMin] = useState("5");
-  const [showAddDialog, setShowAddDialog] = useState(false);
 
-  // Add moto form
+  // Inline name editing
+  const [editingNameId, setEditingNameId] = useState<number | null>(null);
+  const [nameEditValue, setNameEditValue] = useState("");
+
+  // Rider pool
+  const [poolOpen, setPoolOpen] = useState(true);
+  const [activePoolOverMotoId, setActivePoolOverMotoId] = useState<number | null>(null);
+  const [activeDrag, setActiveDrag] = useState<{ riderName: string; bibNumber?: string | null } | null>(null);
+
+  // Generate dialog
+  const [isGenerateOpen, setIsGenerateOpen] = useState(false);
+  const [generateFormat, setGenerateFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
+  const [ridersPerHeat, setRidersPerHeat] = useState("");
+  const [usePracticeSeeding, setUsePracticeSeeding] = useState(false);
+  const [selectedGateConfigId, setSelectedGateConfigId] = useState("");
+
+  // Add moto dialog
+  const [showAddDialog, setShowAddDialog] = useState(false);
   const [addForm, setAddForm] = useState({
     name: "",
     raceClass: "",
     type: "heat" as typeof MOTO_TYPES[number],
     lapCount: "5",
-    scheduledTime: "",
   });
 
   // ── Mutations ──
   const reorderMutation = useReorderMotos();
   const updateMutation = useUpdateMoto();
   const createMutation = useCreateMoto();
+  const generateMutation = useGenerateLineups();
 
   // ── Derived sorted list ──
   const sortedMotos: Moto[] = (() => {
@@ -299,16 +563,89 @@ export default function EventSchedule() {
     return localOrder.map(id => map.get(id)).filter(Boolean) as Moto[];
   })();
 
-  // ── DnD ──
+  // ── DnD sensors ──
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
+  // ── DnD: drag start ──
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const idStr = String(event.active.id);
+    if (idStr.startsWith("pool-")) {
+      const riderId = parseInt(idStr.replace("pool-", ""));
+      const c = checkins.find(c => c.riderId === riderId);
+      setActiveDrag(c ? { riderName: c.riderName ?? "Rider", bibNumber: c.bibNumber } : null);
+    }
+  }, [checkins]);
+
+  // ── DnD: drag over (track which moto a pool rider hovers) ──
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const { active, over } = event;
+    const idStr = String(active.id);
+    if (!idStr.startsWith("pool-")) {
+      setActivePoolOverMotoId(null);
+      return;
+    }
+    if (over && typeof over.id === "number") {
+      setActivePoolOverMotoId(over.id as number);
+    } else {
+      setActivePoolOverMotoId(null);
+    }
+  }, []);
+
+  // ── DnD: drag end ──
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    setActiveDrag(null);
+    setActivePoolOverMotoId(null);
 
+    if (!over) return;
+
+    const idStr = String(active.id);
+
+    // Pool rider dropped onto a moto card
+    if (idStr.startsWith("pool-")) {
+      if (typeof over.id !== "number") return;
+      const riderId = parseInt(idStr.replace("pool-", ""));
+      const targetMotoId = over.id as number;
+      const targetMoto = rawMotos.find(m => m.id === targetMotoId);
+      const checkin = checkins.find(c => c.riderId === riderId);
+      if (!targetMoto || !checkin || targetMoto.status === "completed") return;
+
+      const lineup = getLineup(targetMoto);
+      if (lineup.find(e => e.riderId === riderId)) {
+        toast({ title: `${checkin.riderName ?? "Rider"} is already in this moto` });
+        return;
+      }
+
+      const newEntry: LineupEntry = {
+        position: lineup.length + 1,
+        riderId,
+        riderName: checkin.riderName ?? "",
+        bibNumber: (checkin as any).bibNumber || (checkin as any).registrationBib || null,
+        rfidNumber: (checkin as any).rfidNumber || null,
+      };
+      const newLineup = [...lineup, newEntry];
+
+      updateMutation.mutate(
+        { motoId: targetMotoId, data: { lineup: newLineup as any } },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+            toast({ title: `${checkin.riderName ?? "Rider"} added to ${targetMoto.name}` });
+          },
+          onError: () => {
+            toast({ title: "Failed to add rider", variant: "destructive" });
+          },
+        }
+      );
+      return;
+    }
+
+    // Moto reorder
+    if (active.id === over.id) return;
     const ids = sortedMotos.map(m => m.id);
     const oldIndex = ids.indexOf(active.id as number);
     const newIndex = ids.indexOf(over.id as number);
+    if (oldIndex === -1 || newIndex === -1) return;
     const newIds = arrayMove(ids, oldIndex, newIndex);
     setLocalOrder(newIds);
 
@@ -325,66 +662,80 @@ export default function EventSchedule() {
         },
       }
     );
-  }, [sortedMotos, eventId, reorderMutation, queryClient, toast]);
+  }, [rawMotos, sortedMotos, checkins, eventId, updateMutation, reorderMutation, queryClient, toast]);
 
-  // ── Scheduled time helpers ──
-  function getTimeValue(moto: Moto): string {
-    if (timeEdits[moto.id] !== undefined) return timeEdits[moto.id];
-    return moto.scheduledTime ?? "";
+  // ── Inline name editing ──
+  function startEditName(moto: Moto) {
+    setEditingNameId(moto.id);
+    setNameEditValue(moto.name);
   }
 
-  function handleTimeChange(motoId: number, value: string) {
-    setTimeEdits(prev => ({ ...prev, [motoId]: value }));
-  }
-
-  function handleTimeBlur(motoId: number, value: string) {
+  function saveName(motoId: number) {
+    const trimmed = nameEditValue.trim();
+    const moto = rawMotos.find(m => m.id === motoId);
+    if (!trimmed || !moto || trimmed === moto.name) {
+      setEditingNameId(null);
+      return;
+    }
     updateMutation.mutate(
-      { motoId, data: { scheduledTime: value || undefined } },
+      { motoId, data: { name: trimmed } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-          setTimeEdits(prev => {
-            const next = { ...prev };
-            delete next[motoId];
-            return next;
-          });
+          setEditingNameId(null);
+          toast({ title: "Name updated" });
         },
         onError: () => {
-          toast({ title: "Failed to save time", variant: "destructive" });
+          toast({ title: "Failed to save name", variant: "destructive" });
+          setEditingNameId(null);
         },
       }
     );
   }
 
-  // ── Auto-fill times ──
-  function handleAutoFill() {
-    if (!startTime) {
-      toast({ title: "Set a start time first", variant: "destructive" });
-      return;
-    }
-    const gap = parseInt(gapMin) || 5;
-    let current = startTime;
-    const updates: Array<{ motoId: number; scheduledTime: string }> = [];
+  function cancelEditName() {
+    setEditingNameId(null);
+    setNameEditValue("");
+  }
 
-    for (const moto of sortedMotos) {
-      updates.push({ motoId: moto.id, scheduledTime: current });
-      const dur = estimateDurationMin(moto);
-      current = addMinutes(current, dur + gap);
-    }
+  // ── Generate lineups ──
+  function handleGenerate() {
+    const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+    const lockedClasses = allClasses.filter(cls =>
+      rawMotos.some(m => m.raceClass === cls && m.status === "completed")
+    );
+    const gateConfigId = usePracticeSeeding && selectedGateConfigId ? selectedGateConfigId : undefined;
 
-    setTimeEdits(Object.fromEntries(updates.map(u => [u.motoId, u.scheduledTime])));
-
-    Promise.all(
-      updates.map(u =>
-        updateMutation.mutateAsync({ motoId: u.motoId, data: { scheduledTime: u.scheduledTime } })
-      )
-    ).then(() => {
-      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-      setTimeEdits({});
-      toast({ title: "Scheduled times updated" });
-    }).catch(() => {
-      toast({ title: "Some times failed to save", variant: "destructive" });
-    });
+    generateMutation.mutate(
+      {
+        eventId,
+        data: {
+          raceFormat: generateFormat,
+          classes: allClasses,
+          ridersPerHeat: ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined,
+          usePracticeSeeding,
+          gateConfigId,
+        } as any,
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) as any });
+          setIsGenerateOpen(false);
+          if (lockedClasses.length > 0) {
+            toast({
+              title: "Lineups generated",
+              description: `Skipped ${lockedClasses.length} class${lockedClasses.length > 1 ? "es" : ""} with completed motos: ${lockedClasses.join(", ")}`,
+            });
+          } else {
+            toast({ title: "Lineups generated" });
+          }
+        },
+        onError: (err) => {
+          toast({ title: "Failed to generate", description: (err as Error).message, variant: "destructive" });
+        },
+      }
+    );
   }
 
   // ── Add moto ──
@@ -402,14 +753,13 @@ export default function EventSchedule() {
           raceClass: addForm.raceClass,
           motoNumber,
           lapCount: addForm.lapCount ? parseInt(addForm.lapCount) : undefined,
-          scheduledTime: addForm.scheduledTime || undefined,
         },
       },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           setShowAddDialog(false);
-          setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "5", scheduledTime: "" });
+          setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "5" });
           toast({ title: "Moto added" });
         },
         onError: () => {
@@ -430,167 +780,355 @@ export default function EventSchedule() {
     return map;
   })();
 
-  // ── Type section grouping for run-order view ──
-  // We render them flat in run-order but add visual section separators
-  const TYPE_ORDER = ["practice", "heat", "lcq", "main"];
-  function sectionLabel(type: string): string {
-    switch (type) {
-      case "practice": return "Practice Sessions";
-      case "heat":     return "Heat Races";
-      case "lcq":      return "Last Chance Qualifier";
-      case "main":     return "Main Events";
-      default:         return type;
+  // ── Event start time display ──
+  const eventStartDisplay = (() => {
+    const raw = (event as any)?.startDate as string | undefined;
+    if (!raw) return null;
+    try {
+      return new Date(raw).toLocaleDateString(undefined, {
+        weekday: "long", month: "short", day: "numeric", year: "numeric",
+      });
+    } catch {
+      return null;
     }
-  }
+  })();
 
   if (isLoading) return <div className="p-8 text-muted-foreground">Loading schedule…</div>;
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
-      {/* ── Header toolbar ── */}
-      <div className="flex flex-wrap items-end gap-4">
-        <div>
-          <h2 className="text-xl font-heading font-bold uppercase tracking-tight">Event Schedule</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">{sortedMotos.length} sessions in run order</p>
-        </div>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="flex h-full min-h-0">
+        {/* ── Rider Pool sidebar ── */}
+        <RiderPool
+          checkins={checkins as any}
+          poolOpen={poolOpen}
+          setPoolOpen={setPoolOpen}
+        />
 
-        <div className="flex-1" />
+        {/* ── Main content ── */}
+        <div className="flex-1 min-w-0 overflow-y-auto">
+          <div className="p-6 space-y-5 max-w-4xl">
 
-        {/* View toggle */}
-        <div className="flex bg-muted rounded-md p-0.5 border border-border">
-          <button
-            onClick={() => setViewMode("run-order")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
-              viewMode === "run-order" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <LayoutList size={14} /> Run Order
-          </button>
-          <button
-            onClick={() => setViewMode("by-class")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
-              viewMode === "by-class" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <LayoutGrid size={14} /> By Class
-          </button>
-        </div>
-
-        {/* Add moto */}
-        <Button size="sm" onClick={() => setShowAddDialog(true)}>
-          <Plus size={15} className="mr-1" /> Add Moto
-        </Button>
-      </div>
-
-      {/* ── Auto-fill toolbar ── */}
-      <div className="flex flex-wrap items-center gap-3 p-4 bg-muted/40 border border-border rounded-lg">
-        <Clock size={16} className="text-muted-foreground shrink-0" />
-        <div className="flex items-center gap-2">
-          <Label htmlFor="start-time" className="text-sm whitespace-nowrap">Event start</Label>
-          <Input
-            id="start-time"
-            type="time"
-            value={startTime}
-            onChange={e => setStartTime(e.target.value)}
-            className="h-8 w-28 text-sm bg-background"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Label htmlFor="gap-min" className="text-sm whitespace-nowrap">Gap between sessions</Label>
-          <Input
-            id="gap-min"
-            type="number"
-            min={0}
-            max={30}
-            value={gapMin}
-            onChange={e => setGapMin(e.target.value)}
-            className="h-8 w-16 text-sm bg-background"
-          />
-          <span className="text-sm text-muted-foreground">min</span>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleAutoFill}
-          disabled={sortedMotos.length === 0}
-          className="ml-auto"
-        >
-          <Zap size={14} className="mr-1" /> Auto-fill times
-        </Button>
-      </div>
-
-      {/* ── Empty state ── */}
-      {sortedMotos.length === 0 && (
-        <div className="text-center py-16 text-muted-foreground border border-dashed border-border rounded-lg">
-          <Flag size={40} className="mx-auto mb-3 opacity-30" />
-          <p className="font-medium">No motos yet</p>
-          <p className="text-sm mt-1">Generate lineups in Motos & Lineups, or add one manually.</p>
-        </div>
-      )}
-
-      {/* ── Run-order view ── */}
-      {viewMode === "run-order" && sortedMotos.length > 0 && (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={sortedMotos.map(m => m.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-2">
-              {(() => {
-                let lastType: string | null = null;
-                return sortedMotos.map((moto, index) => {
-                  const showSection = moto.type !== lastType;
-                  lastType = moto.type;
-                  return (
-                    <div key={moto.id}>
-                      {showSection && (
-                        <div className="flex items-center gap-2 mt-4 mb-2 first:mt-0">
-                          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            {sectionLabel(moto.type)}
-                          </span>
-                          <div className="flex-1 h-px bg-border" />
-                        </div>
-                      )}
-                      <SortableMotoCard
-                        moto={moto}
-                        index={index}
-                        eventId={eventId}
-                        timeValue={getTimeValue(moto)}
-                        onTimeChange={handleTimeChange}
-                        onTimeBlur={handleTimeBlur}
-                      />
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </SortableContext>
-        </DndContext>
-      )}
-
-      {/* ── By-class view ── */}
-      {viewMode === "by-class" && sortedMotos.length > 0 && (
-        <div className="space-y-6">
-          {Array.from(byClass.entries()).map(([cls, motos]) => (
-            <div key={cls}>
-              <div className="flex items-center gap-2 mb-3">
-                <h3 className="text-sm font-bold uppercase tracking-widest text-foreground">{cls}</h3>
-                <div className="flex-1 h-px bg-border" />
-                <span className="text-xs text-muted-foreground">{motos.length} sessions</span>
+            {/* ── Header toolbar ── */}
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <h2 className="text-xl font-heading font-bold uppercase tracking-tight">Event Schedule</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {sortedMotos.length} sessions in run order
+                  {eventStartDisplay && (
+                    <span className="ml-2 text-muted-foreground/60">· {eventStartDisplay}</span>
+                  )}
+                </p>
               </div>
-              <div className="space-y-2">
-                {motos.map(moto => (
-                  <StaticMotoCard
-                    key={moto.id}
-                    moto={moto}
-                    eventId={eventId}
-                    timeValue={getTimeValue(moto)}
-                    onTimeChange={handleTimeChange}
-                    onTimeBlur={handleTimeBlur}
-                  />
+
+              <div className="flex-1" />
+
+              {/* Generate Lineups */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsGenerateOpen(true)}
+              >
+                <Settings size={14} className="mr-1.5" /> Generate Lineups
+              </Button>
+
+              {/* View toggle */}
+              <div className="flex bg-muted rounded-md p-0.5 border border-border">
+                <button
+                  onClick={() => setViewMode("run-order")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
+                    viewMode === "run-order"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <LayoutList size={14} /> Run Order
+                </button>
+                <button
+                  onClick={() => setViewMode("by-class")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
+                    viewMode === "by-class"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <LayoutGrid size={14} /> By Class
+                </button>
+              </div>
+
+              {/* Add moto */}
+              <Button size="sm" onClick={() => setShowAddDialog(true)}>
+                <Plus size={15} className="mr-1" /> Add Moto
+              </Button>
+            </div>
+
+            {/* ── Empty state ── */}
+            {sortedMotos.length === 0 && (
+              <div className="text-center py-16 text-muted-foreground border border-dashed border-border rounded-lg">
+                <Flag size={40} className="mx-auto mb-3 opacity-30" />
+                <p className="font-medium">No motos yet</p>
+                <p className="text-sm mt-1">
+                  Use <strong>Generate Lineups</strong> to auto-create motos from checked-in riders, or add one manually.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => setIsGenerateOpen(true)}
+                >
+                  <Settings size={14} className="mr-1.5" /> Generate Lineups
+                </Button>
+              </div>
+            )}
+
+            {/* ── Run-order view ── */}
+            {viewMode === "run-order" && sortedMotos.length > 0 && (
+              <SortableContext items={sortedMotos.map(m => m.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-2">
+                  {(() => {
+                    let lastType: string | null = null;
+                    return sortedMotos.map((moto, index) => {
+                      const showSection = moto.type !== lastType;
+                      lastType = moto.type;
+                      return (
+                        <div key={moto.id}>
+                          {showSection && (
+                            <div className="flex items-center gap-2 mt-4 mb-2 first:mt-0">
+                              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                {sectionLabel(moto.type)}
+                              </span>
+                              <div className="flex-1 h-px bg-border" />
+                            </div>
+                          )}
+                          <SortableMotoCard
+                            moto={moto}
+                            index={index}
+                            eventId={eventId}
+                            isPoolDropTarget={activePoolOverMotoId === moto.id}
+                            isEditing={editingNameId === moto.id}
+                            editValue={nameEditValue}
+                            onEditStart={() => startEditName(moto)}
+                            onEditChange={setNameEditValue}
+                            onEditSave={() => saveName(moto.id)}
+                            onEditCancel={cancelEditName}
+                          />
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </SortableContext>
+            )}
+
+            {/* ── By-class view ── */}
+            {viewMode === "by-class" && sortedMotos.length > 0 && (
+              <div className="space-y-6">
+                {Array.from(byClass.entries()).map(([cls, motos]) => (
+                  <div key={cls}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <h3 className="text-sm font-bold uppercase tracking-widest text-foreground">{cls}</h3>
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-xs text-muted-foreground">{motos.length} sessions</span>
+                    </div>
+                    <div className="space-y-2">
+                      {motos.map(moto => (
+                        <StaticMotoCard
+                          key={moto.id}
+                          moto={moto}
+                          eventId={eventId}
+                          isPoolDropTarget={activePoolOverMotoId === moto.id}
+                          isEditing={editingNameId === moto.id}
+                          editValue={nameEditValue}
+                          onEditStart={() => startEditName(moto)}
+                          onEditChange={setNameEditValue}
+                          onEditSave={() => saveName(moto.id)}
+                          onEditCancel={cancelEditName}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
-            </div>
-          ))}
+            )}
+
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* ── DragOverlay: rider chip ── */}
+      <DragOverlay>
+        {activeDrag ? (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-card border border-primary/40 rounded-lg shadow-lg text-sm opacity-95">
+            <GripVertical size={12} className="text-muted-foreground/50" />
+            {activeDrag.bibNumber && (
+              <span className="font-mono text-xs text-muted-foreground">#{activeDrag.bibNumber}</span>
+            )}
+            <span className="font-medium">{activeDrag.riderName}</span>
+          </div>
+        ) : null}
+      </DragOverlay>
+
+      {/* ── Generate Lineups dialog ── */}
+      <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase text-xl">Generate Lineups</DialogTitle>
+            <DialogDescription>
+              Auto-create motos from checked-in riders for all race classes.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            {/* Locked classes warning */}
+            {(() => {
+              const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+              const lockedClasses = allClasses.filter(cls =>
+                rawMotos.some(m => m.raceClass === cls && m.status === "completed")
+              );
+              const regenerableClasses = allClasses.filter(cls => !lockedClasses.includes(cls));
+              if (lockedClasses.length === 0) return null;
+              return (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-3 py-2.5 space-y-1.5">
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                    <span>⚠️</span> Some classes have completed motos
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Completed motos and their results are never overwritten.
+                  </p>
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300 uppercase tracking-wider w-full">Skipped:</span>
+                    {lockedClasses.map(cls => (
+                      <span key={cls} className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+                        {cls}
+                      </span>
+                    ))}
+                  </div>
+                  {regenerableClasses.length === 0 && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">All classes are locked — nothing to regenerate.</p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Format */}
+            {isSupercrossFormat ? (
+              <p className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">Supercross format:</span> Heat motos and an empty Main Event will be created per class.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <Label>Motos per Class</Label>
+                <Select value={generateFormat} onValueChange={(v: any) => setGenerateFormat(v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Format" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="one_moto">1 Moto</SelectItem>
+                    <SelectItem value="two_moto">2 Motos</SelectItem>
+                    <SelectItem value="three_moto">3 Motos</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Riders per heat */}
+            <div className="space-y-2">
+              <Label>
+                {isSupercrossFormat ? "Max Riders per Heat" : "Group Size"}{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                value={ridersPerHeat}
+                onChange={e => setRidersPerHeat(e.target.value)}
+                placeholder="No limit (all in one group)"
+                className="h-9"
+              />
+              <p className="text-xs text-muted-foreground">
+                {isSupercrossFormat
+                  ? "If a class exceeds this number, additional heats are created automatically."
+                  : "If a class exceeds this number, riders are split into separate groups."}
+              </p>
+            </div>
+
+            {/* Practice seeding */}
+            <div className="rounded-lg border bg-muted/30 px-4 py-3 space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={usePracticeSeeding}
+                  onChange={e => {
+                    setUsePracticeSeeding(e.target.checked);
+                    if (!e.target.checked) setSelectedGateConfigId("");
+                    else if (gateConfigs.length > 0 && !selectedGateConfigId) {
+                      setSelectedGateConfigId(gateConfigs[0].id);
+                    }
+                  }}
+                  className="h-4 w-4 rounded accent-primary"
+                />
+                <span className="text-sm font-medium">Use practice lap seeding</span>
+              </label>
+              <p className="text-xs text-muted-foreground pl-7">
+                Distributes riders by best practice lap time (serpentine seeding) and assigns starting gates.
+              </p>
+              {usePracticeSeeding && gateConfigs.length === 0 && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 ml-7">
+                  No gate configs found — set them up on the Gate Assignments page first.
+                </p>
+              )}
+              {usePracticeSeeding && gateConfigs.length > 1 && (
+                <div className="pl-7 space-y-1">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Gate Config</Label>
+                  <Select
+                    value={selectedGateConfigId || gateConfigs[0]?.id || ""}
+                    onValueChange={setSelectedGateConfigId}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Select gate config…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {gateConfigs.map(cfg => (
+                        <SelectItem key={cfg.id} value={cfg.id}>
+                          {cfg.name}{" "}
+                          <span className="text-muted-foreground ml-1">({cfg.gateCount} gates)</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {usePracticeSeeding && gateConfigs.length === 1 && (
+                <p className="text-xs text-muted-foreground pl-7">
+                  Using: <span className="font-medium">{gateConfigs[0].name}</span> ({gateConfigs[0].gateCount} gates)
+                </p>
+              )}
+            </div>
+
+            <Button
+              onClick={handleGenerate}
+              disabled={
+                generateMutation.isPending ||
+                (() => {
+                  const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+                  return allClasses.length > 0 && allClasses.every(cls =>
+                    rawMotos.some(m => m.raceClass === cls && m.status === "completed")
+                  );
+                })()
+              }
+              className="w-full font-heading uppercase"
+            >
+              {generateMutation.isPending ? "Generating…" : "Generate Lineups"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Add Moto dialog ── */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
@@ -636,24 +1174,14 @@ export default function EventSchedule() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Lap Count</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={addForm.lapCount}
-                  onChange={e => setAddForm(f => ({ ...f, lapCount: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Scheduled Time <span className="text-muted-foreground">(optional)</span></Label>
-                <Input
-                  type="time"
-                  value={addForm.scheduledTime}
-                  onChange={e => setAddForm(f => ({ ...f, scheduledTime: e.target.value }))}
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label>Lap Count</Label>
+              <Input
+                type="number"
+                min={1}
+                value={addForm.lapCount}
+                onChange={e => setAddForm(f => ({ ...f, lapCount: e.target.value }))}
+              />
             </div>
           </div>
 
@@ -668,6 +1196,6 @@ export default function EventSchedule() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DndContext>
   );
 }
