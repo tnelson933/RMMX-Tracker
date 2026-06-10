@@ -1636,6 +1636,32 @@ paths:
         "409":
           description: Code string already exists
 
+  /discount-codes/{codeId}/usage:
+    get:
+      operationId: getDiscountCodeUsage
+      tags: [discounts]
+      summary: Get usage history for a discount code
+      description: Returns every registration that used this code, with rider name, event, class, and date.
+      parameters:
+        - name: codeId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Usage history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DiscountCodeUsageEntry"
+        "401":
+          description: Not authenticated
+        "404":
+          description: Discount code not found
+
   /discount-codes/{codeId}:
     patch:
       operationId: updateDiscountCode
@@ -3206,6 +3232,28 @@ components:
           type: array
           items:
             type: integer
+
+    DiscountCodeUsageEntry:
+      type: object
+      required: [registrationId, riderId, riderName, eventId, eventName, raceClass, discountAmount, usedAt]
+      properties:
+        registrationId:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        raceClass:
+          type: string
+        discountAmount:
+          type: number
+        usedAt:
+          type: string
+          description: ISO timestamp of when the registration was created
 
     ErrorEnvelope:
       type: object

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { compCodesTable, eventsTable, usersTable } from "@workspace/db";
+import { compCodesTable, eventsTable, usersTable, registrationsTable, ridersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -171,6 +171,51 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
     categoryIds: (row.categoryIds as number[]) ?? [],
     createdAt: row.createdAt.toISOString(),
   });
+});
+
+router.get("/discount-codes/:codeId/usage", async (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const clubId = await getClubId(userId);
+  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+
+  const codeId = Number(req.params.codeId);
+
+  const [codeRow] = await db.select({ code: compCodesTable.code })
+    .from(compCodesTable)
+    .where(and(eq(compCodesTable.id, codeId), eq(compCodesTable.clubId, clubId)));
+
+  if (!codeRow) return res.status(404).json({ error: "Discount code not found" });
+
+  const rows = await db
+    .select({
+      registrationId: registrationsTable.id,
+      riderId: registrationsTable.riderId,
+      riderFirstName: ridersTable.firstName,
+      riderLastName: ridersTable.lastName,
+      eventId: registrationsTable.eventId,
+      eventName: eventsTable.name,
+      raceClass: registrationsTable.raceClass,
+      discountAmount: registrationsTable.compDiscount,
+      usedAt: registrationsTable.createdAt,
+    })
+    .from(registrationsTable)
+    .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(eq(registrationsTable.compCode, codeRow.code))
+    .orderBy(registrationsTable.createdAt);
+
+  return res.json(rows.map(r => ({
+    registrationId: r.registrationId,
+    riderId: r.riderId,
+    riderName: `${r.riderFirstName} ${r.riderLastName}`,
+    eventId: r.eventId,
+    eventName: r.eventName,
+    raceClass: r.raceClass,
+    discountAmount: Number(r.discountAmount ?? 0),
+    usedAt: r.usedAt.toISOString(),
+  })));
 });
 
 router.delete("/discount-codes/:codeId", async (req, res) => {

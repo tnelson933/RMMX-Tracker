@@ -1029,6 +1029,18 @@ export interface DiscountCodeUpdate {
   categoryIds?: number[];
 }
 
+export interface DiscountCodeUsageEntry {
+  registrationId: number;
+  riderId: number;
+  riderName: string;
+  eventId: number;
+  eventName: string;
+  raceClass: string;
+  discountAmount: number;
+  /** ISO timestamp of when the registration was created */
+  usedAt: string;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }

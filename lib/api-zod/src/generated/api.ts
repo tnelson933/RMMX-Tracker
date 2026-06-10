@@ -1618,6 +1618,27 @@ export const CreateDiscountCodeBody = zod.object({
 
 
 /**
+ * Returns every registration that used this code, with rider name, event, class, and date.
+ * @summary Get usage history for a discount code
+ */
+export const GetDiscountCodeUsageParams = zod.object({
+  "codeId": zod.coerce.number()
+})
+
+export const GetDiscountCodeUsageResponseItem = zod.object({
+  "registrationId": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "eventId": zod.number(),
+  "eventName": zod.string(),
+  "raceClass": zod.string(),
+  "discountAmount": zod.number(),
+  "usedAt": zod.string().describe('ISO timestamp of when the registration was created')
+})
+export const GetDiscountCodeUsageResponse = zod.array(GetDiscountCodeUsageResponseItem)
+
+
+/**
  * @summary Deactivate or update a discount code
  */
 export const UpdateDiscountCodeParams = zod.object({

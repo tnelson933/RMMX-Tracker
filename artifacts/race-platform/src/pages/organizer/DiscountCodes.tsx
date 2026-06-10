@@ -9,6 +9,7 @@ import {
   useCreateDiscountCode,
   useUpdateDiscountCode,
   useDeleteDiscountCode,
+  useGetDiscountCodeUsage,
   getListDiscountCategoriesQueryKey,
   getListDiscountCodesQueryKey,
 } from "@workspace/api-client-react";
@@ -53,6 +54,7 @@ import {
   Power,
   RefreshCw,
   Copy,
+  History,
 } from "lucide-react";
 
 function formatDate(iso: string | null | undefined): string {
@@ -266,6 +268,7 @@ function DiscountCodesTable() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState<CreateForm>(DEFAULT_FORM);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [usagePanelCode, setUsagePanelCode] = useState<DiscountCode | null>(null);
 
   const catMap = Object.fromEntries((categories as DiscountCategory[]).map(c => [c.id, c.name]));
 
@@ -437,6 +440,15 @@ function DiscountCodesTable() {
                   <TableCell>{getStatusBadge(code)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground"
+                        title="View usage history"
+                        onClick={() => setUsagePanelCode(code)}
+                      >
+                        <History size={13} />
+                      </Button>
                       <Button
                         size="icon"
                         variant="ghost"
@@ -647,7 +659,64 @@ function DiscountCodesTable() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Usage history sheet */}
+      <Sheet open={usagePanelCode !== null} onOpenChange={open => { if (!open) setUsagePanelCode(null); }}>
+        <SheetContent className="sm:max-w-lg overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <History size={16} />
+              Usage History
+            </SheetTitle>
+          </SheetHeader>
+          {usagePanelCode && (
+            <UsageHistoryPanel code={usagePanelCode} />
+          )}
+        </SheetContent>
+      </Sheet>
     </Card>
+  );
+}
+
+function UsageHistoryPanel({ code }: { code: DiscountCode }) {
+  const { data: entries = [], isLoading } = useGetDiscountCodeUsage(code.id, { query: {} as any });
+
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="rounded-md border bg-muted/40 px-4 py-3 space-y-0.5">
+        <p className="font-mono font-bold tracking-wider text-sm">{code.code}</p>
+        <p className="text-xs text-muted-foreground">
+          ${Number(code.amount).toFixed(2)} discount · {code.usesCount} {code.usesCount === 1 ? "use" : "uses"} recorded
+        </p>
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground py-4 text-center">Loading…</p>
+      ) : entries.length === 0 ? (
+        <div className="py-10 text-center text-muted-foreground">
+          <History size={28} className="mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No uses recorded for this code yet.</p>
+        </div>
+      ) : (
+        <div className="divide-y rounded-md border">
+          {entries.map(entry => (
+            <div key={entry.registrationId} className="px-4 py-3 space-y-0.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-sm">{entry.riderName}</span>
+                <span className="text-xs text-muted-foreground">{formatDate(entry.usedAt)}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{entry.eventName}</span>
+                <span>·</span>
+                <span>{entry.raceClass}</span>
+                <span>·</span>
+                <span className="font-medium text-foreground">${Number(entry.discountAmount).toFixed(2)} off</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

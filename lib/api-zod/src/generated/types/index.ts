@@ -37,6 +37,7 @@ export * from './discountCodeInput';
 export * from './discountCodeInputDiscountType';
 export * from './discountCodeUpdate';
 export * from './discountCodeUpdateDiscountType';
+export * from './discountCodeUsageEntry';
 export * from './errorEnvelope';
 export * from './event';
 export * from './eventInput';

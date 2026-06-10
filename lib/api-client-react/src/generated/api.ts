@@ -43,6 +43,7 @@ import type {
   DiscountCode,
   DiscountCodeInput,
   DiscountCodeUpdate,
+  DiscountCodeUsageEntry,
   ErrorEnvelope,
   Event,
   EventInput,
@@ -5950,6 +5951,84 @@ export const useCreateDiscountCode = <TError = ErrorType<void>,
       > => {
       return useMutation(getCreateDiscountCodeMutationOptions(options));
     }
+
+export const getGetDiscountCodeUsageUrl = (codeId: number,) => {
+
+
+
+
+  return `/api/discount-codes/${codeId}/usage`
+}
+
+/**
+ * Returns every registration that used this code, with rider name, event, class, and date.
+ * @summary Get usage history for a discount code
+ */
+export const getDiscountCodeUsage = async (codeId: number, options?: RequestInit): Promise<DiscountCodeUsageEntry[]> => {
+
+  return customFetch<DiscountCodeUsageEntry[]>(getGetDiscountCodeUsageUrl(codeId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDiscountCodeUsageQueryKey = (codeId: number,) => {
+    return [
+    `/api/discount-codes/${codeId}/usage`
+    ] as const;
+    }
+
+
+export const getGetDiscountCodeUsageQueryOptions = <TData = Awaited<ReturnType<typeof getDiscountCodeUsage>>, TError = ErrorType<void>>(codeId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDiscountCodeUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDiscountCodeUsageQueryKey(codeId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDiscountCodeUsage>>> = ({ signal }) => getDiscountCodeUsage(codeId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(codeId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDiscountCodeUsage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDiscountCodeUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getDiscountCodeUsage>>>
+export type GetDiscountCodeUsageQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get usage history for a discount code
+ */
+
+export function useGetDiscountCodeUsage<TData = Awaited<ReturnType<typeof getDiscountCodeUsage>>, TError = ErrorType<void>>(
+ codeId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDiscountCodeUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDiscountCodeUsageQueryOptions(codeId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getUpdateDiscountCodeUrl = (codeId: number,) => {
 
