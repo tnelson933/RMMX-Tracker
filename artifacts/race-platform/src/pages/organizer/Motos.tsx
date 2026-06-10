@@ -969,6 +969,7 @@ export default function Motos() {
   const [poolOpen, setPoolOpen] = useState(true);
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
   const [classFilter, setClassFilter] = useState<string>("schedule");
+  const [roundFilter, setRoundFilter] = useState<number | "all">("all");
   const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
   const [bibInputs, setBibInputs] = useState<Record<number, string>>({});
   const [viewMode, setViewMode] = useState<"grid" | "run-order">("grid");
@@ -1646,6 +1647,28 @@ export default function Motos() {
       result[cls] = Math.max(1, Math.round(avg * 0.3));
     }
     return result;
+  }, [motos]);
+
+  // Round map: motoId → 1-indexed position within its class (sorted by motoNumber)
+  const { roundMap, maxRounds } = useMemo(() => {
+    const raceMotos = (motos ?? []).filter(m => m.type !== "practice");
+    const classBuckets: Record<string, number[]> = {};
+    for (const m of raceMotos) {
+      const cls = m.raceClass ?? "__none__";
+      if (!classBuckets[cls]) classBuckets[cls] = [];
+      classBuckets[cls].push(m.id);
+    }
+    const map = new Map<number, number>();
+    for (const ids of Object.values(classBuckets)) {
+      const sorted = ids.slice().sort((a, b) => {
+        const ma = raceMotos.find(m => m.id === a)?.motoNumber ?? 0;
+        const mb = raceMotos.find(m => m.id === b)?.motoNumber ?? 0;
+        return ma - mb;
+      });
+      sorted.forEach((id, i) => map.set(id, i + 1));
+    }
+    const max = map.size ? Math.max(...map.values()) : 0;
+    return { roundMap: map, maxRounds: max };
   }, [motos]);
 
   useEffect(() => {
@@ -2561,60 +2584,60 @@ export default function Motos() {
           const uniqueClasses = [...new Set(
             (motos ?? []).filter(m => m.type !== "practice").map(m => m.raceClass).filter((c): c is string => !!c)
           )].sort();
+          const pillCls = (active: boolean) =>
+            `px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors ${
+              active ? "bg-primary text-primary-foreground border-primary" : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+            }`;
           return (
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              {viewMode === "grid" && (
-                <>
-                  <button
-                    onClick={() => setClassFilter("schedule")}
-                    className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors ${
-                      classFilter === "schedule"
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
-                    }`}
-                  >
-                    Schedule
-                  </button>
-                  {uniqueClasses.map(cls => (
-                    <button
-                      key={cls}
-                      onClick={() => setClassFilter(cls)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors ${
-                        classFilter === cls
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
-                      }`}
-                    >
-                      {cls}
+            <div className="space-y-2 mb-4">
+              {/* ── Round tabs — only when motos are grouped into multiple rounds ── */}
+              {maxRounds > 1 && viewMode === "grid" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground shrink-0 pr-1">Round</span>
+                  <button onClick={() => setRoundFilter("all")} className={pillCls(roundFilter === "all")}>All</button>
+                  {Array.from({ length: maxRounds }, (_, i) => i + 1).map(r => (
+                    <button key={r} onClick={() => { setRoundFilter(r); setClassFilter("schedule"); }} className={pillCls(roundFilter === r)}>
+                      {r}
                     </button>
                   ))}
-                </>
+                </div>
               )}
-              <div className="ml-auto flex items-center gap-1 border rounded-lg p-0.5 bg-muted/40">
-                <button
-                  onClick={() => setViewMode("grid")}
-                  title="Card grid view"
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider transition-colors ${
-                    viewMode === "grid"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <LayoutGrid size={13} />
-                  <span className="hidden sm:inline">Grid</span>
-                </button>
-                <button
-                  onClick={() => setViewMode("run-order")}
-                  title="Run order list"
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider transition-colors ${
-                    viewMode === "run-order"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <LayoutList size={13} />
-                  <span className="hidden sm:inline">Run Order</span>
-                </button>
+              {/* ── Class filter + view toggle ──────────────────────────────────── */}
+              <div className="flex flex-wrap items-center gap-2">
+                {viewMode === "grid" && (
+                  <>
+                    <button onClick={() => setClassFilter("schedule")} className={pillCls(classFilter === "schedule")}>
+                      {roundFilter === "all" ? "Schedule" : "All Classes"}
+                    </button>
+                    {uniqueClasses.map(cls => (
+                      <button key={cls} onClick={() => setClassFilter(cls)} className={pillCls(classFilter === cls)}>
+                        {cls}
+                      </button>
+                    ))}
+                  </>
+                )}
+                <div className="ml-auto flex items-center gap-1 border rounded-lg p-0.5 bg-muted/40">
+                  <button
+                    onClick={() => setViewMode("grid")}
+                    title="Card grid view"
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider transition-colors ${
+                      viewMode === "grid" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <LayoutGrid size={13} />
+                    <span className="hidden sm:inline">Grid</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode("run-order")}
+                    title="Run order list"
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider transition-colors ${
+                      viewMode === "run-order" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <LayoutList size={13} />
+                    <span className="hidden sm:inline">Run Order</span>
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -2808,7 +2831,12 @@ export default function Motos() {
           </div>
         ) : viewMode === "grid" && motos?.length ? (
         <div className="space-y-0">
-          {motos.filter(m => m.type === "practice" ? classFilter === "schedule" : (classFilter === "schedule" || m.raceClass === classFilter)).sort((a, b) => {
+          {motos.filter(m => {
+              if (m.type === "practice") return classFilter === "schedule" && roundFilter === "all";
+              if (classFilter !== "schedule" && m.raceClass !== classFilter) return false;
+              if (roundFilter !== "all" && roundMap.get(m.id) !== roundFilter) return false;
+              return true;
+            }).sort((a, b) => {
               const rank = (s: string) => s === "in_progress" ? 0 : s === "scheduled" ? 1 : s === "completed" ? 2 : 3;
               const rd = rank(a.status) - rank(b.status);
               if (rd !== 0) return rd;
