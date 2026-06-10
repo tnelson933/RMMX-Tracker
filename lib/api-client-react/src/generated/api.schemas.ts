@@ -569,6 +569,11 @@ export interface MotoUpdate {
   name?: string;
 }
 
+export interface MotoReorderInput {
+  /** Ordered array of moto IDs; index+1 becomes the new motoNumber */
+  motoIds: number[];
+}
+
 export interface GateSettings {
   gateCount?: number | null;
   gateSeeding?: number[];

@@ -53,6 +53,7 @@ import type {
   LoginInput,
   Moto,
   MotoInput,
+  MotoReorderInput,
   MotoUpdate,
   OfflinePackageInfo,
   OfflineSyncUpload200,
@@ -3127,6 +3128,78 @@ export const useDeleteMoto = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteMotoMutationOptions(options));
+    }
+
+export const getReorderMotosUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/motos/reorder`
+}
+
+/**
+ * @summary Reorder motos by updating their motoNumber values in bulk
+ */
+export const reorderMotos = async (eventId: number,
+    motoReorderInput: MotoReorderInput, options?: RequestInit): Promise<Moto[]> => {
+
+  return customFetch<Moto[]>(getReorderMotosUrl(eventId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      motoReorderInput,)
+  }
+);}
+
+
+
+
+export const getReorderMotosMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderMotos>>, TError,{eventId: number;data: BodyType<MotoReorderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reorderMotos>>, TError,{eventId: number;data: BodyType<MotoReorderInput>}, TContext> => {
+
+const mutationKey = ['reorderMotos'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderMotos>>, {eventId: number;data: BodyType<MotoReorderInput>}> = (props) => {
+          const {eventId,data} = props ?? {};
+
+          return  reorderMotos(eventId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReorderMotosMutationResult = NonNullable<Awaited<ReturnType<typeof reorderMotos>>>
+    export type ReorderMotosMutationBody = BodyType<MotoReorderInput>
+    export type ReorderMotosMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Reorder motos by updating their motoNumber values in bulk
+ */
+export const useReorderMotos = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderMotos>>, TError,{eventId: number;data: BodyType<MotoReorderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reorderMotos>>,
+        TError,
+        {eventId: number;data: BodyType<MotoReorderInput>},
+        TContext
+      > => {
+      return useMutation(getReorderMotosMutationOptions(options));
     }
 
 export const getGenerateLineupsUrl = (eventId: number,) => {

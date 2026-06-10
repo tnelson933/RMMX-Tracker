@@ -1115,6 +1115,17 @@ export default function Motos() {
     isSavingRef.current = false;
   }, [eventId]);
 
+  // Deep-link from Schedule tab: if ?motoId=X is in the URL, expand and scroll to that card.
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const motoIdParam = searchParams.get("motoId");
+    if (!motoIdParam) return;
+    const id = parseInt(motoIdParam);
+    if (isNaN(id)) return;
+    setViewMode("grid");
+    setExpandedMotoId(id);
+  }, []);
+
   // Pre-populate gate config from the event's default when event data loads.
   useEffect(() => {
     if (!event || gateConfigs.length === 0) return;

@@ -1,11 +1,12 @@
 import { Switch, Route, Redirect, useRoute } from "wouter";
 import { Link } from "wouter";
 import { useGetEvent } from "@workspace/api-client-react";
-import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, Timer } from "lucide-react";
+import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, Timer, CalendarDays } from "lucide-react";
 
 import EventDetail from "./EventDetail";
 import Registrations from "./Registrations";
 import Checkin from "./Checkin";
+import EventSchedule from "./EventSchedule";
 import EventPractice from "./EventPractice";
 import Motos from "./Motos";
 import EnterResults from "./EnterResults";
@@ -42,6 +43,7 @@ export default function EventLayout() {
           <NavLink href={`${basePath}`} exact icon={<Settings size={16} />}>Overview</NavLink>
           <NavLink href={`${basePath}/registrations`} icon={<Users size={16} />}>Registrations</NavLink>
           <NavLink href={`${basePath}/checkin`} icon={<CheckCircle size={16} />}>Check-In</NavLink>
+          <NavLink href={`${basePath}/schedule`} icon={<CalendarDays size={16} />}>Schedule</NavLink>
           <NavLink href={`${basePath}/practice`} icon={<Timer size={16} />}>Practice</NavLink>
           <NavLink href={`${basePath}/motos`} icon={<Flag size={16} />}>Motos & Lineups</NavLink>
           <NavLink href={`${basePath}/results`} icon={<Activity size={16} />}>Enter Results</NavLink>
@@ -54,6 +56,7 @@ export default function EventLayout() {
           <Route path="/events/:eventId" component={EventDetail} />
           <Route path="/events/:eventId/registrations" component={Registrations} />
           <Route path="/events/:eventId/checkin" component={Checkin} />
+          <Route path="/events/:eventId/schedule" component={EventSchedule} />
           <Route path="/events/:eventId/practice" component={EventPractice} />
           <Route path="/events/:eventId/motos" component={Motos} />
           <Route path="/events/:eventId/results" component={EnterResults} />

@@ -55,6 +55,7 @@ export * from './loginInput';
 export * from './moto';
 export * from './motoInput';
 export * from './motoInputType';
+export * from './motoReorderInput';
 export * from './motoStatus';
 export * from './motoType';
 export * from './motoUpdate';

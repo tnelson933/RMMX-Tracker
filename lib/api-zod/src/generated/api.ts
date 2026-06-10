@@ -908,6 +908,39 @@ export const DeleteMotoParams = zod.object({
 
 
 /**
+ * @summary Reorder motos by updating their motoNumber values in bulk
+ */
+export const ReorderMotosParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const ReorderMotosBody = zod.object({
+  "motoIds": zod.array(zod.number()).describe('Ordered array of moto IDs; index+1 becomes the new motoNumber')
+})
+
+export const ReorderMotosResponseItem = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "name": zod.string(),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice']),
+  "raceClass": zod.string().optional(),
+  "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
+  "motoNumber": zod.number().optional(),
+  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
+  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "scheduledTime": zod.string().nullish(),
+  "lineup": zod.array(zod.object({
+  "position": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "bibNumber": zod.string().nullish(),
+  "rfidNumber": zod.string().nullish()
+})).optional()
+})
+export const ReorderMotosResponse = zod.array(ReorderMotosResponseItem)
+
+
+/**
  * @summary Auto-generate heat lineups from checked-in riders
  */
 export const GenerateLineupsParams = zod.object({

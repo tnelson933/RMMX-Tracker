@@ -535,6 +535,55 @@ router.post("/events/:eventId/generate-practice-sessions", async (req, res) => {
   return res.status(201).json(created);
 });
 
+// Bulk reorder motos for an event by reassigning motoNumber values
+router.post("/events/:eventId/motos/reorder", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const { motoIds } = req.body as { motoIds: number[] };
+  if (!Array.isArray(motoIds) || motoIds.length === 0) {
+    return res.status(400).json({ error: "motoIds array is required" });
+  }
+
+  // Reject duplicate IDs
+  const unique = new Set(motoIds);
+  if (unique.size !== motoIds.length) {
+    return res.status(400).json({ error: "motoIds must not contain duplicates" });
+  }
+
+  // Validate all IDs belong to this event
+  const existing = await db.select({ id: motosTable.id })
+    .from(motosTable)
+    .where(and(eq(motosTable.eventId, eventId), inArray(motosTable.id, motoIds)));
+
+  const existingIds = new Set(existing.map(m => m.id));
+  const invalid = motoIds.filter(id => !existingIds.has(id));
+  if (invalid.length > 0) {
+    return res.status(400).json({ error: `Moto IDs not found in event: ${invalid.join(", ")}` });
+  }
+
+  // Atomically update all motoNumber values in a transaction
+  await db.transaction(async (tx) => {
+    await Promise.all(
+      motoIds.map((id, index) =>
+        tx.update(motosTable)
+          .set({ motoNumber: index + 1 })
+          .where(and(eq(motosTable.id, id), eq(motosTable.eventId, eventId)))
+      )
+    );
+  });
+
+  const motos = await db.select().from(motosTable)
+    .where(eq(motosTable.eventId, eventId))
+    .orderBy(motosTable.motoNumber);
+
+  return res.json(motos.map(m => ({
+    ...m,
+    lineup: Array.isArray(m.lineup) ? m.lineup : [],
+    createdAt: m.createdAt.toISOString(),
+    startedAt: m.startedAt?.toISOString() ?? null,
+    completedAt: m.completedAt?.toISOString() ?? null,
+  })));
+});
+
 // Advance top heat finishers into the Main Event lineup (manual trigger)
 router.post("/events/:eventId/advance-to-main", async (req, res) => {
   const eventId = Number(req.params.eventId);

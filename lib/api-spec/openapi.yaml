@@ -838,6 +838,33 @@ paths:
         "204":
           description: Moto deleted
 
+  /events/{eventId}/motos/reorder:
+    post:
+      operationId: reorderMotos
+      tags: [motos]
+      summary: Reorder motos by updating their motoNumber values in bulk
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MotoReorderInput"
+      responses:
+        "200":
+          description: Motos reordered
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Moto"
+
   /events/{eventId}/generate-lineups:
     post:
       operationId: generateLineups
@@ -2235,6 +2262,16 @@ components:
           type: integer
         name:
           type: string
+
+    MotoReorderInput:
+      type: object
+      required: [motoIds]
+      properties:
+        motoIds:
+          type: array
+          items:
+            type: integer
+          description: Ordered array of moto IDs; index+1 becomes the new motoNumber
 
     LineupEntry:
       type: object
