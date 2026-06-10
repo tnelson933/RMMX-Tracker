@@ -147,9 +147,12 @@ function validateCodeRow(
     return { valid: false, error: "This discount code has already been used", status: 409 };
   }
 
-  const catIds = (row.categoryIds as number[]) ?? [];
-  if (catIds.length > 0) {
-    if (categoryId == null || !catIds.includes(Number(categoryId))) {
+  // Category check only applies when the caller passes a specific categoryId.
+  // When categoryId is null/undefined (e.g. entry-fee validation on the registration
+  // page), skip category enforcement — the entry fee has no purchase-option category.
+  if (categoryId != null) {
+    const catIds = (row.categoryIds as number[]) ?? [];
+    if (catIds.length > 0 && !catIds.includes(Number(categoryId))) {
       return { valid: false, error: "This discount code is not valid for the selected category", status: 409 };
     }
   }
