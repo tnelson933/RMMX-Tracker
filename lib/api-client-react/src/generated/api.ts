@@ -3080,6 +3080,76 @@ export const useCreateMoto = <TError = ErrorType<unknown>,
       return useMutation(getCreateMotoMutationOptions(options));
     }
 
+export const getDeleteAllMotosUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/motos`
+}
+
+/**
+ * @summary Delete all non-completed motos for an event
+ */
+export const deleteAllMotos = async (eventId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteAllMotosUrl(eventId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteAllMotosMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAllMotos>>, TError,{eventId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteAllMotos>>, TError,{eventId: number}, TContext> => {
+
+const mutationKey = ['deleteAllMotos'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAllMotos>>, {eventId: number}> = (props) => {
+          const {eventId} = props ?? {};
+
+          return  deleteAllMotos(eventId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteAllMotosMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAllMotos>>>
+
+    export type DeleteAllMotosMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete all non-completed motos for an event
+ */
+export const useDeleteAllMotos = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAllMotos>>, TError,{eventId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteAllMotos>>,
+        TError,
+        {eventId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteAllMotosMutationOptions(options));
+    }
+
 export const getUpdateMotoUrl = (motoId: number,) => {
 
 

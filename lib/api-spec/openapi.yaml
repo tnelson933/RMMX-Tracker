@@ -863,6 +863,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Moto"
+    delete:
+      operationId: deleteAllMotos
+      tags: [motos]
+      summary: Delete all non-completed motos for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: All non-completed motos deleted
 
   /motos/{motoId}:
     patch:

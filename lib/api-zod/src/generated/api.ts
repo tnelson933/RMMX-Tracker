@@ -906,6 +906,14 @@ export const CreateMotoBody = zod.object({
 
 
 /**
+ * @summary Delete all non-completed motos for an event
+ */
+export const DeleteAllMotosParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+
+/**
  * @summary Update moto status or lineup
  */
 export const UpdateMotoParams = zod.object({

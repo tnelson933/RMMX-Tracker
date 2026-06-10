@@ -229,6 +229,18 @@ router.delete("/motos/:motoId", async (req, res) => {
   return res.status(204).send();
 });
 
+// Bulk-delete all non-completed motos for an event
+router.delete("/events/:eventId/motos", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  await db.delete(motosTable).where(
+    and(
+      eq(motosTable.eventId, eventId),
+      ne(motosTable.status, "completed"),
+    ),
+  );
+  return res.status(204).send();
+});
+
 router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const {

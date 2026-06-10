@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import {
-  useListMotos, useReorderMotos, useUpdateMoto, useCreateMoto, useDeleteMoto,
+  useListMotos, useReorderMotos, useUpdateMoto, useCreateMoto, useDeleteMoto, useDeleteAllMotos,
   useListCheckins, useGenerateLineups, useGetEvent, useListPointsTables,
   useUpdateEvent, useAdvanceToMain,
   getListMotosQueryKey, getListCheckinsQueryKey, type Moto,
@@ -1053,6 +1053,7 @@ export default function EventSchedule() {
 
   // ── Delete confirm state ──
   const [deleteConfirmMotoId, setDeleteConfirmMotoId] = useState<number | null>(null);
+  const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
 
   // ── Mutations ──
   const reorderMutation = useReorderMotos();
@@ -1062,6 +1063,7 @@ export default function EventSchedule() {
   const updateEventMutation = useUpdateEvent();
   const advanceToMainMutation = useAdvanceToMain();
   const deleteMutation = useDeleteMoto();
+  const deleteAllMutation = useDeleteAllMotos();
 
   // ── defaultTopPerHeat (Advance to Main) ──
   const defaultTopPerHeat = useMemo(() => {
@@ -1751,6 +1753,18 @@ export default function EventSchedule() {
 
               <div className="flex-1" />
 
+              {/* Delete All (run-order only, only when there are non-completed motos) */}
+              {viewMode === "run-order" && sortedMotos.some(m => m.status !== "completed") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setDeleteAllConfirmOpen(true)}
+                >
+                  <Trash2 size={14} className="mr-1.5" /> Delete All
+                </Button>
+              )}
+
               {/* Generate Lineups */}
               <Button
                 variant="outline"
@@ -2108,6 +2122,40 @@ export default function EventSchedule() {
               }}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Delete ALL motos confirmation ── */}
+      <AlertDialog open={deleteAllConfirmOpen} onOpenChange={setDeleteAllConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete all motos?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete every non-completed moto and all their lineup assignments.
+              Completed motos will not be affected. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                setDeleteAllConfirmOpen(false);
+                deleteAllMutation.mutate(
+                  { eventId } as any,
+                  {
+                    onSuccess: () => {
+                      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+                      toast({ title: "All motos deleted" });
+                    },
+                    onError: () => toast({ title: "Failed to delete motos", variant: "destructive" }),
+                  }
+                );
+              }}
+            >
+              Delete All
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
