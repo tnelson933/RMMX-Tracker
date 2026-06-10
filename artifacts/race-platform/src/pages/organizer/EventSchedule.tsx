@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   GripVertical, Plus, Clock, LayoutList, LayoutGrid, Flag, ExternalLink,
-  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X,
+  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown,
 } from "lucide-react";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -330,6 +330,59 @@ function InlineName({ motoId, name, isEditing, editValue, onEditStart, onChange,
   );
 }
 
+// ── Sortable lineup row (within an expanded moto) ──────────────────────────────
+
+// LineupEntry is forward-referenced from below — TS hoists type aliases
+interface LineupRowProps {
+  entry: { position: number; riderId: number; riderName: string; bibNumber: string | null };
+  motoId: number;
+  isCompleted: boolean;
+  onRemove: () => void;
+}
+
+function SortableLineupRow({ entry, motoId, isCompleted, onRemove }: LineupRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `lrider-${motoId}-${entry.riderId}`,
+    disabled: isCompleted,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 }}
+      className="flex items-center gap-1.5 px-2 py-1 rounded-md group/lr hover:bg-muted/40 transition-colors select-none"
+    >
+      {!isCompleted ? (
+        <button
+          className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground shrink-0"
+          {...attributes}
+          {...listeners}
+          aria-label="Drag to reorder gate"
+        >
+          <GripVertical size={12} />
+        </button>
+      ) : (
+        <span className="w-[18px] shrink-0" />
+      )}
+      <span className="text-[11px] font-mono text-muted-foreground w-14 shrink-0 tabular-nums">
+        Gate {entry.position}
+      </span>
+      {entry.bibNumber && (
+        <span className="font-mono text-[11px] text-muted-foreground w-9 shrink-0">#{entry.bibNumber}</span>
+      )}
+      <span className="text-xs flex-1 truncate font-medium">{entry.riderName}</span>
+      {!isCompleted && (
+        <button
+          onClick={onRemove}
+          className="opacity-0 group-hover/lr:opacity-100 text-muted-foreground hover:text-destructive transition-all shrink-0 p-0.5 rounded"
+          title="Remove from moto"
+        >
+          <X size={11} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Sortable moto card ────────────────────────────────────────────────────────
 
 interface MotoCardProps {
@@ -343,11 +396,15 @@ interface MotoCardProps {
   onEditChange: (v: string) => void;
   onEditSave: () => void;
   onEditCancel: () => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onRemoveRider: (riderId: number) => void;
 }
 
 function SortableMotoCard({
   moto, index, eventId, isPoolDropTarget,
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
+  isExpanded, onToggleExpand, onRemoveRider,
 }: MotoCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: moto.id });
 
@@ -358,81 +415,118 @@ function SortableMotoCard({
     zIndex: isDragging ? 50 : undefined,
   };
 
-  const riderCount = Array.isArray(moto.lineup) ? moto.lineup.length : 0;
+  const lineup = Array.isArray(moto.lineup) ? (moto.lineup as Array<{ position: number; riderId: number; riderName: string; bibNumber: string | null }>) : [];
+  const riderCount = lineup.length;
+  const isCompleted = moto.status === "completed";
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-3 bg-card border rounded-lg px-4 py-3 group transition-colors ${
+      className={`bg-card border rounded-lg group transition-colors ${
         isPoolDropTarget
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
           : "border-border hover:border-primary/40"
       }`}
     >
-      <span className="text-xs text-muted-foreground w-6 shrink-0 text-center font-mono">
-        {index + 1}
-      </span>
+      {/* ── Header row ── */}
+      <div className="flex items-center gap-3 px-4 py-3">
+        <span className="text-xs text-muted-foreground w-6 shrink-0 text-center font-mono">
+          {index + 1}
+        </span>
 
-      <button
-        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0"
-        {...attributes}
-        {...listeners}
-        aria-label="Drag to reorder"
-      >
-        <GripVertical size={18} />
-      </button>
+        <button
+          className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0"
+          {...attributes}
+          {...listeners}
+          aria-label="Drag to reorder"
+        >
+          <GripVertical size={18} />
+        </button>
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          {moto.raceClass && !(moto as any).raceClasses && (
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
-              {moto.raceClass}
-            </span>
-          )}
-          <InlineName
-            motoId={moto.id}
-            name={moto.name}
-            isEditing={isEditing}
-            editValue={editValue}
-            onEditStart={onEditStart}
-            onChange={onEditChange}
-            onSave={onEditSave}
-            onCancel={onEditCancel}
-          />
-        </div>
-        {Array.isArray((moto as any).raceClasses) && (moto as any).raceClasses.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1">
-            {((moto as any).raceClasses as string[]).map((cls: string) => (
-              <span key={cls} className="text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-medium">
-                {cls}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            {moto.raceClass && !(moto as any).raceClasses && (
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+                {moto.raceClass}
               </span>
-            ))}
+            )}
+            <InlineName
+              motoId={moto.id}
+              name={moto.name}
+              isEditing={isEditing}
+              editValue={editValue}
+              onEditStart={onEditStart}
+              onChange={onEditChange}
+              onSave={onEditSave}
+              onCancel={onEditCancel}
+            />
           </div>
-        )}
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${typeBadgeVariant(moto.type)}`}>
-            {typeLabel(moto.type)}
-          </span>
-          <span className={`text-xs px-2 py-0.5 rounded border ${statusBadgeVariant(moto.status)}`}>
-            {statusLabel(moto.status)}
-          </span>
-          <span className="text-xs text-muted-foreground flex items-center gap-1">
-            <Flag size={11} /> {riderCount} riders
-          </span>
-          {moto.lapCount != null && (
-            <span className="text-xs text-muted-foreground">{moto.lapCount} laps</span>
+          {Array.isArray((moto as any).raceClasses) && (moto as any).raceClasses.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {((moto as any).raceClasses as string[]).map((cls: string) => (
+                <span key={cls} className="text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-medium">
+                  {cls}
+                </span>
+              ))}
+            </div>
           )}
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${typeBadgeVariant(moto.type)}`}>
+              {typeLabel(moto.type)}
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded border ${statusBadgeVariant(moto.status)}`}>
+              {statusLabel(moto.status)}
+            </span>
+            <button
+              onClick={onToggleExpand}
+              className="text-xs text-muted-foreground flex items-center gap-1 hover:text-foreground transition-colors"
+            >
+              <Flag size={11} /> {riderCount} riders
+              <ChevronDown size={11} className={`transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} />
+            </button>
+            {moto.lapCount != null && (
+              <span className="text-xs text-muted-foreground">{moto.lapCount} laps</span>
+            )}
+          </div>
         </div>
+
+        <Link
+          href={`/events/${eventId}/motos?motoId=${moto.id}`}
+          className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+          title="Open in Motos & Lineups"
+        >
+          <ExternalLink size={15} />
+        </Link>
       </div>
 
-      <Link
-        href={`/events/${eventId}/motos?motoId=${moto.id}`}
-        className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
-        title="Open in Motos & Lineups"
-      >
-        <ExternalLink size={15} />
-      </Link>
+      {/* ── Inline lineup (expanded) ── */}
+      {isExpanded && (
+        <div className="border-t border-border/60 px-4 py-2">
+          {lineup.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-2">
+              No riders assigned — drag from the Rider Pool to add
+            </p>
+          ) : (
+            <SortableContext
+              items={lineup.map(e => `lrider-${moto.id}-${e.riderId}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-0.5">
+                {lineup.map(entry => (
+                  <SortableLineupRow
+                    key={entry.riderId}
+                    entry={entry}
+                    motoId={moto.id}
+                    isCompleted={isCompleted}
+                    onRemove={() => onRemoveRider(entry.riderId)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -442,69 +536,107 @@ function SortableMotoCard({
 function StaticMotoCard({
   moto, eventId, isPoolDropTarget,
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
+  isExpanded, onToggleExpand, onRemoveRider,
 }: Omit<MotoCardProps, "index">) {
-  const riderCount = Array.isArray(moto.lineup) ? moto.lineup.length : 0;
+  const lineup = Array.isArray(moto.lineup) ? (moto.lineup as Array<{ position: number; riderId: number; riderName: string; bibNumber: string | null }>) : [];
+  const riderCount = lineup.length;
+  const isCompleted = moto.status === "completed";
 
   return (
     <div
-      className={`flex items-center gap-3 bg-card border rounded-lg px-4 py-3 transition-colors ${
+      className={`bg-card border rounded-lg transition-colors ${
         isPoolDropTarget
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
           : "border-border hover:border-primary/40"
       }`}
     >
-      <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: "hsl(var(--primary) / 0.3)" }} />
+      {/* ── Header row ── */}
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: "hsl(var(--primary) / 0.3)" }} />
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          {moto.raceClass && !(moto as any).raceClasses && (
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
-              {moto.raceClass}
-            </span>
-          )}
-          <InlineName
-            motoId={moto.id}
-            name={moto.name}
-            isEditing={isEditing}
-            editValue={editValue}
-            onEditStart={onEditStart}
-            onChange={onEditChange}
-            onSave={onEditSave}
-            onCancel={onEditCancel}
-          />
-        </div>
-        {Array.isArray((moto as any).raceClasses) && (moto as any).raceClasses.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1">
-            {((moto as any).raceClasses as string[]).map((cls: string) => (
-              <span key={cls} className="text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-medium">
-                {cls}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            {moto.raceClass && !(moto as any).raceClasses && (
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+                {moto.raceClass}
               </span>
-            ))}
+            )}
+            <InlineName
+              motoId={moto.id}
+              name={moto.name}
+              isEditing={isEditing}
+              editValue={editValue}
+              onEditStart={onEditStart}
+              onChange={onEditChange}
+              onSave={onEditSave}
+              onCancel={onEditCancel}
+            />
           </div>
-        )}
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${typeBadgeVariant(moto.type)}`}>
-            {typeLabel(moto.type)}
-          </span>
-          <span className={`text-xs px-2 py-0.5 rounded border ${statusBadgeVariant(moto.status)}`}>
-            {statusLabel(moto.status)}
-          </span>
-          <span className="text-xs text-muted-foreground flex items-center gap-1">
-            <Flag size={11} /> {riderCount} riders
-          </span>
-          {moto.lapCount != null && (
-            <span className="text-xs text-muted-foreground">{moto.lapCount} laps</span>
+          {Array.isArray((moto as any).raceClasses) && (moto as any).raceClasses.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {((moto as any).raceClasses as string[]).map((cls: string) => (
+                <span key={cls} className="text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-medium">
+                  {cls}
+                </span>
+              ))}
+            </div>
           )}
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span className={`text-xs px-2 py-0.5 rounded border font-semibold uppercase tracking-wide ${typeBadgeVariant(moto.type)}`}>
+              {typeLabel(moto.type)}
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded border ${statusBadgeVariant(moto.status)}`}>
+              {statusLabel(moto.status)}
+            </span>
+            <button
+              onClick={onToggleExpand}
+              className="text-xs text-muted-foreground flex items-center gap-1 hover:text-foreground transition-colors"
+            >
+              <Flag size={11} /> {riderCount} riders
+              <ChevronDown size={11} className={`transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} />
+            </button>
+            {moto.lapCount != null && (
+              <span className="text-xs text-muted-foreground">{moto.lapCount} laps</span>
+            )}
+          </div>
         </div>
+
+        <Link
+          href={`/events/${eventId}/motos?motoId=${moto.id}`}
+          className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+          title="Open in Motos & Lineups"
+        >
+          <ExternalLink size={15} />
+        </Link>
       </div>
 
-      <Link
-        href={`/events/${eventId}/motos?motoId=${moto.id}`}
-        className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
-        title="Open in Motos & Lineups"
-      >
-        <ExternalLink size={15} />
-      </Link>
+      {/* ── Inline lineup (expanded) ── */}
+      {isExpanded && (
+        <div className="border-t border-border/60 px-4 py-2">
+          {lineup.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-2">
+              No riders assigned — drag from the Rider Pool to add
+            </p>
+          ) : (
+            <SortableContext
+              items={lineup.map(e => `lrider-${moto.id}-${e.riderId}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-0.5">
+                {lineup.map(entry => (
+                  <SortableLineupRow
+                    key={entry.riderId}
+                    entry={entry}
+                    motoId={moto.id}
+                    isCompleted={isCompleted}
+                    onRemove={() => onRemoveRider(entry.riderId)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -576,7 +708,10 @@ export default function EventSchedule() {
   // Rider pool
   const [poolOpen, setPoolOpen] = useState(true);
   const [activePoolOverMotoId, setActivePoolOverMotoId] = useState<number | null>(null);
-  const [activeDrag, setActiveDrag] = useState<{ riderName: string; bibNumber?: string | null } | null>(null);
+  const [activeDrag, setActiveDrag] = useState<{ riderName: string; bibNumber?: string | null; source: "pool" | "lineup" } | null>(null);
+
+  // Expanded moto state
+  const [expandedMotos, setExpandedMotos] = useState<Set<number>>(new Set());
 
   // Generate dialog
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
@@ -828,21 +963,107 @@ export default function EventSchedule() {
   // ── DnD sensors ──
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
+  // ── Toggle moto expand/collapse ──
+  const toggleMotoExpand = useCallback((motoId: number) => {
+    setExpandedMotos(prev => {
+      const next = new Set(prev);
+      if (next.has(motoId)) next.delete(motoId); else next.add(motoId);
+      return next;
+    });
+  }, []);
+
+  // ── Remove rider from moto lineup ──
+  const handleRemoveRider = useCallback((motoId: number, riderId: number) => {
+    const moto = rawMotos.find(m => m.id === motoId);
+    if (!moto) return;
+    const lineup = (Array.isArray(moto.lineup) ? [...moto.lineup as LineupEntry[]] : [])
+      .filter(e => e.riderId !== riderId)
+      .map((e, i) => ({ ...e, position: i + 1 }));
+    updateMutation.mutate(
+      { motoId, data: { lineup: lineup as any } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+          toast({ title: "Rider removed" });
+        },
+        onError: () => toast({ title: "Failed to remove rider", variant: "destructive" }),
+      }
+    );
+  }, [rawMotos, updateMutation, queryClient, eventId, toast]);
+
+  // ── Move rider between motos ──
+  const moveRiderBetweenMotos = useCallback((
+    sourceMotoId: number, targetMotoId: number, riderId: number, beforeRiderId?: number
+  ) => {
+    const sourceMoto = rawMotos.find(m => m.id === sourceMotoId);
+    const targetMoto = rawMotos.find(m => m.id === targetMotoId);
+    if (!sourceMoto || !targetMoto) return;
+    if (targetMoto.status === "completed" || sourceMoto.status === "completed") {
+      toast({ title: "Cannot move riders in completed motos", variant: "destructive" });
+      return;
+    }
+    const sourceLineup = Array.isArray(sourceMoto.lineup) ? [...sourceMoto.lineup as LineupEntry[]] : [];
+    const entry = sourceLineup.find(e => e.riderId === riderId);
+    if (!entry) return;
+    const newSourceLineup = sourceLineup
+      .filter(e => e.riderId !== riderId)
+      .map((e, i) => ({ ...e, position: i + 1 }));
+    const targetLineup = Array.isArray(targetMoto.lineup) ? [...targetMoto.lineup as LineupEntry[]] : [];
+    let newTargetLineup: LineupEntry[];
+    if (beforeRiderId !== undefined) {
+      const insertIdx = targetLineup.findIndex(e => e.riderId === beforeRiderId);
+      const idx = insertIdx === -1 ? targetLineup.length : insertIdx;
+      newTargetLineup = [
+        ...targetLineup.slice(0, idx),
+        { ...entry, position: idx + 1 },
+        ...targetLineup.slice(idx),
+      ].map((e, i) => ({ ...e, position: i + 1 }));
+    } else {
+      newTargetLineup = [...targetLineup, { ...entry, position: targetLineup.length + 1 }];
+    }
+    updateMutation.mutate(
+      { motoId: sourceMotoId, data: { lineup: newSourceLineup as any } },
+      { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any }) }
+    );
+    updateMutation.mutate(
+      { motoId: targetMotoId, data: { lineup: newTargetLineup as any } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+          toast({ title: `Rider moved to ${targetMoto.name}` });
+        },
+        onError: () => toast({ title: "Failed to move rider", variant: "destructive" }),
+      }
+    );
+  }, [rawMotos, updateMutation, queryClient, eventId, toast]);
+
   // ── DnD: drag start ──
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const idStr = String(event.active.id);
     if (idStr.startsWith("pool-")) {
       const riderId = parseInt(idStr.replace("pool-", ""));
       const c = checkins.find(c => c.riderId === riderId);
-      setActiveDrag(c ? { riderName: c.riderName ?? "Rider", bibNumber: c.bibNumber } : null);
+      setActiveDrag(c ? { riderName: c.riderName ?? "Rider", bibNumber: c.bibNumber, source: "pool" } : null);
+      return;
     }
-  }, [checkins]);
+    if (idStr.startsWith("lrider-")) {
+      const parts = idStr.split("-");
+      const motoId = parseInt(parts[1]);
+      const riderId = parseInt(parts[2]);
+      const moto = rawMotos.find(m => m.id === motoId);
+      if (moto) {
+        const lu = Array.isArray(moto.lineup) ? moto.lineup as LineupEntry[] : [];
+        const e = lu.find(x => x.riderId === riderId);
+        if (e) setActiveDrag({ riderName: e.riderName, bibNumber: e.bibNumber, source: "lineup" });
+      }
+    }
+  }, [checkins, rawMotos]);
 
-  // ── DnD: drag over (track which moto a pool rider hovers) ──
+  // ── DnD: drag over (track which moto a pool/lineup rider hovers) ──
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event;
     const idStr = String(active.id);
-    if (!idStr.startsWith("pool-")) {
+    if (!idStr.startsWith("pool-") && !idStr.startsWith("lrider-")) {
       setActivePoolOverMotoId(null);
       return;
     }
@@ -862,6 +1083,41 @@ export default function EventSchedule() {
     if (!over) return;
 
     const idStr = String(active.id);
+
+    // ── Lineup rider: within-moto reorder or cross-moto move ──
+    if (idStr.startsWith("lrider-")) {
+      const parts = idStr.split("-");
+      const sourceMotoId = parseInt(parts[1]);
+      const riderId = parseInt(parts[2]);
+      const overStr = String(over.id);
+
+      if (overStr.startsWith("lrider-")) {
+        const targetMotoId = parseInt(overStr.split("-")[1]);
+        const targetRiderId = parseInt(overStr.split("-")[2]);
+        if (sourceMotoId === targetMotoId) {
+          // Reorder within moto → gates update automatically by position
+          const moto = rawMotos.find(m => m.id === sourceMotoId);
+          if (!moto) return;
+          const lineup = Array.isArray(moto.lineup) ? [...moto.lineup as LineupEntry[]] : [];
+          const fromIdx = lineup.findIndex(e => e.riderId === riderId);
+          const toIdx = lineup.findIndex(e => e.riderId === targetRiderId);
+          if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+          const newLineup = arrayMove(lineup, fromIdx, toIdx).map((e, i) => ({ ...e, position: i + 1 }));
+          updateMutation.mutate(
+            { motoId: sourceMotoId, data: { lineup: newLineup as any } },
+            { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any }) }
+          );
+        } else {
+          moveRiderBetweenMotos(sourceMotoId, targetMotoId, riderId, targetRiderId);
+        }
+      } else if (typeof over.id === "number") {
+        const targetMotoId = over.id as number;
+        if (sourceMotoId !== targetMotoId) {
+          moveRiderBetweenMotos(sourceMotoId, targetMotoId, riderId);
+        }
+      }
+      return;
+    }
 
     // Pool rider dropped onto a moto card
     if (idStr.startsWith("pool-")) {
@@ -932,7 +1188,7 @@ export default function EventSchedule() {
         },
       }
     );
-  }, [rawMotos, filteredMotos, sortedMotos, checkins, eventId, updateMutation, reorderMutation, queryClient, toast]);
+  }, [rawMotos, filteredMotos, sortedMotos, checkins, eventId, updateMutation, reorderMutation, queryClient, toast, moveRiderBetweenMotos]);
 
   // ── Inline name editing ──
   function startEditName(moto: Moto) {
@@ -1405,6 +1661,9 @@ export default function EventSchedule() {
                             onEditChange={setNameEditValue}
                             onEditSave={() => saveName(moto.id)}
                             onEditCancel={cancelEditName}
+                            isExpanded={expandedMotos.has(moto.id)}
+                            onToggleExpand={() => toggleMotoExpand(moto.id)}
+                            onRemoveRider={(riderId) => handleRemoveRider(moto.id, riderId)}
                           />
                         </div>
                       );
@@ -1437,6 +1696,9 @@ export default function EventSchedule() {
                           onEditChange={setNameEditValue}
                           onEditSave={() => saveName(moto.id)}
                           onEditCancel={cancelEditName}
+                          isExpanded={expandedMotos.has(moto.id)}
+                          onToggleExpand={() => toggleMotoExpand(moto.id)}
+                          onRemoveRider={(riderId) => handleRemoveRider(moto.id, riderId)}
                         />
                       ))}
                     </div>
