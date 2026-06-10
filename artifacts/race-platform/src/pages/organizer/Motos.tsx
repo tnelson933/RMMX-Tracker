@@ -607,6 +607,54 @@ function DraggablePoolRider({ riderId, riderName, bibNumber }: { riderId: number
   );
 }
 
+// ── Lineup sort ────────────────────────────────────────────────────────────────
+
+type LineupSort = "gate" | "name-asc" | "name-desc" | "bib" | "rfid";
+
+function sortLineup(entries: LineupEntry[], sort: LineupSort): LineupEntry[] {
+  if (sort === "gate") return entries;
+  return [...entries].sort((a, b) => {
+    switch (sort) {
+      case "name-asc": return (a.riderName ?? "").localeCompare(b.riderName ?? "");
+      case "name-desc": return (b.riderName ?? "").localeCompare(a.riderName ?? "");
+      case "bib": {
+        const na = parseInt(a.bibNumber ?? "") || Infinity;
+        const nb = parseInt(b.bibNumber ?? "") || Infinity;
+        return na !== nb ? na - nb : (a.bibNumber ?? "").localeCompare(b.bibNumber ?? "");
+      }
+      case "rfid": return (a.rfidNumber ?? "").localeCompare(b.rfidNumber ?? "");
+    }
+  });
+}
+
+function LineupSortBar({ sort, onChange }: { sort: LineupSort; onChange: (s: LineupSort) => void }) {
+  const opts: { key: LineupSort; label: string }[] = [
+    { key: "gate", label: "Gate Pick" },
+    { key: "name-asc", label: "A→Z" },
+    { key: "name-desc", label: "Z→A" },
+    { key: "bib", label: "#" },
+    { key: "rfid", label: "RFID" },
+  ];
+  return (
+    <div className="flex items-center gap-1 px-3 py-1.5 border-b bg-muted/20 flex-wrap">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mr-0.5 shrink-0">Sort</span>
+      {opts.map(o => (
+        <button
+          key={o.key}
+          onClick={() => onChange(o.key)}
+          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+            sort === o.key
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-background text-muted-foreground border-border hover:bg-muted/60"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Lap time helpers (mirrors server formatMs / parseTimeToMs) ─────────────────
 
 function fmtLapMs(ms: number): string {
@@ -970,6 +1018,9 @@ export default function Motos() {
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
   const [classFilter, setClassFilter] = useState<string>("schedule");
   const [roundFilter, setRoundFilter] = useState<number | "all">("all");
+  const [lineupSorts, setLineupSorts] = useState<Record<number, LineupSort>>({});
+  const getMotoSort = (id: number): LineupSort => lineupSorts[id] ?? "gate";
+  const setMotoSort = (id: number, s: LineupSort) => setLineupSorts(p => ({ ...p, [id]: s }));
   const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
   const [bibInputs, setBibInputs] = useState<Record<number, string>>({});
   const [viewMode, setViewMode] = useState<"grid" | "run-order">("grid");
@@ -2932,13 +2983,15 @@ export default function Motos() {
                     </div>
                   )
                 ) : moto.type === "heat" ? (
-                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === moto.id}>
+                  <>
+                  <LineupSortBar sort={getMotoSort(moto.id)} onChange={s => setMotoSort(moto.id, s)} />
+                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed" || getMotoSort(moto.id) !== "gate"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === moto.id}>
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
                           <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate Pick</TableHead>
                           <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
-                            <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
+                            <GripVertical size={12} className={`mx-auto ${moto.status === "completed" || getMotoSort(moto.id) !== "gate" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
                           <TableHead className="text-xs">Rider</TableHead>
                           <TableHead className="w-16 text-center text-xs">#</TableHead>
@@ -2948,24 +3001,22 @@ export default function Motos() {
                       </TableHeader>
                       <TableBody>
                         {getLineup(moto).length > 0 ? (
-                          getLineup(moto).flatMap((entry, idx, arr) => {
-                            const isSlotActive = activeDragMotoId === moto.id && moto.status !== "completed";
+                          sortLineup(getLineup(moto), getMotoSort(moto.id)).flatMap((entry, idx, arr) => {
+                            const isSorted = getMotoSort(moto.id) !== "gate";
+                            const isSlotActive = !isSorted && activeDragMotoId === moto.id && moto.status !== "completed";
                             const slotColSpan = moto.status === "in_progress" ? 6 : 5;
-                            const rows = [
-                              <GateDropSlotRow key={`slot-${moto.id}-${idx}`} id={`gate-slot-${moto.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />,
+                            return [
+                              ...(!isSorted ? [<GateDropSlotRow key={`slot-${moto.id}-${idx}`} id={`gate-slot-${moto.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                               <DraggableRiderRow
-                                key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
+                                key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed" || isSorted}
                                 onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
                                 lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
-                                rowNum={idx + 1}
+                                rowNum={entry.position}
                                 hasShortLap={shortLapSet.has(`${moto.id}-${entry.riderId}`)}
                                 onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
                               />,
+                              ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${moto.id}-${idx + 1}`} id={`gate-slot-${moto.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                             ];
-                            if (idx === arr.length - 1) {
-                              rows.push(<GateDropSlotRow key={`slot-${moto.id}-${idx + 1}`} id={`gate-slot-${moto.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />);
-                            }
-                            return rows;
                           })
                         ) : (
                           <TableRow>
@@ -2977,8 +3028,10 @@ export default function Motos() {
                       </TableBody>
                     </Table>
                   </DroppableMotoLineup>
+                  </>
                 ) : (
                   <div className="flex-1 overflow-y-auto max-h-52 border-b">
+                    <LineupSortBar sort={getMotoSort(moto.id)} onChange={s => setMotoSort(moto.id, s)} />
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
@@ -2991,7 +3044,7 @@ export default function Motos() {
                       </TableHeader>
                       <TableBody>
                         {moto.lineup && moto.lineup.length > 0 ? (
-                          (moto.lineup as LineupEntry[]).map((entry) => {
+                          sortLineup(moto.lineup as LineupEntry[], getMotoSort(moto.id)).map((entry) => {
                             const cooldown = manualLapCooldown.has(`${moto.id}-${entry.riderId}`);
                             const entryHasShortLap = shortLapSet.has(`${moto.id}-${entry.riderId}`);
                             return (
@@ -3242,13 +3295,15 @@ export default function Motos() {
               <div className="flex-1 overflow-y-auto min-h-0">
                 {/* Lineup table */}
                 {moto.type === "heat" ? (
-                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed"} className="flex-1" disableDrop={activeDragMotoId === moto.id}>
+                  <>
+                  <LineupSortBar sort={getMotoSort(moto.id)} onChange={s => setMotoSort(moto.id, s)} />
+                  <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed" || getMotoSort(moto.id) !== "gate"} className="flex-1" disableDrop={activeDragMotoId === moto.id}>
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
                           <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate Pick</TableHead>
                           <TableHead className="w-8 text-center text-xs" title={moto.status === "completed" ? "Lineup locked" : "Drag to move rider"}>
-                            <GripVertical size={12} className={`mx-auto ${moto.status === "completed" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
+                            <GripVertical size={12} className={`mx-auto ${moto.status === "completed" || getMotoSort(moto.id) !== "gate" ? "text-muted-foreground/30" : "text-muted-foreground"}`} />
                           </TableHead>
                           <TableHead className="text-xs">Rider</TableHead>
                           <TableHead className="w-16 text-center text-xs">#</TableHead>
@@ -3258,24 +3313,22 @@ export default function Motos() {
                       </TableHeader>
                       <TableBody>
                         {getLineup(moto).length > 0 ? (
-                          getLineup(moto).flatMap((entry, idx, arr) => {
-                            const isSlotActive = activeDragMotoId === moto.id && moto.status !== "completed";
+                          sortLineup(getLineup(moto), getMotoSort(moto.id)).flatMap((entry, idx, arr) => {
+                            const isSorted = getMotoSort(moto.id) !== "gate";
+                            const isSlotActive = !isSorted && activeDragMotoId === moto.id && moto.status !== "completed";
                             const slotColSpan = moto.status === "in_progress" ? 6 : 5;
-                            const rows = [
-                              <GateDropSlotRow key={`slot-${moto.id}-${idx}`} id={`gate-slot-${moto.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />,
+                            return [
+                              ...(!isSorted ? [<GateDropSlotRow key={`slot-${moto.id}-${idx}`} id={`gate-slot-${moto.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                               <DraggableRiderRow
-                                key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed"}
+                                key={entry.riderId} entry={entry} motoId={moto.id} locked={moto.status === "completed" || isSorted}
                                 onRecordLap={moto.status === "in_progress" ? () => handleManualLap(entry.riderId, moto.id) : undefined}
                                 lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
-                                rowNum={idx + 1}
+                                rowNum={entry.position}
                                 hasShortLap={shortLapSet.has(`${moto.id}-${entry.riderId}`)}
                                 onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
                               />,
+                              ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${moto.id}-${idx + 1}`} id={`gate-slot-${moto.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                             ];
-                            if (idx === arr.length - 1) {
-                              rows.push(<GateDropSlotRow key={`slot-${moto.id}-${idx + 1}`} id={`gate-slot-${moto.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />);
-                            }
-                            return rows;
                           })
                         ) : (
                           <TableRow>
@@ -3285,8 +3338,10 @@ export default function Motos() {
                       </TableBody>
                     </Table>
                   </DroppableMotoLineup>
+                  </>
                 ) : (
                   <div className="flex-1 border-b">
+                    <LineupSortBar sort={getMotoSort(moto.id)} onChange={s => setMotoSort(moto.id, s)} />
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
@@ -3299,7 +3354,7 @@ export default function Motos() {
                       </TableHeader>
                       <TableBody>
                         {moto.lineup && moto.lineup.length > 0 ? (
-                          (moto.lineup as LineupEntry[]).map((entry) => {
+                          sortLineup(moto.lineup as LineupEntry[], getMotoSort(moto.id)).map((entry) => {
                             const cooldown = manualLapCooldown.has(`${moto.id}-${entry.riderId}`);
                             const entryHasShortLap = shortLapSet.has(`${moto.id}-${entry.riderId}`);
                             return (
