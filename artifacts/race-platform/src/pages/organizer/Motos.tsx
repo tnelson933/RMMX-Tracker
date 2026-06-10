@@ -814,7 +814,7 @@ function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, ro
   onViewLaps?: () => void; hasShortLap?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `rider-${motoId}-${entry.riderId}`,
+    id: `rider-${motoId}-${entry.riderId}-${entry.position}`,
     disabled: locked,
   });
   return (
@@ -1276,9 +1276,10 @@ export default function Motos() {
     if (parts[0] !== "rider") return;
     const motoId = parseInt(parts[1]);
     const riderId = parseInt(parts[2]);
+    const position = parseInt(parts[3]);
     const moto = motos?.find(m => m.id === motoId);
     if (!moto) return;
-    const entry = getLineup(moto).find(e => e.riderId === riderId);
+    const entry = getLineup(moto).find(e => e.riderId === riderId && e.position === position);
     setActiveDrag(entry ? { riderName: entry.riderName, bibNumber: entry.bibNumber } : null);
     setActiveDragMotoId(motoId);
   };
@@ -1352,6 +1353,7 @@ export default function Motos() {
     if (parts[0] !== "rider") return;
     const sourceMotoId = parseInt(parts[1]);
     const riderId = parseInt(parts[2]);
+    const dragPosition = parseInt(parts[3]);
 
     // ── Same-moto gate reorder via slot drop ──────────────────────────────────
     const overId = String(over.id);
@@ -1363,11 +1365,11 @@ export default function Motos() {
       const moto = motos?.find(m => m.id === sourceMotoId);
       if (!moto || moto.status === "completed") return;
       const lineup = getLineup(moto);
-      const draggedIdx = lineup.findIndex(e => e.riderId === riderId);
+      const draggedIdx = lineup.findIndex(e => e.riderId === riderId && e.position === dragPosition);
       const draggedEntry = lineup[draggedIdx];
       if (!draggedEntry) return;
-      // Compute insertion index in the filtered array
-      const without = lineup.filter(e => e.riderId !== riderId);
+      // Remove only the specific entry by index, not all entries with matching riderId
+      const without = [...lineup.slice(0, draggedIdx), ...lineup.slice(draggedIdx + 1)];
       const insertAt = draggedIdx < slotIndex ? slotIndex - 1 : slotIndex;
       // Skip if no-op (dropping right before or after current position)
       if (insertAt === draggedIdx) return;
@@ -1399,10 +1401,10 @@ export default function Motos() {
       const sourceMoto = motos?.find(m => m.id === sourceMotoId);
       if (!sourceMoto || sourceMoto.status === "completed") return;
       const srcLineup = getLineup(sourceMoto);
-      const riderEntry = srcLineup.find(e => e.riderId === riderId);
+      const draggedIdx = srcLineup.findIndex(e => e.riderId === riderId && e.position === dragPosition);
+      const riderEntry = srcLineup[draggedIdx];
       if (!riderEntry) return;
-      const newLineup = srcLineup
-        .filter(e => e.riderId !== riderId)
+      const newLineup = [...srcLineup.slice(0, draggedIdx), ...srcLineup.slice(draggedIdx + 1)]
         .map((e, i) => ({ ...e, position: i + 1 }));
       setLineupDrafts(p => ({ ...p, [sourceMotoId]: newLineup }));
       updateMutation.mutate(
@@ -1429,10 +1431,10 @@ export default function Motos() {
     if (sourceMoto.type !== "heat" || targetMoto.type !== "heat") return;
     if (sourceMoto.status === "completed" || targetMoto.status === "completed") return;
     const srcLineup = getLineup(sourceMoto);
-    const riderEntry = srcLineup.find(e => e.riderId === riderId);
+    const draggedIdx = srcLineup.findIndex(e => e.riderId === riderId && e.position === dragPosition);
+    const riderEntry = srcLineup[draggedIdx];
     if (!riderEntry) return;
-    const newSrc = srcLineup
-      .filter(e => e.riderId !== riderId)
+    const newSrc = [...srcLineup.slice(0, draggedIdx), ...srcLineup.slice(draggedIdx + 1)]
       .map((e, i) => ({ ...e, position: i + 1 }));
     const tgtLineup = getLineup(targetMoto);
     const newTgt = [...tgtLineup, { ...riderEntry, position: tgtLineup.length + 1 }];
