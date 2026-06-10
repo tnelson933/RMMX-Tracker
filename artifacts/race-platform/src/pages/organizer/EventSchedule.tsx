@@ -373,6 +373,11 @@ function PracticeCountdownTimer({ motoId, startedAt, countdownSeconds, onExpire 
     return Math.max(0, countdownSeconds - elapsed);
   });
   const expiredRef = useRef(false);
+  // Keep onExpire in a ref so the interval never needs it as a dep — inline
+  // arrow functions passed from the parent would otherwise restart the timer
+  // on every render, causing an infinite setState → re-render loop.
+  const onExpireRef = useRef(onExpire);
+  onExpireRef.current = onExpire;
 
   useEffect(() => {
     expiredRef.current = false;
@@ -388,13 +393,13 @@ function PracticeCountdownTimer({ motoId, startedAt, countdownSeconds, onExpire 
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ status: "completed" }),
-        }).then(() => onExpire()).catch(() => {});
+        }).then(() => onExpireRef.current()).catch(() => {});
       }
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [motoId, startedAt, countdownSeconds, onExpire]);
+  }, [motoId, startedAt, countdownSeconds]);
 
   const mins = Math.floor(remaining / 60);
   const secs = remaining % 60;
