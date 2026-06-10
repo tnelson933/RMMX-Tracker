@@ -45,7 +45,7 @@ export default function EventLayout() {
           <NavLink href={`${basePath}/checkin`} icon={<CheckCircle size={16} />}>Check-In</NavLink>
           <NavLink href={`${basePath}/schedule`} icon={<CalendarDays size={16} />}>Schedule</NavLink>
           <NavLink href={`${basePath}/practice`} icon={<Timer size={16} />}>Practice</NavLink>
-          <NavLink href={`${basePath}/motos`} icon={<Flag size={16} />}>Motos & Lineups</NavLink>
+          <NavLink href={`${basePath}/motos`} icon={<Flag size={16} />}>Race Day Management</NavLink>
           <NavLink href={`${basePath}/results`} icon={<Activity size={16} />}>Enter Results</NavLink>
           <NavLink href={`${basePath}/report`} icon={<FileText size={16} />}>Report</NavLink>
         </div>

@@ -2097,7 +2097,7 @@ export default function Motos() {
             </DialogContent>
           </Dialog>
 
-          {/* Auto generate */}
+          {/* Generate Lineups moved to Schedule page */}
           <Dialog open={isGenerateOpen} onOpenChange={(open) => {
             setIsGenerateOpen(open);
             if (!open) {
@@ -2106,11 +2106,6 @@ export default function Motos() {
               setSelectedRounds([]);
             }
           }}>
-            <DialogTrigger asChild>
-              <Button className="font-heading uppercase tracking-wider">
-                <Settings size={16} className="mr-2" /> Generate Lineups
-              </Button>
-            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="font-heading uppercase text-xl">Generate Lineups</DialogTitle>
@@ -3253,10 +3248,7 @@ export default function Motos() {
             <CardContent className="p-16 text-center">
               <Flag className="mx-auto text-muted-foreground opacity-20 mb-4" size={48} />
               <h3 className="text-xl font-heading font-bold mb-2">No Motos Generated</h3>
-              <p className="text-muted-foreground mb-6">Generate lineups to create heats and main events for this race.</p>
-              <Button onClick={() => setIsGenerateOpen(true)} className="font-heading uppercase tracking-wider">
-                Generate Lineups
-              </Button>
+              <p className="text-muted-foreground mb-6">Use the Schedule tab to generate lineups for this event.</p>
             </CardContent>
           </Card>
         ) : null}
