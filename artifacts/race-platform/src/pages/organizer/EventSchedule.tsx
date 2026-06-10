@@ -2165,15 +2165,15 @@ export default function EventSchedule() {
 
       {/* ── Generate Lineups dialog ── */}
       <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md flex flex-col max-h-[90vh]">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="font-heading uppercase text-xl">Generate Lineups</DialogTitle>
             <DialogDescription>
               Auto-create motos from checked-in riders for all race classes.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5 py-2">
+          <div className="space-y-5 py-2 overflow-y-auto flex-1 min-h-0 pr-1">
             {/* Locked classes warning */}
             {(() => {
               const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
