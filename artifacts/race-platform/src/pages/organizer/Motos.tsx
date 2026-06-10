@@ -838,9 +838,9 @@ function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, ro
           </span>
         )}
       </TableCell>
-      <TableCell className={`font-medium ${hasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
+      <TableCell className="font-medium">
         {onViewLaps ? (
-          <button onClick={onViewLaps} className={`flex items-center gap-1 transition-colors group ${hasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
+          <button onClick={onViewLaps} className="flex items-center gap-1 transition-colors group hover:text-primary">
             {entry.riderName}
             <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
           </button>
@@ -3074,9 +3074,9 @@ export default function Motos() {
                             return (
                               <TableRow key={entry.riderId} className="h-8">
                                 <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                                <TableCell className={`font-medium ${entryHasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
+                                <TableCell className="font-medium">
                                   {moto.status === "completed" ? (
-                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
+                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null })} className="flex items-center gap-1 transition-colors group hover:text-primary">
                                       {entry.riderName}
                                       <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
                                     </button>
@@ -3456,9 +3456,9 @@ export default function Motos() {
                             return (
                               <TableRow key={entry.riderId} className="h-9">
                                 <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                                <TableCell className={`font-medium ${entryHasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
+                                <TableCell className="font-medium">
                                   {moto.status === "completed" ? (
-                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
+                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null })} className="flex items-center gap-1 transition-colors group hover:text-primary">
                                       {entry.riderName}
                                       <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
                                     </button>
