@@ -530,10 +530,12 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     if (codeRow.usesCount >= codeRow.maxUses) {
       return res.status(400).json({ error: "Invalid or already-used discount code" });
     }
-    // Category restriction: if code is restricted to categories, a matching categoryId must be provided
-    const codeCatIds = (codeRow.categoryIds as number[]) ?? [];
-    if (codeCatIds.length > 0) {
-      if (categoryId == null || !codeCatIds.includes(Number(categoryId))) {
+    // Category restriction: only enforce when the caller explicitly passes a categoryId.
+    // Entry-fee registrations have no purchase-option category, so skip the check when
+    // categoryId is absent — the discount applies to the base entry fee in that case.
+    if (categoryId != null) {
+      const codeCatIds = (codeRow.categoryIds as number[]) ?? [];
+      if (codeCatIds.length > 0 && !codeCatIds.includes(Number(categoryId))) {
         return res.status(400).json({ error: "This discount code is not valid for the selected category" });
       }
     }
