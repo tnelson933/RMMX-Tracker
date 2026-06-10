@@ -846,11 +846,11 @@ function DraggableRiderRow({ entry, motoId, locked, onRecordLap, lapCooldown, ro
           </button>
         ) : entry.riderName}
       </TableCell>
-      <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
-      <TableCell className="text-center">
+      <TableCell className="w-16 text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
+      <TableCell className="w-20 text-center overflow-hidden">
         {entry.rfidNumber ? (
-          <span className="inline-flex items-center gap-1 text-green-600">
-            <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
+          <span className="inline-flex items-center gap-1 text-green-600 max-w-full">
+            <Radio size={10} className="shrink-0" /> <span className="font-mono text-xs truncate">{entry.rfidNumber}</span>
           </span>
         ) : (
           <span className="text-muted-foreground text-xs">—</span>
@@ -3009,7 +3009,7 @@ export default function Motos() {
                   <>
                   <LineupSortBar sort={getMotoSort(moto.id)} onChange={s => setMotoSort(moto.id, s)} />
                   <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed" || getMotoSort(moto.id) !== "gate"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === moto.id}>
-                    <Table>
+                    <Table className="table-fixed">
                       <TableHeader className="bg-muted/50 sticky top-0">
                         <TableRow>
                           <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate Pick</TableHead>
@@ -3145,7 +3145,7 @@ export default function Motos() {
                       </div>
                       <LineupSortBar sort={getMotoSort(partner.id)} onChange={s => setMotoSort(partner.id, s)} />
                       <DroppableMotoLineup motoId={partner.id} locked={partner.status === "completed" || getMotoSort(partner.id) !== "gate"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === partner.id}>
-                        <Table>
+                        <Table className="table-fixed">
                           <TableHeader className="bg-muted/50 sticky top-0">
                             <TableRow>
                               <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate Pick</TableHead>
@@ -3167,7 +3167,7 @@ export default function Motos() {
                                   onRecordLap={partnerRunning ? () => handleManualLap(entry.riderId, partner.id) : undefined}
                                   lapCooldown={manualLapCooldown.has(`${partner.id}-${entry.riderId}`)}
                                   rowNum={entry.position}
-                                  hasShortLap={shortLapSet.has(`${partner.id}-${entry.riderId}`)}
+                                  hasShortLap={partner.status !== "scheduled" && shortLapSet.has(`${partner.id}-${entry.riderId}`)}
                                   onViewLaps={partner.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: partner.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
                                 />,
                                 ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${partner.id}-${idx + 1}`} id={`gate-slot-${partner.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
@@ -3528,7 +3528,7 @@ export default function Motos() {
                       </div>
                       <LineupSortBar sort={getMotoSort(partner.id)} onChange={s => setMotoSort(partner.id, s)} />
                       <DroppableMotoLineup motoId={partner.id} locked={partner.status === "completed" || getMotoSort(partner.id) !== "gate"} className="flex-1" disableDrop={activeDragMotoId === partner.id}>
-                        <Table>
+                        <Table className="table-fixed">
                           <TableHeader className="bg-muted/50 sticky top-0">
                             <TableRow>
                               <TableHead className="w-12 text-center text-xs font-bold uppercase tracking-wider">Gate Pick</TableHead>
@@ -3550,7 +3550,7 @@ export default function Motos() {
                                   onRecordLap={partnerRunning ? () => handleManualLap(entry.riderId, partner.id) : undefined}
                                   lapCooldown={manualLapCooldown.has(`${partner.id}-${entry.riderId}`)}
                                   rowNum={entry.position}
-                                  hasShortLap={shortLapSet.has(`${partner.id}-${entry.riderId}`)}
+                                  hasShortLap={partner.status !== "scheduled" && shortLapSet.has(`${partner.id}-${entry.riderId}`)}
                                   onViewLaps={partner.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: partner.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
                                 />,
                                 ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${partner.id}-${idx + 1}`} id={`gate-slot-${partner.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
