@@ -75,20 +75,20 @@ function formatMinLapTime(ms: number): string {
 
 function typeBadgeVariant(type: string): string {
   switch (type) {
-    case "practice": return "bg-blue-500/20 text-blue-300 border-blue-500/30";
-    case "heat":     return "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
-    case "lcq":      return "bg-orange-500/20 text-orange-300 border-orange-500/30";
-    case "main":     return "bg-primary/20 text-primary border-primary/30";
+    case "practice": return "bg-blue-500/25 text-blue-200 border-blue-400/60";
+    case "heat":     return "bg-yellow-400/30 text-yellow-100 border-yellow-400/70";
+    case "lcq":      return "bg-orange-500/30 text-orange-200 border-orange-400/60";
+    case "main":     return "bg-primary/30 text-primary border-primary/60";
     default:         return "bg-muted text-muted-foreground";
   }
 }
 
 function statusBadgeVariant(status: string): string {
   switch (status) {
-    case "in_progress": return "bg-green-500/20 text-green-300 border-green-500/30";
+    case "in_progress": return "bg-green-500/30 text-green-200 border-green-400/60";
     case "completed":   return "bg-muted text-muted-foreground border-border";
-    case "cancelled":   return "bg-red-500/20 text-red-300 border-red-500/30";
-    default:            return "bg-slate-500/20 text-slate-300 border-slate-500/30";
+    case "cancelled":   return "bg-red-500/30 text-red-200 border-red-400/60";
+    default:            return "bg-slate-500/40 text-slate-100 border-slate-400/70";
   }
 }
 
