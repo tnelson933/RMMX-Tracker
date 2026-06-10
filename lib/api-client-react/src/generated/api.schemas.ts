@@ -1041,6 +1041,22 @@ export interface DiscountCodeUsageEntry {
   usedAt: string;
 }
 
+export interface RiderDiscountCode {
+  id: number;
+  code: string;
+  amount: number;
+  maxUses: number;
+  usesCount: number;
+  riderId: number;
+  riderName?: string;
+  createdAt: string;
+}
+
+export interface GenerateRiderDiscountCodeInput {
+  /** Discount amount in dollars */
+  amount: number;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }
@@ -1066,6 +1082,10 @@ status?: string;
 export type ListRidersParams = {
 clubId?: number;
 search?: string;
+};
+
+export type DeleteRiderDiscountCode200 = {
+  ok?: boolean;
 };
 
 export type ListRfidTagsParams = {

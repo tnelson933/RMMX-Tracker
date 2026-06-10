@@ -37,6 +37,7 @@ import type {
   CreateUserInput,
   DeleteDiscountCategory200,
   DeleteDiscountCode200,
+  DeleteRiderDiscountCode200,
   DisconnectStripeConnect200,
   DiscountCategory,
   DiscountCategoryInput,
@@ -51,6 +52,7 @@ import type {
   EventUpdate,
   GateSettings,
   GeneratePracticeSessionsInput,
+  GenerateRiderDiscountCodeInput,
   HealthStatus,
   LineupGenerateInput,
   ListEventsParams,
@@ -82,6 +84,7 @@ import type {
   RfidAssignmentInput,
   Rider,
   RiderDetail,
+  RiderDiscountCode,
   RiderInput,
   RiderUpdate,
   Series,
@@ -2320,6 +2323,234 @@ export const useUpdateRider = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateRiderMutationOptions(options));
+    }
+
+export const getGetRiderDiscountCodeUrl = (clubId: number,
+    riderId: number,) => {
+
+
+
+
+  return `/api/clubs/${clubId}/riders/${riderId}/discount-code`
+}
+
+/**
+ * @summary Get the current discount code assigned to a rider
+ */
+export const getRiderDiscountCode = async (clubId: number,
+    riderId: number, options?: RequestInit): Promise<RiderDiscountCode> => {
+
+  return customFetch<RiderDiscountCode>(getGetRiderDiscountCodeUrl(clubId,riderId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRiderDiscountCodeQueryKey = (clubId: number,
+    riderId: number,) => {
+    return [
+    `/api/clubs/${clubId}/riders/${riderId}/discount-code`
+    ] as const;
+    }
+
+
+export const getGetRiderDiscountCodeQueryOptions = <TData = Awaited<ReturnType<typeof getRiderDiscountCode>>, TError = ErrorType<void>>(clubId: number,
+    riderId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderDiscountCode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRiderDiscountCodeQueryKey(clubId,riderId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRiderDiscountCode>>> = ({ signal }) => getRiderDiscountCode(clubId,riderId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(clubId && riderId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRiderDiscountCode>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRiderDiscountCodeQueryResult = NonNullable<Awaited<ReturnType<typeof getRiderDiscountCode>>>
+export type GetRiderDiscountCodeQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the current discount code assigned to a rider
+ */
+
+export function useGetRiderDiscountCode<TData = Awaited<ReturnType<typeof getRiderDiscountCode>>, TError = ErrorType<void>>(
+ clubId: number,
+    riderId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderDiscountCode>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRiderDiscountCodeQueryOptions(clubId,riderId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGenerateRiderDiscountCodeUrl = (clubId: number,
+    riderId: number,) => {
+
+
+
+
+  return `/api/clubs/${clubId}/riders/${riderId}/discount-code`
+}
+
+/**
+ * @summary Generate a rider-specific discount code
+ */
+export const generateRiderDiscountCode = async (clubId: number,
+    riderId: number,
+    generateRiderDiscountCodeInput: GenerateRiderDiscountCodeInput, options?: RequestInit): Promise<RiderDiscountCode> => {
+
+  return customFetch<RiderDiscountCode>(getGenerateRiderDiscountCodeUrl(clubId,riderId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      generateRiderDiscountCodeInput,)
+  }
+);}
+
+
+
+
+export const getGenerateRiderDiscountCodeMutationOptions = <TError = ErrorType<void | ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateRiderDiscountCode>>, TError,{clubId: number;riderId: number;data: BodyType<GenerateRiderDiscountCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof generateRiderDiscountCode>>, TError,{clubId: number;riderId: number;data: BodyType<GenerateRiderDiscountCodeInput>}, TContext> => {
+
+const mutationKey = ['generateRiderDiscountCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateRiderDiscountCode>>, {clubId: number;riderId: number;data: BodyType<GenerateRiderDiscountCodeInput>}> = (props) => {
+          const {clubId,riderId,data} = props ?? {};
+
+          return  generateRiderDiscountCode(clubId,riderId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GenerateRiderDiscountCodeMutationResult = NonNullable<Awaited<ReturnType<typeof generateRiderDiscountCode>>>
+    export type GenerateRiderDiscountCodeMutationBody = BodyType<GenerateRiderDiscountCodeInput>
+    export type GenerateRiderDiscountCodeMutationError = ErrorType<void | ErrorEnvelope>
+
+    /**
+ * @summary Generate a rider-specific discount code
+ */
+export const useGenerateRiderDiscountCode = <TError = ErrorType<void | ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateRiderDiscountCode>>, TError,{clubId: number;riderId: number;data: BodyType<GenerateRiderDiscountCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof generateRiderDiscountCode>>,
+        TError,
+        {clubId: number;riderId: number;data: BodyType<GenerateRiderDiscountCodeInput>},
+        TContext
+      > => {
+      return useMutation(getGenerateRiderDiscountCodeMutationOptions(options));
+    }
+
+export const getDeleteRiderDiscountCodeUrl = (clubId: number,
+    riderId: number,) => {
+
+
+
+
+  return `/api/clubs/${clubId}/riders/${riderId}/discount-code`
+}
+
+/**
+ * @summary Delete/revoke the rider's current discount code
+ */
+export const deleteRiderDiscountCode = async (clubId: number,
+    riderId: number, options?: RequestInit): Promise<DeleteRiderDiscountCode200> => {
+
+  return customFetch<DeleteRiderDiscountCode200>(getDeleteRiderDiscountCodeUrl(clubId,riderId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteRiderDiscountCodeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteRiderDiscountCode>>, TError,{clubId: number;riderId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteRiderDiscountCode>>, TError,{clubId: number;riderId: number}, TContext> => {
+
+const mutationKey = ['deleteRiderDiscountCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteRiderDiscountCode>>, {clubId: number;riderId: number}> = (props) => {
+          const {clubId,riderId} = props ?? {};
+
+          return  deleteRiderDiscountCode(clubId,riderId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteRiderDiscountCodeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteRiderDiscountCode>>>
+
+    export type DeleteRiderDiscountCodeMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete/revoke the rider's current discount code
+ */
+export const useDeleteRiderDiscountCode = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteRiderDiscountCode>>, TError,{clubId: number;riderId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteRiderDiscountCode>>,
+        TError,
+        {clubId: number;riderId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteRiderDiscountCodeMutationOptions(options));
     }
 
 export const getListRegistrationsUrl = (eventId: number,) => {

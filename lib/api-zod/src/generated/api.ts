@@ -641,6 +641,52 @@ export const UpdateRiderResponse = zod.object({
 
 
 /**
+ * @summary Get the current discount code assigned to a rider
+ */
+export const GetRiderDiscountCodeParams = zod.object({
+  "clubId": zod.coerce.number(),
+  "riderId": zod.coerce.number()
+})
+
+export const GetRiderDiscountCodeResponse = zod.object({
+  "id": zod.number(),
+  "code": zod.string(),
+  "amount": zod.number(),
+  "maxUses": zod.number(),
+  "usesCount": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string().optional(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Generate a rider-specific discount code
+ */
+export const GenerateRiderDiscountCodeParams = zod.object({
+  "clubId": zod.coerce.number(),
+  "riderId": zod.coerce.number()
+})
+
+export const GenerateRiderDiscountCodeBody = zod.object({
+  "amount": zod.number().describe('Discount amount in dollars')
+})
+
+
+/**
+ * @summary Delete/revoke the rider's current discount code
+ */
+export const DeleteRiderDiscountCodeParams = zod.object({
+  "clubId": zod.coerce.number(),
+  "riderId": zod.coerce.number()
+})
+
+export const DeleteRiderDiscountCodeResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
  * @summary List registrations for an event
  */
 export const ListRegistrationsParams = zod.object({

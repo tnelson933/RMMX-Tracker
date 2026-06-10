@@ -1375,9 +1375,16 @@ export default function EventDetail() {
                 <div className="border-t pt-3">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">All Codes</p>
                   <div className="space-y-1 max-h-48 overflow-y-auto">
-                    {existingCodes.map(c => (
+                    {existingCodes.map((c: any) => (
                       <div key={c.code} className="flex items-center justify-between text-xs py-1.5 border-b last:border-0">
-                        <span className="font-mono font-bold tracking-widest">{c.code}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold tracking-widest">{c.code}</span>
+                          {c.riderId && (
+                            <span className="bg-primary/10 text-primary border border-primary/20 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider leading-none">
+                              {c.riderName ? c.riderName : "Rider-specific"}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-3 text-muted-foreground">
                           <span className="font-medium">
                             {c.discountType === "percentage" ? `${c.amount.toFixed(0)}% off` : `$${c.amount.toFixed(2)}`}

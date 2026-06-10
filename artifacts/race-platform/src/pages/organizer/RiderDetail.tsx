@@ -6,11 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin } from "lucide-react";
+import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ticket, Copy, Check, Trash2, Plus, Loader2 } from "lucide-react";
+import { useGetMe } from "@workspace/api-client-react";
 
 const updateRiderSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -37,6 +39,225 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+interface DiscountCode {
+  id: number;
+  code: string;
+  amount: number;
+  maxUses: number;
+  usesCount: number;
+  riderId: number;
+  riderName?: string;
+  createdAt: string;
+}
+
+function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [code, setCode] = useState<DiscountCode | null | undefined>(undefined);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+  const [generateAmount, setGenerateAmount] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchCode = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/clubs/${clubId}/riders/${riderId}/discount-code`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setCode(data);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (code === undefined && !loading) {
+    fetchCode();
+  }
+
+  const handleGenerate = async () => {
+    const amount = parseFloat(generateAmount);
+    if (!amount || amount <= 0) return;
+    setGenerating(true);
+    try {
+      const res = await fetch(`/api/clubs/${clubId}/riders/${riderId}/discount-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ amount }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCode(data);
+        setShowGenerateDialog(false);
+        setGenerateAmount("");
+        toast({ title: "Discount code generated", description: `Code: ${data.code}` });
+      } else {
+        const err = await res.json();
+        toast({ title: "Failed to generate code", description: err.error, variant: "destructive" });
+      }
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/clubs/${clubId}/riders/${riderId}/discount-code`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        setCode(null);
+        toast({ title: "Discount code removed" });
+      } else {
+        const err = await res.json();
+        toast({ title: "Failed to delete code", description: err.error, variant: "destructive" });
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleCopy = () => {
+    if (!code) return;
+    navigator.clipboard.writeText(code.code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast({ title: "Code copied to clipboard" });
+  };
+
+  const isUsed = code ? code.usesCount >= code.maxUses : false;
+
+  return (
+    <>
+      <Card className={code && !isUsed ? "border-primary/30" : ""}>
+        <CardHeader className="border-b pb-4">
+          <CardTitle className="font-heading uppercase text-xl flex items-center gap-2">
+            <Ticket className="text-primary" size={20} />
+            Discount Code
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-6">
+          {loading || code === undefined ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 size={20} className="animate-spin text-muted-foreground" />
+            </div>
+          ) : code && !isUsed ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center p-5 bg-primary/5 rounded-lg border border-primary/20">
+                <div className="text-center">
+                  <div className="text-xs font-bold text-primary uppercase tracking-widest mb-2">Active Code</div>
+                  <div className="font-mono text-2xl font-bold tracking-widest text-primary">{code.code}</div>
+                  <div className="text-sm text-muted-foreground mt-1">${code.amount.toFixed(2)} discount</div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1 font-heading uppercase" onClick={handleCopy}>
+                  {copied ? <><Check size={14} className="mr-2" /> Copied</> : <><Copy size={14} className="mr-2" /> Copy Code</>}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  title="Revoke code"
+                >
+                  {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                Rider enters this code at event registration for ${code.amount.toFixed(2)} off.
+              </p>
+            </div>
+          ) : code && isUsed ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center p-5 bg-muted rounded-lg border">
+                <div className="text-center">
+                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">Code Used</div>
+                  <div className="font-mono text-xl font-bold text-muted-foreground line-through tracking-widest">{code.code}</div>
+                  <div className="text-sm text-muted-foreground mt-1">${code.amount.toFixed(2)} — already redeemed</div>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full font-heading uppercase"
+                onClick={handleDelete}
+                disabled={deleting}
+              >
+                {deleting ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Trash2 size={14} className="mr-2" />}
+                Clear Used Code
+              </Button>
+              <Button
+                size="sm"
+                className="w-full font-heading uppercase"
+                onClick={() => setShowGenerateDialog(true)}
+              >
+                <Plus size={14} className="mr-2" /> Generate New Code
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center p-5 bg-muted/50 rounded-lg border border-dashed">
+                <div className="text-center">
+                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">No Code Assigned</div>
+                  <div className="text-sm text-muted-foreground">Generate a personalized discount code for this rider</div>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                className="w-full font-heading uppercase"
+                onClick={() => setShowGenerateDialog(true)}
+              >
+                <Plus size={14} className="mr-2" /> Generate Code
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showGenerateDialog} onOpenChange={setShowGenerateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase">Generate Discount Code</DialogTitle>
+            <DialogDescription>
+              This code will be locked to this rider. They'll need to enter their exact name and email when using it at registration.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <label className="text-sm font-bold uppercase tracking-wider block mb-2">Discount Amount ($)</label>
+            <Input
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="45.00"
+              value={generateAmount}
+              onChange={e => setGenerateAmount(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerateDialog(false)}>Cancel</Button>
+            <Button
+              onClick={handleGenerate}
+              disabled={generating || !generateAmount || parseFloat(generateAmount) <= 0}
+              className="font-heading uppercase"
+            >
+              {generating ? <><Loader2 size={14} className="mr-2 animate-spin" /> Generating...</> : "Generate Code"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export default function RiderDetail() {
   const [match, params] = useRoute("/riders/:riderId");
   const riderId = parseInt(params?.riderId || "0");
@@ -44,6 +265,7 @@ export default function RiderDetail() {
   const { toast } = useToast();
 
   const { data: rider, isLoading } = useGetRider(riderId, { query: { enabled: !!riderId } as any });
+  const { data: me } = useGetMe({ query: {} as any });
 
   const updateMutation = useUpdateRider();
   const assignRfidMutation = useAssignRfid();
@@ -52,6 +274,7 @@ export default function RiderDetail() {
   const [rfidInput, setRfidInput] = useState("");
 
   const r = rider as any;
+  const clubId = (me as any)?.clubId;
 
   const form = useForm<z.infer<typeof updateRiderSchema>>({
     resolver: zodResolver(updateRiderSchema),
@@ -382,6 +605,11 @@ export default function RiderDetail() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Discount Code */}
+          {clubId && (
+            <DiscountCodeCard riderId={riderId} clubId={clubId} />
+          )}
 
           {/* MyLaps quick view */}
           {r.mylapsTransponderId && (

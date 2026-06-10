@@ -537,6 +537,27 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         return res.status(400).json({ error: "This discount code is not valid for the selected category" });
       }
     }
+    // If this is a rider-specific code, validate that the submitting person matches
+    if (codeRow.riderId) {
+      const [assignedRider] = await db.select({
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+        email: ridersTable.email,
+      }).from(ridersTable).where(eq(ridersTable.id, codeRow.riderId));
+
+      if (!assignedRider) {
+        return res.status(400).json({ error: "Invalid comp code" });
+      }
+
+      const normalize = (s: string) => s.trim().toLowerCase();
+      const firstMatch = normalize(firstName) === normalize(assignedRider.firstName);
+      const lastMatch = normalize(lastName) === normalize(assignedRider.lastName);
+      const emailMatch = normalize(email) === normalize(assignedRider.email ?? "");
+
+      if (!firstMatch || !lastMatch || !emailMatch) {
+        return res.status(400).json({ error: "This discount code is reserved for a specific rider and your details do not match" });
+      }
+    }
     compDiscountType = (codeRow.discountType as "fixed" | "percentage") ?? "fixed";
     compDiscountRaw = Number(codeRow.amount);
     validatedCompCode = codeRow.code;

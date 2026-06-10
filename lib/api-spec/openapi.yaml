@@ -604,6 +604,98 @@ paths:
               schema:
                 $ref: "#/components/schemas/Rider"
 
+  # RIDER DISCOUNT CODES
+  /clubs/{clubId}/riders/{riderId}/discount-code:
+    get:
+      operationId: getRiderDiscountCode
+      tags: [riders]
+      summary: Get the current discount code assigned to a rider
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Rider discount code (or null if none assigned)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiderDiscountCode"
+        "401":
+          description: Not authenticated
+    post:
+      operationId: generateRiderDiscountCode
+      tags: [riders]
+      summary: Generate a rider-specific discount code
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateRiderDiscountCodeInput"
+      responses:
+        "201":
+          description: Code generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiderDiscountCode"
+        "401":
+          description: Not authenticated
+        "409":
+          description: Rider already has an active discount code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    delete:
+      operationId: deleteRiderDiscountCode
+      tags: [riders]
+      summary: Delete/revoke the rider's current discount code
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          description: Not authenticated
+        "404":
+          description: No discount code found for this rider
+
   # REGISTRATIONS
   /events/{eventId}/registrations:
     get:
@@ -3254,6 +3346,35 @@ components:
         usedAt:
           type: string
           description: ISO timestamp of when the registration was created
+
+    RiderDiscountCode:
+      type: object
+      required: [id, code, amount, maxUses, usesCount, createdAt, riderId]
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        amount:
+          type: number
+        maxUses:
+          type: integer
+        usesCount:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        createdAt:
+          type: string
+
+    GenerateRiderDiscountCodeInput:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          description: Discount amount in dollars
 
     ErrorEnvelope:
       type: object
