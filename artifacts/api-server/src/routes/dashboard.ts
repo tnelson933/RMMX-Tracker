@@ -8,6 +8,12 @@ const router = Router();
 router.get("/dashboard/club/:clubId", async (req, res) => {
   const clubId = Number(req.params.clubId);
 
+  // Staff club scoping: reject if requesting another club's dashboard
+  const staffCId = res.locals.staffClubId;
+  if (typeof staffCId === "number" && staffCId !== clubId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
   const [eventsCount] = await db.select({ count: count() }).from(eventsTable).where(eq(eventsTable.clubId, clubId));
   const [upcomingCount] = await db.select({ count: count() }).from(eventsTable).where(
     and(eq(eventsTable.clubId, clubId), sql`${eventsTable.status} IN ('draft','registration_open','registration_closed','race_day')`)

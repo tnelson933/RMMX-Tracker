@@ -63,10 +63,14 @@ router.patch("/points-tables/:tableId", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+  const [user] = await db.select({ clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, userId));
+  const userClubId = user?.clubId ?? null;
+
   const tableId = Number(req.params.tableId);
   const [existing] = await db.select().from(pointsTablesTable).where(eq(pointsTablesTable.id, tableId));
   if (!existing) return res.status(404).json({ error: "Not found" });
   if (existing.isSystemDefault) return res.status(403).json({ error: "System default tables cannot be edited" });
+  if (userClubId !== null && existing.clubId !== userClubId) return res.status(403).json({ error: "Forbidden" });
 
   const { name, description, scoringMethod, mainEventOnly, pointsScale, scoringFormula } = req.body;
   const updates: Record<string, unknown> = {};
@@ -90,10 +94,14 @@ router.delete("/points-tables/:tableId", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+  const [user] = await db.select({ clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, userId));
+  const userClubId = user?.clubId ?? null;
+
   const tableId = Number(req.params.tableId);
   const [existing] = await db.select().from(pointsTablesTable).where(eq(pointsTablesTable.id, tableId));
   if (!existing) return res.status(404).json({ error: "Not found" });
   if (existing.isSystemDefault) return res.status(403).json({ error: "System default tables cannot be deleted" });
+  if (userClubId !== null && existing.clubId !== userClubId) return res.status(403).json({ error: "Forbidden" });
 
   // Check for series using this table (FK constraint)
   const seriesUsing = await db.select({ id: seriesTable.id, name: seriesTable.name })

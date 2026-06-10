@@ -1,10 +1,16 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { sendStatsEmail } from "../lib/email";
 
 const router = Router();
+
+/** Returns the staff user's club restriction, or null for organizer/admin. */
+function getStaffClubId(res: Response): number | null {
+  const id = res.locals.staffClubId;
+  return typeof id === "number" ? id : null;
+}
 
 type EventRow = { id: number; status: string; registrationOpen: string | null; registrationClose: string | null };
 
@@ -60,7 +66,10 @@ async function advanceStatuses(events: EventRow[]): Promise<Map<number, string>>
 }
 
 router.get("/events", async (req, res) => {
-  const { state, clubId, status } = req.query;
+  const { state, status } = req.query;
+  // Staff users are always scoped to their own club; ignore any caller-supplied clubId.
+  const staffCId = getStaffClubId(res);
+  const clubId: string | undefined = staffCId !== null ? String(staffCId) : (req.query.clubId as string | undefined);
 
   let query = db.select({
     id: eventsTable.id,
@@ -115,7 +124,10 @@ router.get("/events", async (req, res) => {
 });
 
 router.post("/events", async (req, res) => {
-  const { clubId, name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, purchaseOptions, scoringTableId } = req.body;
+  const { name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, purchaseOptions, scoringTableId } = req.body;
+  // Staff are always scoped to their own club; ignore any caller-supplied clubId.
+  const staffCId = getStaffClubId(res);
+  const clubId: number = staffCId ?? Number(req.body.clubId);
   if (!clubId || !name || !date || !state) return res.status(400).json({ error: "clubId, name, date, state required" });
 
   // Determine the correct initial status based on the registration window
@@ -198,6 +210,8 @@ router.get("/events/:eventId", async (req, res) => {
   }).from(eventsTable).leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id)).where(eq(eventsTable.id, id));
 
   if (!events[0]) return res.status(404).json({ error: "Not found" });
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null && events[0].clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   const advanced = await advanceStatuses(events);
   const e = events[0];
   return res.json({
@@ -212,9 +226,13 @@ router.get("/events/:eventId", async (req, res) => {
 router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
 
-  // Capture previous status before update
-  const [before] = await db.select({ status: eventsTable.status }).from(eventsTable).where(eq(eventsTable.id, id));
+  // Capture previous status before update; also check club ownership for staff.
+  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, id));
   const previousStatus = before?.status;
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null) {
+    if (!before || before.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  }
 
   const updates: Record<string, unknown> = {};
   const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId"];
@@ -324,6 +342,11 @@ async function fireStatsEmails(eventId: number, eventName: string, eventDate: st
 
 router.delete("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null) {
+    const [ev] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, id));
+    if (!ev || ev.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  }
   await db.delete(eventsTable).where(eq(eventsTable.id, id));
   return res.status(204).send();
 });
@@ -334,6 +357,13 @@ router.get("/clubs/:clubId/unpublished-completed-events", async (req, res) => {
   if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
 
   const clubId = Number(req.params.clubId);
+
+  // Staff can only query their own club's unpublished events
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null && clubId !== staffCId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   const completedEvents = await db

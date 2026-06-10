@@ -34,10 +34,12 @@ import type {
   CompleteAccountSetup200,
   CompleteSetupInput,
   CompleteTour200,
+  CreateTeamMemberInput,
   CreateUserInput,
   DeleteDiscountCategory200,
   DeleteDiscountCode200,
   DeleteRiderDiscountCode200,
+  DeleteTeamMember200,
   DisconnectStripeConnect200,
   DiscountCategory,
   DiscountCategoryInput,
@@ -98,10 +100,12 @@ import type {
   StripeConnectDashboardLink,
   StripeConnectStartResult,
   StripeConnectStatus,
+  TeamMember,
   UpcomingEventItem,
   UpdateMe,
   UpdateResultLaps200,
   UpdateResultLapsInput,
+  UpdateTeamMemberInput,
   UploadUrlRequest,
   UploadUrlResponse,
   User
@@ -844,6 +848,296 @@ export const useCompleteTour = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getCompleteTourMutationOptions(options));
+    }
+
+export const getListTeamMembersUrl = () => {
+
+
+
+
+  return `/api/organizer/team`
+}
+
+/**
+ * @summary List staff employees for the caller's club
+ */
+export const listTeamMembers = async ( options?: RequestInit): Promise<TeamMember[]> => {
+
+  return customFetch<TeamMember[]>(getListTeamMembersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamMembersQueryKey = () => {
+    return [
+    `/api/organizer/team`
+    ] as const;
+    }
+
+
+export const getListTeamMembersQueryOptions = <TData = Awaited<ReturnType<typeof listTeamMembers>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamMembers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamMembersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamMembers>>> = ({ signal }) => listTeamMembers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamMembers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamMembersQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamMembers>>>
+export type ListTeamMembersQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List staff employees for the caller's club
+ */
+
+export function useListTeamMembers<TData = Awaited<ReturnType<typeof listTeamMembers>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamMembers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamMembersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateTeamMemberUrl = () => {
+
+
+
+
+  return `/api/organizer/team`
+}
+
+/**
+ * @summary Create a staff employee and send invite email
+ */
+export const createTeamMember = async (createTeamMemberInput: CreateTeamMemberInput, options?: RequestInit): Promise<TeamMember> => {
+
+  return customFetch<TeamMember>(getCreateTeamMemberUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createTeamMemberInput,)
+  }
+);}
+
+
+
+
+export const getCreateTeamMemberMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamMember>>, TError,{data: BodyType<CreateTeamMemberInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTeamMember>>, TError,{data: BodyType<CreateTeamMemberInput>}, TContext> => {
+
+const mutationKey = ['createTeamMember'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTeamMember>>, {data: BodyType<CreateTeamMemberInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTeamMember(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTeamMemberMutationResult = NonNullable<Awaited<ReturnType<typeof createTeamMember>>>
+    export type CreateTeamMemberMutationBody = BodyType<CreateTeamMemberInput>
+    export type CreateTeamMemberMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Create a staff employee and send invite email
+ */
+export const useCreateTeamMember = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamMember>>, TError,{data: BodyType<CreateTeamMemberInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTeamMember>>,
+        TError,
+        {data: BodyType<CreateTeamMemberInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTeamMemberMutationOptions(options));
+    }
+
+export const getUpdateTeamMemberUrl = (userId: number,) => {
+
+
+
+
+  return `/api/organizer/team/${userId}`
+}
+
+/**
+ * @summary Update a team member's name, email, or permissions; optionally resend invite
+ */
+export const updateTeamMember = async (userId: number,
+    updateTeamMemberInput: UpdateTeamMemberInput, options?: RequestInit): Promise<TeamMember> => {
+
+  return customFetch<TeamMember>(getUpdateTeamMemberUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateTeamMemberInput,)
+  }
+);}
+
+
+
+
+export const getUpdateTeamMemberMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamMember>>, TError,{userId: number;data: BodyType<UpdateTeamMemberInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTeamMember>>, TError,{userId: number;data: BodyType<UpdateTeamMemberInput>}, TContext> => {
+
+const mutationKey = ['updateTeamMember'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTeamMember>>, {userId: number;data: BodyType<UpdateTeamMemberInput>}> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  updateTeamMember(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTeamMemberMutationResult = NonNullable<Awaited<ReturnType<typeof updateTeamMember>>>
+    export type UpdateTeamMemberMutationBody = BodyType<UpdateTeamMemberInput>
+    export type UpdateTeamMemberMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Update a team member's name, email, or permissions; optionally resend invite
+ */
+export const useUpdateTeamMember = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamMember>>, TError,{userId: number;data: BodyType<UpdateTeamMemberInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTeamMember>>,
+        TError,
+        {userId: number;data: BodyType<UpdateTeamMemberInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateTeamMemberMutationOptions(options));
+    }
+
+export const getDeleteTeamMemberUrl = (userId: number,) => {
+
+
+
+
+  return `/api/organizer/team/${userId}`
+}
+
+/**
+ * @summary Remove a team member from the club
+ */
+export const deleteTeamMember = async (userId: number, options?: RequestInit): Promise<DeleteTeamMember200> => {
+
+  return customFetch<DeleteTeamMember200>(getDeleteTeamMemberUrl(userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteTeamMemberMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamMember>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTeamMember>>, TError,{userId: number}, TContext> => {
+
+const mutationKey = ['deleteTeamMember'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTeamMember>>, {userId: number}> = (props) => {
+          const {userId} = props ?? {};
+
+          return  deleteTeamMember(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTeamMemberMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTeamMember>>>
+
+    export type DeleteTeamMemberMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Remove a team member from the club
+ */
+export const useDeleteTeamMember = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamMember>>, TError,{userId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTeamMember>>,
+        TError,
+        {userId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteTeamMemberMutationOptions(options));
     }
 
 export const getListUsersUrl = () => {

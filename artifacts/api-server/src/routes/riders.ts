@@ -1,14 +1,43 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { ridersTable, raceResultsTable, motosTable, eventsTable, registrationsTable } from "@workspace/db";
-import { eq, ilike, or, desc, isNotNull } from "drizzle-orm";
+import { eq, ilike, or, desc, and, inArray } from "drizzle-orm";
 
 const router = Router();
 
+function getStaffClubId(res: any): number | null {
+  const v = res.locals?.staffClubId;
+  return typeof v === "number" ? v : null;
+}
+
+async function getClubRiderIds(clubId: number): Promise<number[]> {
+  const events = await db.select({ id: eventsTable.id }).from(eventsTable).where(eq(eventsTable.clubId, clubId));
+  if (events.length === 0) return [];
+  const regs = await db.selectDistinct({ riderId: registrationsTable.riderId }).from(registrationsTable)
+    .where(inArray(registrationsTable.eventId, events.map(e => e.id)));
+  return regs.map(r => r.riderId).filter((id): id is number => id !== null);
+}
+
 router.get("/riders", async (req, res) => {
   const { search } = req.query;
+  const staffCId = getStaffClubId(res);
+
   let riders;
-  if (search) {
+  if (staffCId !== null) {
+    const riderIds = await getClubRiderIds(staffCId);
+    if (riderIds.length === 0) return res.json([]);
+    const cond = search
+      ? and(
+          inArray(ridersTable.id, riderIds),
+          or(
+            ilike(ridersTable.firstName, `%${String(search)}%`),
+            ilike(ridersTable.lastName, `%${String(search)}%`),
+            ilike(ridersTable.bibNumber, `%${String(search)}%`)
+          )
+        )
+      : inArray(ridersTable.id, riderIds);
+    riders = await db.select().from(ridersTable).where(cond).orderBy(ridersTable.lastName);
+  } else if (search) {
     const s = `%${String(search)}%`;
     riders = await db.select().from(ridersTable).where(
       or(ilike(ridersTable.firstName, s), ilike(ridersTable.lastName, s), ilike(ridersTable.bibNumber, s))
@@ -32,7 +61,12 @@ router.get("/riders/:riderId", async (req, res) => {
   if (!riders[0]) return res.status(404).json({ error: "Not found" });
   const rider = riders[0];
 
-  // Get recent results
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null) {
+    const riderIds = await getClubRiderIds(staffCId);
+    if (!riderIds.includes(id)) return res.status(403).json({ error: "Forbidden" });
+  }
+
   const recentResults = await db.select({
     id: raceResultsTable.id,
     eventId: raceResultsTable.eventId,
@@ -52,7 +86,6 @@ router.get("/riders/:riderId", async (req, res) => {
     .where(eq(raceResultsTable.riderId, id))
     .limit(10);
 
-  // Most recent club ID number from any registration
   const [latestClubId] = await db
     .select({ clubIdNumber: registrationsTable.clubIdNumber })
     .from(registrationsTable)
@@ -75,6 +108,13 @@ router.get("/riders/:riderId", async (req, res) => {
 
 router.patch("/riders/:riderId", async (req, res) => {
   const id = Number(req.params.riderId);
+
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null) {
+    const riderIds = await getClubRiderIds(staffCId);
+    if (!riderIds.includes(id)) return res.status(403).json({ error: "Forbidden" });
+  }
+
   const fields = ["firstName", "lastName", "email", "phone", "bibNumber", "dateOfBirth", "emergencyContact", "emergencyPhone", "rfidNumber", "bikeManufacturer", "sponsors", "amaNumber", "mylapsTransponderId", "hometown", "homeState"];
   const updates: Record<string, unknown> = {};
   for (const f of fields) {

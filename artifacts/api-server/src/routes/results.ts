@@ -65,6 +65,18 @@ function calcPoints(opts: {
 
 const router = Router();
 
+function getStaffClubId(res: any): number | null {
+  const v = res.locals?.staffClubId;
+  return typeof v === "number" ? v : null;
+}
+
+async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
+  if (staffCId === null) return true;
+  const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!evt || evt.clubId !== staffCId) { res.status(403).json({ error: "Forbidden" }); return false; }
+  return true;
+}
+
 router.get("/events/:eventId/results", async (req, res) => {
   const eventId = Number(req.params.eventId);
 
@@ -74,6 +86,8 @@ router.get("/events/:eventId/results", async (req, res) => {
       .from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
     if (!pub?.published) return res.json([]);
   }
+
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
 
   const results = await db.select({
     id: raceResultsTable.id,
@@ -125,6 +139,7 @@ router.get("/events/:eventId/results", async (req, res) => {
 
 router.post("/events/:eventId/results", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const { motoId, results: riderResults } = req.body;
   if (!motoId || !Array.isArray(riderResults)) return res.status(400).json({ error: "motoId and results[] required" });
 
@@ -219,6 +234,9 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
 
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+
   const resultId = Number(req.params.resultId);
   const { lapTimes } = req.body as { lapTimes?: unknown };
 
@@ -243,6 +261,7 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
 
 router.post("/events/:eventId/results/publish", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const { published } = req.body;
 
   const existing = await db.select().from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
@@ -268,7 +287,10 @@ router.get("/events/:eventId/ama-export", async (req, res) => {
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event) return res.status(404).json({ error: "Event not found" });
-  if ((event as any).clubId !== session.clubId && session.role !== "super_admin") {
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null) {
+    if (event.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  } else if ((event as any).clubId !== session.clubId && session.role !== "super_admin") {
     return res.status(403).json({ error: "Forbidden" });
   }
 

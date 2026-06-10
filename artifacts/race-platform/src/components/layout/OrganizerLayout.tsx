@@ -26,21 +26,39 @@ import {
   VideoOff,
   ListOrdered,
   Timer,
-  GitFork,
   WifiOff,
   Tag,
+  UsersRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import rmLogo from "@assets/rm-logo.png";
 
+const NAV_ITEMS = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permKey: "dashboard" },
+  { href: "/events", label: "Events", icon: CalendarDays, permKey: "events" },
+  { href: "/practice", label: "Practice", icon: Timer, permKey: "practice" },
+  { href: "/riders", label: "Riders", icon: Users, permKey: "riders" },
+  { href: "/series", label: "Series", icon: Trophy, permKey: "series" },
+  { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, permKey: "points_tables" },
+  { href: "/payments", label: "Payments", icon: CreditCard, permKey: "payments" },
+  { href: "/discount-codes", label: "Discount Codes", icon: Tag, permKey: "discount_codes" },
+  { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, permKey: "reader_setup" },
+  { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, permKey: "offline_mode" },
+];
+
 export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user } = useAuth();
+  const { user, permissions } = useAuth();
   const logout = useLogout();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { broadcastState, micEnabled, camEnabled, duration, activeEventId, toggleMic, toggleCam, stopBroadcast } = useBroadcast();
   const isLive = broadcastState === "live";
   const showTour = user !== null && user !== undefined && !user.tourCompleted;
+
+  const isStaff = user?.role === "staff";
+  const isAdmin = user?.role === "super_admin";
+  const isOrganizer = user?.role === "club_organizer";
+  const clubId = user?.clubId;
 
   const formatDuration = (s: number) => {
     const h = Math.floor(s / 3600);
@@ -58,22 +76,14 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const isAdmin = user?.role === "super_admin";
-  const clubId = user?.clubId;
   const close = () => setSidebarOpen(false);
 
-  const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: false },
-    { href: "/events", label: "Events", icon: CalendarDays, exact: false },
-    { href: "/practice", label: "Practice", icon: Timer, exact: false },
-    { href: "/riders", label: "Riders", icon: Users, exact: false },
-    { href: "/series", label: "Series", icon: Trophy, exact: false },
-    { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, exact: false },
-    { href: "/payments", label: "Payments", icon: CreditCard, exact: false },
-    { href: "/discount-codes", label: "Discount Codes", icon: Tag, exact: false },
-    { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, exact: false },
-    { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, exact: false },
-  ];
+  // For staff: only show nav items they have permissions for
+  // For organizer/admin: show all nav items
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (!isStaff) return true;
+    return permissions.includes(item.permKey);
+  });
 
   const SidebarContent = () => (
     <>
@@ -101,8 +111,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <nav className="flex-1 py-4 flex flex-col gap-1 px-3 overflow-y-auto">
-        {navItems.map((item) => {
-          const isActive = item.exact ? location === item.href : location.startsWith(item.href);
+        {visibleNavItems.map((item) => {
+          const isActive = location.startsWith(item.href);
           const Icon = item.icon;
           return (
             <Link
@@ -120,6 +130,38 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             </Link>
           );
         })}
+
+        {/* Gate Schedule link for staff with that permission */}
+        {isStaff && permissions.includes("gate_schedule") && (
+          <Link
+            href="/gate"
+            onClick={close}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+              location.startsWith("/gate")
+                ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            }`}
+          >
+            <CalendarDays size={18} />
+            Gate Schedule
+          </Link>
+        )}
+
+        {/* Team link — visible to organizers only (not staff, not super_admin) */}
+        {isOrganizer && (
+          <Link
+            href="/team"
+            onClick={close}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+              location.startsWith("/team")
+                ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            }`}
+          >
+            <UsersRound size={18} />
+            Team
+          </Link>
+        )}
 
         {isAdmin && (
           <div className="mt-4 pt-4 border-t border-sidebar-border/40">

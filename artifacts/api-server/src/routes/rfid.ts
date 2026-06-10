@@ -1,15 +1,26 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rfidAssignmentsTable, ridersTable, checkinsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable } from "@workspace/db";
+import { eq, and, inArray } from "drizzle-orm";
 
 const router = Router();
+
+function getStaffClubId(res: any): number | null {
+  const v = res.locals?.staffClubId;
+  return typeof v === "number" ? v : null;
+}
 
 router.get("/rfid", async (req, res) => {
   const { eventId } = req.query;
   const numEventId = eventId ? parseInt(String(eventId), 10) : null;
   if (eventId && (numEventId === null || isNaN(numEventId))) {
     return res.status(400).json({ error: "Invalid eventId" });
+  }
+  const staffCId = getStaffClubId(res);
+  // Staff: verify the requested event belongs to their club
+  if (staffCId !== null && numEventId) {
+    const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, numEventId));
+    if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   }
   let assignments;
   if (numEventId) {
@@ -24,6 +35,23 @@ router.get("/rfid", async (req, res) => {
     }).from(rfidAssignmentsTable)
       .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
       .where(eq(rfidAssignmentsTable.eventId, numEventId));
+  } else if (staffCId !== null) {
+    // Staff with no eventId filter — scope to their club's events only
+    const clubEvents = await db.select({ id: eventsTable.id }).from(eventsTable).where(eq(eventsTable.clubId, staffCId));
+    const clubEventIds = clubEvents.map(e => e.id);
+    assignments = clubEventIds.length > 0
+      ? await db.select({
+          id: rfidAssignmentsTable.id,
+          riderId: rfidAssignmentsTable.riderId,
+          rfidNumber: rfidAssignmentsTable.rfidNumber,
+          eventId: rfidAssignmentsTable.eventId,
+          assignedAt: rfidAssignmentsTable.assignedAt,
+          firstName: ridersTable.firstName,
+          lastName: ridersTable.lastName,
+        }).from(rfidAssignmentsTable)
+          .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
+          .where(inArray(rfidAssignmentsTable.eventId, clubEventIds))
+      : [];
   } else {
     assignments = await db.select({
       id: rfidAssignmentsTable.id,
@@ -56,6 +84,13 @@ router.post("/rfid", async (req, res) => {
   const numEventId = eventId != null ? parseInt(String(eventId), 10) : null;
   if (eventId != null && (numEventId === null || isNaN(numEventId))) {
     return res.status(400).json({ error: "Invalid eventId" });
+  }
+
+  // Staff: verify the event belongs to their club
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null && numEventId) {
+    const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, numEventId));
+    if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   }
 
   // Guard: prevent the same tag number being assigned to multiple riders in the same event.

@@ -55,6 +55,7 @@ router.post("/auth/login", async (req, res) => {
       role: user.role,
       clubId: user.clubId,
       tourCompleted: user.tourCompleted,
+      permissions: user.permissions ?? [],
       createdAt: user.createdAt.toISOString(),
     },
     token: "session",
@@ -85,6 +86,7 @@ router.get("/auth/me", async (req, res) => {
     role: user.role,
     clubId: user.clubId,
     tourCompleted: user.tourCompleted,
+    permissions: user.permissions ?? [],
     createdAt: user.createdAt.toISOString(),
   });
 });
@@ -190,6 +192,7 @@ router.patch("/auth/me", async (req, res) => {
     role: updated.role,
     clubId: updated.clubId,
     tourCompleted: updated.tourCompleted,
+    permissions: updated.permissions ?? [],
     createdAt: updated.createdAt.toISOString(),
   });
 });

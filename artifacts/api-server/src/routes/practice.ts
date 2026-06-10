@@ -249,6 +249,8 @@ router.get("/practice/:id", async (req, res) => {
   const id = Number(req.params.id);
   const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
   if (!session) return res.status(404).json({ error: "Not found" });
+  const callerClubId = await getClubId(req);
+  if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Forbidden" });
   return res.json(toJson(session));
 });
 
@@ -323,6 +325,10 @@ router.delete("/practice/:id", async (req, res) => {
 // GET /practice/:id/crossings
 router.get("/practice/:id/crossings", async (req, res) => {
   const id = Number(req.params.id);
+  const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
+  if (!session) return res.status(404).json({ error: "Not found" });
+  const callerClubId = await getClubId(req);
+  if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Forbidden" });
   const crossings = await db.select().from(practiceCrossingsTable)
     .where(eq(practiceCrossingsTable.sessionId, id))
     .orderBy(asc(practiceCrossingsTable.crossingTime));
@@ -343,6 +349,8 @@ router.post("/practice/:id/crossing", async (req, res) => {
 
   const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, sessionId));
   if (!session) return res.status(404).json({ error: "Session not found" });
+  const callerClubId = await getClubId(req);
+  if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Forbidden" });
   if (session.status !== "active") return res.status(409).json({ error: "Session not active" });
 
   const rawTime: string | undefined =
@@ -367,6 +375,8 @@ router.get("/practice/:id/live", async (req, res) => {
 
   const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, sessionId));
   if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+  const callerClubId = await getClubId(req);
+  if (callerClubId !== null && session.clubId !== callerClubId) { res.status(403).json({ error: "Forbidden" }); return; }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");

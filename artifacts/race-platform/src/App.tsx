@@ -35,6 +35,9 @@ import SetPassword from "@/pages/public/SetPassword";
 import StripeConnect from "@/pages/organizer/StripeConnect";
 import StandalonePractice from "@/pages/organizer/StandalonePractice";
 import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
+import TeamPage from "@/pages/organizer/TeamPage";
+import GateSchedulePage from "@/pages/organizer/GateSchedulePage";
+import NoAccessPage from "@/pages/organizer/NoAccessPage";
 import RiderLogin from "@/pages/rider/RiderLogin";
 import RiderPortal from "@/pages/rider/RiderPortal";
 import RiderHistory from "@/pages/rider/RiderHistory";
@@ -52,16 +55,56 @@ const queryClient = new QueryClient({
   },
 });
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
-  if (isLoading) return <div className="flex items-center justify-center h-screen bg-sidebar"><div className="text-white font-heading text-xl uppercase tracking-widest animate-pulse">Loading...</div></div>;
+const Loading = () => (
+  <div className="flex items-center justify-center h-screen bg-sidebar">
+    <div className="text-white font-heading text-xl uppercase tracking-widest animate-pulse">Loading...</div>
+  </div>
+);
+
+/**
+ * ProtectedRoute — requires authentication.
+ * If permKey is provided, staff users must have that permission or they land on /no-access.
+ */
+function ProtectedRoute({ children, permKey }: { children: React.ReactNode; permKey?: string }) {
+  const { isAuthenticated, isLoading, user, permissions } = useAuth();
+  if (isLoading) return <Loading />;
   if (!isAuthenticated) return <Redirect to="/login" />;
+
+  // Staff permission enforcement
+  if (user?.role === "staff" && permKey && !permissions.includes(permKey)) {
+    return <Redirect to="/no-access" />;
+  }
+
   return <OrganizerLayout>{children}</OrganizerLayout>;
+}
+
+/** OrganizerOnlyRoute — redirects staff back to their landing destination. */
+function OrganizerOnlyRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading, user } = useAuth();
+  if (isLoading) return <Loading />;
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (user?.role === "staff") return <Redirect to="/no-access" />;
+  return <OrganizerLayout>{children}</OrganizerLayout>;
+}
+
+/** GateRoute — accessible to organizers and staff with gate_schedule permission. */
+function GateRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading, user, permissions } = useAuth();
+  if (isLoading) return <Loading />;
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (user?.role === "staff" && !permissions.includes("gate_schedule")) {
+    return <Redirect to="/no-access" />;
+  }
+  return <>{children}</>;
 }
 
 function RiderProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useRiderAuth();
-  if (isLoading) return <div className="flex items-center justify-center h-screen"><div className="font-heading text-xl uppercase tracking-widest animate-pulse text-muted-foreground">Loading...</div></div>;
+  if (isLoading) return (
+    <div className="flex items-center justify-center h-screen">
+      <div className="font-heading text-xl uppercase tracking-widest animate-pulse text-muted-foreground">Loading...</div>
+    </div>
+  );
   if (!isAuthenticated) return <Redirect to="/rider/login" />;
   return <>{children}</>;
 }
@@ -69,6 +112,7 @@ function RiderProtectedRoute({ children }: { children: React.ReactNode }) {
 function Router() {
   return (
     <Switch>
+      {/* ── Public routes ── */}
       <Route path="/">
         <PublicLayout><Home /></PublicLayout>
       </Route>
@@ -103,6 +147,7 @@ function Router() {
         <EventWidget />
       </Route>
 
+      {/* ── Rider portal ── */}
       <Route path="/rider/login">
         <RiderLogin />
       </Route>
@@ -116,53 +161,69 @@ function Router() {
         <RiderProtectedRoute><RiderPortal /></RiderProtectedRoute>
       </Route>
 
+      {/* ── Gate Schedule — no OrganizerLayout shell (mobile optimized) ── */}
+      <Route path="/gate">
+        <GateRoute><GateSchedulePage /></GateRoute>
+      </Route>
+
+      {/* ── No-access landing for restricted staff ── */}
+      <Route path="/no-access">
+        <ProtectedRoute><NoAccessPage /></ProtectedRoute>
+      </Route>
+
+      {/* ── Organizer portal — per-page permission guards ── */}
       <Route path="/dashboard">
-        <ProtectedRoute><Dashboard /></ProtectedRoute>
+        <ProtectedRoute permKey="dashboard"><Dashboard /></ProtectedRoute>
       </Route>
       <Route path="/events">
-        <ProtectedRoute><EventsList /></ProtectedRoute>
+        <ProtectedRoute permKey="events"><EventsList /></ProtectedRoute>
       </Route>
       <Route path="/events/:eventId/*?">
-        <ProtectedRoute><EventLayout /></ProtectedRoute>
+        <ProtectedRoute permKey="events"><EventLayout /></ProtectedRoute>
       </Route>
       <Route path="/riders">
-        <ProtectedRoute><Riders /></ProtectedRoute>
+        <ProtectedRoute permKey="riders"><Riders /></ProtectedRoute>
       </Route>
       <Route path="/riders/:riderId">
-        <ProtectedRoute><RiderDetail /></ProtectedRoute>
+        <ProtectedRoute permKey="riders"><RiderDetail /></ProtectedRoute>
       </Route>
       <Route path="/rfid/setup">
-        <ProtectedRoute><ReaderSetup /></ProtectedRoute>
+        <ProtectedRoute permKey="reader_setup"><ReaderSetup /></ProtectedRoute>
       </Route>
       <Route path="/offline-mode">
-        <ProtectedRoute><OfflineMode /></ProtectedRoute>
+        <ProtectedRoute permKey="offline_mode"><OfflineMode /></ProtectedRoute>
       </Route>
       <Route path="/offline/sync">
-        <ProtectedRoute><OfflineSync /></ProtectedRoute>
+        <ProtectedRoute permKey="offline_mode"><OfflineSync /></ProtectedRoute>
       </Route>
       <Route path="/rfid">
-        <ProtectedRoute><RfidManagement /></ProtectedRoute>
+        <ProtectedRoute permKey="reader_setup"><RfidManagement /></ProtectedRoute>
       </Route>
       <Route path="/series">
-        <ProtectedRoute><Series /></ProtectedRoute>
+        <ProtectedRoute permKey="series"><Series /></ProtectedRoute>
       </Route>
       <Route path="/points-tables">
-        <ProtectedRoute><PointsTables /></ProtectedRoute>
-      </Route>
-      <Route path="/admin/clubs">
-        <ProtectedRoute><ClubsAdmin /></ProtectedRoute>
-      </Route>
-      <Route path="/admin/users">
-        <ProtectedRoute><UsersAdmin /></ProtectedRoute>
+        <ProtectedRoute permKey="points_tables"><PointsTables /></ProtectedRoute>
       </Route>
       <Route path="/payments">
-        <ProtectedRoute><StripeConnect /></ProtectedRoute>
+        <ProtectedRoute permKey="payments"><StripeConnect /></ProtectedRoute>
       </Route>
       <Route path="/discount-codes">
-        <ProtectedRoute><DiscountCodesPage /></ProtectedRoute>
+        <ProtectedRoute permKey="discount_codes"><DiscountCodesPage /></ProtectedRoute>
       </Route>
       <Route path="/practice">
-        <ProtectedRoute><StandalonePractice /></ProtectedRoute>
+        <ProtectedRoute permKey="practice"><StandalonePractice /></ProtectedRoute>
+      </Route>
+
+      {/* ── Organizer / admin only ── */}
+      <Route path="/team">
+        <OrganizerOnlyRoute><TeamPage /></OrganizerOnlyRoute>
+      </Route>
+      <Route path="/admin/clubs">
+        <OrganizerOnlyRoute><ClubsAdmin /></OrganizerOnlyRoute>
+      </Route>
+      <Route path="/admin/users">
+        <OrganizerOnlyRoute><UsersAdmin /></OrganizerOnlyRoute>
       </Route>
 
       <Route component={NotFound} />

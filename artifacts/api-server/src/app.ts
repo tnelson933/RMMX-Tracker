@@ -7,6 +7,7 @@ import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { WebhookHandlers } from "./webhookHandlers";
+import { staffPermissionMiddleware } from "./middleware/staffPermissions";
 
 const app: Express = express();
 
@@ -78,6 +79,6 @@ app.use(
   })
 );
 
-app.use("/api", router);
+app.use("/api", staffPermissionMiddleware, router);
 
 export default app;

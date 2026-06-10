@@ -55,6 +55,7 @@ export const LoginResponse = zod.object({
   "role": zod.enum(['super_admin', 'club_organizer', 'staff', 'public']),
   "clubId": zod.number().nullish(),
   "tourCompleted": zod.boolean(),
+  "permissions": zod.array(zod.string()),
   "createdAt": zod.string().optional()
 }),
   "token": zod.string()
@@ -71,6 +72,7 @@ export const GetMeResponse = zod.object({
   "role": zod.enum(['super_admin', 'club_organizer', 'staff', 'public']),
   "clubId": zod.number().nullish(),
   "tourCompleted": zod.boolean(),
+  "permissions": zod.array(zod.string()),
   "createdAt": zod.string().optional()
 })
 
@@ -89,6 +91,7 @@ export const UpdateMeResponse = zod.object({
   "role": zod.enum(['super_admin', 'club_organizer', 'staff', 'public']),
   "clubId": zod.number().nullish(),
   "tourCompleted": zod.boolean(),
+  "permissions": zod.array(zod.string()),
   "createdAt": zod.string().optional()
 })
 
@@ -122,6 +125,70 @@ export const CompleteAccountSetupResponse = zod.object({
  * @summary Mark the first-login product tour as completed for the current user
  */
 export const CompleteTourResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
+ * @summary List staff employees for the caller's club
+ */
+export const ListTeamMembersResponseItem = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "permissions": zod.array(zod.string()),
+  "status": zod.enum(['active', 'invited']),
+  "emailSent": zod.boolean().optional(),
+  "setupUrl": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+export const ListTeamMembersResponse = zod.array(ListTeamMembersResponseItem)
+
+
+/**
+ * @summary Create a staff employee and send invite email
+ */
+export const CreateTeamMemberBody = zod.object({
+  "name": zod.string(),
+  "email": zod.string(),
+  "permissions": zod.array(zod.string()).optional()
+})
+
+
+/**
+ * @summary Update a team member's name, email, or permissions; optionally resend invite
+ */
+export const UpdateTeamMemberParams = zod.object({
+  "userId": zod.coerce.number()
+})
+
+export const UpdateTeamMemberBody = zod.object({
+  "name": zod.string().optional(),
+  "email": zod.string().optional(),
+  "permissions": zod.array(zod.string()).optional(),
+  "resendInvite": zod.boolean().optional()
+})
+
+export const UpdateTeamMemberResponse = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "name": zod.string(),
+  "permissions": zod.array(zod.string()),
+  "status": zod.enum(['active', 'invited']),
+  "emailSent": zod.boolean().optional(),
+  "setupUrl": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Remove a team member from the club
+ */
+export const DeleteTeamMemberParams = zod.object({
+  "userId": zod.coerce.number()
+})
+
+export const DeleteTeamMemberResponse = zod.object({
   "ok": zod.boolean().optional()
 })
 

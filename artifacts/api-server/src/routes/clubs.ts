@@ -12,6 +12,11 @@ function requireAdmin(req: any, res: any, next: any) {
 }
 
 router.get("/clubs", async (req, res) => {
+  const staffCId: number | null = typeof (res as any).locals?.staffClubId === "number" ? (res as any).locals.staffClubId : null;
+  if (staffCId !== null) {
+    const clubs = await db.select().from(clubsTable).where(eq(clubsTable.id, staffCId));
+    return res.json(clubs.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })));
+  }
   const clubs = await db.select().from(clubsTable).orderBy(clubsTable.name);
   return res.json(clubs.map(c => ({ ...c, createdAt: c.createdAt.toISOString() })));
 });
@@ -33,6 +38,8 @@ router.post("/clubs", async (req, res) => {
 
 router.get("/clubs/:clubId", async (req, res) => {
   const id = Number(req.params.clubId);
+  const staffCId: number | null = typeof (res as any).locals?.staffClubId === "number" ? (res as any).locals.staffClubId : null;
+  if (staffCId !== null && staffCId !== id) return res.status(403).json({ error: "Forbidden" });
   const clubs = await db.select().from(clubsTable).where(eq(clubsTable.id, id));
   if (!clubs[0]) return res.status(404).json({ error: "Not found" });
   const c = clubs[0];

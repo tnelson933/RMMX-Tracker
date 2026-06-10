@@ -11,6 +11,7 @@ export const usersTable = pgTable("users", {
   role: text("role").notNull().default("staff"), // super_admin | club_organizer | staff
   clubId: integer("club_id").references(() => clubsTable.id),
   tourCompleted: boolean("tour_completed").default(false).notNull(),
+  permissions: text("permissions").array().notNull().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

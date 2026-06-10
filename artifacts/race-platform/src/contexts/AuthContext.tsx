@@ -6,6 +6,8 @@ interface AuthContextType {
   user: User | null | undefined;
   isLoading: boolean;
   isAuthenticated: boolean;
+  permissions: string[];
+  hasPermission: (page: string) => boolean;
   logout: () => void;
 }
 
@@ -19,10 +21,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const permissions: string[] = user?.permissions ?? [];
+
+  const hasPermission = (page: string): boolean => {
+    if (!user) return false;
+    if (user.role === "super_admin" || user.role === "club_organizer") return true;
+    return permissions.includes(page);
+  };
+
   const value = {
     user: user ?? null,
     isLoading,
     isAuthenticated: !!user && !error,
+    permissions,
+    hasPermission,
     logout: () => {
       window.location.href = "/login";
     },

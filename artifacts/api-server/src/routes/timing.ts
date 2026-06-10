@@ -18,6 +18,25 @@ import { processPracticeCrossing } from "./practice";
 
 const router = Router();
 
+function getStaffClubId(res: any): number | null {
+  const v = res.locals?.staffClubId;
+  return typeof v === "number" ? v : null;
+}
+
+async function checkMotoClubAccess(motoId: number, staffCId: number | null): Promise<boolean> {
+  if (staffCId === null) return true;
+  const [moto] = await db.select({ eventId: motosTable.eventId }).from(motosTable).where(eq(motosTable.id, motoId));
+  if (!moto) return false;
+  const [event] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, moto.eventId));
+  return !!event && event.clubId === staffCId;
+}
+
+async function checkEventClubAccess(eventId: number, staffCId: number | null): Promise<boolean> {
+  if (staffCId === null) return true;
+  const [event] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  return !!event && event.clubId === staffCId;
+}
+
 // ── SSE registry: motoId → connected Response objects ─────────────────────────
 const sseClients = new Map<number, Set<Response>>();
 
@@ -437,6 +456,15 @@ router.post("/timing/crossing", async (req, res) => {
 
   const antenna = antennaId !== undefined ? Number(antennaId) : undefined;
 
+  // Staff: verify the moto belongs to their club before accepting the crossing
+  const _staffCId = getStaffClubId(res);
+  if (_staffCId !== null) {
+    const [_motoRow] = await db.select({ eventId: motosTable.eventId }).from(motosTable).where(eq(motosTable.id, Number(motoId)));
+    if (!_motoRow) return res.status(404).json({ error: "Moto not found" });
+    const [_evtRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, _motoRow.eventId));
+    if (!_evtRow || _evtRow.clubId !== _staffCId) return res.status(403).json({ error: "Forbidden" });
+  }
+
   try {
     const result = await processCrossing({ rfidNumber, motoId: Number(motoId), crossingTime: time, readerId, antennaId: antenna });
     if (result.debounced) {
@@ -503,6 +531,12 @@ router.post("/timing/active/crossing", async (req, res) => {
   const clubId = Number(req.query.clubId);
   if (!clubId || isNaN(clubId)) {
     return res.status(400).json({ error: "clubId query param is required" });
+  }
+
+  // Staff: verify the target club matches their own club
+  const _staffCId = getStaffClubId(res);
+  if (_staffCId !== null && clubId !== _staffCId) {
+    return res.status(403).json({ error: "Forbidden" });
   }
 
   const body = req.body as any;
@@ -674,6 +708,12 @@ router.post("/timing/impinj-crossing", async (req, res) => {
     return res.status(400).json({ error: "eventId query param is required" });
   }
 
+  const _staffCId = getStaffClubId(res);
+  if (_staffCId !== null) {
+    const [_evtRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (!_evtRow || _evtRow.clubId !== _staffCId) return res.status(403).json({ error: "Forbidden" });
+  }
+
   const body = req.body as { events?: unknown[] };
   const events = Array.isArray(body.events) ? body.events : [];
 
@@ -726,6 +766,12 @@ router.post("/timing/zebra-crossing", async (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) {
     return res.status(400).json({ error: "eventId query param is required" });
+  }
+
+  const _staffCId = getStaffClubId(res);
+  if (_staffCId !== null) {
+    const [_evtRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (!_evtRow || _evtRow.clubId !== _staffCId) return res.status(403).json({ error: "Forbidden" });
   }
 
   const body = req.body as any;
@@ -784,6 +830,12 @@ router.post("/timing/mylaps-crossing", async (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) {
     return res.status(400).json({ error: "eventId query param is required" });
+  }
+
+  const _staffCId = getStaffClubId(res);
+  if (_staffCId !== null) {
+    const [_evtRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (!_evtRow || _evtRow.clubId !== _staffCId) return res.status(403).json({ error: "Forbidden" });
   }
 
   const body = req.body as any;
@@ -898,6 +950,8 @@ router.post("/timing/manual-crossing", async (req, res) => {
 // GET /timing/live/:motoId — SSE stream for live leaderboard
 router.get("/timing/live/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
+  const staffCId = getStaffClubId(res);
+  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -928,11 +982,15 @@ router.get("/timing/live/:motoId", async (req, res) => {
     clearInterval(heartbeat);
     sseUnsubscribe(motoId, res);
   });
+
+  return;
 });
 
 // GET /timing/crossings/:motoId — all raw crossings (debug / replay)
 router.get("/timing/crossings/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
+  const staffCId = getStaffClubId(res);
+  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
   const crossings = await db
     .select({
       id: lapCrossingsTable.id,
@@ -1087,7 +1145,10 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
 
 // GET /timing/leaderboard/:motoId — snapshot (polling fallback)
 router.get("/timing/leaderboard/:motoId", async (req, res) => {
-  const snapshot = await buildLeaderboard(Number(req.params.motoId));
+  const motoId = Number(req.params.motoId);
+  const staffCId = getStaffClubId(res);
+  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+  const snapshot = await buildLeaderboard(motoId);
   if (!snapshot) return res.status(404).json({ error: "Moto not found" });
   return res.json(snapshot);
 });
@@ -1100,6 +1161,8 @@ router.get("/timing/rmonitor-feed", async (req, res) => {
   if (!eventId || isNaN(eventId)) {
     return res.status(400).json({ error: "eventId is required" });
   }
+  const staffCId = getStaffClubId(res);
+  if (!await checkEventClubAccess(eventId, staffCId)) return res.status(403).json({ error: "Forbidden" });
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -1152,6 +1215,8 @@ router.get("/timing/rmonitor-snapshot", async (req, res) => {
   if (!eventId || isNaN(eventId)) {
     return res.status(400).json({ error: "eventId is required" });
   }
+  const staffCId = getStaffClubId(res);
+  if (!await checkEventClubAccess(eventId, staffCId)) return res.status(403).json({ error: "Forbidden" });
 
   // Prefer in-progress moto; fall back to most recent completed
   const [activeMoto] = await db
@@ -1176,11 +1241,13 @@ router.get("/timing/rmonitor-snapshot", async (req, res) => {
 });
 
 // ── RMonitor status — how many bridge SSE subscribers are active ───────────────
-router.get("/timing/rmonitor-status", (req, res) => {
+router.get("/timing/rmonitor-status", async (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) {
     return res.status(400).json({ error: "eventId is required" });
   }
+  const staffCId = getStaffClubId(res);
+  if (!await checkEventClubAccess(eventId, staffCId)) return res.status(403).json({ error: "Forbidden" });
   return res.json({ bridges: rmonitorClientCount(eventId) });
 });
 

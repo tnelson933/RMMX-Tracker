@@ -6,6 +6,18 @@ import { getUncachableStripeClient } from "../stripeClient";
 
 const router = Router();
 
+function getStaffClubId(res: any): number | null {
+  const v = res.locals?.staffClubId;
+  return typeof v === "number" ? v : null;
+}
+
+async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
+  if (staffCId === null) return true;
+  const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!evt || evt.clubId !== staffCId) { res.status(403).json({ error: "Forbidden" }); return false; }
+  return true;
+}
+
 router.get("/public/riders/lookup", async (req, res) => {
   const email = ((req.query.email as string) || "").trim().toLowerCase();
   if (!email) return res.status(400).json({ error: "email required" });
@@ -58,6 +70,7 @@ function getAppUrl(): string {
 
 router.get("/events/:eventId/registrations", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
 
   // Subquery: one RFID assignment per (riderId, eventId) — most recent wins.
   // Using DISTINCT ON prevents fan-out when a rider has multiple RFID records
@@ -133,6 +146,7 @@ router.get("/events/:eventId/registrations", async (req, res) => {
 
 router.post("/events/:eventId/registrations", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const {
     riderId, raceClass, bibNumber, bikeBrand, clubIdNumber,
     // Full on-site rider info (alternative to riderId)
@@ -253,6 +267,12 @@ router.patch("/registrations/:registrationId", async (req, res) => {
     .from(registrationsTable).where(eq(registrationsTable.id, id));
   const oldRiderId = before?.riderId;
 
+  if (before) {
+    if (!await checkEventOwnership(before.eventId, getStaffClubId(res), res)) return;
+  } else {
+    return res.status(404).json({ error: "Not found" });
+  }
+
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();
   if (!reg) return res.status(404).json({ error: "Not found" });
 
@@ -294,6 +314,7 @@ router.patch("/registrations/:registrationId", async (req, res) => {
 // ── Organizer: create a Stripe Checkout session for an existing on-site registration ──
 router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const regId = Number(req.params.regId);
 
   try {

@@ -1,14 +1,27 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable } from "@workspace/db";
+import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable } from "@workspace/db";
 import { eq, and, ne, asc } from "drizzle-orm";
 
 const router = Router();
+
+function getStaffClubId(res: any): number | null {
+  const v = res.locals?.staffClubId;
+  return typeof v === "number" ? v : null;
+}
+
+async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
+  if (staffCId === null) return true;
+  const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!evt || evt.clubId !== staffCId) { res.status(403).json({ error: "Forbidden" }); return false; }
+  return true;
+}
 
 // List all registered riders for an event with their check-in status overlaid.
 // Source of truth is registrations — every registered rider appears here.
 router.get("/events/:eventId/checkins", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
 
   // Fetch all registrations + rider info
   const regs = await db.select({
@@ -64,6 +77,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
 
 router.post("/events/:eventId/checkins", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const { riderId, rfidNumber, bibNumber } = req.body;
   if (!riderId) return res.status(400).json({ error: "riderId required" });
 

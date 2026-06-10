@@ -40,6 +40,8 @@ tags:
     description: Offline mode package management
   - name: discounts
     description: Discount codes and categories
+  - name: team
+    description: Club team / employee management
 
 paths:
   /healthz:
@@ -235,6 +237,156 @@ paths:
                     type: boolean
         "401":
           description: Not authenticated
+
+  # TEAM (organizer-scoped employee management)
+  /organizer/team:
+    get:
+      operationId: listTeamMembers
+      tags: [team]
+      summary: List staff employees for the caller's club
+      responses:
+        "200":
+          description: List of team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamMember"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    post:
+      operationId: createTeamMember
+      tags: [team]
+      summary: Create a staff employee and send invite email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamMemberInput"
+      responses:
+        "201":
+          description: Team member created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMember"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /organizer/team/{userId}:
+    patch:
+      operationId: updateTeamMember
+      tags: [team]
+      summary: Update a team member's name, email, or permissions; optionally resend invite
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTeamMemberInput"
+      responses:
+        "200":
+          description: Updated team member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMember"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    delete:
+      operationId: deleteTeamMember
+      tags: [team]
+      summary: Remove a team member from the club
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 
   # USERS
   /users:
@@ -1971,7 +2123,7 @@ components:
 
     User:
       type: object
-      required: [id, email, name, role, tourCompleted]
+      required: [id, email, name, role, tourCompleted, permissions]
       properties:
         id:
           type: integer
@@ -1986,6 +2138,10 @@ components:
           type: ["integer", "null"]
         tourCompleted:
           type: boolean
+        permissions:
+          type: array
+          items:
+            type: string
         createdAt:
           type: string
 
@@ -3562,6 +3718,57 @@ components:
         amount:
           type: number
           description: Discount amount in dollars
+
+    TeamMember:
+      type: object
+      required: [id, email, name, permissions, status, createdAt]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [active, invited]
+        emailSent:
+          type: boolean
+        setupUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    CreateTeamMemberInput:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    UpdateTeamMemberInput:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        resendInvite:
+          type: boolean
 
     ErrorEnvelope:
       type: object

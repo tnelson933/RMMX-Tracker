@@ -5,16 +5,16 @@
  * Rocky Mountain Race Platform API
  * OpenAPI spec version: 0.1.0
  */
-import type { UserRole } from './userRole';
+import type { TeamMemberStatus } from './teamMemberStatus';
 
-export interface User {
+export interface TeamMember {
   id: number;
   email: string;
   name: string;
-  role: UserRole;
-  /** @nullable */
-  clubId?: number | null;
-  tourCompleted: boolean;
   permissions: string[];
-  createdAt?: string;
+  status: TeamMemberStatus;
+  emailSent?: boolean;
+  /** @nullable */
+  setupUrl?: string | null;
+  createdAt: string;
 }

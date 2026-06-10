@@ -26,6 +26,7 @@ import syncRouter from "./sync";
 import offlineRouter from "./offline";
 import discountCategoriesRouter from "./discount-categories";
 import discountCodesRouter from "./discount-codes";
+import teamRouter from "./team";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(syncRouter);
 router.use(offlineRouter);
 router.use(discountCategoriesRouter);
 router.use(discountCodesRouter);
+router.use(teamRouter);
 
 export default router;

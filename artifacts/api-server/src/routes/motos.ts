@@ -1,10 +1,33 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable } from "@workspace/db";
 import { eq, and, inArray, min, ne, gt } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 
 const router = Router();
+
+/** Returns the staff user's club restriction, or null for organizer/admin. */
+function getStaffClubId(res: Response): number | null {
+  const id = res.locals.staffClubId;
+  return typeof id === "number" ? id : null;
+}
+
+/**
+ * Fetches the clubId of the event that owns a moto.
+ * Returns null if the moto doesn't exist.
+ */
+async function getMotoClubId(motoId: number): Promise<number | null> {
+  const [m] = await db.select({ eventId: motosTable.eventId }).from(motosTable).where(eq(motosTable.id, motoId));
+  if (!m) return null;
+  const [ev] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, m.eventId));
+  return ev?.clubId ?? null;
+}
+
+/** Returns the clubId of a given event. */
+async function getEventClubId(eventId: number): Promise<number | null> {
+  const [ev] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  return ev?.clubId ?? null;
+}
 
 // Helper: check if event uses Supercross format (mainEventOnly=true)
 async function getEventFormat(eventId: number): Promise<{ isSupercross: boolean; topPerHeat: number }> {
@@ -109,6 +132,13 @@ router.get("/events/:eventId/motos", async (req, res) => {
     if (!pub?.published) return res.json([]);
   }
 
+  // Staff club scoping: reject if event belongs to a different club
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null) {
+    const evClubId = await getEventClubId(eventId);
+    if (evClubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  }
+
   const motos = await db.select().from(motosTable).where(eq(motosTable.eventId, eventId)).orderBy(motosTable.motoNumber);
   return res.json(motos.map(m => ({
     ...m,
@@ -121,6 +151,14 @@ router.get("/events/:eventId/motos", async (req, res) => {
 
 router.post("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
+
+  // Staff club scoping
+  const staffCIdPost = getStaffClubId(res);
+  if (staffCIdPost !== null) {
+    const evClubId = await getEventClubId(eventId);
+    if (evClubId !== staffCIdPost) return res.status(403).json({ error: "Forbidden" });
+  }
+
   const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, practiceMode, countdownSeconds } = req.body;
 
   // raceClasses (multi-class practice): raceClass can be derived from first entry
@@ -143,6 +181,15 @@ router.post("/events/:eventId/motos", async (req, res) => {
 
 router.patch("/motos/:motoId", async (req, res) => {
   const id = Number(req.params.motoId);
+
+  // Staff club scoping: verify this moto belongs to the staff user's club
+  const staffCIdPatch = getStaffClubId(res);
+  if (staffCIdPatch !== null) {
+    const motoClubId = await getMotoClubId(id);
+    if (motoClubId === null) return res.status(404).json({ error: "Not found" });
+    if (motoClubId !== staffCIdPatch) return res.status(403).json({ error: "Forbidden" });
+  }
+
   const updates: Record<string, unknown> = {};
   if (req.body.status !== undefined) {
     updates.status = req.body.status;
@@ -212,6 +259,13 @@ router.post("/motos/:motoId/restart", async (req, res) => {
   const id = Number(req.params.motoId);
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
   if (!moto) return res.status(404).json({ error: "Not found" });
+
+  // Staff club scoping
+  const staffCIdRestart = getStaffClubId(res);
+  if (staffCIdRestart !== null) {
+    const evClubId = await getEventClubId(moto.eventId);
+    if (evClubId !== staffCIdRestart) return res.status(403).json({ error: "Forbidden" });
+  }
   await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
   const [updated] = await db
     .update(motosTable)
@@ -224,6 +278,15 @@ router.post("/motos/:motoId/restart", async (req, res) => {
 
 router.delete("/motos/:motoId", async (req, res) => {
   const id = Number(req.params.motoId);
+
+  // Staff club scoping: verify this moto belongs to the staff user's club
+  const staffCIdDel = getStaffClubId(res);
+  if (staffCIdDel !== null) {
+    const motoClubId = await getMotoClubId(id);
+    if (motoClubId === null) return res.status(404).json({ error: "Not found" });
+    if (motoClubId !== staffCIdDel) return res.status(403).json({ error: "Forbidden" });
+  }
+
   const deleted = await db.delete(motosTable).where(eq(motosTable.id, id)).returning();
   if (deleted.length === 0) return res.status(404).json({ error: "Not found" });
   return res.status(204).send();

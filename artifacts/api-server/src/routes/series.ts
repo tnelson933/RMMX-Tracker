@@ -5,13 +5,23 @@ import { eq, inArray, and } from "drizzle-orm";
 
 const router = Router();
 
+function getStaffClubId(res: any): number | null {
+  const v = res.locals?.staffClubId;
+  return typeof v === "number" ? v : null;
+}
+
 router.get("/series", async (req, res) => {
-  const series = await db.select().from(seriesTable).orderBy(seriesTable.name);
+  const staffCId = getStaffClubId(res);
+  const series = staffCId !== null
+    ? await db.select().from(seriesTable).where(eq(seriesTable.clubId, staffCId)).orderBy(seriesTable.name)
+    : await db.select().from(seriesTable).orderBy(seriesTable.name);
   return res.json(series.map(s => ({ ...s, createdAt: s.createdAt.toISOString() })));
 });
 
 router.post("/series", async (req, res) => {
-  const { name, clubId, season, classes, pointsSystem, scoringTableId, eventIds } = req.body;
+  const staffCId = getStaffClubId(res);
+  const { name, clubId: rawClubId, season, classes, pointsSystem, scoringTableId, eventIds } = req.body;
+  const clubId = staffCId !== null ? staffCId : rawClubId;
   if (!name || !clubId || !season) return res.status(400).json({ error: "name, clubId, season required" });
   const [series] = await db.insert(seriesTable).values({
     name,
@@ -27,13 +37,18 @@ router.post("/series", async (req, res) => {
 
 router.patch("/series/:seriesId", async (req, res) => {
   const seriesId = Number(req.params.seriesId);
+
+  const [existingSeries] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
+  if (!existingSeries) return res.status(404).json({ error: "Not found" });
+
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null && existingSeries.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+
   const { name, season, classes, scoringTableId, eventIds } = req.body;
 
   // Validate events match scoring format when eventIds is being updated
   if (eventIds !== undefined && eventIds.length > 0) {
-    const [series] = await db.select({ scoringTableId: seriesTable.scoringTableId })
-      .from(seriesTable).where(eq(seriesTable.id, seriesId));
-    const tableId = scoringTableId !== undefined ? (scoringTableId ?? null) : series?.scoringTableId;
+    const tableId = scoringTableId !== undefined ? (scoringTableId ?? null) : existingSeries.scoringTableId;
 
     if (tableId) {
       const events = await db.select({ id: eventsTable.id, scoringTableId: eventsTable.scoringTableId })
@@ -64,6 +79,9 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
   const seriesId = Number(req.params.seriesId);
   const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
   if (!series) return res.status(404).json({ error: "Not found" });
+
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null && series.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
 
   const eventIds = series.eventIds as number[];
   if (eventIds.length === 0) return res.json([]);
@@ -196,6 +214,12 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
 });
 
 router.post("/series/:seriesId/recalculate", async (req, res) => {
+  const seriesId = Number(req.params.seriesId);
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null) {
+    const [series] = await db.select({ clubId: seriesTable.clubId }).from(seriesTable).where(eq(seriesTable.id, seriesId));
+    if (!series || series.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  }
   return res.json({ ok: true });
 });
 

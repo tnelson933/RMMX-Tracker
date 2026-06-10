@@ -42,6 +42,7 @@ export interface User {
   /** @nullable */
   clubId?: number | null;
   tourCompleted: boolean;
+  permissions: string[];
   createdAt?: string;
 }
 
@@ -1228,6 +1229,39 @@ export interface GenerateRiderDiscountCodeInput {
   amount: number;
 }
 
+export type TeamMemberStatus = typeof TeamMemberStatus[keyof typeof TeamMemberStatus];
+
+
+export const TeamMemberStatus = {
+  active: 'active',
+  invited: 'invited',
+} as const;
+
+export interface TeamMember {
+  id: number;
+  email: string;
+  name: string;
+  permissions: string[];
+  status: TeamMemberStatus;
+  emailSent?: boolean;
+  /** @nullable */
+  setupUrl?: string | null;
+  createdAt: string;
+}
+
+export interface CreateTeamMemberInput {
+  name: string;
+  email: string;
+  permissions?: string[];
+}
+
+export interface UpdateTeamMemberInput {
+  name?: string;
+  email?: string;
+  permissions?: string[];
+  resendInvite?: boolean;
+}
+
 export interface ErrorEnvelope {
   error: string;
 }
@@ -1241,6 +1275,10 @@ export type CompleteAccountSetup200 = {
 };
 
 export type CompleteTour200 = {
+  ok?: boolean;
+};
+
+export type DeleteTeamMember200 = {
   ok?: boolean;
 };
 
