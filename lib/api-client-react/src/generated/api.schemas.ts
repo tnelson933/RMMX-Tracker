@@ -705,6 +705,9 @@ export interface LineupGenerateInput {
   /** Controls gate number assignment. random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first; first_registered = sort by registration timestamp, earliest registered gets first gate pick. Supersedes gateSeedingMethod when both are present.
    */
   gatePickMethod?: LineupGenerateInputGatePickMethod;
+  /** Number of laps for each generated moto. When set, indicates this is a laps-based race (first to reach this many laps wins) and the value is stored on every created moto for display and timing purposes.
+   */
+  lapCount?: number;
 }
 
 /**

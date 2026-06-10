@@ -235,7 +235,9 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateSeedingMethod: rawMethod,
     gatePickMethod,        // "random" | "practice" | "prior_round_finish" | "first_registered"
     rounds: roundsFilter,  // new: number[] — if provided, only generate these round numbers
+    lapCount,              // optional: target laps for laps-based races
   } = req.body;
+  const motoLapCount: number | null = lapCount != null && Number(lapCount) > 0 ? Number(lapCount) : null;
 
   // Map gatePickMethod to internal seeding method + gate assignment flag.
   // gatePickMethod supersedes gateSeedingMethod when both are present.
@@ -587,6 +589,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         const [moto] = await db.insert(motosTable).values({
           eventId, name: heatName, type: "heat", raceClass: cls,
           motoNumber: motoNumber++, status: "scheduled", lineup,
+          lapCount: motoLapCount,
         }).returning();
         motos.push(moto);
       }
@@ -595,6 +598,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       const [mainMoto] = await db.insert(motosTable).values({
         eventId, name: `${cls} Main Event`, type: "main", raceClass: cls,
         motoNumber: motoNumber++, status: "scheduled", lineup: [],
+        lapCount: motoLapCount,
       }).returning();
       motos.push(mainMoto);
     }
@@ -614,6 +618,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
           const [moto] = await db.insert(motosTable).values({
             eventId, name, type: "heat", raceClass: cls,
             motoNumber: motoNumber++, status: "scheduled", lineup,
+            lapCount: motoLapCount,
           }).returning();
           motos.push(moto);
         }

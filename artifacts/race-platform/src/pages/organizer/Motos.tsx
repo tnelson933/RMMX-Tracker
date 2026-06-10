@@ -1007,6 +1007,7 @@ export default function Motos() {
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
+  const [generateLapCount, setGenerateLapCount] = useState<string>("");
   const [gatePickMethod, setGatePickMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [selectedRounds, setSelectedRounds] = useState<number[]>([]);
   const [perMotoDialog, setPerMotoDialog] = useState<{ open: boolean; motoId: number | null; motoName: string; motoClass: string }>({ open: false, motoId: null, motoName: "", motoClass: "" });
@@ -1530,13 +1531,14 @@ export default function Motos() {
           (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
         );
     const perHeat = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
+    const lapCountVal = generateLapCount.trim() ? parseInt(generateLapCount, 10) : undefined;
     const divCount = format === "three_moto" ? 3 : format === "two_moto" ? 2 : 1;
     const allRoundsSet = new Set(Array.from({ length: divCount }, (_, i) => i + 1));
     const roundsToSend = selectedRounds.length > 0 && !selectedRounds.every(r => allRoundsSet.has(r) && selectedRounds.length === divCount)
       ? selectedRounds
       : undefined;
     generateMutation.mutate(
-      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, gatePickMethod, rounds: roundsToSend } as any },
+      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, lapCount: lapCountVal, gatePickMethod, rounds: roundsToSend } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -2206,6 +2208,24 @@ export default function Motos() {
                   {isSupercrossFormat
                     ? "If a class exceeds this number, additional heats are created automatically."
                     : "If a class exceeds this number, riders are split into separate divs."}
+                </p>
+              </div>
+
+              {/* Lap count */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Laps per Race <span className="text-muted-foreground font-normal">(optional)</span>
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={generateLapCount}
+                  onChange={e => setGenerateLapCount(e.target.value)}
+                  placeholder="e.g. 6"
+                  className="h-9"
+                />
+                <p className="text-xs text-muted-foreground">
+                  For laps-based races. Sets the target lap count on every moto — shown on the race card.
                 </p>
               </div>
               {/* Gate Pick Method */}

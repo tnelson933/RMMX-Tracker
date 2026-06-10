@@ -853,6 +853,7 @@ export default function EventSchedule() {
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
   const [generateFormat, setGenerateFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState("");
+  const [generateLapCount, setGenerateLapCount] = useState("");
   const [generateGateMethod, setGenerateGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
 
@@ -1375,6 +1376,7 @@ export default function EventSchedule() {
       ? []
       : allClasses.filter(cls => rawMotos.some(m => m.raceClass === cls && m.status === "completed"));
     const ridersPerHeatVal = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
+    const lapCountVal = generateLapCount.trim() ? parseInt(generateLapCount, 10) : undefined;
     const divCount = generateFormat === "three_moto" ? 3 : generateFormat === "two_moto" ? 2 : 1;
     const roundsToSend = generateSelectedRounds.length > 0 && generateSelectedRounds.length < divCount
       ? generateSelectedRounds
@@ -1387,6 +1389,7 @@ export default function EventSchedule() {
           raceFormat: generateFormat,
           classes: allClasses,
           ridersPerHeat: ridersPerHeatVal,
+          lapCount: lapCountVal,
           gatePickMethod: generateGateMethod,
           rounds: roundsToSend,
         } as any,
@@ -2023,6 +2026,25 @@ export default function EventSchedule() {
                 {isSupercrossFormat
                   ? "If a class exceeds this number, additional heats are created automatically."
                   : "If a class exceeds this number, riders are split into separate divs."}
+              </p>
+            </div>
+
+            {/* Lap count */}
+            <div className="space-y-2">
+              <Label>
+                Laps per Race{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                value={generateLapCount}
+                onChange={e => setGenerateLapCount(e.target.value)}
+                placeholder="e.g. 6"
+                className="h-9"
+              />
+              <p className="text-xs text-muted-foreground">
+                For laps-based races. Sets the target lap count on every moto — shown to the timer and displayed on the race card.
               </p>
             </div>
 
