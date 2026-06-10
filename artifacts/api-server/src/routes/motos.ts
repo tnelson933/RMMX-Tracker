@@ -348,7 +348,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
 
     // Assign round numbers using a tiered strategy:
     //  1. "Moto N" in name (e.g. "450 Pro Moto 1") → use N; handles standard multi-round formats and
-    //     multi-group classes ("Group 1 Moto 1" and "Group 2 Moto 1" both yield round 1).
+    //     multi-div classes ("Div 1 Moto 1" and "Div 2 Moto 1" both yield round 1).
     //  2. moto type signal (no "Moto N" in name, i.e. Supercross-style naming):
     //       heat / lcq  → round 1  (qualifying; all heats are the same round)
     //       main        → round 2  (final; always higher than heats/lcq)
@@ -583,7 +583,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       for (const { cls, groups } of allClassGroups) {
         const multiGroup = groups.length > 1;
         for (let h = 0; h < groups.length; h++) {
-          const groupLabel = multiGroup ? ` Group ${h + 1}` : "";
+          const groupLabel = multiGroup ? ` Div ${h + 1}` : "";
           const motoLabel = divCount > 1 ? ` Moto ${d}` : " Moto";
           const name = `${cls}${groupLabel}${motoLabel}`;
           const lineup = buildLineup(groups[h], gateSeeding);

@@ -2137,20 +2137,20 @@ export default function Motos() {
               )}
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  {isSupercrossFormat ? "Max Riders per Heat" : "Group Size (optional)"}
+                  {isSupercrossFormat ? "Max Riders per Heat" : "Div Size (optional)"}
                 </label>
                 <Input
                   type="number"
                   min={1}
                   value={ridersPerHeat}
                   onChange={e => setRidersPerHeat(e.target.value)}
-                  placeholder="No limit (all in one group)"
+                  placeholder="No limit (all in one div)"
                   className="h-9"
                 />
                 <p className="text-xs text-muted-foreground">
                   {isSupercrossFormat
                     ? "If a class exceeds this number, additional heats are created automatically."
-                    : "If a class exceeds this number, riders are split into separate groups."}
+                    : "If a class exceeds this number, riders are split into separate divs."}
                 </p>
               </div>
               {/* Gate Pick Method */}
