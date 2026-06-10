@@ -4,7 +4,7 @@ import {
   useListMotos, useGenerateLineups, useGenerateMotoLineup, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables,
   useUpdateResultLaps, useListResults, useGeneratePracticeSessions,
-  getListMotosQueryKey, getListCheckinsQueryKey, Moto,
+  getListMotosQueryKey, getListCheckinsQueryKey, Moto, updateMoto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1613,28 +1613,27 @@ export default function Motos() {
     return { roundMap: map, maxRounds: max };
   }, [motos]);
 
-  const doStartMoto = (motoId: number, motoName?: string) => {
+  const doStartMoto = async (motoId: number, _motoName?: string) => {
     const motoObj = (motos ?? []).find(m => m.id === motoId);
     const partnerId: number | null =
       (motoObj as any)?.staggeredOrder === 1 && (motoObj as any)?.staggeredWithMotoId
         ? Number((motoObj as any).staggeredWithMotoId)
         : null;
-    updateMutation.mutate(
-      { motoId, data: { status: "in_progress" } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-          const timingLabel = (event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID";
-          toast({ title: partnerId ? `🏁 Staggered start — both motos now live` : `🏁 Moto started — ${timingLabel} timing active` });
-          if (partnerId) {
-            updateMutation.mutate(
-              { motoId: partnerId, data: { status: "in_progress" } },
-              { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }) }
-            );
-          }
-        },
-      }
-    );
+
+    const timingLabel = (event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID";
+
+    try {
+      // Fire both start requests simultaneously so neither moto briefly shows "Waiting".
+      await Promise.all([
+        updateMoto(motoId, { status: "in_progress" } as any),
+        ...(partnerId ? [updateMoto(partnerId, { status: "in_progress" } as any)] : []),
+      ]);
+      await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      toast({ title: partnerId ? `🏁 Staggered start — both motos now live` : `🏁 Moto started — ${timingLabel} timing active` });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not start moto";
+      toast({ title: "Failed to start moto", description: msg, variant: "destructive" });
+    }
   };
 
   const handleStatusUpdate = (motoId: number, status: string) => {
