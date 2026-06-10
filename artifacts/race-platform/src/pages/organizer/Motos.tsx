@@ -2575,10 +2575,10 @@ export default function Motos() {
                     (a.riderName ?? "").localeCompare(b.riderName ?? "")
                   );
                   return (
-                    <Card key={cls} className="overflow-hidden">
-                      <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
+                    <Card key={cls} className="overflow-hidden border-sidebar-border">
+                      <div className="flex items-center justify-between px-3 py-2 bg-sidebar text-sidebar-foreground border-b">
                         <span className="font-heading font-bold text-xs uppercase tracking-wider truncate mr-2">{cls}</span>
-                        <Badge variant="secondary" className="text-xs h-5 shrink-0">{sorted.length}</Badge>
+                        <Badge variant="secondary" className="text-xs h-5 shrink-0 bg-sidebar-accent text-sidebar-foreground border-transparent">{sorted.length}</Badge>
                       </div>
                       <div className="divide-y max-h-80 overflow-y-auto">
                         {sorted.map(r => (
@@ -2730,10 +2730,10 @@ export default function Motos() {
               </div>
             </div>
             <div className="border rounded-lg overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/30 border-b">
-                <LayoutList size={14} className="text-muted-foreground shrink-0" />
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-sidebar text-sidebar-foreground border-b">
+                <LayoutList size={14} className="text-sidebar-foreground/60 shrink-0" />
                 <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Run Order</h3>
-                <span className="text-[10px] text-muted-foreground font-normal">— {runOrderMotos.length} motos, read-only</span>
+                <span className="text-[10px] text-sidebar-foreground/50 font-normal">— {runOrderMotos.length} motos, read-only</span>
                 <button
                   onClick={() => window.print()}
                   className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded border border-border bg-background hover:bg-muted/60 text-xs font-bold uppercase tracking-wider text-foreground transition-colors no-print"
@@ -2873,8 +2873,8 @@ export default function Motos() {
             }).map((moto) => (
             <div key={moto.id} id={`moto-card-${moto.id}`}>
               <DroppableMotoSlot id={`moto-slot-${moto.id}`} active={!!activeMotoCardDrag && activeMotoCardDrag.motoId !== moto.id} />
-            <Card className="flex flex-col h-full border-zinc-600 overflow-hidden">
-              <CardHeader className="bg-card py-3 border-b flex flex-row items-center gap-3 px-4">
+            <Card className="flex flex-col h-full border-sidebar-border overflow-hidden">
+              <CardHeader className="bg-sidebar text-sidebar-foreground py-3 border-b flex flex-row items-center gap-3 px-4">
                 {/* Race number corner block */}
                 <div className="shrink-0 self-stretch -my-3 -ml-4 mr-0 flex flex-col items-center justify-center bg-primary border-r border-primary/70 w-14">
                   <span className="text-[8px] font-bold uppercase tracking-widest text-white leading-none mb-0.5">RACE</span>

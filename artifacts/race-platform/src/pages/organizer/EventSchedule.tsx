@@ -260,12 +260,12 @@ function RiderPool({ checkins, poolOpen, setPoolOpen, isRiderDragging }: RiderPo
                   a.riderName.localeCompare(b.riderName)
                 );
                 return (
-                  <Card key={cls} className="overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
+                  <Card key={cls} className="overflow-hidden border-sidebar-border">
+                    <div className="flex items-center justify-between px-3 py-2 bg-sidebar text-sidebar-foreground border-b">
                       <span className="font-heading font-bold text-xs uppercase tracking-wider truncate mr-2">
                         {cls}
                       </span>
-                      <Badge variant="secondary" className="text-xs h-5 shrink-0">
+                      <Badge variant="secondary" className="text-xs h-5 shrink-0 bg-sidebar-accent text-sidebar-foreground border-transparent">
                         {sorted.length}
                       </Badge>
                     </div>
@@ -585,7 +585,7 @@ function SortableMotoCard({
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
           : staggerPartner
           ? "border-primary/40 ring-1 ring-primary/20"
-          : "border-zinc-600 hover:border-primary/40"
+          : "border-sidebar-border hover:border-primary/40"
       }`}
     >
       {/* ── Stagger drop zone (shown when another moto card is being dragged) ── */}
@@ -621,13 +621,13 @@ function SortableMotoCard({
       )}
 
       {/* ── Header row ── */}
-      <div className="flex items-center gap-3 px-4 py-3">
-        <span className="text-xs text-muted-foreground w-6 shrink-0 text-center font-mono">
+      <div className="flex items-center gap-3 px-4 py-3 bg-sidebar text-sidebar-foreground border-b">
+        <span className="text-xs text-sidebar-foreground/50 w-6 shrink-0 text-center font-mono">
           {index + 1}
         </span>
 
         <button
-          className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0"
+          className="touch-none cursor-grab active:cursor-grabbing text-sidebar-foreground/40 hover:text-sidebar-foreground shrink-0"
           {...attributes}
           {...listeners}
           aria-label="Drag to reorder"
@@ -802,7 +802,7 @@ function StaticMotoCard({
           ? "border-muted bg-muted/10"
           : showDropHighlight
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
-          : "border-zinc-600 hover:border-primary/40"
+          : "border-sidebar-border hover:border-primary/40"
       }`}
     >
       {/* ── Countdown complete banner ── */}
@@ -814,8 +814,8 @@ function StaticMotoCard({
       )}
 
       {/* ── Header row ── */}
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: "hsl(var(--primary) / 0.3)" }} />
+      <div className="flex items-center gap-3 px-4 py-3 bg-sidebar text-sidebar-foreground border-b">
+        <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: "hsl(var(--primary) / 0.5)" }} />
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
