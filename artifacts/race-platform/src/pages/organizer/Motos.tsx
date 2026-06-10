@@ -1753,11 +1753,20 @@ export default function Motos() {
     const { motoId, motoName } = restartDialog;
     if (motoId === null) return;
     setRestartDialog({ open: false, motoId: null, motoName: "" });
+
+    // Find the stagger partner (works whether organizer clicked restart on order=1 or order=2)
+    const motoObj = (motos ?? []).find(m => m.id === motoId);
+    const partnerId: number | null = (motoObj as any)?.staggeredWithMotoId
+      ? Number((motoObj as any).staggeredWithMotoId)
+      : null;
+
     try {
-      const res = await fetch(`/api/motos/${motoId}/restart`, { method: "POST" });
-      if (!res.ok) throw new Error("Failed to restart moto");
-      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-      toast({ title: `🔄 Moto restarted: ${motoName}` });
+      await Promise.all([
+        fetch(`/api/motos/${motoId}/restart`, { method: "POST" }).then(r => { if (!r.ok) throw new Error("Failed"); }),
+        ...(partnerId ? [fetch(`/api/motos/${partnerId}/restart`, { method: "POST" }).then(r => { if (!r.ok) throw new Error("Failed"); })] : []),
+      ]);
+      await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      toast({ title: partnerId ? `🔄 Both motos restarted` : `🔄 Moto restarted: ${motoName}` });
     } catch {
       toast({ title: "Failed to restart moto", variant: "destructive" });
     }
@@ -3690,11 +3699,24 @@ export default function Motos() {
       <Dialog open={restartDialog.open} onOpenChange={open => !open && setRestartDialog({ open: false, motoId: null, motoName: "" })}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-heading uppercase tracking-wider text-destructive">Restart Moto?</DialogTitle>
+            <DialogTitle className="font-heading uppercase tracking-wider text-destructive">
+              {(() => {
+                const m = (motos ?? []).find(x => x.id === restartDialog.motoId);
+                return (m as any)?.staggeredWithMotoId ? "Restart Both Motos?" : "Restart Moto?";
+              })()}
+            </DialogTitle>
             <DialogDescription className="pt-1">
-              This will clear all lap times and crossings for{" "}
-              <span className="font-semibold text-foreground">"{restartDialog.motoName}"</span>{" "}
-              and restart the clock from zero.
+              {(() => {
+                const m = (motos ?? []).find(x => x.id === restartDialog.motoId);
+                const partner = (m as any)?.staggeredWithMotoId
+                  ? (motos ?? []).find(x => x.id === Number((m as any).staggeredWithMotoId))
+                  : null;
+                return partner ? (
+                  <>This will clear all lap times and crossings for <span className="font-semibold text-foreground">"{restartDialog.motoName}"</span> and its staggered partner <span className="font-semibold text-foreground">"{partner.name}"</span>, and restart both clocks from zero.</>
+                ) : (
+                  <>This will clear all lap times and crossings for <span className="font-semibold text-foreground">"{restartDialog.motoName}"</span> and restart the clock from zero.</>
+                );
+              })()}
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">This cannot be undone. All recorded laps will be permanently deleted.</p>
