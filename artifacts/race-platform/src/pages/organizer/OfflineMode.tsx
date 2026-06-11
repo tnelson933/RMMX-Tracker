@@ -276,6 +276,55 @@ export default function OfflineMode() {
   const syncCmdMac = `CLOUD_URL=${cloudDomain} CLUB_ID=${clubId} CLOUD_EMAIL=you@club.com CLOUD_PASSWORD=yourpassword npm start`;
   const syncCmdWindows = `set CLOUD_URL=${cloudDomain}\nset CLUB_ID=${clubId}\nset CLOUD_EMAIL=you@club.com\nset CLOUD_PASSWORD=yourpassword\nnpm start`;
 
+  const downloadLauncher = (platform: "windows" | "mac", cmd: string) => {
+    const cmd3 = cmd.replace(/^python /, "python3 ");
+    let content: string;
+    let filename: string;
+    if (platform === "windows") {
+      content = [
+        "@echo off",
+        "title Rocky Mountain Race Timing Bridge",
+        "echo ================================================",
+        "echo   Rocky Mountain Race Timing Bridge",
+        "echo ================================================",
+        "echo.",
+        "echo Starting... Keep this window open while racing.",
+        "echo.",
+        "set SCRIPT_DIR=%~dp0",
+        'cd /d "%SCRIPT_DIR%"',
+        cmd,
+        "echo.",
+        "echo Bridge stopped. Press any key to close.",
+        "pause > nul",
+      ].join("\r\n");
+      filename = "start-timing.bat";
+    } else {
+      content = [
+        "#!/bin/bash",
+        'cd "$(dirname "$0")"',
+        "echo '================================================'",
+        "echo '  Rocky Mountain Race Timing Bridge'",
+        "echo '================================================'",
+        "echo ''",
+        "echo 'Starting... Keep this window open while racing.'",
+        "echo ''",
+        cmd3,
+        "echo ''",
+        "echo 'Bridge stopped.'",
+      ].join("\n");
+      filename = "start-timing.command";
+    }
+    const blob = new Blob([content], { type: "text/plain" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-8">
 
@@ -520,9 +569,22 @@ export default function OfflineMode() {
                 <p className="text-xs font-medium text-foreground">
                   Start your bridge pointed at the laptop instead of the cloud:
                 </p>
-                <CopyableCodeBlock>{bridgeCmdLocal}</CopyableCodeBlock>
+                <div className="flex flex-wrap gap-2">
+                  <a href="/rfid_bridge.py" download="rfid_bridge.py"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                    <Download size={12} /> rfid_bridge.py
+                  </a>
+                  <button onClick={() => downloadLauncher("windows", bridgeCmdLocal)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                    <Download size={12} /> Windows Launcher (.bat)
+                  </button>
+                  <button onClick={() => downloadLauncher("mac", bridgeCmdLocal)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                    <Download size={12} /> Mac Launcher (.command)
+                  </button>
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  This replaces the normal <span className="font-mono bg-muted rounded px-1">python rfid_bridge.py</span> command for today.
+                  Save the launcher in the same folder as rfid_bridge.py and double-click it — no terminal needed.
                   Keep the window open — closing it cuts the reader connection.
                 </p>
                 <p className="text-xs">
@@ -546,9 +608,28 @@ export default function OfflineMode() {
                     className="font-mono h-8 text-xs max-w-xs"
                   />
                 </div>
-                <CopyableCodeBlock>{mylapsBridgeCmdLocal}</CopyableCodeBlock>
+                <div className="flex flex-wrap gap-2">
+                  <a href="/rfid_bridge.py" download="rfid_bridge.py"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                    <Download size={12} /> rfid_bridge.py
+                  </a>
+                  <button onClick={() => downloadLauncher("windows", mylapsBridgeCmdLocal)}
+                    disabled={!decoderIp.trim()}
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
+                    <Download size={12} /> Windows Launcher (.bat)
+                  </button>
+                  <button onClick={() => downloadLauncher("mac", mylapsBridgeCmdLocal)}
+                    disabled={!decoderIp.trim()}
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
+                    <Download size={12} /> Mac Launcher (.command)
+                  </button>
+                </div>
+                {!decoderIp.trim() && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable launcher download.</p>
+                )}
                 <p className="text-xs text-muted-foreground">
-                  Keep the terminal window open all day — closing it disconnects from the decoder.
+                  Save the launcher in the same folder as rfid_bridge.py and double-click it.
+                  Keep the window open all day — closing it disconnects from the decoder.
                 </p>
               </div>
             )}
@@ -642,11 +723,33 @@ export default function OfflineMode() {
             {tech === "rfid" ? (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-foreground">Restart the bridge without the local override:</p>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => downloadLauncher("windows", bridgeCmdCloud)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                    <Download size={12} /> Windows Launcher (.bat)
+                  </button>
+                  <button onClick={() => downloadLauncher("mac", bridgeCmdCloud)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                    <Download size={12} /> Mac Launcher (.command)
+                  </button>
+                </div>
                 <CopyableCodeBlock>{bridgeCmdCloud}</CopyableCodeBlock>
               </div>
             ) : (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-foreground">Restart the bridge pointed back at the cloud:</p>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => downloadLauncher("windows", mylapsBridgeCmdCloud)}
+                    disabled={!decoderIp.trim()}
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
+                    <Download size={12} /> Windows Launcher (.bat)
+                  </button>
+                  <button onClick={() => downloadLauncher("mac", mylapsBridgeCmdCloud)}
+                    disabled={!decoderIp.trim()}
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
+                    <Download size={12} /> Mac Launcher (.command)
+                  </button>
+                </div>
                 <CopyableCodeBlock>{mylapsBridgeCmdCloud}</CopyableCodeBlock>
                 <p className="text-xs text-muted-foreground">
                   This is the same command you use on normal race days — just run it once and the decoder reconnects automatically.
