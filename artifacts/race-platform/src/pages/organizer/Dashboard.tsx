@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Calendar, Users, CheckCircle, Plus, Tag, Activity,
-  Upload, ImageIcon, Loader2, X, Sparkles, Save, Building2, LayoutDashboard, Mail, Copy, ClipboardCheck, Download,
+  Upload, ImageIcon, Loader2, X, Sparkles, Save, Building2, LayoutDashboard, Mail, Copy, ClipboardCheck,
   Cloud, CloudOff, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import { Link } from "wouter";
@@ -260,31 +260,6 @@ export default function Dashboard() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [clubIdCopied, setClubIdCopied] = useState(false);
-  const [exporting, setExporting] = useState(false);
-
-  const handleExport = async () => {
-    if (!clubId || exporting) return;
-    setExporting(true);
-    try {
-      const res = await fetch(`/api/clubs/${clubId}/export`, { credentials: "include" });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      const today = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `race-data-${today}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      // silent — download failure shouldn't break the UI
-    } finally {
-      setExporting(false);
-    }
-  };
-
   const handleCopyClubId = () => {
     if (!clubId) return;
     navigator.clipboard.writeText(String(clubId)).then(() => {
@@ -349,17 +324,6 @@ export default function Dashboard() {
           <p className="text-muted-foreground mt-1">{club?.name || "Club"} — organizer portal</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={handleExport}
-            disabled={exporting}
-            className="font-heading uppercase tracking-wider"
-          >
-            {exporting
-              ? <Loader2 size={16} className="mr-2 animate-spin" />
-              : <Download size={16} className="mr-2" />}
-            {exporting ? "Exporting…" : "Download Race Data"}
-          </Button>
           <Link href="/events">
             <Button className="font-heading uppercase tracking-wider">
               <Plus size={16} className="mr-2" /> New Event

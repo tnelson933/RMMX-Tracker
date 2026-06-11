@@ -2,10 +2,11 @@ import { useState, useCallback, useEffect } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   WifiOff, Download, UploadCloud, AlertTriangle,
   CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
-  Wifi, Loader2,
+  Wifi, Loader2, Database,
 } from "lucide-react";
 import { useGetOfflinePackageInfo, useRebuildOfflinePackage } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -220,10 +221,37 @@ export default function OfflineMode() {
   }, [resetRebuild, triggerRebuild]);
 
   const [os, setOs] = useState<"mac" | "windows">("mac");
+  const [exporting, setExporting] = useState(false);
+  const [exportDone, setExportDone] = useState(false);
 
   const { user } = useAuth();
   const cloudDomain = window.location.origin;
   const clubId = user?.clubId ?? "<your-club-id>";
+
+  const handleExportRaceData = useCallback(async () => {
+    if (!user?.clubId || exporting) return;
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/clubs/${user.clubId}/export`, { credentials: "include" });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const today = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `race-data-${today}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setExportDone(true);
+      setTimeout(() => setExportDone(false), 4000);
+    } catch {
+      // silent
+    } finally {
+      setExporting(false);
+    }
+  }, [user?.clubId, exporting]);
 
   const { ip: localIp, loading: ipLoading } = useLocalIp();
   const laptopIp = localIp ?? "<laptop-ip>";
@@ -384,7 +412,32 @@ export default function OfflineMode() {
         </CardHeader>
         <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
 
-          {/* 2a — Start the software */}
+          {/* 2a — Download race data */}
+          <div className="space-y-3">
+            <p className="text-foreground font-semibold">Download your race data</p>
+            <p>
+              Before you leave home (while you still have internet), download a copy of your
+              rider database and event info. Your laptop uses this file to run the event offline.
+            </p>
+            <Button
+              variant="outline"
+              onClick={handleExportRaceData}
+              disabled={exporting}
+              className="font-heading uppercase tracking-wider gap-2"
+            >
+              {exporting
+                ? <Loader2 size={15} className="animate-spin" />
+                : exportDone
+                  ? <CheckCircle2 size={15} className="text-green-500" />
+                  : <Database size={15} />}
+              {exporting ? "Downloading…" : exportDone ? "Downloaded!" : "Download Race Data"}
+            </Button>
+            <Callout kind="warning">
+              Do this at home before heading to the venue — you need internet to download it.
+            </Callout>
+          </div>
+
+          {/* 2b — Start the software */}
           <div className="space-y-2">
             <p className="text-foreground font-semibold">Start the software on your laptop</p>
             <p>Open a terminal window and start the software the same way you tested it at home. Keep that window open all day — don't close it.</p>
