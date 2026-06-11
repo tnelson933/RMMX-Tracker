@@ -1115,6 +1115,7 @@ export default function EventSchedule() {
     mode: "lap_count" as "lap_count" | "countdown",
     lapCount: "3",
     countdownMinutes: "15",
+    maxRidersPerSession: "",
   });
 
   // ── Event rules data ──
@@ -1752,12 +1753,13 @@ export default function EventSchedule() {
       mode: "lap_count",
       lapCount: "3",
       countdownMinutes: "15",
+      maxRidersPerSession: "",
     });
     setShowPracticeDialog(true);
   }
 
   function handleAddPractice() {
-    const { name, selectedClasses, mode, lapCount, countdownMinutes } = practiceForm;
+    const { name, selectedClasses, mode, lapCount, countdownMinutes, maxRidersPerSession } = practiceForm;
     if (selectedClasses.length === 0) {
       toast({ title: "Select at least one class", variant: "destructive" });
       return;
@@ -1769,22 +1771,60 @@ export default function EventSchedule() {
         return;
       }
     }
+
+    const autoName = name.trim() || `Practice ${rawMotos.filter(m => m.type === "practice").length + 1}`;
+    const countdownSecs = mode === "countdown" ? parseInt(countdownMinutes, 10) * 60 : undefined;
+    const lapCountNum = mode === "lap_count" && lapCount ? parseInt(lapCount, 10) : undefined;
+
+    // ── Auto-assign mode: call generate-practice-sessions ────────────────────
+    const maxNum = maxRidersPerSession ? parseInt(maxRidersPerSession, 10) : NaN;
+    if (maxRidersPerSession && !isNaN(maxNum) && maxNum >= 1) {
+      fetch(`/api/events/${eventId}/generate-practice-sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          raceClasses: selectedClasses,
+          maxRidersPerSession: maxNum,
+          name: autoName,
+          practiceMode: mode,
+          lapCount: lapCountNum,
+          countdownSeconds: countdownSecs,
+        }),
+      })
+        .then(async (r) => {
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error((err as any).error ?? "Failed to generate practice sessions");
+          }
+          return r.json() as Promise<unknown[]>;
+        })
+        .then((created) => {
+          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          setShowPracticeDialog(false);
+          const n = (created as unknown[]).length;
+          toast({ title: n === 1 ? "Practice created with riders assigned" : `${n} practice groups created` });
+        })
+        .catch((err: Error) => {
+          toast({ title: err.message, variant: "destructive" });
+        });
+      return;
+    }
+
+    // ── Manual mode: create empty practice ───────────────────────────────────
     const motoNumber = (rawMotos.length > 0
       ? Math.max(...rawMotos.map(m => m.motoNumber ?? 0))
       : 0) + 1;
-
-    const countdownSecs = mode === "countdown" ? parseInt(countdownMinutes, 10) * 60 : undefined;
 
     createMutation.mutate(
       {
         eventId,
         data: {
-          name: name.trim() || `Practice ${rawMotos.filter(m => m.type === "practice").length + 1}`,
+          name: autoName,
           type: "practice",
           raceClass: selectedClasses[0],
           raceClasses: selectedClasses,
           motoNumber,
-          lapCount: mode === "lap_count" && lapCount ? parseInt(lapCount, 10) : undefined,
+          lapCount: lapCountNum,
           practiceMode: mode,
           countdownSeconds: countdownSecs,
         } as any,
@@ -2789,6 +2829,38 @@ export default function EventSchedule() {
                 </p>
               </div>
             )}
+
+            {/* Max riders per session */}
+            <div className="space-y-1.5 pt-1 border-t">
+              <div className="flex items-center justify-between">
+                <Label>Max Riders Per Session</Label>
+                <span className="text-xs text-muted-foreground">Optional</span>
+              </div>
+              <Input
+                type="number"
+                min={1}
+                value={practiceForm.maxRidersPerSession}
+                onChange={e => setPracticeForm(f => ({ ...f, maxRidersPerSession: e.target.value }))}
+                className="h-9"
+                placeholder="e.g. 25"
+              />
+              {practiceForm.maxRidersPerSession && !isNaN(parseInt(practiceForm.maxRidersPerSession, 10)) ? (() => {
+                const max = parseInt(practiceForm.maxRidersPerSession, 10);
+                const checkedInForClasses = (checkins as any[]).filter((c: any) =>
+                  c.checkedIn && practiceForm.selectedClasses.includes(c.raceClass)
+                ).length;
+                const groups = checkedInForClasses > 0 ? Math.ceil(checkedInForClasses / max) : 0;
+                return (
+                  <p className="text-xs text-primary font-medium">
+                    {checkedInForClasses} checked-in rider{checkedInForClasses !== 1 ? "s" : ""} → {groups > 1 ? `${groups} practice groups` : groups === 1 ? "1 practice" : "0 riders found"} will be created
+                  </p>
+                );
+              })() : (
+                <p className="text-xs text-muted-foreground">
+                  When set, checked-in riders for the selected classes are auto-assigned. If more riders than the limit, multiple groups are created automatically.
+                </p>
+              )}
+            </div>
           </div>
 
           <DialogFooter>
