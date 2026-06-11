@@ -432,6 +432,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     .filter(m => {
       if (m.raceClass == null) return false;
       if (m.status === "completed") return false;
+      if (m.type === "practice") return false; // never delete practice sessions on lineup generation
       if (lockedClasses.has(m.raceClass)) {
         // Locked class: only prune rounds beyond what was requested.
         return getRoundFromMoto(m) > divCount;
