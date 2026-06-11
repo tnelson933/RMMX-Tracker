@@ -619,7 +619,6 @@ export default function ReaderSetup() {
                               <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
                                 placeholder="e.g. 192.168.1.50" className="font-mono h-8 text-xs max-w-xs" />
                             </div>
-                            <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal window opens and the bridge starts with your decoder IP already configured.</p>
                             <button onClick={() => downloadLauncher(os, "mylaps")}
                               disabled={!readerIp.trim()}
                               className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${readerIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
@@ -628,6 +627,7 @@ export default function ReaderSetup() {
                             {!readerIp.trim() && (
                               <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable the download.</p>
                             )}
+                            <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal window opens and the bridge starts with your decoder IP already configured.</p>
                             {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
                           </div>
                         </div>
