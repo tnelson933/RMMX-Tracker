@@ -330,7 +330,7 @@ export default function Checkin() {
             <Input
               value={search}
               onChange={e => handleSearchChange(e.target.value)}
-              placeholder="Search by rider name or bib #..."
+              placeholder="Search by rider name or number #..."
               className="pl-9 pr-9 h-10 text-base font-medium bg-muted/30"
             />
             {search && (
