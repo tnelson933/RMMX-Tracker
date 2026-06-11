@@ -599,17 +599,13 @@ export default function ReaderSetup() {
                           <MiniStep n={2} />
                           <div className="space-y-1.5 min-w-0">
                             <p className="text-xs font-medium">Install Python — one time only</p>
-                            <div className="flex flex-wrap gap-2">
-                              <a href="https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe"
-                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                <Download size={12} /> Python for Windows
-                              </a>
-                              <a href="https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"
-                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                <Download size={12} /> Python for Mac
-                              </a>
-                            </div>
-                            <p className="text-xs text-muted-foreground">Click through the installer. Check <strong>"Add Python to PATH"</strong> if it appears.</p>
+                            <a href={os === "windows" ? "https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe" : "https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"}
+                              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                              <Download size={12} /> {os === "windows" ? "Python for Windows" : "Python for Mac"}
+                            </a>
+                            <p className="text-xs text-muted-foreground">
+                              Click through the installer.{os === "windows" && <> Check <strong>"Add Python to PATH"</strong> if it appears.</>}
+                            </p>
                           </div>
                         </div>
                         <div className="flex gap-3 px-3 py-2.5">
