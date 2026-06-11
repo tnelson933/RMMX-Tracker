@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable } from "@workspace/db";
+import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { sendStatsEmail } from "../lib/email";
 
@@ -347,7 +347,18 @@ router.delete("/events/:eventId", async (req, res) => {
     const [ev] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, id));
     if (!ev || ev.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   }
-  await db.delete(eventsTable).where(eq(eventsTable.id, id));
+  await db.transaction(async (tx) => {
+    // Delete deepest dependents first to satisfy FK constraints
+    await tx.delete(raceResultsTable).where(eq(raceResultsTable.eventId, id));
+    await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.eventId, id));
+    await tx.delete(motosTable).where(eq(motosTable.eventId, id));
+    await tx.delete(checkinsTable).where(eq(checkinsTable.eventId, id));
+    await tx.delete(registrationsTable).where(eq(registrationsTable.eventId, id));
+    await tx.delete(rfidAssignmentsTable).where(eq(rfidAssignmentsTable.eventId, id));
+    await tx.delete(compCodesTable).where(eq(compCodesTable.eventId, id));
+    await tx.delete(eventPublicationTable).where(eq(eventPublicationTable.eventId, id));
+    await tx.delete(eventsTable).where(eq(eventsTable.id, id));
+  });
   return res.status(204).send();
 });
 
