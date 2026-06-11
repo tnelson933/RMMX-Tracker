@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { useRoute } from "wouter";
+import { useRoute, useLocation } from "wouter";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
-import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, useListDiscountCategories } from "@workspace/api-client-react";
+import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, useListDiscountCategories, useDeleteEvent } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info, Upload, ImageIcon, X, Loader2, Sparkles, Ticket } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -116,6 +117,7 @@ export default function EventDetail() {
   const [match, params] = useRoute("/events/:eventId");
   const eventId = parseInt(params?.eventId || "0");
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
@@ -125,8 +127,21 @@ export default function EventDetail() {
   const { data: seriesList } = useListSeries({ query: {} as any });
   const updateMutation = useUpdateEvent();
   const updateSeriesMutation = useUpdateSeries();
+  const deleteMutation = useDeleteEvent();
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  const handleDeleteEvent = () => {
+    deleteMutation.mutate({ eventId }, {
+      onSuccess: () => {
+        toast({ title: "Event deleted" });
+        navigate("/events");
+      },
+      onError: () => toast({ title: "Failed to delete event", variant: "destructive" }),
+    });
+  };
 
   const [editSeriesId, setEditSeriesId] = useState<string>("none");
 
@@ -427,6 +442,19 @@ export default function EventDetail() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8">
+      {/* Page header — event name + delete */}
+      <div className="flex items-center justify-between">
+        <h1 className="font-heading font-bold uppercase tracking-tight text-xl">{event.name}</h1>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 font-heading uppercase tracking-wider"
+          onClick={() => setDeleteConfirmOpen(true)}
+        >
+          <Trash2 size={14} className="mr-1.5" /> Delete Event
+        </Button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
         <div className="lg:col-span-2 space-y-6">
@@ -1463,6 +1491,27 @@ export default function EventDetail() {
           </Card>
         </div>
       </div>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{event.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the event and all associated registrations, check-ins, motos, and results. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteEvent}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Deleting…</> : "Delete Event"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
