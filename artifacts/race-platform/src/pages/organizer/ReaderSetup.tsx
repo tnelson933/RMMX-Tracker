@@ -409,10 +409,16 @@ export default function ReaderSetup() {
                               <MiniStep n={2} />
                               <div className="space-y-1.5 min-w-0">
                                 <p className="text-xs font-medium">Install Python — one time only</p>
-                                <a href="https://www.python.org/downloads/" target="_blank" rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                  <ExternalLink size={12} /> Download Python from python.org
-                                </a>
+                                <div className="flex flex-wrap gap-2">
+                                  <a href="https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe"
+                                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                                    <Download size={12} /> Python for Windows
+                                  </a>
+                                  <a href="https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"
+                                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                                    <Download size={12} /> Python for Mac
+                                  </a>
+                                </div>
                                 <p className="text-xs text-muted-foreground">Click through the installer. Check <strong>"Add Python to PATH"</strong> if it appears.</p>
                               </div>
                             </div>
@@ -601,10 +607,16 @@ export default function ReaderSetup() {
                           <MiniStep n={2} />
                           <div className="space-y-1.5 min-w-0">
                             <p className="text-xs font-medium">Install Python — one time only</p>
-                            <a href="https://www.python.org/downloads/" target="_blank" rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                              <ExternalLink size={12} /> Download Python from python.org
-                            </a>
+                            <div className="flex flex-wrap gap-2">
+                              <a href="https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe"
+                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                                <Download size={12} /> Python for Windows
+                              </a>
+                              <a href="https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"
+                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                                <Download size={12} /> Python for Mac
+                              </a>
+                            </div>
                             <p className="text-xs text-muted-foreground">Click through the installer. Check <strong>"Add Python to PATH"</strong> if it appears.</p>
                           </div>
                         </div>
