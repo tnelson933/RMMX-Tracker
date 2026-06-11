@@ -515,7 +515,7 @@ export default function ReaderSetup() {
                   Save — these settings work for every event and every heat. You never need to change them again.
                 </p>
                 <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
-                  <strong>Compatible with:</strong> AMBrc 5+, Orbits 4. Works with AMB TranX, AMB RC4, AMB MX, MyLaps X2, and P3 Flex decoders.
+                  <strong>Compatible with:</strong> AMBrc 5+ (HTTP Output feature). Works with AMB TranX, AMB RC4, AMB MX, MyLaps X2, and P3 Flex decoders.
                 </p>
               </div>
             </div>

@@ -528,11 +528,12 @@ export default function OfflineMode() {
             ) : (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-foreground">
-                  In your decoder software (Orbits 4 / AMBrc), change the upload URL to:
+                  In AMBrc, go to <strong className="text-foreground">Settings → Passings Output → HTTP Output</strong> and change the URL to:
                 </p>
                 <CopyableCodeBlock>{localEndpoint}</CopyableCodeBlock>
                 <p className="text-xs text-muted-foreground">
-                  Compatible with AMBrc 5+, Orbits 4, AMB TranX, AMB RC4, AMB MX, MyLaps X2, and P3 Flex decoders.
+                  This uses AMBrc's built-in HTTP push feature — AMBrc sends each crossing to your laptop instead of the cloud.
+                  Compatible with AMBrc 5+ and decoders: AMB TranX, AMB RC4, AMB MX, MyLaps X2, P3 Flex.
                 </p>
               </div>
             )}
@@ -630,7 +631,7 @@ export default function OfflineMode() {
               </div>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-foreground">In your decoder software, change the upload URL back to:</p>
+                <p className="text-xs font-medium text-foreground">In AMBrc, go to <strong className="text-foreground">Settings → Passings Output → HTTP Output</strong> and change the URL back to:</p>
                 <CopyableCodeBlock>{cloudEndpoint}</CopyableCodeBlock>
               </div>
             )}
