@@ -1351,6 +1351,14 @@ export default function EventSchedule() {
       ? sortedMotos.filter(m => m.type === "practice")
       : sortedMotos.filter(m => m.type !== "practice" && roundMap.get(m.id) === roundFilter);
 
+  // ── Stable global race-number map ──
+  // Compute each moto's position in the full day's run order (excluding stagger-2 motos),
+  // so the number shown on each card never changes when a filter pill is active.
+  const globalMotoIndexMap = useMemo(() => {
+    const allVisible = sortedMotos.filter(m => (m as any).staggeredOrder !== 2);
+    return new Map(allVisible.map((m, i) => [m.id, i]));
+  }, [sortedMotos]);
+
   // ── DnD sensors ──
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -2179,6 +2187,7 @@ export default function EventSchedule() {
                         const staggerPartner = (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
                           ? (rawMotos.find(m => m.id === (moto as any).staggeredWithMotoId) ?? null)
                           : null;
+                        const globalIndex = globalMotoIndexMap.get(moto.id) ?? index;
                         return (
                           <div key={moto.id}>
                             {showSection && (
@@ -2191,7 +2200,7 @@ export default function EventSchedule() {
                             )}
                             <SortableMotoCard
                               moto={moto}
-                              index={index}
+                              index={globalIndex}
                               eventId={eventId}
                               isPoolDropTarget={activePoolOverMotoId === moto.id}
                               isEditing={editingNameId === moto.id}
