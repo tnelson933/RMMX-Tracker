@@ -113,7 +113,7 @@ export default function EventsList() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("upcoming");
   const [createSeriesId, setCreateSeriesId] = useState<string>("none");
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [createImgState, setCreateImgState] = useState<"idle" | "processing" | "uploading" | "done">("idle");
@@ -273,14 +273,23 @@ export default function EventsList() {
   };
 
   const todayStr = format(new Date(), "yyyy-MM-dd");
-  const filteredEvents = events?.filter(e => {
-    if (filter === "all") return true;
-    if (filter === "draft") return e.status === "draft";
-    if (filter === "registration_open") return e.status === "registration_open";
-    if (filter === "race_day") return e.status === "race_day" || e.date.substring(0, 10) === todayStr;
-    if (filter === "completed") return e.status === "completed";
-    return true;
-  }) || [];
+  const filteredEvents = (() => {
+    const all = events ?? [];
+    if (filter === "upcoming") {
+      return [...all]
+        .filter(e => e.status !== "completed")
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(0, 5);
+    }
+    return all.filter(e => {
+      if (filter === "all") return true;
+      if (filter === "draft") return e.status === "draft";
+      if (filter === "registration_open") return e.status === "registration_open";
+      if (filter === "race_day") return e.status === "race_day" || e.date.substring(0, 10) === todayStr;
+      if (filter === "completed") return e.status === "completed";
+      return true;
+    });
+  })();
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8">
@@ -869,6 +878,7 @@ export default function EventsList() {
 
       <Tabs value={filter} onValueChange={setFilter} className="w-full">
         <TabsList className="bg-muted">
+          <TabsTrigger value="upcoming" className="font-heading uppercase">Upcoming</TabsTrigger>
           <TabsTrigger value="all" className="font-heading uppercase">All</TabsTrigger>
           <TabsTrigger value="draft" className="font-heading uppercase">Draft</TabsTrigger>
           <TabsTrigger value="registration_open" className="font-heading uppercase">Reg Open</TabsTrigger>
