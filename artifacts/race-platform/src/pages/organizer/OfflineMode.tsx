@@ -227,6 +227,13 @@ export default function OfflineMode() {
   const [syncPassword, setSyncPassword] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
+  const [showReconnectBanner, setShowReconnectBanner] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => setShowReconnectBanner(true);
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, []);
 
   const { user } = useAuth();
   const cloudDomain = window.location.origin;
@@ -422,6 +429,36 @@ export default function OfflineMode() {
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-8">
+
+      {/* ── Back-online reconnect banner ─────────────────────────────────────────── */}
+      {showReconnectBanner && (
+        <div className="flex items-start gap-3 rounded-xl border-2 border-green-500/50 bg-green-500/10 px-4 py-4">
+          <Wifi size={20} className="text-green-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 space-y-2">
+            <p className="text-sm font-semibold text-foreground">You're back online!</p>
+            <p className="text-xs text-muted-foreground">Switch your timing reader back to the cloud now so it's ready for your next event.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => {
+                  downloadLauncher(os, tech === "rfid" ? bridgeCmdCloud : mylapsBridgeCmdCloud);
+                  setShowReconnectBanner(false);
+                }}
+                disabled={tech === "mylaps" && !decoderIp.trim()}
+                className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border bg-background transition-colors ${tech === "mylaps" && !decoderIp.trim() ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"}`}>
+                <Download size={12} /> Download switch-to-cloud script
+              </button>
+              <button
+                onClick={() => setShowReconnectBanner(false)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
+                Skip for now
+              </button>
+            </div>
+            {tech === "mylaps" && !decoderIp.trim() && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">Enter your decoder IP in Step 2c to enable the download.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Page header ─────────────────────────────────────────────────────────── */}
       <div>
@@ -826,29 +863,23 @@ export default function OfflineMode() {
             <p>After syncing, point your reader back at the cloud so it's ready for your next event.</p>
             {tech === "rfid" ? (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-foreground">Restart the bridge without the local override:</p>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => downloadLauncher(os, bridgeCmdCloud)}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                    <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
-                  </button>
-                </div>
-                <CopyableCodeBlock>{bridgeCmdCloud}</CopyableCodeBlock>
+                <button onClick={() => downloadLauncher(os, bridgeCmdCloud)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                  <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
+                </button>
+                <p className="text-xs text-muted-foreground">Double-click to run — the bridge reconnects to the cloud automatically.</p>
               </div>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-foreground">Restart the bridge pointed back at the cloud:</p>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => downloadLauncher(os, mylapsBridgeCmdCloud)}
-                    disabled={!decoderIp.trim()}
-                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                    <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
-                  </button>
-                </div>
-                <CopyableCodeBlock>{mylapsBridgeCmdCloud}</CopyableCodeBlock>
-                <p className="text-xs text-muted-foreground">
-                  This is the same command you use on normal race days — just run it once and the decoder reconnects automatically.
-                </p>
+                <button onClick={() => downloadLauncher(os, mylapsBridgeCmdCloud)}
+                  disabled={!decoderIp.trim()}
+                  className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
+                  <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
+                </button>
+                {!decoderIp.trim() && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">Enter your decoder IP in Step 2c to enable the download.</p>
+                )}
+                <p className="text-xs text-muted-foreground">This is the same script you use on normal race days — double-click it and the decoder reconnects automatically.</p>
               </div>
             )}
           </div>
