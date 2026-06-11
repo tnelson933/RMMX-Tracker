@@ -3001,7 +3001,7 @@ export default function Motos() {
                       Open to all checked-in riders — no gate assignment needed.
                     </div>
                   )
-                ) : moto.type === "heat" ? (
+                ) : (
                   <>
                   <LineupSortBar sort={getMotoSort(moto.id)} onChange={s => setMotoSort(moto.id, s)} />
                   <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed" || getMotoSort(moto.id) !== "gate"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === moto.id}>
@@ -3048,74 +3048,6 @@ export default function Motos() {
                     </Table>
                   </DroppableMotoLineup>
                   </>
-                ) : (
-                  <div className="flex-1 overflow-y-auto max-h-52 border-b">
-                    <LineupSortBar sort={getMotoSort(moto.id)} onChange={s => setMotoSort(moto.id, s)} />
-                    <Table>
-                      <TableHeader className="bg-muted/50 sticky top-0">
-                        <TableRow>
-                          <TableHead className="w-12 text-center text-xs">Gate Pick</TableHead>
-                          <TableHead className="text-xs">Rider</TableHead>
-                          <TableHead className="w-16 text-center text-xs">#</TableHead>
-                          <TableHead className="w-20 text-center text-xs">RFID</TableHead>
-                          {moto.status === "in_progress" && <TableHead className="w-24" />}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {moto.lineup && moto.lineup.length > 0 ? (
-                          sortLineup(moto.lineup as LineupEntry[], getMotoSort(moto.id)).map((entry) => {
-                            const cooldown = manualLapCooldown.has(`${moto.id}-${entry.riderId}`);
-                            const entryHasShortLap = shortLapSet.has(`${moto.id}-${entry.riderId}`);
-                            return (
-                              <TableRow key={entry.riderId} className="h-8">
-                                <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
-                                <TableCell className={`font-medium ${entryHasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
-                                  {moto.status === "completed" ? (
-                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
-                                      {entry.riderName}
-                                      <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
-                                    </button>
-                                  ) : entry.riderName}
-                                </TableCell>
-                                <TableCell className="text-center font-mono text-xs">{entry.bibNumber || "—"}</TableCell>
-                                <TableCell className="text-center">
-                                  {entry.rfidNumber ? (
-                                    <span className="inline-flex items-center gap-1 text-green-600">
-                                      <Radio size={10} /> <span className="font-mono text-xs">{entry.rfidNumber}</span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground text-xs">—</span>
-                                  )}
-                                </TableCell>
-                                {moto.status === "in_progress" && (
-                                  <TableCell className="pr-2 text-right">
-                                    <button
-                                      onClick={() => handleManualLap(entry.riderId, moto.id)}
-                                      disabled={cooldown}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-heading font-bold uppercase tracking-wide transition-all border ${
-                                        cooldown
-                                          ? "bg-green-100 border-green-300 text-green-600 opacity-60 cursor-not-allowed"
-                                          : "bg-background border-border text-muted-foreground hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50"
-                                      }`}
-                                    >
-                                      <Timer size={11} />
-                                      {cooldown ? "Recorded" : "Lap"}
-                                    </button>
-                                  </TableCell>
-                                )}
-                              </TableRow>
-                            );
-                          })
-                        ) : (
-                          <TableRow>
-                            <TableCell colSpan={moto.status === "in_progress" ? 5 : 4} className="text-center py-4 text-muted-foreground text-sm">
-                              No lineup generated
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
                 )}
 
                 {/* Stagger partner lineup — shown on order=1 card */}
