@@ -584,8 +584,8 @@ export default function OfflineMode() {
                   </button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Save the launcher in the same folder as rfid_bridge.py and double-click it — no terminal needed.
-                  Keep the window open — closing it cuts the reader connection.
+                  Save both files to the same folder — your <strong>Downloads</strong> folder works great.
+                  Double-click the launcher to start. Keep the window open — closing it cuts the reader connection.
                 </p>
                 <p className="text-xs">
                   <a href="/rfid/setup" className="text-primary underline underline-offset-2">Reader Setup page</a>{" "}
@@ -628,8 +628,8 @@ export default function OfflineMode() {
                   <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable launcher download.</p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Save the launcher in the same folder as rfid_bridge.py and double-click it.
-                  Keep the window open all day — closing it disconnects from the decoder.
+                  Save both files to the same folder — your <strong>Downloads</strong> folder works great.
+                  Double-click the launcher to start. Keep the window open all day — closing it disconnects from the decoder.
                 </p>
               </div>
             )}
