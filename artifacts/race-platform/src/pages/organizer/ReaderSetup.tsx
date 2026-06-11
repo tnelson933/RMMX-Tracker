@@ -382,19 +382,8 @@ export default function ReaderSetup() {
                 {setupMethod === "auto" && (
                   <div className="space-y-3">
                     <div className="border rounded-lg bg-muted/20 p-4 space-y-3">
-                      <div className="flex items-center gap-2 text-sm">
-                        {bridgeDot}
-                        <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
-                          {bridgeStatus === "checking" && "Checking for bridge…"}
-                          {bridgeStatus === "running"  && "Bridge is running — form unlocked below"}
-                          {bridgeStatus === "offline"  && "Bridge not detected — start it first"}
-                        </span>
-                      </div>
-                      {bridgeStatus === "running" ? (
-                        <p className="text-xs text-green-700 dark:text-green-400 font-medium">Bridge is running — configure your reader in the form below.</p>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="border rounded-lg divide-y overflow-hidden">
+                      <div className="space-y-3">
+                        <div className="border rounded-lg divide-y overflow-hidden">
                             <div className="flex gap-3 px-3 py-2.5">
                               <MiniStep n={1} />
                               <div className="space-y-1.5 min-w-0">
@@ -443,7 +432,14 @@ export default function ReaderSetup() {
                           </div>
                           <p className="text-xs text-muted-foreground">Keep the window open while configuring — closing it disconnects the reader.</p>
                         </div>
-                      )}
+                      <div className="flex items-center gap-2 pt-2 border-t text-sm">
+                        {bridgeDot}
+                        <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
+                          {bridgeStatus === "checking" && "Checking for bridge…"}
+                          {bridgeStatus === "running"  && "Bridge connected — configure your reader below"}
+                          {bridgeStatus === "offline"  && "Waiting for bridge — double-click the launcher to start"}
+                        </span>
+                      </div>
                     </div>
 
                     <div className={`border rounded-lg p-4 space-y-3 transition-opacity ${bridgeStatus === "running" ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
@@ -580,19 +576,8 @@ export default function ReaderSetup() {
                   Download the script, enter your decoder's IP, and run the command shown below.
                 </p>
                 <div className="border rounded-lg bg-muted/20 p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-sm">
-                    {bridgeDot}
-                    <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
-                      {bridgeStatus === "checking" && "Checking for bridge…"}
-                      {bridgeStatus === "running"  && "Bridge is running — decoder connected"}
-                      {bridgeStatus === "offline"  && "Bridge not detected — start it with the command below"}
-                    </span>
-                  </div>
-                  {bridgeStatus === "running" ? (
-                    <p className="text-xs text-green-700 dark:text-green-400 font-medium">Bridge is running — decoder connected.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="border rounded-lg divide-y overflow-hidden">
+                  <div className="space-y-3">
+                    <div className="border rounded-lg divide-y overflow-hidden">
                         <div className="flex gap-3 px-3 py-2.5">
                           <MiniStep n={1} />
                           <div className="space-y-1.5 min-w-0">
@@ -653,7 +638,14 @@ export default function ReaderSetup() {
                       </div>
                       <p className="text-xs text-muted-foreground">Keep the window open while racing — closing it disconnects from the decoder.</p>
                     </div>
-                  )}
+                  <div className="flex items-center gap-2 pt-2 border-t text-sm">
+                    {bridgeDot}
+                    <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
+                      {bridgeStatus === "checking" && "Checking for bridge…"}
+                      {bridgeStatus === "running"  && "Bridge connected — decoder linked"}
+                      {bridgeStatus === "offline"  && "Waiting for bridge — double-click the launcher to start"}
+                    </span>
+                  </div>
                 </div>
                 <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
                   <strong>Compatible hardware:</strong> AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX, MyLaps X2, P3 Flex — any decoder supported by AMBrc 4.x/5.x.
