@@ -2967,41 +2967,8 @@ export default function Motos() {
               </CardHeader>
 
               <CardContent className="p-0 flex-1 flex flex-col">
-                {/* Lineup table */}
-                {moto.type === "practice" ? (
-                  getLineup(moto).length > 0 ? (
-                    <div className="flex-1 overflow-y-auto max-h-52 border-b">
-                      <Table>
-                        <TableHeader className="bg-muted/50 sticky top-0">
-                          <TableRow>
-                            <TableHead className="w-10 text-center text-xs">#</TableHead>
-                            <TableHead className="text-xs">Rider</TableHead>
-                            <TableHead className="w-16 text-center text-xs">#</TableHead>
-                            <TableHead className="w-14 text-center text-xs">RFID</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {getLineup(moto).map((entry, idx) => (
-                            <TableRow key={entry.riderId}>
-                              <TableCell className="text-center text-xs font-mono text-muted-foreground">{idx + 1}</TableCell>
-                              <TableCell className="text-xs font-medium">{entry.riderName}</TableCell>
-                              <TableCell className="text-center text-xs font-mono">{entry.bibNumber ?? "—"}</TableCell>
-                              <TableCell className="text-center text-xs">
-                                {entry.rfidNumber
-                                  ? <span className="text-green-600 font-bold">●</span>
-                                  : <span className="text-muted-foreground/30">—</span>}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center px-4 py-6 text-center text-sm text-muted-foreground">
-                      Open to all checked-in riders — no gate assignment needed.
-                    </div>
-                  )
-                ) : (
+                {/* Lineup table — draggable for all moto types */}
+                {(
                   <>
                   <LineupSortBar sort={getMotoSort(moto.id)} onChange={s => setMotoSort(moto.id, s)} />
                   <DroppableMotoLineup motoId={moto.id} locked={moto.status === "completed" || getMotoSort(moto.id) !== "gate"} disableDrop={!!activeMotoCardDrag || activeDragMotoId === moto.id}>
