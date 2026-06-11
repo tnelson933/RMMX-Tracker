@@ -80,20 +80,31 @@ export default function StandalonePractice() {
         setLoadError(`Server error (${res.status}) — check your connection and refresh.`);
         return;
       }
-      const data = await res.json();
+      const data: PracticeSession[] = await res.json();
       setLoadError(null);
       setSessions(data);
-      if (!selectedId && data.length > 0) {
-        const active = data.find((s: PracticeSession) => s.status === "active");
-        setSelectedId((active ?? data[0]).id);
-      }
+      const active = data.find((s: PracticeSession) => s.status === "active");
+      setSelectedId(prev => {
+        if (!prev && data.length > 0) {
+          return (active ?? data[0]).id;
+        }
+        if (active && prev) {
+          const current = data.find((s: PracticeSession) => s.id === prev);
+          if (current && current.status !== "active") {
+            return active.id;
+          }
+        }
+        return prev;
+      });
     } catch {
       setLoadError("Could not reach the server — check your connection and refresh.");
     }
-  }, [selectedId]);
+  }, []);
 
   useEffect(() => {
     loadSessions();
+    const interval = setInterval(loadSessions, 10_000);
+    return () => clearInterval(interval);
   }, []);
 
   // SSE connection for selected session
