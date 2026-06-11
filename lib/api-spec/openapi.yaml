@@ -3473,7 +3473,7 @@ components:
 
     PointsTable:
       type: object
-      required: [id, name, description, scoringMethod, mainEventOnly, pointsScale, isSystemDefault, createdAt]
+      required: [id, name, description, scoringMethod, mainEventOnly, pointsScale, isSystemDefault, autoDnfEnabled, autoDnfThreshold, createdAt]
       properties:
         id:
           type: integer
@@ -3495,6 +3495,12 @@ components:
         scoringFormula:
           type: ["string", "null"]
           description: JS expression using position and riders variables
+        autoDnfEnabled:
+          type: boolean
+          description: When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points
+        autoDnfThreshold:
+          type: integer
+          description: Minimum % of leader laps a rider must complete to score points (1-100)
         isSystemDefault:
           type: boolean
         createdAt:
@@ -3520,6 +3526,12 @@ components:
         scoringFormula:
           type: ["string", "null"]
           description: JS expression using position and riders variables
+        autoDnfEnabled:
+          type: boolean
+          description: When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points
+        autoDnfThreshold:
+          type: integer
+          description: Minimum % of leader laps a rider must complete to score points (1-100)
 
     UpdateResultLapsInput:
       type: object

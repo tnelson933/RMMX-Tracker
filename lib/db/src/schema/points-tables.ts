@@ -13,6 +13,8 @@ export const pointsTablesTable = pgTable("points_tables", {
   pointsScale: jsonb("points_scale").$type<number[]>().notNull().default([]),
   scoringFormula: text("scoring_formula"),
   isSystemDefault: boolean("is_system_default").notNull().default(false),
+  autoDnfEnabled: boolean("auto_dnf_enabled").notNull().default(false),
+  autoDnfThreshold: integer("auto_dnf_threshold").notNull().default(75),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

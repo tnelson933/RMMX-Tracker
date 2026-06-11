@@ -1472,6 +1472,8 @@ export const ListPointsTablesResponseItem = zod.object({
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number()),
   "scoringFormula": zod.string().nullish().describe('JS expression using position and riders variables'),
+  "autoDnfEnabled": zod.boolean().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
+  "autoDnfThreshold": zod.number().describe('Minimum % of leader laps a rider must complete to score points (1-100)'),
   "isSystemDefault": zod.boolean(),
   "createdAt": zod.string()
 })
@@ -1487,7 +1489,9 @@ export const CreatePointsTableBody = zod.object({
   "scoringMethod": zod.enum(['highest_points', 'lowest_positions', 'per_rider', 'formula']),
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number()),
-  "scoringFormula": zod.string().nullish().describe('JS expression using position and riders variables')
+  "scoringFormula": zod.string().nullish().describe('JS expression using position and riders variables'),
+  "autoDnfEnabled": zod.boolean().optional().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
+  "autoDnfThreshold": zod.number().optional().describe('Minimum % of leader laps a rider must complete to score points (1-100)')
 })
 
 
@@ -1504,7 +1508,9 @@ export const UpdatePointsTableBody = zod.object({
   "scoringMethod": zod.enum(['highest_points', 'lowest_positions', 'per_rider', 'formula']),
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number()),
-  "scoringFormula": zod.string().nullish().describe('JS expression using position and riders variables')
+  "scoringFormula": zod.string().nullish().describe('JS expression using position and riders variables'),
+  "autoDnfEnabled": zod.boolean().optional().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
+  "autoDnfThreshold": zod.number().optional().describe('Minimum % of leader laps a rider must complete to score points (1-100)')
 })
 
 export const UpdatePointsTableResponse = zod.object({
@@ -1516,6 +1522,8 @@ export const UpdatePointsTableResponse = zod.object({
   "mainEventOnly": zod.boolean(),
   "pointsScale": zod.array(zod.number()),
   "scoringFormula": zod.string().nullish().describe('JS expression using position and riders variables'),
+  "autoDnfEnabled": zod.boolean().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
+  "autoDnfThreshold": zod.number().describe('Minimum % of leader laps a rider must complete to score points (1-100)'),
   "isSystemDefault": zod.boolean(),
   "createdAt": zod.string()
 })

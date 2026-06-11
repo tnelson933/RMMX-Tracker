@@ -21,6 +21,10 @@ export interface PointsTable {
      * @nullable
      */
   scoringFormula?: string | null;
+  /** When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points */
+  autoDnfEnabled: boolean;
+  /** Minimum % of leader laps a rider must complete to score points (1-100) */
+  autoDnfThreshold: number;
   isSystemDefault: boolean;
   createdAt: string;
 }

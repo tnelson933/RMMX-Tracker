@@ -78,6 +78,8 @@ interface FormState {
   mainEventOnly: boolean;
   scaleText: string;
   scoringFormula: string;
+  autoDnfEnabled: boolean;
+  autoDnfThreshold: string;
 }
 
 const defaultForm: FormState = {
@@ -87,6 +89,8 @@ const defaultForm: FormState = {
   mainEventOnly: false,
   scaleText: scaleToText(SUPERCROSS_SCALE),
   scoringFormula: "",
+  autoDnfEnabled: false,
+  autoDnfThreshold: "75",
 };
 
 // ─── Live Preview ───────────────────────────────────────────────────────────
@@ -616,6 +620,8 @@ function TableFormDialog({
           mainEventOnly: editingTable.mainEventOnly,
           scaleText: scaleToText(editingTable.pointsScale as number[]),
           scoringFormula: (editingTable as any).scoringFormula ?? "",
+          autoDnfEnabled: (editingTable as any).autoDnfEnabled ?? false,
+          autoDnfThreshold: String((editingTable as any).autoDnfThreshold ?? 75),
         }
       : defaultForm
   );
@@ -637,14 +643,15 @@ function TableFormDialog({
     pointsScale: number[];
     scoringFormula?: string | null;
   }) {
-    setForm({
+    setForm(prev => ({
+      ...prev,
       name: result.name,
       description: result.description,
       scoringMethod: result.scoringMethod as ScoringMethod,
       mainEventOnly: result.mainEventOnly,
       scaleText: scaleToText(result.pointsScale),
       scoringFormula: result.scoringFormula ?? "",
-    });
+    }));
     setAiUsed(true);
     // In create mode, keep manual fields hidden so the explanation panel shows
     if (isEditing) setShowManual(true);
@@ -661,6 +668,7 @@ function TableFormDialog({
     if (needsScale && pointsScale.length === 0) { toast({ title: "Enter at least one points value", variant: "destructive" }); return; }
     if (isFormula && !form.scoringFormula.trim()) { toast({ title: "Enter a scoring formula", variant: "destructive" }); return; }
 
+    const thresholdNum = parseInt(form.autoDnfThreshold, 10);
     const payload = {
       name: form.name.trim(),
       description: form.description.trim(),
@@ -668,6 +676,8 @@ function TableFormDialog({
       mainEventOnly: form.mainEventOnly,
       pointsScale,
       scoringFormula: isFormula ? form.scoringFormula.trim() : null,
+      autoDnfEnabled: form.autoDnfEnabled,
+      autoDnfThreshold: !isNaN(thresholdNum) ? Math.min(100, Math.max(1, thresholdNum)) : 75,
     };
 
     try {
@@ -832,6 +842,59 @@ function TableFormDialog({
                   </Label>
                   <p className="text-xs text-muted-foreground">Only the Main Event moto counts for championship points</p>
                 </div>
+              </div>
+
+              {/* Auto DNF toggle */}
+              <div className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="pt-auto-dnf"
+                    checked={form.autoDnfEnabled}
+                    onCheckedChange={(v) => setForm((f) => ({ ...f, autoDnfEnabled: v }))}
+                  />
+                  <div>
+                    <Label htmlFor="pt-auto-dnf" className="cursor-pointer flex items-center gap-1.5 font-medium">
+                      <TriangleAlert size={13} className="text-amber-500" />
+                      Auto DNF
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Riders completing fewer laps than the minimum threshold score 0 points
+                    </p>
+                  </div>
+                </div>
+
+                {form.autoDnfEnabled && (
+                  <div className="pl-10 space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs">Minimum Lap % of Leader</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={form.autoDnfThreshold}
+                            onChange={(e) => setForm((f) => ({ ...f, autoDnfThreshold: e.target.value }))}
+                            className="h-8 w-24 font-mono text-sm"
+                          />
+                          <span className="text-sm text-muted-foreground">%</span>
+                        </div>
+                      </div>
+                    </div>
+                    {(() => {
+                      const pct = parseInt(form.autoDnfThreshold, 10);
+                      if (isNaN(pct) || pct < 1 || pct > 100) return null;
+                      const exampleLeaderLaps = 10;
+                      const minLaps = Math.floor(exampleLeaderLaps * pct / 100);
+                      return (
+                        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                          Example: if 1st place completes <strong>{exampleLeaderLaps} laps</strong>, any rider
+                          below <strong>{minLaps} lap{minLaps !== 1 ? "s" : ""}</strong> scores 0 points.
+                        </p>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
 
               {isPerRider ? (

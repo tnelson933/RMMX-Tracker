@@ -23,6 +23,8 @@ router.get("/points-tables", async (req, res) => {
     ...t,
     pointsScale: t.pointsScale as number[],
     scoringFormula: t.scoringFormula ?? null,
+    autoDnfEnabled: t.autoDnfEnabled ?? false,
+    autoDnfThreshold: t.autoDnfThreshold ?? 75,
     createdAt: t.createdAt.toISOString(),
   })));
 });
@@ -35,7 +37,7 @@ router.post("/points-tables", async (req, res) => {
   const userClubId = user?.clubId;
   if (!userClubId) return res.status(403).json({ error: "No club associated with this account" });
 
-  const { name, description, scoringMethod, mainEventOnly, pointsScale, scoringFormula } = req.body;
+  const { name, description, scoringMethod, mainEventOnly, pointsScale, scoringFormula, autoDnfEnabled, autoDnfThreshold } = req.body;
   if (!name || !scoringMethod || !Array.isArray(pointsScale)) {
     return res.status(400).json({ error: "name, scoringMethod, and pointsScale are required" });
   }
@@ -49,12 +51,16 @@ router.post("/points-tables", async (req, res) => {
     pointsScale,
     scoringFormula: scoringFormula ?? null,
     isSystemDefault: false,
+    autoDnfEnabled: !!autoDnfEnabled,
+    autoDnfThreshold: autoDnfThreshold != null ? Number(autoDnfThreshold) : 75,
   }).returning();
 
   return res.status(201).json({
     ...table,
     pointsScale: table.pointsScale as number[],
     scoringFormula: table.scoringFormula ?? null,
+    autoDnfEnabled: table.autoDnfEnabled ?? false,
+    autoDnfThreshold: table.autoDnfThreshold ?? 75,
     createdAt: table.createdAt.toISOString(),
   });
 });
@@ -72,7 +78,7 @@ router.patch("/points-tables/:tableId", async (req, res) => {
   if (existing.isSystemDefault) return res.status(403).json({ error: "System default tables cannot be edited" });
   if (userClubId !== null && existing.clubId !== userClubId) return res.status(403).json({ error: "Forbidden" });
 
-  const { name, description, scoringMethod, mainEventOnly, pointsScale, scoringFormula } = req.body;
+  const { name, description, scoringMethod, mainEventOnly, pointsScale, scoringFormula, autoDnfEnabled, autoDnfThreshold } = req.body;
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
@@ -80,12 +86,16 @@ router.patch("/points-tables/:tableId", async (req, res) => {
   if (mainEventOnly !== undefined) updates.mainEventOnly = mainEventOnly;
   if (pointsScale !== undefined) updates.pointsScale = pointsScale;
   if (scoringFormula !== undefined) updates.scoringFormula = scoringFormula ?? null;
+  if (autoDnfEnabled !== undefined) updates.autoDnfEnabled = !!autoDnfEnabled;
+  if (autoDnfThreshold !== undefined) updates.autoDnfThreshold = Number(autoDnfThreshold);
 
   const [updated] = await db.update(pointsTablesTable).set(updates as any).where(eq(pointsTablesTable.id, tableId)).returning();
   return res.json({
     ...updated,
     pointsScale: updated.pointsScale as number[],
     scoringFormula: updated.scoringFormula ?? null,
+    autoDnfEnabled: updated.autoDnfEnabled ?? false,
+    autoDnfThreshold: updated.autoDnfThreshold ?? 75,
     createdAt: updated.createdAt.toISOString(),
   });
 });

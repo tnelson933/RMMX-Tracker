@@ -33,6 +33,7 @@ function evalFormula(formula: string, position: number, riders: number): number 
  *   (fallback)        — use hardcoded FALLBACK_POINTS array.
  *
  * mainEventOnly — if true, heats score 0; only moto type "main" scores points.
+ * autoDnfEnabled/autoDnfThreshold — riders completing < threshold% of leader laps score 0.
  */
 function calcPoints(opts: {
   position: number;
@@ -44,9 +45,25 @@ function calcPoints(opts: {
   scoringFormula: string | null;
   mainEventOnly: boolean;
   motoType: string;
+  autoDnfEnabled?: boolean;
+  autoDnfThreshold?: number;
+  lapsCompleted?: number;
+  leaderLapsCompleted?: number;
 }): number {
   if (opts.dnf || opts.dns) return 0;
   if (opts.mainEventOnly && opts.motoType !== "main") return 0;
+
+  // Auto DNF: rider completed too few laps vs the leader → treat as DNF for scoring
+  if (
+    opts.autoDnfEnabled &&
+    opts.leaderLapsCompleted != null &&
+    opts.leaderLapsCompleted > 0 &&
+    opts.lapsCompleted != null &&
+    opts.autoDnfThreshold != null
+  ) {
+    const minLaps = Math.floor(opts.leaderLapsCompleted * opts.autoDnfThreshold / 100);
+    if (opts.lapsCompleted < minLaps) return 0;
+  }
 
   switch (opts.scoringMethod) {
     case "formula":
@@ -157,6 +174,8 @@ router.post("/events/:eventId/results", async (req, res) => {
   let pointsScale: number[] = [];
   let scoringFormula: string | null = null;
   let mainEventOnly = false;
+  let autoDnfEnabled = false;
+  let autoDnfThreshold = 75;
 
   if (event?.scoringTableId) {
     const [table] = await db.select().from(pointsTablesTable)
@@ -166,17 +185,30 @@ router.post("/events/:eventId/results", async (req, res) => {
       pointsScale    = (table.pointsScale as number[]) ?? [];
       scoringFormula = table.scoringFormula ?? null;
       mainEventOnly  = table.mainEventOnly;
+      autoDnfEnabled = table.autoDnfEnabled ?? false;
+      autoDnfThreshold = table.autoDnfThreshold ?? 75;
     }
   }
 
   // Total starters = riders who are NOT dns (did not start)
   const totalStarters = riderResults.filter((r: any) => !r.dns).length;
 
+  // Find the leader's lap count for Auto DNF calculation
+  // Leader = position 1, not dnf, not dns — lapTimes array length = laps completed
+  let leaderLapsCompleted: number | undefined;
+  if (autoDnfEnabled) {
+    const leader = riderResults.find((r: any) => r.position === 1 && !r.dnf && !r.dns);
+    if (leader) {
+      leaderLapsCompleted = Array.isArray(leader.lapTimes) ? leader.lapTimes.length : 0;
+    }
+  }
+
   // ── Delete existing results for this moto then re-insert ─────────────────
   await db.delete(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
 
   const inserted = [];
   for (const r of riderResults) {
+    const lapsCompleted = Array.isArray(r.lapTimes) ? r.lapTimes.length : 0;
     const points = calcPoints({
       position:      r.position,
       dnf:           !!r.dnf,
@@ -187,6 +219,10 @@ router.post("/events/:eventId/results", async (req, res) => {
       scoringFormula,
       mainEventOnly,
       motoType,
+      autoDnfEnabled,
+      autoDnfThreshold,
+      lapsCompleted,
+      leaderLapsCompleted,
     });
 
     const [result] = await db.insert(raceResultsTable).values({
