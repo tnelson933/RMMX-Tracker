@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practiceCrossingsTable } from "@workspace/db";
-import { eq, and, inArray, isNull } from "drizzle-orm";
+import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practiceCrossingsTable, lapCrossingsTable, raceResultsTable, motosTable } from "@workspace/db";
+import { eq, and, inArray, isNull, asc } from "drizzle-orm";
+import { formatLapTime } from "./timing";
 
 const router = Router();
 
@@ -150,6 +151,76 @@ router.post("/rfid", async (req, res) => {
         eq(practiceCrossingsTable.rfidNumber, rfidNumber),
         isNull(practiceCrossingsTable.riderId),
       ));
+  }
+
+  // Backfill race lap_crossings and race_results for this RFID
+  if (rider) {
+    // Find unidentified race crossings for this tag
+    const unidentified = await db.select()
+      .from(lapCrossingsTable)
+      .where(and(eq(lapCrossingsTable.rfidNumber, rfidNumber), isNull(lapCrossingsTable.riderId)));
+
+    if (unidentified.length > 0) {
+      // Stamp riderId onto all unidentified crossings for this tag
+      await db.update(lapCrossingsTable)
+        .set({ riderId: numRiderId })
+        .where(and(eq(lapCrossingsTable.rfidNumber, rfidNumber), isNull(lapCrossingsTable.riderId)));
+
+      // For each affected moto, upsert race_results and recalculate positions
+      const affectedMotoIds = [...new Set(unidentified.map(c => c.motoId))];
+      for (const motoId of affectedMotoIds) {
+        const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
+        if (!moto) continue;
+
+        // All crossings for this rider in this moto (after backfill)
+        const riderCrossings = await db.select()
+          .from(lapCrossingsTable)
+          .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.riderId, numRiderId)))
+          .orderBy(asc(lapCrossingsTable.crossingTime));
+
+        // Get bib from check-in
+        const checkins = await db.select().from(checkinsTable)
+          .where(and(eq(checkinsTable.eventId, moto.eventId), eq(checkinsTable.riderId, numRiderId)));
+        const checkin = checkins.find(c => c.raceClass === moto.raceClass) ?? checkins[0];
+
+        const lapTimes = riderCrossings.map(c => c.lapTimeMs).filter((t): t is number => t !== null);
+        const totalMs = lapTimes.reduce((s, t) => s + t, 0);
+
+        const [existing] = await db.select().from(raceResultsTable)
+          .where(and(eq(raceResultsTable.motoId, motoId), eq(raceResultsTable.riderId, numRiderId)));
+
+        if (existing) {
+          await db.update(raceResultsTable)
+            .set({ lapTimes, totalTime: lapTimes.length ? formatLapTime(totalMs) : null, bibNumber: checkin?.bibNumber ?? null })
+            .where(eq(raceResultsTable.id, existing.id));
+        } else {
+          await db.insert(raceResultsTable).values({
+            eventId: moto.eventId,
+            motoId,
+            riderId: numRiderId,
+            raceClass: moto.raceClass,
+            position: 999,
+            lapTimes,
+            totalTime: lapTimes.length ? formatLapTime(totalMs) : null,
+            bibNumber: checkin?.bibNumber ?? null,
+            dnf: false,
+            dns: false,
+          });
+        }
+
+        // Recalculate positions for all riders in this moto
+        const allResults = await db.select().from(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
+        const sorted = allResults
+          .map(r => {
+            const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
+            return { id: r.id, laps: laps.length, totalMs: laps.reduce((s, t) => s + t, 0) };
+          })
+          .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
+        for (let i = 0; i < sorted.length; i++) {
+          await db.update(raceResultsTable).set({ position: i + 1 }).where(eq(raceResultsTable.id, sorted[i].id));
+        }
+      }
+    }
   }
 
   return res.status(201).json({
