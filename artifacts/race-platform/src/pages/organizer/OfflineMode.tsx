@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   WifiOff, Download, UploadCloud, AlertTriangle,
   CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
-  Wifi, Loader2, Database,
+  Wifi, Loader2, Database, Timer,
 } from "lucide-react";
 import { useGetOfflinePackageInfo, useRebuildOfflinePackage } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -221,6 +221,7 @@ export default function OfflineMode() {
   }, [resetRebuild, triggerRebuild]);
 
   const [os, setOs] = useState<"mac" | "windows">("mac");
+  const [tech, setTech] = useState<"rfid" | "mylaps">("rfid");
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
 
@@ -258,6 +259,8 @@ export default function OfflineMode() {
 
   const cloudEndpoint = `${cloudDomain}/api/timing/active/crossing?clubId=${clubId}`;
   const localEndpoint = `http://${laptopIp}:8080/api/timing/active/crossing?clubId=${clubId}`;
+  const bridgeCmdLocal = `python rfid_bridge.py --api-url http://${laptopIp}:8080`;
+  const bridgeCmdCloud = `python rfid_bridge.py --api-url ${cloudDomain}`;
 
   const installCmdMac = `unzip rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
   const installCmdWindows = `tar -xf rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
@@ -279,6 +282,33 @@ export default function OfflineMode() {
         <p className="text-muted-foreground mt-1">
           Run a full race day with no internet — your laptop handles everything, then syncs back to the cloud when you're done.
         </p>
+
+        {/* Tech picker */}
+        <div className="mt-5 space-y-2">
+          <p className="text-sm font-semibold text-foreground">What timing technology do you use?</p>
+          <div className="grid grid-cols-2 gap-3 max-w-sm">
+            <button
+              onClick={() => setTech("rfid")}
+              className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${tech === "rfid" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+            >
+              <Wifi size={18} className={tech === "rfid" ? "text-primary" : "text-muted-foreground"} />
+              <div>
+                <p className="font-semibold text-sm">RFID Sticker Tags</p>
+                <p className="text-xs text-muted-foreground">Bridge script</p>
+              </div>
+            </button>
+            <button
+              onClick={() => setTech("mylaps")}
+              className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${tech === "mylaps" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+            >
+              <Timer size={18} className={tech === "mylaps" ? "text-primary" : "text-muted-foreground"} />
+              <div>
+                <p className="font-semibold text-sm">MyLaps / AMB</p>
+                <p className="text-xs text-muted-foreground">Transponder decoder</p>
+              </div>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── Step 1 — Before Race Day ─────────────────────────────────────────────── */}
@@ -447,12 +477,12 @@ export default function OfflineMode() {
             </ShowMeHow>
           </div>
 
-          {/* 2b — Point your reader at the laptop */}
+          {/* 2c — Point your reader at the laptop */}
           <div className="space-y-3">
             <p className="text-foreground font-semibold">Point your timing reader at your laptop</p>
             <p>
-              Your timing reader normally sends data to the cloud. For offline mode, change
-              that address to your laptop instead.
+              Your timing reader normally sends data to the cloud. For offline mode, redirect
+              it to your laptop instead.
             </p>
 
             {/* IP detection status */}
@@ -480,16 +510,32 @@ export default function OfflineMode() {
               </div>
             )}
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-foreground">Use this address for your reader:</p>
-              <CopyableCodeBlock>{localEndpoint}</CopyableCodeBlock>
-            </div>
-            <p className="text-xs">
-              <a href="/rfid/setup" className="text-primary underline underline-offset-2">
-                See the Reader Setup page
-              </a>{" "}
-              for per-reader configuration screenshots.
-            </p>
+            {tech === "rfid" ? (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-foreground">
+                  Start your bridge pointed at the laptop instead of the cloud:
+                </p>
+                <CopyableCodeBlock>{bridgeCmdLocal}</CopyableCodeBlock>
+                <p className="text-xs text-muted-foreground">
+                  This replaces the normal <span className="font-mono bg-muted rounded px-1">python rfid_bridge.py</span> command for today.
+                  Keep the window open — closing it cuts the reader connection.
+                </p>
+                <p className="text-xs">
+                  <a href="/rfid/setup" className="text-primary underline underline-offset-2">Reader Setup page</a>{" "}
+                  has per-reader configuration screenshots.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-foreground">
+                  In your decoder software (Orbits 4 / AMBrc), change the upload URL to:
+                </p>
+                <CopyableCodeBlock>{localEndpoint}</CopyableCodeBlock>
+                <p className="text-xs text-muted-foreground">
+                  Compatible with AMBrc 5+, Orbits 4, AMB TranX, AMB RC4, AMB MX, MyLaps X2, and P3 Flex decoders.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* 2c — Run the event */}
@@ -576,8 +622,18 @@ export default function OfflineMode() {
           {/* 3c — Point reader back */}
           <div className="space-y-2">
             <p className="text-foreground font-semibold">Switch your timing reader back to the cloud</p>
-            <p>After syncing, update your timing reader to point back to the normal cloud address so it's ready for your next event.</p>
-            <CopyableCodeBlock>{`POST ${cloudEndpoint}`}</CopyableCodeBlock>
+            <p>After syncing, point your reader back at the cloud so it's ready for your next event.</p>
+            {tech === "rfid" ? (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-foreground">Restart the bridge without the local override:</p>
+                <CopyableCodeBlock>{bridgeCmdCloud}</CopyableCodeBlock>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-foreground">In your decoder software, change the upload URL back to:</p>
+                <CopyableCodeBlock>{cloudEndpoint}</CopyableCodeBlock>
+              </div>
+            )}
           </div>
 
           <Callout kind="warning">
