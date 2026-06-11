@@ -1328,23 +1328,16 @@ export default function EventSchedule() {
   // ── Multi-class conflict detection ──
   const scheduleConflicts = useScheduleConflicts(rawMotos);
 
-  // ── Round derivation (mirrors Motos.tsx) ──
+  // ── Round derivation ──
+  // Round number comes from the moto name ("Moto N" → N) rather than sequential
+  // position within a class, so Div 1 Moto 1 and Div 2 Moto 1 both map to round 1.
   const { roundMap, maxRounds } = useMemo(() => {
     const raceMotos = rawMotos.filter(m => m.type !== "practice");
-    const classBuckets: Record<string, number[]> = {};
-    for (const m of raceMotos) {
-      const cls = m.raceClass ?? "__none__";
-      if (!classBuckets[cls]) classBuckets[cls] = [];
-      classBuckets[cls].push(m.id);
-    }
     const map = new Map<number, number>();
-    for (const ids of Object.values(classBuckets)) {
-      const sorted = ids.slice().sort((a, b) => {
-        const ma = raceMotos.find(m => m.id === a)?.motoNumber ?? 0;
-        const mb = raceMotos.find(m => m.id === b)?.motoNumber ?? 0;
-        return ma - mb;
-      });
-      sorted.forEach((id, i) => map.set(id, i + 1));
+    for (const m of raceMotos) {
+      const nameMatch = (m.name ?? "").match(/\bMoto\s+(\d+)\b/i);
+      const round = nameMatch ? parseInt(nameMatch[1]) : (m.type === "main" ? 2 : 1);
+      map.set(m.id, round);
     }
     const max = map.size ? Math.max(...map.values()) : 0;
     return { roundMap: map, maxRounds: max };
