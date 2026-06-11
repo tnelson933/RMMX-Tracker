@@ -492,7 +492,7 @@ export default function ReaderSetup() {
                     </div>
 
                     <p className="text-xs text-muted-foreground">
-                      After configuring, unplug the reader and move it to your race-day network. It will send laps directly to the platform — no laptop needed on race day.
+                      The reader can be configured from anywhere — as long as you have its IP address and it's reachable on your network. Once configured, it sends laps directly to the platform over the internet. You'll still need your laptop or device on race day to start motos and manage the event.
                     </p>
                   </div>
                 )}

@@ -233,7 +233,7 @@ def _configure_impinj(ip, target_url):
     try:
         status, _ = _reader_request(f"{base}/api/v1/profiles", data=data, credentials=creds)
         if status in (200, 201, 204):
-            return {"ok": True, "message": "Impinj R700 configured! Move it to your race network — it is ready to go."}
+            return {"ok": True, "message": "Impinj R700 configured! It will send laps directly to the platform — keep your laptop handy on race day to start motos and manage the event."}
     except urllib.error.HTTPError as e:
         if e.code == 409:
             # Profile already exists — overwrite it
@@ -242,7 +242,7 @@ def _configure_impinj(ip, target_url):
                 data=data, method="PUT", credentials=creds,
             )
             if status in (200, 204):
-                return {"ok": True, "message": "Impinj R700 updated! Move it to your race network — it is ready to go."}
+                return {"ok": True, "message": "Impinj R700 updated! It will send laps directly to the platform — keep your laptop handy on race day to start motos and manage the event."}
         raise
     return {"ok": False, "error": "Reader did not accept the configuration. Check the IP address and try again."}
 
@@ -268,7 +268,7 @@ def _configure_zebra(ip, target_url):
     try:
         status, _ = _reader_request(f"{base}/api/v1/profiles", data=data, credentials=creds)
         if status in (200, 201, 204):
-            return {"ok": True, "message": "Zebra FX7500 configured! Move it to your race network — it is ready to go."}
+            return {"ok": True, "message": "Zebra FX7500 configured! It will send laps directly to the platform — keep your laptop handy on race day to start motos and manage the event."}
     except urllib.error.HTTPError as e:
         if e.code == 409:
             status, _ = _reader_request(
@@ -276,7 +276,7 @@ def _configure_zebra(ip, target_url):
                 data=data, method="PUT", credentials=creds,
             )
             if status in (200, 204):
-                return {"ok": True, "message": "Zebra FX7500 updated! Move it to your race network — it is ready to go."}
+                return {"ok": True, "message": "Zebra FX7500 updated! It will send laps directly to the platform — keep your laptop handy on race day to start motos and manage the event."}
         raise
     return {"ok": False, "error": "Reader did not accept the configuration. Check the IP address and try again."}
 
