@@ -17,6 +17,30 @@ this bridge running locally on your laptop. The bridge:
 Your lap times are never lost — even if you lose internet for the entire race.
 
 ────────────────────────────────────────────────────────────────────────────────
+QUICK START — MyLaps / AMB transponder decoders
+────────────────────────────────────────────────────────────────────────────────
+
+  python rfid_bridge.py --mylaps DECODER_IP \
+                        --club-id YOUR_CLUB_ID \
+                        --api-url https://your-app.replit.app
+
+  Replace DECODER_IP with the IP address printed on your decoder or shown in
+  AMBrc.  Replace YOUR_CLUB_ID with the number in your organizer portal URL.
+
+  The bridge connects to your decoder on port 3601 and streams crossings
+  automatically.  You do not need to configure anything inside AMBrc or the
+  decoder — just enter the IP and run.
+
+  Compatible hardware: AMB TranX 160/260, AMB RC4, AMB MX, AMB RC4-WA,
+  MyLaps X2, P3 Flex, and any decoder supported by AMBrc 4.x / 5.x.
+
+  For offline use (race-day laptop), point the bridge at your local server:
+
+      python rfid_bridge.py --mylaps DECODER_IP \
+                            --club-id YOUR_CLUB_ID \
+                            --api-url http://LAPTOP_IP:8080
+
+────────────────────────────────────────────────────────────────────────────────
 QUICK START — Generic / custom readers
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -113,7 +137,7 @@ import time
 import http.server
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -358,6 +382,113 @@ def retry_loop(api_url: str, db: sqlite3.Connection, db_lock: threading.Lock,
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ── AMB / MyLaps decoder TCP protocol ──────────────────────────────────────────
+# Record format for AMBrc-compatible decoders on port 3601 (13 bytes each):
+#   [0]     Record type  — 0x02 = transponder crossing; others = status/ignored
+#   [1..6]  Transponder  — 48-bit big-endian integer (decoder serial number)
+#   [7..10] Time         — 32-bit big-endian uint, centiseconds since midnight UTC
+#   [11]    Loop/antenna — antenna number (informational)
+#   [12]    RSSI/battery — signal quality (informational)
+#
+# Compatible: AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX,
+#             MyLaps X2, P3 Flex, any decoder supported by AMBrc 4.x/5.x.
+# NOTE: a small number of older decoders use 10-byte records; contact support
+# if crossings aren't appearing and we can adjust AMB_RECORD_SIZE for your model.
+AMB_DECODER_PORT  = 3601
+AMB_RECORD_SIZE   = 13
+AMB_TYPE_CROSSING = 0x02
+
+
+def _parse_amb_crossing(record: bytes):
+    """Parse a single AMB binary record.
+    Returns (transponder_id: str, crossing_time: datetime) for crossing events,
+    or None for status/heartbeat records."""
+    if len(record) < AMB_RECORD_SIZE:
+        return None
+    if record[0] != AMB_TYPE_CROSSING:
+        return None
+
+    transponder_id = str(int.from_bytes(record[1:7], "big"))
+
+    centiseconds = int.from_bytes(record[7:11], "big")
+    now_utc = datetime.now(timezone.utc)
+    midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    crossing_time = midnight + timedelta(seconds=centiseconds / 100.0)
+    # Guard against day-boundary wrap (decoder clock slightly behind wall clock)
+    if crossing_time > now_utc + timedelta(minutes=5):
+        crossing_time -= timedelta(days=1)
+
+    return transponder_id, crossing_time
+
+
+def run_mylaps_bridge(decoder_ip: str, api_url: str, club_id: str,
+                       db: sqlite3.Connection, db_lock: threading.Lock,
+                       stop: threading.Event, retry: int = 10):
+    """Connect to an AMB/MyLaps decoder via TCP and stream crossings to the API.
+
+    Opens a persistent TCP connection to port 3601 on the decoder.  Each
+    transponder crossing is cached locally and forwarded to the cloud API.
+    On disconnect the bridge reconnects automatically after `retry` seconds.
+    """
+    cloud_path = f"/api/timing/active/crossing?clubId={club_id}"
+
+    while not stop.is_set():
+        try:
+            log.info("MyLaps: connecting to decoder at %s:%d…", decoder_ip, AMB_DECODER_PORT)
+            with socket.create_connection((decoder_ip, AMB_DECODER_PORT), timeout=10) as sock:
+                sock.settimeout(2.0)
+                log.info("MyLaps: connected — streaming crossings from %s", decoder_ip)
+                buf = b""
+                while not stop.is_set():
+                    try:
+                        chunk = sock.recv(4096)
+                        if not chunk:
+                            log.warning("MyLaps: decoder closed connection — reconnecting")
+                            break
+                        buf += chunk
+                        while len(buf) >= AMB_RECORD_SIZE:
+                            record = buf[:AMB_RECORD_SIZE]
+                            buf = buf[AMB_RECORD_SIZE:]
+                            result = _parse_amb_crossing(record)
+                            if result is None:
+                                continue
+                            transponder_id, crossing_time = result
+                            payload = {
+                                "transponder": transponder_id,
+                                "passingTime": crossing_time.isoformat(),
+                            }
+                            log.info("MyLaps: crossing — transponder=%-10s  time=%s",
+                                     transponder_id, crossing_time.strftime("%H:%M:%S"))
+                            with db_lock:
+                                cursor = db.execute(
+                                    "INSERT INTO crossings (payload, cloud_path, received_at) "
+                                    "VALUES (?, ?, ?)",
+                                    (json.dumps(payload), cloud_path, _now()),
+                                )
+                                row_id = cursor.lastrowid
+                                db.commit()
+                            if forward_to_cloud(api_url, cloud_path, payload):
+                                with db_lock:
+                                    db.execute("UPDATE crossings SET sent_at=? WHERE id=?",
+                                               (_now(), row_id))
+                                    db.commit()
+                    except socket.timeout:
+                        continue
+                    except OSError as e:
+                        log.warning("MyLaps: socket error: %s — reconnecting", e)
+                        break
+        except (OSError, ConnectionRefusedError) as e:
+            log.warning("MyLaps: could not reach %s — %s (retry in %ds)",
+                        decoder_ip, e, retry)
+        except Exception as e:
+            log.error("MyLaps: unexpected error: %s (retry in %ds)", e, retry)
+
+        if not stop.is_set():
+            stop.wait(retry)
+
+    log.info("MyLaps bridge stopped.")
 
 
 # ── HTTP request handler ────────────────────────────────────────────────────────
@@ -876,7 +1007,15 @@ def main():
         "--club-id",
         default=os.getenv("RMMX_CLUB_ID", ""),
         metavar="N",
-        help="Club ID — required when --mode practice. Find yours in the organizer portal URL.",
+        help="Club ID — required with --mylaps and --mode practice. "
+             "Find yours in the organizer portal URL (e.g. /organizer → clubs/3 → ID is 3).",
+    )
+    parser.add_argument(
+        "--mylaps",
+        default=os.getenv("RMMX_MYLAPS_IP", ""),
+        metavar="DECODER_IP",
+        help="Run in MyLaps/AMB TCP mode — connect to decoder at this IP on port 3601. "
+             "Requires --club-id.  Example: --mylaps 192.168.1.50",
     )
     parser.add_argument(
         "--rmonitor",
@@ -894,6 +1033,20 @@ def main():
         print()
         print("Example:")
         print("  python rfid_bridge.py --api-url https://your-app.replit.app")
+        print()
+        sys.exit(1)
+
+    if args.mylaps and not args.club_id:
+        print()
+        print("ERROR: --club-id is required when using --mylaps")
+        print()
+        print("Find your Club ID in the organizer portal URL")
+        print("(e.g. your-app.replit.app/organizer → clubs/3 → Club ID is 3).")
+        print()
+        print("Example:")
+        print(f"  python rfid_bridge.py --mylaps {args.mylaps} \\")
+        print(f"                        --club-id 1 \\")
+        print(f"                        --api-url {args.api_url or 'https://your-app.replit.app'}")
         print()
         sys.exit(1)
 
@@ -946,23 +1099,35 @@ def main():
         local_endpoint = f"http://localhost:{args.port}/timing/crossing"
 
     log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    log.info("  RMMX Local RFID Bridge")
+    if args.mylaps:
+        log.info("  RMMX MyLaps / AMB TCP Bridge")
+    else:
+        log.info("  RMMX Local RFID Bridge")
     log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     log.info("  Cloud API  : %s", args.api_url)
-    log.info("  Bridge mode: %s", args.mode.upper())
-    log.info("  Reader mode: %s", reader_labels.get(args.reader, args.reader))
-    if args.mode == "practice":
+    if args.mylaps:
+        log.info("  Mode       : MyLaps / AMB TCP")
+        log.info("  Decoder IP : %s:%d", args.mylaps, AMB_DECODER_PORT)
         log.info("  Club ID    : %s", args.club_id)
-        log.info("  → Crossings route to active practice session for club %s", args.club_id)
-    elif args.event_id:
-        log.info("  Event ID   : %s", args.event_id)
+        log.info("  → Crossings routed to active moto for club %s", args.club_id)
+    else:
+        log.info("  Bridge mode: %s", args.mode.upper())
+        log.info("  Reader mode: %s", reader_labels.get(args.reader, args.reader))
+        if args.mode == "practice":
+            log.info("  Club ID    : %s", args.club_id)
+            log.info("  → Crossings route to active practice session for club %s", args.club_id)
+        elif args.event_id:
+            log.info("  Event ID   : %s", args.event_id)
     log.info("  Local port : %d", args.port)
     log.info("  Cache file : %s", args.db)
     log.info("  Retry every: %ds", args.retry)
     if args.rmonitor:
         log.info("  RMonitor   : tcp://YOUR-LAPTOP-IP:%d  (scoreboards / Race Monitor)", args.rmonitor)
     log.info("")
-    log.info("  Reader endpoint → %s", local_endpoint)
+    if args.mylaps:
+        log.info("  Decoder TCP → connecting to %s:%d", args.mylaps, AMB_DECODER_PORT)
+    else:
+        log.info("  Reader endpoint → %s", local_endpoint)
     log.info("  Status page     → http://localhost:%d", args.port)
     if args.rmonitor:
         log.info("  RMonitor TCP    → connect scoreboard to tcp://YOUR-LAPTOP-IP:%d", args.rmonitor)
@@ -985,6 +1150,16 @@ def main():
         name="retry-loop",
     )
     retry_thread.start()
+
+    # ── Start MyLaps / AMB TCP bridge thread (if --mylaps) ────────────────────
+    if args.mylaps:
+        mylaps_thread = threading.Thread(
+            target=run_mylaps_bridge,
+            args=(args.mylaps, args.api_url, args.club_id, db, db_lock, stop_event, args.retry),
+            daemon=True,
+            name="mylaps-bridge",
+        )
+        mylaps_thread.start()
 
     BridgeHandler.api_url = args.api_url
     BridgeHandler.local_port = args.port

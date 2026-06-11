@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   WifiOff, Download, UploadCloud, AlertTriangle,
   CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
@@ -222,6 +223,7 @@ export default function OfflineMode() {
 
   const [os, setOs] = useState<"mac" | "windows">("mac");
   const [tech, setTech] = useState<"rfid" | "mylaps">("rfid");
+  const [decoderIp, setDecoderIp] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
 
@@ -261,6 +263,9 @@ export default function OfflineMode() {
   const localEndpoint = `http://${laptopIp}:8080/api/timing/active/crossing?clubId=${clubId}`;
   const bridgeCmdLocal = `python rfid_bridge.py --api-url http://${laptopIp}:8080`;
   const bridgeCmdCloud = `python rfid_bridge.py --api-url ${cloudDomain}`;
+  const decoderIpDisplay = decoderIp || "<decoder-ip>";
+  const mylapsBridgeCmdLocal = `python rfid_bridge.py --mylaps ${decoderIpDisplay} --club-id ${clubId} --api-url http://${laptopIp}:8080`;
+  const mylapsBridgeCmdCloud = `python rfid_bridge.py --mylaps ${decoderIpDisplay} --club-id ${clubId} --api-url ${cloudDomain}`;
 
   const installCmdMac = `unzip rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
   const installCmdWindows = `tar -xf rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
@@ -526,14 +531,24 @@ export default function OfflineMode() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <p className="text-xs font-medium text-foreground">
-                  In AMBrc, go to <strong className="text-foreground">Settings → Passings Output → HTTP Output</strong> and change the URL to:
+                  Start the bridge pointed at your laptop — it will connect to your decoder and forward crossings locally:
                 </p>
-                <CopyableCodeBlock>{localEndpoint}</CopyableCodeBlock>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">
+                    Decoder IP address <span className="opacity-60">(from the decoder label or AMBrc)</span>:
+                  </p>
+                  <Input
+                    value={decoderIp}
+                    onChange={e => setDecoderIp(e.target.value)}
+                    placeholder="e.g. 192.168.1.50"
+                    className="font-mono h-8 text-xs max-w-xs"
+                  />
+                </div>
+                <CopyableCodeBlock>{mylapsBridgeCmdLocal}</CopyableCodeBlock>
                 <p className="text-xs text-muted-foreground">
-                  This uses AMBrc's built-in HTTP push feature — AMBrc sends each crossing to your laptop instead of the cloud.
-                  Compatible with AMBrc 5+ and decoders: AMB TranX, AMB RC4, AMB MX, MyLaps X2, P3 Flex.
+                  Keep the terminal window open all day — closing it disconnects from the decoder.
                 </p>
               </div>
             )}
@@ -631,8 +646,11 @@ export default function OfflineMode() {
               </div>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-foreground">In AMBrc, go to <strong className="text-foreground">Settings → Passings Output → HTTP Output</strong> and change the URL back to:</p>
-                <CopyableCodeBlock>{cloudEndpoint}</CopyableCodeBlock>
+                <p className="text-xs font-medium text-foreground">Restart the bridge pointed back at the cloud:</p>
+                <CopyableCodeBlock>{mylapsBridgeCmdCloud}</CopyableCodeBlock>
+                <p className="text-xs text-muted-foreground">
+                  This is the same command you use on normal race days — just run it once and the decoder reconnects automatically.
+                </p>
               </div>
             )}
           </div>

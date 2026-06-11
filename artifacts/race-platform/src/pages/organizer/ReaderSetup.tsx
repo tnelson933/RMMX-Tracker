@@ -12,7 +12,6 @@ const BASE_URL = window.location.origin;
 const FACILITY_ENDPOINT_BASE = `${BASE_URL}/api/timing/active/crossing`;
 const PING_ENDPOINT_BASE = `${BASE_URL}/api/timing/ping`;
 const BRIDGE_URL = "http://localhost:5555";
-const AMBRC_BODY = `{\n  "transponder": "%TRANSPONDER%",\n  "passingTime": "%PASSTIME_ISO%"\n}`;
 
 type BridgeStatus = "checking" | "running" | "offline";
 type SetupMethod  = "auto" | "manual";
@@ -55,7 +54,6 @@ export default function ReaderSetup() {
 
   // ── Copy states ──────────────────────────────────────────────────────────
   const [copiedUrl,       setCopiedUrl]       = useState(false);
-  const [copiedBody,      setCopiedBody]      = useState(false);
   const [copiedCmd,       setCopiedCmd]       = useState(false);
   const [copiedManualUrl, setCopiedManualUrl] = useState(false);
 
@@ -63,7 +61,8 @@ export default function ReaderSetup() {
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
 
   useEffect(() => {
-    if (tech !== "rfid" || setupMethod !== "auto") return;
+    const shouldCheck = (tech === "rfid" && setupMethod === "auto") || tech === "mylaps";
+    if (!shouldCheck) return;
     setBridgeStatus("checking");
     const check = async () => {
       try {
@@ -140,10 +139,12 @@ export default function ReaderSetup() {
     }
   };
 
+  // ── Derived commands ──────────────────────────────────────────────────────
+  const mylapsBridgeCmd = `python rfid_bridge.py --mylaps ${readerIp || "<decoder-ip>"} --club-id ${user?.clubId ?? "YOUR_CLUB_ID"} --api-url ${BASE_URL}`;
+
   // ── Copy helpers ──────────────────────────────────────────────────────────
   const copyUrl       = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedUrl(true);       setTimeout(() => setCopiedUrl(false),       2000); };
-  const copyBody      = () => { navigator.clipboard.writeText(AMBRC_BODY);       setCopiedBody(true);      setTimeout(() => setCopiedBody(false),      2000); };
-  const copyCmd       = () => { navigator.clipboard.writeText(bridgeCmd);        setCopiedCmd(true);       setTimeout(() => setCopiedCmd(false),       2000); };
+  const copyCmd       = () => { navigator.clipboard.writeText(tech === "mylaps" ? mylapsBridgeCmd : bridgeCmd); setCopiedCmd(true); setTimeout(() => setCopiedCmd(false), 2000); };
   const copyManualUrl = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedManualUrl(true); setTimeout(() => setCopiedManualUrl(false), 2000); };
 
   // ── Bridge status dot ─────────────────────────────────────────────────────
@@ -224,24 +225,26 @@ export default function ReaderSetup() {
         <p className="text-muted-foreground mt-1">Get your timing hardware connected in a few minutes.</p>
       </div>
 
-      {/* Timing URL */}
-      <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-5 space-y-3">
-        <div>
-          <p className="font-heading font-bold uppercase tracking-wider text-sm">Your Timing URL</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            This gets programmed into your hardware once — it automatically routes to whichever heat is running.
-          </p>
+      {/* Timing URL — RFID only (MyLaps uses TCP pull, not HTTP push) */}
+      {tech === "rfid" && (
+        <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-5 space-y-3">
+          <div>
+            <p className="font-heading font-bold uppercase tracking-wider text-sm">Your Timing URL</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              This gets programmed into your hardware once — it automatically routes to whichever heat is running.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2.5 truncate text-primary">
+              {facilityEndpoint}
+            </code>
+            <button onClick={copyUrl} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2.5 text-xs font-medium hover:bg-muted transition-colors">
+              {copiedUrl ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+              {copiedUrl ? "Copied" : "Copy"}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2.5 truncate text-primary">
-            {facilityEndpoint}
-          </code>
-          <button onClick={copyUrl} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2.5 text-xs font-medium hover:bg-muted transition-colors">
-            {copiedUrl ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
-            {copiedUrl ? "Copied" : "Copy"}
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Hardware toggle */}
       <div className="space-y-3">
@@ -482,40 +485,43 @@ export default function ReaderSetup() {
             {/* MyLaps Step 2 */}
             <div className="flex gap-4 p-5">
               <StepBadge n={2} />
-              <div className="space-y-3 min-w-0">
-                <p className="font-semibold">Set up AMBrc to send data here</p>
+              <div className="space-y-3 min-w-0 w-full">
+                <p className="font-semibold">Run the bridge script with your decoder's IP</p>
                 <p className="text-sm text-muted-foreground">
-                  In AMBrc go to <strong className="text-foreground">Settings → Passings Output → HTTP Output</strong>, turn it on, and enter:
+                  The bridge connects directly to your decoder over the local network — no AMBrc configuration needed.
+                  Download the script, enter your decoder's IP, and run the command shown below.
                 </p>
-                <div className="border rounded-lg divide-y text-sm overflow-hidden">
-                  <div className="grid grid-cols-[80px_1fr] gap-3 items-center px-4 py-2.5">
-                    <span className="text-muted-foreground text-xs font-medium">URL</span>
-                    <code className="font-mono text-xs text-primary truncate">{facilityEndpoint}</code>
+                <div className="border rounded-lg bg-muted/20 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    {bridgeDot}
+                    <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
+                      {bridgeStatus === "checking" && "Checking for bridge…"}
+                      {bridgeStatus === "running"  && "Bridge is running — decoder connected"}
+                      {bridgeStatus === "offline"  && "Bridge not detected — start it with the command below"}
+                    </span>
                   </div>
-                  <div className="grid grid-cols-[80px_1fr] gap-3 items-center px-4 py-2.5">
-                    <span className="text-muted-foreground text-xs font-medium">Method</span>
-                    <span className="font-semibold">POST</span>
+                  <a href="/rfid_bridge.py" download="rfid_bridge.py"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                    <Download size={13} /> Download rfid_bridge.py
+                  </a>
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-muted-foreground">
+                      Decoder IP address <span className="text-muted-foreground/60">(printed on the decoder or shown in AMBrc)</span>
+                    </label>
+                    <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
+                      placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-xs" />
                   </div>
-                  <div className="grid grid-cols-[80px_1fr] gap-3 items-center px-4 py-2.5">
-                    <span className="text-muted-foreground text-xs font-medium">Header</span>
-                    <code className="font-mono text-xs">Content-Type: application/json</code>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2 break-all">{mylapsBridgeCmd}</code>
+                    <button onClick={copyCmd} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-2.5 py-2 text-xs font-medium hover:bg-muted transition-colors">
+                      {copiedCmd ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+                      {copiedCmd ? "Copied" : "Copy"}
+                    </button>
                   </div>
-                  <div className="px-4 py-2.5 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground text-xs font-medium">Body template</span>
-                      <button onClick={copyBody} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border bg-background hover:bg-muted transition-colors">
-                        {copiedBody ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
-                        {copiedBody ? "Copied" : "Copy"}
-                      </button>
-                    </div>
-                    <pre className="font-mono text-xs bg-muted px-3 py-2 rounded">{AMBRC_BODY}</pre>
-                  </div>
+                  <p className="text-xs text-muted-foreground">Python 3.8+ only — no extra packages needed. Keep the window open while racing.</p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Save — these settings work for every event and every heat. You never need to change them again.
-                </p>
                 <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
-                  <strong>Compatible with:</strong> AMBrc 5+ (HTTP Output feature). Works with AMB TranX, AMB RC4, AMB MX, MyLaps X2, and P3 Flex decoders.
+                  <strong>Compatible hardware:</strong> AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX, MyLaps X2, P3 Flex — any decoder supported by AMBrc 4.x/5.x.
                 </p>
               </div>
             </div>
