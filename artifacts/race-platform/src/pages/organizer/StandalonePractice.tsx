@@ -17,6 +17,7 @@ import {
   Tag,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   LayoutList,
   Activity,
 } from "lucide-react";
@@ -71,6 +72,7 @@ export default function StandalonePractice() {
   const [showNewForm, setShowNewForm] = useState(false);
   const [expandedRfids, setExpandedRfids] = useState<Set<string>>(new Set());
   const [mobilePanel, setMobilePanel] = useState<"sidebar" | "board">("board");
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(() => new Set([new Date().toISOString().slice(0, 10)]));
   const esRef = useRef<EventSource | null>(null);
 
   const loadSessions = useCallback(async () => {
@@ -331,33 +333,75 @@ export default function StandalonePractice() {
                 </button>
               </div>
             )}
-            {sessions.map(s => {
-              const bp = statusBadgeProps(s.status);
-              const isSelected = s.id === selectedId;
-              return (
-                <div
-                  key={s.id}
-                  className={`px-4 py-3 border-b border-sidebar-border/30 cursor-pointer group hover:bg-sidebar-accent/30 transition-colors ${
-                    isSelected ? "bg-sidebar-accent/40 border-l-2 border-l-primary" : ""
-                  }`}
-                  onClick={() => selectSession(s.id)}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`font-medium text-sm truncate ${isSelected ? "text-white" : "text-sidebar-foreground/80"}`}>
-                      {s.name}
-                    </span>
-                    <Badge variant="outline" className={`text-xs shrink-0 font-bold ${bp.className}`}>
-                      {bp.label}
-                    </Badge>
+            {(() => {
+              const today = new Date().toISOString().slice(0, 10);
+              const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+              const groups: Map<string, PracticeSession[]> = new Map();
+              for (const s of sessions) {
+                const key = s.createdAt.slice(0, 10);
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key)!.push(s);
+              }
+              const sortedKeys = [...groups.keys()].sort((a, b) => b.localeCompare(a));
+              return sortedKeys.map(dateKey => {
+                const daySessions = groups.get(dateKey)!;
+                const hasActive = daySessions.some(s => s.status === "active");
+                const hasSelected = daySessions.some(s => s.id === selectedId);
+                const isOpen = expandedDates.has(dateKey) || hasActive || hasSelected;
+                const label = dateKey === today ? "Today" : dateKey === yesterday ? "Yesterday"
+                  : new Date(dateKey + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+                return (
+                  <div key={dateKey}>
+                    <button
+                      className="w-full flex items-center justify-between px-4 py-2 bg-sidebar-accent/20 hover:bg-sidebar-accent/40 transition-colors border-b border-sidebar-border/40 group"
+                      onClick={() => setExpandedDates(prev => {
+                        const next = new Set(prev);
+                        if (isOpen) next.delete(dateKey); else next.add(dateKey);
+                        return next;
+                      })}
+                    >
+                      <div className="flex items-center gap-2">
+                        {isOpen
+                          ? <ChevronDown size={14} className="text-sidebar-foreground/50 shrink-0" />
+                          : <ChevronRight size={14} className="text-sidebar-foreground/50 shrink-0" />}
+                        <span className="text-xs font-bold uppercase tracking-wider text-sidebar-foreground/70">{label}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {hasActive && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
+                        <span className="text-xs text-sidebar-foreground/40">{daySessions.length}</span>
+                      </div>
+                    </button>
+                    {isOpen && daySessions.map(s => {
+                      const bp = statusBadgeProps(s.status);
+                      const isSelected = s.id === selectedId;
+                      return (
+                        <div
+                          key={s.id}
+                          className={`px-4 py-3 border-b border-sidebar-border/30 cursor-pointer hover:bg-sidebar-accent/30 transition-colors ${
+                            isSelected ? "bg-sidebar-accent/40 border-l-2 border-l-primary" : "pl-[1.125rem]"
+                          }`}
+                          onClick={() => selectSession(s.id)}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`font-medium text-sm truncate ${isSelected ? "text-white" : "text-sidebar-foreground/80"}`}>
+                              {s.name}
+                            </span>
+                            <Badge variant="outline" className={`text-xs shrink-0 font-bold ${bp.className}`}>
+                              {bp.label}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-sidebar-foreground/40 mt-0.5">
+                            {s.startedAt
+                              ? new Date(s.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                              : "Not started"}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="text-xs text-sidebar-foreground/40 mt-0.5">
-                    {s.startedAt
-                      ? new Date(s.startedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-                      : "Not started"}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </div>
 
