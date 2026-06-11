@@ -402,7 +402,7 @@ export default function ReaderSetup() {
                             <div className="flex gap-3 px-3 py-2.5">
                               <MiniStep n={1} />
                               <div className="space-y-1.5 min-w-0">
-                                <p className="text-xs font-medium">Download the bridge script</p>
+                                <p className="text-xs font-medium">Download the one-time setup tool</p>
                                 <a href="/rfid_bridge.py" download="rfid_bridge.py"
                                   className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
                                   <Download size={12} /> Download rfid_bridge.py
@@ -426,24 +426,24 @@ export default function ReaderSetup() {
                             <div className="flex gap-3 px-3 py-2.5">
                               <MiniStep n={3} />
                               <div className="space-y-2 min-w-0 w-full">
-                                <p className="text-xs font-medium">Download the launcher</p>
-                                <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Then open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal window opens and the bridge starts automatically.</p>
+                                <p className="text-xs font-medium">Run the setup tool — just this once</p>
                                 <button onClick={() => downloadLauncher(os, "rfid")}
                                   className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
                                   <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
                                 </button>
+                                <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal opens and the tool starts. Once your reader is configured below, you can close it. The reader will send laps directly to the platform from then on — no tool needed on race day.</p>
                                 {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
                               </div>
                             </div>
                           </div>
-                          <p className="text-xs text-muted-foreground">Keep the window open while configuring — closing it disconnects the reader.</p>
+                          <p className="text-xs text-muted-foreground">Keep the terminal open until you've configured the reader below, then you can close it.</p>
                         </div>
                       <div className="flex items-center gap-2 pt-2 border-t text-sm">
                         {bridgeDot}
                         <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
-                          {bridgeStatus === "checking" && "Checking for bridge…"}
-                          {bridgeStatus === "running"  && "Bridge connected — configure your reader below"}
-                          {bridgeStatus === "offline"  && `Waiting for bridge — open Downloads and double-click ${os === "windows" ? "start-timing.bat" : "start-timing.command"}`}
+                          {bridgeStatus === "checking" && "Checking for setup tool…"}
+                          {bridgeStatus === "running"  && "Setup tool ready — configure your reader below, then close the terminal"}
+                          {bridgeStatus === "offline"  && `Waiting for setup tool — open Downloads and double-click ${os === "windows" ? "start-timing.bat" : "start-timing.command"}`}
                         </span>
                       </div>
                     </div>
