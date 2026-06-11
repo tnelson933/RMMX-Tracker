@@ -562,7 +562,9 @@ export default function OfflineMode() {
               <Download size={12} /> {os === "windows" ? "start-server.bat" : "start-server.command"}
             </button>
             <p className="text-xs text-muted-foreground">
-              Double-click to start. Then open <span className="font-mono bg-muted rounded px-1">http://localhost:8080</span> in your browser to confirm it's working.
+              Double-click to start. Then open{" "}
+              <a href="http://localhost:8080" target="_blank" rel="noopener noreferrer" className="font-mono bg-muted rounded px-1 text-primary underline underline-offset-2 hover:bg-muted/70 transition-colors">http://localhost:8080</a>{" "}
+              in your browser to confirm it's working.
             </p>
             {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
           </div>
