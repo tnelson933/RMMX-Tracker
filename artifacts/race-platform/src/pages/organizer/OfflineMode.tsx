@@ -224,6 +224,7 @@ export default function OfflineMode() {
   const [os, setOs] = useState<"mac" | "windows">("mac");
   const [tech, setTech] = useState<"rfid" | "mylaps">("rfid");
   const [decoderIp, setDecoderIp] = useState("");
+  const [manualLaptopIp, setManualLaptopIp] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
 
@@ -257,7 +258,8 @@ export default function OfflineMode() {
   }, [user?.clubId, exporting]);
 
   const { ip: localIp, loading: ipLoading } = useLocalIp();
-  const laptopIp = localIp ?? "<laptop-ip>";
+  const effectiveLaptopIp = localIp ?? (manualLaptopIp.trim() || null);
+  const laptopIp = effectiveLaptopIp ?? "<laptop-ip>";
 
   const cloudEndpoint = `${cloudDomain}/api/timing/active/crossing?clubId=${clubId}`;
   const localEndpoint = `http://${laptopIp}:8080/api/timing/active/crossing?clubId=${clubId}`;
@@ -641,13 +643,20 @@ export default function OfflineMode() {
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                <Wifi size={13} className="shrink-0" />
-                <span>
-                  Couldn't auto-detect your IP — replace{" "}
-                  <span className="font-mono bg-background border rounded px-1">&lt;laptop-ip&gt;</span>{" "}
-                  below with your laptop's address on your hotspot network.
-                </span>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  <Wifi size={13} className="shrink-0" />
+                  <span>Couldn't auto-detect your IP — enter it below so the launcher script is pre-configured correctly.</span>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Your laptop's IP address on the hotspot network</label>
+                  <Input
+                    value={manualLaptopIp}
+                    onChange={e => setManualLaptopIp(e.target.value)}
+                    placeholder="e.g. 192.168.1.10"
+                    className="font-mono h-8 text-xs max-w-xs"
+                  />
+                </div>
               </div>
             )}
 
@@ -662,10 +671,14 @@ export default function OfflineMode() {
                     <Download size={12} /> rfid_bridge.py
                   </a>
                   <button onClick={() => downloadLauncher(os, bridgeCmdLocal)}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                    disabled={!effectiveLaptopIp}
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${effectiveLaptopIp ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
                     <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
                   </button>
                 </div>
+                {!effectiveLaptopIp && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">Enter your laptop's IP above to enable the download.</p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Save both files to your <strong>Downloads</strong> folder — they must be in the same folder.
                   Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal opens and the bridge starts. Keep the window open — closing it cuts the reader connection.
@@ -697,13 +710,19 @@ export default function OfflineMode() {
                     <Download size={12} /> rfid_bridge.py
                   </a>
                   <button onClick={() => downloadLauncher(os, mylapsBridgeCmdLocal)}
-                    disabled={!decoderIp.trim()}
-                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
+                    disabled={!decoderIp.trim() || !effectiveLaptopIp}
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() && effectiveLaptopIp ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
                     <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
                   </button>
                 </div>
-                {!decoderIp.trim() && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable launcher download.</p>
+                {(!decoderIp.trim() || !effectiveLaptopIp) && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    {!decoderIp.trim() && !effectiveLaptopIp
+                      ? "Enter the decoder IP and your laptop's IP above to enable the download."
+                      : !decoderIp.trim()
+                        ? "Enter the decoder IP above to enable the download."
+                        : "Enter your laptop's IP above to enable the download."}
+                  </p>
                 )}
                 <p className="text-xs text-muted-foreground">
                   Save both files to your <strong>Downloads</strong> folder — they must be in the same folder.
