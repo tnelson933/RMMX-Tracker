@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import {
   useListMotos, useReorderMotos, useUpdateMoto, useCreateMoto, useDeleteMoto, useDeleteAllMotos,
-  useListCheckins, useGenerateLineups, useGetEvent, useListPointsTables,
+  useListCheckins, useGenerateLineups, useGetEvent, useListPointsTables, useListSeries,
   useUpdateEvent, useAdvanceToMain, useLinkStagger, useUnlinkStagger,
   getListMotosQueryKey, getListCheckinsQueryKey, type Moto,
 } from "@workspace/api-client-react";
@@ -1063,6 +1063,8 @@ export default function EventSchedule() {
     query: { enabled: !!eventId } as any,
   });
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
+  const { data: seriesList = [] } = useListSeries({ query: {} as any });
+  const eventSeries = seriesList.find(s => (s.eventIds as number[])?.includes(eventId));
 
 
   const eventScoringTable = (pointsTables ?? []).find(
@@ -1092,7 +1094,7 @@ export default function EventSchedule() {
   const [generateFormat, setGenerateFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState("");
   const [generateLapCount, setGenerateLapCount] = useState("");
-  const [generateGateMethod, setGenerateGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
+  const [generateGateMethod, setGenerateGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered" | "series_points">("random");
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [generateMinRacesBetween, setGenerateMinRacesBetween] = useState<number>(0);
   const [generateClass, setGenerateClass] = useState<string>("all");
@@ -2608,7 +2610,7 @@ export default function EventSchedule() {
             {/* Gate Pick Method */}
             {(() => {
               const hasCompletedRaceMotos = rawMotos.some(m => m.status === "completed" && m.type !== "practice");
-              const methods: { value: "random" | "practice" | "prior_round_finish" | "first_registered"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
+              const methods: { value: "random" | "practice" | "prior_round_finish" | "first_registered" | "series_points"; label: string; description: string; disabled?: boolean; disabledReason?: string }[] = [
                 {
                   value: "random",
                   label: "Random Draw",
@@ -2631,6 +2633,15 @@ export default function EventSchedule() {
                   description: "Riders are seeded by their finish position in the most recently completed round.",
                   disabled: !hasCompletedRaceMotos,
                   disabledReason: "No completed race motos yet — run Round 1 first.",
+                },
+                {
+                  value: "series_points",
+                  label: "Series Points",
+                  description: eventSeries
+                    ? `Riders with the most ${eventSeries.name} points get first gate pick. Riders with zero points are placed randomly below.`
+                    : "Riders are seeded by current series championship points — most points gets first gate pick.",
+                  disabled: !eventSeries,
+                  disabledReason: "This event is not part of a series.",
                 },
               ];
               return (

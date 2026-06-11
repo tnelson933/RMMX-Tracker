@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable } from "@workspace/db";
+import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable, seriesTable, seriesPointsTable } from "@workspace/db";
 import { eq, and, inArray, min, ne, gt } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 
@@ -371,11 +371,12 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
 
   // Map gatePickMethod to internal seeding method + gate assignment flag.
   // gatePickMethod supersedes gateSeedingMethod when both are present.
-  let seedingMethod: "random" | "practice_fastest_lap" | "previous_round" | "registration_order";
+  let seedingMethod: "random" | "practice_fastest_lap" | "previous_round" | "registration_order" | "series_points";
   if (gatePickMethod) {
     seedingMethod = gatePickMethod === "practice" ? "practice_fastest_lap"
       : gatePickMethod === "prior_round_finish" ? "previous_round"
       : gatePickMethod === "first_registered" ? "registration_order"
+      : gatePickMethod === "series_points" ? "series_points"
       : "random";
   } else {
     // Backward compat: legacy gateSeedingMethod / usePracticeSeeding fields
@@ -593,6 +594,27 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     }
   }
 
+  // --- Series points (series_points method) ---
+  // Key: raceClass → Map<riderId, totalPoints>
+  const seriesPointsByClass = new Map<string, Map<number, number>>();
+
+  if (seedingMethod === "series_points") {
+    const allSeries = await db.select().from(seriesTable);
+    const eventSeries = allSeries.find(s => (s.eventIds as number[]).includes(eventId));
+    if (eventSeries) {
+      const pts = await db.select({
+        riderId: seriesPointsTable.riderId,
+        raceClass: seriesPointsTable.raceClass,
+        totalPoints: seriesPointsTable.totalPoints,
+      }).from(seriesPointsTable).where(eq(seriesPointsTable.seriesId, eventSeries.id));
+
+      for (const row of pts) {
+        if (!seriesPointsByClass.has(row.raceClass)) seriesPointsByClass.set(row.raceClass, new Map());
+        seriesPointsByClass.get(row.raceClass)!.set(row.riderId, row.totalPoints);
+      }
+    }
+  }
+
   // Effective max per heat: explicit input OR unlimited
   const effectiveMax: number = ridersPerHeat && ridersPerHeat > 0 ? ridersPerHeat : Infinity;
 
@@ -670,6 +692,24 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         return lapA - lapB;
       });
     }
+    if (seedingMethod === "series_points") {
+      const classPoints = seriesPointsByClass.get(cls);
+      // Split: riders with points vs zero/no points
+      const withPts = [...riders].filter(r => r.riderId != null && (classPoints?.get(r.riderId) ?? 0) > 0);
+      const noPts = [...riders].filter(r => r.riderId == null || (classPoints?.get(r.riderId) ?? 0) === 0);
+      // Sort points-holders descending
+      withPts.sort((a, b) => {
+        const pa = a.riderId != null ? (classPoints?.get(a.riderId) ?? 0) : 0;
+        const pb = b.riderId != null ? (classPoints?.get(b.riderId) ?? 0) : 0;
+        return pb - pa;
+      });
+      // Shuffle zero-point riders randomly
+      for (let i = noPts.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [noPts[i], noPts[j]] = [noPts[j], noPts[i]];
+      }
+      return [...withPts, ...noPts];
+    }
     // random: shuffle
     const arr = [...riders];
     for (let i = arr.length - 1; i > 0; i--) {
@@ -694,7 +734,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     const numGroups = effectiveMax === Infinity ? 1 : Math.ceil(classRiders.length / effectiveMax);
     const groups: CheckinRow[][] = Array.from({ length: numGroups }, () => []);
 
-    const useSerp = (seedingMethod === "registration_order" || seedingMethod === "practice_fastest_lap" || seedingMethod === "previous_round") && numGroups > 1;
+    const useSerp = (seedingMethod === "registration_order" || seedingMethod === "practice_fastest_lap" || seedingMethod === "previous_round" || seedingMethod === "series_points") && numGroups > 1;
     if (useSerp) {
       // Serpentine (snake) distribution: ensures balanced competition across groups
       classRiders.forEach((rider, idx) => {
