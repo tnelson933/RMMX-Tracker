@@ -46,4 +46,27 @@ router.get("/clubs/:clubId", async (req, res) => {
   return res.json({ ...c, createdAt: c.createdAt.toISOString() });
 });
 
+router.patch("/clubs/:clubId", async (req, res) => {
+  const id = Number(req.params.clubId);
+  const staffCId: number | null = typeof (res as any).locals?.staffClubId === "number" ? (res as any).locals.staffClubId : null;
+  if (staffCId !== null && staffCId !== id) return res.status(403).json({ error: "Forbidden" });
+  if (!req.session || !(req.session as any).userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const { name, state, contactEmail, contactPhone, logoUrl, website, description, autoDnfEnabled, autoDnfThreshold } = req.body;
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) updates.name = name;
+  if (state !== undefined) updates.state = state;
+  if (contactEmail !== undefined) updates.contactEmail = contactEmail;
+  if (contactPhone !== undefined) updates.contactPhone = contactPhone;
+  if (logoUrl !== undefined) updates.logoUrl = logoUrl;
+  if (website !== undefined) updates.website = website;
+  if (description !== undefined) updates.description = description;
+  if (autoDnfEnabled !== undefined) updates.autoDnfEnabled = !!autoDnfEnabled;
+  if (autoDnfThreshold !== undefined) updates.autoDnfThreshold = Math.min(100, Math.max(1, Number(autoDnfThreshold)));
+
+  const [updated] = await db.update(clubsTable).set(updates as any).where(eq(clubsTable.id, id)).returning();
+  if (!updated) return res.status(404).json({ error: "Not found" });
+  return res.json({ ...updated, createdAt: updated.createdAt.toISOString() });
+});
+
 export default router;

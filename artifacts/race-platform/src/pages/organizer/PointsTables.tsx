@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListPointsTables,
@@ -8,6 +8,8 @@ import {
   useAiSuggestPointsTable,
   useAiTweakPointsTable,
   getListPointsTablesQueryKey,
+  useListClubs,
+  useUpdateClub,
 } from "@workspace/api-client-react";
 import type { PointsTable } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -78,8 +80,6 @@ interface FormState {
   mainEventOnly: boolean;
   scaleText: string;
   scoringFormula: string;
-  autoDnfEnabled: boolean;
-  autoDnfThreshold: string;
 }
 
 const defaultForm: FormState = {
@@ -89,8 +89,6 @@ const defaultForm: FormState = {
   mainEventOnly: false,
   scaleText: scaleToText(SUPERCROSS_SCALE),
   scoringFormula: "",
-  autoDnfEnabled: false,
-  autoDnfThreshold: "75",
 };
 
 // ─── Live Preview ───────────────────────────────────────────────────────────
@@ -620,8 +618,6 @@ function TableFormDialog({
           mainEventOnly: editingTable.mainEventOnly,
           scaleText: scaleToText(editingTable.pointsScale as number[]),
           scoringFormula: (editingTable as any).scoringFormula ?? "",
-          autoDnfEnabled: (editingTable as any).autoDnfEnabled ?? false,
-          autoDnfThreshold: String((editingTable as any).autoDnfThreshold ?? 75),
         }
       : defaultForm
   );
@@ -668,7 +664,6 @@ function TableFormDialog({
     if (needsScale && pointsScale.length === 0) { toast({ title: "Enter at least one points value", variant: "destructive" }); return; }
     if (isFormula && !form.scoringFormula.trim()) { toast({ title: "Enter a scoring formula", variant: "destructive" }); return; }
 
-    const thresholdNum = parseInt(form.autoDnfThreshold, 10);
     const payload = {
       name: form.name.trim(),
       description: form.description.trim(),
@@ -676,8 +671,6 @@ function TableFormDialog({
       mainEventOnly: form.mainEventOnly,
       pointsScale,
       scoringFormula: isFormula ? form.scoringFormula.trim() : null,
-      autoDnfEnabled: form.autoDnfEnabled,
-      autoDnfThreshold: !isNaN(thresholdNum) ? Math.min(100, Math.max(1, thresholdNum)) : 75,
     };
 
     try {
@@ -844,58 +837,6 @@ function TableFormDialog({
                 </div>
               </div>
 
-              {/* Auto DNF toggle */}
-              <div className="rounded-lg border p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <Switch
-                    id="pt-auto-dnf"
-                    checked={form.autoDnfEnabled}
-                    onCheckedChange={(v) => setForm((f) => ({ ...f, autoDnfEnabled: v }))}
-                  />
-                  <div>
-                    <Label htmlFor="pt-auto-dnf" className="cursor-pointer flex items-center gap-1.5 font-medium">
-                      <TriangleAlert size={13} className="text-amber-500" />
-                      Auto DNF
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Riders completing fewer laps than the minimum threshold score 0 points
-                    </p>
-                  </div>
-                </div>
-
-                {form.autoDnfEnabled && (
-                  <div className="pl-10 space-y-2">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 space-y-1">
-                        <Label className="text-xs">Minimum Lap % of Leader</Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={form.autoDnfThreshold}
-                            onChange={(e) => setForm((f) => ({ ...f, autoDnfThreshold: e.target.value }))}
-                            className="h-8 w-24 font-mono text-sm"
-                          />
-                          <span className="text-sm text-muted-foreground">%</span>
-                        </div>
-                      </div>
-                    </div>
-                    {(() => {
-                      const pct = parseInt(form.autoDnfThreshold, 10);
-                      if (isNaN(pct) || pct < 1 || pct > 100) return null;
-                      const exampleLeaderLaps = 10;
-                      const minLaps = Math.floor(exampleLeaderLaps * pct / 100);
-                      return (
-                        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                          Example: if 1st place completes <strong>{exampleLeaderLaps} laps</strong>, any rider
-                          below <strong>{minLaps} lap{minLaps !== 1 ? "s" : ""}</strong> scores 0 points.
-                        </p>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
 
               {isPerRider ? (
                 <div className="flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
@@ -1216,6 +1157,22 @@ export default function PointsTables() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<PointsTable | null>(null);
 
+  // Club-level Auto DNF setting
+  const { data: clubs = [] } = useListClubs({ query: {} as any });
+  const club = clubs[0] ?? null;
+  const updateClubMutation = useUpdateClub();
+  const [dnfEnabled, setDnfEnabled] = useState(false);
+  const [dnfThreshold, setDnfThreshold] = useState("75");
+  const [dnfSaving, setDnfSaving] = useState(false);
+
+  useEffect(() => {
+    if (club) {
+      setDnfEnabled(club.autoDnfEnabled ?? false);
+      setDnfThreshold(String(club.autoDnfThreshold ?? 75));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [club?.id]);
+
   const systemTables = tables.filter((t) => t.isSystemDefault);
   const customTables = tables.filter((t) => !t.isSystemDefault);
 
@@ -1269,6 +1226,83 @@ export default function PointsTables() {
           Create Table
         </Button>
       </div>
+
+      {/* Club-wide Auto DNF setting */}
+      {club && (
+        <div className="rounded-xl border bg-card p-4 mb-6 flex items-start gap-4">
+          <Switch
+            id="global-auto-dnf"
+            checked={dnfEnabled}
+            onCheckedChange={async (v) => {
+              setDnfEnabled(v);
+              try {
+                await updateClubMutation.mutateAsync({
+                  clubId: club.id,
+                  data: { autoDnfEnabled: v, autoDnfThreshold: Math.min(100, Math.max(1, parseInt(dnfThreshold, 10) || 75)) },
+                });
+                toast({ title: v ? "Auto DNF enabled for all races" : "Auto DNF disabled" });
+              } catch {
+                setDnfEnabled(!v);
+                toast({ title: "Failed to save setting", variant: "destructive" });
+              }
+            }}
+          />
+          <div className="flex-1 min-w-0">
+            <Label htmlFor="global-auto-dnf" className="flex items-center gap-2 cursor-pointer font-medium text-sm">
+              <TriangleAlert size={13} className="text-amber-500" />
+              Auto DNF — Club-wide Setting
+            </Label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Applies to <strong>all races</strong> across every scoring system — riders completing fewer than the threshold % of the leader's laps score 0 points
+            </p>
+            {dnfEnabled && (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={dnfThreshold}
+                    onChange={(e) => setDnfThreshold(e.target.value)}
+                    className="h-8 w-20 font-mono text-sm"
+                  />
+                  <span className="text-sm text-muted-foreground">% of leader laps</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={dnfSaving}
+                  onClick={async () => {
+                    const t = Math.min(100, Math.max(1, parseInt(dnfThreshold, 10) || 75));
+                    setDnfThreshold(String(t));
+                    setDnfSaving(true);
+                    try {
+                      await updateClubMutation.mutateAsync({ clubId: club.id, data: { autoDnfEnabled: true, autoDnfThreshold: t } });
+                      toast({ title: "Threshold saved" });
+                    } catch {
+                      toast({ title: "Failed to save threshold", variant: "destructive" });
+                    } finally {
+                      setDnfSaving(false);
+                    }
+                  }}
+                >
+                  {dnfSaving ? "Saving…" : "Save"}
+                </Button>
+                {(() => {
+                  const pct = parseInt(dnfThreshold, 10);
+                  if (isNaN(pct) || pct < 1 || pct > 100) return null;
+                  const minLaps = Math.floor(10 * pct / 100);
+                  return (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
+                      e.g. leader completes <strong>10 laps</strong> → riders below <strong>{minLaps} lap{minLaps !== 1 ? "s" : ""}</strong> score 0 pts
+                    </p>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="text-center py-16 text-muted-foreground">Loading...</div>

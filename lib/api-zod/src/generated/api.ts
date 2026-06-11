@@ -248,6 +248,8 @@ export const ListClubsResponseItem = zod.object({
   "logoUrl": zod.string().nullish(),
   "website": zod.string().nullish(),
   "description": zod.string().nullish(),
+  "autoDnfEnabled": zod.boolean().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
+  "autoDnfThreshold": zod.number().describe('Minimum % of leader laps required to score points (1-100)'),
   "createdAt": zod.string().optional()
 })
 export const ListClubsResponse = zod.array(ListClubsResponseItem)
@@ -283,6 +285,8 @@ export const GetClubResponse = zod.object({
   "logoUrl": zod.string().nullish(),
   "website": zod.string().nullish(),
   "description": zod.string().nullish(),
+  "autoDnfEnabled": zod.boolean().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
+  "autoDnfThreshold": zod.number().describe('Minimum % of leader laps required to score points (1-100)'),
   "createdAt": zod.string().optional()
 })
 
@@ -301,7 +305,9 @@ export const UpdateClubBody = zod.object({
   "contactPhone": zod.string().optional(),
   "logoUrl": zod.string().optional(),
   "website": zod.string().optional(),
-  "description": zod.string().optional()
+  "description": zod.string().optional(),
+  "autoDnfEnabled": zod.boolean().optional(),
+  "autoDnfThreshold": zod.number().optional()
 })
 
 export const UpdateClubResponse = zod.object({
@@ -313,6 +319,8 @@ export const UpdateClubResponse = zod.object({
   "logoUrl": zod.string().nullish(),
   "website": zod.string().nullish(),
   "description": zod.string().nullish(),
+  "autoDnfEnabled": zod.boolean().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
+  "autoDnfThreshold": zod.number().describe('Minimum % of leader laps required to score points (1-100)'),
   "createdAt": zod.string().optional()
 })
 

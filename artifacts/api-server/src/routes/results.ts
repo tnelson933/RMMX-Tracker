@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { createContext, Script } from "vm";
 import { db } from "@workspace/db";
-import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable } from "@workspace/db";
+import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable, clubsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
@@ -166,7 +166,7 @@ router.post("/events/:eventId/results", async (req, res) => {
   const motoType: string = (moto as any).type ?? "heat";
 
   // ── Resolve scoring table for this event ─────────────────────────────────
-  const [event] = await db.select({ scoringTableId: eventsTable.scoringTableId })
+  const [event] = await db.select({ scoringTableId: eventsTable.scoringTableId, clubId: eventsTable.clubId })
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
 
@@ -185,8 +185,16 @@ router.post("/events/:eventId/results", async (req, res) => {
       pointsScale    = (table.pointsScale as number[]) ?? [];
       scoringFormula = table.scoringFormula ?? null;
       mainEventOnly  = table.mainEventOnly;
-      autoDnfEnabled = table.autoDnfEnabled ?? false;
-      autoDnfThreshold = table.autoDnfThreshold ?? 75;
+    }
+  }
+
+  // Auto DNF is a club-level setting — applies to all races regardless of scoring table
+  if (event?.clubId) {
+    const [club] = await db.select({ autoDnfEnabled: clubsTable.autoDnfEnabled, autoDnfThreshold: clubsTable.autoDnfThreshold })
+      .from(clubsTable).where(eq(clubsTable.id, event.clubId));
+    if (club) {
+      autoDnfEnabled = club.autoDnfEnabled ?? false;
+      autoDnfThreshold = club.autoDnfThreshold ?? 75;
     }
   }
 

@@ -14,4 +14,6 @@ export interface ClubUpdate {
   logoUrl?: string;
   website?: string;
   description?: string;
+  autoDnfEnabled?: boolean;
+  autoDnfThreshold?: number;
 }

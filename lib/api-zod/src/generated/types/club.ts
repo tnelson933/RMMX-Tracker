@@ -20,5 +20,9 @@ export interface Club {
   website?: string | null;
   /** @nullable */
   description?: string | null;
+  /** When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points */
+  autoDnfEnabled: boolean;
+  /** Minimum % of leader laps required to score points (1-100) */
+  autoDnfThreshold: number;
   createdAt?: string;
 }

@@ -2161,7 +2161,7 @@ components:
 
     Club:
       type: object
-      required: [id, name, state]
+      required: [id, name, state, autoDnfEnabled, autoDnfThreshold]
       properties:
         id:
           type: integer
@@ -2179,6 +2179,12 @@ components:
           type: ["string", "null"]
         description:
           type: ["string", "null"]
+        autoDnfEnabled:
+          type: boolean
+          description: When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points
+        autoDnfThreshold:
+          type: integer
+          description: Minimum % of leader laps required to score points (1-100)
         createdAt:
           type: string
 
@@ -2218,6 +2224,10 @@ components:
           type: string
         description:
           type: string
+        autoDnfEnabled:
+          type: boolean
+        autoDnfThreshold:
+          type: integer
 
     Event:
       type: object
