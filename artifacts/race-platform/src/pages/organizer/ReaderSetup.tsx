@@ -47,6 +47,7 @@ export default function ReaderSetup() {
   // ── Technology & setup-method toggles ────────────────────────────────────
   const [tech,        setTech]        = useState<"rfid" | "mylaps">("rfid");
   const [setupMethod, setSetupMethod] = useState<SetupMethod>("auto");
+  const [os,          setOs]          = useState<"mac" | "windows">("windows");
 
   // ── Shared reader fields ──────────────────────────────────────────────────
   const [readerType, setReaderType] = useState<ReaderType>("impinj-r700");
@@ -339,23 +340,62 @@ export default function ReaderSetup() {
                           {bridgeStatus === "offline"  && "Bridge not detected — start it first"}
                         </span>
                       </div>
-                      <div className="space-y-2">
-                        <p className="text-xs text-muted-foreground font-medium">
-                          {bridgeStatus === "running" ? "Bridge is running — skip to the form below." : "Start the bridge on your laptop:"}
-                        </p>
-                        <a href="/rfid_bridge.py" download="rfid_bridge.py"
-                          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                          <Download size={13} /> Download rfid_bridge.py
-                        </a>
-                        <div className="flex items-center gap-2">
-                          <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2 truncate">{bridgeCmd}</code>
-                          <button onClick={copyCmd} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-2.5 py-2 text-xs font-medium hover:bg-muted transition-colors">
-                            {copiedCmd ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
-                            {copiedCmd ? "Copied" : "Copy"}
-                          </button>
+                      {bridgeStatus === "running" ? (
+                        <p className="text-xs text-green-700 dark:text-green-400 font-medium">Bridge is running — configure your reader in the form below.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-1 text-xs">
+                            <span className="text-muted-foreground mr-1">My laptop runs:</span>
+                            <button onClick={() => setOs("windows")} className={`px-2 py-1 rounded border text-xs font-medium transition-colors ${os === "windows" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>Windows</button>
+                            <button onClick={() => setOs("mac")}     className={`px-2 py-1 rounded border text-xs font-medium transition-colors ${os === "mac"     ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>Mac / Linux</button>
+                          </div>
+                          <div className="border rounded-lg divide-y overflow-hidden">
+                            <div className="flex gap-3 px-3 py-2.5">
+                              <MiniStep n={1} />
+                              <div className="space-y-1.5 min-w-0">
+                                <p className="text-xs font-medium">Download the script</p>
+                                <a href="/rfid_bridge.py" download="rfid_bridge.py"
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                                  <Download size={12} /> Download rfid_bridge.py
+                                </a>
+                                <p className="text-xs text-muted-foreground">It saves to your Downloads folder automatically.</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-3 px-3 py-2.5">
+                              <MiniStep n={2} />
+                              <div className="space-y-1 min-w-0">
+                                <p className="text-xs font-medium">Open a terminal</p>
+                                {os === "windows"
+                                  ? <p className="text-xs text-muted-foreground">Press <kbd className="font-sans bg-muted border rounded px-1.5 py-0.5 text-xs font-medium text-foreground">Win + R</kbd>, type <span className="font-mono bg-muted rounded px-1">cmd</span>, press Enter.</p>
+                                  : <p className="text-xs text-muted-foreground">Press <kbd className="font-sans bg-muted border rounded px-1.5 py-0.5 text-xs font-medium text-foreground">Cmd ⌘ + Space</kbd>, type <span className="font-mono bg-muted rounded px-1">Terminal</span>, press Enter.</p>}
+                              </div>
+                            </div>
+                            <div className="flex gap-3 px-3 py-2.5">
+                              <MiniStep n={3} />
+                              <div className="space-y-1 min-w-0">
+                                <p className="text-xs font-medium">Go to your Downloads folder</p>
+                                <code className="block font-mono text-xs bg-muted rounded px-2 py-1">{os === "windows" ? "cd Downloads" : "cd ~/Downloads"}</code>
+                                <p className="text-xs text-muted-foreground">Type that and press Enter.</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-3 px-3 py-2.5">
+                              <MiniStep n={4} />
+                              <div className="space-y-1.5 min-w-0 w-full">
+                                <p className="text-xs font-medium">Paste and run this command</p>
+                                <p className="text-xs text-muted-foreground">{os === "windows" ? "Right-click anywhere in the window to paste." : "Use Cmd+V to paste."}</p>
+                                <div className="flex items-center gap-2">
+                                  <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2 truncate">{bridgeCmd}</code>
+                                  <button onClick={copyCmd} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-2.5 py-2 text-xs font-medium hover:bg-muted transition-colors">
+                                    {copiedCmd ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+                                    {copiedCmd ? "Copied" : "Copy"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Keep the terminal window open — closing it disconnects the reader.</p>
                         </div>
-                        <p className="text-xs text-muted-foreground">Python 3.8+ only — no extra packages needed. Keep the window open while configuring.</p>
-                      </div>
+                      )}
                     </div>
 
                     <div className={`border rounded-lg p-4 space-y-3 transition-opacity ${bridgeStatus === "running" ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
@@ -500,25 +540,69 @@ export default function ReaderSetup() {
                       {bridgeStatus === "offline"  && "Bridge not detected — start it with the command below"}
                     </span>
                   </div>
-                  <a href="/rfid_bridge.py" download="rfid_bridge.py"
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                    <Download size={13} /> Download rfid_bridge.py
-                  </a>
-                  <div className="space-y-1.5">
-                    <label className="text-xs text-muted-foreground">
-                      Decoder IP address <span className="text-muted-foreground/60">(printed on the decoder or shown in AMBrc)</span>
-                    </label>
-                    <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
-                      placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-xs" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2 break-all">{mylapsBridgeCmd}</code>
-                    <button onClick={copyCmd} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-2.5 py-2 text-xs font-medium hover:bg-muted transition-colors">
-                      {copiedCmd ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
-                      {copiedCmd ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Python 3.8+ only — no extra packages needed. Keep the window open while racing.</p>
+                  {bridgeStatus === "running" ? (
+                    <p className="text-xs text-green-700 dark:text-green-400 font-medium">Bridge is running — decoder connected.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-1 text-xs">
+                        <span className="text-muted-foreground mr-1">My laptop runs:</span>
+                        <button onClick={() => setOs("windows")} className={`px-2 py-1 rounded border text-xs font-medium transition-colors ${os === "windows" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>Windows</button>
+                        <button onClick={() => setOs("mac")}     className={`px-2 py-1 rounded border text-xs font-medium transition-colors ${os === "mac"     ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}>Mac / Linux</button>
+                      </div>
+                      <div className="border rounded-lg divide-y overflow-hidden">
+                        <div className="flex gap-3 px-3 py-2.5">
+                          <MiniStep n={1} />
+                          <div className="space-y-1.5 min-w-0">
+                            <p className="text-xs font-medium">Download the script</p>
+                            <a href="/rfid_bridge.py" download="rfid_bridge.py"
+                              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                              <Download size={12} /> Download rfid_bridge.py
+                            </a>
+                            <p className="text-xs text-muted-foreground">It saves to your Downloads folder automatically.</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-3 px-3 py-2.5">
+                          <MiniStep n={2} />
+                          <div className="space-y-1 min-w-0">
+                            <p className="text-xs font-medium">Open a terminal</p>
+                            {os === "windows"
+                              ? <p className="text-xs text-muted-foreground">Press <kbd className="font-sans bg-muted border rounded px-1.5 py-0.5 text-xs font-medium text-foreground">Win + R</kbd>, type <span className="font-mono bg-muted rounded px-1">cmd</span>, press Enter.</p>
+                              : <p className="text-xs text-muted-foreground">Press <kbd className="font-sans bg-muted border rounded px-1.5 py-0.5 text-xs font-medium text-foreground">Cmd ⌘ + Space</kbd>, type <span className="font-mono bg-muted rounded px-1">Terminal</span>, press Enter.</p>}
+                          </div>
+                        </div>
+                        <div className="flex gap-3 px-3 py-2.5">
+                          <MiniStep n={3} />
+                          <div className="space-y-1 min-w-0">
+                            <p className="text-xs font-medium">Go to your Downloads folder</p>
+                            <code className="block font-mono text-xs bg-muted rounded px-2 py-1">{os === "windows" ? "cd Downloads" : "cd ~/Downloads"}</code>
+                            <p className="text-xs text-muted-foreground">Type that and press Enter.</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-3 px-3 py-2.5">
+                          <MiniStep n={4} />
+                          <div className="space-y-1.5 min-w-0 w-full">
+                            <p className="text-xs font-medium">Enter your decoder's IP, then paste and run</p>
+                            <div className="space-y-1.5">
+                              <label className="text-xs text-muted-foreground">
+                                Decoder IP address <span className="opacity-60">(printed on the decoder or shown in AMBrc)</span>
+                              </label>
+                              <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
+                                placeholder="e.g. 192.168.1.50" className="font-mono h-8 text-xs max-w-xs" />
+                            </div>
+                            <p className="text-xs text-muted-foreground">{os === "windows" ? "Right-click anywhere in the window to paste." : "Use Cmd+V to paste."}</p>
+                            <div className="flex items-center gap-2">
+                              <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2 break-all">{mylapsBridgeCmd}</code>
+                              <button onClick={copyCmd} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-2.5 py-2 text-xs font-medium hover:bg-muted transition-colors">
+                                {copiedCmd ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+                                {copiedCmd ? "Copied" : "Copy"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Keep the terminal window open — closing it disconnects from the decoder.</p>
+                    </div>
+                  )}
                 </div>
                 <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
                   <strong>Compatible hardware:</strong> AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX, MyLaps X2, P3 Flex — any decoder supported by AMBrc 4.x/5.x.
