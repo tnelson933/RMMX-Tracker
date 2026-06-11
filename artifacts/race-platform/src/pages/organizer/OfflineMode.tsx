@@ -574,18 +574,14 @@ export default function OfflineMode() {
                     className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
                     <Download size={12} /> rfid_bridge.py
                   </a>
-                  <button onClick={() => downloadLauncher("windows", bridgeCmdLocal)}
+                  <button onClick={() => downloadLauncher(os, bridgeCmdLocal)}
                     className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                    <Download size={12} /> start-timing.bat
-                  </button>
-                  <button onClick={() => downloadLauncher("mac", bridgeCmdLocal)}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                    <Download size={12} /> start-timing.command
+                    <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
                   </button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Save both files to your <strong>Downloads</strong> folder — they must be in the same folder.
-                  Open your Downloads folder and double-click <strong>start-timing.bat</strong> (Windows) or <strong>start-timing.command</strong> (Mac) — a terminal opens and the bridge starts. Keep the window open — closing it cuts the reader connection.
+                  Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal opens and the bridge starts. Keep the window open — closing it cuts the reader connection.
                 </p>
                 <p className="text-xs">
                   <a href="/rfid/setup" className="text-primary underline underline-offset-2">Reader Setup page</a>{" "}
@@ -613,15 +609,10 @@ export default function OfflineMode() {
                     className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
                     <Download size={12} /> rfid_bridge.py
                   </a>
-                  <button onClick={() => downloadLauncher("windows", mylapsBridgeCmdLocal)}
+                  <button onClick={() => downloadLauncher(os, mylapsBridgeCmdLocal)}
                     disabled={!decoderIp.trim()}
                     className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                    <Download size={12} /> start-timing.bat
-                  </button>
-                  <button onClick={() => downloadLauncher("mac", mylapsBridgeCmdLocal)}
-                    disabled={!decoderIp.trim()}
-                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                    <Download size={12} /> start-timing.command
+                    <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
                   </button>
                 </div>
                 {!decoderIp.trim() && (
@@ -629,7 +620,7 @@ export default function OfflineMode() {
                 )}
                 <p className="text-xs text-muted-foreground">
                   Save both files to your <strong>Downloads</strong> folder — they must be in the same folder.
-                  Open your Downloads folder and double-click <strong>start-timing.bat</strong> (Windows) or <strong>start-timing.command</strong> (Mac) — a terminal opens and the bridge starts. Keep the window open all day — closing it disconnects from the decoder.
+                  Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal opens and the bridge starts. Keep the window open all day — closing it disconnects from the decoder.
                 </p>
               </div>
             )}
@@ -724,13 +715,9 @@ export default function OfflineMode() {
               <div className="space-y-2">
                 <p className="text-xs font-medium text-foreground">Restart the bridge without the local override:</p>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => downloadLauncher("windows", bridgeCmdCloud)}
+                  <button onClick={() => downloadLauncher(os, bridgeCmdCloud)}
                     className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                    <Download size={12} /> start-timing.bat
-                  </button>
-                  <button onClick={() => downloadLauncher("mac", bridgeCmdCloud)}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                    <Download size={12} /> start-timing.command
+                    <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
                   </button>
                 </div>
                 <CopyableCodeBlock>{bridgeCmdCloud}</CopyableCodeBlock>
@@ -739,15 +726,10 @@ export default function OfflineMode() {
               <div className="space-y-2">
                 <p className="text-xs font-medium text-foreground">Restart the bridge pointed back at the cloud:</p>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => downloadLauncher("windows", mylapsBridgeCmdCloud)}
+                  <button onClick={() => downloadLauncher(os, mylapsBridgeCmdCloud)}
                     disabled={!decoderIp.trim()}
                     className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                    <Download size={12} /> start-timing.bat
-                  </button>
-                  <button onClick={() => downloadLauncher("mac", mylapsBridgeCmdCloud)}
-                    disabled={!decoderIp.trim()}
-                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                    <Download size={12} /> start-timing.command
+                    <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
                   </button>
                 </div>
                 <CopyableCodeBlock>{mylapsBridgeCmdCloud}</CopyableCodeBlock>

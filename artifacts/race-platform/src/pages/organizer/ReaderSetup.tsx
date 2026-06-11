@@ -104,6 +104,8 @@ export default function ReaderSetup() {
   };
 
   // ── Test crossing ─────────────────────────────────────────────────────────
+  const [os,          setOs]          = useState<"windows" | "mac">("windows");
+
   const [testValue,   setTestValue]   = useState("");
   const [testResult,  setTestResult]  = useState<{ ok: boolean; message: string } | null>(null);
   const [testLoading, setTestLoading] = useState(false);
@@ -324,6 +326,19 @@ export default function ReaderSetup() {
         </div>
       </div>
 
+      {/* OS picker */}
+      <div className="flex items-center gap-2 text-sm">
+        <span className="font-medium text-muted-foreground">My laptop runs:</span>
+        <button
+          onClick={() => setOs("windows")}
+          className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${os === "windows" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+        >Windows</button>
+        <button
+          onClick={() => setOs("mac")}
+          className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${os === "mac" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+        >Mac</button>
+      </div>
+
       {/* Steps */}
       <div className="border rounded-xl bg-card overflow-hidden divide-y">
         <div className="px-5 py-3 bg-muted/30 border-b">
@@ -399,35 +414,25 @@ export default function ReaderSetup() {
                               <MiniStep n={2} />
                               <div className="space-y-1.5 min-w-0">
                                 <p className="text-xs font-medium">Install Python — one time only</p>
-                                <div className="flex flex-wrap gap-2">
-                                  <a href="https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe"
-                                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                    <Download size={12} /> Python for Windows
-                                  </a>
-                                  <a href="https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"
-                                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                    <Download size={12} /> Python for Mac
-                                  </a>
-                                </div>
-                                <p className="text-xs text-muted-foreground">Click through the installer. Check <strong>"Add Python to PATH"</strong> if it appears.</p>
+                                <a href={os === "windows" ? "https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe" : "https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"}
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                                  <Download size={12} /> {os === "windows" ? "Python for Windows" : "Python for Mac"}
+                                </a>
+                                <p className="text-xs text-muted-foreground">
+                                  Click through the installer.{os === "windows" && <> Check <strong>"Add Python to PATH"</strong> if it appears.</>}
+                                </p>
                               </div>
                             </div>
                             <div className="flex gap-3 px-3 py-2.5">
                               <MiniStep n={3} />
                               <div className="space-y-2 min-w-0 w-full">
-                                <p className="text-xs font-medium">Download the launcher for your computer</p>
-                                <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Then open your Downloads folder and double-click <strong>start-timing.bat</strong> (Windows) or <strong>start-timing.command</strong> (Mac) — a terminal window opens and the bridge starts automatically.</p>
-                                <div className="flex flex-wrap gap-2">
-                                  <button onClick={() => downloadLauncher("windows", "rfid")}
-                                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                    <Download size={12} /> start-timing.bat
-                                  </button>
-                                  <button onClick={() => downloadLauncher("mac", "rfid")}
-                                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                    <Download size={12} /> start-timing.command
-                                  </button>
-                                </div>
-                                <p className="text-xs text-muted-foreground opacity-70">Mac only: right-click the file → Open the first time to allow it past Gatekeeper.</p>
+                                <p className="text-xs font-medium">Download the launcher</p>
+                                <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Then open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal window opens and the bridge starts automatically.</p>
+                                <button onClick={() => downloadLauncher(os, "rfid")}
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                                  <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
+                                </button>
+                                {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
                               </div>
                             </div>
                           </div>
@@ -438,7 +443,7 @@ export default function ReaderSetup() {
                         <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
                           {bridgeStatus === "checking" && "Checking for bridge…"}
                           {bridgeStatus === "running"  && "Bridge connected — configure your reader below"}
-                          {bridgeStatus === "offline"  && "Waiting for bridge — open Downloads and double-click start-timing.bat or start-timing.command"}
+                          {bridgeStatus === "offline"  && `Waiting for bridge — open Downloads and double-click ${os === "windows" ? "start-timing.bat" : "start-timing.command"}`}
                         </span>
                       </div>
                     </div>
@@ -618,23 +623,16 @@ export default function ReaderSetup() {
                               <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
                                 placeholder="e.g. 192.168.1.50" className="font-mono h-8 text-xs max-w-xs" />
                             </div>
-                            <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Open your Downloads folder and double-click <strong>start-timing.bat</strong> (Windows) or <strong>start-timing.command</strong> (Mac) — a terminal window opens and the bridge starts with your decoder IP already configured.</p>
-                            <div className="flex flex-wrap gap-2">
-                              <button onClick={() => downloadLauncher("windows", "mylaps")}
-                                disabled={!readerIp.trim()}
-                                className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${readerIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                                <Download size={12} /> start-timing.bat
-                              </button>
-                              <button onClick={() => downloadLauncher("mac", "mylaps")}
-                                disabled={!readerIp.trim()}
-                                className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${readerIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                                <Download size={12} /> start-timing.command
-                              </button>
-                            </div>
+                            <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal window opens and the bridge starts with your decoder IP already configured.</p>
+                            <button onClick={() => downloadLauncher(os, "mylaps")}
+                              disabled={!readerIp.trim()}
+                              className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${readerIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
+                              <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
+                            </button>
                             {!readerIp.trim() && (
                               <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable the download.</p>
                             )}
-                            <p className="text-xs text-muted-foreground opacity-70">Mac only: right-click the file → Open the first time to allow it past Gatekeeper.</p>
+                            {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
                           </div>
                         </div>
                       </div>
@@ -645,7 +643,7 @@ export default function ReaderSetup() {
                     <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
                       {bridgeStatus === "checking" && "Checking for bridge…"}
                       {bridgeStatus === "running"  && "Bridge connected — decoder linked"}
-                      {bridgeStatus === "offline"  && "Waiting for bridge — open Downloads and double-click start-timing.bat or start-timing.command"}
+                      {bridgeStatus === "offline"  && `Waiting for bridge — open Downloads and double-click ${os === "windows" ? "start-timing.bat" : "start-timing.command"}`}
                     </span>
                   </div>
                 </div>
