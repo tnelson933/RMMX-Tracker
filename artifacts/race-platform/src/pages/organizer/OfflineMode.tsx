@@ -325,6 +325,87 @@ export default function OfflineMode() {
     URL.revokeObjectURL(url);
   };
 
+  const downloadInstallScript = (platform: "windows" | "mac") => {
+    let content: string;
+    let filename: string;
+    if (platform === "windows") {
+      content = [
+        "@echo off",
+        "title Rocky Mountain Local Server — Install",
+        "echo ================================================",
+        "echo   Rocky Mountain Local Server — Install",
+        "echo ================================================",
+        "echo.",
+        "cd %USERPROFILE%\\Downloads",
+        "echo Unzipping server package...",
+        "tar -xf rocky-mountain-local-server-latest.zip",
+        "cd rocky-mountain-local-server",
+        "echo.",
+        "echo Installing dependencies (this may take a minute)...",
+        "npm install",
+        "echo.",
+        "echo Done! Press any key to close.",
+        "pause > nul",
+      ].join("\r\n");
+      filename = "install-server.bat";
+    } else {
+      content = [
+        "#!/bin/bash",
+        "cd ~/Downloads",
+        "echo 'Unzipping server package...'",
+        "unzip -o rocky-mountain-local-server-latest.zip",
+        "cd rocky-mountain-local-server",
+        "echo ''",
+        "echo 'Installing dependencies (this may take a minute)...'",
+        "npm install",
+        "echo ''",
+        "echo 'Done! You can close this window.'",
+        "read -n1",
+      ].join("\n");
+      filename = "install-server.command";
+    }
+    const blob = new Blob([content], { type: "text/plain" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadStartScript = (platform: "windows" | "mac") => {
+    let content: string;
+    let filename: string;
+    if (platform === "windows") {
+      content = [
+        "@echo off",
+        "title Rocky Mountain Local Server",
+        "cd %USERPROFILE%\\Downloads\\rocky-mountain-local-server",
+        "npm start",
+        "pause > nul",
+      ].join("\r\n");
+      filename = "start-server.bat";
+    } else {
+      content = [
+        "#!/bin/bash",
+        "cd ~/Downloads/rocky-mountain-local-server",
+        "npm start",
+      ].join("\n");
+      filename = "start-server.command";
+    }
+    const blob = new Blob([content], { type: "text/plain" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-8">
 
@@ -455,31 +536,35 @@ export default function OfflineMode() {
                 <Badge variant="default" className="text-[10px] px-1.5 py-0 ml-auto">Download</Badge>
               )}
             </a>
+            <p className="text-xs text-muted-foreground">
+              Save it to your <strong>Downloads</strong> folder — the install script will look for it there.
+            </p>
           </div>
 
           {/* 1b — Install */}
           <div className="space-y-2">
             <p className="text-foreground font-semibold">Install it (one time only)</p>
-            <p>Unzip the file you just downloaded, then run a quick install so everything is ready for race day.</p>
+            <p>Download this script and double-click it — it unzips and installs everything automatically. No typing needed.</p>
             <OsToggle os={os} onChange={setOs} />
-            <ShowMeHow label="Show me how to install">
-              <p className="text-xs text-muted-foreground">Open the Terminal app and type:</p>
-              <CopyableCodeBlock>{os === "mac" ? installCmdMac : installCmdWindows}</CopyableCodeBlock>
-            </ShowMeHow>
+            <button onClick={() => downloadInstallScript(os)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+              <Download size={12} /> {os === "windows" ? "install-server.bat" : "install-server.command"}
+            </button>
+            {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
           </div>
 
           {/* 1c — Test it */}
           <div className="space-y-2">
             <p className="text-foreground font-semibold">Test it at home first</p>
             <p>Start the software and make sure it runs on your laptop before the day of the event.</p>
-            <ShowMeHow label="Show me how to start it">
-              <p className="text-xs text-muted-foreground">In your Terminal, type:</p>
-              <CopyableCodeBlock>{os === "mac" ? startCmdMac : startCmdWindows}</CopyableCodeBlock>
-              <p className="text-xs text-muted-foreground">
-                You should see a startup message and the software will be running at <span className="font-mono bg-muted rounded px-1">http://localhost:8080</span>.
-                Open that address in your browser to confirm it's working.
-              </p>
-            </ShowMeHow>
+            <button onClick={() => downloadStartScript(os)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+              <Download size={12} /> {os === "windows" ? "start-server.bat" : "start-server.command"}
+            </button>
+            <p className="text-xs text-muted-foreground">
+              Double-click to start. Then open <span className="font-mono bg-muted rounded px-1">http://localhost:8080</span> in your browser to confirm it's working.
+            </p>
+            {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
           </div>
 
           <Callout kind="tip">
@@ -524,11 +609,11 @@ export default function OfflineMode() {
           {/* 2b — Start the software */}
           <div className="space-y-2">
             <p className="text-foreground font-semibold">Start the software on your laptop</p>
-            <p>Open a terminal window and start the software the same way you tested it at home. Keep that window open all day — don't close it.</p>
-            <ShowMeHow label="Show me the start command">
-              <p className="text-xs text-muted-foreground">Type this in your terminal:</p>
-              <CopyableCodeBlock>{os === "mac" ? startCmdMac : startCmdWindows}</CopyableCodeBlock>
-            </ShowMeHow>
+            <p>Double-click the same start script you downloaded in Step 1. Keep the window open all day — don't close it.</p>
+            <button onClick={() => downloadStartScript(os)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+              <Download size={12} /> {os === "windows" ? "start-server.bat" : "start-server.command"}
+            </button>
           </div>
 
           {/* 2c — Point your reader at the laptop */}
