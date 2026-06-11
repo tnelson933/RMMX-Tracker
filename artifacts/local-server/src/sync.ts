@@ -3,26 +3,31 @@ import { resolve } from "path";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const SQLITE_FILE = process.env.SQLITE_FILE  ?? process.argv[2] ?? "./race_data.db";
-const CLOUD_URL   = (process.env.CLOUD_URL   ?? process.argv[3] ?? "").replace(/\/$/, "");
-const CLUB_ID     = process.env.CLUB_ID      ?? process.argv[4] ?? "";
-const EMAIL       = process.env.CLOUD_EMAIL  ?? process.argv[5] ?? "";
+const SQLITE_FILE = process.env.SQLITE_FILE   ?? process.argv[2] ?? "./race_data.db";
+const CLOUD_URL   = (process.env.CLOUD_URL    ?? process.argv[3] ?? "").replace(/\/$/, "");
+const CLUB_ID     = process.env.CLUB_ID       ?? process.argv[4] ?? "";
+const SYNC_TOKEN  = process.env.SYNC_TOKEN    ?? "";
+const EMAIL       = process.env.CLOUD_EMAIL   ?? process.argv[5] ?? "";
 const PASSWORD    = process.env.CLOUD_PASSWORD ?? process.argv[6] ?? "";
 
-if (!CLOUD_URL || !CLUB_ID || !EMAIL || !PASSWORD) {
+if (!CLOUD_URL || !CLUB_ID || !(SYNC_TOKEN || (EMAIL && PASSWORD))) {
   console.error(`
   Sync local SQLite → cloud Postgres.
 
-  Usage (env vars):
+  Usage with sync token (recommended):
+    SQLITE_FILE=./race_data.db \\
+    CLOUD_URL=https://your-app.replit.app \\
+    CLUB_ID=1 \\
+    SYNC_TOKEN=<token> \\
+    node dist/sync.mjs
+
+  Usage with email/password:
     SQLITE_FILE=./race_data.db \\
     CLOUD_URL=https://your-app.replit.app \\
     CLUB_ID=1 \\
     CLOUD_EMAIL=jake@club.com \\
     CLOUD_PASSWORD=secret \\
     node dist/sync.mjs
-
-  Usage (positional args):
-    node dist/sync.mjs ./race_data.db https://your-app.replit.app 1 jake@club.com secret
 `);
   process.exit(1);
 }
@@ -102,33 +107,42 @@ if (Object.keys(watermarks).length > 0) {
 
 // ─── Authenticate ─────────────────────────────────────────────────────────────
 
-console.log(`\n  Logging in as ${EMAIL}…`);
+let authHeader: Record<string, string>;
 
-const loginRes = await fetch(`${CLOUD_URL}/api/auth/login`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
-});
+if (SYNC_TOKEN) {
+  console.log(`\n  Authenticating with sync token…`);
+  authHeader = { Authorization: `Bearer ${SYNC_TOKEN}` };
+} else {
+  console.log(`\n  Logging in as ${EMAIL}…`);
 
-if (!loginRes.ok) {
-  const body = await loginRes.text();
-  console.error(`  Login failed (${loginRes.status}): ${body}`);
-  process.exit(1);
+  const loginRes = await fetch(`${CLOUD_URL}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
+  });
+
+  if (!loginRes.ok) {
+    const body = await loginRes.text();
+    console.error(`  Login failed (${loginRes.status}): ${body}`);
+    process.exit(1);
+  }
+
+  const rawSetCookie = loginRes.headers.get("set-cookie") ?? "";
+  const cookieValue = rawSetCookie
+    .split(",")
+    .map((c) => c.trim().split(";")[0].trim())
+    .filter(Boolean)
+    .join("; ");
+
+  if (!cookieValue) {
+    console.error("  Login succeeded but no session cookie received.");
+    process.exit(1);
+  }
+
+  authHeader = { Cookie: cookieValue };
 }
 
-const rawSetCookie = loginRes.headers.get("set-cookie") ?? "";
-const cookieValue = rawSetCookie
-  .split(",")
-  .map((c) => c.trim().split(";")[0].trim())
-  .filter(Boolean)
-  .join("; ");
-
-if (!cookieValue) {
-  console.error("  Login succeeded but no session cookie received.");
-  process.exit(1);
-}
-
-console.log(`  Logged in. Syncing…\n`);
+console.log(`  Syncing…\n`);
 
 // ─── POST sync ────────────────────────────────────────────────────────────────
 
@@ -136,7 +150,7 @@ const syncRes = await fetch(`${CLOUD_URL}/api/clubs/${CLUB_ID}/sync`, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    Cookie: cookieValue,
+    ...authHeader,
   },
   body: JSON.stringify({
     watermarks,

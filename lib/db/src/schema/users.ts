@@ -12,6 +12,7 @@ export const usersTable = pgTable("users", {
   clubId: integer("club_id").references(() => clubsTable.id),
   tourCompleted: boolean("tour_completed").default(false).notNull(),
   permissions: text("permissions").array().notNull().default([]),
+  offlineSyncToken: text("offline_sync_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

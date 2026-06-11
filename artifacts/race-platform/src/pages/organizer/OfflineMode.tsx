@@ -224,7 +224,9 @@ export default function OfflineMode() {
   const [os, setOs] = useState<"mac" | "windows">("mac");
   const [tech, setTech] = useState<"rfid" | "mylaps">("rfid");
   const [decoderIp, setDecoderIp] = useState("");
-  const [syncPassword, setSyncPassword] = useState("");
+  const [syncEnabled, setSyncEnabled] = useState(false);
+  const [syncToken, setSyncToken] = useState<string | null>(null);
+  const [syncTokenLoading, setSyncTokenLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
   const [showReconnectBanner, setShowReconnectBanner] = useState(false);
@@ -378,8 +380,8 @@ export default function OfflineMode() {
     URL.revokeObjectURL(url);
   };
 
-  const downloadStartScript = (platform: "windows" | "mac", credentials?: { email: string; password: string }) => {
-    const hasSync = !!(credentials?.email && credentials?.password);
+  const downloadStartScript = (platform: "windows" | "mac", token?: string | null) => {
+    const hasSync = !!token;
     let content: string;
     let filename: string;
     if (platform === "windows") {
@@ -392,8 +394,7 @@ export default function OfflineMode() {
         lines.push(
           `set CLOUD_URL=${cloudDomain}`,
           `set CLUB_ID=${clubId}`,
-          `set CLOUD_EMAIL=${credentials!.email}`,
-          `set CLOUD_PASSWORD=${credentials!.password}`,
+          `set SYNC_TOKEN=${token}`,
         );
       }
       lines.push("npm start", "pause > nul");
@@ -408,8 +409,7 @@ export default function OfflineMode() {
         lines.push(
           `export CLOUD_URL=${cloudDomain}`,
           `export CLUB_ID=${clubId}`,
-          `export CLOUD_EMAIL=${credentials!.email}`,
-          `export CLOUD_PASSWORD=${credentials!.password}`,
+          `export SYNC_TOKEN=${token}`,
         );
       }
       lines.push("npm start");
@@ -604,31 +604,43 @@ export default function OfflineMode() {
             {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
           </div>
 
-          {/* 1c — Test it */}
-          <div className="space-y-2">
+          {/* 1c — Download start script */}
+          <div className="space-y-3">
             <p className="text-foreground font-semibold">Download the start script</p>
-            <p>Enter your account password below — it gets baked into the script so results sync automatically when you get internet after a race. No typing needed on race day.</p>
-            <div className="space-y-1 max-w-xs">
-              <label className="text-xs text-muted-foreground">
-                Account email <span className="opacity-60">(auto-filled from your login)</span>
-              </label>
-              <Input value={user?.email ?? ""} readOnly className="font-mono h-8 text-xs bg-muted/40 cursor-default" />
-            </div>
-            <div className="space-y-1 max-w-xs">
-              <label className="text-xs text-muted-foreground">Account password</label>
-              <Input
-                type="password"
-                value={syncPassword}
-                onChange={e => setSyncPassword(e.target.value)}
-                placeholder="Your organizer password"
-                className="font-mono h-8 text-xs"
+            <p>Check the box below to include auto-sync — results will upload to the cloud automatically once your laptop reconnects to the internet after the race.</p>
+            <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit">
+              <input
+                type="checkbox"
+                checked={syncEnabled}
+                onChange={async (e) => {
+                  const checked = e.target.checked;
+                  setSyncEnabled(checked);
+                  if (checked && !syncToken) {
+                    setSyncTokenLoading(true);
+                    try {
+                      const res = await fetch("/api/auth/offline-token", { method: "POST", credentials: "include" });
+                      if (res.ok) {
+                        const data = await res.json() as { token: string };
+                        setSyncToken(data.token);
+                      }
+                    } finally {
+                      setSyncTokenLoading(false);
+                    }
+                  }
+                }}
+                className="w-4 h-4 accent-primary"
               />
-            </div>
+              <span className="text-sm">
+                Include auto-sync
+                {syncTokenLoading && <span className="text-muted-foreground ml-1">(generating token…)</span>}
+                {syncEnabled && syncToken && <span className="text-green-600 dark:text-green-400 ml-1">✓ ready</span>}
+              </span>
+            </label>
             <button
-              onClick={() => downloadStartScript(os, syncPassword && user?.email ? { email: user.email, password: syncPassword } : undefined)}
+              onClick={() => downloadStartScript(os, syncEnabled ? syncToken : null)}
               className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
               <Download size={12} /> {os === "windows" ? "start-server.bat" : "start-server.command"}
-              {syncPassword && user?.email && <span className="text-green-600 dark:text-green-400 font-normal ml-1">(sync included)</span>}
+              {syncEnabled && syncToken && <span className="text-green-600 dark:text-green-400 font-normal ml-1">(sync included)</span>}
             </button>
             <p className="text-xs text-muted-foreground">
               Double-click to start. Then open{" "}
@@ -681,10 +693,10 @@ export default function OfflineMode() {
           <div className="space-y-2">
             <p className="text-foreground font-semibold">Start the software on your laptop</p>
             <p>Double-click the start script you downloaded in Step 1. Keep the window open all day — don't close it.</p>
-            <button onClick={() => downloadStartScript(os, syncPassword && user?.email ? { email: user.email, password: syncPassword } : undefined)}
+            <button onClick={() => downloadStartScript(os, syncEnabled ? syncToken : null)}
               className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
               <Download size={12} /> {os === "windows" ? "start-server.bat" : "start-server.command"}
-              {syncPassword && user?.email && <span className="text-green-600 dark:text-green-400 font-normal ml-1">(sync included)</span>}
+              {syncEnabled && syncToken && <span className="text-green-600 dark:text-green-400 font-normal ml-1">(sync included)</span>}
             </button>
           </div>
 
@@ -829,7 +841,7 @@ export default function OfflineMode() {
               As soon as your laptop connects to the internet — whether that's driving home or stopping at a café —
               the software will push all your race data to the cloud on its own. Results will appear publicly within minutes.
             </p>
-            {syncPassword && user?.email ? (
+            {syncEnabled && syncToken ? (
               <div className="flex items-center gap-2 rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs">
                 <CheckCircle2 size={13} className="text-green-500 shrink-0" />
                 <span className="text-foreground">Auto-sync is already included in your start script — no extra steps needed.</span>
@@ -837,7 +849,7 @@ export default function OfflineMode() {
             ) : (
               <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
                 <AlertTriangle size={13} className="text-amber-500 shrink-0" />
-                <span className="text-foreground">Go back to Step 1 and enter your account password before downloading the start script to enable auto-sync.</span>
+                <span className="text-foreground">Go back to Step 1, check "Include auto-sync", and re-download the start script to enable auto-sync.</span>
               </div>
             )}
           </div>

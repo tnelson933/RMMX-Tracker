@@ -2,12 +2,13 @@ import { getDb } from "./db";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-export const CLOUD_URL   = (process.env.CLOUD_URL   ?? "").replace(/\/$/, "");
-export const CLUB_ID     = process.env.CLUB_ID      ?? "";
-export const EMAIL       = process.env.CLOUD_EMAIL  ?? "";
+export const CLOUD_URL   = (process.env.CLOUD_URL    ?? "").replace(/\/$/, "");
+export const CLUB_ID     = process.env.CLUB_ID       ?? "";
+export const SYNC_TOKEN  = process.env.SYNC_TOKEN    ?? "";
+export const EMAIL       = process.env.CLOUD_EMAIL   ?? "";
 export const PASSWORD    = process.env.CLOUD_PASSWORD ?? "";
 
-export const AUTO_SYNC_ENABLED = !!(CLOUD_URL && CLUB_ID && EMAIL && PASSWORD);
+export const AUTO_SYNC_ENABLED = !!(CLOUD_URL && CLUB_ID && (SYNC_TOKEN || (EMAIL && PASSWORD)));
 
 const POLL_INTERVAL_MS = 2 * 60 * 1000;
 
@@ -142,29 +143,36 @@ export async function runSync(): Promise<SyncResult> {
   const registrations   = normalizeRows(db.prepare("SELECT * FROM registrations").all()   as Record<string, unknown>[]);
   const riders          = normalizeRows(db.prepare("SELECT * FROM riders").all()           as Record<string, unknown>[]);
 
-  const loginRes = await fetch(`${CLOUD_URL}/api/auth/login`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ email: EMAIL, password: PASSWORD }),
-  });
+  let authHeader: Record<string, string>;
 
-  if (!loginRes.ok) {
-    const body = await loginRes.text();
-    throw new Error(`Login failed (${loginRes.status}): ${body}`);
+  if (SYNC_TOKEN) {
+    authHeader = { Authorization: `Bearer ${SYNC_TOKEN}` };
+  } else {
+    const loginRes = await fetch(`${CLOUD_URL}/api/auth/login`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ email: EMAIL, password: PASSWORD }),
+    });
+
+    if (!loginRes.ok) {
+      const body = await loginRes.text();
+      throw new Error(`Login failed (${loginRes.status}): ${body}`);
+    }
+
+    const rawSetCookie = loginRes.headers.get("set-cookie") ?? "";
+    const cookieValue = rawSetCookie
+      .split(",")
+      .map((c) => c.trim().split(";")[0].trim())
+      .filter(Boolean)
+      .join("; ");
+
+    if (!cookieValue) throw new Error("Login succeeded but no session cookie received");
+    authHeader = { Cookie: cookieValue };
   }
-
-  const rawSetCookie = loginRes.headers.get("set-cookie") ?? "";
-  const cookieValue = rawSetCookie
-    .split(",")
-    .map((c) => c.trim().split(";")[0].trim())
-    .filter(Boolean)
-    .join("; ");
-
-  if (!cookieValue) throw new Error("Login succeeded but no session cookie received");
 
   const syncRes = await fetch(`${CLOUD_URL}/api/clubs/${CLUB_ID}/sync`, {
     method:  "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookieValue },
+    headers: { "Content-Type": "application/json", ...authHeader },
     body:    JSON.stringify({ watermarks, checkins, rfidAssignments, registrations, riders }),
   });
 

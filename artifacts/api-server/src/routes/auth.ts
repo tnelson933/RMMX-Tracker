@@ -197,4 +197,22 @@ router.patch("/auth/me", async (req, res) => {
   });
 });
 
+// POST /auth/offline-token — generate or return an offline sync token for the
+// authenticated user. The token is stored on the user row and returned once so
+// the Offline Mode page can bake it into the downloaded start script.
+router.post("/auth/offline-token", async (req, res) => {
+  const userId = (req.session as any).userId as number | undefined;
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+  const token = crypto.randomUUID();
+  const [updated] = await db
+    .update(usersTable)
+    .set({ offlineSyncToken: token })
+    .where(eq(usersTable.id, userId))
+    .returning({ token: usersTable.offlineSyncToken });
+
+  if (!updated) return res.status(500).json({ error: "Failed to generate token" });
+  return res.json({ token: updated.token });
+});
+
 export default router;
