@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  WifiOff, Download, UploadCloud, AlertTriangle,
+  WifiOff, Download, AlertTriangle,
   CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
   Wifi, Loader2, Database, Timer,
 } from "lucide-react";
@@ -830,49 +830,20 @@ export default function OfflineMode() {
       {/* ── Step 3 — After the Race ──────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3 border-b">
-          <StepHeader n={3} title="After the Race — Sync Your Results" />
+          <StepHeader n={3} title="After the Race" />
         </CardHeader>
         <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
 
-          {/* 3a — Auto-sync */}
-          <div className="space-y-2">
-            <p className="text-foreground font-semibold">Results sync automatically when you get internet</p>
-            <p>
-              As soon as your laptop connects to the internet — whether that's driving home or stopping at a café —
-              the software will push all your race data to the cloud on its own. Results will appear publicly within minutes.
-            </p>
-            {syncEnabled && syncToken ? (
-              <div className="flex items-center gap-2 rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs">
-                <CheckCircle2 size={13} className="text-green-500 shrink-0" />
-                <span className="text-foreground">Auto-sync is already included in your start script — no extra steps needed.</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
-                <AlertTriangle size={13} className="text-amber-500 shrink-0" />
-                <span className="text-foreground">Go back to Step 1, check "Include auto-sync", and re-download the start script to enable auto-sync.</span>
-              </div>
-            )}
-          </div>
+          {/* 3a — Auto-sync reminder */}
+          <p>
+            As soon as your laptop connects to the internet — driving home, stopping at a café, wherever —
+            the software syncs your race data automatically. Results will appear publicly within minutes. Nothing to do.
+          </p>
 
-          {/* 3b — Manual upload fallback */}
-          <div className="space-y-2">
-            <p className="text-foreground font-semibold">Or upload manually from the cloud portal</p>
-            <p>
-              If auto-sync didn't run, you can upload your results file directly from this website.
-            </p>
-            <Link
-              href="/offline/sync"
-              className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
-            >
-              <UploadCloud size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
-              <span className="text-xs font-mono text-primary flex-1">Upload Offline Results →</span>
-            </Link>
-          </div>
-
-          {/* 3c — Point reader back */}
+          {/* 3b — Point reader back */}
           <div className="space-y-2">
             <p className="text-foreground font-semibold">Switch your timing reader back to the cloud</p>
-            <p>After syncing, point your reader back at the cloud so it's ready for your next event.</p>
+            <p>Point your reader back at the cloud so it's ready for your next event.</p>
             {tech === "rfid" ? (
               <div className="space-y-2">
                 <button onClick={() => downloadLauncher(os, bridgeCmdCloud)}
