@@ -1075,7 +1075,7 @@ export default function EventSchedule() {
   // ── Local state ──
   const [viewMode, setViewMode] = useState<ViewMode>("run-order");
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
-  const [roundFilter, setRoundFilter] = useState<"all" | number>("all");
+  const [roundFilter, setRoundFilter] = useState<"all" | "practice" | number>("all");
 
   // Inline name editing
   const [editingNameId, setEditingNameId] = useState<number | null>(null);
@@ -1344,9 +1344,12 @@ export default function EventSchedule() {
   }, [rawMotos]);
 
   // ── Filtered motos (by round) ──
+  const hasPracticeMotos = rawMotos.some(m => m.type === "practice");
   const filteredMotos: Moto[] = roundFilter === "all"
     ? sortedMotos
-    : sortedMotos.filter(m => m.type === "practice" || roundMap.get(m.id) === roundFilter);
+    : roundFilter === "practice"
+      ? sortedMotos.filter(m => m.type === "practice")
+      : sortedMotos.filter(m => m.type !== "practice" && roundMap.get(m.id) === roundFilter);
 
   // ── DnD sensors ──
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -1898,9 +1901,10 @@ export default function EventSchedule() {
                           <span className="ml-2 text-muted-foreground/60">· {eventStartDisplay}</span>
                         )}
                       </>
-                    ) : (
-                      `${sortedMotos.length} sessions · Round ${roundFilter} (${filteredMotos.length} sessions)`
-                    )}
+                    ) : roundFilter === "practice"
+                      ? `${filteredMotos.length} practice session${filteredMotos.length !== 1 ? "s" : ""}`
+                      : `${sortedMotos.length} sessions · Round ${roundFilter} (${filteredMotos.length} sessions)`
+                    }
                 </p>
               </div>
 
@@ -1969,7 +1973,7 @@ export default function EventSchedule() {
             </div>
 
             {/* ── Round filter pills ── */}
-            {maxRounds > 1 && (
+            {(maxRounds > 1 || hasPracticeMotos) && (
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setRoundFilter("all")}
@@ -1981,6 +1985,18 @@ export default function EventSchedule() {
                 >
                   All
                 </button>
+                {hasPracticeMotos && (
+                  <button
+                    onClick={() => setRoundFilter("practice")}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                      roundFilter === "practice"
+                        ? "bg-blue-500 text-white border-blue-500"
+                        : "bg-transparent text-muted-foreground border-border hover:text-foreground hover:border-foreground/40"
+                    }`}
+                  >
+                    Practice Sessions
+                  </button>
+                )}
                 {Array.from({ length: maxRounds }, (_, i) => i + 1).map(round => (
                   <button
                     key={round}
