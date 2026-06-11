@@ -3363,9 +3363,11 @@ export default function Motos() {
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider border ${
                         moto.type === "main"
                           ? "bg-primary/30 text-primary border-primary/40"
+                          : moto.type === "practice"
+                          ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
                           : "bg-white/10 text-sidebar-foreground/80 border-white/20"
                       }`}>
-                        {moto.type === "main" ? "Main Event" : isSupercrossFormat ? "Heat" : "Moto"}
+                        {moto.type === "main" ? "Main Event" : moto.type === "practice" ? "Practice" : isSupercrossFormat ? "Heat" : "Moto"}
                       </span>
                     </div>
                   </div>
@@ -3563,9 +3565,24 @@ export default function Motos() {
                   );
                 })()}
 
-                {/* First place finish countdown */}
-                {moto.status === "in_progress" && (
+                {/* First place finish countdown — not shown for practice motos */}
+                {moto.type !== "practice" && moto.status === "in_progress" && (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
+                )}
+
+                {/* Practice time limit countdown — shown in expanded dialog when in progress */}
+                {moto.type === "practice" && moto.status === "in_progress" && (moto as any).timeLimitMs && (
+                  <div className="border-t flex items-center gap-3 px-4 py-2.5 bg-sky-500/5">
+                    <Timer size={15} className="shrink-0 text-sky-500" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-none mb-0.5">Practice Time Limit</div>
+                    </div>
+                    <PracticeTimeLimitCountdown
+                      startedAt={(moto as any).startedAt ?? null}
+                      timeLimitMs={(moto as any).timeLimitMs ?? null}
+                      onExpire={() => { handleStatusUpdate(moto.id, "completed"); setExpandedMotoId(null); }}
+                    />
+                  </div>
                 )}
 
                 {/* Live crossing feed — for staggered pairs show both */}
@@ -3601,17 +3618,17 @@ export default function Motos() {
               <div className="p-3 bg-muted/30 border-t flex gap-2 items-center flex-wrap shrink-0">
                 {moto.status === "scheduled" && (
                   <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs">
-                    <Play size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Start Both Motos" : "Start Moto"}
+                    <Play size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Start Both Motos" : moto.type === "practice" ? "Start Practice" : "Start Moto"}
                   </Button>
                 )}
                 {moto.status === "in_progress" && (
                   <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs" onClick={() => doFinishMoto(moto.id)}>
-                    <CheckCircle size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Finish Both Motos" : "Finish Moto"}
+                    <CheckCircle size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Finish Both Motos" : moto.type === "practice" ? "Finish Practice" : "Finish Moto"}
                   </Button>
                 )}
                 {moto.status === "in_progress" && (
                   <Button size="sm" variant="ghost" className="text-muted-foreground font-heading uppercase text-xs" onClick={() => setRestartDialog({ open: true, motoId: moto.id, motoName: moto.name })}>
-                    <RefreshCw size={14} className="mr-1" /> Restart Moto
+                    <RefreshCw size={14} className="mr-1" /> {moto.type === "practice" ? "Restart Practice" : "Restart Moto"}
                   </Button>
                 )}
 
@@ -3634,8 +3651,15 @@ export default function Motos() {
                   </form>
                 )}
 
-                {moto.status === "in_progress" && (
+                {moto.type !== "practice" && moto.status === "in_progress" && (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />
+                )}
+                {moto.type === "practice" && moto.status === "in_progress" && (moto as any).timeLimitMs && (
+                  <PracticeTimeLimitCountdown
+                    startedAt={(moto as any).startedAt ?? null}
+                    timeLimitMs={(moto as any).timeLimitMs ?? null}
+                    onExpire={() => { handleStatusUpdate(moto.id, "completed"); setExpandedMotoId(null); }}
+                  />
                 )}
 
                 <div className="ml-auto flex gap-1.5">
