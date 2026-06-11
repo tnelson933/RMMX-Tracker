@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import {
   WifiOff, Download, AlertTriangle,
   CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
-  Wifi, Loader2, Database, Timer,
+  Wifi, Loader2, Database, Timer, Settings2,
 } from "lucide-react";
 import { useGetOfflinePackageInfo, useRebuildOfflinePackage } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -231,11 +231,36 @@ export default function OfflineMode() {
   const [exportDone, setExportDone] = useState(false);
   const [showReconnectBanner, setShowReconnectBanner] = useState(false);
 
+  // Offline reader auto-configure
+  const [offlineBridgeStatus, setOfflineBridgeStatus] = useState<"checking" | "running" | "offline">("offline");
+  const [offlineReaderType, setOfflineReaderType] = useState<"impinj-r700" | "zebra-fx7500">("impinj-r700");
+  const [offlineReaderIp, setOfflineReaderIp] = useState("");
+  const [offlineConfiguring, setOfflineConfiguring] = useState(false);
+  const [offlineConfigResult, setOfflineConfigResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   useEffect(() => {
     const handleOnline = () => setShowReconnectBanner(true);
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
   }, []);
+
+  // Poll the local bridge so we know when it's running for offline auto-configure
+  useEffect(() => {
+    if (tech !== "rfid") return;
+    setOfflineBridgeStatus("checking");
+    const check = async () => {
+      try {
+        const res = await fetch(`${BRIDGE_URL}/api-status`);
+        setOfflineBridgeStatus(res.ok ? "running" : "offline");
+      } catch {
+        setOfflineBridgeStatus("offline");
+      }
+    };
+    check();
+    const id = setInterval(check, 5000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tech]);
 
   const { user } = useAuth();
   const cloudDomain = window.location.origin;
@@ -268,6 +293,29 @@ export default function OfflineMode() {
 
   const { ip: localIp, loading: ipLoading } = useLocalIp();
 
+  const configureReaderOffline = async () => {
+    if (!localIp || !offlineReaderIp.trim()) return;
+    setOfflineConfiguring(true);
+    setOfflineConfigResult(null);
+    const bridgePath = offlineReaderType === "impinj-r700" ? "timing/impinj-crossing" : "timing/zebra-crossing";
+    const targetUrl = `http://${localIp}:5555/${bridgePath}`;
+    try {
+      const res = await fetch(`${BRIDGE_URL}/configure-reader`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ readerType: offlineReaderType, readerIp: offlineReaderIp.trim(), targetUrl }),
+      });
+      const data = await res.json() as { ok: boolean; message?: string; error?: string };
+      const msg = data.ok ? (data.message ?? "Reader configured!") : (data.error ?? "Something went wrong.");
+      setOfflineConfigResult({ ok: data.ok, message: msg });
+    } catch {
+      setOfflineConfigResult({ ok: false, message: "Could not reach the bridge. Make sure the start-timing script is running." });
+    } finally {
+      setOfflineConfiguring(false);
+    }
+  };
+
+  const BRIDGE_URL = "http://localhost:5555";
   const cloudEndpoint = `${cloudDomain}/api/timing/active/crossing?clubId=${clubId}`;
   const bridgeCmdLocal = `python rfid_bridge.py --api-url http://localhost:8080`;
   const bridgeCmdCloud = `python rfid_bridge.py --api-url ${cloudDomain}`;
@@ -746,12 +794,82 @@ export default function OfflineMode() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Save both files to your <strong>Downloads</strong> folder — they must be in the same folder.
-                  Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal opens and the bridge starts. Keep the window open — closing it cuts the reader connection.
+                  Double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal opens and the bridge starts. Keep the window open all day.
                 </p>
-                <p className="text-xs">
-                  <a href="/rfid/setup" className="text-primary underline underline-offset-2">Reader Setup page</a>{" "}
-                  has per-reader configuration screenshots.
-                </p>
+
+                {/* Auto-configure reader */}
+                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3 mt-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-xs font-semibold text-foreground">Auto-configure your reader</p>
+                    {offlineBridgeStatus === "running" ? (
+                      <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                        <CheckCircle2 size={11} /> Bridge running
+                      </span>
+                    ) : offlineBridgeStatus === "checking" ? (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Loader2 size={11} className="animate-spin" /> Checking…
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-xs text-amber-500">
+                        <AlertTriangle size={11} /> Bridge not running — start it first
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Enter your reader's IP and click Configure — the bridge will push the offline target URL directly to the reader over your network. No manual reader setup needed.
+                  </p>
+                  <div className="flex flex-wrap gap-2 items-end">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">Reader model</label>
+                      <select
+                        value={offlineReaderType}
+                        onChange={e => { setOfflineReaderType(e.target.value as "impinj-r700" | "zebra-fx7500"); setOfflineConfigResult(null); }}
+                        className="h-8 text-xs rounded-md border bg-background px-2 font-mono"
+                      >
+                        <option value="impinj-r700">Impinj R700</option>
+                        <option value="zebra-fx7500">Zebra FX7500</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">Reader IP address</label>
+                      <Input
+                        value={offlineReaderIp}
+                        onChange={e => { setOfflineReaderIp(e.target.value); setOfflineConfigResult(null); }}
+                        placeholder="e.g. 192.168.1.20"
+                        className="font-mono h-8 text-xs w-44"
+                        onKeyDown={e => { if (e.key === "Enter") void configureReaderOffline(); }}
+                      />
+                    </div>
+                    <button
+                      onClick={() => void configureReaderOffline()}
+                      disabled={offlineConfiguring || !offlineReaderIp.trim() || !localIp || offlineBridgeStatus !== "running"}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 h-8 rounded-md border bg-background hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {offlineConfiguring
+                        ? <Loader2 size={12} className="animate-spin" />
+                        : <Settings2 size={12} />}
+                      {offlineConfiguring ? "Configuring…" : "Configure Reader"}
+                    </button>
+                  </div>
+                  {!localIp && !ipLoading && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">Couldn't detect your laptop's IP — auto-configure needs it to set the reader's target URL. Check your network connection.</p>
+                  )}
+                  {localIp && (
+                    <p className="text-xs text-muted-foreground">
+                      Reader will be pointed at{" "}
+                      <span className="font-mono text-foreground">http://{localIp}:5555/…</span>
+                      {" "}(your laptop on this network).
+                    </p>
+                  )}
+                  {offlineConfigResult && (
+                    <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs ${offlineConfigResult.ok ? "border-green-500/40 bg-green-500/10" : "border-destructive/40 bg-destructive/10"}`}>
+                      {offlineConfigResult.ok
+                        ? <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
+                        : <XCircle size={13} className="text-destructive shrink-0 mt-0.5" />}
+                      <span>{offlineConfigResult.message}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="space-y-3">
