@@ -25,7 +25,10 @@ const updateRiderSchema = z.object({
   dateOfBirth: z.string().optional(),
   emergencyContact: z.string().optional(),
   emergencyPhone: z.string().optional(),
-  hometown: z.string().optional(),
+  streetAddress: z.string().optional(),
+  city: z.string().optional(),
+  homeState: z.string().optional(),
+  zip: z.string().optional(),
   bikeManufacturer: z.string().optional(),
   sponsors: z.string().optional(),
   amaNumber: z.string().optional(),
@@ -375,7 +378,10 @@ export default function RiderDetail() {
       dateOfBirth: "",
       emergencyContact: "",
       emergencyPhone: "",
-      hometown: "",
+      streetAddress: "",
+      city: "",
+      homeState: "",
+      zip: "",
       bikeManufacturer: "",
       sponsors: "",
       amaNumber: "",
@@ -393,7 +399,10 @@ export default function RiderDetail() {
       dateOfBirth: rider.dateOfBirth || "",
       emergencyContact: rider.emergencyContact || "",
       emergencyPhone: rider.emergencyPhone || "",
-      hometown: r.hometown || "",
+      streetAddress: r.streetAddress || "",
+      city: r.city || "",
+      homeState: r.homeState || "",
+      zip: r.zip || "",
       bikeManufacturer: r.bikeManufacturer || "",
       sponsors: r.sponsors || "",
       amaNumber: r.amaNumber || "",
@@ -455,8 +464,8 @@ export default function RiderDetail() {
             {rider.bibNumber && (
               <span className="font-mono bg-muted px-2 py-0.5 rounded text-sm font-bold border">Bib: {rider.bibNumber}</span>
             )}
-            {r.hometown && (
-              <span className="flex items-center gap-1 text-sm"><MapPin size={13} /> {r.hometown}</span>
+            {(r.city || r.homeState) && (
+              <span className="flex items-center gap-1 text-sm"><MapPin size={13} /> {[r.city, r.homeState].filter(Boolean).join(", ")}</span>
             )}
             {r.bikeManufacturer && (
               <span className="flex items-center gap-1 text-sm"><Bike size={13} /> {r.bikeManufacturer}</span>
@@ -502,15 +511,26 @@ export default function RiderDetail() {
                       )} />
                     </div>
 
-                    {/* Basics */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField control={form.control} name="hometown" render={({ field }) => (
-                        <FormItem><FormLabel>Hometown</FormLabel><FormControl><Input placeholder="City, State" {...field} /></FormControl><FormMessage /></FormItem>
+                    {/* Address */}
+                    <FormField control={form.control} name="streetAddress" render={({ field }) => (
+                      <FormItem><FormLabel>Street Address</FormLabel><FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField control={form.control} name="city" render={({ field }) => (
+                        <FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="Tucson" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
-                      <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
-                        <FormItem><FormLabel>Date of Birth</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                      <FormField control={form.control} name="homeState" render={({ field }) => (
+                        <FormItem><FormLabel>State</FormLabel><FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl><FormMessage /></FormItem>
+                      )} />
+                      <FormField control={form.control} name="zip" render={({ field }) => (
+                        <FormItem><FormLabel>ZIP</FormLabel><FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
                     </div>
+
+                    {/* Basics */}
+                    <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
+                      <FormItem><FormLabel>Date of Birth</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
 
                     {/* Racing info */}
                     <div className="border-t pt-4 mt-2">
@@ -565,8 +585,16 @@ export default function RiderDetail() {
                   <div className="grid grid-cols-2 gap-y-5">
                     <InfoRow label="Email" value={rider.email} />
                     <InfoRow label="Phone" value={rider.phone} />
-                    <InfoRow label="Hometown" value={r.hometown} />
                     <InfoRow label="Date of Birth" value={rider.dateOfBirth} />
+                  </div>
+                  <div className="border-t pt-5">
+                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Address</p>
+                    <div className="grid grid-cols-2 gap-y-5">
+                      <InfoRow label="Street Address" value={r.streetAddress} />
+                      <InfoRow label="ZIP" value={r.zip} />
+                      <InfoRow label="City" value={r.city} />
+                      <InfoRow label="State" value={r.homeState} />
+                    </div>
                   </div>
 
                   {/* Racing */}

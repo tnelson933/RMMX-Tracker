@@ -34,7 +34,13 @@ export interface RiderDetail {
   /** @nullable */
   mylapsTransponderId?: string | null;
   /** @nullable */
-  hometown?: string | null;
+  streetAddress?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  homeState?: string | null;
+  /** @nullable */
+  zip?: string | null;
   recentResults?: RaceResult[];
   totalEvents?: number;
   createdAt?: string;

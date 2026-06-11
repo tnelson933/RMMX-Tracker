@@ -27,7 +27,10 @@ const createRiderSchema = z.object({
   mylapsTransponderId: z.string().optional(),
   bikeManufacturer: z.string().optional(),
   sponsors: z.string().optional(),
-  hometown: z.string().optional(),
+  streetAddress: z.string().optional(),
+  city: z.string().optional(),
+  homeState: z.string().optional(),
+  zip: z.string().optional(),
 });
 
 type ExportRider = {
@@ -37,7 +40,10 @@ type ExportRider = {
   email?: string | null;
   phone?: string | null;
   bibNumber?: string | null;
-  hometown?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  homeState?: string | null;
+  zip?: string | null;
   bikeManufacturer?: string | null;
   amaNumber?: string | null;
   rfidNumber?: string | null;
@@ -54,7 +60,10 @@ function toExportRows(riders: ExportRider[]) {
     "First Name": r.firstName,
     "Last Name": r.lastName,
     "#": r.bibNumber ?? "",
-    Hometown: r.hometown ?? "",
+    "Street Address": r.streetAddress ?? "",
+    City: r.city ?? "",
+    State: r.homeState ?? "",
+    ZIP: r.zip ?? "",
     "Bike Manufacturer": r.bikeManufacturer ?? "",
     "AMA #": r.amaNumber ?? "",
     "RFID #": r.rfidNumber ?? "",
@@ -142,7 +151,10 @@ export default function RidersList() {
       mylapsTransponderId: "",
       bikeManufacturer: "",
       sponsors: "",
-      hometown: "",
+      streetAddress: "",
+      city: "",
+      homeState: "",
+      zip: "",
     },
   });
 
@@ -254,14 +266,23 @@ export default function RidersList() {
                     )} />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField control={form.control} name="hometown" render={({ field }) => (
-                      <FormItem><FormLabel>Hometown</FormLabel><FormControl><Input placeholder="City, State" {...field} /></FormControl><FormMessage /></FormItem>
+                  <FormField control={form.control} name="streetAddress" render={({ field }) => (
+                    <FormItem><FormLabel>Street Address</FormLabel><FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <div className="grid grid-cols-3 gap-4">
+                    <FormField control={form.control} name="city" render={({ field }) => (
+                      <FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="Tucson" {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
-                    <FormField control={form.control} name="bikeManufacturer" render={({ field }) => (
-                      <FormItem><FormLabel>Bike Manufacturer</FormLabel><FormControl><Input placeholder="Honda, KTM, Yamaha…" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormField control={form.control} name="homeState" render={({ field }) => (
+                      <FormItem><FormLabel>State</FormLabel><FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={form.control} name="zip" render={({ field }) => (
+                      <FormItem><FormLabel>ZIP</FormLabel><FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
                   </div>
+                  <FormField control={form.control} name="bikeManufacturer" render={({ field }) => (
+                    <FormItem><FormLabel>Bike Manufacturer</FormLabel><FormControl><Input placeholder="Honda, KTM, Yamaha…" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
 
                   <div className="grid grid-cols-3 gap-4">
                     <FormField control={form.control} name="bibNumber" render={({ field }) => (
@@ -313,7 +334,7 @@ export default function RidersList() {
               <TableRow className="hover:bg-sidebar">
                 <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">Name</TableHead>
                 <TableHead className="w-20 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">#</TableHead>
-                <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">Hometown</TableHead>
+                <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">City / State</TableHead>
                 <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">Bike</TableHead>
                 <TableHead className="w-28 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">AMA #</TableHead>
                 <TableHead className="w-28 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">RFID</TableHead>
@@ -342,7 +363,9 @@ export default function RidersList() {
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {(rider as any).hometown || <span className="text-muted-foreground/40">—</span>}
+                      {((rider as any).city || (rider as any).homeState)
+                        ? [(rider as any).city, (rider as any).homeState].filter(Boolean).join(", ")
+                        : <span className="text-muted-foreground/40">—</span>}
                     </TableCell>
                     <TableCell className="text-sm">
                       {(rider as any).bikeManufacturer || <span className="text-muted-foreground/40">—</span>}

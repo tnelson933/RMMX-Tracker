@@ -20,5 +20,8 @@ export interface RiderUpdate {
   sponsors?: string;
   amaNumber?: string;
   mylapsTransponderId?: string;
-  hometown?: string;
+  streetAddress?: string;
+  city?: string;
+  homeState?: string;
+  zip?: string;
 }

@@ -71,8 +71,10 @@ const onSiteRegSchema = z.object({
   dateOfBirth: z.string().optional(),
   emergencyContact: z.string().optional(),
   emergencyPhone: z.string().optional(),
-  hometown: z.string().optional(),
+  streetAddress: z.string().optional(),
+  city: z.string().optional(),
   homeState: z.string().optional(),
+  zip: z.string().optional(),
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
   clubIdNumber: z.string().optional(),
@@ -158,7 +160,7 @@ export default function Registrations() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      hometown: "", homeState: "",
+      streetAddress: "", city: "", homeState: "", zip: "",
       raceClass: "", bibNumber: "", clubIdNumber: "", bikeBrand: "",
       rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
@@ -319,8 +321,10 @@ export default function Registrations() {
         if (!dirty.dateOfBirth) form.setValue("dateOfBirth", data.dateOfBirth || "", { shouldDirty: false });
         if (!dirty.emergencyContact) form.setValue("emergencyContact", data.emergencyContact || "", { shouldDirty: false });
         if (!dirty.emergencyPhone) form.setValue("emergencyPhone", data.emergencyPhone || "", { shouldDirty: false });
-        if (!dirty.hometown && data.hometown) form.setValue("hometown", data.hometown, { shouldDirty: false });
+        if (!dirty.streetAddress && data.streetAddress) form.setValue("streetAddress", data.streetAddress, { shouldDirty: false });
+        if (!dirty.city && data.city) form.setValue("city", data.city, { shouldDirty: false });
         if (!dirty.homeState && data.homeState) form.setValue("homeState", data.homeState, { shouldDirty: false });
+        if (!dirty.zip && data.zip) form.setValue("zip", data.zip, { shouldDirty: false });
         if (!dirty.bibNumber && data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
         if (!dirty.bikeBrand && data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
         setLookedUpName(`${data.firstName} ${data.lastName}`);
@@ -432,8 +436,10 @@ export default function Registrations() {
           dateOfBirth: data.dateOfBirth || undefined,
           emergencyContact: data.emergencyContact || undefined,
           emergencyPhone: data.emergencyPhone || undefined,
-          hometown: data.hometown || undefined,
+          streetAddress: data.streetAddress || undefined,
+          city: data.city || undefined,
           homeState: data.homeState || undefined,
+          zip: data.zip || undefined,
           raceClass: data.raceClass,
           bibNumber: data.bibNumber || undefined,
           clubIdNumber: data.clubIdNumber || undefined,
@@ -842,11 +848,18 @@ export default function Registrations() {
               )} />
             </div>
 
-            {/* ── Hometown ── */}
-            <div className="grid grid-cols-2 gap-3">
-              <FormField control={form.control} name="hometown" render={({ field }) => (
+            {/* ── Address ── */}
+            <FormField control={form.control} name="streetAddress" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Street Address</FormLabel>
+                <FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <div className="grid grid-cols-3 gap-3">
+              <FormField control={form.control} name="city" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Hometown</FormLabel>
+                  <FormLabel>City</FormLabel>
                   <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
@@ -855,6 +868,13 @@ export default function Registrations() {
                 <FormItem>
                   <FormLabel>State</FormLabel>
                   <FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="zip" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>ZIP</FormLabel>
+                  <FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

@@ -2469,7 +2469,13 @@ components:
           type: ["string", "null"]
         mylapsTransponderId:
           type: ["string", "null"]
-        hometown:
+        streetAddress:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        homeState:
+          type: ["string", "null"]
+        zip:
           type: ["string", "null"]
         clubIdNumber:
           type: ["string", "null"]
@@ -2509,7 +2515,13 @@ components:
           type: ["string", "null"]
         mylapsTransponderId:
           type: ["string", "null"]
-        hometown:
+        streetAddress:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        homeState:
+          type: ["string", "null"]
+        zip:
           type: ["string", "null"]
         recentResults:
           type: array
@@ -2550,7 +2562,13 @@ components:
           type: string
         mylapsTransponderId:
           type: string
-        hometown:
+        streetAddress:
+          type: string
+        city:
+          type: string
+        homeState:
+          type: string
+        zip:
           type: string
 
     RiderUpdate:
@@ -2582,7 +2600,13 @@ components:
           type: string
         mylapsTransponderId:
           type: string
-        hometown:
+        streetAddress:
+          type: string
+        city:
+          type: string
+        homeState:
+          type: string
+        zip:
           type: string
 
     Registration:

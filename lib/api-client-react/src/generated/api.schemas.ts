@@ -309,7 +309,13 @@ export interface Rider {
   /** @nullable */
   mylapsTransponderId?: string | null;
   /** @nullable */
-  hometown?: string | null;
+  streetAddress?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  homeState?: string | null;
+  /** @nullable */
+  zip?: string | null;
   /**
      * Most recent club membership ID from the rider's registrations
      * @nullable
@@ -365,7 +371,13 @@ export interface RiderDetail {
   /** @nullable */
   mylapsTransponderId?: string | null;
   /** @nullable */
-  hometown?: string | null;
+  streetAddress?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  homeState?: string | null;
+  /** @nullable */
+  zip?: string | null;
   recentResults?: RaceResult[];
   totalEvents?: number;
   createdAt?: string;
@@ -385,7 +397,10 @@ export interface RiderInput {
   sponsors?: string;
   amaNumber?: string;
   mylapsTransponderId?: string;
-  hometown?: string;
+  streetAddress?: string;
+  city?: string;
+  homeState?: string;
+  zip?: string;
 }
 
 export interface RiderUpdate {
@@ -402,7 +417,10 @@ export interface RiderUpdate {
   sponsors?: string;
   amaNumber?: string;
   mylapsTransponderId?: string;
-  hometown?: string;
+  streetAddress?: string;
+  city?: string;
+  homeState?: string;
+  zip?: string;
 }
 
 export type RegistrationStatus = typeof RegistrationStatus[keyof typeof RegistrationStatus];

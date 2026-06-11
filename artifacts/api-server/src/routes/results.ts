@@ -350,7 +350,8 @@ router.get("/events/:eventId/ama-export", async (req, res) => {
     motoNumber: motosTable.motoNumber,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
-    hometown: ridersTable.hometown,
+    city: ridersTable.city,
+    homeState: ridersTable.homeState,
     amaNumber: registrationsTable.amaNumber,
     bibNumber: raceResultsTable.bibNumber,
   }).from(raceResultsTable)
@@ -405,8 +406,8 @@ router.get("/events/:eventId/ama-export", async (req, res) => {
       escCsv(r.bibNumber ?? ""),
       escCsv(r.firstName ?? ""),
       escCsv(r.lastName ?? ""),
-      escCsv(r.hometown ?? ""),
-      escCsv(riderHomeStateMap.get(r.riderId) ?? ""),
+      escCsv(r.city ?? ""),
+      escCsv(r.homeState ?? riderHomeStateMap.get(r.riderId) ?? ""),
       escCsv(r.position ?? ""),
     ].join(","));
   }

@@ -585,7 +585,10 @@ export const ListRidersResponseItem = zod.object({
   "sponsors": zod.string().nullish(),
   "amaNumber": zod.string().nullish(),
   "mylapsTransponderId": zod.string().nullish(),
-  "hometown": zod.string().nullish(),
+  "streetAddress": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "homeState": zod.string().nullish(),
+  "zip": zod.string().nullish(),
   "clubIdNumber": zod.string().nullish().describe('Most recent club membership ID from the rider\'s registrations'),
   "createdAt": zod.string().optional()
 })
@@ -609,7 +612,10 @@ export const CreateRiderBody = zod.object({
   "sponsors": zod.string().optional(),
   "amaNumber": zod.string().optional(),
   "mylapsTransponderId": zod.string().optional(),
-  "hometown": zod.string().optional()
+  "streetAddress": zod.string().optional(),
+  "city": zod.string().optional(),
+  "homeState": zod.string().optional(),
+  "zip": zod.string().optional()
 })
 
 
@@ -635,7 +641,10 @@ export const GetRiderResponse = zod.object({
   "sponsors": zod.string().nullish(),
   "amaNumber": zod.string().nullish(),
   "mylapsTransponderId": zod.string().nullish(),
-  "hometown": zod.string().nullish(),
+  "streetAddress": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "homeState": zod.string().nullish(),
+  "zip": zod.string().nullish(),
   "recentResults": zod.array(zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -678,7 +687,10 @@ export const UpdateRiderBody = zod.object({
   "sponsors": zod.string().optional(),
   "amaNumber": zod.string().optional(),
   "mylapsTransponderId": zod.string().optional(),
-  "hometown": zod.string().optional()
+  "streetAddress": zod.string().optional(),
+  "city": zod.string().optional(),
+  "homeState": zod.string().optional(),
+  "zip": zod.string().optional()
 })
 
 export const UpdateRiderResponse = zod.object({
@@ -696,7 +708,10 @@ export const UpdateRiderResponse = zod.object({
   "sponsors": zod.string().nullish(),
   "amaNumber": zod.string().nullish(),
   "mylapsTransponderId": zod.string().nullish(),
-  "hometown": zod.string().nullish(),
+  "streetAddress": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "homeState": zod.string().nullish(),
+  "zip": zod.string().nullish(),
   "clubIdNumber": zod.string().nullish().describe('Most recent club membership ID from the rider\'s registrations'),
   "createdAt": zod.string().optional()
 })

@@ -307,7 +307,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     "firstName", "lastName", "phone", "dateOfBirth",
     "emergencyContact", "emergencyPhone",
     "bibNumber", "amaNumber", "bikeManufacturer", "sponsors",
-    "hometown", "homeState",
+    "streetAddress", "city", "homeState", "zip",
   ] as const;
 
   type AllowedKey = typeof allowed[number];
@@ -350,7 +350,7 @@ router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   const { firstName, lastName, phone, dateOfBirth, bibNumber, amaNumber,
-    bikeManufacturer, sponsors, hometown, homeState, myLapsTransponderNumber } = req.body;
+    bikeManufacturer, sponsors, streetAddress, city, homeState, zip, myLapsTransponderNumber } = req.body;
 
   if (!firstName?.trim() || !lastName?.trim()) {
     return res.status(400).json({ error: "First and last name are required" });
@@ -366,8 +366,10 @@ router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
     amaNumber: amaNumber?.trim() || null,
     bikeManufacturer: bikeManufacturer?.trim() || null,
     sponsors: sponsors?.trim() || null,
-    hometown: hometown?.trim() || null,
+    streetAddress: streetAddress?.trim() || null,
+    city: city?.trim() || null,
     homeState: homeState?.trim() || null,
+    zip: zip?.trim() || null,
     mylapsTransponderId: myLapsTransponderNumber?.trim() || null,
   }).returning();
 

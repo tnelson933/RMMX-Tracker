@@ -31,8 +31,10 @@ const registerSchema = z.object({
   dateOfBirth: z.string().optional(),
   emergencyContact: z.string().optional(),
   emergencyPhone: z.string().optional(),
-  hometown: z.string().optional(),
+  streetAddress: z.string().optional(),
+  city: z.string().optional(),
   homeState: z.string().optional(),
+  zip: z.string().optional(),
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
   amaNumber: z.string().optional(),
@@ -143,7 +145,7 @@ export default function Register() {
     defaultValues: {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
-      hometown: "", homeState: "",
+      streetAddress: "", city: "", homeState: "", zip: "",
       raceClass: "", bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
@@ -290,8 +292,10 @@ export default function Register() {
         form.setValue("dateOfBirth", data.dateOfBirth, { shouldDirty: false });
         form.setValue("emergencyContact", data.emergencyContact, { shouldDirty: false });
         form.setValue("emergencyPhone", data.emergencyPhone, { shouldDirty: false });
-        if (data.hometown) form.setValue("hometown", data.hometown, { shouldDirty: false });
+        if (data.streetAddress) form.setValue("streetAddress", data.streetAddress, { shouldDirty: false });
+        if (data.city) form.setValue("city", data.city, { shouldDirty: false });
         if (data.homeState) form.setValue("homeState", data.homeState, { shouldDirty: false });
+        if (data.zip) form.setValue("zip", data.zip, { shouldDirty: false });
         if (data.amaNumber) form.setValue("amaNumber", data.amaNumber, { shouldDirty: false });
         if (data.clubIdNumber) form.setValue("clubIdNumber", data.clubIdNumber, { shouldDirty: false });
         if (data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
@@ -891,10 +895,17 @@ export default function Register() {
                         </FormItem>
                       )} />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField control={form.control} name="hometown" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Hometown</FormLabel>
+                    <FormField control={form.control} name="streetAddress" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Street Address</FormLabel>
+                        <FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField control={form.control} name="city" render={({ field }) => (
+                        <FormItem className="col-span-1">
+                          <FormLabel>City</FormLabel>
                           <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
@@ -903,6 +914,13 @@ export default function Register() {
                         <FormItem>
                           <FormLabel>State</FormLabel>
                           <FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="zip" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ZIP</FormLabel>
+                          <FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
