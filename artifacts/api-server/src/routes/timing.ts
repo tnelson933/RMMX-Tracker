@@ -253,7 +253,7 @@ export async function buildLeaderboard(motoId: number) {
 // NOTE: event.minLapMs is a SCORING threshold (flags suspiciously fast laps in the
 // results UI) — it is intentionally NOT used here so short-track laps < minLapMs
 // are still recorded rather than silently dropped.
-const BURST_DEBOUNCE_MS = 3_000;
+const BURST_DEBOUNCE_MS = 10_000;
 
 // ── Per-moto async lock ────────────────────────────────────────────────────────
 // Node.js yields at every `await`, so two simultaneous requests can interleave:

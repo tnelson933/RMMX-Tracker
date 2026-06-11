@@ -7,7 +7,7 @@ export const practiceSessionsTable = pgTable("practice_sessions", {
   clubId: integer("club_id").notNull().references(() => clubsTable.id),
   name: text("name").notNull(),
   status: text("status").notNull().default("idle"), // idle | active | ended
-  debounceMs: integer("debounce_ms").notNull().default(30000),
+  debounceMs: integer("debounce_ms").notNull().default(10000),
   startedAt: timestamp("started_at", { withTimezone: true }),
   endedAt: timestamp("ended_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),

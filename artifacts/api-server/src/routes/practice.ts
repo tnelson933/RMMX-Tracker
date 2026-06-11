@@ -268,7 +268,7 @@ router.post("/practice", async (req, res) => {
     clubId,
     name,
     status: "idle",
-    debounceMs: debounceMs ? Number(debounceMs) : 30000,
+    debounceMs: debounceMs ? Number(debounceMs) : 10000,
   }).returning();
   return res.status(201).json(toJson(session));
 });
