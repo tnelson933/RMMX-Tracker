@@ -416,15 +416,15 @@ export default function ReaderSetup() {
                               <MiniStep n={3} />
                               <div className="space-y-2 min-w-0 w-full">
                                 <p className="text-xs font-medium">Download the launcher for your computer</p>
-                                <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Then double-click the file you downloaded (<strong>.bat</strong> on Windows, <strong>.command</strong> on Mac) — a terminal window opens and the bridge starts automatically.</p>
+                                <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Then open your Downloads folder and double-click <strong>start-timing.bat</strong> (Windows) or <strong>start-timing.command</strong> (Mac) — a terminal window opens and the bridge starts automatically.</p>
                                 <div className="flex flex-wrap gap-2">
                                   <button onClick={() => downloadLauncher("windows", "rfid")}
                                     className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                    <Download size={12} /> Windows (.bat)
+                                    <Download size={12} /> start-timing.bat
                                   </button>
                                   <button onClick={() => downloadLauncher("mac", "rfid")}
                                     className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                    <Download size={12} /> Mac / Linux (.command)
+                                    <Download size={12} /> start-timing.command
                                   </button>
                                 </div>
                                 <p className="text-xs text-muted-foreground opacity-70">Mac only: right-click the file → Open the first time to allow it past Gatekeeper.</p>
@@ -438,7 +438,7 @@ export default function ReaderSetup() {
                         <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
                           {bridgeStatus === "checking" && "Checking for bridge…"}
                           {bridgeStatus === "running"  && "Bridge connected — configure your reader below"}
-                          {bridgeStatus === "offline"  && "Waiting for bridge — double-click the .bat or .command file to start"}
+                          {bridgeStatus === "offline"  && "Waiting for bridge — open Downloads and double-click start-timing.bat or start-timing.command"}
                         </span>
                       </div>
                     </div>
@@ -618,17 +618,17 @@ export default function ReaderSetup() {
                               <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
                                 placeholder="e.g. 192.168.1.50" className="font-mono h-8 text-xs max-w-xs" />
                             </div>
-                            <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Double-click the file you downloaded (<strong>.bat</strong> on Windows, <strong>.command</strong> on Mac) — a terminal window opens and the bridge starts with your decoder IP already configured.</p>
+                            <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Open your Downloads folder and double-click <strong>start-timing.bat</strong> (Windows) or <strong>start-timing.command</strong> (Mac) — a terminal window opens and the bridge starts with your decoder IP already configured.</p>
                             <div className="flex flex-wrap gap-2">
                               <button onClick={() => downloadLauncher("windows", "mylaps")}
                                 disabled={!readerIp.trim()}
                                 className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${readerIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                                <Download size={12} /> Windows (.bat)
+                                <Download size={12} /> start-timing.bat
                               </button>
                               <button onClick={() => downloadLauncher("mac", "mylaps")}
                                 disabled={!readerIp.trim()}
                                 className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${readerIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                                <Download size={12} /> Mac / Linux (.command)
+                                <Download size={12} /> start-timing.command
                               </button>
                             </div>
                             {!readerIp.trim() && (
@@ -645,7 +645,7 @@ export default function ReaderSetup() {
                     <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
                       {bridgeStatus === "checking" && "Checking for bridge…"}
                       {bridgeStatus === "running"  && "Bridge connected — decoder linked"}
-                      {bridgeStatus === "offline"  && "Waiting for bridge — double-click the .bat or .command file to start"}
+                      {bridgeStatus === "offline"  && "Waiting for bridge — open Downloads and double-click start-timing.bat or start-timing.command"}
                     </span>
                   </div>
                 </div>
