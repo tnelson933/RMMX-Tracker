@@ -296,8 +296,15 @@ router.delete("/motos/:motoId", async (req, res) => {
     if (motoClubId !== staffCIdDel) return res.status(403).json({ error: "Forbidden" });
   }
 
-  const deleted = await db.delete(motosTable).where(eq(motosTable.id, id)).returning();
-  if (deleted.length === 0) return res.status(404).json({ error: "Not found" });
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
+  if (!moto) return res.status(404).json({ error: "Not found" });
+
+  // Delete FK-dependent rows before deleting the moto
+  await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
+  if (moto.status !== "completed") {
+    await db.delete(raceResultsTable).where(eq(raceResultsTable.motoId, id));
+  }
+  await db.delete(motosTable).where(eq(motosTable.id, id));
   return res.status(204).send();
 });
 
@@ -330,12 +337,23 @@ router.delete("/motos/:motoId/stagger", async (req, res) => {
 // Bulk-delete all non-completed motos for an event
 router.delete("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  await db.delete(motosTable).where(
-    and(
-      eq(motosTable.eventId, eventId),
-      ne(motosTable.status, "completed"),
-    ),
-  );
+
+  // Collect the IDs first so we can clean up FK-dependent rows
+  const targets = await db
+    .select({ id: motosTable.id })
+    .from(motosTable)
+    .where(and(eq(motosTable.eventId, eventId), ne(motosTable.status, "completed")));
+
+  if (targets.length === 0) return res.status(204).send();
+
+  const ids = targets.map((m) => m.id);
+
+  // Delete FK-dependent rows before deleting motos
+  // (lap_crossings and race_results both have non-cascading FKs on moto_id)
+  await db.delete(lapCrossingsTable).where(inArray(lapCrossingsTable.motoId, ids));
+  await db.delete(raceResultsTable).where(inArray(raceResultsTable.motoId, ids));
+  await db.delete(motosTable).where(inArray(motosTable.id, ids));
+
   return res.status(204).send();
 });
 
