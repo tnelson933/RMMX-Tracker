@@ -224,6 +224,7 @@ export default function OfflineMode() {
   const [os, setOs] = useState<"mac" | "windows">("mac");
   const [tech, setTech] = useState<"rfid" | "mylaps">("rfid");
   const [decoderIp, setDecoderIp] = useState("");
+  const [syncPassword, setSyncPassword] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
 
@@ -270,9 +271,6 @@ export default function OfflineMode() {
 
   const startCmdMac = `cd rocky-mountain-local-server\nnpm start`;
   const startCmdWindows = `cd rocky-mountain-local-server\nnpm start`;
-
-  const syncCmdMac = `CLOUD_URL=${cloudDomain} CLUB_ID=${clubId} CLOUD_EMAIL=you@club.com CLOUD_PASSWORD=yourpassword npm start`;
-  const syncCmdWindows = `set CLOUD_URL=${cloudDomain}\nset CLUB_ID=${clubId}\nset CLOUD_EMAIL=you@club.com\nset CLOUD_PASSWORD=yourpassword\nnpm start`;
 
   const downloadLauncher = (platform: "windows" | "mac", cmd: string) => {
     const cmd3 = cmd.replace(/^python /, "python3 ");
@@ -373,24 +371,42 @@ export default function OfflineMode() {
     URL.revokeObjectURL(url);
   };
 
-  const downloadStartScript = (platform: "windows" | "mac") => {
+  const downloadStartScript = (platform: "windows" | "mac", credentials?: { email: string; password: string }) => {
+    const hasSync = !!(credentials?.email && credentials?.password);
     let content: string;
     let filename: string;
     if (platform === "windows") {
-      content = [
+      const lines = [
         "@echo off",
         "title Rocky Mountain Local Server",
         "cd %USERPROFILE%\\Downloads\\rocky-mountain-local-server",
-        "npm start",
-        "pause > nul",
-      ].join("\r\n");
+      ];
+      if (hasSync) {
+        lines.push(
+          `set CLOUD_URL=${cloudDomain}`,
+          `set CLUB_ID=${clubId}`,
+          `set CLOUD_EMAIL=${credentials!.email}`,
+          `set CLOUD_PASSWORD=${credentials!.password}`,
+        );
+      }
+      lines.push("npm start", "pause > nul");
+      content = lines.join("\r\n");
       filename = "start-server.bat";
     } else {
-      content = [
+      const lines = [
         "#!/bin/bash",
         "cd ~/Downloads/rocky-mountain-local-server",
-        "npm start",
-      ].join("\n");
+      ];
+      if (hasSync) {
+        lines.push(
+          `export CLOUD_URL=${cloudDomain}`,
+          `export CLUB_ID=${clubId}`,
+          `export CLOUD_EMAIL=${credentials!.email}`,
+          `export CLOUD_PASSWORD=${credentials!.password}`,
+        );
+      }
+      lines.push("npm start");
+      content = lines.join("\n");
       filename = "start-server.command";
     }
     const blob = new Blob([content], { type: "text/plain" });
@@ -553,11 +569,29 @@ export default function OfflineMode() {
 
           {/* 1c — Test it */}
           <div className="space-y-2">
-            <p className="text-foreground font-semibold">Test it at home first</p>
-            <p>Start the software and make sure it runs on your laptop before the day of the event.</p>
-            <button onClick={() => downloadStartScript(os)}
+            <p className="text-foreground font-semibold">Download the start script</p>
+            <p>Enter your account password below — it gets baked into the script so results sync automatically when you get internet after a race. No typing needed on race day.</p>
+            <div className="space-y-1 max-w-xs">
+              <label className="text-xs text-muted-foreground">
+                Account email <span className="opacity-60">(auto-filled from your login)</span>
+              </label>
+              <Input value={user?.email ?? ""} readOnly className="font-mono h-8 text-xs bg-muted/40 cursor-default" />
+            </div>
+            <div className="space-y-1 max-w-xs">
+              <label className="text-xs text-muted-foreground">Account password</label>
+              <Input
+                type="password"
+                value={syncPassword}
+                onChange={e => setSyncPassword(e.target.value)}
+                placeholder="Your organizer password"
+                className="font-mono h-8 text-xs"
+              />
+            </div>
+            <button
+              onClick={() => downloadStartScript(os, syncPassword && user?.email ? { email: user.email, password: syncPassword } : undefined)}
               className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
               <Download size={12} /> {os === "windows" ? "start-server.bat" : "start-server.command"}
+              {syncPassword && user?.email && <span className="text-green-600 dark:text-green-400 font-normal ml-1">(sync included)</span>}
             </button>
             <p className="text-xs text-muted-foreground">
               Double-click to start. Then open{" "}
@@ -609,10 +643,11 @@ export default function OfflineMode() {
           {/* 2b — Start the software */}
           <div className="space-y-2">
             <p className="text-foreground font-semibold">Start the software on your laptop</p>
-            <p>Double-click the same start script you downloaded in Step 1. Keep the window open all day — don't close it.</p>
-            <button onClick={() => downloadStartScript(os)}
+            <p>Double-click the start script you downloaded in Step 1. Keep the window open all day — don't close it.</p>
+            <button onClick={() => downloadStartScript(os, syncPassword && user?.email ? { email: user.email, password: syncPassword } : undefined)}
               className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
               <Download size={12} /> {os === "windows" ? "start-server.bat" : "start-server.command"}
+              {syncPassword && user?.email && <span className="text-green-600 dark:text-green-400 font-normal ml-1">(sync included)</span>}
             </button>
           </div>
 
@@ -757,20 +792,17 @@ export default function OfflineMode() {
               As soon as your laptop connects to the internet — whether that's driving home or stopping at a café —
               the software will push all your race data to the cloud on its own. Results will appear publicly within minutes.
             </p>
-            <p>
-              For this to work, you need to start the software with your cloud account details. Expand the section below to set that up.
-            </p>
-            <ShowMeHow label="Set up automatic sync (recommended)">
-              <p className="text-xs text-muted-foreground">
-                Start the software with your login details instead of the plain start command.
-                Replace <span className="font-mono bg-muted rounded px-1">you@club.com</span> and <span className="font-mono bg-muted rounded px-1">yourpassword</span> with your organizer account credentials:
-              </p>
-              <OsToggle os={os} onChange={setOs} />
-              <CopyableCodeBlock>{os === "mac" ? syncCmdMac : syncCmdWindows}</CopyableCodeBlock>
-              <p className="text-xs text-muted-foreground">
-                Once you have internet, the software will sync automatically. You don't need to do anything else.
-              </p>
-            </ShowMeHow>
+            {syncPassword && user?.email ? (
+              <div className="flex items-center gap-2 rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs">
+                <CheckCircle2 size={13} className="text-green-500 shrink-0" />
+                <span className="text-foreground">Auto-sync is already included in your start script — no extra steps needed.</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+                <AlertTriangle size={13} className="text-amber-500 shrink-0" />
+                <span className="text-foreground">Go back to Step 1 and enter your account password before downloading the start script to enable auto-sync.</span>
+              </div>
+            )}
           </div>
 
           {/* 3b — Manual upload fallback */}
