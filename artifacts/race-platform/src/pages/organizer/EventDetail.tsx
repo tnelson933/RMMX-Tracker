@@ -776,7 +776,7 @@ export default function EventDetail() {
                                   onCheckedChange={field.onChange}
                                 />
                               </FormControl>
-                              <FormLabel className="cursor-pointer font-normal">Do not allow duplicate bib numbers</FormLabel>
+                              <FormLabel className="cursor-pointer font-normal">Do not allow duplicate race numbers</FormLabel>
                             </FormItem>
                           )}
                         />
