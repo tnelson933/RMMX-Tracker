@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable } from "@workspace/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practiceCrossingsTable } from "@workspace/db";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 
 const router = Router();
 
@@ -140,6 +140,17 @@ router.post("/rfid", async (req, res) => {
 
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, numRiderId));
   const rider = riders[0];
+
+  // Backfill any practice crossings that recorded this RFID but had no rider identity at the time
+  if (rider) {
+    const riderName = `${rider.firstName} ${rider.lastName}`.trim();
+    await db.update(practiceCrossingsTable)
+      .set({ riderId: numRiderId, riderName, bibNumber: rider.bibNumber ?? null })
+      .where(and(
+        eq(practiceCrossingsTable.rfidNumber, rfidNumber),
+        isNull(practiceCrossingsTable.riderId),
+      ));
+  }
 
   return res.status(201).json({
     id: assignment.id,
