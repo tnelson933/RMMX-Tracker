@@ -13,7 +13,7 @@ import {
 } from "@workspace/db";
 import { eq, and, asc, desc, isNotNull, or } from "drizzle-orm";
 import type { Response } from "express";
-import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
+import { textToSpeech, openai } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
 
 const router = Router();
@@ -1251,6 +1251,38 @@ router.get("/timing/rmonitor-status", async (req, res) => {
   return res.json({ bridges: rmonitorClientCount(eventId) });
 });
 
+// ── Announcer voice & script generation ──────────────────────────────────────
+
+const ANNOUNCER_VOICE_INSTRUCTIONS = `You are a booming, deep-voiced professional motorsports announcer — the voice of Supercross and AMA motocross. \
+Deliver every word with maximum energy, drama, and passion. \
+Speak in a powerful, resonant baritone. Vary your pacing — build tension, pause on big moments, then hit the crowd with explosive energy. \
+Sound like you are in a packed stadium with 60,000 fans on their feet. Every race is the most important race in the world.`;
+
+async function generateAnnouncerScript(context: string): Promise<string> {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: `You write exciting, varied race announcements for a live ATV and motocross event announcer. \
+Style: high-energy, dramatic, conversational — like the Supercross PA announcer. \
+Rules: \
+- Never use the exact same phrasing twice; vary your sentence structures and exclamations every call. \
+- Keep it punchy and natural — no bullet points, no stage directions, just the words the announcer speaks. \
+- Use authentic motorsports language (gate, going green, moto, heat, main event, podium, checking down, gap, charging, pinned, etc.). \
+- Output ONLY the final spoken script — nothing else.`,
+      },
+      {
+        role: "user",
+        content: context,
+      },
+    ],
+    temperature: 1.1,
+    max_tokens: 300,
+  });
+  return (completion.choices[0]?.message?.content ?? "").trim();
+}
+
 // ── Announcement script builder (pure code — no LLM needed) ───────────────────
 
 interface Top5Entry {
@@ -1395,43 +1427,22 @@ router.post("/timing/announce-moto-start", async (req, res) => {
       motoType === "lcq" ? "last chance qualifier" :
       (motoType ?? "race");
 
-    const parts: string[] = [];
-    parts.push("Ladies and gentlemen, your attention please!");
-
-    if (raceClass) {
-      parts.push(`Coming up next on track — the ${raceClass} ${typeLabel}!`);
-    } else {
-      parts.push(`Coming up next on track — the ${typeLabel}!`);
-    }
-
-    if (motoName) {
-      parts.push(`This is ${motoName}.`);
-    }
-
     const validRiders = (lineup ?? []).filter(r => r.riderName);
-    if (validRiders.length > 0) {
-      parts.push("Let's meet the riders taking the gate today:");
-      for (const rider of validRiders) {
-        if (rider.bibNumber) {
-          parts.push(`Wearing number ${rider.bibNumber}, ${rider.riderName}!`);
-        } else {
-          parts.push(`${rider.riderName}!`);
-        }
-      }
-    }
+    const riderList = validRiders
+      .map(r => r.bibNumber ? `#${r.bibNumber} ${r.riderName}` : r.riderName)
+      .join(", ");
 
-    // Deterministic outro keyed to moto name so it's consistent
-    const outros = [
-      "What a lineup! Get on your feet, folks — this one is about to go green!",
-      "Give it up for these riders! The gate drops in moments — it's race time!",
-      "Eyes on that gate, everyone — this moto is about to get underway!",
-      "Hold on to your seats — this race is moments away from going green! Let's go!",
-    ];
-    const hash = (motoName ?? "").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-    parts.push(outros[hash % outros.length]);
+    const context = [
+      `Write a live race-start announcement for a ${typeLabel}${raceClass ? ` in the ${raceClass} class` : ""}.`,
+      motoName ? `Moto name: ${motoName}.` : "",
+      validRiders.length > 0
+        ? `Riders taking the gate: ${riderList}.`
+        : "No rider lineup available yet.",
+      "Hype the crowd, introduce the class and riders with excitement, then build to the gate drop. Keep it under 40 seconds of speaking time.",
+    ].filter(Boolean).join(" ");
 
-    const script = parts.join(" ");
-    const audioBuffer = await textToSpeech(script, "onyx", "mp3");
+    const script = await generateAnnouncerScript(context);
+    const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "no-store");
     return res.send(audioBuffer);
@@ -1455,9 +1466,15 @@ router.post("/timing/announce", async (req, res) => {
       return res.status(400).json({ error: "top5 array is required" });
     }
 
-    const script = buildAnnouncementScript({ lapCompleted, top5, positionChanges, isComplete });
+    // Build structured facts from race data — feed to LLM as context
+    const rawFacts = buildAnnouncementScript({ lapCompleted, top5, positionChanges, isComplete });
 
-    const audioBuffer = await textToSpeech(script, "onyx", "mp3");
+    const context = isComplete
+      ? `Write an exciting race-finish announcement. Race facts: ${rawFacts} — Celebrate the winner, call out the podium finishers dramatically, and fire up the crowd. Keep it punchy, under 30 seconds.`
+      : `Write a live mid-race lap update. Race facts: ${rawFacts} — Deliver this like an in-stadium Supercross announcer: dramatic, energetic, specific. Vary the phrasing — don't use generic filler. Keep it under 25 seconds.`;
+
+    const script = await generateAnnouncerScript(context);
+    const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "no-store");
