@@ -1047,32 +1047,23 @@ export default function WatchLive() {
             </div>
           )}
 
-        {viewerState === "playing" && needsTap && (
+        {viewerState === "playing" && (
           <button
-            className="absolute inset-0 flex flex-col items-center justify-center gap-3 cursor-pointer bg-transparent hover:bg-black/10 transition-colors"
-            onClick={handleTap}
-          >
-            <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-5 py-3 backdrop-blur-sm">
-              <VolumeX size={18} className="text-white/70" />
-              <span className="text-white text-sm font-heading uppercase tracking-wider">Tap to watch with audio</span>
-            </div>
-          </button>
-        )}
-
-        {viewerState === "playing" && audioUnlocked && !needsTap && (
-          <button
-            className="absolute bottom-4 right-4 flex items-center gap-1.5 bg-black/50 hover:bg-black/70 border border-white/20 rounded-full px-3 py-1.5 transition-colors"
+            className="absolute bottom-3 right-3 p-2 rounded-full bg-black/50 hover:bg-black/70 border border-white/20 transition-colors"
+            title={needsTap ? "Tap to enable audio" : audioUnlocked ? "Mute audio" : "Unmute audio"}
             onClick={() => {
-              if (videoRef.current) {
+              if (needsTap) {
+                handleTap();
+              } else if (videoRef.current) {
                 const nowMuted = !videoRef.current.muted;
                 videoRef.current.muted = nowMuted;
                 if (nowMuted) { audioUnlockedRef.current = false; setAudioUnlocked(false); setNeedsTap(true); }
               }
             }}
-            title="Toggle audio"
           >
-            <Volume2 size={14} className="text-white/60" />
-            <span className="text-white/60 text-xs">Audio on</span>
+            {audioUnlocked && !needsTap
+              ? <Volume2 size={15} className="text-white/70" />
+              : <VolumeX size={15} className="text-white/40" />}
           </button>
         )}
 
