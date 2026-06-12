@@ -2368,7 +2368,19 @@ export default function EventSchedule() {
                   { motoId: id } as any,
                   {
                     onSuccess: () => {
-                      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+                      // Compact motoNumber values so race day management stays in sync
+                      const remaining = [...rawMotos]
+                        .filter(m => m.id !== id)
+                        .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0))
+                        .map(m => m.id);
+                      if (remaining.length > 0) {
+                        reorderMutation.mutate(
+                          { eventId, data: { motoIds: remaining } } as any,
+                          { onSettled: () => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }) }
+                        );
+                      } else {
+                        queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+                      }
                       toast({ title: "Moto deleted" });
                     },
                     onError: () => toast({ title: "Failed to delete moto", variant: "destructive" }),
