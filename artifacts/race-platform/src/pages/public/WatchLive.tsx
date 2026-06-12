@@ -114,21 +114,46 @@ export default function WatchLive() {
     console.debug("[WatchLive]", msg);
   };
 
-  // Keep announcerOnRef in sync with state so SSE callbacks see the latest value
-  useEffect(() => { announcerOnRef.current = announcerOn; }, [announcerOn]);
+  // Keep announcerOnRef in sync with state so SSE callbacks see the latest value.
+  // When muted: immediately stop whatever is playing and flush the queue.
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    announcerOnRef.current = announcerOn;
+    if (!announcerOn) {
+      // Stop the currently-playing clip
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.src = "";
+        currentAudioRef.current = null;
+      }
+      annPlayingRef.current = false;
+      // Revoke and discard all queued URLs
+      for (const url of audioQueueRef.current) URL.revokeObjectURL(url);
+      audioQueueRef.current = [];
+    }
+  }, [announcerOn]);
 
   // ── Announcer audio queue ─────────────────────────────────────────────────
   const drainQueue = useCallback(() => {
     if (annPlayingRef.current || audioQueueRef.current.length === 0) return;
+    if (!announcerOnRef.current) { audioQueueRef.current = []; return; }
     const url = audioQueueRef.current.shift()!;
     annPlayingRef.current = true;
     const audio = new Audio(url);
-    audio.onended = () => { URL.revokeObjectURL(url); annPlayingRef.current = false; drainQueue(); };
-    audio.onerror = () => { URL.revokeObjectURL(url); annPlayingRef.current = false; drainQueue(); };
+    currentAudioRef.current = audio;
+    const cleanup = () => {
+      URL.revokeObjectURL(url);
+      annPlayingRef.current = false;
+      if (currentAudioRef.current === audio) currentAudioRef.current = null;
+      drainQueue();
+    };
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
     audio.play().catch(() => { annPlayingRef.current = false; drainQueue(); });
   }, []);
 
   const enqueueAudio = useCallback((blob: Blob) => {
+    if (!announcerOnRef.current) return;   // discard if muted after fetch resolved
     const url = URL.createObjectURL(blob);
     audioQueueRef.current.push(url);
     drainQueue();
