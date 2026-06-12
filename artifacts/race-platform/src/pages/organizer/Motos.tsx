@@ -481,12 +481,11 @@ function FirstPlaceCountdown({ motoId, lapCount, variant = "banner" }: { motoId:
   const avgLapMs = leaderLapTimes.reduce((a, b) => a + b, 0) / leaderLapTimes.length;
   const lastCrossingMs = new Date(leaderLastCrossing.crossingTime).getTime();
 
-  // If lapCount known: project to finish; otherwise project to next crossing
-  const remainingLaps = lapCount != null ? lapCount - leaderMaxLap : 1;
-  const projectedMs = lastCrossingMs + remainingLaps * avgLapMs;
+  // Always project one avg-lap forward from the leader's last crossing
+  const projectedMs = lastCrossingMs + avgLapMs;
   const msUntil = projectedMs - now;
   const isOverdue = msUntil < 0;
-  const isFinish = lapCount != null;
+  const isFinish = false;
   const timeStr = isOverdue ? `${formatCountdown(Math.abs(msUntil))} ago` : formatCountdown(msUntil);
 
   if (variant === "inline") {
