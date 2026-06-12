@@ -312,6 +312,15 @@ export default function Register() {
   };
 
   const onSubmit = async (data: RegisterForm) => {
+    // Client-side enforcement of event-level required fields
+    if (event?.requireAma && !data.amaNumber?.trim()) {
+      form.setError("amaNumber", { message: "AMA # is required for this event" });
+      return;
+    }
+    if (event?.requireClubId && !data.clubIdNumber?.trim()) {
+      form.setError("clubIdNumber", { message: "Club ID # is required for this event" });
+      return;
+    }
     // MyLaps events require either a transponder number or a rental
     if (event?.timingTechnology === "mylaps") {
       const hasNumber = !!data.myLapsTransponderNumber?.trim();
