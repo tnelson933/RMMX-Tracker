@@ -13,7 +13,7 @@ import {
 } from "@workspace/db";
 import { eq, and, asc, desc, isNotNull, or } from "drizzle-orm";
 import type { Response } from "express";
-import { textToSpeech, openai } from "@workspace/integrations-openai-ai-server/audio";
+import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
 
 const router = Router();
@@ -1258,29 +1258,72 @@ Deliver every word with maximum energy, drama, and passion. \
 Speak in a powerful, resonant baritone. Vary your pacing — build tension, pause on big moments, then hit the crowd with explosive energy. \
 Sound like you are in a packed stadium with 60,000 fans on their feet. Every race is the most important race in the world.`;
 
-async function generateAnnouncerScript(context: string): Promise<string> {
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content: `You write exciting, varied race announcements for a live ATV and motocross event announcer. \
-Style: high-energy, dramatic, conversational — like the Supercross PA announcer. \
-Rules: \
-- Never use the exact same phrasing twice; vary your sentence structures and exclamations every call. \
-- Keep it punchy and natural — no bullet points, no stage directions, just the words the announcer speaks. \
-- Use authentic motorsports language (gate, going green, moto, heat, main event, podium, checking down, gap, charging, pinned, etc.). \
-- Output ONLY the final spoken script — nothing else.`,
-      },
-      {
-        role: "user",
-        content: context,
-      },
-    ],
-    temperature: 1.1,
-    max_tokens: 300,
-  });
-  return (completion.choices[0]?.message?.content ?? "").trim();
+/** Pick a random element from an array. */
+function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
+
+/** Build a fact-only race-start script from known data — no invented history or countdowns. */
+function buildStartScript(opts: {
+  typeLabel: string;
+  raceClass: string | null;
+  motoName: string | null;
+  riders: Array<{ bibNumber: string | null; riderName: string | null }>;
+}): string {
+  const { typeLabel, raceClass, motoName, riders } = opts;
+
+  const openings = [
+    "Alright folks, eyes on the track — it is race time!",
+    "Your attention please everyone — we are about to get underway!",
+    "Let's get loud in here — it's time to race!",
+    "Alright ladies and gentlemen — here we go!",
+    "Listen up everybody — this next moto is ready to go!",
+  ];
+
+  const classIntros = raceClass
+    ? [
+        `Coming to the gate right now — ${raceClass}, ${typeLabel}!`,
+        `Up next on track — the ${raceClass} ${typeLabel}!`,
+        `We have the ${raceClass} ${typeLabel} ready to go!`,
+        `The gate is set — ${raceClass}, ${typeLabel} is up!`,
+        `Next up — ${raceClass} in the ${typeLabel}!`,
+      ]
+    : [
+        `Coming to the gate — the ${typeLabel} is up!`,
+        `Next on track — the ${typeLabel} is ready to go!`,
+        `The ${typeLabel} is set — here we go!`,
+      ];
+
+  const validRiders = riders.filter(r => r.riderName);
+
+  let riderLine = "";
+  if (validRiders.length > 0) {
+    const names = validRiders.map(r =>
+      r.bibNumber ? `number ${r.bibNumber}, ${r.riderName}` : r.riderName!
+    );
+    const listStr = names.length === 1
+      ? names[0]
+      : names.slice(0, -1).join("; ") + "; and " + names[names.length - 1];
+    const riderIntros = [
+      `Taking the gate today: ${listStr}.`,
+      `At the gate we have: ${listStr}.`,
+      `Lined up and ready: ${listStr}.`,
+      `Our competitors for this moto: ${listStr}.`,
+    ];
+    riderLine = pick(riderIntros);
+  }
+
+  const closings = [
+    "Let's hear it for these riders — let's race!",
+    "Give it up for the competitors — it's race time!",
+    "Get on your feet, folks — this moto is about to get underway!",
+    "What a field — let's see what they've got on track today!",
+    "Buckle up — this one is about to go!",
+  ];
+
+  const parts = [pick(openings), pick(classIntros)];
+  if (motoName) parts.push(`This is ${motoName}.`);
+  if (riderLine) parts.push(riderLine);
+  parts.push(pick(closings));
+  return parts.join(" ");
 }
 
 // ── Announcement script builder (pure code — no LLM needed) ───────────────────
@@ -1361,36 +1404,63 @@ function buildAnnouncementScript(opts: {
   const parts: string[] = [];
 
   if (isComplete) {
-    parts.push("Checkered flag!");
+    parts.push(pick([
+      "Checkered flag!",
+      "That's the checkered flag!",
+      "And there it is — checkered flag!",
+      "We have a winner!",
+    ]));
     const winner = top5[0];
     if (winner) {
       const timeStr = totalToSpeech(winner.totalTime);
-      parts.push(
-        `${winner.riderName} takes the win${timeStr ? ` in ${timeStr}` : ""}!`
-      );
+      parts.push(pick([
+        `${winner.riderName} takes the win${timeStr ? ` in ${timeStr}` : ""}!`,
+        `${winner.riderName} crosses the line first${timeStr ? ` — ${timeStr}` : ""}!`,
+        `It's ${winner.riderName} for the win${timeStr ? ` in ${timeStr}` : ""}!`,
+      ]));
     }
-    if (top5[1]) parts.push(`${top5[1].riderName} crosses in second.`);
-    if (top5[2]) parts.push(`${top5[2].riderName} rounds out the podium.`);
+    if (top5[1]) parts.push(pick([
+      `${top5[1].riderName} crosses in second.`,
+      `${top5[1].riderName} finishes second.`,
+      `Second place goes to ${top5[1].riderName}.`,
+    ]));
+    if (top5[2]) parts.push(pick([
+      `${top5[2].riderName} rounds out the podium.`,
+      `${top5[2].riderName} takes third.`,
+      `And ${top5[2].riderName} in third — completing the podium.`,
+    ]));
     if (top5[3]) parts.push(`${top5[3].riderName} finishes fourth.`);
   } else {
     // Lead with position changes first — most dramatic
     for (const change of positionChanges) {
       if (change.to < change.from) {
-        parts.push(`${change.riderName} makes a move — up to ${posWord(change.to)}!`);
+        parts.push(pick([
+          `${change.riderName} makes a move — up to ${posWord(change.to)}!`,
+          `${change.riderName} is charging — moving up to ${posWord(change.to)}!`,
+          `What a pass — ${change.riderName} into ${posWord(change.to)}!`,
+          `${change.riderName} makes it happen — up to ${posWord(change.to)} position!`,
+        ]));
       }
     }
 
     // Lap callout
     const lapStr = lapCompleted < CARDINALS.length ? CARDINALS[lapCompleted] : String(lapCompleted);
-    parts.push(`Lap ${lapStr} is complete.`);
+    parts.push(pick([
+      `Lap ${lapStr} is complete.`,
+      `That's lap ${lapStr} in the books.`,
+      `Through lap ${lapStr} now.`,
+      `Lap ${lapStr} done.`,
+    ]));
 
     // Leader
     const leader = top5[0];
     if (leader) {
       const timeStr = totalToSpeech(leader.totalTime);
-      parts.push(
-        `${leader.riderName} leads${timeStr ? `, ${timeStr} on the clock` : ""}.`
-      );
+      parts.push(pick([
+        `${leader.riderName} leads${timeStr ? `, ${timeStr} on the clock` : ""}.`,
+        `${leader.riderName} out front${timeStr ? ` — ${timeStr}` : ""}.`,
+        `${leader.riderName} in the lead${timeStr ? ` with ${timeStr} elapsed` : ""}.`,
+      ]));
     }
 
     // P2–P5
@@ -1399,7 +1469,11 @@ function buildAnnouncementScript(opts: {
       if (r.dnf || r.dns) continue;
       const gapStr = gapToSpeech(r.gap);
       if (gapStr) {
-        parts.push(`${r.riderName} running ${posWord(r.position)}, ${gapStr}.`);
+        parts.push(pick([
+          `${r.riderName} running ${posWord(r.position)}, ${gapStr}.`,
+          `${r.riderName} in ${posWord(r.position)}, ${gapStr}.`,
+          `${posWord(r.position).charAt(0).toUpperCase() + posWord(r.position).slice(1)} place — ${r.riderName}, ${gapStr}.`,
+        ]));
       } else {
         parts.push(`${r.riderName} in ${posWord(r.position)}.`);
       }
@@ -1427,21 +1501,13 @@ router.post("/timing/announce-moto-start", async (req, res) => {
       motoType === "lcq" ? "last chance qualifier" :
       (motoType ?? "race");
 
-    const validRiders = (lineup ?? []).filter(r => r.riderName);
-    const riderList = validRiders
-      .map(r => r.bibNumber ? `#${r.bibNumber} ${r.riderName}` : r.riderName)
-      .join(", ");
+    const script = buildStartScript({
+      typeLabel,
+      raceClass: raceClass ?? null,
+      motoName: motoName ?? null,
+      riders: lineup ?? [],
+    });
 
-    const context = [
-      `Write a live race-start announcement for a ${typeLabel}${raceClass ? ` in the ${raceClass} class` : ""}.`,
-      motoName ? `Moto name: ${motoName}.` : "",
-      validRiders.length > 0
-        ? `Riders taking the gate: ${riderList}.`
-        : "No rider lineup available yet.",
-      "Hype the crowd, introduce the class and riders with excitement, then build to the gate drop. Keep it under 40 seconds of speaking time.",
-    ].filter(Boolean).join(" ");
-
-    const script = await generateAnnouncerScript(context);
     const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "no-store");
@@ -1466,14 +1532,7 @@ router.post("/timing/announce", async (req, res) => {
       return res.status(400).json({ error: "top5 array is required" });
     }
 
-    // Build structured facts from race data — feed to LLM as context
-    const rawFacts = buildAnnouncementScript({ lapCompleted, top5, positionChanges, isComplete });
-
-    const context = isComplete
-      ? `Write an exciting race-finish announcement. Race facts: ${rawFacts} — Celebrate the winner, call out the podium finishers dramatically, and fire up the crowd. Keep it punchy, under 30 seconds.`
-      : `Write a live mid-race lap update. Race facts: ${rawFacts} — Deliver this like an in-stadium Supercross announcer: dramatic, energetic, specific. Vary the phrasing — don't use generic filler. Keep it under 25 seconds.`;
-
-    const script = await generateAnnouncerScript(context);
+    const script = buildAnnouncementScript({ lapCompleted, top5, positionChanges, isComplete });
     const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
 
     res.setHeader("Content-Type", "audio/mpeg");
