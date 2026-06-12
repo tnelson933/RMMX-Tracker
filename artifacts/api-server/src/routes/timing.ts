@@ -1463,10 +1463,16 @@ function buildAnnouncementScript(opts: {
       ]));
     }
 
-    // P2–P5
+    // P2–P5: only call out riders who are on the same lap as the leader.
+    // A rider who is laps down does not have a meaningful positional
+    // relationship to the leader — saying "in second, 2 laps back" is
+    // both misleading and incorrect when most of the field hasn't yet
+    // crossed the timing line.
+    const leaderLaps = leader?.laps ?? 0;
     for (let i = 1; i < Math.min(top5.length, 5); i++) {
       const r = top5[i];
       if (r.dnf || r.dns) continue;
+      if (r.laps < leaderLaps) continue; // skip riders who are a lap or more behind
       const gapStr = gapToSpeech(r.gap);
       if (gapStr) {
         parts.push(pick([

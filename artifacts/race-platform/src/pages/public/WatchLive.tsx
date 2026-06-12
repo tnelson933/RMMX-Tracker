@@ -262,13 +262,18 @@ export default function WatchLive() {
             const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
             triggerAnnouncement(top5[0]?.laps ?? 0, top5, [], true);
           } else if (!isComplete) {
-            // Announce when the leader completes a new lap
+            // Announce when the leader completes a new lap, but only once at
+            // least 3 riders are on the same lap — prevents early "P2" calls
+            // when just 1–2 riders have crossed the timing line.
             const leader = leaderboard[0];
             if (leader) {
               const prevLeaderLaps = prevLapsRef.current.get(leader.riderId) ?? 0;
               if (leader.laps > prevLeaderLaps) {
-                const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
-                triggerAnnouncement(leader.laps, top5, positionChanges, false);
+                const ridersOnLeaderLap = leaderboard.filter(r => r.laps >= leader.laps).length;
+                if (ridersOnLeaderLap >= 3) {
+                  const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
+                  triggerAnnouncement(leader.laps, top5, positionChanges, false);
+                }
               }
             }
           }
