@@ -30,6 +30,7 @@ import {
   WifiOff,
   Tag,
   UsersRound,
+  Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import rmLogo from "@assets/rm-logo.png";
@@ -43,6 +44,7 @@ const NAV_ITEMS = [
   { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, permKey: "points_tables" },
   { href: "/payments", label: "Payments", icon: CreditCard, permKey: "payments" },
   { href: "/discount-codes", label: "Discount Codes", icon: Tag, permKey: "discount_codes" },
+  { href: "/notifications", label: "Notifications", icon: Bell, permKey: "notifications" },
   { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, permKey: "reader_setup" },
   { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, permKey: "offline_mode" },
 ];

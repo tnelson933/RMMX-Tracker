@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "WZE5aRmGt3P1V_msghMRn"
+uri = "file://artifacts/rider-app/assets/images/icon.png"
+type = "image"
+title = "rider app icon"

@@ -36,6 +36,7 @@ import StripeConnect from "@/pages/organizer/StripeConnect";
 import StandalonePractice from "@/pages/organizer/StandalonePractice";
 import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
 import TeamPage from "@/pages/organizer/TeamPage";
+import { Notifications } from "@/pages/organizer/Notifications";
 import GateSchedulePage from "@/pages/organizer/GateSchedulePage";
 import NoAccessPage from "@/pages/organizer/NoAccessPage";
 import RiderLogin from "@/pages/rider/RiderLogin";
@@ -203,6 +204,10 @@ function Router() {
       </Route>
       <Route path="/practice">
         <ProtectedRoute permKey="practice"><StandalonePractice /></ProtectedRoute>
+      </Route>
+
+      <Route path="/notifications">
+        <ProtectedRoute permKey="notifications"><Notifications /></ProtectedRoute>
       </Route>
 
       {/* ── Organizer / admin only ── */}

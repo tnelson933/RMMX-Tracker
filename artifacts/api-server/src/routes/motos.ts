@@ -1,8 +1,65 @@
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable, seriesTable, seriesPointsTable } from "@workspace/db";
-import { eq, and, inArray, min, ne, gt } from "drizzle-orm";
+import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
+import { eq, and, inArray, min, ne, gt, asc } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
+import { sendPushNotifications } from "../lib/push";
+
+/** Notify riders who are next up or 3 races away after a moto completes. Fire-and-forget. */
+async function sendRaceNotifications(eventId: number): Promise<void> {
+  const scheduled = await db
+    .select()
+    .from(motosTable)
+    .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "scheduled")))
+    .orderBy(asc(motosTable.motoNumber));
+
+  const toNotify: Array<{ riderIds: number[]; title: string; body: string }> = [];
+
+  if (scheduled[0]) {
+    const lineup = (scheduled[0].lineup as Array<{ riderId: number }> | null) ?? [];
+    toNotify.push({
+      riderIds: lineup.map((l) => l.riderId).filter(Boolean),
+      title: "You're up next! 🏁",
+      body: `${scheduled[0].name} is about to start — head to staging now!`,
+    });
+  }
+  if (scheduled[2]) {
+    const lineup = (scheduled[2].lineup as Array<{ riderId: number }> | null) ?? [];
+    toNotify.push({
+      riderIds: lineup.map((l) => l.riderId).filter(Boolean),
+      title: "3 races away",
+      body: `You're in ${scheduled[2].name} — start getting ready!`,
+    });
+  }
+
+  for (const { riderIds, title, body } of toNotify) {
+    if (riderIds.length === 0) continue;
+
+    const riderRows = await db
+      .select({ email: ridersTable.email })
+      .from(ridersTable)
+      .where(inArray(ridersTable.id, riderIds));
+
+    const emails = riderRows
+      .map((r) => r.email?.toLowerCase())
+      .filter((e): e is string => !!e);
+    if (emails.length === 0) continue;
+
+    const accounts = await db
+      .select({ id: riderAccountsTable.id })
+      .from(riderAccountsTable)
+      .where(inArray(riderAccountsTable.email, emails));
+    if (accounts.length === 0) continue;
+
+    const pushRows = await db
+      .select({ token: riderPushTokensTable.expoPushToken })
+      .from(riderPushTokensTable)
+      .where(inArray(riderPushTokensTable.riderAccountId, accounts.map((a) => a.id)));
+    if (pushRows.length === 0) continue;
+
+    await sendPushNotifications(pushRows.map((r) => ({ to: r.token, title, body })));
+  }
+}
 
 const router = Router();
 
@@ -229,6 +286,11 @@ router.patch("/motos/:motoId", async (req, res) => {
     buildLeaderboard(id).then(snapshot => {
       if (snapshot) sseBroadcast(id, snapshot);
     }).catch(() => {});
+  }
+
+  // Race-day push notifications: notify riders next up or 3 away when a moto completes
+  if (req.body.status === "completed") {
+    sendRaceNotifications(moto.eventId).catch(() => {});
   }
 
   // Auto-advance to main when a heat completes (Supercross format only)

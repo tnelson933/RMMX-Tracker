@@ -1,5 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 import { formatLapTime } from "./timing";
 import { db } from "@workspace/db";
 import {
@@ -13,16 +14,38 @@ import {
   registrationsTable,
   lapCrossingsTable,
   checkinsTable,
+  riderMobileTokensTable,
+  riderPushTokensTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql } from "drizzle-orm";
 
 const router = Router();
 
+function generateMobileToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
 function requireRiderAuth(req: any, res: any, next: any) {
-  if (!(req.session as any).riderAccountId) {
-    return res.status(401).json({ error: "Not authenticated" });
+  // Session auth (web portal)
+  if ((req.session as any).riderAccountId) return next();
+
+  // Bearer token auth (mobile app)
+  const auth = req.headers.authorization as string | undefined;
+  if (auth?.startsWith("Bearer ")) {
+    const token = auth.slice(7);
+    db.select()
+      .from(riderMobileTokensTable)
+      .where(eq(riderMobileTokensTable.token, token))
+      .then(([row]) => {
+        if (!row) return res.status(401).json({ error: "Not authenticated" });
+        (req.session as any).riderAccountId = row.riderAccountId;
+        next();
+      })
+      .catch(() => res.status(500).json({ error: "Server error" }));
+    return;
   }
-  next();
+
+  return res.status(401).json({ error: "Not authenticated" });
 }
 
 // POST /rider/auth/register
@@ -47,7 +70,10 @@ router.post("/rider/auth/register", async (req, res) => {
   (req.session as any).riderAccountId = account.id;
   req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
 
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
+  const mobileToken = generateMobileToken();
+  await db.insert(riderMobileTokensTable).values({ riderAccountId: account.id, token: mobileToken });
+
+  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), mobileToken });
 });
 
 // POST /rider/auth/login
@@ -71,7 +97,10 @@ router.post("/rider/auth/login", async (req, res) => {
   (req.session as any).riderAccountId = account.id;
   req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
 
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
+  const mobileToken = generateMobileToken();
+  await db.insert(riderMobileTokensTable).values({ riderAccountId: account.id, token: mobileToken });
+
+  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), mobileToken });
 });
 
 // POST /rider/auth/logout
@@ -89,6 +118,33 @@ router.get("/rider/auth/me", async (req, res) => {
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
+});
+
+// GET /rider/auth/mobile-me — Bearer token auth check for mobile app startup
+router.get("/rider/auth/mobile-me", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
+});
+
+// POST /rider/push-token — register Expo push token for the authenticated rider account
+router.post("/rider/push-token", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const { expoPushToken } = req.body as { expoPushToken?: string };
+  if (!expoPushToken || typeof expoPushToken !== "string") {
+    return res.status(400).json({ error: "expoPushToken required" });
+  }
+
+  await db
+    .insert(riderPushTokensTable)
+    .values({ riderAccountId, expoPushToken })
+    .onConflictDoUpdate({
+      target: riderPushTokensTable.expoPushToken,
+      set: { riderAccountId },
+    });
+
+  return res.json({ ok: true });
 });
 
 // GET /rider/profiles — all rider profiles linked to this account's email

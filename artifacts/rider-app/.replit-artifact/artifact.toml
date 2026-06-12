@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/rider-app/"
+title = "Rider App"
+version = "1.0.0"
+id = "artifacts/rider-app"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/rider-app/" ]
+localPort = 18530
+
+[services.development]
+run = "pnpm --filter @workspace/rider-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/rider-app", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/rider-app", "run", "serve" ]
+
+[services.env]
+PORT = "18530"
+BASE_PATH = "/rider-app/"
