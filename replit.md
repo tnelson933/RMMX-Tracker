@@ -11,6 +11,23 @@ A full-stack SaaS race operations platform for motorcycle and ATV clubs — live
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string, `SESSION_SECRET` — express-session secret
 
+## Desktop App (Electron)
+
+- `pnpm --filter @workspace/desktop run build` — compile Electron main process + preload with esbuild
+- `pnpm --filter @workspace/desktop run dist` — build + package as .dmg (Mac), .exe NSIS (Windows), or AppImage (Linux)
+- Built artifacts written to `artifacts/desktop/release/`
+
+**Pre-requisites for `dist`:**
+1. `pnpm --filter @workspace/local-server run build` — build the local Express server (bundled into the app)
+2. `pnpm --filter @workspace/race-platform run build` — build the web frontend (served from local server)
+3. Place icon files in `artifacts/desktop/assets/` — `icon.icns` (Mac), `icon.ico` (Win), `icon.png` (Linux, 512×512)
+
+**How it works:** The desktop app spawns the local-server Express process on `localhost:9090`, opens a BrowserWindow loading that URL, manages native serial/USB RFID readers via `serialport`, and maintains a real-time cloud sync queue backed by SQLite. Credentials are stored encrypted via Electron `safeStorage`.
+
+**Cloud sync endpoints added to the cloud API:**
+- `POST /api/clubs/:clubId/desktop-push` — receive write-queue batches from the desktop
+- `POST /api/clubs/:clubId/sync-pull` — send new cloud rows to the desktop (watermark-based)
+
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9

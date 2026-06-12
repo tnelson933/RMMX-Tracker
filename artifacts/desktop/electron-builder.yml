@@ -1,0 +1,80 @@
+appId: com.rockymtn.race-platform
+productName: Rocky Mountain Race
+copyright: Copyright © 2026 Rocky Mountain Race Platform
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - package.json
+  # node_modules is intentionally included — electron-builder runs afterPack
+  # to rebuild native modules (serialport, better-sqlite3) for Electron's
+  # Node.js ABI.  Excluding node_modules here would strip those runtime deps
+  # and crash the packaged app on launch.
+  - node_modules/**/*
+
+extraResources:
+  - from: ../local-server/dist
+    to: local-server/dist
+    filter:
+      - "**/*.mjs"
+      - "**/*.mjs.map"
+  - from: ../local-server/node_modules
+    to: local-server/node_modules
+    filter:
+      - "**/*"
+      - "!**/*.md"
+      - "!**/test/**"
+      - "!**/tests/**"
+      - "!**/__tests__/**"
+  - from: ../race-platform/dist
+    to: race-platform
+    filter:
+      - "**/*"
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.sports
+  darkModeSupport: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  publisherName: Rocky Mountain Race Platform
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Sports
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  installerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# Rebuild native modules for Electron's Node.js version
+afterPack: scripts/after-pack.js

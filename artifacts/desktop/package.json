@@ -1,0 +1,28 @@
+{
+  "name": "@workspace/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Rocky Mountain Race Platform — Electron desktop app",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "pnpm run build && electron .",
+    "dist": "pnpm --filter @workspace/local-server run build && pnpm --filter @workspace/race-platform run build && pnpm run build && electron-builder",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
+    "better-sqlite3": "^11.5.0",
+    "electron-squirrel-startup": "^1.0.1",
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "catalog:",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "0.27.3",
+    "typescript": "^5.9.3"
+  }
+}

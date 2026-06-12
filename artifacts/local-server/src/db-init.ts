@@ -23,27 +23,58 @@ export function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS events (
-      id             INTEGER PRIMARY KEY,
-      club_id        INTEGER NOT NULL,
-      name           TEXT NOT NULL,
-      date           TEXT NOT NULL,
-      location       TEXT,
-      state          TEXT,
-      status         TEXT NOT NULL DEFAULT 'draft',
-      classes        TEXT NOT NULL DEFAULT '[]',
-      min_lap_times  TEXT NOT NULL DEFAULT '{}',
-      ama_event_id   TEXT,
-      created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      id                         INTEGER PRIMARY KEY,
+      club_id                    INTEGER NOT NULL,
+      name                       TEXT NOT NULL,
+      date                       TEXT NOT NULL,
+      location                   TEXT,
+      state                      TEXT NOT NULL DEFAULT '',
+      track_name                 TEXT,
+      race_classes               TEXT NOT NULL DEFAULT '[]',
+      registration_open          TEXT,
+      registration_close         TEXT,
+      status                     TEXT NOT NULL DEFAULT 'draft',
+      payment_enabled            INTEGER NOT NULL DEFAULT 0,
+      require_ama                INTEGER NOT NULL DEFAULT 0,
+      entry_fee                  TEXT,
+      max_riders                 INTEGER,
+      race_class_limits          TEXT NOT NULL DEFAULT '{}',
+      purchase_options           TEXT NOT NULL DEFAULT '[]',
+      image_url                  TEXT,
+      timing_technology          TEXT NOT NULL DEFAULT 'rfid',
+      transponder_rental_enabled INTEGER NOT NULL DEFAULT 0,
+      transponder_rental_fee     TEXT,
+      no_duplicate_bibs          INTEGER NOT NULL DEFAULT 0,
+      require_club_id            INTEGER NOT NULL DEFAULT 0,
+      scoring_table_id           INTEGER,
+      entry_fee_category_id      INTEGER,
+      min_lap_ms                 INTEGER,
+      ama_event_id               TEXT,
+      created_at                 TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS riders (
-      id           INTEGER PRIMARY KEY,
-      first_name   TEXT NOT NULL DEFAULT '',
-      last_name    TEXT NOT NULL DEFAULT '',
-      email        TEXT,
-      phone        TEXT,
-      rfid_number  TEXT,
-      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      id                   INTEGER PRIMARY KEY,
+      first_name           TEXT NOT NULL DEFAULT '',
+      last_name            TEXT NOT NULL DEFAULT '',
+      email                TEXT,
+      phone                TEXT,
+      bib_number           TEXT,
+      date_of_birth        TEXT,
+      emergency_contact    TEXT,
+      emergency_phone      TEXT,
+      rfid_number          TEXT,
+      street_address       TEXT,
+      city                 TEXT,
+      home_state           TEXT,
+      zip                  TEXT,
+      bike_manufacturer    TEXT,
+      bike_model           TEXT,
+      bike_year            TEXT,
+      sponsors             TEXT,
+      ama_number           TEXT,
+      mylaps_transponder_id TEXT,
+      created_at           TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS registrations (
@@ -53,15 +84,21 @@ export function initDb() {
       race_class                 TEXT NOT NULL,
       status                     TEXT NOT NULL DEFAULT 'confirmed',
       payment_status             TEXT NOT NULL DEFAULT 'unpaid',
-      bib_number                 TEXT,
-      bike_brand                 TEXT,
-      my_laps_transponder_number TEXT,
-      club_id_number             TEXT,
-      amount_paid                TEXT,
       payment_method             TEXT,
+      amount_paid                TEXT,
+      bib_number                 TEXT,
+      ama_number                 TEXT,
+      club_id_number             TEXT,
+      bike_brand                 TEXT,
+      bike_model                 TEXT,
+      bike_year                  TEXT,
+      sponsors                   TEXT,
       stats_email_opt_in         INTEGER NOT NULL DEFAULT 0,
       transponder_rental         INTEGER NOT NULL DEFAULT 0,
+      mylaps_transponder_number  TEXT,
       selected_purchase_options  TEXT NOT NULL DEFAULT '[]',
+      comp_code                  TEXT,
+      comp_discount              TEXT,
       display_first_name         TEXT,
       display_last_name          TEXT,
       created_at                 TEXT NOT NULL DEFAULT (datetime('now'))
@@ -89,33 +126,40 @@ export function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS motos (
-      id             INTEGER PRIMARY KEY,
-      event_id       INTEGER NOT NULL,
-      name           TEXT NOT NULL DEFAULT '',
-      type           TEXT NOT NULL DEFAULT 'moto',
-      race_class     TEXT NOT NULL DEFAULT '',
-      moto_number    INTEGER NOT NULL DEFAULT 0,
-      scheduled_time TEXT,
-      lineup         TEXT NOT NULL DEFAULT '[]',
-      lap_count      INTEGER,
-      status         TEXT NOT NULL DEFAULT 'scheduled',
-      started_at     TEXT,
-      completed_at   TEXT,
-      created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      id                     INTEGER PRIMARY KEY,
+      event_id               INTEGER NOT NULL,
+      name                   TEXT NOT NULL DEFAULT '',
+      type                   TEXT NOT NULL DEFAULT 'moto',
+      race_class             TEXT NOT NULL DEFAULT '',
+      race_classes           TEXT,
+      status                 TEXT NOT NULL DEFAULT 'scheduled',
+      moto_number            INTEGER NOT NULL DEFAULT 0,
+      scheduled_time         TEXT,
+      lineup                 TEXT NOT NULL DEFAULT '[]',
+      lap_count              INTEGER,
+      time_limit_ms          INTEGER,
+      practice_mode          TEXT,
+      countdown_seconds      INTEGER,
+      started_at             TEXT,
+      completed_at           TEXT,
+      staggered_with_moto_id INTEGER,
+      staggered_order        INTEGER,
+      created_at             TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS race_results (
       id         INTEGER PRIMARY KEY,
-      event_id   INTEGER,
+      event_id   INTEGER NOT NULL,
       moto_id    INTEGER NOT NULL,
       rider_id   INTEGER NOT NULL,
-      race_class TEXT,
-      position   INTEGER,
-      bib_number TEXT,
-      lap_times  TEXT NOT NULL DEFAULT '[]',
+      race_class TEXT NOT NULL DEFAULT '',
+      position   INTEGER NOT NULL DEFAULT 999,
       total_time TEXT,
+      lap_times  TEXT NOT NULL DEFAULT '[]',
+      points     INTEGER,
       dnf        INTEGER NOT NULL DEFAULT 0,
       dns        INTEGER NOT NULL DEFAULT 0,
+      bib_number TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -126,10 +170,11 @@ export function initDb() {
       rider_id      INTEGER,
       rfid_number   TEXT NOT NULL,
       crossing_time TEXT NOT NULL,
-      lap_number    INTEGER NOT NULL,
-      lap_time_ms   INTEGER NOT NULL,
+      lap_number    INTEGER,
+      lap_time_ms   INTEGER,
       reader_id     TEXT,
-      antenna_id    INTEGER
+      antenna_id    INTEGER,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_lap_crossings_moto_rfid
@@ -164,10 +209,17 @@ export function initDb() {
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Guard flag set by the sync-engine during cloud-pull upserts.
+    -- Triggers skip enqueue when this table has a row (active = 1) so that
+    -- cloud-originated rows do not echo back into the push queue.
+    CREATE TABLE IF NOT EXISTS _cloud_pull_guard (
+      active INTEGER PRIMARY KEY
+    );
+
     CREATE TABLE IF NOT EXISTS _sync_watermarks (
-      table_name      TEXT PRIMARY KEY,
-      max_imported_id INTEGER NOT NULL DEFAULT 0,
-      last_synced_at  TEXT
+      table_name     TEXT PRIMARY KEY,
+      last_pulled_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z',
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS _sync_state (
@@ -179,19 +231,203 @@ export function initDb() {
     );
 
     INSERT OR IGNORE INTO _sync_state (id) VALUES (1);
+
+    -- Desktop write queue: rows inserted by SQLite triggers on every local write.
+    -- The Electron sync engine polls this table and pushes changes to the cloud.
+    CREATE TABLE IF NOT EXISTS _write_queue (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_name    TEXT NOT NULL,
+      record_id     INTEGER NOT NULL,
+      operation     TEXT NOT NULL DEFAULT 'upsert',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      synced_at     TEXT,
+      error         TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_write_queue_unsynced
+      ON _write_queue (synced_at, attempt_count)
+      WHERE synced_at IS NULL;
+
+    -- Triggers: automatically enqueue a row whenever any mutable club table is written.
+    -- These are idempotent (CREATE TRIGGER IF NOT EXISTS is supported in SQLite 3.35+).
+    -- Covers ALL tables that the organizer can edit on the desktop so every local
+    -- change is pushed to the cloud and the web portal stays in lockstep.
+
+    -- lap_crossings (timing data written by RFID reader)
+    CREATE TRIGGER IF NOT EXISTS _wq_lap_crossings_insert
+    AFTER INSERT ON lap_crossings
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('lap_crossings', NEW.id, 'insert');
+    END;
+
+    -- race_results (enter/edit results)
+    CREATE TRIGGER IF NOT EXISTS _wq_race_results_insert
+    AFTER INSERT ON race_results
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('race_results', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_race_results_update
+    AFTER UPDATE ON race_results
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('race_results', NEW.id, 'upsert');
+    END;
+
+    -- motos (moto status, lineup changes)
+    CREATE TRIGGER IF NOT EXISTS _wq_motos_insert
+    AFTER INSERT ON motos
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('motos', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_motos_update
+    AFTER UPDATE ON motos
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('motos', NEW.id, 'upsert');
+    END;
+
+    -- checkins (check in / RFID link)
+    CREATE TRIGGER IF NOT EXISTS _wq_checkins_insert
+    AFTER INSERT ON checkins
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('checkins', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_checkins_update
+    AFTER UPDATE ON checkins
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('checkins', NEW.id, 'upsert');
+    END;
+
+    -- registrations (on-site walk-up registrations or edits)
+    CREATE TRIGGER IF NOT EXISTS _wq_registrations_insert
+    AFTER INSERT ON registrations
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('registrations', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_registrations_update
+    AFTER UPDATE ON registrations
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('registrations', NEW.id, 'upsert');
+    END;
+
+    -- riders (new rider created at the gate)
+    CREATE TRIGGER IF NOT EXISTS _wq_riders_insert
+    AFTER INSERT ON riders
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('riders', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_riders_update
+    AFTER UPDATE ON riders
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('riders', NEW.id, 'upsert');
+    END;
+
+    -- rfid_assignments (assign transponder to rider at event)
+    CREATE TRIGGER IF NOT EXISTS _wq_rfid_assignments_insert
+    AFTER INSERT ON rfid_assignments
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('rfid_assignments', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_rfid_assignments_update
+    AFTER UPDATE ON rfid_assignments
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('rfid_assignments', NEW.id, 'upsert');
+    END;
+
+    -- events (status changes, class list updates made on desktop)
+    CREATE TRIGGER IF NOT EXISTS _wq_events_update
+    AFTER UPDATE ON events
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('events', NEW.id, 'upsert');
+    END;
   `);
 
+  // Schema migrations — safely add any column that might be missing on older DBs.
+  // Each entry is [table, "col_name  TYPE  DEFAULT ..."].
+  // ALTER TABLE ADD COLUMN is idempotent: errors are swallowed when column already exists.
   const migrations: Array<[string, string]> = [
-    ["motos", "name           TEXT NOT NULL DEFAULT ''"],
-    ["motos", "type           TEXT NOT NULL DEFAULT 'moto'"],
-    ["motos", "scheduled_time TEXT"],
-    ["motos", "lap_count      INTEGER"],
+    // events
+    ["events", "track_name                 TEXT"],
+    ["events", "race_classes               TEXT NOT NULL DEFAULT '[]'"],
+    ["events", "registration_open          TEXT"],
+    ["events", "registration_close         TEXT"],
+    ["events", "payment_enabled            INTEGER NOT NULL DEFAULT 0"],
+    ["events", "require_ama                INTEGER NOT NULL DEFAULT 0"],
+    ["events", "entry_fee                  TEXT"],
+    ["events", "max_riders                 INTEGER"],
+    ["events", "race_class_limits          TEXT NOT NULL DEFAULT '{}'"],
+    ["events", "purchase_options           TEXT NOT NULL DEFAULT '[]'"],
+    ["events", "image_url                  TEXT"],
+    ["events", "timing_technology          TEXT NOT NULL DEFAULT 'rfid'"],
+    ["events", "transponder_rental_enabled INTEGER NOT NULL DEFAULT 0"],
+    ["events", "transponder_rental_fee     TEXT"],
+    ["events", "no_duplicate_bibs          INTEGER NOT NULL DEFAULT 0"],
+    ["events", "require_club_id            INTEGER NOT NULL DEFAULT 0"],
+    ["events", "scoring_table_id           INTEGER"],
+    ["events", "entry_fee_category_id      INTEGER"],
+    ["events", "min_lap_ms                 INTEGER"],
+    // keep legacy column name for backward compat (old rows may reference it)
+    ["events", "min_lap_times              TEXT NOT NULL DEFAULT '{}'"],
+    // riders
+    ["riders", "bib_number            TEXT"],
+    ["riders", "date_of_birth         TEXT"],
+    ["riders", "emergency_contact     TEXT"],
+    ["riders", "emergency_phone       TEXT"],
+    ["riders", "street_address        TEXT"],
+    ["riders", "city                  TEXT"],
+    ["riders", "home_state            TEXT"],
+    ["riders", "zip                   TEXT"],
+    ["riders", "bike_manufacturer     TEXT"],
+    ["riders", "bike_model            TEXT"],
+    ["riders", "bike_year             TEXT"],
+    ["riders", "sponsors              TEXT"],
+    ["riders", "ama_number            TEXT"],
+    ["riders", "mylaps_transponder_id TEXT"],
+    // registrations
+    ["registrations", "ama_number                TEXT"],
+    ["registrations", "bike_model                TEXT"],
+    ["registrations", "bike_year                 TEXT"],
+    ["registrations", "sponsors                  TEXT"],
+    ["registrations", "comp_code                 TEXT"],
+    ["registrations", "comp_discount             TEXT"],
+    // rename old mylaps column (keep old for compat)
+    ["registrations", "mylaps_transponder_number TEXT"],
+    // motos
+    ["motos", "name                   TEXT NOT NULL DEFAULT ''"],
+    ["motos", "type                   TEXT NOT NULL DEFAULT 'moto'"],
+    ["motos", "race_classes           TEXT"],
+    ["motos", "scheduled_time         TEXT"],
+    ["motos", "lap_count              INTEGER"],
+    ["motos", "time_limit_ms          INTEGER"],
+    ["motos", "practice_mode          TEXT"],
+    ["motos", "countdown_seconds      INTEGER"],
+    ["motos", "staggered_with_moto_id INTEGER"],
+    ["motos", "staggered_order        INTEGER"],
+    // race_results
     ["race_results", "event_id   INTEGER"],
     ["race_results", "race_class TEXT"],
     ["race_results", "position   INTEGER"],
     ["race_results", "bib_number TEXT"],
     ["race_results", "total_time TEXT"],
-    ["events", "min_lap_times TEXT NOT NULL DEFAULT '{}'"],
+    ["race_results", "points     INTEGER"],
+    // lap_crossings
+    ["lap_crossings", "created_at TEXT NOT NULL DEFAULT (datetime('now'))"],
+    // _sync_watermarks — ensure new column names exist on older schemas
+    ["_sync_watermarks", "last_pulled_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'"],
+    ["_sync_watermarks", "updated_at     TEXT NOT NULL DEFAULT (datetime('now'))"],
+    // _cloud_pull_guard — safety: ensure it exists (created above, but just in case)
   ];
 
   for (const [table, colDef] of migrations) {

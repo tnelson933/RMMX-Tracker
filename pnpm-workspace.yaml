@@ -70,9 +70,12 @@ autoInstallPeers: false
 
 onlyBuiltDependencies:
   - '@swc/core'
+  - '@serialport/bindings-cpp'
   - better-sqlite3
   - esbuild
+  - electron
   - msw
+  - serialport
   - unrs-resolver
 
 overrides:

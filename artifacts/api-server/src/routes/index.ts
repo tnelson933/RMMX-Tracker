@@ -29,6 +29,7 @@ import discountCodesRouter from "./discount-codes";
 import teamRouter from "./team";
 import anthropicRouter from "./anthropic/index";
 import notificationsRouter from "./notifications";
+import desktopSyncRouter from "./desktop-sync";
 
 const router: IRouter = Router();
 
@@ -62,5 +63,6 @@ router.use(discountCodesRouter);
 router.use(teamRouter);
 router.use(anthropicRouter);
 router.use(notificationsRouter);
+router.use(desktopSyncRouter);
 
 export default router;
