@@ -270,6 +270,14 @@ export default function WatchLive() {
       const code = videoRef.current?.error?.code ?? -1;
       const msg = videoRef.current?.error?.message ?? "";
       logEvent(`video.error ${code}: ${msg}`);
+      // Code 3 = MEDIA_ERR_DECODE — decoder rejected MSE data, unrecoverable without a reconnect.
+      // Code 4 = MEDIA_ERR_SRC_NOT_SUPPORTED — fired by video.src="" during normal teardown; ignore.
+      // Guard: only reconnect when we still own an active MediaSource (not already torn down).
+      if (code === 3 && !cleaningUpRef.current && msRef.current !== null) {
+        logEvent("decode error — tearing down and reconnecting");
+        teardownMSE();
+        wsRef.current?.close(); // ws.onclose handles the 3s delayed reconnect
+      }
     };
 
     ms.addEventListener("sourceopen", () => {
@@ -302,6 +310,12 @@ export default function WatchLive() {
 
         sb.addEventListener("error", (e) => {
           logEvent(`SB error: ${(e as any)?.message ?? "unknown"}`);
+          // SourceBuffer errors leave the MediaSource in an unrecoverable state.
+          // Tear down and close the WS so ws.onclose schedules a clean reconnect.
+          if (!cleaningUpRef.current) {
+            teardownMSE();
+            wsRef.current?.close();
+          }
         });
 
         sb.addEventListener("updateend", () => {
