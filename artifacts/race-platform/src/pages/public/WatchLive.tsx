@@ -281,7 +281,7 @@ export default function WatchLive() {
             const leader = leaderboard[0];
             if (leader && leader.laps > lastAnnouncedLapRef.current) {
               const ridersOnLeaderLap = leaderboard.filter(r => r.laps >= leader.laps && !r.dnf && !r.dns).length;
-              if (ridersOnLeaderLap >= 3) {
+              if (ridersOnLeaderLap >= 5) {
                 const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
                 triggerAnnouncement(leader.laps, top5, positionChanges, false);
                 lastAnnouncedLapRef.current = leader.laps;

@@ -1261,6 +1261,17 @@ Sound like you are in a packed stadium with 60,000 fans on their feet. Every rac
 /** Pick a random element from an array. */
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
 
+/**
+ * Expand common abbreviations in moto/class names so the TTS engine
+ * pronounces them correctly.
+ *   "Div 1" → "Division 1"   "Div1" → "Division 1"
+ *   "Div." → "Division"
+ */
+function expandAbbrev(s: string | null): string | null {
+  if (!s) return s;
+  return s.replace(/\bDiv\.?\s*(\d*)/gi, (_, n) => n ? `Division ${n}` : "Division").trim();
+}
+
 /** Build a fact-only race-start script from known data — no invented history or countdowns. */
 function buildStartScript(opts: {
   typeLabel: string;
@@ -1268,7 +1279,9 @@ function buildStartScript(opts: {
   motoName: string | null;
   riders: Array<{ bibNumber: string | null; riderName: string | null }>;
 }): string {
-  const { typeLabel, raceClass, motoName, riders } = opts;
+  const { typeLabel, riders } = opts;
+  const raceClass = expandAbbrev(opts.raceClass);
+  const motoName  = expandAbbrev(opts.motoName);
 
   const openings = [
     "Alright folks, eyes on the track — it is race time!",
@@ -1368,11 +1381,9 @@ function buildAnnouncementScript(opts: {
   // Parse "M:SS.cc" gap string → natural English
   function gapToSpeech(gap: string): string | null {
     if (!gap || gap === "Leader" || gap === "—") return null;
-    const lapMatch = gap.match(/^\+(\d+)\s+laps?/);
-    if (lapMatch) {
-      const n = parseInt(lapMatch[1]);
-      return `${lapWord(n)} lap${n !== 1 ? "s" : ""} back`;
-    }
+    // Never say "N laps back" — lap-down riders are excluded by the caller;
+    // if one slips through, silently omit rather than speak confusing lap counts.
+    if (/^\+\d+\s+laps?/.test(gap)) return null;
     const timeMatch = gap.match(/^\+(\d+):(\d+)\.(\d+)/);
     if (!timeMatch) return null;
     const mins = parseInt(timeMatch[1]);
