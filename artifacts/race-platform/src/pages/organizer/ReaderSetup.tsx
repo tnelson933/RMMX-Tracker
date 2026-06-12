@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Wifi, Timer, Copy, Check, Send, RefreshCw,
   CheckCircle2, XCircle, Download, Circle, ExternalLink,
+  Usb, Plug, Terminal, Settings2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,13 @@ const MiniStep = ({ n }: { n: number }) => (
 export default function ReaderSetup() {
   const { toast } = useToast();
   const { user } = useAuth();
+
+  // Detect desktop app (Electron injects window.electronAPI via preload)
+  const isDesktop = typeof (window as any).electronAPI !== "undefined";
+
+  // Open the native serial-port picker modal (desktop only)
+  const openSerialSettings = () =>
+    window.dispatchEvent(new CustomEvent("rm-open-serial-settings"));
 
   const facilityEndpoint = user?.clubId
     ? `${FACILITY_ENDPOINT_BASE}?clubId=${user.clubId}`
