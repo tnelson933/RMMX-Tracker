@@ -246,6 +246,7 @@ function injectSyncModal(): void {
       margin-bottom: 18px;
     }
     #rm-modal .rm-clear-btn:hover { text-decoration: underline; }
+    .rm-btn-test { background: #0f172a; color: #a5b4fc; border: 1px solid #4f46e5; }
   `;
   document.head.appendChild(style);
 
@@ -272,6 +273,7 @@ function injectSyncModal(): void {
       <input id="rm-field-password" type="password" autocomplete="current-password" />
       <div class="rm-actions">
         <button class="rm-btn rm-btn-ghost" id="rm-modal-cancel">Cancel</button>
+        <button class="rm-btn rm-btn-test" id="rm-modal-test">Test Connection</button>
         <button class="rm-btn rm-btn-primary" id="rm-modal-save">Save &amp; Connect</button>
       </div>
       <button class="rm-clear-btn" id="rm-modal-clear">Disconnect cloud sync</button>
@@ -318,23 +320,61 @@ function injectSyncModal(): void {
     }).catch(() => {});
   });
 
-  document.getElementById("rm-modal-save")?.addEventListener("click", () => {
+  function readFields(): { url: string; clubId: string; email: string; password: string } | null {
     const url      = (document.getElementById("rm-field-url")      as HTMLInputElement).value.trim();
     const clubId   = (document.getElementById("rm-field-clubid")   as HTMLInputElement).value.trim();
     const email    = (document.getElementById("rm-field-email")    as HTMLInputElement).value.trim();
     const password = (document.getElementById("rm-field-password") as HTMLInputElement).value;
-
     if (!url || !clubId || !email || !password) {
       showMsg("All fields are required.", "error");
-      return;
+      return null;
     }
+    return { url, clubId, email, password };
+  }
 
-    const btn = document.getElementById("rm-modal-save") as HTMLButtonElement;
-    btn.textContent = "Connecting…";
+  document.getElementById("rm-modal-test")?.addEventListener("click", () => {
+    const fields = readFields();
+    if (!fields) return;
+
+    const btn = document.getElementById("rm-modal-test") as HTMLButtonElement;
+    const saveBtn = document.getElementById("rm-modal-save") as HTMLButtonElement;
+    btn.textContent = "Testing…";
     btn.disabled = true;
+    saveBtn.disabled = true;
 
     electronAPI.auth
-      .setCredentials(email, password, url, clubId)
+      .setCredentials(fields.email, fields.password, fields.url, fields.clubId)
+      .then(() => electronAPI.sync.flush())
+      .then(() => electronAPI.sync.getState())
+      .then((state) => {
+        if (state.status === "error") {
+          showMsg(`Connection failed: ${state.lastError ?? "unknown error"}`, "error");
+        } else {
+          showMsg("Connection successful! Click Save & Connect to finish.", "success");
+        }
+      })
+      .catch((err: unknown) => {
+        showMsg(`Error: ${err instanceof Error ? err.message : String(err)}`, "error");
+      })
+      .finally(() => {
+        btn.textContent = "Test Connection";
+        btn.disabled = false;
+        saveBtn.disabled = false;
+      });
+  });
+
+  document.getElementById("rm-modal-save")?.addEventListener("click", () => {
+    const fields = readFields();
+    if (!fields) return;
+
+    const btn = document.getElementById("rm-modal-save") as HTMLButtonElement;
+    const testBtn = document.getElementById("rm-modal-test") as HTMLButtonElement;
+    btn.textContent = "Connecting…";
+    btn.disabled = true;
+    testBtn.disabled = true;
+
+    electronAPI.auth
+      .setCredentials(fields.email, fields.password, fields.url, fields.clubId)
       .then(() => electronAPI.sync.flush())
       .then(() => electronAPI.sync.getState())
       .then((state) => {
@@ -351,6 +391,7 @@ function injectSyncModal(): void {
       .finally(() => {
         btn.textContent = "Save & Connect";
         btn.disabled = false;
+        testBtn.disabled = false;
       });
   });
 
