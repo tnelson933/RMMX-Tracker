@@ -68,6 +68,11 @@ export default function WatchLive() {
   const annPlayingRef = useRef(false);
   const prevLapsRef = useRef<Map<number, number>>(new Map());
   const prevPositionsRef = useRef<Map<number, number>>(new Map());
+  // Tracks the last lap number that actually triggered an announcement.
+  // Separate from prevLapsRef (which updates on every SSE message) so the
+  // "wait for 3 riders" threshold can still fire after prevLapsRef has
+  // already advanced past the leader's crossing.
+  const lastAnnouncedLapRef = useRef<number>(0);
   const esRef = useRef<EventSource | null>(null);
   const activeMotoIdRef = useRef<number | null>(null);
   const prevSseStatusRef = useRef<string | null>(null);
@@ -262,18 +267,24 @@ export default function WatchLive() {
             const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
             triggerAnnouncement(top5[0]?.laps ?? 0, top5, [], true);
           } else if (!isComplete) {
-            // Announce when the leader completes a new lap, but only once at
-            // least 3 riders are on the same lap — prevents early "P2" calls
-            // when just 1–2 riders have crossed the timing line.
+            // Announce when enough riders have completed the leader's current
+            // lap.  We gate on ≥3 riders to avoid premature callouts in the
+            // opening seconds when only 1–2 riders have crossed.
+            //
+            // We use lastAnnouncedLapRef (not prevLapsRef) for the "new lap"
+            // check.  prevLapsRef is updated on every SSE message, so it
+            // advances to N the moment the leader crosses; subsequent SSE
+            // messages (P2, P3 crossing) would see leader.laps === prevLapsRef
+            // and never fire.  lastAnnouncedLapRef only advances when we
+            // actually speak — so the gate stays open until 3 riders are on
+            // the same lap, at which point the gaps are time-based, not laps.
             const leader = leaderboard[0];
-            if (leader) {
-              const prevLeaderLaps = prevLapsRef.current.get(leader.riderId) ?? 0;
-              if (leader.laps > prevLeaderLaps) {
-                const ridersOnLeaderLap = leaderboard.filter(r => r.laps >= leader.laps).length;
-                if (ridersOnLeaderLap >= 3) {
-                  const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
-                  triggerAnnouncement(leader.laps, top5, positionChanges, false);
-                }
+            if (leader && leader.laps > lastAnnouncedLapRef.current) {
+              const ridersOnLeaderLap = leaderboard.filter(r => r.laps >= leader.laps && !r.dnf && !r.dns).length;
+              if (ridersOnLeaderLap >= 3) {
+                const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
+                triggerAnnouncement(leader.laps, top5, positionChanges, false);
+                lastAnnouncedLapRef.current = leader.laps;
               }
             }
           }
