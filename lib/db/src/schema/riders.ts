@@ -20,6 +20,8 @@ export const ridersTable = pgTable("riders", {
   zip: text("zip"),
   // Extended rider profile
   bikeManufacturer: text("bike_manufacturer"),
+  bikeModel: text("bike_model"),
+  bikeYear: text("bike_year"),
   sponsors: text("sponsors"),
   amaNumber: text("ama_number"),
   mylapsTransponderId: text("mylaps_transponder_id"),

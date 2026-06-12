@@ -30,6 +30,8 @@ const updateRiderSchema = z.object({
   homeState: z.string().optional(),
   zip: z.string().optional(),
   bikeManufacturer: z.string().optional(),
+  bikeModel: z.string().optional(),
+  bikeYear: z.string().optional(),
   sponsors: z.string().optional(),
   amaNumber: z.string().optional(),
   mylapsTransponderId: z.string().optional(),
@@ -383,6 +385,8 @@ export default function RiderDetail() {
       homeState: "",
       zip: "",
       bikeManufacturer: "",
+      bikeModel: "",
+      bikeYear: "",
       sponsors: "",
       amaNumber: "",
       mylapsTransponderId: "",
@@ -404,6 +408,8 @@ export default function RiderDetail() {
       homeState: r.homeState || "",
       zip: r.zip || "",
       bikeManufacturer: r.bikeManufacturer || "",
+      bikeModel: (r as any).bikeModel || "",
+      bikeYear: (r as any).bikeYear || "",
       sponsors: r.sponsors || "",
       amaNumber: r.amaNumber || "",
       mylapsTransponderId: r.mylapsTransponderId || "",
@@ -544,6 +550,14 @@ export default function RiderDetail() {
                         )} />
                       </div>
                       <div className="grid grid-cols-2 gap-4 mt-4">
+                        <FormField control={form.control} name="bikeModel" render={({ field }) => (
+                          <FormItem><FormLabel>Bike Model</FormLabel><FormControl><Input placeholder="450 SX-F, CRF450R…" {...field} /></FormControl><FormMessage /></FormItem>
+                        )} />
+                        <FormField control={form.control} name="bikeYear" render={({ field }) => (
+                          <FormItem><FormLabel>Bike Year</FormLabel><FormControl><Input placeholder="2024" maxLength={4} {...field} /></FormControl><FormMessage /></FormItem>
+                        )} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 mt-4">
                         <FormField control={form.control} name="amaNumber" render={({ field }) => (
                           <FormItem><FormLabel>AMA #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
@@ -602,6 +616,8 @@ export default function RiderDetail() {
                     <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Racing Info</p>
                     <div className="grid grid-cols-2 gap-y-5">
                       <InfoRow label="Bike Manufacturer" value={r.bikeManufacturer} />
+                      <InfoRow label="Bike Model" value={(r as any).bikeModel} />
+                      <InfoRow label="Bike Year" value={(r as any).bikeYear} />
                       <InfoRow label="Default Bib #" value={rider.bibNumber} />
                       <InfoRow label="AMA #" value={r.amaNumber} />
                       <InfoRow label="MyLaps Transponder #" value={r.mylapsTransponderId} />

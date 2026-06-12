@@ -18,6 +18,8 @@ export const registrationsTable = pgTable("registrations", {
   amaNumber: text("ama_number"),
   clubIdNumber: text("club_id_number"),
   bikeBrand: text("bike_brand"),
+  bikeModel: text("bike_model"),
+  bikeYear: text("bike_year"),
   sponsors: text("sponsors"),
   statsEmailOptIn: boolean("stats_email_opt_in").notNull().default(false),
   transponderRental: boolean("transponder_rental").notNull().default(false),

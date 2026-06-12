@@ -40,6 +40,8 @@ const registerSchema = z.object({
   amaNumber: z.string().optional(),
   clubIdNumber: z.string().optional(),
   bikeBrand: z.string().optional(),
+  bikeModel: z.string().optional(),
+  bikeYear: z.string().optional(),
   sponsors: z.string().optional(),
   statsEmailOptIn: z.boolean().default(false),
   rentTransponder: z.boolean().default(false),
@@ -146,7 +148,7 @@ export default function Register() {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
       streetAddress: "", city: "", homeState: "", zip: "",
-      raceClass: "", bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
+      raceClass: "", bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "", bikeModel: "", bikeYear: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
 
@@ -299,6 +301,8 @@ export default function Register() {
         if (data.amaNumber) form.setValue("amaNumber", data.amaNumber, { shouldDirty: false });
         if (data.clubIdNumber) form.setValue("clubIdNumber", data.clubIdNumber, { shouldDirty: false });
         if (data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
+        if (data.bikeModel) form.setValue("bikeModel", data.bikeModel, { shouldDirty: false });
+        if (data.bikeYear) form.setValue("bikeYear", data.bikeYear, { shouldDirty: false });
         if (data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
         if (data.sponsors) form.setValue("sponsors", data.sponsors, { shouldDirty: false });
         setLookedUpName(`${data.firstName} ${data.lastName}`);
@@ -864,6 +868,22 @@ export default function Register() {
                         </FormItem>
                       )}
                     />
+                    <div className="grid grid-cols-2 gap-3 mt-4">
+                      <FormField control={form.control} name="bikeModel" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Model</FormLabel>
+                          <FormControl><Input placeholder="450 SX-F, CRF450R…" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="bikeYear" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Year</FormLabel>
+                          <FormControl><Input placeholder="2024" maxLength={4} {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
                   </CardContent>
                 </Card>
 

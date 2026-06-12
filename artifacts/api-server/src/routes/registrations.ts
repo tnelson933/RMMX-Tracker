@@ -34,6 +34,8 @@ router.get("/public/riders/lookup", async (req, res) => {
     amaNumber: registrationsTable.amaNumber,
     clubIdNumber: registrationsTable.clubIdNumber,
     bikeBrand: registrationsTable.bikeBrand,
+    bikeModel: registrationsTable.bikeModel,
+    bikeYear: registrationsTable.bikeYear,
     bibNumber: registrationsTable.bibNumber,
     sponsors: registrationsTable.sponsors,
   }).from(registrationsTable)
@@ -58,6 +60,8 @@ router.get("/public/riders/lookup", async (req, res) => {
     amaNumber: lastReg?.amaNumber ?? "",
     clubIdNumber: lastReg?.clubIdNumber ?? "",
     bikeBrand: lastReg?.bikeBrand ?? "",
+    bikeModel: lastReg?.bikeModel ?? "",
+    bikeYear: lastReg?.bikeYear ?? "",
     bibNumber: lastReg?.bibNumber?.toString() ?? "",
     sponsors: lastReg?.sponsors ?? "",
   });
@@ -150,7 +154,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const {
-    riderId, raceClass, bibNumber, bikeBrand, clubIdNumber,
+    riderId, raceClass, bibNumber, bikeBrand, bikeModel, bikeYear, clubIdNumber,
     // Full on-site rider info (alternative to riderId)
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
     // MyLaps transponder fields
@@ -214,6 +218,8 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     eventId, riderId: resolvedRiderId, raceClass,
     bibNumber: bibNumber || null,
     bikeBrand: bikeBrand || null,
+    bikeModel: bikeModel || null,
+    bikeYear: bikeYear || null,
     clubIdNumber: clubIdNumber || null,
     status: needsPayment ? "pending" : "confirmed",
     paymentStatus: "unpaid",
@@ -630,6 +636,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     amaNumber: amaNumber || null,
     clubIdNumber: clubIdNumber || null,
     bikeBrand: req.body.bikeBrand || null,
+    bikeModel: req.body.bikeModel || null,
+    bikeYear: req.body.bikeYear || null,
     sponsors: sponsors || null,
     statsEmailOptIn: !!statsEmailOptIn,
     transponderRental: wantsRental,
