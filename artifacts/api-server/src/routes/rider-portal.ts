@@ -317,6 +317,45 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
   });
 });
 
+// GET /rider/profiles/:riderId — full profile detail
+router.get("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  return res.json({
+    id: rider.id,
+    firstName: rider.firstName,
+    lastName: rider.lastName,
+    email: rider.email,
+    phone: rider.phone ?? null,
+    dateOfBirth: rider.dateOfBirth ?? null,
+    emergencyContact: rider.emergencyContact ?? null,
+    emergencyPhone: rider.emergencyPhone ?? null,
+    rfidNumber: rider.rfidNumber ?? null,
+    bibNumber: rider.bibNumber ?? null,
+    amaNumber: rider.amaNumber ?? null,
+    bikeManufacturer: rider.bikeManufacturer ?? null,
+    bikeModel: rider.bikeModel ?? null,
+    bikeYear: rider.bikeYear ?? null,
+    sponsors: rider.sponsors ?? null,
+    myLapsTransponderNumber: rider.mylapsTransponderId ?? null,
+    streetAddress: rider.streetAddress ?? null,
+    city: rider.city ?? null,
+    homeState: rider.homeState ?? null,
+    zip: rider.zip ?? null,
+  });
+});
+
 // PATCH /rider/profiles/:riderId/rfid — rider self-service RFID update
 router.patch("/rider/profiles/:riderId/rfid", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
@@ -362,7 +401,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
   const allowed = [
     "firstName", "lastName", "phone", "dateOfBirth",
     "emergencyContact", "emergencyPhone",
-    "bibNumber", "amaNumber", "bikeManufacturer", "sponsors",
+    "bibNumber", "amaNumber", "bikeManufacturer", "bikeModel", "bikeYear", "sponsors",
     "streetAddress", "city", "homeState", "zip",
   ] as const;
 
