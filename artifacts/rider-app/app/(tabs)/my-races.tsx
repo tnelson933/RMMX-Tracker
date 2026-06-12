@@ -3,27 +3,94 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
-  Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
+  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function fmtLap(ms: number | null | undefined): string {
+  if (ms == null || ms <= 0) return "—";
+  const totalSec = ms / 1000;
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return mins > 0
+    ? `${mins}:${secs.toFixed(3).padStart(6, "0")}`
+    : `${secs.toFixed(3)}s`;
+}
+
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric", year: "numeric",
+  });
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface FamilyGate { gate: number; riderId: number; riderName: string }
+interface LineupEntry { gate: number; riderId: number; riderName: string; bibNumber: string | null; isFamilyMember: boolean }
+interface PracticeLap { riderId: number; lapNumber: number; lapTimeMs: number | null }
+interface PracticeLeaderEntry { rank: number; riderId: number | null; riderName: string; bestLapMs: number; isMe: boolean }
+
+interface ScheduleMoto {
+  motoId: number;
+  motoNumber: number;
+  name: string;
+  type: string;
+  raceClass: string | null;
+  status: string;
+  lapCount: number | null;
+  scheduledTime: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  isAnyFamilyMemberInMoto: boolean;
+  familyGates: FamilyGate[];
+  lineup: LineupEntry[];
+  practiceLaps?: PracticeLap[];
+  practiceLeaderboard?: PracticeLeaderEntry[];
+}
+
+interface ScheduleEvent {
+  eventId: number;
+  eventName: string;
+  eventDate: string | null;
+  eventState: string | null;
+  eventLocation: string | null;
+  status: string;
+  registrations: { riderId: number; riderName: string; raceClass: string | null }[];
+  motos: ScheduleMoto[];
+}
+
+interface PracticeSession {
+  sessionId: number;
+  sessionName: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  lapCount: number;
+  bestLapMs: number | null;
+  laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
+}
+
 interface MotoResult {
   motoId: number;
   motoName: string;
+  motoType: string;
   position: number | null;
   points: number | null;
   dnf: boolean;
   dns: boolean;
   totalTime: string | null;
-  raceClass: string;
+  lapTimes: string[];
+  bibNumber: string | null;
 }
 
 interface EventHistory {
@@ -38,12 +105,322 @@ interface EventHistory {
   totalPoints: number;
 }
 
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+function SectionHeader({ title, icon, color }: { title: string; icon: string; color: string }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginTop: 24, marginBottom: 8 }}>
+      <Feather name={icon as any} size={13} color={color} />
+      <Text style={{ fontSize: 11, fontWeight: "700", color, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+        {title}
+      </Text>
+    </View>
+  );
+}
+
+function MotoStatusBadge({ status, colors }: { status: string; colors: ReturnType<typeof useColors> }) {
+  const config: Record<string, { label: string; bg: string; fg: string }> = {
+    scheduled: { label: "Scheduled", bg: colors.muted, fg: colors.mutedForeground },
+    in_progress: { label: "Live Now", bg: "#ef444422", fg: "#ef4444" },
+    completed: { label: "Completed", bg: colors.primary + "22", fg: colors.primary },
+  };
+  const c = config[status] ?? { label: status, bg: colors.muted, fg: colors.mutedForeground };
+  return (
+    <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: c.bg }}>
+      <Text style={{ fontSize: 10, fontWeight: "700", color: c.fg, fontFamily: "Inter_700Bold" }}>
+        {status === "in_progress" ? "🔴 " : ""}{c.label}
+      </Text>
+    </View>
+  );
+}
+
+function ScheduleMotoRow({ moto, colors }: { moto: ScheduleMoto; colors: ReturnType<typeof useColors> }) {
+  const isPractice = moto.type === "practice";
+  const myGates = moto.familyGates;
+  const myBestLap = moto.practiceLaps && moto.practiceLaps.length > 0
+    ? Math.min(...moto.practiceLaps.filter(l => (l.lapTimeMs ?? 0) > 0).map(l => l.lapTimeMs!))
+    : null;
+  const myRank = moto.practiceLeaderboard?.find(e => e.isMe)?.rank ?? null;
+
+  const isHighlighted = moto.isAnyFamilyMemberInMoto;
+
+  return (
+    <View style={{
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      backgroundColor: isHighlighted ? colors.primary + "08" : "transparent",
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+    }}>
+      {isHighlighted && (
+        <View style={{ width: 3, backgroundColor: colors.primary, borderRadius: 2, alignSelf: "stretch", marginRight: 2 }} />
+      )}
+      <View style={{ flex: 1, gap: 4 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+            {moto.name as string}
+          </Text>
+          {isPractice && (
+            <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "#f59e0b22" }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b", fontFamily: "Inter_700Bold" }}>PRACTICE</Text>
+            </View>
+          )}
+        </View>
+
+        {moto.scheduledTime && moto.status === "scheduled" && (
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+            🕐 {moto.scheduledTime}
+          </Text>
+        )}
+
+        {/* Race motos: show my gate positions */}
+        {!isPractice && myGates.length > 0 && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
+            {myGates.map(g => (
+              <View key={g.gate} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary + "18", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                <Feather name="flag" size={10} color={colors.primary} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>
+                  Gate {g.gate} · {g.riderName}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Race motos with no lineup yet but rider is registered */}
+        {!isPractice && myGates.length === 0 && isHighlighted && moto.status === "scheduled" && (
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontStyle: "italic" }}>
+            Gate draw pending
+          </Text>
+        )}
+
+        {/* Practice motos: show my best lap + rank */}
+        {isPractice && isHighlighted && (myBestLap != null || moto.status === "in_progress") && (
+          <View style={{ flexDirection: "row", gap: 12, marginTop: 2 }}>
+            {myBestLap != null && (
+              <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: colors.foreground }}>
+                Best: <Text style={{ color: colors.primary, fontWeight: "700" }}>{fmtLap(myBestLap)}</Text>
+              </Text>
+            )}
+            {myRank != null && (
+              <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground }}>
+                Rank: <Text style={{ color: colors.foreground, fontWeight: "700" }}>P{myRank}</Text> of {moto.practiceLeaderboard?.length}
+              </Text>
+            )}
+          </View>
+        )}
+      </View>
+
+      <MotoStatusBadge status={moto.status} colors={colors} />
+    </View>
+  );
+}
+
+function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: ReturnType<typeof useColors> }) {
+  const myClasses = [...new Set(event.registrations.map(r => r.raceClass).filter(Boolean))];
+  const myRiders = [...new Set(event.registrations.map(r => r.riderName))];
+  const nextMoto = event.motos.find(m => m.status === "scheduled" && m.isAnyFamilyMemberInMoto);
+
+  return (
+    <>
+      <SectionHeader title="Race Day" icon="zap" color="#ef4444" />
+      <View style={{ marginHorizontal: 16, borderRadius: 12, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.card }}>
+        {/* Event header */}
+        <View style={{ padding: 14, backgroundColor: "#ef444410", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+            {event.eventName}
+          </Text>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+            {[event.eventLocation, event.eventState].filter(Boolean).join(", ")}
+            {event.eventDate ? `  ·  ${fmtDate(event.eventDate)}` : ""}
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+            {myRiders.map(name => (
+              <View key={name} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary + "18", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                <Feather name="user" size={10} color={colors.primary} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>{name}</Text>
+              </View>
+            ))}
+            {myClasses.map(cls => (
+              <View key={cls} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.muted }}>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{cls}</Text>
+              </View>
+            ))}
+          </View>
+          {nextMoto && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, padding: 8, backgroundColor: "#ef444418", borderRadius: 8 }}>
+              <Feather name="alert-circle" size={13} color="#ef4444" />
+              <Text style={{ fontSize: 12, fontWeight: "600", color: "#ef4444", fontFamily: "Inter_600SemiBold", flex: 1 }}>
+                Up next: {nextMoto.name as string}
+                {nextMoto.scheduledTime ? ` at ${nextMoto.scheduledTime}` : ""}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Moto schedule */}
+        {event.motos.map(moto => (
+          <ScheduleMotoRow key={moto.motoId} moto={moto} colors={colors} />
+        ))}
+      </View>
+    </>
+  );
+}
+
+function UpcomingSection({ events, colors }: { events: ScheduleEvent[]; colors: ReturnType<typeof useColors> }) {
+  if (events.length === 0) return null;
+  return (
+    <>
+      <SectionHeader title="Upcoming Events" icon="calendar" color={colors.primary} />
+      {events.map(event => {
+        const myClasses = [...new Set(event.registrations.map(r => r.raceClass).filter(Boolean))];
+        return (
+          <View key={event.eventId} style={{ marginHorizontal: 16, marginBottom: 8, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.card, padding: 14 }}>
+            <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+              {event.eventName}
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+              {fmtDate(event.eventDate)} · {[event.eventLocation, event.eventState].filter(Boolean).join(", ")}
+            </Text>
+            {myClasses.length > 0 && (
+              <View style={{ flexDirection: "row", gap: 6, marginTop: 8 }}>
+                {myClasses.map(cls => (
+                  <View key={cls} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.primary + "18" }}>
+                    <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>{cls}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 }}>
+              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#22c55e" }} />
+              <Text style={{ fontSize: 12, color: "#22c55e", fontFamily: "Inter_600SemiBold" }}>Registration Open</Text>
+            </View>
+          </View>
+        );
+      })}
+    </>
+  );
+}
+
+function PracticeSection({ sessions, colors }: { sessions: PracticeSession[]; colors: ReturnType<typeof useColors> }) {
+  if (sessions.length === 0) return null;
+  return (
+    <>
+      <SectionHeader title="Practice Sessions" icon="activity" color="#f59e0b" />
+      {sessions.map(session => (
+        <View key={session.sessionId} style={{ marginHorizontal: 16, marginBottom: 8, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.card, overflow: "hidden" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                {session.sessionName}
+              </Text>
+              {session.startedAt && (
+                <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+                  {fmtDate(session.startedAt)}
+                </Text>
+              )}
+            </View>
+            <View style={{ alignItems: "flex-end", gap: 2 }}>
+              <Text style={{ fontSize: 18, fontWeight: "800", color: "#f59e0b", fontFamily: "Inter_700Bold" }}>
+                {fmtLap(session.bestLapMs)}
+              </Text>
+              <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Best Lap
+              </Text>
+            </View>
+          </View>
+          {session.laps.filter(l => (l.lapTimeMs ?? 0) > 0).slice(0, 5).map((lap, i) => (
+            <View key={i} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: i < Math.min(session.laps.length, 5) - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border }}>
+              <Text style={{ width: 28, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>L{lap.lapNumber}</Text>
+              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>
+                {fmtLap(lap.lapTimeMs)}
+              </Text>
+              {lap.lapTimeMs === session.bestLapMs && (
+                <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "#f59e0b22" }}>
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b", fontFamily: "Inter_700Bold" }}>BEST</Text>
+                </View>
+              )}
+            </View>
+          ))}
+          {session.lapCount > 5 && (
+            <View style={{ padding: 10, alignItems: "center" }}>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                +{session.lapCount - 5} more laps
+              </Text>
+            </View>
+          )}
+        </View>
+      ))}
+    </>
+  );
+}
+
+function HistorySection({ history, colors }: { history: EventHistory[]; colors: ReturnType<typeof useColors> }) {
+  if (history.length === 0) return null;
+  return (
+    <>
+      <SectionHeader title="Past Race Results" icon="award" color={colors.primary} />
+      {history.map(event => (
+        <View key={event.eventId} style={{ marginHorizontal: 16, marginBottom: 8, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.card, overflow: "hidden" }}>
+          <View style={{ padding: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{event.eventName}</Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                {fmtDate(event.eventDate)} · {event.eventLocation ?? event.eventState} · {event.raceClass}
+              </Text>
+            </View>
+            <View style={{ alignItems: "flex-end", gap: 4 }}>
+              {event.bestPosition != null && (
+                <View style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>P{event.bestPosition}</Text>
+                </View>
+              )}
+              {event.totalPoints > 0 && (
+                <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{event.totalPoints} pts</Text>
+              )}
+            </View>
+          </View>
+          {event.motos.map(moto => (
+            <View key={moto.motoId} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{moto.motoName}</Text>
+              {moto.totalTime && (
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>
+                  {moto.totalTime}
+                </Text>
+              )}
+              {moto.points != null && moto.points > 0 && (
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{moto.points}pts</Text>
+              )}
+              {moto.dnf || moto.dns ? (
+                <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, backgroundColor: colors.muted }}>
+                  <Text style={{ fontSize: 11, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>{moto.dnf ? "DNF" : "DNS"}</Text>
+                </View>
+              ) : moto.position != null ? (
+                <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, backgroundColor: colors.primary }}>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>P{moto.position}</Text>
+                </View>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ))}
+    </>
+  );
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
+
 export default function MyRacesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading, profiles, riderFetch } = useRiderAuth();
 
+  const [schedule, setSchedule] = useState<{ familyRiderIds: number[]; events: ScheduleEvent[] } | null>(null);
+  const [practice, setPractice] = useState<{ sessions: PracticeSession[] } | null>(null);
   const [history, setHistory] = useState<EventHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -51,31 +428,42 @@ export default function MyRacesScreen() {
 
   const primaryProfile = profiles[0] ?? null;
 
-  const loadHistory = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     if (!primaryProfile) return;
-    setLoading(true);
     setError(null);
+    setLoading(true);
     try {
-      const res = await riderFetch(`/api/rider/profiles/${primaryProfile.id}/history`);
-      if (!res.ok) throw new Error("Failed to load history");
-      const data: EventHistory[] = await res.json();
-      setHistory(data);
-    } catch (e: any) {
-      setError(e.message);
+      const [schedRes, practRes, histRes] = await Promise.all([
+        riderFetch(`/api/rider/profiles/${primaryProfile.id}/schedule`),
+        riderFetch(`/api/rider/profiles/${primaryProfile.id}/practice`),
+        riderFetch(`/api/rider/profiles/${primaryProfile.id}/history`),
+      ]);
+
+      if (schedRes.ok) setSchedule(await schedRes.json());
+      if (practRes.ok) {
+        const p = await practRes.json();
+        setPractice({ sessions: p.sessions ?? [] });
+      }
+      if (histRes.ok) {
+        const h = await histRes.json();
+        setHistory(h.history ?? []);
+      }
+    } catch {
+      setError("Couldn't load your racing data. Pull to refresh.");
     } finally {
       setLoading(false);
     }
-  }, [primaryProfile, riderFetch]);
+  }, [primaryProfile?.id, riderFetch]);
 
   useEffect(() => {
-    if (isAuthenticated && primaryProfile) void loadHistory();
+    if (isAuthenticated && primaryProfile) void loadAll();
   }, [isAuthenticated, primaryProfile?.id]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadHistory();
+    await loadAll();
     setRefreshing(false);
-  }, [loadHistory]);
+  }, [loadAll]);
 
   const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
@@ -87,163 +475,29 @@ export default function MyRacesScreen() {
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
-    headerTitle: {
-      fontSize: 26,
-      fontWeight: "800",
-      color: colors.foreground,
-      fontFamily: "Inter_700Bold",
-      letterSpacing: -0.5,
-    },
-    statsRow: {
-      flexDirection: "row",
-      gap: 12,
-      marginTop: 12,
-    },
-    statBox: {
-      flex: 1,
-      backgroundColor: colors.muted,
-      borderRadius: 10,
-      padding: 12,
-      alignItems: "center",
-    },
-    statValue: {
-      fontSize: 22,
-      fontWeight: "700",
-      color: colors.primary,
-      fontFamily: "Inter_700Bold",
-    },
-    statLabel: {
-      fontSize: 11,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_500Medium",
-      marginTop: 2,
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
-    },
-    eventCard: {
-      marginHorizontal: 16,
-      marginTop: 12,
-      backgroundColor: colors.card,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      overflow: "hidden",
-    },
-    eventHeader: {
-      padding: 14,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
-    eventName: {
-      fontSize: 15,
-      fontWeight: "700",
-      color: colors.foreground,
-      fontFamily: "Inter_700Bold",
-    },
-    eventMeta: {
-      fontSize: 12,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-      marginTop: 2,
-    },
-    motoRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
-    motoName: {
-      flex: 1,
-      fontSize: 13,
-      color: colors.foreground,
-      fontFamily: "Inter_500Medium",
-    },
-    positionBadge: {
-      paddingHorizontal: 10,
-      paddingVertical: 3,
-      borderRadius: 20,
-      backgroundColor: colors.primary,
-    },
-    positionText: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: "#fff",
-      fontFamily: "Inter_700Bold",
-    },
-    dnfBadge: {
-      paddingHorizontal: 10,
-      paddingVertical: 3,
-      borderRadius: 20,
-      backgroundColor: colors.muted,
-    },
-    dnfText: {
-      fontSize: 12,
-      fontWeight: "600",
-      color: colors.mutedForeground,
-      fontFamily: "Inter_600SemiBold",
-    },
-    pointsText: {
-      fontSize: 12,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_500Medium",
-      marginRight: 8,
-    },
-    centered: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 32,
-    },
-    emptyTitle: {
-      fontSize: 18,
-      fontWeight: "700",
-      color: colors.foreground,
-      fontFamily: "Inter_700Bold",
-      marginTop: 12,
-      textAlign: "center",
-    },
-    emptyText: {
-      fontSize: 14,
-      color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
-      marginTop: 6,
-      textAlign: "center",
-      lineHeight: 20,
-    },
-    signInBtn: {
-      marginTop: 20,
-      backgroundColor: colors.primary,
-      paddingHorizontal: 28,
-      paddingVertical: 12,
-      borderRadius: 10,
-    },
-    signInBtnText: {
-      color: "#fff",
-      fontSize: 15,
-      fontWeight: "700",
-      fontFamily: "Inter_700Bold",
-    },
-    listFooter: { height: insets.bottom + 16 },
+    headerTitle: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+    statsRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+    statBox: { flex: 1, backgroundColor: colors.muted, borderRadius: 10, padding: 12, alignItems: "center" },
+    statValue: { fontSize: 20, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" },
+    statLabel: { fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 },
+    centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 8 },
+    emptyTitle: { fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" },
+    emptyText: { fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 },
+    signInBtn: { marginTop: 12, backgroundColor: colors.primary, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 },
+    signInBtnText: { color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" },
+    footer: { height: insets.bottom + 32 },
   });
 
   if (authLoading) {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    return <View style={[styles.container, styles.centered]}><ActivityIndicator color={colors.primary} /></View>;
   }
 
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, styles.centered]}>
         <Feather name="award" size={48} color={colors.mutedForeground} />
-        <Text style={styles.emptyTitle}>Your race history lives here</Text>
-        <Text style={styles.emptyText}>
-          Sign in to see your results, points, and lap times from every race.
-        </Text>
+        <Text style={styles.emptyTitle}>Your racing lives here</Text>
+        <Text style={styles.emptyText}>Sign in to see your race schedule, practice laps, and results.</Text>
         <Pressable style={styles.signInBtn} onPress={() => router.push("/(tabs)/profile")}>
           <Text style={styles.signInBtnText}>Sign In</Text>
         </Pressable>
@@ -256,50 +510,24 @@ export default function MyRacesScreen() {
       <View style={[styles.container, styles.centered]}>
         <Feather name="user-x" size={40} color={colors.mutedForeground} />
         <Text style={styles.emptyTitle}>No rider profile linked</Text>
-        <Text style={styles.emptyText}>
-          Register for an event using this email address to link your rider profile.
-        </Text>
+        <Text style={styles.emptyText}>Register for an event using this email address to link your rider profile.</Text>
       </View>
     );
   }
 
-  const renderEventCard = ({ item }: { item: EventHistory }) => (
-    <View style={styles.eventCard}>
-      <View style={styles.eventHeader}>
-        <Text style={styles.eventName}>{item.eventName}</Text>
-        <Text style={styles.eventMeta}>
-          {new Date(item.eventDate).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}{" "}
-          · {item.eventLocation ?? item.eventState} · {item.raceClass}
-        </Text>
-      </View>
-      {item.motos.map((moto) => (
-        <View key={moto.motoId} style={styles.motoRow}>
-          <Text style={styles.motoName}>{moto.motoName}</Text>
-          {moto.points != null && moto.points > 0 && (
-            <Text style={styles.pointsText}>{moto.points}pts</Text>
-          )}
-          {moto.dnf || moto.dns ? (
-            <View style={styles.dnfBadge}>
-              <Text style={styles.dnfText}>{moto.dnf ? "DNF" : "DNS"}</Text>
-            </View>
-          ) : moto.position != null ? (
-            <View style={styles.positionBadge}>
-              <Text style={styles.positionText}>P{moto.position}</Text>
-            </View>
-          ) : null}
-        </View>
-      ))}
-    </View>
-  );
+  const raceDay = schedule?.events.filter(e => e.status === "race_day") ?? [];
+  const upcoming = schedule?.events.filter(e => e.status === "registration_open") ?? [];
+  const practiceSessions = practice?.sessions ?? [];
+  const isEmpty = raceDay.length === 0 && upcoming.length === 0 && practiceSessions.length === 0 && history.length === 0;
 
-  const ListHeader = () => (
-    <View style={styles.header}>
-      <Text style={styles.headerTitle}>My Races</Text>
-      {primaryProfile && (
+  return (
+    <ScrollView
+      style={styles.container}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>My Racing</Text>
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>{primaryProfile.eventsRaced}</Text>
@@ -313,51 +541,45 @@ export default function MyRacesScreen() {
             <Text style={styles.statValue}>
               {primaryProfile.bestPosition != null ? `P${primaryProfile.bestPosition}` : "—"}
             </Text>
-            <Text style={styles.statLabel}>Best</Text>
+            <Text style={styles.statLabel}>Best Finish</Text>
           </View>
         </View>
-      )}
-    </View>
-  );
+      </View>
 
-  return (
-    <FlatList
-      style={styles.container}
-      data={history}
-      keyExtractor={(item) => String(item.eventId)}
-      renderItem={renderEventCard}
-      ListHeaderComponent={ListHeader}
-      ListFooterComponent={<View style={styles.listFooter} />}
-      contentContainerStyle={history.length === 0 ? { flexGrow: 1 } : undefined}
-      scrollEnabled={history.length > 0}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.primary}
-        />
-      }
-      ListEmptyComponent={
-        loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color={colors.primary} />
-          </View>
-        ) : error ? (
-          <View style={styles.centered}>
-            <Feather name="alert-circle" size={32} color={colors.mutedForeground} />
-            <Text style={styles.emptyTitle}>Couldn't load history</Text>
-            <Text style={styles.emptyText}>{error}</Text>
-          </View>
-        ) : (
-          <View style={styles.centered}>
-            <Feather name="flag" size={40} color={colors.mutedForeground} />
-            <Text style={styles.emptyTitle}>No races yet</Text>
-            <Text style={styles.emptyText}>
-              Your results will appear here after your first race.
-            </Text>
-          </View>
-        )
-      }
-    />
+      {loading && !refreshing ? (
+        <View style={[styles.centered, { marginTop: 48 }]}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      ) : error ? (
+        <View style={[styles.centered, { marginTop: 48 }]}>
+          <Feather name="alert-circle" size={32} color={colors.mutedForeground} />
+          <Text style={styles.emptyText}>{error}</Text>
+        </View>
+      ) : isEmpty ? (
+        <View style={[styles.centered, { marginTop: 48 }]}>
+          <Feather name="flag" size={40} color={colors.mutedForeground} />
+          <Text style={styles.emptyTitle}>Nothing yet</Text>
+          <Text style={styles.emptyText}>Your race schedule and results will appear here once you're registered for an event.</Text>
+        </View>
+      ) : (
+        <>
+          {/* 1. Race day (most important) */}
+          {raceDay.map(event => (
+            <RaceDaySection key={event.eventId} event={event} colors={colors} />
+          ))}
+
+          {/* 2. Upcoming events */}
+          <UpcomingSection events={upcoming} colors={colors} />
+
+          {/* 3. Practice history */}
+          <PracticeSection sessions={practiceSessions} colors={colors} />
+
+          {/* 4. Past race results */}
+          <HistorySection history={history} colors={colors} />
+        </>
+      )}
+
+      <View style={styles.footer} />
+    </ScrollView>
   );
 }
