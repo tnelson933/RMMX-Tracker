@@ -85,11 +85,9 @@ export default function WatchLive() {
     motos?.find(m => m.status === "in_progress") ??
     [...(motos ?? [])].filter(m => m.status === "completed").pop();
 
-  // Next 3 scheduled motos after the active one (sorted by motoNumber then id)
-  const upcomingMotos = [...(motos ?? [])]
-    .filter(m => m.status === "scheduled")
-    .sort((a, b) => (a.motoNumber ?? a.id) - (b.motoNumber ?? b.id))
-    .slice(0, 3);
+  // All motos sorted for the schedule panel
+  const scheduleMotos = [...(motos ?? [])]
+    .sort((a, b) => (a.motoNumber ?? a.id) - (b.motoNumber ?? b.id));
 
   // Unified rider row type satisfied by both LineupEntry and RaceResult
   type RiderRow = { position: number; riderId: number; riderName: string; bibNumber?: string | null };
@@ -782,35 +780,56 @@ export default function WatchLive() {
                 {sseLeaderboard && activeMoto.status === "in_progress" ? "● live timing" : "↻ updates every 15s"}
               </div>
 
-              {/* Up Next */}
-              {upcomingMotos.length > 0 && (
-                <div className="shrink-0 border-t border-white/10">
-                  <div className="px-3 pt-2.5 pb-1 text-white/25 text-[10px] uppercase tracking-widest font-bold">
-                    Up Next
+              {/* Full Schedule */}
+              {scheduleMotos.length > 0 && (
+                <div className="shrink-0 border-t border-white/10 flex flex-col" style={{ maxHeight: "40%" }}>
+                  <div className="px-3 pt-2.5 pb-1 text-white/25 text-[10px] uppercase tracking-widest font-bold shrink-0">
+                    Schedule
                   </div>
-                  {upcomingMotos.map((m, idx) => (
-                    <div
-                      key={m.id}
-                      className={`flex items-center gap-2 px-3 py-2 ${idx < upcomingMotos.length - 1 ? "border-b border-white/5" : ""}`}
-                    >
-                      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 ${motoTypeColor(m.type)}`}>
-                        {motoTypeLabel(m.type)}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-white/70 text-[11px] font-heading uppercase tracking-wide truncate leading-tight">
-                          {m.name}
+                  <div className="overflow-y-auto">
+                    {scheduleMotos.map((m, idx) => {
+                      const isActive = m.status === "in_progress";
+                      const isDone   = m.status === "completed";
+                      return (
+                        <div
+                          key={m.id}
+                          className={`flex items-center gap-2 px-3 py-1.5 ${idx < scheduleMotos.length - 1 ? "border-b border-white/5" : ""} ${isActive ? "bg-white/5" : ""}`}
+                        >
+                          {/* Status dot */}
+                          <div className="w-3 shrink-0 flex items-center justify-center">
+                            {isActive ? (
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-400" />
+                              </span>
+                            ) : isDone ? (
+                              <CheckCircle2 size={10} className="text-white/20" />
+                            ) : (
+                              <span className="h-1 w-1 rounded-full bg-white/15" />
+                            )}
+                          </div>
+                          {/* Type badge */}
+                          <span className={`text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded shrink-0 ${isDone ? "bg-white/5 text-white/20" : motoTypeColor(m.type)}`}>
+                            {motoTypeLabel(m.type)}
+                          </span>
+                          {/* Name + class */}
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-[11px] font-heading uppercase tracking-wide truncate leading-tight ${isDone ? "text-white/20" : isActive ? "text-white/90" : "text-white/55"}`}>
+                              {m.name}
+                            </div>
+                            {m.raceClass && (
+                              <div className={`text-[10px] truncate leading-tight ${isDone ? "text-white/15" : "text-white/25"}`}>{m.raceClass}</div>
+                            )}
+                          </div>
+                          {m.scheduledTime && !isDone && (
+                            <div className="text-white/20 text-[10px] font-mono shrink-0">
+                              {new Date(m.scheduledTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                            </div>
+                          )}
                         </div>
-                        {m.raceClass && (
-                          <div className="text-white/30 text-[10px] truncate leading-tight">{m.raceClass}</div>
-                        )}
-                      </div>
-                      {m.scheduledTime && (
-                        <div className="text-white/25 text-[10px] font-mono shrink-0">
-                          {new Date(m.scheduledTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </>
