@@ -134,6 +134,28 @@ export default function WatchLive() {
     drainQueue();
   }, [drainQueue]);
 
+  // ── Moto-start hype intro ────────────────────────────────────────────────
+  const triggerStartAnnouncement = useCallback(async (moto: typeof activeMoto) => {
+    if (!announcerOnRef.current || !moto) return;
+    try {
+      setAnnouncerLabel("Race starting!");
+      const res = await fetch("/api/timing/announce-moto-start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          motoName: moto.name,
+          motoType: moto.type,
+          raceClass: moto.raceClass ?? null,
+          lineup: ((moto.lineup ?? []) as Array<{ bibNumber?: string | null; riderName?: string | null }>)
+            .map(r => ({ bibNumber: r.bibNumber ?? null, riderName: r.riderName ?? null })),
+        }),
+      });
+      if (!res.ok) { setAnnouncerLabel(null); return; }
+      enqueueAudio(await res.blob());
+      setTimeout(() => setAnnouncerLabel(null), 6_000);
+    } catch { setAnnouncerLabel(null); }
+  }, [enqueueAudio]);
+
   // ── Full AI TTS announcement (OpenAI voice — used for race-complete only) ────
   const triggerAnnouncement = useCallback(async (
     lapCompleted: number,
@@ -181,6 +203,9 @@ export default function WatchLive() {
     prevPositionsRef.current = new Map();
     prevSseStatusRef.current = null;
 
+    // Fire the race-start hype intro whenever we connect to a new in_progress moto.
+    triggerStartAnnouncement(activeMoto);
+
     const es = new EventSource(`/api/timing/live/${motoId}`);
     esRef.current = es;
 
@@ -218,7 +243,7 @@ export default function WatchLive() {
       es.close();
       if (esRef.current === es) { esRef.current = null; activeMotoIdRef.current = null; }
     };
-  }, [activeMoto?.id, activeMoto?.status, triggerAnnouncement]);
+  }, [activeMoto?.id, activeMoto?.status, triggerAnnouncement, triggerStartAnnouncement]);
 
   useEffect(() => {
     if (!eventId) return;
