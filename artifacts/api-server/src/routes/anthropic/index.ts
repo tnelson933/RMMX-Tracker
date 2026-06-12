@@ -109,7 +109,7 @@ router.get("/anthropic/conversations", async (req, res) => {
   const rows = await db
     .select()
     .from(conversations)
-    .where(eq((conversations as any).userId, userId))
+    .where(eq(conversations.userId, userId))
     .orderBy(desc(conversations.createdAt));
 
   res.json(rows);
@@ -138,7 +138,7 @@ router.get("/anthropic/conversations/:id", async (req, res) => {
   const [conv] = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq((conversations as any).userId, userId)));
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
 
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -159,7 +159,7 @@ router.delete("/anthropic/conversations/:id", async (req, res) => {
   const [conv] = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq((conversations as any).userId, userId)));
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
 
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -175,7 +175,7 @@ router.get("/anthropic/conversations/:id/messages", async (req, res) => {
   const [conv] = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq((conversations as any).userId, userId)));
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
 
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -196,7 +196,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   const [conv] = await db
     .select()
     .from(conversations)
-    .where(and(eq(conversations.id, id), eq((conversations as any).userId, userId)));
+    .where(and(eq(conversations.id, id), eq(conversations.userId, userId)));
 
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
 
