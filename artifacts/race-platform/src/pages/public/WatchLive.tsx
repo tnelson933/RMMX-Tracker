@@ -248,10 +248,29 @@ export default function WatchLive() {
         const isFirstMessage = prevLapsRef.current.size === 0;
 
         if (!isFirstMessage) {
-          // Race complete — play the full AI TTS recap.
+          // Detect position changes across all riders
+          const positionChanges: Array<{ riderName: string; from: number; to: number }> = [];
+          for (const entry of leaderboard) {
+            const prevPos = prevPositionsRef.current.get(entry.riderId);
+            if (prevPos !== undefined && prevPos !== entry.position) {
+              positionChanges.push({ riderName: entry.riderName, from: prevPos, to: entry.position });
+            }
+          }
+
           if (isComplete && wasInProgress) {
+            // Race complete — full podium recap
             const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
             triggerAnnouncement(top5[0]?.laps ?? 0, top5, [], true);
+          } else if (!isComplete) {
+            // Announce when the leader completes a new lap
+            const leader = leaderboard[0];
+            if (leader) {
+              const prevLeaderLaps = prevLapsRef.current.get(leader.riderId) ?? 0;
+              if (leader.laps > prevLeaderLaps) {
+                const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
+                triggerAnnouncement(leader.laps, top5, positionChanges, false);
+              }
+            }
           }
         }
 
