@@ -78,3 +78,9 @@ dmg:
 
 # Rebuild native modules for Electron's Node.js version
 afterPack: scripts/after-pack.js
+
+# GitHub Releases — electron-builder uploads installers and auto-update metadata
+# here; electron-updater reads from this same provider at runtime.
+publish:
+  provider: github
+  releaseType: release

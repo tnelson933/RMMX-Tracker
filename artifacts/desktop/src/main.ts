@@ -6,6 +6,7 @@ import {
   shell,
   dialog,
 } from "electron";
+import { autoUpdater } from "electron-updater";
 import path from "path";
 import fs from "fs";
 import http from "http";
@@ -423,6 +424,49 @@ function postCrossingToLocalServer(rfidNumber: string): void {
   req.end();
 }
 
+// ── Auto-updater ──────────────────────────────────────────────────────────────
+
+function setupAutoUpdater(): void {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("update-available", (info) => {
+    dialog.showMessageBox({
+      type: "info",
+      title: "Update available",
+      message: `Rocky Mountain Race v${info.version} is available and will be installed automatically when you quit.`,
+      buttons: ["OK"],
+    });
+  });
+
+  autoUpdater.on("update-downloaded", () => {
+    dialog
+      .showMessageBox({
+        type: "info",
+        title: "Restart to update",
+        message:
+          "A new version has been downloaded. Restart the app now to apply the update.",
+        buttons: ["Restart now", "Later"],
+        defaultId: 0,
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("[updater] auto-update error:", err.message);
+  });
+
+  autoUpdater.checkForUpdatesAndNotify().catch((err: Error) => {
+    console.error("[updater] checkForUpdatesAndNotify failed:", err.message);
+  });
+}
+
 // ── Electron app lifecycle ────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -440,6 +484,7 @@ app.whenReady().then(async () => {
 
   createWindow();
   startSyncEngine();
+  setupAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
