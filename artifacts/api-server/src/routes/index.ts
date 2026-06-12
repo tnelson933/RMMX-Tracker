@@ -27,6 +27,7 @@ import offlineRouter from "./offline";
 import discountCategoriesRouter from "./discount-categories";
 import discountCodesRouter from "./discount-codes";
 import teamRouter from "./team";
+import anthropicRouter from "./anthropic/index";
 
 const router: IRouter = Router();
 
@@ -58,5 +59,6 @@ router.use(offlineRouter);
 router.use(discountCategoriesRouter);
 router.use(discountCodesRouter);
 router.use(teamRouter);
+router.use(anthropicRouter);
 
 export default router;

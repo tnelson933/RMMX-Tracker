@@ -6,6 +6,7 @@ import { useLogout } from "@workspace/api-client-react";
 import { PastEventCheckDialog } from "@/components/organizer/PastEventCheckDialog";
 import { UnpublishedResultsDialog } from "@/components/organizer/UnpublishedResultsDialog";
 import { ProductTour } from "@/components/organizer/ProductTour";
+import { AIAssistant } from "@/components/organizer/AIAssistant";
 import { useBroadcast } from "@/contexts/BroadcastContext";
 import {
   LayoutDashboard,
@@ -296,6 +297,9 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
 
       {/* First-login product tour */}
       {showTour && <ProductTour onComplete={() => {}} />}
+
+      {/* AI Assistant — floating on every organizer page */}
+      <AIAssistant />
     </div>
   );
 }
