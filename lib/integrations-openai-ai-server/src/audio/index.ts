@@ -8,6 +8,4 @@ export {
   voiceChatStream,
   textToSpeech,
   textToSpeechStream,
-  speechToText,
-  speechToTextStream,
 } from "./client";

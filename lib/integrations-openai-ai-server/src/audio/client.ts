@@ -1,4 +1,4 @@
-import OpenAI, { toFile } from "openai";
+import OpenAI from "openai";
 import { Buffer } from "node:buffer";
 import { spawn } from "child_process";
 import { writeFile, unlink, readFile } from "fs/promises";
@@ -213,40 +213,6 @@ export async function textToSpeechStream(
       if (!delta) continue;
       if (delta?.audio?.data) {
         yield delta.audio.data;
-      }
-    }
-  })();
-}
-
-/** Speech-to-Text using gpt-5-mini-transcribe. */
-export async function speechToText(
-  audioBuffer: Buffer,
-  format: "wav" | "mp3" | "webm" = "wav"
-): Promise<string> {
-  const file = await toFile(audioBuffer, `audio.${format}`);
-  const response = await openai.audio.transcriptions.create({
-    file,
-    model: "gpt-5-mini-transcribe",
-  });
-  return response.text;
-}
-
-/** Streaming Speech-to-Text. */
-export async function speechToTextStream(
-  audioBuffer: Buffer,
-  format: "wav" | "mp3" | "webm" = "wav"
-): Promise<AsyncIterable<string>> {
-  const file = await toFile(audioBuffer, `audio.${format}`);
-  const stream = await openai.audio.transcriptions.create({
-    file,
-    model: "gpt-5-mini-transcribe",
-    stream: true,
-  });
-
-  return (async function* () {
-    for await (const event of stream) {
-      if (event.type === "transcript.text.delta") {
-        yield event.delta;
       }
     }
   })();
