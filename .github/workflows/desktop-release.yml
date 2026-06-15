@@ -27,8 +27,11 @@ jobs:
           node-version: "24"
           cache: "pnpm"
 
+      - name: Remove Replit platform-exclusion overrides
+        run: node -e "const fs=require('fs');const c=fs.readFileSync('pnpm-workspace.yaml','utf8');fs.writeFileSync('pnpm-workspace.yaml',c.split('\n').filter(l=>!l.includes(': \"-\"')).join('\n'));"
+
       - name: Install dependencies
-        run: pnpm install 
+        run: pnpm install
 
       - name: Build local-server
         run: pnpm --filter @workspace/local-server run build
@@ -64,6 +67,9 @@ jobs:
         with:
           node-version: "24"
           cache: "pnpm"
+
+      - name: Remove Replit platform-exclusion overrides
+        run: node -e "const fs=require('fs');const c=fs.readFileSync('pnpm-workspace.yaml','utf8');fs.writeFileSync('pnpm-workspace.yaml',c.split('\n').filter(l=>!l.includes(': \"-\"')).join('\n'));"
 
       - name: Install dependencies
         run: pnpm install
