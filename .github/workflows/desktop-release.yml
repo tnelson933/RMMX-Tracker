@@ -28,7 +28,7 @@ jobs:
           cache: "pnpm"
 
       - name: Remove Replit platform-exclusion overrides
-        run: node -e "const fs=require('fs');const c=fs.readFileSync('pnpm-workspace.yaml','utf8');fs.writeFileSync('pnpm-workspace.yaml',c.split('\n').filter(l=>!l.includes(': \"-\"')).join('\n'));"
+        run: sed -i '' '/": "-"/d' pnpm-workspace.yaml
 
       - name: Install dependencies
         run: pnpm install
@@ -69,7 +69,8 @@ jobs:
           cache: "pnpm"
 
       - name: Remove Replit platform-exclusion overrides
-        run: node -e "const fs=require('fs');const c=fs.readFileSync('pnpm-workspace.yaml','utf8');fs.writeFileSync('pnpm-workspace.yaml',c.split('\n').filter(l=>!l.includes(': \"-\"')).join('\n'));"
+        shell: pwsh
+        run: (Get-Content pnpm-workspace.yaml) | Where-Object { $_ -notmatch '": "-"' } | Set-Content pnpm-workspace.yaml
 
       - name: Install dependencies
         run: pnpm install
