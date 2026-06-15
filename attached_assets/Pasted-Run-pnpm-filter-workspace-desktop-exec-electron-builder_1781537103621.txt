@@ -1,0 +1,34 @@
+Run pnpm --filter @workspace/desktop exec electron-builder --win --x64 --publish always
+  • electron-builder  version=25.1.8 os=10.0.20348
+  • loaded configuration  file=D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\desktop\electron-builder.yml
+  • author is missed in the package.json  appPackageFile=D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\desktop\package.json
+  • @electron/rebuild already used by electron-builder, please consider to remove excess dependency from devDependencies
+
+To ensure your native dependencies are always matched electron version, simply add script `"postinstall": "electron-builder install-app-deps" to your `package.json`
+  • "electron-squirrel-startup" dependency is not required for NSIS
+  • executing @electron/rebuild  electronVersion=33.4.11 arch=x64 buildFromSource=false appDir=./
+  • installing native dependencies  arch=x64
+  • preparing       moduleName=better-sqlite3 arch=x64
+  • finished        moduleName=better-sqlite3 arch=x64
+  • preparing       moduleName=@serialport/bindings-cpp arch=x64
+  • finished        moduleName=@serialport/bindings-cpp arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=33.4.11 appOutDir=release\win-unpacked
+  • downloading     url=https://github.com/electron/electron/releases/download/v33.4.11/electron-v33.4.11-win32-x64.zip size=115 MB parts=4
+  • downloaded      url=https://github.com/electron/electron/releases/download/v33.4.11/electron-v33.4.11-win32-x64.zip duration=781ms
+  • updating asar integrity executable resource  executablePath=release\win-unpacked\Rocky Mountain Race.exe
+  ⨯ Expected a string version for electron version, got a "undefined"  failedTask=build stackTrace=Error: Expected a string version for electron version, got a "undefined"
+    at new Rebuilder (D:\a\RMMX-Tracker\RMMX-Tracker\node_modules\.pnpm\@electron+rebuild@3.7.2\node_modules\@electron\rebuild\src\rebuild.ts:190:13)
+    at rebuild (D:\a\RMMX-Tracker\RMMX-Tracker\node_modules\.pnpm\@electron+rebuild@3.7.2\node_modules\@electron\rebuild\src\rebuild.ts:333:21)
+    at exports.default (D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\desktop\scripts\after-pack.js:15:9)
+    at Packager.afterPack (D:\a\RMMX-Tracker\RMMX-Tracker\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\packager.ts:560:29)
+    at WinPackager.doPack (D:\a\RMMX-Tracker\RMMX-Tracker\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\platformPackager.ts:322:5)
+    at WinPackager.pack (D:\a\RMMX-Tracker\RMMX-Tracker\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\platformPackager.ts:138:5)
+    at Packager.doBuild (D:\a\RMMX-Tracker\RMMX-Tracker\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\packager.ts:459:9)
+    at executeFinally (D:\a\RMMX-Tracker\RMMX-Tracker\node_modules\.pnpm\builder-util@25.1.7\node_modules\builder-util\src\promise.ts:12:14)
+    at Packager.build (D:\a\RMMX-Tracker\RMMX-Tracker\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\packager.ts:393:31)
+    at executeFinally (D:\a\RMMX-Tracker\RMMX-Tracker\node_modules\.pnpm\builder-util@25.1.7\node_modules\builder-util\src\promise.ts:12:14)
+undefined
+D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\desktop:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: electron-builder --win --x64 --publish always
+Error: Process completed with exit code 1.
