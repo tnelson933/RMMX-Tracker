@@ -1,0 +1,63 @@
+1m 16s
+Run pnpm --filter @workspace/race-platform run build
+
+> @workspace/race-platform@0.0.0 build D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\race-platform
+> vite build --config vite.config.ts
+
+vite v7.3.3 building client environment for production...
+transforming...
+src/components/ui/tooltip.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/label.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/select.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/dropdown-menu.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/sheet.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+✓ 2888 modules transformed.
+rendering chunks...
+[plugin vite:reporter] 
+(!) D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/xlsx@0.18.5/node_modules/xlsx/xlsx.mjs is dynamically imported by D:/a/RMMX-Tracker/RMMX-Tracker/artifacts/race-platform/src/pages/organizer/RidersList.tsx but also statically imported by D:/a/RMMX-Tracker/RMMX-Tracker/artifacts/race-platform/src/pages/organizer/Registrations.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/public/registerSW.js                                          0.13 kB
+
+dist/public/manifest.webmanifest                                   0.45 kB
+(!) Some chunks are larger than 500 kB after minification. Consider:
+dist/public/index.html                                             1.55 kB │ gzip:     0.61 kB
+- Using dynamic import() to code-split the application
+dist/public/assets/rm-logo-BrbFS_rZ.png                          183.27 kB
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+dist/public/assets/ort.bundle.min-OfoG_cy9.mjs                   399.90 kB
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+dist/public/assets/ort.webgpu.bundle.min-CEayb2S6.mjs            399.92 kB
+dist/public/assets/ort-wasm-simd-threaded.jsep-D5Jk56-t.wasm  23,914.39 kB │ gzip: 5,662.56 kB
+dist/public/assets/index-6U6d4Uzq.css                            186.04 kB │ gzip:    27.28 kB
+dist/public/assets/purify.es-DSHCW8nm.js                          26.22 kB │ gzip:     9.82 kB
+dist/public/assets/jspdf.plugin.autotable-BBLUVd7n.js             30.93 kB │ gzip:     9.87 kB
+dist/public/assets/index-JU7E3ohN.js                              82.00 kB │ gzip:    22.24 kB
+dist/public/assets/index.es-D0c-mvzO.js                          158.83 kB │ gzip:    53.04 kB
+dist/public/assets/html2canvas.esm-DXEQVQnt.js                   201.04 kB │ gzip:    47.43 kB
+dist/public/assets/jspdf.es.min-B9i-7HDI.js                      385.99 kB │ gzip:   126.32 kB
+dist/public/assets/ort.bundle.min-DAXuwjBG.js                    395.51 kB │ gzip:   108.23 kB
+dist/public/assets/ort.webgpu.bundle.min-CElWvg4j.js             395.53 kB │ gzip:   108.23 kB
+dist/public/assets/index-DsT6hNTV.js                           2,715.00 kB │ gzip:   748.68 kB
+✓ built in 1m 8s
+error during build:
+Error: 
+  Configure "workbox.maximumFileSizeToCacheInBytes" to change the limit: the default value is 2 MiB.
+  Check https://vite-pwa-org.netlify.app/guide/faq.html#missing-assets-from-sw-precache-manifest for more information.
+  Assets exceeding the limit:
+  - assets/index-DsT6hNTV.js is 2.71 MB, and won't be precached.
+
+    at logWorkboxResult (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/vite-plugin-pwa@1.3.0_@type_d134bf17f1a9ba9f0cfafc9136dcbbab/node_modules/vite-plugin-pwa/dist/chunk-G4TAN34B.js:44:13)
+    at generateServiceWorker (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/vite-plugin-pwa@1.3.0_@type_d134bf17f1a9ba9f0cfafc9136dcbbab/node_modules/vite-plugin-pwa/dist/index.js:209:3)
+    at async _generateSW (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/vite-plugin-pwa@1.3.0_@type_d134bf17f1a9ba9f0cfafc9136dcbbab/node_modules/vite-plugin-pwa/dist/index.js:234:5)
+    at async Object.handler (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/vite-plugin-pwa@1.3.0_@type_d134bf17f1a9ba9f0cfafc9136dcbbab/node_modules/vite-plugin-pwa/dist/index.js:427:13)
+    at async PluginDriver.hookParallel (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/rollup@4.60.3/node_modules/rollup/dist/es/shared/node-entry.js:22891:17)
+    at async Object.close (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/rollup@4.60.3/node_modules/rollup/dist/es/shared/node-entry.js:23910:13)
+    at async buildEnvironment (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/vite@7.3.3_@types+node@25.6_a3f39bdab8a01c2e0887457013ce58fe/node_modules/vite/dist/node/chunks/config.js:33575:15)
+    at async Object.build (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/vite@7.3.3_@types+node@25.6_a3f39bdab8a01c2e0887457013ce58fe/node_modules/vite/dist/node/chunks/config.js:33920:19)
+    at async Object.buildApp (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/vite@7.3.3_@types+node@25.6_a3f39bdab8a01c2e0887457013ce58fe/node_modules/vite/dist/node/chunks/config.js:33917:153)
+    at async CAC.<anonymous> (file:///D:/a/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/vite@7.3.3_@types+node@25.6_a3f39bdab8a01c2e0887457013ce58fe/node_modules/vite/dist/node/cli.js:629:3)
+D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\race-platform:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/race-platform@0.0.0 build: `vite build --config vite.config.ts`
+Exit status 1
+Error: Process completed with exit code 1.
