@@ -1,0 +1,31 @@
+Run pnpm --filter @workspace/desktop exec electron-builder --win --x64 --publish always
+  • electron-builder  version=25.1.8 os=10.0.20348
+  • loaded configuration  file=D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\desktop\electron-builder.yml
+  • author is missed in the package.json  appPackageFile=D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\desktop\package.json
+  • @electron/rebuild already used by electron-builder, please consider to remove excess dependency from devDependencies
+
+To ensure your native dependencies are always matched electron version, simply add script `"postinstall": "electron-builder install-app-deps" to your `package.json`
+  • "electron-squirrel-startup" dependency is not required for NSIS
+  • executing @electron/rebuild  electronVersion=33.4.11 arch=x64 buildFromSource=false appDir=./
+  • installing native dependencies  arch=x64
+  • preparing       moduleName=better-sqlite3 arch=x64
+  • finished        moduleName=better-sqlite3 arch=x64
+  • preparing       moduleName=@serialport/bindings-cpp arch=x64
+  • finished        moduleName=@serialport/bindings-cpp arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=33.4.11 appOutDir=release\win-unpacked
+  • downloading     url=https://github.com/electron/electron/releases/download/v33.4.11/electron-v33.4.11-win32-x64.zip size=115 MB parts=4
+  • downloaded      url=https://github.com/electron/electron/releases/download/v33.4.11/electron-v33.4.11-win32-x64.zip duration=366ms
+  • updating asar integrity executable resource  executablePath=release\win-unpacked\Rocky Mountain Race.exe
+  • default Electron icon is used  reason=application icon is not set
+  • downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z size=5.6 MB parts=1
+  • downloaded      url=https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z duration=257ms
+  • signing with signtool.exe  path=release\win-unpacked\Rocky Mountain Race.exe
+  • deprecated field  fields=["publisherName"] reason=please move to win.signtoolOptions.<field_name>
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • building        target=nsis file=release\Rocky Mountain Race Setup 0.0.1.exe archs=x64 oneClick=false perMachine=false
+  ⨯ cannot find specified resource "assets/icon.ico", nor relative to "D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\desktop\assets", neither relative to project dir ("D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\desktop")
+undefined
+D:\a\RMMX-Tracker\RMMX-Tracker\artifacts\desktop:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: electron-builder --win --x64 --publish always
+Error: Process completed with exit code 1.
