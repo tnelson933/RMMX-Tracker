@@ -1,14 +1,16 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, Image, StyleSheet } from "react-native";
 import { useColors } from "@/hooks/useColors";
 
 export function BrandBar() {
   const colors = useColors();
   return (
     <View style={styles.row}>
-      <View style={[styles.circle, { backgroundColor: colors.primary }]}>
-        <Text style={styles.logoText}>RM</Text>
-      </View>
+      <Image
+        source={require("../assets/images/rm-logo.png")}
+        style={styles.logo}
+        resizeMode="contain"
+      />
       <View>
         <Text style={[styles.brand, { color: colors.foreground }]}>RMMX</Text>
         <Text style={[styles.sub, { color: colors.mutedForeground }]}>TRACKER</Text>
@@ -24,19 +26,9 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
-  circle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoText: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#fff",
-    fontFamily: "Inter_700Bold",
-    letterSpacing: -0.5,
+  logo: {
+    width: 36,
+    height: 36,
   },
   brand: {
     fontSize: 15,
