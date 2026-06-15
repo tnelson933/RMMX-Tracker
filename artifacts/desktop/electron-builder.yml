@@ -64,8 +64,10 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  artifactName: "Rocky-Mountain-Race-Setup.${ext}"
 
 dmg:
+  artifactName: "Rocky-Mountain-Race-${arch}.${ext}"
   contents:
     - x: 130
       y: 220

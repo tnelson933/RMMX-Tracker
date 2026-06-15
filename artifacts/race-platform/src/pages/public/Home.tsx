@@ -22,9 +22,9 @@ import { format, parseISO } from "date-fns";
 const RELEASE_BASE = "https://github.com/tnelson933/RMMX-Tracker/releases/latest/download";
 const DOWNLOADS_READY = RELEASE_BASE.length > 0;
 const DOWNLOADS = {
-  macArm: RELEASE_BASE ? `${RELEASE_BASE}/Rocky.Mountain.Race-arm64.dmg` : "#",
-  macX64: RELEASE_BASE ? `${RELEASE_BASE}/Rocky.Mountain.Race-x64.dmg` : "#",
-  windows: RELEASE_BASE ? `${RELEASE_BASE}/Rocky.Mountain.Race.Setup.exe` : "#",
+  macArm: RELEASE_BASE ? `${RELEASE_BASE}/Rocky-Mountain-Race-arm64.dmg` : "#",
+  macX64: RELEASE_BASE ? `${RELEASE_BASE}/Rocky-Mountain-Race-x64.dmg` : "#",
+  windows: RELEASE_BASE ? `${RELEASE_BASE}/Rocky-Mountain-Race-Setup.exe` : "#",
 };
 
 type Tab = "today" | "upcoming" | "past";
