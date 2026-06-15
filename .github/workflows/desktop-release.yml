@@ -51,8 +51,16 @@ jobs:
       - name: Install Python setuptools (required by node-gyp on macOS)
         run: pip3 install setuptools
 
-      - name: Package macOS installer
-        run: pnpm --filter @workspace/desktop exec electron-builder --mac --x64 --arm64 --publish always
+      - name: Package macOS installers
+        run: pnpm --filter @workspace/desktop exec electron-builder --mac --x64 --arm64 --publish never
+
+      - name: Upload macOS assets to GitHub Release
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            artifacts/desktop/release/RMMX-Tracker-arm64.dmg \
+            artifacts/desktop/release/RMMX-Tracker-x64.dmg \
+            artifacts/desktop/release/latest-mac.yml \
+            --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -95,6 +103,14 @@ jobs:
         run: pnpm --filter @workspace/desktop run build
 
       - name: Package Windows installer
-        run: pnpm --filter @workspace/desktop exec electron-builder --win --x64 --publish always
+        run: pnpm --filter @workspace/desktop exec electron-builder --win --x64 --publish never
+
+      - name: Upload Windows assets to GitHub Release
+        shell: pwsh
+        run: |
+          gh release upload "${{ github.ref_name }}" `
+            "artifacts\desktop\release\RMMX-Tracker-Setup.exe" `
+            "artifacts\desktop\release\latest.yml" `
+            --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
