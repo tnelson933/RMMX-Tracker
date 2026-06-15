@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Calendar, MapPin, Trophy, ChevronRight, Radio,
   Flag, Clock, Activity, AlertCircle, CheckCircle,
-  Download, Monitor, Apple,
+  Download, Monitor, Apple, ChevronDown,
 } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
@@ -248,6 +248,7 @@ function PastCard({ result }: { result: RecentResultItem }) {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("today");
+  const [showDownloads, setShowDownloads] = useState(false);
   const [selectedState, setSelectedState] = useState("all");
 
   const { data: upcomingAll, isLoading: upcomingLoading } = useListUpcomingEvents({ query: {} as any });
@@ -326,67 +327,6 @@ export default function Home() {
                 </Button>
               </Link>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Desktop App Download */}
-      <section className="container mx-auto px-4 -mt-4">
-        <div className="border rounded-xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 bg-card shadow-sm">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-              <Download size={22} className="text-primary" />
-            </div>
-            <div>
-              <h2 className="font-heading font-bold text-lg uppercase tracking-tight">Desktop Scoring App</h2>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                For club organizers — run events offline, sync results to the cloud instantly.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col items-start sm:items-end gap-2 w-full md:w-auto">
-            <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-              {DOWNLOADS_READY ? (
-                <>
-                  <a href={DOWNLOADS.macArm} className="w-full sm:w-auto" title="macOS Apple Silicon (M1/M2/M3)">
-                    <Button variant="outline" size="sm" className="w-full font-heading uppercase tracking-wider gap-2 h-10 px-5">
-                      <Apple size={15} />
-                      Mac (Apple Silicon)
-                    </Button>
-                  </a>
-                  <a href={DOWNLOADS.macX64} className="w-full sm:w-auto" title="macOS Intel">
-                    <Button variant="outline" size="sm" className="w-full font-heading uppercase tracking-wider gap-2 h-10 px-5">
-                      <Apple size={15} />
-                      Mac (Intel)
-                    </Button>
-                  </a>
-                  <a href={DOWNLOADS.windows} className="w-full sm:w-auto" title="Windows 10/11 Installer">
-                    <Button size="sm" className="w-full font-heading uppercase tracking-wider gap-2 h-10 px-5">
-                      <Monitor size={15} />
-                      Windows
-                    </Button>
-                  </a>
-                </>
-              ) : (
-                <>
-                  <Button variant="outline" size="sm" disabled className="font-heading uppercase tracking-wider gap-2 h-10 px-5 opacity-50 cursor-not-allowed">
-                    <Apple size={15} />
-                    Mac (Apple Silicon)
-                  </Button>
-                  <Button variant="outline" size="sm" disabled className="font-heading uppercase tracking-wider gap-2 h-10 px-5 opacity-50 cursor-not-allowed">
-                    <Apple size={15} />
-                    Mac (Intel)
-                  </Button>
-                  <Button size="sm" disabled className="font-heading uppercase tracking-wider gap-2 h-10 px-5 opacity-50 cursor-not-allowed">
-                    <Monitor size={15} />
-                    Windows
-                  </Button>
-                </>
-              )}
-            </div>
-            {!DOWNLOADS_READY && (
-              <p className="text-xs text-muted-foreground">Coming soon — available when the app is published</p>
-            )}
           </div>
         </div>
       </section>
@@ -530,6 +470,40 @@ export default function Home() {
               Organizer Login
             </Button>
           </Link>
+        </div>
+
+        {/* Subtle desktop app download */}
+        <div className="mt-3 flex flex-col items-center gap-3">
+          <button
+            onClick={() => setShowDownloads(v => !v)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Download size={12} />
+            Download Desktop Scoring App
+            <ChevronDown size={12} className={`transition-transform duration-200 ${showDownloads ? "rotate-180" : ""}`} />
+          </button>
+          {showDownloads && (
+            <div className="flex flex-wrap justify-center gap-2">
+              <a href={DOWNLOADS.macArm} title="macOS Apple Silicon (M1/M2/M3)">
+                <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+                  <Apple size={13} />
+                  Mac (Apple Silicon)
+                </Button>
+              </a>
+              <a href={DOWNLOADS.macX64} title="macOS Intel">
+                <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+                  <Apple size={13} />
+                  Mac (Intel)
+                </Button>
+              </a>
+              <a href={DOWNLOADS.windows} title="Windows 10/11">
+                <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+                  <Monitor size={13} />
+                  Windows
+                </Button>
+              </a>
+            </div>
+          )}
         </div>
       </section>
     </div>
