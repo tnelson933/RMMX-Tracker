@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
+import { BrandBar } from "@/components/BrandBar";
 
 // ─── Auth form (shown when logged out) ──────────────────────────────────────
 
@@ -439,6 +440,7 @@ function ProfileList() {
     >
       {/* Account section */}
       <View>
+        <BrandBar />
         <Text style={s.pageTitle}>My Profiles</Text>
         <Text style={s.pageSubtitle}>All rider profiles linked to your account</Text>
       </View>

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
+import { BrandBar } from "@/components/BrandBar";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -607,6 +608,7 @@ export default function MyRacesScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
+        <BrandBar />
         <Text style={styles.headerTitle}>My Racing</Text>
         <View style={styles.statsRow}>
           <View style={styles.statBox}>

@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { BrandBar } from "@/components/BrandBar";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 
@@ -211,6 +212,7 @@ export default function EventsScreen() {
   const ListHeader = () => (
     <>
       <View style={styles.header}>
+        <BrandBar />
         <Text style={styles.headerTitle}>Upcoming Races</Text>
         <Text style={styles.headerSub}>
           {events ? `${events.length} event${events.length !== 1 ? "s" : ""} open` : "Loading…"}
