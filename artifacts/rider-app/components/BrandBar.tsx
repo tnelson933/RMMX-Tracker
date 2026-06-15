@@ -6,9 +6,11 @@ export function BrandBar() {
   const colors = useColors();
   return (
     <View style={styles.row}>
-      <View style={[styles.logoBox, { backgroundColor: colors.primary }]}>
-        <Text style={styles.logoText}>RM</Text>
-      </View>
+      <Image
+        source={require("../assets/images/icon.png")}
+        style={styles.logo}
+        resizeMode="contain"
+      />
       <View>
         <Text style={[styles.brand, { color: colors.foreground }]}>RMMX</Text>
         <Text style={[styles.sub, { color: colors.mutedForeground }]}>TRACKER</Text>
@@ -24,19 +26,10 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
-  logoBox: {
+  logo: {
     width: 34,
     height: 34,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoText: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: "#fff",
-    fontFamily: "Inter_700Bold",
-    letterSpacing: -0.5,
+    borderRadius: 17,
   },
   brand: {
     fontSize: 15,
