@@ -976,4 +976,9 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
   return res.json({ familyRiderIds, events: results });
 });
 
+// GET /rider/race-gas-balance — stub; returns 0 until race gas system is wired up
+router.get("/rider/race-gas-balance", requireRiderAuth, async (_req, res) => {
+  return res.json({ balance: 0, currency: "USD" });
+});
+
 export default router;

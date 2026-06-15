@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,8 +13,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useColors } from "@/hooks/useColors";
 import { BrandBar } from "@/components/BrandBar";
+import { useColors } from "@/hooks/useColors";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 
@@ -41,11 +42,25 @@ async function fetchEvents(): Promise<Event[]> {
   const all: Event[] = await res.json();
   return all
     .filter((e) => e.status === "registration_open" || e.status === "race_day")
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort((a, b) => {
+      // race_day events first, then by date
+      if (a.status === "race_day" && b.status !== "race_day") return -1;
+      if (b.status === "race_day" && a.status !== "race_day") return 1;
+      return new Date(a.date).getTime() - new Date(b.date).getTime();
+    });
 }
 
-function EventCard({ event, colors }: { event: Event; colors: ReturnType<typeof useColors> }) {
+function EventCard({
+  event,
+  colors,
+  onPress,
+}: {
+  event: Event;
+  colors: ReturnType<typeof useColors>;
+  onPress: () => void;
+}) {
   const statusInfo = STATUS_LABEL[event.status] ?? { label: event.status, color: "#9ca3af" };
+  const isLive = event.status === "race_day";
   const dateStr = new Date(event.date).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
@@ -57,8 +72,8 @@ function EventCard({ event, colors }: { event: Event; colors: ReturnType<typeof 
     card: {
       backgroundColor: colors.card,
       borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
+      borderWidth: isLive ? 1.5 : StyleSheet.hairlineWidth,
+      borderColor: isLive ? "#ef4444" : colors.border,
       padding: 16,
       marginHorizontal: 16,
       marginBottom: 10,
@@ -82,12 +97,21 @@ function EventCard({ event, colors }: { event: Event; colors: ReturnType<typeof 
       paddingVertical: 3,
       borderRadius: 20,
       backgroundColor: statusInfo.color + "22",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
     },
     badgeText: {
       fontSize: 11,
       fontWeight: "700",
       color: statusInfo.color,
       fontFamily: "Inter_600SemiBold",
+    },
+    liveDot: {
+      width: 5,
+      height: 5,
+      borderRadius: 3,
+      backgroundColor: "#ef4444",
     },
     metaRow: {
       flexDirection: "row",
@@ -100,7 +124,6 @@ function EventCard({ event, colors }: { event: Event; colors: ReturnType<typeof 
       color: colors.mutedForeground,
       fontFamily: "Inter_400Regular",
     },
-    divider: { color: colors.border, fontSize: 13 },
     feeTag: {
       marginTop: 10,
       flexDirection: "row",
@@ -113,13 +136,22 @@ function EventCard({ event, colors }: { event: Event; colors: ReturnType<typeof 
       color: colors.primary,
       fontFamily: "Inter_600SemiBold",
     },
+    chevron: {
+      position: "absolute",
+      right: 0,
+      top: 0,
+    },
   });
 
   return (
-    <View style={s.card}>
+    <Pressable
+      style={({ pressed }) => [s.card, pressed && { opacity: 0.75 }]}
+      onPress={onPress}
+    >
       <View style={s.topRow}>
         <Text style={s.name}>{event.name}</Text>
         <View style={s.badge}>
+          {isLive && <View style={s.liveDot} />}
           <Text style={s.badgeText}>{statusInfo.label}</Text>
         </View>
       </View>
@@ -141,19 +173,26 @@ function EventCard({ event, colors }: { event: Event; colors: ReturnType<typeof 
           <Text style={s.feeText}>${event.entryFee} entry</Text>
         </View>
       )}
-    </View>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginTop: 10, gap: 4 }}>
+        <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+          {isLive ? "View live schedule" : "View details"}
+        </Text>
+        <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+      </View>
+    </Pressable>
   );
 }
 
 export default function EventsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
 
   const { data: events, isLoading, error, refetch } = useQuery<Event[], Error>({
     queryKey: ["mobile-events"],
     queryFn: fetchEvents,
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
 
   const onRefresh = useCallback(async () => {
@@ -209,14 +248,19 @@ export default function EventsScreen() {
     },
   });
 
+  const liveCount = (events ?? []).filter(e => e.status === "race_day").length;
+  const subLabel = isLoading
+    ? "Loading…"
+    : liveCount > 0
+    ? `${liveCount} live now · ${(events?.length ?? 0) - liveCount} upcoming`
+    : `${events?.length ?? 0} event${(events?.length ?? 1) !== 1 ? "s" : ""} open`;
+
   const ListHeader = () => (
     <>
       <View style={styles.header}>
         <BrandBar />
         <Text style={styles.headerTitle}>Upcoming Races</Text>
-        <Text style={styles.headerSub}>
-          {events ? `${events.length} event${events.length !== 1 ? "s" : ""} open` : "Loading…"}
-        </Text>
+        <Text style={styles.headerSub}>{subLabel}</Text>
       </View>
       <View style={styles.listTop} />
     </>
@@ -256,7 +300,13 @@ export default function EventsScreen() {
       style={styles.container}
       data={events ?? []}
       keyExtractor={(item) => String(item.id)}
-      renderItem={({ item }) => <EventCard event={item} colors={colors} />}
+      renderItem={({ item }) => (
+        <EventCard
+          event={item}
+          colors={colors}
+          onPress={() => router.push(`/event/${item.id}` as any)}
+        />
+      )}
       ListHeaderComponent={<ListHeader />}
       ListFooterComponent={<View style={styles.listBottom} />}
       contentContainerStyle={(events?.length ?? 0) === 0 ? { flexGrow: 1 } : undefined}

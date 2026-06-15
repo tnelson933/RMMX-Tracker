@@ -1,22 +1,26 @@
 import React from "react";
 import { View, Text, Image, StyleSheet } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { RaceGasWidget } from "@/components/RaceGasWidget";
 
 export function BrandBar() {
   const colors = useColors();
   return (
     <View style={styles.row}>
-      <View style={styles.logoBacking}>
-        <Image
-          source={require("../assets/images/rm-logo.png")}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+      <View style={styles.left}>
+        <View style={styles.logoBacking}>
+          <Image
+            source={require("../assets/images/rm-logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
+        <View>
+          <Text style={[styles.brand, { color: colors.foreground }]}>RMMX</Text>
+          <Text style={[styles.sub, { color: colors.mutedForeground }]}>TRACKER</Text>
+        </View>
       </View>
-      <View>
-        <Text style={[styles.brand, { color: colors.foreground }]}>RMMX</Text>
-        <Text style={[styles.sub, { color: colors.mutedForeground }]}>TRACKER</Text>
-      </View>
+      <RaceGasWidget />
     </View>
   );
 }
@@ -25,8 +29,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "space-between",
     marginBottom: 10,
+  },
+  left: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   logoBacking: {
     width: 44,
