@@ -12,8 +12,6 @@ jobs:
   build-mac:
     name: Build macOS installer
     runs-on: macos-14
-    env:
-      PIP_BREAK_SYSTEM_PACKAGES: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,18 +49,16 @@ jobs:
       - name: Install Python setuptools (required by node-gyp on macOS)
         run: pip3 install setuptools
 
-      - name: Package macOS installers
-        run: pnpm --filter @workspace/desktop exec electron-builder --mac --x64 --arm64 --publish never
-
-      - name: Upload macOS assets to GitHub Release
-        run: |
-          gh release upload "${{ github.ref_name }}" \
-            artifacts/desktop/release/RMMX-Tracker-arm64.dmg \
-            artifacts/desktop/release/RMMX-Tracker-x64.dmg \
-            artifacts/desktop/release/latest-mac.yml \
-            --clobber
+      - name: Package macOS installer
+        run: pnpm --filter @workspace/desktop exec electron-builder --mac --x64 --arm64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List release artifacts
+        if: always()
+        run: |
+          echo "=== Contents of artifacts/desktop/release ==="
+          ls -lh artifacts/desktop/release/ 2>/dev/null || echo "release directory does not exist"
 
   build-windows:
     name: Build Windows installer
@@ -103,14 +99,17 @@ jobs:
         run: pnpm --filter @workspace/desktop run build
 
       - name: Package Windows installer
-        run: pnpm --filter @workspace/desktop exec electron-builder --win --x64 --publish never
-
-      - name: Upload Windows assets to GitHub Release
-        shell: pwsh
-        run: |
-          gh release upload "${{ github.ref_name }}" `
-            "artifacts\desktop\release\RMMX-Tracker-Setup.exe" `
-            "artifacts\desktop\release\latest.yml" `
-            --clobber
+        run: pnpm --filter @workspace/desktop exec electron-builder --win --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List release artifacts
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "=== Contents of artifacts/desktop/release ==="
+          if (Test-Path "artifacts/desktop/release") {
+            Get-ChildItem "artifacts/desktop/release" | Format-Table Name, Length, LastWriteTime -AutoSize
+          } else {
+            Write-Host "release directory does not exist - build likely failed"
+          }
