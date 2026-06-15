@@ -72,15 +72,6 @@ interface ScheduleEvent {
   motos: ScheduleMoto[];
 }
 
-interface PracticeSession {
-  sessionId: number;
-  sessionName: string;
-  startedAt: string | null;
-  endedAt: string | null;
-  lapCount: number;
-  bestLapMs: number | null;
-  laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
-}
 
 interface MotoResult {
   motoId: number;
@@ -107,14 +98,13 @@ interface EventHistory {
   totalPoints: number;
 }
 
-type FilterTab = "today" | "upcoming" | "near_me" | "history" | "practice";
+type FilterTab = "today" | "upcoming" | "near_me" | "history";
 
 const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
   { key: "today",    label: "Today",        icon: "zap" },
   { key: "upcoming", label: "Upcoming",     icon: "calendar" },
   { key: "near_me",  label: "Near Me",      icon: "map-pin" },
   { key: "history",  label: "Race History", icon: "award" },
-  { key: "practice", label: "Practice",     icon: "activity" },
 ];
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -296,52 +286,6 @@ function UpcomingCard({ event, colors }: { event: ScheduleEvent; colors: ReturnT
   );
 }
 
-function PracticeCard({ session, colors }: { session: PracticeSession; colors: ReturnType<typeof useColors> }) {
-  return (
-    <View style={{ marginHorizontal: 16, marginBottom: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: colors.card, overflow: "hidden" }}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-            {session.sessionName}
-          </Text>
-          {session.startedAt && (
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-              {fmtDate(session.startedAt)}
-            </Text>
-          )}
-        </View>
-        <View style={{ alignItems: "flex-end", gap: 2 }}>
-          <Text style={{ fontSize: 18, fontWeight: "800", color: "#f59e0b", fontFamily: "Inter_700Bold" }}>
-            {fmtLap(session.bestLapMs)}
-          </Text>
-          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Best Lap
-          </Text>
-        </View>
-      </View>
-      {session.laps.filter(l => (l.lapTimeMs ?? 0) > 0).slice(0, 5).map((lap, i, arr) => (
-        <View key={i} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: i < arr.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border }}>
-          <Text style={{ width: 28, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>L{lap.lapNumber}</Text>
-          <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>
-            {fmtLap(lap.lapTimeMs)}
-          </Text>
-          {lap.lapTimeMs === session.bestLapMs && (
-            <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: "#f59e0b22" }}>
-              <Text style={{ fontSize: 10, fontWeight: "700", color: "#f59e0b", fontFamily: "Inter_700Bold" }}>BEST</Text>
-            </View>
-          )}
-        </View>
-      ))}
-      {session.lapCount > 5 && (
-        <View style={{ padding: 10, alignItems: "center" }}>
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-            +{session.lapCount - 5} more laps
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-}
 
 function HistoryCard({ event, colors }: { event: EventHistory; colors: ReturnType<typeof useColors> }) {
   return (
@@ -410,7 +354,6 @@ export default function MyRacesScreen() {
 
   const [activeFilter, setActiveFilter] = useState<FilterTab>("today");
   const [schedule, setSchedule] = useState<{ familyRiderIds: number[]; events: ScheduleEvent[] } | null>(null);
-  const [practice, setPractice] = useState<{ sessions: PracticeSession[] } | null>(null);
   const [history, setHistory] = useState<EventHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -425,16 +368,11 @@ export default function MyRacesScreen() {
     setError(null);
     setLoading(true);
     try {
-      const [schedRes, practRes, histRes] = await Promise.all([
+      const [schedRes, histRes] = await Promise.all([
         riderFetch(`/api/rider/profiles/${primaryProfile.id}/schedule`),
-        riderFetch(`/api/rider/profiles/${primaryProfile.id}/practice`),
         riderFetch(`/api/rider/profiles/${primaryProfile.id}/history`),
       ]);
       if (schedRes.ok) setSchedule(await schedRes.json());
-      if (practRes.ok) {
-        const p = await practRes.json();
-        setPractice({ sessions: p.sessions ?? [] });
-      }
       if (histRes.ok) {
         const h = await histRes.json();
         setHistory(h.history ?? []);
@@ -477,7 +415,6 @@ export default function MyRacesScreen() {
 
   const raceDay   = schedule?.events.filter(e => e.status === "race_day") ?? [];
   const upcoming  = schedule?.events.filter(e => e.status === "registration_open") ?? [];
-  const sessions  = practice?.sessions ?? [];
 
   // Near Me: all my events (race_day + upcoming) filtered by the user's state
   const nearMeEvents = nearMeState
@@ -592,15 +529,6 @@ export default function MyRacesScreen() {
           <EmptyState icon="award" title="No race history" text="Your past race results will appear here once events are completed." colors={colors} />
         );
 
-      case "practice":
-        return sessions.length > 0 ? (
-          <>
-            <SectionHeader title="Practice Sessions" icon="activity" color="#f59e0b" />
-            {sessions.map(s => <PracticeCard key={s.sessionId} session={s} colors={colors} />)}
-          </>
-        ) : (
-          <EmptyState icon="activity" title="No practice sessions" text="Your RFID-tracked practice laps will show up here." colors={colors} />
-        );
     }
   }
 
