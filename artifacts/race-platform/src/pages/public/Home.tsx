@@ -18,10 +18,8 @@ import {
 import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
 
-// Set RELEASE_BASE to your GitHub releases download URL once the repo is published, e.g.:
-// "https://github.com/your-org/rocky-mountain-race/releases/latest/download"
-// Leave empty to show a "Coming soon" state instead of broken links.
-const RELEASE_BASE = "";
+// GitHub releases download base — update the tag if you pin to a specific version
+const RELEASE_BASE = "https://github.com/tnelson933/RMMX-Tracker/releases/latest/download";
 const DOWNLOADS_READY = RELEASE_BASE.length > 0;
 const DOWNLOADS = {
   macArm: RELEASE_BASE ? `${RELEASE_BASE}/Rocky.Mountain.Race-arm64.dmg` : "#",

@@ -83,4 +83,6 @@ afterPack: scripts/after-pack.js
 # here; electron-updater reads from this same provider at runtime.
 publish:
   provider: github
+  owner: tnelson933
+  repo: RMMX-Tracker
   releaseType: release
