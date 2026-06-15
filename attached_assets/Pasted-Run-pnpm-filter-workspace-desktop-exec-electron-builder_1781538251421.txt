@@ -1,0 +1,37 @@
+Run pnpm --filter @workspace/desktop exec electron-builder --mac --x64 --arm64 --publish always
+  • electron-builder  version=25.1.8 os=23.6.0
+  • loaded configuration  file=/Users/runner/work/RMMX-Tracker/RMMX-Tracker/artifacts/desktop/electron-builder.yml
+  • author is missed in the package.json  appPackageFile=/Users/runner/work/RMMX-Tracker/RMMX-Tracker/artifacts/desktop/package.json
+  • @electron/rebuild already used by electron-builder, please consider to remove excess dependency from devDependencies
+
+To ensure your native dependencies are always matched electron version, simply add script `"postinstall": "electron-builder install-app-deps" to your `package.json`
+  • executing @electron/rebuild  electronVersion=33.4.11 arch=x64 buildFromSource=false appDir=./
+  • installing native dependencies  arch=x64
+  • preparing       moduleName=better-sqlite3 arch=x64
+  • finished        moduleName=better-sqlite3 arch=x64
+  • preparing       moduleName=@serialport/bindings-cpp arch=x64
+  ⨯ (node:18605) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Traceback (most recent call last):
+  File "/Users/runner/work/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/node-gyp@9.4.1/node_modules/node-gyp/gyp/gyp_main.py", line 42, in <module>
+    import gyp  # noqa: E402
+    ^^^^^^^^^^
+  File "/Users/runner/work/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/node-gyp@9.4.1/node_modules/node-gyp/gyp/pylib/gyp/__init__.py", line 9, in <module>
+    import gyp.input
+  File "/Users/runner/work/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/node-gyp@9.4.1/node_modules/node-gyp/gyp/pylib/gyp/input.py", line 19, in <module>
+    from distutils.version import StrictVersion
+ModuleNotFoundError: No module named 'distutils'
+Error: `gyp` failed with exit code: 1
+    at ChildProcess.onCpExit (/Users/runner/work/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/node-gyp@9.4.1/node_modules/node-gyp/lib/configure.js:325:16)
+    at ChildProcess.emit (node:events:509:28)
+    at ChildProcess._handle.onexit (node:internal/child_process:295:12)
+
+
+  ⨯ node-gyp failed to rebuild '/Users/runner/work/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/@serialport+bindings-cpp@12.0.1/node_modules/@serialport/bindings-cpp'  failedTask=build stackTrace=Error: node-gyp failed to rebuild '/Users/runner/work/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/@serialport+bindings-cpp@12.0.1/node_modules/@serialport/bindings-cpp'
+    at ChildProcess.<anonymous> (/Users/runner/work/RMMX-Tracker/RMMX-Tracker/node_modules/.pnpm/@electron+rebuild@3.6.1/node_modules/@electron/rebuild/lib/module-type/node-gyp/node-gyp.js:121:24)
+    at ChildProcess.emit (node:events:509:28)
+    at ChildProcess._handle.onexit (node:internal/child_process:295:12)
+undefined
+/Users/runner/work/RMMX-Tracker/RMMX-Tracker/artifacts/desktop:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: electron-builder --mac --x64 --arm64 --publish always
+Error: Process completed with exit code 1.
