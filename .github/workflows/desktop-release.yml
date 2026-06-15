@@ -47,7 +47,7 @@ jobs:
         run: pnpm --filter @workspace/desktop run build
 
       - name: Install Python setuptools (required by node-gyp on macOS)
-        run: run: pip3 install setuptools --break-system-packages
+        run: pip3 install setuptools --break-system-packages
 
       - name: Package macOS installer
         run: pnpm --filter @workspace/desktop exec electron-builder --mac --x64 --arm64 --publish always
