@@ -18,13 +18,15 @@ import {
 import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
 
-// Update this to your GitHub repo once it's published, e.g.:
+// Set RELEASE_BASE to your GitHub releases download URL once the repo is published, e.g.:
 // "https://github.com/your-org/rocky-mountain-race/releases/latest/download"
-const RELEASE_BASE = "https://github.com/your-org/rocky-mountain-race/releases/latest/download";
+// Leave empty to show a "Coming soon" state instead of broken links.
+const RELEASE_BASE = "";
+const DOWNLOADS_READY = RELEASE_BASE.length > 0;
 const DOWNLOADS = {
-  macArm: `${RELEASE_BASE}/Rocky.Mountain.Race-arm64.dmg`,
-  macX64: `${RELEASE_BASE}/Rocky.Mountain.Race-x64.dmg`,
-  windows: `${RELEASE_BASE}/Rocky.Mountain.Race.Setup.exe`,
+  macArm: RELEASE_BASE ? `${RELEASE_BASE}/Rocky.Mountain.Race-arm64.dmg` : "#",
+  macX64: RELEASE_BASE ? `${RELEASE_BASE}/Rocky.Mountain.Race-x64.dmg` : "#",
+  windows: RELEASE_BASE ? `${RELEASE_BASE}/Rocky.Mountain.Race.Setup.exe` : "#",
 };
 
 type Tab = "today" | "upcoming" | "past";
@@ -344,37 +346,49 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-            <a
-              href={DOWNLOADS.macArm}
-              className="w-full sm:w-auto"
-              title="macOS Apple Silicon (M1/M2/M3)"
-            >
-              <Button variant="outline" size="sm" className="w-full font-heading uppercase tracking-wider gap-2 h-10 px-5">
-                <Apple size={15} />
-                Mac (Apple Silicon)
-              </Button>
-            </a>
-            <a
-              href={DOWNLOADS.macX64}
-              className="w-full sm:w-auto"
-              title="macOS Intel"
-            >
-              <Button variant="outline" size="sm" className="w-full font-heading uppercase tracking-wider gap-2 h-10 px-5">
-                <Apple size={15} />
-                Mac (Intel)
-              </Button>
-            </a>
-            <a
-              href={DOWNLOADS.windows}
-              className="w-full sm:w-auto"
-              title="Windows 10/11 Installer"
-            >
-              <Button size="sm" className="w-full font-heading uppercase tracking-wider gap-2 h-10 px-5">
-                <Monitor size={15} />
-                Windows
-              </Button>
-            </a>
+          <div className="flex flex-col items-start sm:items-end gap-2 w-full md:w-auto">
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+              {DOWNLOADS_READY ? (
+                <>
+                  <a href={DOWNLOADS.macArm} className="w-full sm:w-auto" title="macOS Apple Silicon (M1/M2/M3)">
+                    <Button variant="outline" size="sm" className="w-full font-heading uppercase tracking-wider gap-2 h-10 px-5">
+                      <Apple size={15} />
+                      Mac (Apple Silicon)
+                    </Button>
+                  </a>
+                  <a href={DOWNLOADS.macX64} className="w-full sm:w-auto" title="macOS Intel">
+                    <Button variant="outline" size="sm" className="w-full font-heading uppercase tracking-wider gap-2 h-10 px-5">
+                      <Apple size={15} />
+                      Mac (Intel)
+                    </Button>
+                  </a>
+                  <a href={DOWNLOADS.windows} className="w-full sm:w-auto" title="Windows 10/11 Installer">
+                    <Button size="sm" className="w-full font-heading uppercase tracking-wider gap-2 h-10 px-5">
+                      <Monitor size={15} />
+                      Windows
+                    </Button>
+                  </a>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" disabled className="font-heading uppercase tracking-wider gap-2 h-10 px-5 opacity-50 cursor-not-allowed">
+                    <Apple size={15} />
+                    Mac (Apple Silicon)
+                  </Button>
+                  <Button variant="outline" size="sm" disabled className="font-heading uppercase tracking-wider gap-2 h-10 px-5 opacity-50 cursor-not-allowed">
+                    <Apple size={15} />
+                    Mac (Intel)
+                  </Button>
+                  <Button size="sm" disabled className="font-heading uppercase tracking-wider gap-2 h-10 px-5 opacity-50 cursor-not-allowed">
+                    <Monitor size={15} />
+                    Windows
+                  </Button>
+                </>
+              )}
+            </div>
+            {!DOWNLOADS_READY && (
+              <p className="text-xs text-muted-foreground">Coming soon — available when the app is published</p>
+            )}
           </div>
         </div>
       </section>
