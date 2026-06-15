@@ -27,8 +27,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   logo: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
   },
   brand: {
     fontSize: 15,
