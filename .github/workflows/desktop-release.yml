@@ -12,6 +12,8 @@ jobs:
   build-mac:
     name: Build macOS installer
     runs-on: macos-14
+    env:
+      PIP_BREAK_SYSTEM_PACKAGES: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,16 +49,12 @@ jobs:
         run: pnpm --filter @workspace/desktop run build
 
       - name: Install Python setuptools (required by node-gyp on macOS)
-        run: pip3 install setuptools --break-system-packages
+        run: pip3 install setuptools
 
       - name: Package macOS installer
-        run: pnpm --filter @workspace/desktop exec electron-builder --mac --x64 --arm64 --publish never
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-installers
-          path: artifacts/desktop/release/*.dmg
+        run: pnpm --filter @workspace/desktop exec electron-builder --mac --x64 --arm64 --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
     name: Build Windows installer
@@ -97,28 +95,6 @@ jobs:
         run: pnpm --filter @workspace/desktop run build
 
       - name: Package Windows installer
-        run: pnpm --filter @workspace/desktop exec electron-builder --win --x64 --publish never
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: win-installers
-          path: artifacts/desktop/release/*.exe
-
-  publish-release:
-    name: Publish GitHub Release
-    needs: [build-mac, build-windows]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all installers
-        uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
-          path: dist
-
-      - name: Create release and upload installers
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "Desktop App ${{ github.ref_name }}"
-          files: dist/*
-          fail_on_unmatched_files: true
+        run: pnpm --filter @workspace/desktop exec electron-builder --win --x64 --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
