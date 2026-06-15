@@ -492,8 +492,9 @@ export default function MyRacesScreen() {
     statBox:       { flex: 1, backgroundColor: colors.muted, borderRadius: 10, padding: 12, alignItems: "center" },
     statValue:     { fontSize: 20, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" },
     statLabel:     { fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 },
-    filterBar:     { flexDirection: "row", paddingHorizontal: 14, paddingVertical: 10, gap: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.background },
-    filterChip:    { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
+    filterBar:     { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.background },
+    filterBarContent: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, gap: 8, paddingRight: 20 },
+    filterChip:    { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1, flexShrink: 0 },
     footer:        { height: insets.bottom + 32 },
   });
 
@@ -633,7 +634,7 @@ export default function MyRacesScreen() {
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.filterBar}
-        contentContainerStyle={{ paddingRight: 6 }}
+        contentContainerStyle={styles.filterBarContent}
       >
         {FILTER_TABS.map(tab => {
           const active = activeFilter === tab.key;
@@ -647,7 +648,7 @@ export default function MyRacesScreen() {
               onPress={() => setActiveFilter(tab.key)}
             >
               <Feather name={tab.icon as any} size={12} color={active ? "#fff" : colors.mutedForeground} />
-              <Text style={{ fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold", color: active ? "#fff" : colors.mutedForeground }}>
+              <Text style={{ fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold", color: active ? "#fff" : colors.mutedForeground, lineHeight: 18 }}>
                 {tab.label}
               </Text>
             </Pressable>
