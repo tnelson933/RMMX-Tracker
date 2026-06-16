@@ -60,7 +60,7 @@ function getRacePlatformDist(): string {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, "race-platform");
   }
-  return path.resolve(__dirname, "../../race-platform/dist");
+  return path.resolve(__dirname, "../../race-platform/dist/public");
 }
 
 function getDbPath(): string {
