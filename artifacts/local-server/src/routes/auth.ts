@@ -79,6 +79,43 @@ router.get("/auth/me", (req, res) => {
   return res.json(formatUser(user));
 });
 
+router.patch("/auth/me", async (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+  const db = getDb();
+  const { name, email, password } = req.body;
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (name !== undefined) {
+    const parts = String(name).trim().split(" ");
+    fields.push("first_name = ?", "last_name = ?");
+    values.push(parts[0] ?? "", parts.slice(1).join(" ") || "");
+  }
+  if (email !== undefined) {
+    fields.push("email = ?");
+    values.push(String(email).trim());
+  }
+  if (password) {
+    const hash = await bcrypt.hash(String(password), 10);
+    fields.push("password_hash = ?");
+    values.push(hash);
+  }
+
+  if (fields.length === 0) {
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as Record<string, unknown>;
+    return res.json(formatUser(user));
+  }
+
+  values.push(userId);
+  db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...(values as any[]));
+
+  const updated = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as Record<string, unknown>;
+  return res.json(formatUser(updated));
+});
+
 router.post("/auth/complete-tour", (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
