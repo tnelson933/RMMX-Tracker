@@ -54,11 +54,33 @@ export default function Login() {
       { data: { email: data.email, password: data.password, rememberMe: data.rememberMe } },
       {
         onSuccess: async () => {
-          // On desktop: wait for sync to finish pulling cloud data into SQLite,
-          // then wipe all cached query responses so the dashboard fetches fresh
-          // data instead of serving the empty-table snapshots taken before sync.
           if (isDesktop) {
-            try { await (window as any).electronAPI?.sync?.flush?.(); } catch { /* non-fatal */ }
+            const api = (window as any).electronAPI;
+
+            // Check whether cloud sync is already configured (credentials saved).
+            let hasSyncUrl = false;
+            try {
+              const state = (await api?.sync?.getState?.()) as { cloudUrl?: string | null } | null;
+              hasSyncUrl = !!state?.cloudUrl;
+            } catch { /* ignore */ }
+
+            if (!hasSyncUrl && VITE_CLOUD_URL) {
+              // Sync engine not running — credentials were never saved or were
+              // cleared (e.g. fresh install, app update).  Auto-configure it now
+              // using the credentials the user just proved are valid locally.
+              setCloudSyncing(true);
+              try {
+                await api?.auth?.cloudLogin(data.email, data.password, VITE_CLOUD_URL);
+              } catch { /* non-fatal */ }
+              setCloudSyncing(false);
+            } else if (hasSyncUrl) {
+              // Sync is configured — flush and wait so SQLite is fully populated
+              // before we invalidate the cache and the dashboard loads.
+              try { await api?.sync?.flush?.(); } catch { /* non-fatal */ }
+            }
+
+            // Wipe all query caches so the dashboard refetches from the
+            // now-populated SQLite rather than serving stale empty snapshots.
             await queryClient.invalidateQueries();
           }
           await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
