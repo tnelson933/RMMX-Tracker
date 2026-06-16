@@ -12,7 +12,7 @@ if (isNaN(port) || port <= 0) {
 
 const server = http.createServer(app);
 
-server.listen(port, () => {
+server.listen(port, "127.0.0.1", () => {
   const dbFile = process.env.SQLITE_FILE ?? "./race_data.db";
   const staticDir = process.env.STATIC_FILES_DIR;
 
