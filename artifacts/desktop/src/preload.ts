@@ -60,7 +60,6 @@ window.addEventListener("DOMContentLoaded", () => {
   injectSyncBar();
   injectSyncModal();
   injectSerialModal();
-  autoShowLoginIfNeeded();
 });
 
 // ── Sync status bar (top-right corner) ───────────────────────────────────────
@@ -555,16 +554,3 @@ function injectSerialModal(): void {
   window.addEventListener("rm-open-serial-settings", openSerialModal);
 }
 
-/**
- * Auto-show the login modal on first launch (when no credentials are stored).
- * Gives the page 1 second to finish rendering before showing the overlay.
- */
-function autoShowLoginIfNeeded(): void {
-  electronAPI.auth.getCredentials().then((creds) => {
-    if (!creds?.cloudUrl) {
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("rm-open-sync-settings"));
-      }, 1000);
-    }
-  }).catch(() => {});
-}
