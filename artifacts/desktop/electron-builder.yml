@@ -77,12 +77,3 @@ dmg:
       y: 220
       type: link
       path: /Applications
-
-# GitHub Releases — electron-builder uploads installers and auto-update metadata
-# here; electron-updater reads from this same provider at runtime.
-publish:
-  provider: github
-  owner: tnelson933
-  repo: RMMX-Tracker
-  releaseType: release
-  tagName: "desktop-v${version}"
