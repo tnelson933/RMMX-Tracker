@@ -180,6 +180,33 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_lap_crossings_moto_rfid
       ON lap_crossings (moto_id, rfid_number);
 
+    CREATE TABLE IF NOT EXISTS practice_sessions (
+      id          INTEGER PRIMARY KEY,
+      club_id     INTEGER NOT NULL,
+      name        TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'idle',
+      debounce_ms INTEGER NOT NULL DEFAULT 10000,
+      started_at  TEXT,
+      ended_at    TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS practice_crossings (
+      id            INTEGER PRIMARY KEY,
+      session_id    INTEGER NOT NULL,
+      rfid_number   TEXT NOT NULL,
+      rider_id      INTEGER,
+      rider_name    TEXT,
+      bib_number    TEXT,
+      crossing_time TEXT NOT NULL,
+      lap_number    INTEGER NOT NULL DEFAULT 0,
+      lap_time_ms   INTEGER,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_practice_crossings_session
+      ON practice_crossings (session_id, rfid_number);
+
     CREATE TABLE IF NOT EXISTS event_publication (
       id           INTEGER PRIMARY KEY,
       event_id     INTEGER NOT NULL UNIQUE,
