@@ -82,6 +82,8 @@ const onSiteRegSchema = z.object({
   rentTransponder: z.boolean().default(false),
   myLapsTransponderNumber: z.string().optional(),
   selectedPurchaseOptions: z.array(z.string()).default([]),
+  paymentMethod: z.enum(["cash", "waived", "other"]).default("cash"),
+  amountPaid: z.string().optional(),
 });
 type OnSiteRegForm = z.infer<typeof onSiteRegSchema>;
 
@@ -123,6 +125,8 @@ export default function Registrations() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const isDesktop = typeof (window as any).electronAPI !== "undefined";
+
   // ── Table state ─────────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
 
@@ -163,6 +167,7 @@ export default function Registrations() {
       streetAddress: "", city: "", homeState: "", zip: "",
       raceClass: "", bibNumber: "", clubIdNumber: "", bikeBrand: "",
       rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
+      paymentMethod: "cash" as const, amountPaid: "",
     },
   });
 
@@ -425,29 +430,39 @@ export default function Registrations() {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      const body: Record<string, unknown> = {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        phone: data.phone || undefined,
+        dateOfBirth: data.dateOfBirth || undefined,
+        emergencyContact: data.emergencyContact || undefined,
+        emergencyPhone: data.emergencyPhone || undefined,
+        streetAddress: data.streetAddress || undefined,
+        city: data.city || undefined,
+        homeState: data.homeState || undefined,
+        zip: data.zip || undefined,
+        raceClass: data.raceClass,
+        bibNumber: data.bibNumber || undefined,
+        clubIdNumber: data.clubIdNumber || undefined,
+        bikeBrand: data.bikeBrand || undefined,
+        rentTransponder: data.rentTransponder || undefined,
+        myLapsTransponderNumber: data.myLapsTransponderNumber || undefined,
+        selectedPurchaseOptions: eventPurchaseOptions.filter(o => data.selectedPurchaseOptions.includes(o.id)),
+      };
+
+      // On desktop: include payment info inline and confirm the registration immediately
+      if (isDesktop) {
+        body.paymentMethod = data.paymentMethod;
+        const parsed = parseFloat(data.amountPaid ?? "");
+        if (!isNaN(parsed) && parsed >= 0) body.amountPaid = parsed;
+        body.status = "confirmed";
+      }
+
       const res = await fetch(`/api/events/${eventId}/registrations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
-          phone: data.phone || undefined,
-          dateOfBirth: data.dateOfBirth || undefined,
-          emergencyContact: data.emergencyContact || undefined,
-          emergencyPhone: data.emergencyPhone || undefined,
-          streetAddress: data.streetAddress || undefined,
-          city: data.city || undefined,
-          homeState: data.homeState || undefined,
-          zip: data.zip || undefined,
-          raceClass: data.raceClass,
-          bibNumber: data.bibNumber || undefined,
-          clubIdNumber: data.clubIdNumber || undefined,
-          bikeBrand: data.bikeBrand || undefined,
-          rentTransponder: data.rentTransponder || undefined,
-          myLapsTransponderNumber: data.myLapsTransponderNumber || undefined,
-          selectedPurchaseOptions: eventPurchaseOptions.filter(o => data.selectedPurchaseOptions.includes(o.id)),
-        }),
+        body: JSON.stringify(body),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Registration failed");
@@ -455,7 +470,13 @@ export default function Registrations() {
       await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
       setRegSuccess({ id: json.id, riderName: json.riderName, raceClass: json.raceClass });
 
-      // If event has an entry fee, prompt for payment; otherwise show basic success
+      // Desktop: payment collected inline — go straight to success
+      if (isDesktop) {
+        setStep("reg-done");
+        return;
+      }
+
+      // Cloud: if event has an entry fee, prompt for payment; otherwise show basic success
       if (eventEntryFee && eventEntryFee > 0) {
         const rentalTotal = (data.rentTransponder && transponderRentalFee) ? transponderRentalFee : 0;
         const purchasesTotal = eventPurchaseOptions
@@ -901,6 +922,53 @@ export default function Registrations() {
               </div>
             </div>
 
+            {/* ── Payment (desktop walk-up only) ── */}
+            {isDesktop && (
+              <div className="space-y-3 rounded-lg border border-green-200 bg-green-50/50 p-4">
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b border-green-200 pb-1.5">Payment</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField control={form.control} name="paymentMethod" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Method</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="waived">Waived</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="amountPaid" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Amount Paid ($)</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder={eventEntryFee ? eventEntryFee.toFixed(2) : "0.00"}
+                            className="pl-7"
+                            {...field}
+                          />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                {eventEntryFee && eventEntryFee > 0 && (
+                  <p className="text-xs text-muted-foreground">Entry fee: ${eventEntryFee.toFixed(2)}</p>
+                )}
+              </div>
+            )}
+
             {submitError && (
               <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-3 py-2.5 text-sm flex items-center gap-2">
                 <AlertCircle size={15} className="shrink-0" />{submitError}
@@ -1047,7 +1115,7 @@ export default function Registrations() {
             })()}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className={`grid ${isDesktop ? "grid-cols-1" : "grid-cols-2"} gap-4`}>
             <button
               onClick={() => setStep("pay-cash")}
               className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 p-6 transition-all group"
@@ -1059,17 +1127,19 @@ export default function Registrations() {
               <span className="text-xs text-muted-foreground text-center">Record amount collected on site</span>
             </button>
 
-            <button
-              onClick={handleStartCardPayment}
-              disabled={submitting}
-              className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 p-6 transition-all group disabled:opacity-60"
-            >
-              <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-                {submitting ? <Loader2 size={28} className="text-blue-700 animate-spin" /> : <CreditCard size={28} className="text-blue-700" />}
-              </div>
-              <span className="font-heading font-bold uppercase tracking-wide">Card</span>
-              <span className="text-xs text-muted-foreground text-center">Stripe checkout via link or QR</span>
-            </button>
+            {!isDesktop && (
+              <button
+                onClick={handleStartCardPayment}
+                disabled={submitting}
+                className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-primary/50 hover:bg-primary/5 p-6 transition-all group disabled:opacity-60"
+              >
+                <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                  {submitting ? <Loader2 size={28} className="text-blue-700 animate-spin" /> : <CreditCard size={28} className="text-blue-700" />}
+                </div>
+                <span className="font-heading font-bold uppercase tracking-wide">Card</span>
+                <span className="text-xs text-muted-foreground text-center">Stripe checkout via link or QR</span>
+              </button>
+            )}
           </div>
 
           {paymentError && (
