@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mountain, Mail, Lock, UserPlus, LogIn, AlertCircle } from "lucide-react";
+import { Mountain, Mail, Lock, UserPlus, LogIn, AlertCircle, Zap } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +63,15 @@ export default function RiderLogin() {
 
   return (
     <div className="min-h-screen h-screen overflow-y-auto hide-scrollbar bg-background flex flex-col items-center justify-center p-4">
+      {/* Race Gas — always top-right */}
+      <div className="fixed top-4 right-4 flex items-center gap-1.5 bg-muted border border-border rounded-lg px-2.5 py-1.5 select-none z-50">
+        <Zap size={11} className="text-green-600 fill-green-600" />
+        <div className="flex flex-col leading-none">
+          <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground">Race Gas</span>
+          <span className="text-sm font-extrabold text-green-600">$0.00</span>
+        </div>
+      </div>
+
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center gap-3 mb-8">
           <Mountain size={32} className="text-primary" />
