@@ -380,6 +380,8 @@ export function initDb() {
     ["events", "min_lap_ms                 INTEGER"],
     // keep legacy column name for backward compat (old rows may reference it)
     ["events", "min_lap_times              TEXT NOT NULL DEFAULT '{}'"],
+    // users
+    ["users", "tour_completed INTEGER NOT NULL DEFAULT 0"],
     // riders
     ["riders", "bib_number            TEXT"],
     ["riders", "date_of_birth         TEXT"],
