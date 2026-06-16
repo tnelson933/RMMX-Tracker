@@ -18,9 +18,89 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRight, Unlink } from "lucide-react";
+import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRight, Unlink, Globe } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+
+const isDesktop = typeof (window as any).electronAPI !== "undefined";
+
+function DesktopStripeRedirect() {
+  const [cloudUrl, setCloudUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    (window as any).electronAPI?.sync?.getState?.()
+      .then((s: any) => setCloudUrl(s?.cloudUrl ?? null))
+      .catch(() => {});
+  }, []);
+
+  const paymentsUrl = cloudUrl ? `${cloudUrl.replace(/\/$/, "")}/payments` : null;
+
+  return (
+    <div className="p-8 max-w-3xl mx-auto space-y-8">
+      <div>
+        <h1 className="text-4xl font-heading font-bold uppercase tracking-tight">Payments</h1>
+        <p className="text-muted-foreground mt-1">
+          Connect your Stripe account to collect entry fees from riders at registration.
+        </p>
+      </div>
+
+      <Card className="border-blue-500/30 bg-blue-500/5">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-start gap-4">
+            <div className="bg-blue-500/15 rounded-full p-3 shrink-0">
+              <Globe size={24} className="text-blue-400" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="font-heading font-semibold uppercase tracking-wide text-base">
+                Manage Stripe via Cloud Portal
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Stripe Connect requires your cloud server to handle the OAuth flow and hold your API keys securely.
+                Connect or manage your account from the web portal — your connection status syncs automatically to the desktop.
+              </p>
+            </div>
+          </div>
+
+          {paymentsUrl ? (
+            <Button
+              className="font-heading uppercase tracking-wider"
+              size="lg"
+              onClick={() => window.open(paymentsUrl, "_blank")}
+            >
+              <ExternalLink size={16} className="mr-2" />
+              Open Payments in Cloud Portal
+            </Button>
+          ) : (
+            <div className="text-sm text-muted-foreground rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center gap-2">
+              <AlertCircle size={14} className="text-amber-400 shrink-0" />
+              No cloud URL configured. Log out and log back in to connect this app to your cloud account.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="bg-muted/30">
+        <CardContent className="pt-6">
+          <h3 className="font-heading font-semibold uppercase tracking-wide text-sm mb-3">How it works</h3>
+          <div className="grid gap-3 sm:grid-cols-3 text-sm text-muted-foreground">
+            <div className="space-y-1">
+              <div className="font-medium text-foreground">1. Connect (web)</div>
+              <div>Visit Payments in your cloud portal to link your Stripe Express account once.</div>
+            </div>
+            <div className="space-y-1">
+              <div className="font-medium text-foreground">2. Enable on Events</div>
+              <div>Check "Collect Payments" and set an entry fee when creating events — works on desktop too.</div>
+            </div>
+            <div className="space-y-1">
+              <div className="font-medium text-foreground">3. Get Paid</div>
+              <div>Riders pay at registration and funds deposit directly to your Stripe account.</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 function useStripeConnectStatus() {
   return useQuery({
@@ -34,6 +114,8 @@ function useStripeConnectStatus() {
 }
 
 export default function StripeConnect() {
+  if (isDesktop) return <DesktopStripeRedirect />;
+
   const [location] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
