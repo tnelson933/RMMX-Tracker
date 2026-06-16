@@ -15,7 +15,7 @@ export function initDb() {
       id            INTEGER PRIMARY KEY,
       club_id       INTEGER NOT NULL,
       email         TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
+      password_hash TEXT,
       role          TEXT NOT NULL DEFAULT 'organizer',
       first_name    TEXT,
       last_name     TEXT,
