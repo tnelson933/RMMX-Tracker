@@ -9,6 +9,7 @@ import motosRouter from "./motos";
 import timingRouter from "./timing";
 import statusRouter from "./status";
 import desktopRouter from "./desktop";
+import practiceRouter from "./practice";
 
 const router = Router();
 
@@ -22,6 +23,7 @@ router.use(registrationsRouter);
 router.use(rfidRouter);
 router.use(motosRouter);
 router.use(timingRouter);
+router.use(practiceRouter);
 
 router.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
