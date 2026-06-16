@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -33,6 +34,7 @@ import Series from "@/pages/organizer/Series";
 import PointsTables from "@/pages/organizer/PointsTables";
 import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
 import UsersAdmin from "@/pages/organizer/UsersAdmin";
+import AdminNotifications from "@/pages/organizer/AdminNotifications";
 import SetPassword from "@/pages/public/SetPassword";
 import StripeConnect from "@/pages/organizer/StripeConnect";
 import StandalonePractice from "@/pages/organizer/StandalonePractice";
@@ -57,6 +59,32 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Listens for Electron sync-engine state changes and invalidates all React
+ * Query caches whenever a cloud pull completes (syncing → idle transition).
+ * This ensures events/riders/etc appear immediately after the first sync
+ * without requiring the user to navigate away and back.
+ */
+function DesktopSyncWatcher() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (!api?.sync?.onChange) return;
+    let prevStatus = "";
+    api.sync.getState?.().then((state: { status: string }) => {
+      prevStatus = state.status;
+    }).catch(() => {});
+    const unsub = api.sync.onChange((state: { status: string }) => {
+      if (prevStatus === "syncing" && state.status === "idle") {
+        queryClient.invalidateQueries();
+      }
+      prevStatus = state.status;
+    });
+    return () => { if (typeof unsub === "function") unsub(); };
+  }, [queryClient]);
+  return null;
+}
 
 const Loading = () => (
   <div className="flex items-center justify-center h-screen bg-sidebar">
@@ -222,6 +250,9 @@ function Router() {
       <Route path="/admin/users">
         <OrganizerOnlyRoute><UsersAdmin /></OrganizerOnlyRoute>
       </Route>
+      <Route path="/admin/notifications">
+        <OrganizerOnlyRoute><AdminNotifications /></OrganizerOnlyRoute>
+      </Route>
 
       <Route component={NotFound} />
     </Switch>
@@ -235,6 +266,7 @@ function App() {
         <RiderAuthProvider>
           <BroadcastProvider>
             <TooltipProvider>
+              <DesktopSyncWatcher />
               <OfflineBanner />
               <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
                 <Router />
