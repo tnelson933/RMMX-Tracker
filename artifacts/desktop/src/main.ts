@@ -107,45 +107,80 @@ function startLocalServer(): Promise<void> {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
+  // Collect stderr so we can show the real crash reason in the error dialog.
+  const stderrLines: string[] = [];
+
   localServerProcess.stdout?.on("data", (data: Buffer) => {
     process.stdout.write(`[local-server] ${data.toString()}`);
   });
 
   localServerProcess.stderr?.on("data", (data: Buffer) => {
-    process.stderr.write(`[local-server] ${data.toString()}`);
+    const text = data.toString();
+    process.stderr.write(`[local-server] ${text}`);
+    stderrLines.push(...text.split("\n").filter(Boolean));
+    if (stderrLines.length > 40) stderrLines.splice(0, stderrLines.length - 40);
   });
 
-  localServerProcess.on("exit", (code) => {
-    if (code !== 0 && code !== null) {
-      console.error(`[local-server] exited with code ${code}`);
-    }
-    localServerProcess = null;
-  });
-
-  return waitForLocalServer();
-}
-
-function waitForLocalServer(): Promise<void> {
-  const deadline = Date.now() + STARTUP_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
+    let settled = false;
+    function fail(err: Error) {
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    }
+    function succeed() {
+      if (!settled) {
+        settled = true;
+        resolve();
+      }
+    }
+
+    // Fail fast if the process exits before the healthcheck passes.
+    localServerProcess!.on("exit", (code) => {
+      localServerProcess = null;
+      if (!settled) {
+        const detail = stderrLines.slice(-20).join("\n") || "(no output)";
+        fail(
+          new Error(
+            `Local server exited with code ${code ?? "null"}.\n\nOutput:\n${detail}`,
+          ),
+        );
+      }
+    });
+
+    // Poll the healthcheck endpoint until the server is up.
+    const deadline = Date.now() + STARTUP_TIMEOUT_MS;
     function probe() {
+      if (settled) return;
       const req = http.get(
         `http://127.0.0.1:${LOCAL_PORT}/api/healthz`,
         (res) => {
           if (res.statusCode === 200) {
-            resolve();
+            succeed();
           } else if (Date.now() < deadline) {
             setTimeout(probe, 300);
           } else {
-            reject(new Error("Local server did not start in time"));
+            const detail = stderrLines.slice(-20).join("\n") || "(no output)";
+            fail(
+              new Error(
+                `Local server did not start in time.\n\nOutput:\n${detail}`,
+              ),
+            );
           }
         },
       );
       req.on("error", () => {
+        if (settled) return;
         if (Date.now() < deadline) {
           setTimeout(probe, 300);
         } else {
-          reject(new Error("Local server did not respond in time"));
+          const detail = stderrLines.slice(-20).join("\n") || "(no output)";
+          fail(
+            new Error(
+              `Local server did not respond in time.\n\nOutput:\n${detail}`,
+            ),
+          );
         }
       });
       req.end();
