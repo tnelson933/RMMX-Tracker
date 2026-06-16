@@ -40,23 +40,36 @@ exports.default = async function (context) {
   // These live at resources/local-server regardless of asar mode and are NOT
   // rebuilt by electron-builder's built-in @electron/rebuild step.
   const localServerPath = path.join(appOutDir, "resources", "local-server");
-  if (fs.existsSync(localServerPath)) {
-    console.log(`[after-pack] Rebuilding local-server native modules at: ${localServerPath}`);
-    try {
-      await rebuild({
-        buildPath: localServerPath,
-        electronVersion,
-        arch: archStr,
-        onlyModules: ["better-sqlite3"],
-        force: true,
-      });
-      console.log("[after-pack] Local-server rebuild complete.");
-    } catch (err) {
-      console.error("[after-pack] ERROR rebuilding local-server native modules:", err.message ?? err);
-      throw err;
-    }
-  } else {
+
+  if (!fs.existsSync(localServerPath)) {
     console.log(`[after-pack] local-server path not found (${localServerPath}), skipping.`);
+    console.log("[after-pack] Done.");
+    return;
+  }
+
+  // @electron/rebuild requires a package.json at buildPath.
+  // electron-builder.yml copies ../local-server/package.json via extraResources,
+  // but as a safety net copy it here if missing.
+  const localServerPkg = path.join(localServerPath, "package.json");
+  if (!fs.existsSync(localServerPkg)) {
+    console.log(`[after-pack] package.json missing from local-server output — copying from source`);
+    const sourcePkg = path.join(process.cwd(), "..", "local-server", "package.json");
+    fs.copyFileSync(sourcePkg, localServerPkg);
+  }
+
+  console.log(`[after-pack] Rebuilding local-server native modules at: ${localServerPath}`);
+  try {
+    await rebuild({
+      buildPath: localServerPath,
+      electronVersion,
+      arch: archStr,
+      onlyModules: ["better-sqlite3"],
+      force: true,
+    });
+    console.log("[after-pack] Local-server rebuild complete.");
+  } catch (err) {
+    console.error("[after-pack] ERROR rebuilding local-server native modules:", err.message ?? err);
+    throw err;
   }
 
   console.log("[after-pack] Done.");
