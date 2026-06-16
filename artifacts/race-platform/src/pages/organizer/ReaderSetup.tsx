@@ -377,18 +377,20 @@ export default function ReaderSetup() {
         </div>
       </div>
 
-      {/* OS picker */}
-      <div className="flex items-center gap-2 text-sm">
-        <span className="font-medium text-muted-foreground">My laptop runs:</span>
-        <button
-          onClick={() => setOs("windows")}
-          className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${os === "windows" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-        >Windows</button>
-        <button
-          onClick={() => setOs("mac")}
-          className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${os === "mac" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-        >Mac</button>
-      </div>
+      {/* OS picker — only needed for Python bridge downloads; hidden on desktop MyLaps */}
+      {!(isDesktop && tech === "mylaps") && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="font-medium text-muted-foreground">My laptop runs:</span>
+          <button
+            onClick={() => setOs("windows")}
+            className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${os === "windows" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+          >Windows</button>
+          <button
+            onClick={() => setOs("mac")}
+            className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${os === "mac" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+          >Mac</button>
+        </div>
+      )}
 
       {/* Steps */}
       <div className="border rounded-xl bg-card overflow-hidden divide-y">
