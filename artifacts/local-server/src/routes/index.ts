@@ -8,11 +8,13 @@ import rfidRouter from "./rfid";
 import motosRouter from "./motos";
 import timingRouter from "./timing";
 import statusRouter from "./status";
+import desktopRouter from "./desktop";
 
 const router = Router();
 
 router.use(healthRouter);
 router.use(statusRouter);
+router.use(desktopRouter);
 router.use(authRouter);
 router.use(eventsRouter);
 router.use(checkinsRouter);
