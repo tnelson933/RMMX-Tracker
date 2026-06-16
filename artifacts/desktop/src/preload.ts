@@ -62,8 +62,31 @@ const electronAPI = {
       email: string,
       password: string,
       fallbackCloudUrl: string,
-    ): Promise<{ ok: boolean; error?: string }> =>
+    ): Promise<{ ok: boolean; error?: string; syncWarning?: string }> =>
       ipcRenderer.invoke("auth:cloudLogin", email, password, fallbackCloudUrl),
+  },
+
+  ai: {
+    suggestPointsTable: (body: {
+      scoringDescription: string;
+      motoDescription?: string;
+    }): Promise<{ ok: boolean; status: number; data: unknown }> =>
+      ipcRenderer.invoke("ai:suggestPointsTable", body),
+    tweakPointsTable: (body: {
+      instruction: string;
+      currentTable: unknown;
+    }): Promise<{ ok: boolean; status: number; data: unknown }> =>
+      ipcRenderer.invoke("ai:tweakPointsTable", body),
+    listConversations: (): Promise<{ ok: boolean; status: number; data: unknown }> =>
+      ipcRenderer.invoke("ai:listConversations"),
+    createConversation: (title: string): Promise<{ ok: boolean; status: number; data: unknown }> =>
+      ipcRenderer.invoke("ai:createConversation", title),
+    getConversation: (id: number): Promise<{ ok: boolean; status: number; data: unknown }> =>
+      ipcRenderer.invoke("ai:getConversation", id),
+    deleteConversation: (id: number): Promise<{ ok: boolean; status: number; data: unknown }> =>
+      ipcRenderer.invoke("ai:deleteConversation", id),
+    sendMessage: (convId: number, content: string): Promise<{ ok: boolean; text?: string; error?: string }> =>
+      ipcRenderer.invoke("ai:sendMessage", convId, content),
   },
 
   app: {
@@ -102,6 +125,14 @@ function injectSyncBar(): void {
       pointer-events: none;
       backdrop-filter: blur(4px);
       transition: opacity 0.2s;
+      max-width: 480px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #rm-sync-bar.error {
+      pointer-events: auto;
+      cursor: pointer;
     }
     #rm-sync-bar .dot {
       width: 7px;
@@ -148,9 +179,17 @@ function injectSyncBar(): void {
       case "offline":
         label.textContent = `Offline — ${state.pendingCount} pending`;
         break;
-      case "error":
-        label.textContent = `Sync error — ${state.pendingCount} pending`;
+      case "error": {
+        const snippet = state.lastError
+          ? state.lastError.replace(/\n/g, " ").slice(0, 100)
+          : "unknown error";
+        label.textContent = `Sync error: ${snippet}`;
+        bar.title = state.lastError ?? "Unknown sync error";
+        bar.onclick = () => {
+          if (state.lastError) alert(`Cloud Sync Error:\n\n${state.lastError}`);
+        };
         break;
+      }
     }
   }
 
