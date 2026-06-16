@@ -18,6 +18,8 @@ files:
   - node_modules/**/*
 
 extraResources:
+  - from: ../local-server/package.json
+    to: local-server/package.json
   - from: ../local-server/dist
     to: local-server/dist
     filter:
