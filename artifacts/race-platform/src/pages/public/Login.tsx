@@ -23,6 +23,7 @@ const loginSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
   password: z.string().min(1, { message: "Password is required." }),
   rememberMe: z.boolean().default(false),
+  cloudUrl: z.string().optional().default(""),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -33,6 +34,7 @@ export default function Login() {
   const loginMutation = useLogin();
   const { isAuthenticated } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
 
@@ -46,6 +48,7 @@ export default function Login() {
       email: "",
       password: "",
       rememberMe: false,
+      cloudUrl: VITE_CLOUD_URL ?? "",
     },
   });
 
@@ -90,7 +93,7 @@ export default function Login() {
           // no password hash (account not activated locally), automatically try to
           // log in to the cloud and pull all data down, then retry locally.
           if (isDesktop) {
-            const fallbackUrl = VITE_CLOUD_URL ?? "";
+            const fallbackUrl = data.cloudUrl?.trim() || VITE_CLOUD_URL || "";
             setCloudSyncing(true);
             setAuthError(null);
             try {
@@ -98,10 +101,14 @@ export default function Login() {
                 data.email,
                 data.password,
                 fallbackUrl,
-              ) as { ok: boolean; error?: string };
+              ) as { ok: boolean; error?: string; syncWarning?: string };
 
               if (result.ok) {
-                // Cloud sync succeeded — retry local login with freshly synced data.
+                // Cloud sync succeeded — warn if data pull had issues but still try local login.
+                if (result.syncWarning) {
+                  setSyncWarning(result.syncWarning);
+                }
+                // Retry local login with freshly synced data.
                 // cloudLogin already awaited flush(), so data is in SQLite.
                 // Invalidate all query caches so the dashboard refetches clean data.
                 loginMutation.mutate(
@@ -137,6 +144,7 @@ export default function Login() {
 
   const onSubmit = (data: LoginFormValues) => {
     setAuthError(null);
+    setSyncWarning(null);
     attemptLocalLogin(data);
   };
 
@@ -164,6 +172,17 @@ export default function Login() {
               <RefreshCw size={16} className="text-blue-400 shrink-0 animate-spin" />
               <div className="text-sm text-blue-400 font-medium">
                 Syncing your account from the cloud… this takes a few seconds.
+              </div>
+            </div>
+          )}
+
+          {syncWarning && !cloudSyncing && (
+            <div className="mb-6 rounded-md border border-yellow-400 bg-yellow-400/10 px-4 py-3 flex items-start gap-3">
+              <ShieldAlert size={16} className="text-yellow-400 shrink-0 mt-0.5" />
+              <div className="text-sm text-yellow-300">
+                <p className="font-semibold mb-1">Cloud sync warning — some data may be missing</p>
+                <p className="text-xs opacity-90 font-mono break-all">{syncWarning}</p>
+                <p className="text-xs opacity-70 mt-1">Check the cloud URL in Sync Settings and retry login.</p>
               </div>
             </div>
           )}
@@ -243,6 +262,32 @@ export default function Login() {
                   </FormItem>
                 )}
               />
+
+              {isDesktop && (
+                <FormField
+                  control={form.control}
+                  name="cloudUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="font-heading uppercase tracking-wider text-muted-foreground font-bold flex items-center gap-2">
+                        <Cloud size={14} />
+                        Cloud Server URL
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="https://your-rmmx-app.replit.app"
+                          {...field}
+                          className="h-12 bg-muted/50 focus:bg-background border-muted-foreground/20 text-base font-mono"
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Address of your deployed RMMX cloud server
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}
