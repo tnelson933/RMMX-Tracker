@@ -3,6 +3,52 @@ import { getDb } from "../db";
 
 const router = Router();
 
+router.get("/rfid", (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+  const db = getDb();
+  const user = db
+    .prepare("SELECT club_id FROM users WHERE id = ?")
+    .get(userId) as { club_id: number } | undefined;
+  if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+  const { eventId, riderId } = req.query;
+
+  let sql =
+    "SELECT ra.id, ra.rider_id, ra.event_id, ra.rfid_number, " +
+    "r.first_name, r.last_name " +
+    "FROM rfid_assignments ra " +
+    "INNER JOIN riders r ON r.id = ra.rider_id " +
+    "INNER JOIN events e ON e.id = ra.event_id " +
+    "WHERE e.club_id = ?";
+  const params: (number | string)[] = [user.club_id];
+
+  if (eventId) {
+    sql += " AND ra.event_id = ?";
+    params.push(Number(eventId));
+  }
+  if (riderId) {
+    sql += " AND ra.rider_id = ?";
+    params.push(Number(riderId));
+  }
+
+  const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
+
+  const assignments = rows.map((r) => ({
+    id: r.id,
+    riderId: r.rider_id,
+    eventId: r.event_id,
+    rfidNumber: r.rfid_number,
+    rider: {
+      firstName: r.first_name,
+      lastName: r.last_name,
+    },
+  }));
+
+  return res.json(assignments);
+});
+
 router.post("/rfid/assign", (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
