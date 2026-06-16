@@ -1,13 +1,10 @@
 /**
- * after-pack.js — Rebuilds native Node.js modules for the target Electron version.
- * electron-builder runs this after packing but before signing.
+ * after-pack.js — Rebuilds native Node.js modules for the local-server extraResources.
  *
- * Rebuilds in TWO locations:
- *  1. resources/app[.asar.unpacked]/node_modules — Electron main process (serialport, better-sqlite3)
- *  2. resources/local-server/node_modules        — local Express server (better-sqlite3)
- *
- * Handles both asar (default in eb v25: resources/app.asar.unpacked) and
- * non-asar layouts (resources/app).
+ * electron-builder's built-in @electron/rebuild already handles native modules
+ * in the Electron main process (better-sqlite3, serialport in node_modules/).
+ * This script only needs to rebuild the local-server's native deps, which are
+ * copied via extraResources and are NOT touched by the built-in rebuild step.
  */
 
 const { rebuild } = require("@electron/rebuild");
@@ -36,43 +33,15 @@ exports.default = async function (context) {
   const appOutDir = context.appOutDir;
   const archStr = ARCH_NAMES[context.arch] ?? "x64";
 
-  console.log(`[after-pack] electronVersion=${electronVersion} arch=${archStr} (raw=${context.arch})`);
+  console.log(`[after-pack] electronVersion=${electronVersion} arch=${archStr}`);
   console.log(`[after-pack] appOutDir=${appOutDir}`);
 
-  // 1. Rebuild native modules used by the Electron main process.
-  //    eb v25 defaults to asar, so unpacked natives land in app.asar.unpacked.
-  //    Non-asar builds use app/ directly.
-  const appPathCandidates = [
-    path.join(appOutDir, "resources", "app"),
-    path.join(appOutDir, "resources", "app.asar.unpacked"),
-  ];
-  const appPath = appPathCandidates.find((p) => fs.existsSync(p));
-
-  if (appPath) {
-    console.log(`[after-pack] Rebuilding native modules for Electron main process at: ${appPath}`);
-    try {
-      await rebuild({
-        buildPath: appPath,
-        electronVersion,
-        arch: archStr,
-        onlyModules: ["better-sqlite3", "serialport", "@serialport/bindings-cpp"],
-        force: true,
-      });
-      console.log("[after-pack] Main process native module rebuild complete.");
-    } catch (err) {
-      console.error("[after-pack] ERROR rebuilding main process native modules:", err.message ?? err);
-      throw err;
-    }
-  } else {
-    console.log(`[after-pack] No app directory found at either candidate path — skipping main process rebuild.`);
-    console.log(`[after-pack]   Checked: ${appPathCandidates.join(", ")}`);
-  }
-
-  // 2. Rebuild native modules bundled with the local-server (extraResources).
-  //    These are always at resources/local-server regardless of asar mode.
+  // Rebuild native modules bundled with the local-server (extraResources).
+  // These live at resources/local-server regardless of asar mode and are NOT
+  // rebuilt by electron-builder's built-in @electron/rebuild step.
   const localServerPath = path.join(appOutDir, "resources", "local-server");
   if (fs.existsSync(localServerPath)) {
-    console.log(`[after-pack] Rebuilding native modules for local-server at: ${localServerPath}`);
+    console.log(`[after-pack] Rebuilding local-server native modules at: ${localServerPath}`);
     try {
       await rebuild({
         buildPath: localServerPath,
@@ -81,7 +50,7 @@ exports.default = async function (context) {
         onlyModules: ["better-sqlite3"],
         force: true,
       });
-      console.log("[after-pack] Local-server native module rebuild complete.");
+      console.log("[after-pack] Local-server rebuild complete.");
     } catch (err) {
       console.error("[after-pack] ERROR rebuilding local-server native modules:", err.message ?? err);
       throw err;
@@ -90,5 +59,5 @@ exports.default = async function (context) {
     console.log(`[after-pack] local-server path not found (${localServerPath}), skipping.`);
   }
 
-  console.log("[after-pack] All done.");
+  console.log("[after-pack] Done.");
 };
