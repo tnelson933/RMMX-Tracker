@@ -1,9 +1,31 @@
 import { Link, useLocation } from "wouter";
-import { Mountain, LogOut, ChevronLeft, User } from "lucide-react";
+import { Mountain, LogOut, ChevronLeft, User, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRiderAuth } from "@/contexts/RiderAuthContext";
 import { riderApi } from "@/lib/rider-api";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
+
+function RaceGasWidget({ isAuthenticated }: { isAuthenticated: boolean }) {
+  const { data } = useQuery<{ balance: number }>({
+    queryKey: ["race-gas-balance"],
+    queryFn: () =>
+      fetch("/api/rider/race-gas-balance", { credentials: "include" })
+        .then(r => r.ok ? r.json() : { balance: 0 })
+        .catch(() => ({ balance: 0 })),
+    enabled: isAuthenticated,
+    staleTime: 60_000,
+  });
+  const display = `$${(data?.balance ?? 0).toFixed(2)}`;
+  return (
+    <div className="flex items-center gap-1.5 bg-muted border border-border rounded-lg px-2.5 py-1.5 select-none">
+      <Zap size={11} className="text-green-600 fill-green-600" />
+      <div className="flex flex-col leading-none">
+        <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground">Race Gas</span>
+        <span className="text-sm font-extrabold text-green-600">{display}</span>
+      </div>
+    </div>
+  );
+}
 
 interface RiderLayoutProps {
   children: React.ReactNode;
@@ -49,6 +71,7 @@ export function RiderLayout({ children, showBack, backTo = "/rider/portal", back
           </div>
 
           <div className="flex items-center gap-3">
+            <RaceGasWidget isAuthenticated={isAuthenticated} />
             {isAuthenticated && account && (
               <>
                 <span className="text-sm text-muted-foreground hidden sm:block flex items-center gap-1.5">
