@@ -83,14 +83,14 @@ export default function Login() {
         
         <CardContent className="p-8">
           {isDesktop && (
-            <div className="mb-6 rounded-md border border-blue-500/30 bg-blue-500/10 px-4 py-3 flex items-start gap-3">
-              <Cloud size={16} className="text-blue-400 mt-0.5 shrink-0" />
-              <div className="text-sm text-blue-200">
+            <div className="mb-6 rounded-md border border-blue-500/40 bg-blue-500 px-4 py-3 flex items-start gap-3">
+              <Cloud size={16} className="text-white mt-0.5 shrink-0" />
+              <div className="text-sm text-white">
                 <span className="font-semibold">Desktop app</span> — first time on this device?{" "}
                 You need to sync your account from the cloud before logging in.{" "}
                 <button
                   type="button"
-                  className="underline font-semibold text-blue-300 hover:text-blue-100"
+                  className="underline font-semibold text-white hover:text-blue-100"
                   onClick={() => window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))}
                 >
                   Set up cloud sync →
