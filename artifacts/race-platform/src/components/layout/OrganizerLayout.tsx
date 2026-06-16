@@ -35,6 +35,8 @@ import {
 import { Button } from "@/components/ui/button";
 import rmLogo from "@assets/rm-logo.png";
 
+const isDesktop = typeof (window as any).electronAPI !== "undefined";
+
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permKey: "dashboard" },
   { href: "/events", label: "Events", icon: CalendarDays, permKey: "events" },
@@ -42,12 +44,12 @@ const NAV_ITEMS = [
   { href: "/riders", label: "Riders", icon: Users, permKey: "riders" },
   { href: "/series", label: "Series", icon: Trophy, permKey: "series" },
   { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, permKey: "points_tables" },
-  { href: "/payments", label: "Payments", icon: CreditCard, permKey: "payments" },
-  { href: "/discount-codes", label: "Discount Codes", icon: Tag, permKey: "discount_codes" },
-  { href: "/notifications", label: "Notifications", icon: Bell, permKey: "notifications" },
+  { href: "/payments", label: "Payments", icon: CreditCard, permKey: "payments", desktopHidden: true },
+  { href: "/discount-codes", label: "Discount Codes", icon: Tag, permKey: "discount_codes", desktopHidden: true },
+  { href: "/notifications", label: "Notifications", icon: Bell, permKey: "notifications", desktopHidden: true },
   { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, permKey: "reader_setup" },
-  { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, permKey: "offline_mode" },
-];
+  { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, permKey: "offline_mode", desktopHidden: true },
+] as const;
 
 export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -84,6 +86,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   // For staff: only show nav items they have permissions for
   // For organizer/admin: show all nav items
   const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (isDesktop && (item as any).desktopHidden) return false;
     if (!isStaff) return true;
     return permissions.includes(item.permKey);
   });
@@ -134,8 +137,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           );
         })}
 
-        {/* Team link — visible to organizers only (not staff, not super_admin) */}
-        {isOrganizer && (
+        {/* Team link — visible to organizers only on cloud (not on desktop, not staff, not super_admin) */}
+        {isOrganizer && !isDesktop && (
           <Link
             href="/team"
             onClick={close}
@@ -181,6 +184,18 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             >
               <Building2 size={18} />
               Clubs
+            </Link>
+            <Link
+              href="/admin/notifications"
+              onClick={close}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+                location.startsWith("/admin/notifications")
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <Bell size={18} />
+              Notifications
             </Link>
           </div>
         )}
@@ -300,8 +315,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
       {/* First-login product tour */}
       {showTour && <ProductTour onComplete={() => {}} />}
 
-      {/* AI Assistant — floating on every organizer page */}
-      <AIAssistant />
+      {/* AI Assistant — cloud only (requires Anthropic API, not available offline) */}
+      {!isDesktop && <AIAssistant />}
     </div>
   );
 }
