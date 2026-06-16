@@ -51,15 +51,22 @@ jobs:
 
       - name: Package macOS installer
         working-directory: artifacts/desktop
-        run: ./node_modules/.bin/electron-builder --mac --x64 --arm64 --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./node_modules/.bin/electron-builder --mac --x64 --arm64
 
       - name: List release artifacts
         if: always()
         run: |
           echo "=== Contents of artifacts/desktop/release ==="
           ls -lh artifacts/desktop/release/ 2>/dev/null || echo "release directory does not exist"
+
+      - name: Upload macOS installers to release
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "artifacts/desktop/release/RMMX-Tracker-arm64.dmg" \
+            "artifacts/desktop/release/RMMX-Tracker-x64.dmg" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
     name: Build Windows installer
@@ -102,9 +109,7 @@ jobs:
       - name: Package Windows installer
         working-directory: artifacts/desktop
         shell: pwsh
-        run: ./node_modules/.bin/electron-builder --win --x64 --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./node_modules/.bin/electron-builder --win --x64
 
       - name: List release artifacts
         if: always()
@@ -116,3 +121,10 @@ jobs:
           } else {
             Write-Host "release directory does not exist - build likely failed"
           }
+
+      - name: Upload Windows installer to release
+        shell: pwsh
+        run: |
+          gh release upload "${{ github.ref_name }}" "artifacts/desktop/release/RMMX-Tracker-Setup.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
