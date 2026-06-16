@@ -50,7 +50,8 @@ jobs:
         run: pip3 install setuptools --break-system-packages
 
       - name: Package macOS installer
-        run: pnpm --filter @workspace/desktop exec electron-builder --mac --x64 --arm64 --publish always
+        working-directory: artifacts/desktop
+        run: ./node_modules/.bin/electron-builder --mac --x64 --arm64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -99,7 +100,9 @@ jobs:
         run: pnpm --filter @workspace/desktop run build
 
       - name: Package Windows installer
-        run: pnpm --filter @workspace/desktop exec electron-builder --win --x64 --publish always
+        working-directory: artifacts/desktop
+        shell: pwsh
+        run: ./node_modules/.bin/electron-builder --win --x64 --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
