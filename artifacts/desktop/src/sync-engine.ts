@@ -190,7 +190,11 @@ export class SyncEngine {
     }
 
     const pending = this.getPendingCount();
-    this.setStatus(pending > 0 ? "syncing" : "idle");
+    // Always set "syncing" — even when there are no pending local writes we
+    // still call pullCloud(), so the cycle is never a no-op.  This guarantees
+    // the syncing→idle transition that DesktopSyncWatcher uses to call
+    // queryClient.invalidateQueries() and refresh the UI after cloud pulls.
+    this.setStatus("syncing");
 
     try {
       await this.ensureSession();
@@ -279,6 +283,35 @@ export class SyncEngine {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Makes an authenticated request to the cloud API.
+   * Handles session refresh automatically — callers never need to manage cookies.
+   */
+  async cloudFetch(
+    path: string,
+    options: { method?: string; body?: unknown } = {},
+  ): Promise<{ ok: boolean; status: number; data: unknown }> {
+    await this.ensureSession();
+    const res = await fetch(`${this.cloudUrl}${path}`, {
+      method: options.method ?? "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: this.sessionCookie!,
+      },
+      ...(options.body !== undefined
+        ? { body: JSON.stringify(options.body) }
+        : {}),
+    });
+    const text = await res.text();
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+    return { ok: res.ok, status: res.status, data };
   }
 
   private async pushQueue(): Promise<void> {
@@ -383,6 +416,10 @@ export class SyncEngine {
       lapCrossings?: Record<string, unknown>[];
       raceResults?: Record<string, unknown>[];
       users?: Record<string, unknown>[];
+      clubs?: Record<string, unknown>[];
+      series?: Record<string, unknown>[];
+      seriesPoints?: Record<string, unknown>[];
+      pointsTables?: Record<string, unknown>[];
     };
 
     const now = new Date().toISOString();
@@ -396,14 +433,18 @@ export class SyncEngine {
 
       try {
         const tableMap: Array<[string, Record<string, unknown>[]]> = [
-          ["registrations",    data.registrations   ?? []],
+          ["clubs",            data.clubs            ?? []],
+          ["points_tables",    data.pointsTables     ?? []],
+          ["series",           data.series           ?? []],
+          ["series_points",    data.seriesPoints     ?? []],
+          ["registrations",    data.registrations    ?? []],
           ["checkins",         data.checkins         ?? []],
           ["riders",           data.riders           ?? []],
           ["rfid_assignments", data.rfidAssignments  ?? []],
           ["events",           data.events           ?? []],
           ["motos",            data.motos            ?? []],
-          ["lap_crossings",    data.lapCrossings      ?? []],
-          ["race_results",     data.raceResults       ?? []],
+          ["lap_crossings",    data.lapCrossings     ?? []],
+          ["race_results",     data.raceResults      ?? []],
           ["users",            data.users            ?? []],
         ];
 
