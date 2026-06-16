@@ -58,6 +58,12 @@ const electronAPI = {
       ipcRenderer.invoke("auth:setCredentials", email, password, cloudUrl, clubId),
     clearCredentials: (): Promise<void> =>
       ipcRenderer.invoke("auth:clearCredentials"),
+    cloudLogin: (
+      email: string,
+      password: string,
+      fallbackCloudUrl: string,
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke("auth:cloudLogin", email, password, fallbackCloudUrl),
   },
 
   app: {
