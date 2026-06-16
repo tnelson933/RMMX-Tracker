@@ -21,7 +21,7 @@ import { format, parseISO } from "date-fns";
 // Direct links to the latest uploaded release assets on GitHub.
 // When a new release is published and assets upload successfully,
 // update RELEASE_TAG and the filenames below to match.
-const RELEASE_TAG = "desktop-v1.0.31";
+const RELEASE_TAG = "desktop-v1.0.32";
 const RELEASE_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${RELEASE_TAG}`;
 const DOWNLOADS_READY = true;
 const DOWNLOADS = {
