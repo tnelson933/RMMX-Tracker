@@ -27,6 +27,14 @@ export interface SerialStatus {
   tagCount: number;
 }
 
+export interface MyLapsStatus {
+  connected: boolean;
+  decoderIp: string | null;
+  error: string | null;
+  lastPassingAt: string | null;
+  passingCount: number;
+}
+
 export interface CloudCredentials {
   email: string;
   cloudUrl: string;
@@ -42,6 +50,9 @@ export type IpcChannels = {
   "serial:connect": (portPath: string, baudRate?: number) => void;
   "serial:disconnect": () => void;
   "serial:getStatus": () => SerialStatus;
+  "mylaps:connect": (ip: string) => void;
+  "mylaps:disconnect": () => void;
+  "mylaps:getStatus": () => MyLapsStatus;
   "auth:getCredentials": () => CloudCredentials | null;
   "auth:setCredentials": (email: string, password: string, cloudUrl: string, clubId: string) => void;
   "auth:clearCredentials": () => void;
