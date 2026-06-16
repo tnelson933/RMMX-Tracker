@@ -128,7 +128,9 @@ export default function EventsList() {
   // Clubs list for the super_admin club selector
   const { data: clubs } = useListClubs({ query: { enabled: isSuperAdmin } as any });
 
-  // Check Stripe Connect status
+  const isDesktop = typeof (window as any).electronAPI !== "undefined";
+
+  // Check Stripe Connect status — cloud only, never on desktop
   const { data: stripeStatus } = useQuery({
     queryKey: ["stripe-connect-status"],
     queryFn: async () => {
@@ -136,10 +138,10 @@ export default function EventsList() {
       if (!res.ok) return { connected: false, onboardingComplete: false, accountId: null };
       return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null }>;
     },
-    enabled: !isSuperAdmin,
+    enabled: !isSuperAdmin && !isDesktop,
   });
 
-  const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
+  const stripeReady = !isSuperAdmin && !isDesktop && (stripeStatus?.connected ?? false);
 
   const { data: seriesList } = useListSeries({ query: {} as any });
   const updateSeriesMutation = useUpdateSeries();
@@ -231,8 +233,8 @@ export default function EventsList() {
       }
     }
 
-    // Upload image if one was selected
-    if (pendingImageFile) {
+    // Upload image if one was selected — cloud only (object storage not available on desktop)
+    if (pendingImageFile && !isDesktop) {
       try {
         setCreateImgState("processing");
         let cleanBlob: Blob = pendingImageFile;
