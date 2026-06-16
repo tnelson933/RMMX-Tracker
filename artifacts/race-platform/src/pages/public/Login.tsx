@@ -11,11 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { ShieldAlert, KeyRound, Eye, EyeOff, Cloud } from "lucide-react";
+import { ShieldAlert, KeyRound, Eye, EyeOff, Cloud, RefreshCw } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const isDesktop = typeof (window as any).electronAPI !== "undefined";
+
+const VITE_CLOUD_URL = (import.meta as any).env?.VITE_CLOUD_URL as string | undefined;
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
@@ -32,9 +34,8 @@ export default function Login() {
   const { isAuthenticated } = useAuth();
   const [authError, setAuthError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [cloudSyncing, setCloudSyncing] = useState(false);
 
-  // Navigate as soon as auth state confirms login — avoids race condition where
-  // setLocation fires before AuthContext re-renders with the new user data.
   useEffect(() => {
     if (isAuthenticated) setLocation("/dashboard");
   }, [isAuthenticated, setLocation]);
@@ -48,27 +49,77 @@ export default function Login() {
     },
   });
 
-  const onSubmit = (data: LoginFormValues) => {
-    setAuthError(null);
+  const attemptLocalLogin = (data: LoginFormValues) => {
     loginMutation.mutate(
       { data: { email: data.email, password: data.password, rememberMe: data.rememberMe } },
       {
         onSuccess: async () => {
+          // After a successful local login on desktop, trigger an immediate sync so
+          // any data added via the web portal shows up right away.
+          if (isDesktop) {
+            void (window as any).electronAPI?.sync?.flush?.();
+          }
           await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
-          // Navigation is handled by the useEffect above once isAuthenticated flips true
         },
-        onError: (error: any) => {
-          setAuthError(error?.message || "Invalid email or password. Please try again.");
+        onError: async (error: any) => {
+          // On desktop: if the local user doesn't exist yet (first install) or has
+          // no password hash (account not activated locally), automatically try to
+          // log in to the cloud and pull all data down, then retry locally.
+          if (isDesktop) {
+            const fallbackUrl = VITE_CLOUD_URL ?? "";
+            setCloudSyncing(true);
+            setAuthError(null);
+            try {
+              const result = await (window as any).electronAPI.auth.cloudLogin(
+                data.email,
+                data.password,
+                fallbackUrl,
+              ) as { ok: boolean; error?: string };
+
+              if (result.ok) {
+                // Cloud sync succeeded — retry local login with freshly synced data
+                loginMutation.mutate(
+                  { data: { email: data.email, password: data.password, rememberMe: data.rememberMe } },
+                  {
+                    onSuccess: async () => {
+                      void (window as any).electronAPI?.sync?.flush?.();
+                      await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
+                    },
+                    onError: (retryErr: any) => {
+                      setAuthError(
+                        retryErr?.message ||
+                          "Sync succeeded but local login still failed. Please try again.",
+                      );
+                    },
+                  },
+                );
+              } else {
+                setAuthError(result.error ?? "Cloud sync failed. Check your credentials.");
+              }
+            } catch (e: any) {
+              setAuthError(e?.message || "Cloud sync failed. Check your connection.");
+            } finally {
+              setCloudSyncing(false);
+            }
+          } else {
+            setAuthError(error?.message || "Invalid email or password. Please try again.");
+          }
         },
-      }
+      },
     );
   };
 
+  const onSubmit = (data: LoginFormValues) => {
+    setAuthError(null);
+    attemptLocalLogin(data);
+  };
+
+  const isBusy = loginMutation.isPending || cloudSyncing;
+
   return (
     <div className="min-h-[calc(100vh-64px)] flex items-center justify-center p-4 bg-sidebar/5 relative overflow-hidden">
-      {/* Background decoration */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/5 rounded-full blur-3xl -z-10 pointer-events-none"></div>
-      
+
       <Card className="w-full max-w-md shadow-2xl border-sidebar-border/20">
         <div className="bg-sidebar p-8 text-center border-b border-sidebar-border relative overflow-hidden">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjMWExYTFhIj48L3JlY3Q+CjxwYXRoIGQ9Ik0wIDBMOCA4Wk04IDBMMCA4WiIgc3Ryb2tlPSIjMjI0IiBzdHJva2Utd2lkdGg9IjEiPjwvcGF0aD4KPC9zdmc+')] opacity-20"></div>
@@ -80,26 +131,18 @@ export default function Login() {
             Secure login for club officials and track staff
           </CardDescription>
         </div>
-        
+
         <CardContent className="p-8">
-          {isDesktop && (
-            <div className="mb-6 rounded-md border border-blue-400 bg-blue-400 px-4 py-3 flex items-start gap-3">
-              <Cloud size={16} className="text-slate-900 mt-0.5 shrink-0" />
-              <div className="text-sm text-slate-900">
-                <span className="font-semibold">Desktop app</span> — first time on this device?{" "}
-                You need to sync your account from the cloud before logging in.{" "}
-                <button
-                  type="button"
-                  className="underline font-bold text-slate-900 hover:text-slate-700"
-                  onClick={() => window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))}
-                >
-                  Set up cloud sync →
-                </button>
+          {cloudSyncing && (
+            <div className="mb-6 rounded-md border border-blue-400 bg-blue-400/10 px-4 py-3 flex items-center gap-3">
+              <RefreshCw size={16} className="text-blue-400 shrink-0 animate-spin" />
+              <div className="text-sm text-blue-400 font-medium">
+                Syncing your account from the cloud… this takes a few seconds.
               </div>
             </div>
           )}
 
-          {authError && (
+          {authError && !cloudSyncing && (
             <Alert variant="destructive" className="mb-6 rounded-sm">
               <AlertDescription className="font-medium text-sm flex flex-col gap-2">
                 <span className="flex items-center gap-2">
@@ -108,15 +151,17 @@ export default function Login() {
                 </span>
                 {isDesktop && (
                   <span className="text-xs opacity-90">
-                    If this is your first login on this device, you need to{" "}
+                    If the problem persists, open{" "}
                     <button
                       type="button"
                       className="underline font-semibold"
-                      onClick={() => window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))}
+                      onClick={() =>
+                        window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))
+                      }
                     >
-                      set up cloud sync
+                      Cloud Sync Settings
                     </button>
-                    {" "}first to bring your account over.
+                    {" "}to verify your cloud URL and club ID.
                   </span>
                 )}
               </AlertDescription>
@@ -132,9 +177,9 @@ export default function Login() {
                   <FormItem>
                     <FormLabel className="font-heading uppercase tracking-wider text-muted-foreground font-bold">Email Address</FormLabel>
                     <FormControl>
-                      <Input 
-                        placeholder="official@club.com" 
-                        {...field} 
+                      <Input
+                        placeholder="official@club.com"
+                        {...field}
                         className="h-12 bg-muted/50 focus:bg-background border-muted-foreground/20 text-lg font-medium"
                       />
                     </FormControl>
@@ -142,7 +187,7 @@ export default function Login() {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="password"
@@ -151,10 +196,10 @@ export default function Login() {
                     <FormLabel className="font-heading uppercase tracking-wider text-muted-foreground font-bold">Password</FormLabel>
                     <FormControl>
                       <div className="relative">
-                        <Input 
+                        <Input
                           type={showPassword ? "text" : "password"}
-                          placeholder="••••••••" 
-                          {...field} 
+                          placeholder="••••••••"
+                          {...field}
                           className="h-12 bg-muted/50 focus:bg-background border-muted-foreground/20 text-lg tracking-widest font-mono pr-12"
                         />
                         <button
@@ -172,7 +217,7 @@ export default function Login() {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="rememberMe"
@@ -196,12 +241,17 @@ export default function Login() {
                 )}
               />
 
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full h-14 text-lg font-heading font-bold uppercase tracking-widest mt-2"
-                disabled={loginMutation.isPending}
+                disabled={isBusy}
               >
-                {loginMutation.isPending ? (
+                {cloudSyncing ? (
+                  <span className="flex items-center gap-2">
+                    <RefreshCw size={20} className="animate-spin" />
+                    Syncing from cloud…
+                  </span>
+                ) : loginMutation.isPending ? (
                   <span className="flex items-center gap-2">
                     <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span>
                     Authenticating...
@@ -216,10 +266,27 @@ export default function Login() {
           </Form>
         </CardContent>
         <CardFooter className="bg-muted/30 border-t p-6 text-center text-sm text-muted-foreground font-medium flex flex-col gap-2">
-          <span>Authorized personnel only. All access is logged.</span>
-          <a href="/setup-account" className="text-primary hover:underline font-semibold">
-            First time signing in? Set up your account →
-          </a>
+          {isDesktop ? (
+            <span>
+              First time on this device?{" "}
+              <button
+                type="button"
+                className="text-primary hover:underline font-semibold"
+                onClick={() =>
+                  window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))
+                }
+              >
+                Open Cloud Sync Settings →
+              </button>
+            </span>
+          ) : (
+            <>
+              <span>Authorized personnel only. All access is logged.</span>
+              <a href="/setup-account" className="text-primary hover:underline font-semibold">
+                First time signing in? Set up your account →
+              </a>
+            </>
+          )}
         </CardFooter>
       </Card>
     </div>
