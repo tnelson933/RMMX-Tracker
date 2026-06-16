@@ -18,13 +18,16 @@ import {
 import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
 
-// GitHub releases download base — update the tag if you pin to a specific version
-const RELEASE_BASE = "https://github.com/tnelson933/RMMX-Tracker/releases/latest/download";
-const DOWNLOADS_READY = RELEASE_BASE.length > 0;
+// Direct links to the latest uploaded release assets on GitHub.
+// When a new release is published and assets upload successfully,
+// update RELEASE_TAG and the filenames below to match.
+const RELEASE_TAG = "desktop-v1.0.29";
+const RELEASE_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${RELEASE_TAG}`;
+const DOWNLOADS_READY = true;
 const DOWNLOADS = {
-  macArm: RELEASE_BASE ? `${RELEASE_BASE}/Rocky-Mountain-Race-arm64.dmg` : "#",
-  macX64: RELEASE_BASE ? `${RELEASE_BASE}/Rocky-Mountain-Race-x64.dmg` : "#",
-  windows: RELEASE_BASE ? `${RELEASE_BASE}/Rocky-Mountain-Race-Setup.exe` : "#",
+  macArm: `${RELEASE_BASE}/RMMX-Tracker-arm64.dmg`,
+  macX64: `${RELEASE_BASE}/RMMX-Tracker-x64.dmg`,
+  windows: `${RELEASE_BASE}/RMMX-Tracker-Setup.exe`,
 };
 
 type Tab = "today" | "upcoming" | "past";
