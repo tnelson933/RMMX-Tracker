@@ -1,10 +1,12 @@
-appId: com.rockymtn.race-platform
-productName: Rocky Mountain Race
-copyright: Copyright © 2026 Rocky Mountain Race Platform
+appId: com.rockymtn.rmmx-tracker
+productName: RMMX Tracker
+copyright: Copyright © 2026 RMMX Tracker
 
 directories:
   output: release
   buildResources: assets
+
+afterPack: ./scripts/after-pack.js
 
 files:
   - dist/**/*
@@ -48,7 +50,7 @@ win:
     - target: nsis
       arch:
         - x64
-  publisherName: Rocky Mountain Race Platform
+  publisherName: RMMX Tracker
 
 linux:
   target:
@@ -64,10 +66,10 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  artifactName: "Rocky-Mountain-Race-Setup.${ext}"
+  artifactName: "RMMX-Tracker-Setup.${ext}"
 
 dmg:
-  artifactName: "Rocky-Mountain-Race-${arch}.${ext}"
+  artifactName: "RMMX-Tracker-${arch}.${ext}"
   contents:
     - x: 130
       y: 220
@@ -83,3 +85,4 @@ publish:
   owner: tnelson933
   repo: RMMX-Tracker
   releaseType: release
+  tagName: "desktop-v${version}"
