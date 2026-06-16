@@ -18,6 +18,14 @@ type BridgeStatus = "checking" | "running" | "offline";
 type SetupMethod  = "auto" | "manual";
 type ReaderType   = "impinj-r700" | "zebra-fx7500" | "generic";
 
+interface MyLapsStatus {
+  connected: boolean;
+  decoderIp: string | null;
+  error: string | null;
+  lastPassingAt: string | null;
+  passingCount: number;
+}
+
 // ── Small presentational helpers — defined OUTSIDE so they're never remounted ──
 const StepBadge = ({ n }: { n: number }) => (
   <div className="w-8 h-8 shrink-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-heading font-bold text-sm">
@@ -69,7 +77,8 @@ export default function ReaderSetup() {
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
 
   useEffect(() => {
-    const shouldCheck = (tech === "rfid" && setupMethod === "auto") || tech === "mylaps";
+    // Only poll the Python bridge for non-desktop MyLaps and RFID auto-configure
+    const shouldCheck = (tech === "rfid" && setupMethod === "auto") || (tech === "mylaps" && !isDesktop);
     if (!shouldCheck) return;
     setBridgeStatus("checking");
     const check = async () => {
@@ -83,7 +92,7 @@ export default function ReaderSetup() {
     check();
     const id = setInterval(check, 5000);
     return () => clearInterval(id);
-  }, [tech, setupMethod]);
+  }, [tech, setupMethod, isDesktop]);
 
   // ── Reader auto-configure ─────────────────────────────────────────────────
   const [configuring,  setConfiguring]  = useState(false);
@@ -109,6 +118,40 @@ export default function ReaderSetup() {
     } finally {
       setConfiguring(false);
     }
+  };
+
+  // ── MyLaps desktop TCP connection ─────────────────────────────────────────
+  const [myLapsStatus,      setMyLapsStatus]      = useState<MyLapsStatus | null>(null);
+  const [myLapsConnecting,  setMyLapsConnecting]  = useState(false);
+  const [myLapsConnectError, setMyLapsConnectError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isDesktop || tech !== "mylaps") return;
+    const api = (window as any).electronAPI;
+    if (!api?.mylaps) return;
+    api.mylaps.getStatus().then(setMyLapsStatus).catch(() => {});
+    const unsub = api.mylaps.onStatus(setMyLapsStatus);
+    return unsub;
+  }, [isDesktop, tech]);
+
+  const handleMyLapsConnect = async () => {
+    if (!readerIp.trim()) return;
+    const api = (window as any).electronAPI;
+    setMyLapsConnecting(true);
+    setMyLapsConnectError(null);
+    try {
+      await api.mylaps.connect(readerIp.trim());
+    } catch (err: unknown) {
+      setMyLapsConnectError(err instanceof Error ? err.message : "Could not connect to decoder.");
+    } finally {
+      setMyLapsConnecting(false);
+    }
+  };
+
+  const handleMyLapsDisconnect = async () => {
+    const api = (window as any).electronAPI;
+    await api.mylaps.disconnect().catch(() => {});
+    setMyLapsConnectError(null);
   };
 
   // ── Test crossing ─────────────────────────────────────────────────────────
@@ -584,76 +627,137 @@ export default function ReaderSetup() {
             <div className="flex gap-4 p-5">
               <StepBadge n={2} />
               <div className="space-y-3 min-w-0 w-full">
-                <p className="font-semibold">Run the bridge script with your decoder's IP</p>
-                <p className="text-sm text-muted-foreground">
-                  The bridge connects directly to your decoder over the local network — no AMBrc configuration needed.
-                  Download the script, enter your decoder's IP, and run the command shown below.
-                </p>
-                <div className="border rounded-lg bg-muted/20 p-4 space-y-3">
-                  <div className="space-y-3">
-                    <div className="border rounded-lg divide-y overflow-hidden">
-                        <div className="flex gap-3 px-3 py-2.5">
-                          <MiniStep n={1} />
-                          <div className="space-y-1.5 min-w-0">
-                            <p className="text-xs font-medium">Download the bridge script</p>
-                            <a href="/rfid_bridge.py" download="rfid_bridge.py"
-                              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                              <Download size={12} /> Download rfid_bridge.py
-                            </a>
-                            <p className="text-xs text-muted-foreground">Your browser saves it to your <strong>Downloads</strong> folder — leave it there.</p>
-                          </div>
-                        </div>
-                        <div className="flex gap-3 px-3 py-2.5">
-                          <MiniStep n={2} />
-                          <div className="space-y-1.5 min-w-0">
-                            <p className="text-xs font-medium">Install Python — one time only</p>
-                            <a href={os === "windows" ? "https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe" : "https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"}
-                              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                              <Download size={12} /> {os === "windows" ? "Python for Windows" : "Python for Mac"}
-                            </a>
-                            <p className="text-xs text-muted-foreground">
-                              Click through the installer.{os === "windows" && <> Check <strong>"Add Python to PATH"</strong> if it appears.</>}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex gap-3 px-3 py-2.5">
-                          <MiniStep n={3} />
-                          <div className="space-y-2 min-w-0 w-full">
-                            <p className="text-xs font-medium">Enter your decoder IP, then download the launcher</p>
-                            <div className="space-y-1">
-                              <label className="text-xs text-muted-foreground">
-                                Decoder IP address <span className="opacity-60">(printed on the decoder or shown in AMBrc)</span>
-                              </label>
-                              <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
-                                placeholder="e.g. 192.168.1.50" className="font-mono h-8 text-xs max-w-xs" />
-                            </div>
-                            <button onClick={() => downloadLauncher(os, "mylaps")}
-                              disabled={!readerIp.trim()}
-                              className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${readerIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                              <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
-                            </button>
-                            {!readerIp.trim() && (
-                              <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable the download.</p>
-                            )}
-                            <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal window opens and the bridge starts with your decoder IP already configured.</p>
-                            {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Keep the window open while racing — closing it disconnects from the decoder.</p>
+
+                {isDesktop ? (
+                  /* ── Desktop: direct TCP connection — no Python script needed ── */
+                  <>
+                    <div>
+                      <p className="font-semibold">Connect to your decoder</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Enter your decoder's IP address and click Connect. The app talks to it directly — no scripts or extra software needed.
+                      </p>
                     </div>
-                  <div className="flex items-center gap-2 pt-2 border-t text-sm">
-                    {bridgeDot}
-                    <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
-                      {bridgeStatus === "checking" && "Checking for bridge…"}
-                      {bridgeStatus === "running"  && "Bridge connected — decoder linked"}
-                      {bridgeStatus === "offline"  && `Waiting for bridge — open Downloads and double-click ${os === "windows" ? "start-timing.bat" : "start-timing.command"}`}
-                    </span>
-                  </div>
-                </div>
-                <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
-                  <strong>Compatible hardware:</strong> AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX, MyLaps X2, P3 Flex — any decoder supported by AMBrc 4.x/5.x.
-                </p>
+
+                    <div className="flex gap-2 max-w-sm">
+                      <Input
+                        value={readerIp}
+                        onChange={e => { setReaderIp(e.target.value); setMyLapsConnectError(null); }}
+                        placeholder="e.g. 192.168.1.50"
+                        className="font-mono h-9 text-sm"
+                        disabled={myLapsStatus?.connected}
+                        onKeyDown={e => { if (e.key === "Enter" && !myLapsStatus?.connected) handleMyLapsConnect(); }}
+                      />
+                      <Button
+                        onClick={myLapsStatus?.connected ? handleMyLapsDisconnect : handleMyLapsConnect}
+                        disabled={myLapsConnecting || (!myLapsStatus?.connected && !readerIp.trim())}
+                        variant={myLapsStatus?.connected ? "outline" : "default"}
+                        className="h-9 px-4 shrink-0 gap-1.5"
+                      >
+                        {myLapsConnecting && <RefreshCw size={13} className="animate-spin" />}
+                        {myLapsConnecting ? "Connecting…" : myLapsStatus?.connected ? "Disconnect" : "Connect"}
+                      </Button>
+                    </div>
+
+                    {myLapsStatus?.connected && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Circle size={10} className="fill-green-500 text-green-500 shrink-0" />
+                        <span className="text-green-700 dark:text-green-400 font-medium">
+                          Connected to {myLapsStatus.decoderIp}
+                        </span>
+                        {(myLapsStatus.passingCount ?? 0) > 0 && (
+                          <span className="text-muted-foreground">
+                            — {myLapsStatus.passingCount} passing{myLapsStatus.passingCount !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {(myLapsConnectError || (myLapsStatus?.error && !myLapsStatus.connected)) && (
+                      <div className="flex items-start gap-2 text-sm text-destructive">
+                        <XCircle size={14} className="shrink-0 mt-0.5" />
+                        <span>{myLapsConnectError ?? myLapsStatus?.error}</span>
+                      </div>
+                    )}
+
+                    <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
+                      <strong>Compatible hardware:</strong> AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX, MyLaps X2, P3 Flex — any decoder supported by AMBrc 4.x/5.x. The decoder must be on the same local network as this computer.
+                    </p>
+                  </>
+                ) : (
+                  /* ── Browser/web: Python bridge script ── */
+                  <>
+                    <p className="font-semibold">Run the bridge script with your decoder's IP</p>
+                    <p className="text-sm text-muted-foreground">
+                      The bridge connects directly to your decoder over the local network — no AMBrc configuration needed.
+                      Download the script, enter your decoder's IP, and run the command shown below.
+                    </p>
+                    <div className="border rounded-lg bg-muted/20 p-4 space-y-3">
+                      <div className="space-y-3">
+                        <div className="border rounded-lg divide-y overflow-hidden">
+                          <div className="flex gap-3 px-3 py-2.5">
+                            <MiniStep n={1} />
+                            <div className="space-y-1.5 min-w-0">
+                              <p className="text-xs font-medium">Download the bridge script</p>
+                              <a href="/rfid_bridge.py" download="rfid_bridge.py"
+                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                                <Download size={12} /> Download rfid_bridge.py
+                              </a>
+                              <p className="text-xs text-muted-foreground">Your browser saves it to your <strong>Downloads</strong> folder — leave it there.</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-3 px-3 py-2.5">
+                            <MiniStep n={2} />
+                            <div className="space-y-1.5 min-w-0">
+                              <p className="text-xs font-medium">Install Python — one time only</p>
+                              <a href={os === "windows" ? "https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe" : "https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"}
+                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
+                                <Download size={12} /> {os === "windows" ? "Python for Windows" : "Python for Mac"}
+                              </a>
+                              <p className="text-xs text-muted-foreground">
+                                Click through the installer.{os === "windows" && <> Check <strong>"Add Python to PATH"</strong> if it appears.</>}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-3 px-3 py-2.5">
+                            <MiniStep n={3} />
+                            <div className="space-y-2 min-w-0 w-full">
+                              <p className="text-xs font-medium">Enter your decoder IP, then download the launcher</p>
+                              <div className="space-y-1">
+                                <label className="text-xs text-muted-foreground">
+                                  Decoder IP address <span className="opacity-60">(printed on the decoder or shown in AMBrc)</span>
+                                </label>
+                                <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
+                                  placeholder="e.g. 192.168.1.50" className="font-mono h-8 text-xs max-w-xs" />
+                              </div>
+                              <button onClick={() => downloadLauncher(os, "mylaps")}
+                                disabled={!readerIp.trim()}
+                                className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${readerIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
+                                <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
+                              </button>
+                              {!readerIp.trim() && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable the download.</p>
+                              )}
+                              <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal window opens and the bridge starts with your decoder IP already configured.</p>
+                              {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Keep the window open while racing — closing it disconnects from the decoder.</p>
+                      </div>
+                      <div className="flex items-center gap-2 pt-2 border-t text-sm">
+                        {bridgeDot}
+                        <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
+                          {bridgeStatus === "checking" && "Checking for bridge…"}
+                          {bridgeStatus === "running"  && "Bridge connected — decoder linked"}
+                          {bridgeStatus === "offline"  && `Waiting for bridge — open Downloads and double-click ${os === "windows" ? "start-timing.bat" : "start-timing.command"}`}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
+                      <strong>Compatible hardware:</strong> AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX, MyLaps X2, P3 Flex — any decoder supported by AMBrc 4.x/5.x.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
