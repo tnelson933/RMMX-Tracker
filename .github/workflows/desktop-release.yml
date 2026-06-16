@@ -71,7 +71,7 @@ jobs:
         working-directory: artifacts/local-server
         run: |
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.devDependencies;fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
-          npm install --omit=dev --no-package-lock
+          npm install --omit=dev --no-package-lock --ignore-scripts
 
       - name: Rebuild local-server native modules for Electron
         working-directory: artifacts/desktop
@@ -156,7 +156,7 @@ jobs:
         shell: pwsh
         run: |
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.devDependencies;fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
-          npm install --omit=dev --no-package-lock
+          npm install --omit=dev --no-package-lock --ignore-scripts
 
       - name: Rebuild local-server native modules for Electron
         working-directory: artifacts/desktop
