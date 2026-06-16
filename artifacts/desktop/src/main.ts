@@ -441,6 +441,55 @@ function registerIpcHandlers(): void {
     stopSyncEngine();
   });
 
+  ipcMain.handle(
+    "auth:cloudLogin",
+    async (_event, email: string, password: string, fallbackCloudUrl: string) => {
+      const saved = loadCredentials();
+      const cloudUrl = (saved?.cloudUrl || fallbackCloudUrl || "").replace(/\/$/, "");
+      if (!cloudUrl) {
+        return {
+          ok: false,
+          error:
+            "Cloud URL not configured. Open Cloud Sync Settings from the app menu and enter your cloud URL.",
+        };
+      }
+
+      try {
+        const loginRes = await fetch(`${cloudUrl}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (!loginRes.ok) {
+          const body = await loginRes.text().catch(() => "");
+          return { ok: false, error: `Cloud login failed (${loginRes.status}): ${body}` };
+        }
+
+        const data = (await loginRes.json()) as { user?: { clubId?: number } };
+        const clubId = data?.user?.clubId;
+        if (!clubId) {
+          return { ok: false, error: "Cloud login succeeded but no club ID was returned." };
+        }
+
+        saveCredentials({ email, password, cloudUrl, clubId: String(clubId) });
+        stopSyncEngine();
+        startSyncEngine();
+
+        if (syncEngine) {
+          await syncEngine.flush();
+        }
+
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
   ipcMain.handle("app:getVersion", () => app.getVersion());
 }
 
