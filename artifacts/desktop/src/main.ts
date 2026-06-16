@@ -27,6 +27,11 @@ import {
   connectPort,
   disconnectPort,
 } from "./serial";
+import {
+  connectDecoder,
+  disconnectDecoder,
+  getMyLapsStatus,
+} from "./mylaps";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -392,7 +397,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("serial:connect", async (_event, portPath: string, baudRate?: number) => {
     await connectPort(portPath, baudRate, (rfidNumber) => {
-      postCrossingToLocalServer(rfidNumber);
+      postCrossingToLocalServer({ tag: rfidNumber });
       mainWindow?.webContents.send("serial:status", getSerialStatus());
     });
     mainWindow?.webContents.send("serial:status", getSerialStatus());
@@ -404,6 +409,21 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("serial:getStatus", () => getSerialStatus());
+
+  ipcMain.handle("mylaps:connect", async (_event, ip: string) => {
+    await connectDecoder(ip, (transponder, crossingTime) => {
+      postCrossingToLocalServer({ tag: transponder, fieldName: "transponder", crossingTime });
+      mainWindow?.webContents.send("mylaps:status", getMyLapsStatus());
+    });
+    mainWindow?.webContents.send("mylaps:status", getMyLapsStatus());
+  });
+
+  ipcMain.handle("mylaps:disconnect", () => {
+    disconnectDecoder();
+    mainWindow?.webContents.send("mylaps:status", getMyLapsStatus());
+  });
+
+  ipcMain.handle("mylaps:getStatus", () => getMyLapsStatus());
 
   ipcMain.handle("auth:getCredentials", () => getPublicCredentials());
 
@@ -424,10 +444,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle("app:getVersion", () => app.getVersion());
 }
 
-// ── Forward RFID tag reads from serial port to local server ───────────────────
+// ── Forward tag reads to local server ─────────────────────────────────────────
 
-function postCrossingToLocalServer(rfidNumber: string): void {
-  const body = JSON.stringify({ rfidNumber, crossingTime: new Date().toISOString() });
+function postCrossingToLocalServer(opts: {
+  tag: string;
+  fieldName?: "rfidNumber" | "transponder";
+  crossingTime?: Date;
+}): void {
+  const { tag, fieldName = "rfidNumber", crossingTime } = opts;
+  const body = JSON.stringify({ [fieldName]: tag, crossingTime: (crossingTime ?? new Date()).toISOString() });
   const req = http.request(
     {
       host: "127.0.0.1",
@@ -541,6 +566,7 @@ app.on("before-quit", () => {
 function cleanupAndQuit(): void {
   stopSyncEngine();
   disconnectPort();
+  disconnectDecoder();
   void stopLocalServer().finally(() => {
     app.quit();
   });
