@@ -10,6 +10,12 @@ import timingRouter from "./timing";
 import statusRouter from "./status";
 import desktopRouter from "./desktop";
 import practiceRouter from "./practice";
+import ridersRouter from "./riders";
+import clubsRouter from "./clubs";
+import resultsRouter from "./results";
+import seriesRouter from "./series";
+import pointsTablesRouter from "./points-tables";
+import dashboardRouter from "./dashboard";
 
 const router = Router();
 
@@ -24,6 +30,12 @@ router.use(rfidRouter);
 router.use(motosRouter);
 router.use(timingRouter);
 router.use(practiceRouter);
+router.use(ridersRouter);
+router.use(clubsRouter);
+router.use(resultsRouter);
+router.use(seriesRouter);
+router.use(pointsTablesRouter);
+router.use(dashboardRouter);
 
 router.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
