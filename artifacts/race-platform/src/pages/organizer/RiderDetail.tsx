@@ -368,6 +368,7 @@ export default function RiderDetail() {
 
   const r = rider as any;
   const clubId = (me as any)?.clubId;
+  const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
   const form = useForm<z.infer<typeof updateRiderSchema>>({
     resolver: zodResolver(updateRiderSchema),
@@ -643,8 +644,8 @@ export default function RiderDetail() {
             </CardContent>
           </Card>
 
-          {/* Assigned Discount Codes */}
-          <RiderAssignedCodesSection riderId={riderId} />
+          {/* Assigned Discount Codes — cloud-only feature */}
+          {!isDesktop && <RiderAssignedCodesSection riderId={riderId} />}
 
           {/* Sponsors callout (read view) */}
           {!isEditing && r.sponsors && (
@@ -741,8 +742,8 @@ export default function RiderDetail() {
             </CardContent>
           </Card>
 
-          {/* Discount Code */}
-          {clubId && (
+          {/* Discount Code — cloud-only feature */}
+          {!isDesktop && clubId && (
             <DiscountCodeCard riderId={riderId} clubId={clubId} />
           )}
 
