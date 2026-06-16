@@ -632,7 +632,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
   // Full-pull approach ensures edits to existing rows are always applied.
   const [
     registrations, checkins, rfidAssignments, events, motos,
-    lapCrossings, raceResults,
+    lapCrossings, raceResults, clubUsers,
   ] = await Promise.all([
     db.select().from(registrationsTable).where(
       inArray(registrationsTable.eventId, clubEventIds),
@@ -653,6 +653,17 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     db.select().from(raceResultsTable).where(
       inArray(raceResultsTable.eventId, clubEventIds),
     ),
+    // Users for this club — pulled with hashed password so the desktop can
+    // authenticate locally with the same credentials as the web platform.
+    db.select({
+      id:           usersTable.id,
+      email:        usersTable.email,
+      passwordHash: usersTable.passwordHash,
+      name:         usersTable.name,
+      role:         usersTable.role,
+      clubId:       usersTable.clubId,
+      createdAt:    usersTable.createdAt,
+    }).from(usersTable).where(eq(usersTable.clubId, clubId)),
   ]);
 
   // Riders: only return riders who have a registration for a club event.
@@ -673,7 +684,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
 
   return res.json({
     registrations, checkins, rfidAssignments, riders, events,
-    motos, lapCrossings, raceResults,
+    motos, lapCrossings, raceResults, users: clubUsers,
   });
 });
 
