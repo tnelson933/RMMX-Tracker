@@ -49,6 +49,18 @@ jobs:
       - name: Install Python setuptools (required by node-gyp on macOS)
         run: pip3 install setuptools --break-system-packages
 
+      - name: Rebuild local-server native modules for Electron
+        working-directory: artifacts/desktop
+        run: |
+          node -e "
+            const { rebuild } = require('./node_modules/@electron/rebuild');
+            const electronVersion = require('./node_modules/electron/package.json').version;
+            console.log('Rebuilding better-sqlite3 for Electron', electronVersion);
+            rebuild({ buildPath: '../local-server', electronVersion, onlyModules: ['better-sqlite3'], force: true })
+              .then(() => console.log('Rebuild complete'))
+              .catch(err => { console.error(err); process.exit(1); });
+          "
+
       - name: Package macOS installer
         working-directory: artifacts/desktop
         run: ./node_modules/.bin/electron-builder --mac --x64 --arm64
@@ -105,6 +117,12 @@ jobs:
 
       - name: Build Electron main + preload
         run: pnpm --filter @workspace/desktop run build
+
+      - name: Rebuild local-server native modules for Electron
+        working-directory: artifacts/desktop
+        shell: pwsh
+        run: |
+          node -e "const { rebuild } = require('./node_modules/@electron/rebuild'); const electronVersion = require('./node_modules/electron/package.json').version; console.log('Rebuilding better-sqlite3 for Electron', electronVersion); rebuild({ buildPath: '../local-server', electronVersion, onlyModules: ['better-sqlite3'], force: true }).then(() => console.log('Rebuild complete')).catch(err => { console.error(err); process.exit(1); });"
 
       - name: Package Windows installer
         working-directory: artifacts/desktop
