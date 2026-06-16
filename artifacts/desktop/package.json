@@ -1,6 +1,6 @@
 {
   "name": "@workspace/desktop",
-  "version": "1.0.43",
+  "version": "1.0.44",
   "private": true,
   "description": "Rocky Mountain Race Platform — Electron desktop app",
   "main": "dist/main.js",
