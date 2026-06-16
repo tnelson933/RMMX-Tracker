@@ -3,6 +3,7 @@ import { Bot, X, Send, Plus, Trash2, ChevronLeft, Loader2, MessageSquare } from 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 interface Message {
@@ -85,6 +86,8 @@ const QUICK_PROMPTS = [
   "How do I check in riders on race day?",
 ];
 
+const isDesktop = typeof (window as any).electronAPI !== "undefined";
+
 export function AIAssistant() {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"list" | "chat">("list");
@@ -99,6 +102,7 @@ export function AIAssistant() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const { toast } = useToast();
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -115,8 +119,23 @@ export function AIAssistant() {
   const loadConversations = async () => {
     setLoadingConvs(true);
     try {
-      const res = await fetch("/api/anthropic/conversations");
-      if (res.ok) setConversations(await res.json());
+      if (isDesktop) {
+        const result = await (window as any).electronAPI.ai.listConversations();
+        if (result.ok && Array.isArray(result.data)) {
+          setConversations(result.data as Conversation[]);
+        } else if (!result.ok) {
+          toast({
+            title: "AI Assistant unavailable",
+            description: result.status === 503
+              ? "Open App → Cloud Sync Settings to connect your account."
+              : "Could not load conversations. Check your cloud sync connection.",
+            variant: "destructive",
+          });
+        }
+      } else {
+        const res = await fetch("/api/anthropic/conversations");
+        if (res.ok) setConversations(await res.json());
+      }
     } finally {
       setLoadingConvs(false);
     }
@@ -127,10 +146,26 @@ export function AIAssistant() {
     setView("chat");
     setLoadingMsgs(true);
     try {
-      const res = await fetch(`/api/anthropic/conversations/${conv.id}`);
-      if (res.ok) {
-        const data: Conversation = await res.json();
-        setMessages(data.messages ?? []);
+      if (isDesktop) {
+        const result = await (window as any).electronAPI.ai.getConversation(conv.id);
+        if (result.ok && result.data) {
+          const data = result.data as Conversation;
+          setMessages(data.messages ?? []);
+        } else if (!result.ok) {
+          toast({
+            title: "Could not load conversation",
+            description: result.status === 503
+              ? "Open App → Cloud Sync Settings to connect your account."
+              : "Failed to load messages. Check your cloud sync connection.",
+            variant: "destructive",
+          });
+        }
+      } else {
+        const res = await fetch(`/api/anthropic/conversations/${conv.id}`);
+        if (res.ok) {
+          const data: Conversation = await res.json();
+          setMessages(data.messages ?? []);
+        }
       }
     } finally {
       setLoadingMsgs(false);
@@ -142,13 +177,31 @@ export function AIAssistant() {
     if (!msg) return;
 
     const title = msg.length > 50 ? msg.slice(0, 47) + "…" : msg;
-    const res = await fetch("/api/anthropic/conversations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    });
-    if (!res.ok) return;
-    const conv: Conversation = await res.json();
+
+    let conv: Conversation;
+    if (isDesktop) {
+      const result = await (window as any).electronAPI.ai.createConversation(title);
+      if (!result.ok || !result.data) {
+        toast({
+          title: "Cannot start conversation",
+          description: result.status === 503
+            ? "Cloud sync isn't configured. Open App → Cloud Sync Settings to connect your account."
+            : (result.data as any)?.error ?? "Failed to create conversation. Check your cloud sync connection.",
+          variant: "destructive",
+        });
+        return;
+      }
+      conv = result.data as Conversation;
+    } else {
+      const res = await fetch("/api/anthropic/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) return;
+      conv = await res.json();
+    }
+
     setActiveConv(conv);
     setMessages([]);
     setView("chat");
@@ -172,6 +225,40 @@ export function AIAssistant() {
     setStreamBuffer("");
     scrollToBottom();
 
+    // Desktop: IPC call collects the full SSE stream and returns complete text at once.
+    if (isDesktop) {
+      try {
+        setStreamBuffer("Thinking…");
+        const result = await (window as any).electronAPI.ai.sendMessage(convId, content);
+        if (!result.ok) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: Date.now(),
+              role: "assistant",
+              content: result.error ?? "Sorry, something went wrong. Please try again.",
+              createdAt: new Date().toISOString(),
+            },
+          ]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            { id: Date.now(), role: "assistant", content: result.text ?? "", createdAt: new Date().toISOString() },
+          ]);
+        }
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          { id: Date.now(), role: "assistant", content: "Connection error. Please try again.", createdAt: new Date().toISOString() },
+        ]);
+      } finally {
+        setStreaming(false);
+        setStreamBuffer("");
+      }
+      return;
+    }
+
+    // Web: stream the response token by token.
     const abort = new AbortController();
     abortRef.current = abort;
 
@@ -257,7 +344,11 @@ export function AIAssistant() {
 
   const deleteConversation = async (e: React.MouseEvent, convId: number) => {
     e.stopPropagation();
-    await fetch(`/api/anthropic/conversations/${convId}`, { method: "DELETE" });
+    if (isDesktop) {
+      await (window as any).electronAPI.ai.deleteConversation(convId);
+    } else {
+      await fetch(`/api/anthropic/conversations/${convId}`, { method: "DELETE" });
+    }
     setConversations((prev) => prev.filter((c) => c.id !== convId));
   };
 
