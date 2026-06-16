@@ -17,11 +17,12 @@ import {
 } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
+import { UpcomingNearMe } from "@/components/UpcomingNearMe";
 
 // Direct links to the latest uploaded release assets on GitHub.
 // When a new release is published and assets upload successfully,
 // update RELEASE_TAG and the filenames below to match.
-const RELEASE_TAG = "desktop-v1.0.46";
+const RELEASE_TAG = "desktop-v1.0.50";
 const RELEASE_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${RELEASE_TAG}`;
 const DOWNLOADS_READY = true;
 const DOWNLOADS = {
@@ -458,6 +459,9 @@ export default function Home() {
           )
         )}
       </section>
+
+      {/* Upcoming Races Near Me */}
+      <UpcomingNearMe />
 
       {/* CTA */}
       <section className="container mx-auto px-4 mt-4">
