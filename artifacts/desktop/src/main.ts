@@ -5,7 +5,6 @@ import {
   Menu,
   shell,
   dialog,
-  session as electronSession,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "path";
@@ -66,44 +65,6 @@ function getRacePlatformDist(): string {
 
 function getDbPath(): string {
   return path.join(app.getPath("userData"), "race_data.db");
-}
-
-// ── Desktop auto-login ────────────────────────────────────────────────────────
-
-/**
- * Calls POST /api/desktop/init which creates a default local user if none
- * exists and authenticates the session. Returns the raw connect.sid cookie
- * value so the caller can inject it into the BrowserWindow before navigating.
- */
-function initDesktopSession(): Promise<string | null> {
-  return new Promise((resolve) => {
-    const req = http.request(
-      {
-        host: "127.0.0.1",
-        port: LOCAL_PORT,
-        path: "/api/desktop/init",
-        method: "POST",
-        headers: { "Content-Length": "0", "Content-Type": "application/json" },
-      },
-      (res) => {
-        const setCookies: string[] = (res.headers["set-cookie"] as string[] | undefined) ?? [];
-        const sidCookie = setCookies.find((c) => c.startsWith("connect.sid="));
-        res.resume();
-        if (sidCookie) {
-          // Extract just the value portion before the first ";"
-          const value = sidCookie.split(";")[0].slice("connect.sid=".length);
-          resolve(value);
-        } else {
-          resolve(null);
-        }
-      },
-    );
-    req.on("error", (err) => {
-      console.error("[desktop-init] request failed:", err.message);
-      resolve(null);
-    });
-    req.end();
-  });
 }
 
 // ── Local server management ───────────────────────────────────────────────────
@@ -308,7 +269,7 @@ function createWindow(): void {
     },
   });
 
-  mainWindow.loadURL(`http://127.0.0.1:${LOCAL_PORT}/dashboard`);
+  mainWindow.loadURL(`http://127.0.0.1:${LOCAL_PORT}/login`);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -554,21 +515,6 @@ app.whenReady().then(async () => {
     dialog.showErrorBox("Failed to start local server", msg);
     app.quit();
     return;
-  }
-
-  // Auto-authenticate: inject the session cookie before creating the window
-  // so the BrowserWindow loads /dashboard already authenticated.
-  const sidValue = await initDesktopSession();
-  if (sidValue) {
-    await electronSession.defaultSession.cookies.set({
-      url: `http://127.0.0.1:${LOCAL_PORT}`,
-      name: "connect.sid",
-      value: sidValue,
-      httpOnly: true,
-      path: "/",
-    });
-  } else {
-    console.warn("[main] desktop init did not return a session cookie — user will see login page");
   }
 
   createWindow();
