@@ -130,6 +130,7 @@ function SyncStatusBanner({ syncStatus, loading }: { syncStatus: SyncState | nul
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const isDesktop = typeof (window as any).electronAPI !== "undefined";
   const queryClient = useQueryClient();
   const clubId = user?.clubId;
 
@@ -480,7 +481,8 @@ export default function Dashboard() {
 
         {/* ── CLUB PROFILE TAB ─────────────────────────────────────────── */}
         <TabsContent value="profile" className="space-y-8 mt-4">
-          {/* Logo */}
+          {/* Logo — upload is cloud-only; hidden on desktop */}
+          {!isDesktop && <>
           <input
             ref={fileInputRef}
             type="file"
@@ -547,6 +549,7 @@ export default function Dashboard() {
               </CardContent>
             )}
           </Card>
+          </>}
 
           {/* Club ID — read-only, for RFID bridge / internal reference */}
           <Card>
