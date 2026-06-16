@@ -11,9 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { ShieldAlert, KeyRound, Eye, EyeOff } from "lucide-react";
+import { ShieldAlert, KeyRound, Eye, EyeOff, Cloud } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+
+const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
@@ -80,11 +82,43 @@ export default function Login() {
         </div>
         
         <CardContent className="p-8">
+          {isDesktop && (
+            <div className="mb-6 rounded-md border border-blue-500/30 bg-blue-500/10 px-4 py-3 flex items-start gap-3">
+              <Cloud size={16} className="text-blue-400 mt-0.5 shrink-0" />
+              <div className="text-sm text-blue-200">
+                <span className="font-semibold">Desktop app</span> — first time on this device?{" "}
+                You need to sync your account from the cloud before logging in.{" "}
+                <button
+                  type="button"
+                  className="underline font-semibold text-blue-300 hover:text-blue-100"
+                  onClick={() => window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))}
+                >
+                  Set up cloud sync →
+                </button>
+              </div>
+            </div>
+          )}
+
           {authError && (
             <Alert variant="destructive" className="mb-6 rounded-sm">
-              <AlertDescription className="font-medium text-sm flex items-center gap-2">
-                <ShieldAlert size={16} />
-                {authError}
+              <AlertDescription className="font-medium text-sm flex flex-col gap-2">
+                <span className="flex items-center gap-2">
+                  <ShieldAlert size={16} />
+                  {authError}
+                </span>
+                {isDesktop && (
+                  <span className="text-xs opacity-90">
+                    If this is your first login on this device, you need to{" "}
+                    <button
+                      type="button"
+                      className="underline font-semibold"
+                      onClick={() => window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))}
+                    >
+                      set up cloud sync
+                    </button>
+                    {" "}first to bring your account over.
+                  </span>
+                )}
               </AlertDescription>
             </Alert>
           )}
