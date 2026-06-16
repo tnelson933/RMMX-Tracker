@@ -368,7 +368,10 @@ export class SyncEngine {
       },
     );
 
-    if (!res.ok) return;
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`sync-pull failed (${res.status}): ${body}`);
+    }
 
     const data = (await res.json()) as {
       registrations?: Record<string, unknown>[];
