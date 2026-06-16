@@ -186,18 +186,6 @@ export default function Login() {
           <a href="/setup-account" className="text-primary hover:underline font-semibold">
             First time signing in? Set up your account →
           </a>
-          {typeof (window as any).electronAPI !== "undefined" && (
-            <span className="text-xs text-muted-foreground/70 border-t border-muted pt-2 mt-1">
-              Desktop app — use your Rocky Mountain Race Platform credentials.{" "}
-              <button
-                type="button"
-                className="text-primary hover:underline font-semibold"
-                onClick={() => window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))}
-              >
-                Connect cloud account →
-              </button>
-            </span>
-          )}
         </CardFooter>
       </Card>
     </div>

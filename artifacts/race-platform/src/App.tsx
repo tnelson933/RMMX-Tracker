@@ -8,6 +8,8 @@ import { BroadcastProvider } from "@/contexts/BroadcastContext";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { OrganizerLayout } from "@/components/layout/OrganizerLayout";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { DesktopSyncModal } from "@/components/DesktopSyncModal";
+import { DesktopSerialModal } from "@/components/DesktopSerialModal";
 import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/public/Home";
@@ -238,6 +240,8 @@ function App() {
                 <Router />
               </WouterRouter>
               <Toaster />
+              <DesktopSyncModal />
+              <DesktopSerialModal />
             </TooltipProvider>
           </BroadcastProvider>
         </RiderAuthProvider>
