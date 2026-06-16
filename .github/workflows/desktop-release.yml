@@ -67,6 +67,10 @@ jobs:
       - name: Install Python setuptools (required by node-gyp on macOS)
         run: pip3 install setuptools --break-system-packages
 
+      - name: Flatten local-server node_modules with npm (resolves pnpm transitive dep symlinks)
+        working-directory: artifacts/local-server
+        run: npm install --omit=dev --no-package-lock
+
       - name: Rebuild local-server native modules for Electron
         working-directory: artifacts/desktop
         run: |
@@ -144,6 +148,11 @@ jobs:
         run: |
           magick convert icon.png -define icon:auto-resize=256,128,64,48,32,16 icon.ico
           Write-Host "icon.ico generated:"; Get-Item icon.ico | Select-Object Name, Length
+
+      - name: Flatten local-server node_modules with npm (resolves pnpm transitive dep symlinks)
+        working-directory: artifacts/local-server
+        shell: pwsh
+        run: npm install --omit=dev --no-package-lock
 
       - name: Rebuild local-server native modules for Electron
         working-directory: artifacts/desktop
