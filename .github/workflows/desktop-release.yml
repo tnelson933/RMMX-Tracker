@@ -53,10 +53,12 @@ jobs:
         working-directory: artifacts/desktop
         run: |
           node -e "
+            const path = require('path');
             const { rebuild } = require('./node_modules/@electron/rebuild');
             const electronVersion = require('./node_modules/electron/package.json').version;
-            console.log('Rebuilding better-sqlite3 for Electron', electronVersion);
-            rebuild({ buildPath: '../local-server', electronVersion, onlyModules: ['better-sqlite3'], force: true })
+            const buildPath = path.resolve(process.cwd(), '../local-server');
+            console.log('Rebuilding better-sqlite3 for Electron', electronVersion, 'at', buildPath);
+            rebuild({ buildPath, electronVersion, onlyModules: ['better-sqlite3'], force: true })
               .then(() => console.log('Rebuild complete'))
               .catch(err => { console.error(err); process.exit(1); });
           "
@@ -122,7 +124,7 @@ jobs:
         working-directory: artifacts/desktop
         shell: pwsh
         run: |
-          node -e "const { rebuild } = require('./node_modules/@electron/rebuild'); const electronVersion = require('./node_modules/electron/package.json').version; console.log('Rebuilding better-sqlite3 for Electron', electronVersion); rebuild({ buildPath: '../local-server', electronVersion, onlyModules: ['better-sqlite3'], force: true }).then(() => console.log('Rebuild complete')).catch(err => { console.error(err); process.exit(1); });"
+          node -e "const path = require('path'); const { rebuild } = require('./node_modules/@electron/rebuild'); const electronVersion = require('./node_modules/electron/package.json').version; const buildPath = path.resolve(process.cwd(), '../local-server'); console.log('Rebuilding better-sqlite3 for Electron', electronVersion, 'at', buildPath); rebuild({ buildPath, electronVersion, onlyModules: ['better-sqlite3'], force: true }).then(() => console.log('Rebuild complete')).catch(err => { console.error(err); process.exit(1); });"
 
       - name: Package Windows installer
         working-directory: artifacts/desktop
