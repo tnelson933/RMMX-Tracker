@@ -16,12 +16,17 @@ function eAPI(): ElectronAPI | null {
   return (window as { electronAPI?: ElectronAPI }).electronAPI ?? null;
 }
 
+// Baked in at build time via VITE_CLOUD_URL repo variable.
+// If set, we hide the URL field so users only need Club ID + credentials.
+const BUILT_IN_CLOUD_URL: string = (import.meta.env.VITE_CLOUD_URL as string) || "";
+
 export function DesktopSyncModal() {
   const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(BUILT_IN_CLOUD_URL);
   const [clubId, setClubId] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showUrlField, setShowUrlField] = useState(!BUILT_IN_CLOUD_URL);
   const [msg, setMsg] = useState<{ text: string; kind: "error" | "success" } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -33,7 +38,8 @@ export function DesktopSyncModal() {
       setMsg(null);
       setPassword("");
       api.auth.getCredentials().then((creds: any) => {
-        setUrl(creds?.cloudUrl ?? "");
+        // If the user previously saved a custom URL use that; otherwise keep the built-in one
+        setUrl(creds?.cloudUrl || BUILT_IN_CLOUD_URL);
         setClubId(String(creds?.clubId ?? ""));
         setEmail(creds?.email ?? "");
       }).catch(() => {});
@@ -57,7 +63,6 @@ export function DesktopSyncModal() {
     setMsg(null);
     try {
       await api.auth.setCredentials(email, password, url, clubId);
-      // flush() now waits for the real sync cycle to complete before resolving
       await api.sync.flush();
       const state = await api.sync.getState();
       if (state.status === "error") {
@@ -86,11 +91,11 @@ export function DesktopSyncModal() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[min(440px,calc(100vw-32px))] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Cloud Sync Settings</DialogTitle>
           <DialogDescription>
-            Connect this desktop app to your Rocky Mountain Race Platform cloud account to sync registrations, check-ins, and timing data in real time.
+            Enter your organizer credentials to sync your account to this device.
           </DialogDescription>
         </DialogHeader>
 
@@ -107,31 +112,24 @@ export function DesktopSyncModal() {
         )}
 
         <div className="space-y-3">
-          <div>
-            <Label htmlFor="sync-url">Cloud URL</Label>
-            <Input
-              id="sync-url"
-              type="url"
-              placeholder="https://your-app.replit.app"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              autoComplete="off"
-              className="mt-1"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="sync-clubid">Club ID</Label>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="min-w-0">
+              <Label htmlFor="sync-clubid" className="text-xs font-semibold uppercase tracking-wide">
+                Club ID
+              </Label>
               <Input
                 id="sync-clubid"
-                placeholder="1"
+                placeholder="e.g. 1"
                 value={clubId}
                 onChange={(e) => setClubId(e.target.value)}
-                className="mt-1"
+                className="mt-1 h-9 text-sm"
               />
+              <p className="mt-1 text-[11px] text-muted-foreground leading-tight">
+                Find yours on your Organizer Dashboard
+              </p>
             </div>
-            <div>
-              <Label htmlFor="sync-email">Email</Label>
+            <div className="min-w-0">
+              <Label htmlFor="sync-email" className="text-xs font-semibold uppercase tracking-wide">Email</Label>
               <Input
                 id="sync-email"
                 type="email"
@@ -139,24 +137,63 @@ export function DesktopSyncModal() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
-                className="mt-1"
+                className="mt-1 h-9 text-sm"
               />
             </div>
           </div>
+
           <div>
-            <Label htmlFor="sync-password">Password</Label>
+            <Label htmlFor="sync-password" className="text-xs font-semibold uppercase tracking-wide">Password</Label>
             <Input
               id="sync-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
-              className="mt-1"
+              className="mt-1 h-9 text-sm"
             />
           </div>
+
+          {/* URL field — hidden when the cloud URL is already baked into the build */}
+          {showUrlField ? (
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="sync-url" className="text-xs font-semibold uppercase tracking-wide">Cloud URL</Label>
+                {BUILT_IN_CLOUD_URL && (
+                  <button
+                    type="button"
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                    onClick={() => { setUrl(BUILT_IN_CLOUD_URL); setShowUrlField(false); }}
+                  >
+                    Reset to default
+                  </button>
+                )}
+              </div>
+              <Input
+                id="sync-url"
+                type="url"
+                placeholder="https://your-app.replit.app"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                autoComplete="off"
+                className="mt-1 h-9 text-sm"
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Connecting to: <span className="font-mono">{url}</span></span>
+              <button
+                type="button"
+                className="underline hover:text-foreground ml-2 shrink-0"
+                onClick={() => setShowUrlField(true)}
+              >
+                Change
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="pt-2 space-y-2">
+        <div className="pt-2 flex flex-col gap-2">
           <div className="flex gap-2 justify-end">
             <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={busy}>
               Cancel
@@ -165,17 +202,15 @@ export function DesktopSyncModal() {
               {busy ? "Connecting…" : "Save & Connect"}
             </Button>
           </div>
-          <div className="flex justify-start">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive hover:text-destructive hover:bg-destructive/10 text-xs"
-              onClick={handleDisconnect}
-              disabled={busy}
-            >
-              Disconnect cloud sync
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-start text-destructive hover:text-destructive hover:bg-destructive/10 text-xs px-2"
+            onClick={handleDisconnect}
+            disabled={busy}
+          >
+            Disconnect cloud sync
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
