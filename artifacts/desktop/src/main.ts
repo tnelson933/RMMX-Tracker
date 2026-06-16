@@ -478,6 +478,12 @@ function registerIpcHandlers(): void {
 
         if (syncEngine) {
           await syncEngine.flush();
+          // Surface any sync error so the UI can warn the user that data may be
+          // incomplete, without blocking the login flow.
+          const syncState = syncEngine.getState();
+          if (syncState.status === "error" && syncState.lastError) {
+            return { ok: true, syncWarning: syncState.lastError };
+          }
         }
 
         return { ok: true };
@@ -490,7 +496,144 @@ function registerIpcHandlers(): void {
     },
   );
 
+  ipcMain.handle(
+    "ai:suggestPointsTable",
+    async (
+      _event,
+      body: { scoringDescription: string; motoDescription?: string },
+    ) => {
+      if (!syncEngine) {
+        return {
+          ok: false,
+          status: 503,
+          data: {
+            error:
+              "Cloud sync not configured. Please open Cloud Sync Settings and connect to your server first.",
+          },
+        };
+      }
+      try {
+        return await syncEngine.cloudFetch("/api/ai/suggest-points-table", {
+          method: "POST",
+          body,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          status: 500,
+          data: { error: err instanceof Error ? err.message : String(err) },
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "ai:tweakPointsTable",
+    async (_event, body: { instruction: string; currentTable: unknown }) => {
+      if (!syncEngine) {
+        return {
+          ok: false,
+          status: 503,
+          data: { error: "Cloud sync not configured." },
+        };
+      }
+      try {
+        return await syncEngine.cloudFetch("/api/ai/tweak-points-table", {
+          method: "POST",
+          body,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          status: 500,
+          data: { error: err instanceof Error ? err.message : String(err) },
+        };
+      }
+    },
+  );
+
   ipcMain.handle("app:getVersion", () => app.getVersion());
+
+  // ── AI Assistant conversation handlers (AIAssistant component) ───────────────
+  // These route through the sync engine's authenticated cloudFetch so that the
+  // floating AI Assistant panel works on desktop exactly as it does on the web.
+
+  ipcMain.handle("ai:listConversations", async () => {
+    if (!syncEngine) return { ok: false, status: 503, data: [] };
+    try {
+      return await syncEngine.cloudFetch("/api/anthropic/conversations");
+    } catch (err) {
+      return { ok: false, status: 500, data: [] };
+    }
+  });
+
+  ipcMain.handle("ai:createConversation", async (_event, title: string) => {
+    if (!syncEngine) return { ok: false, status: 503, data: null };
+    try {
+      return await syncEngine.cloudFetch("/api/anthropic/conversations", {
+        method: "POST",
+        body: { title },
+      });
+    } catch (err) {
+      return { ok: false, status: 500, data: null };
+    }
+  });
+
+  ipcMain.handle("ai:getConversation", async (_event, id: number) => {
+    if (!syncEngine) return { ok: false, status: 503, data: null };
+    try {
+      return await syncEngine.cloudFetch(`/api/anthropic/conversations/${id}`);
+    } catch (err) {
+      return { ok: false, status: 500, data: null };
+    }
+  });
+
+  ipcMain.handle("ai:deleteConversation", async (_event, id: number) => {
+    if (!syncEngine) return { ok: false, status: 503, data: null };
+    try {
+      return await syncEngine.cloudFetch(`/api/anthropic/conversations/${id}`, {
+        method: "DELETE",
+      });
+    } catch (err) {
+      return { ok: false, status: 500, data: null };
+    }
+  });
+
+  // ai:sendMessage collects the full SSE stream from the cloud streaming endpoint
+  // and returns the assembled text in one shot — no token-by-token streaming on desktop.
+  ipcMain.handle("ai:sendMessage", async (_event, convId: number, content: string) => {
+    if (!syncEngine) {
+      return { ok: false, error: "Cloud sync not configured. Please connect via Cloud Sync Settings." };
+    }
+    try {
+      const result = await syncEngine.cloudFetch(
+        `/api/anthropic/conversations/${convId}/messages`,
+        { method: "POST", body: { content } },
+      );
+      if (!result.ok) {
+        const errData = result.data as any;
+        return { ok: false, error: errData?.error ?? `Server error (${result.status})` };
+      }
+      // The cloud endpoint streams SSE; cloudFetch buffers it all into a string.
+      const sseText = typeof result.data === "string" ? result.data : "";
+      let full = "";
+      for (const line of sseText.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const payload = JSON.parse(line.slice(6)) as {
+            content?: string;
+            done?: boolean;
+            error?: string;
+          };
+          if (payload.content) full += payload.content;
+          else if (payload.error) return { ok: false, error: payload.error };
+        } catch { /* skip malformed SSE lines */ }
+      }
+      return { ok: true, text: full };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 }
 
 // ── Forward tag reads to local server ─────────────────────────────────────────
