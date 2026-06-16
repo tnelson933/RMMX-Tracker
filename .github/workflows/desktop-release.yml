@@ -42,6 +42,7 @@ jobs:
         env:
           PORT: "9090"
           BASE_PATH: "/"
+          VITE_CLOUD_URL: ${{ vars.CLOUD_URL }}
 
       - name: Build Electron main + preload
         run: pnpm --filter @workspace/desktop run build
@@ -141,6 +142,7 @@ jobs:
         env:
           PORT: "9090"
           BASE_PATH: "/"
+          VITE_CLOUD_URL: ${{ vars.CLOUD_URL }}
 
       - name: Build Electron main + preload
         run: pnpm --filter @workspace/desktop run build
