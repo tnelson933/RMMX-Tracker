@@ -371,6 +371,7 @@ export class SyncEngine {
       motos?: Record<string, unknown>[];
       lapCrossings?: Record<string, unknown>[];
       raceResults?: Record<string, unknown>[];
+      users?: Record<string, unknown>[];
     };
 
     const now = new Date().toISOString();
@@ -392,6 +393,7 @@ export class SyncEngine {
           ["motos",            data.motos            ?? []],
           ["lap_crossings",    data.lapCrossings      ?? []],
           ["race_results",     data.raceResults       ?? []],
+          ["users",            data.users            ?? []],
         ];
 
         for (const [table, rows] of tableMap) {
