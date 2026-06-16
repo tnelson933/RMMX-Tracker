@@ -121,6 +121,7 @@ export default function EventDetail() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
+  const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
   const { data: event, isLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: summary } = useGetRaceDaySummary(eventId, { query: { enabled: !!eventId } as any });
@@ -152,9 +153,9 @@ export default function EventDetail() {
       if (!res.ok) return { connected: false, onboardingComplete: false };
       return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean }>;
     },
-    enabled: !isSuperAdmin,
+    enabled: !isSuperAdmin && !isDesktop,
   });
-  const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
+  const stripeReady = !isSuperAdmin && !isDesktop && (stripeStatus?.connected ?? false);
 
 
   const [isEditing, setIsEditing] = useState(false);
@@ -459,8 +460,8 @@ export default function EventDetail() {
 
         <div className="lg:col-span-2 space-y-6">
 
-          {/* Event Image upload card */}
-          <Card>
+          {/* Event Image upload card — cloud-only feature, hidden on desktop */}
+          {!isDesktop && <Card>
             <CardHeader className="pb-3 border-b">
               <CardTitle className="font-heading uppercase text-base flex items-center gap-2">
                 <ImageIcon size={16} className="text-primary" /> Event Image
@@ -543,7 +544,7 @@ export default function EventDetail() {
                 </div>
               </CardContent>
             )}
-          </Card>
+          </Card>}
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2 border-b">
