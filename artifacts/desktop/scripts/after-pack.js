@@ -19,7 +19,19 @@ const fs = require("fs");
 const ARCH_NAMES = { 0: "ia32", 1: "x64", 2: "armv7l", 3: "arm64", 4: "universal" };
 
 exports.default = async function (context) {
-  const electronVersion = context.electronVersion;
+  // electron-builder v25 removed electronVersion from the afterPack context.
+  // Try several paths, then fall back to reading from the installed electron package.
+  const electronVersion =
+    context.electronVersion ??
+    context.packager?.electronVersion ??
+    context.packager?.info?.framework?.version ??
+    JSON.parse(
+      fs.readFileSync(
+        path.join(process.cwd(), "node_modules", "electron", "package.json"),
+        "utf8"
+      )
+    ).version;
+
   const appOutDir = context.appOutDir;
   const archStr = ARCH_NAMES[context.arch] ?? "x64";
 
