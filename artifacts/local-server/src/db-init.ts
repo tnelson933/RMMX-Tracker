@@ -220,10 +220,27 @@ export function initDb() {
       club_id          INTEGER NOT NULL,
       name             TEXT NOT NULL,
       year             INTEGER NOT NULL DEFAULT 0,
+      season           TEXT NOT NULL DEFAULT '',
       classes          TEXT NOT NULL DEFAULT '[]',
       event_ids        TEXT NOT NULL DEFAULT '[]',
+      points_system    TEXT NOT NULL DEFAULT 'standard',
       scoring_table_id INTEGER,
       created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS points_tables (
+      id                 INTEGER PRIMARY KEY,
+      club_id            INTEGER,
+      name               TEXT NOT NULL,
+      description        TEXT NOT NULL DEFAULT '',
+      scoring_method     TEXT NOT NULL DEFAULT 'highest_points',
+      main_event_only    INTEGER NOT NULL DEFAULT 0,
+      points_scale       TEXT NOT NULL DEFAULT '[]',
+      scoring_formula    TEXT,
+      is_system_default  INTEGER NOT NULL DEFAULT 0,
+      auto_dnf_enabled   INTEGER NOT NULL DEFAULT 0,
+      auto_dnf_threshold INTEGER NOT NULL DEFAULT 75,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS series_points (
@@ -407,8 +424,23 @@ export function initDb() {
     ["events", "min_lap_ms                 INTEGER"],
     // keep legacy column name for backward compat (old rows may reference it)
     ["events", "min_lap_times              TEXT NOT NULL DEFAULT '{}'"],
+    ["events", "ama_event_id               TEXT"],
     // users
     ["users", "tour_completed INTEGER NOT NULL DEFAULT 0"],
+    // clubs
+    ["clubs", "contact_email    TEXT"],
+    ["clubs", "contact_phone    TEXT"],
+    ["clubs", "logo_url         TEXT"],
+    ["clubs", "website          TEXT"],
+    ["clubs", "description      TEXT"],
+    ["clubs", "auto_dnf_enabled   INTEGER NOT NULL DEFAULT 0"],
+    ["clubs", "auto_dnf_threshold INTEGER NOT NULL DEFAULT 75"],
+    // series
+    ["series", "season        TEXT NOT NULL DEFAULT ''"],
+    ["series", "points_system TEXT NOT NULL DEFAULT 'standard'"],
+    // points_tables (table created above; add any future columns here)
+    ["points_tables", "auto_dnf_enabled   INTEGER NOT NULL DEFAULT 0"],
+    ["points_tables", "auto_dnf_threshold INTEGER NOT NULL DEFAULT 75"],
     // riders
     ["riders", "bib_number            TEXT"],
     ["riders", "date_of_birth         TEXT"],
