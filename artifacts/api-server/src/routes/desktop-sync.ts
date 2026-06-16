@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, gt, and, inArray } from "drizzle-orm";
+import { eq, gt, and, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -11,6 +11,10 @@ import {
   lapCrossingsTable,
   raceResultsTable,
   motosTable,
+  clubsTable,
+  seriesTable,
+  seriesPointsTable,
+  pointsTablesTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -630,11 +634,31 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     .from(eventsTable)
     .where(eq(eventsTable.clubId, clubId));
 
+  // Fetch club record + scoring tables + series (needed even when no events)
+  const [clubRow] = await db
+    .select()
+    .from(clubsTable)
+    .where(eq(clubsTable.id, clubId));
+
+  const pointsTables = await db
+    .select()
+    .from(pointsTablesTable)
+    .where(or(isNull(pointsTablesTable.clubId), eq(pointsTablesTable.clubId, clubId)));
+
+  const clubSeries = await db
+    .select()
+    .from(seriesTable)
+    .where(eq(seriesTable.clubId, clubId));
+
   if (clubEvents.length === 0) {
     return res.json({
       registrations: [], checkins: [], riders: [],
       rfidAssignments: [], events: [], motos: [],
       lapCrossings: [], raceResults: [], users: clubUsers,
+      clubs: clubRow ? [clubRow] : [],
+      pointsTables,
+      series: clubSeries,
+      seriesPoints: [],
     });
   }
 
@@ -683,9 +707,23 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
           .where(inArray(ridersTable.id, regRiderIds))
       : [];
 
+  // Series points for all club series
+  const seriesIds = clubSeries.map((s) => s.id);
+  const seriesPoints =
+    seriesIds.length > 0
+      ? await db
+          .select()
+          .from(seriesPointsTable)
+          .where(inArray(seriesPointsTable.seriesId, seriesIds))
+      : [];
+
   return res.json({
     registrations, checkins, rfidAssignments, riders, events,
     motos, lapCrossings, raceResults, users: clubUsers,
+    clubs: clubRow ? [clubRow] : [],
+    pointsTables,
+    series: clubSeries,
+    seriesPoints,
   });
 });
 
