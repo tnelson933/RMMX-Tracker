@@ -5,10 +5,13 @@ import { getDb, parseBool } from "../db";
 const router = Router();
 
 function formatUser(u: Record<string, unknown>) {
+  const firstName = String(u.first_name ?? "").trim();
+  const lastName = String(u.last_name ?? "").trim();
+  const fullName = [firstName, lastName].filter(Boolean).join(" ") || String(u.email ?? "");
   return {
     id: u.id,
     email: u.email,
-    name: u.name ?? "",
+    name: fullName,
     role: u.role ?? "organizer",
     clubId: u.club_id,
     tourCompleted: parseBool(u.tour_completed as number | null),
