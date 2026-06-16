@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 
+const isDesktop = typeof (window as any).electronAPI !== "undefined";
+
 export function PublicLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -22,18 +24,22 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-6">
-            <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Home</Link>
-            <Link href="/results" className="text-sm font-medium hover:text-primary transition-colors">Results</Link>
-            <Link href="/leaderboard" className="text-sm font-medium hover:text-primary transition-colors">Leaderboard</Link>
-          </nav>
+          {/* Desktop nav — hidden in the Electron desktop app (organizer-only) */}
+          {!isDesktop && (
+            <nav className="hidden md:flex items-center gap-6">
+              <Link href="/" className="text-sm font-medium hover:text-primary transition-colors">Home</Link>
+              <Link href="/results" className="text-sm font-medium hover:text-primary transition-colors">Results</Link>
+              <Link href="/leaderboard" className="text-sm font-medium hover:text-primary transition-colors">Leaderboard</Link>
+            </nav>
+          )}
 
           {/* Desktop auth buttons */}
           <div className="hidden md:flex items-center gap-2">
-            <Link href="/rider/login">
-              <Button variant="outline" className="font-heading uppercase text-sm">Rider Login</Button>
-            </Link>
+            {!isDesktop && (
+              <Link href="/rider/login">
+                <Button variant="outline" className="font-heading uppercase text-sm">Rider Login</Button>
+              </Link>
+            )}
             {isAuthenticated ? (
               <Link href="/dashboard">
                 <Button variant="outline" className="font-heading uppercase text-sm">Dashboard</Button>
@@ -45,18 +51,20 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          {/* Mobile hamburger */}
-          <button
-            className="md:hidden p-2 rounded-md hover:bg-muted transition-colors"
-            onClick={() => setMobileOpen(o => !o)}
-            aria-label="Toggle menu"
-          >
-            {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-          </button>
+          {/* Mobile hamburger — hidden on desktop app */}
+          {!isDesktop && (
+            <button
+              className="md:hidden p-2 rounded-md hover:bg-muted transition-colors"
+              onClick={() => setMobileOpen(o => !o)}
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+            </button>
+          )}
         </div>
 
-        {/* Mobile drawer */}
-        {mobileOpen && (
+        {/* Mobile drawer — hidden on desktop app */}
+        {!isDesktop && mobileOpen && (
           <div className="md:hidden absolute top-full left-0 right-0 bg-card border-b border-border shadow-lg">
             <nav className="container mx-auto px-4 py-3 flex flex-col">
               <Link href="/" onClick={close} className="py-3 px-1 text-sm font-medium border-b border-border/50 hover:text-primary transition-colors">Home</Link>
