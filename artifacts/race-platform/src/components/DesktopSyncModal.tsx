@@ -57,37 +57,14 @@ export function DesktopSyncModal() {
     setMsg(null);
     try {
       await api.auth.setCredentials(email, password, url, clubId);
+      // flush() now waits for the real sync cycle to complete before resolving
       await api.sync.flush();
       const state = await api.sync.getState();
       if (state.status === "error") {
         setMsg({ text: `Could not connect: ${state.lastError ?? "unknown error"}`, kind: "error" });
       } else {
-        setMsg({ text: "Connected! Sync is running.", kind: "success" });
+        setMsg({ text: "Connected! Your account has been synced.", kind: "success" });
         setTimeout(() => setOpen(false), 1400);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setMsg({ text: `Error: ${msg}`, kind: "error" });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleTest = async () => {
-    if (!url || !clubId || !email || !password) {
-      setMsg({ text: "All fields are required.", kind: "error" });
-      return;
-    }
-    setBusy(true);
-    setMsg(null);
-    try {
-      await api.auth.setCredentials(email, password, url, clubId);
-      await api.sync.flush();
-      const state = await api.sync.getState();
-      if (state.status === "error") {
-        setMsg({ text: `Connection failed: ${state.lastError ?? "unknown error"}`, kind: "error" });
-      } else {
-        setMsg({ text: "Connection successful! Click Save & Connect to finish.", kind: "success" });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -109,7 +86,7 @@ export function DesktopSyncModal() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Cloud Sync Settings</DialogTitle>
           <DialogDescription>
@@ -179,25 +156,24 @@ export function DesktopSyncModal() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={handleDisconnect}
-            disabled={busy}
-          >
-            Disconnect cloud sync
-          </Button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+        <div className="pt-2 space-y-2">
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={busy}>
               Cancel
             </Button>
-            <Button variant="outline" onClick={handleTest} disabled={busy}>
-              Test Connection
-            </Button>
-            <Button onClick={handleSave} disabled={busy}>
+            <Button size="sm" onClick={handleSave} disabled={busy}>
               {busy ? "Connecting…" : "Save & Connect"}
+            </Button>
+          </div>
+          <div className="flex justify-start">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10 text-xs"
+              onClick={handleDisconnect}
+              disabled={busy}
+            >
+              Disconnect cloud sync
             </Button>
           </div>
         </div>
