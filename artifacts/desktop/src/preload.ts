@@ -3,6 +3,7 @@ import type {
   SyncState,
   SerialPortInfo,
   SerialStatus,
+  MyLapsStatus,
   CloudCredentials,
 } from "./ipc-types";
 
@@ -31,6 +32,17 @@ const electronAPI = {
       const handler = (_: unknown, status: SerialStatus) => cb(status);
       ipcRenderer.on("serial:status", handler);
       return () => ipcRenderer.off("serial:status", handler);
+    },
+  },
+
+  mylaps: {
+    connect: (ip: string): Promise<void> => ipcRenderer.invoke("mylaps:connect", ip),
+    disconnect: (): Promise<void> => ipcRenderer.invoke("mylaps:disconnect"),
+    getStatus: (): Promise<MyLapsStatus> => ipcRenderer.invoke("mylaps:getStatus"),
+    onStatus: (cb: (status: MyLapsStatus) => void): (() => void) => {
+      const handler = (_: unknown, status: MyLapsStatus) => cb(status);
+      ipcRenderer.on("mylaps:status", handler);
+      return () => ipcRenderer.off("mylaps:status", handler);
     },
   },
 
