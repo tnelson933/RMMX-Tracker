@@ -130,7 +130,7 @@ function waitForLocalServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     function probe() {
       const req = http.get(
-        `http://localhost:${LOCAL_PORT}/api/healthz`,
+        `http://127.0.0.1:${LOCAL_PORT}/api/healthz`,
         (res) => {
           if (res.statusCode === 200) {
             resolve();
@@ -234,7 +234,7 @@ function createWindow(): void {
     },
   });
 
-  mainWindow.loadURL(`http://localhost:${LOCAL_PORT}`);
+  mainWindow.loadURL(`http://127.0.0.1:${LOCAL_PORT}`);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -395,7 +395,7 @@ function postCrossingToLocalServer(rfidNumber: string): void {
   const body = JSON.stringify({ rfidNumber, crossingTime: new Date().toISOString() });
   const req = http.request(
     {
-      host: "localhost",
+      host: "127.0.0.1",
       port: LOCAL_PORT,
       path: "/api/timing/active/crossing",
       method: "POST",
