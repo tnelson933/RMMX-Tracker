@@ -56,5 +56,13 @@ export type IpcChannels = {
   "auth:getCredentials": () => CloudCredentials | null;
   "auth:setCredentials": (email: string, password: string, cloudUrl: string, clubId: string) => void;
   "auth:clearCredentials": () => void;
+  "ai:suggestPointsTable": (body: {
+    scoringDescription: string;
+    motoDescription?: string;
+  }) => { ok: boolean; status: number; data: unknown };
+  "ai:tweakPointsTable": (body: {
+    instruction: string;
+    currentTable: unknown;
+  }) => { ok: boolean; status: number; data: unknown };
   "app:getVersion": () => string;
 };
