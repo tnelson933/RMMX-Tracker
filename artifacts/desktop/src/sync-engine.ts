@@ -34,7 +34,7 @@ export class SyncEngine {
   private sessionCookie: string | null = null;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private listeners: StateChangeCallback[] = [];
-  private flushing = false;
+  private flushPromise: Promise<void> | null = null;
   private pollIntervalMs: number;
 
   constructor(opts: {
@@ -155,15 +155,25 @@ export class SyncEngine {
     this.emit();
   }
 
-  async flush(): Promise<void> {
-    if (this.flushing) return;
-    this.flushing = true;
+  /**
+   * Trigger a sync cycle. If a cycle is already in flight, returns the same
+   * promise so every caller waits for the same real completion — this is the
+   * fix for the race condition where setCredentials starts a flush and the
+   * modal's subsequent flush() call previously returned immediately.
+   */
+  flush(): Promise<void> {
+    if (this.flushPromise) return this.flushPromise;
+    this.flushPromise = this._flush().finally(() => {
+      this.flushPromise = null;
+    });
+    return this.flushPromise;
+  }
 
+  private async _flush(): Promise<void> {
     const reachable = await this.probe();
     if (!reachable) {
       this.wasOffline = true;
       this.setStatus("offline");
-      this.flushing = false;
       return;
     }
 
@@ -197,8 +207,6 @@ export class SyncEngine {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.setStatus("error", msg);
-    } finally {
-      this.flushing = false;
     }
   }
 
