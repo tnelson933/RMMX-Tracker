@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { formatLapTime } from "./timing";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
 import {
   riderAccountsTable,
@@ -147,6 +148,32 @@ router.post("/rider/push-token", requireRiderAuth, async (req, res) => {
   return res.json({ ok: true });
 });
 
+// GET /rider/my-event-ids — lightweight list of event IDs any family rider is registered for
+router.get("/rider/my-event-ids", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const familyRiders = await db
+    .select({ id: ridersTable.id })
+    .from(ridersTable)
+    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+
+  if (familyRiders.length === 0) return res.json({ eventIds: [] });
+
+  const familyRiderIds = familyRiders.map(r => r.id);
+
+  const regs = await db
+    .selectDistinct({ eventId: registrationsTable.eventId })
+    .from(registrationsTable)
+    .where(and(
+      inArray(registrationsTable.riderId, familyRiderIds),
+      ne(registrationsTable.status, "void"),
+    ));
+
+  return res.json({ eventIds: regs.map(r => r.eventId) });
+});
+
 // GET /rider/profiles — all rider profiles linked to this account's email
 router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
@@ -187,6 +214,9 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
         bibNumber: rider.bibNumber,
         rfidNumber: rider.rfidNumber,
         dateOfBirth: rider.dateOfBirth,
+        bikeManufacturer: rider.bikeManufacturer ?? null,
+        bikeModel: rider.bikeModel ?? null,
+        bikeYear: rider.bikeYear ?? null,
         eventsRaced: uniqueEvents.size,
         totalPoints,
         bestPosition,
@@ -214,6 +244,11 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     return res.status(403).json({ error: "Access denied" });
   }
 
+  const eventIdFilter = req.query.eventId ? parseInt(req.query.eventId as string, 10) : null;
+  const historyWhere = eventIdFilter && !isNaN(eventIdFilter)
+    ? and(eq(raceResultsTable.riderId, riderId), eq(raceResultsTable.eventId, eventIdFilter))
+    : eq(raceResultsTable.riderId, riderId);
+
   const rows = await db
     .select({
       resultId: raceResultsTable.id,
@@ -239,7 +274,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     .from(raceResultsTable)
     .leftJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
     .leftJoin(eventsTable, eq(raceResultsTable.eventId, eventsTable.id))
-    .where(eq(raceResultsTable.riderId, riderId))
+    .where(historyWhere)
     .orderBy(desc(eventsTable.date), asc(motosTable.motoNumber));
 
   // Group by event
@@ -748,7 +783,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
   const familyRiderIds = familyRiders.map(r => r.id);
   const familyRiderMap = new Map(familyRiders.map(r => [r.id, `${r.firstName} ${r.lastName}`]));
 
-  // All confirmed registrations for ALL family riders
+  // Only confirmed registrations for ALL family riders
   const regs = await db
     .select({
       riderId: registrationsTable.riderId,
@@ -759,7 +794,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     .from(registrationsTable)
     .where(and(
       inArray(registrationsTable.riderId, familyRiderIds),
-      ne(registrationsTable.status, "void"),
+      eq(registrationsTable.status, "confirmed"),
     ));
 
   if (regs.length === 0) return res.json({ familyRiderIds, events: [] });
@@ -974,6 +1009,230 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
   });
 
   return res.json({ familyRiderIds, events: results });
+});
+
+// GET /rider/memory — return the server-side Rocky memory blob for this account
+router.get("/rider/memory", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const [account] = await db
+    .select({ rockyMemory: riderAccountsTable.rockyMemory })
+    .from(riderAccountsTable)
+    .where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  return res.json({ memory: account.rockyMemory ?? "" });
+});
+
+// PATCH /rider/memory — overwrite the server-side Rocky memory blob
+router.patch("/rider/memory", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const { memory } = req.body;
+  if (typeof memory !== "string") {
+    return res.status(400).json({ error: "memory must be a string" });
+  }
+  await db
+    .update(riderAccountsTable)
+    .set({ rockyMemory: memory || null })
+    .where(eq(riderAccountsTable.id, riderAccountId));
+  return res.json({ ok: true });
+});
+
+// GET /rider/race-gas-balance — stub; returns 0 until race gas system is wired up
+router.get("/rider/race-gas-balance", requireRiderAuth, async (_req, res) => {
+  return res.json({ balance: 0, currency: "USD" });
+});
+
+// POST /rider/training-plan — AI-powered MX/SX gym workout plan generator
+const MX_TRAINING_SYSTEM_PROMPT = `You are an elite Supercross and Motocross physical conditioning coach with 20+ years of experience training professional and amateur racers at all levels from local amateur to AMA Pro.
+
+Your knowledge is deeply specialized in the unique physical demands of SX/MX racing:
+- Arm pump (forearm compartment syndrome) — the #1 complaint of MX racers — prevention, treatment, and long-term conditioning
+- Explosive power for holeshots, ruts, and whoops sections
+- Cardiovascular endurance for 30–35 minute outdoor motos and 20-minute Supercross races
+- Core stability and anti-rotation strength for absorbing G-forces through rough terrain
+- Grip strength, wrist conditioning, and forearm endurance for technical sections
+- Knee and ankle stability for the standing riding position over rough terrain
+- Neck and shoulder strength for helmet loads and crash recovery
+- Hip flexor and posterior chain power for pumping the bike
+- Balance and proprioception for sand, ruts, and off-cambers
+
+Professional MX/SX athletes (Eli Tomac, Cooper Webb, Ken Roczen, Chase Sexton) follow periodized training programs combining:
+- HIIT intervals mimicking the variable intensity of a moto (sprint → recovery → sprint)
+- Strength training emphasizing push/pull balance, hip hinge, and posterior chain
+- Grip-specific forearm work: reverse curls, farmer carries, wrist rollers, dead hangs
+- Aerobic base building: cycling, running, swimming at conversational pace
+- Plyometric explosive power for starts (box jumps, broad jumps, med ball slams)
+- Core anti-rotation: Pallof press, single-arm carries, plank variations
+
+RULES:
+1. ONLY use standard commercial gym equipment: treadmills, free weights (barbells, dumbbells, EZ-curl bars), cable machines, pull-up bars, bench, squat rack, battle ropes, plyo boxes, resistance bands, foam rollers, exercise bikes, rowing machines
+2. NEVER reference motocross bikes, moto simulators, tracks, or specialized MX equipment
+3. EVERY exercise must include a specific, practical mxBenefit explaining exactly why it helps SX/MX performance — be specific (e.g. "Builds the forearm pump endurance needed for the last 10 minutes of a moto" not just "builds arm strength")
+4. Form tips must be extremely specific and practical — include common mistakes to avoid
+5. Time the workout realistically: warm-up 8–12 min, main work proportional to total duration, cool-down 5–8 min
+6. For HIIT/cardio exercises use treadmill or bike with specific speed/resistance settings
+7. progressionTip should give a concrete next step for the next session
+
+Respond with ONLY a valid JSON object — no markdown fences, no explanation, no prefix text. Schema:
+{"planTitle":"string","totalMinutes":number,"focus":["3-4 specific focuses"],"mxRelevance":"2 sentences on why this helps SX/MX","phases":[{"name":"string","duration":number,"phaseColor":"hex (#22c55e warm-up, #3b82f6 strength, #ef4444 HIIT, #f97316 finisher, #8b5cf6 cool-down)","exercises":[{"name":"string","equipment":"string","duration":"string or null","sets":number_or_null,"reps":"string or null","restSeconds":number,"intensity":"string","muscleGroups":["string"],"mxBenefit":"specific MX performance benefit","formTips":["3-4 specific cues"],"equipmentSetup":"string","progressionTip":"string"}]}],"proTip":"pro SX/MX training insight","nutritionTip":"specific nutrition advice","recoveryTip":"specific recovery protocol"}`;
+
+router.post("/rider/training-plan", requireRiderAuth, async (req, res) => {
+  const { goal, durationMinutes } = req.body as { goal?: string; durationMinutes?: number };
+
+  if (!goal?.trim()) return res.status(400).json({ error: "goal is required" });
+  if (!durationMinutes || durationMinutes < 15 || durationMinutes > 180) {
+    return res.status(400).json({ error: "durationMinutes must be between 15 and 180" });
+  }
+
+  const userPrompt = `Generate a complete ${durationMinutes}-minute gym workout plan for a Supercross/Motocross racer who wants to improve: "${goal.trim()}"
+
+Make this workout extremely targeted to what they asked about. If they mention arm pump, make the grip/forearm work the centerpiece. If they mention starts, make explosive power the focus. If they mention endurance, structure it as interval-based cardio with strength support.
+
+Total workout time: ${durationMinutes} minutes. Distribute phases logically (warm-up ~10 min, main work proportional, finisher and cool-down at end).`;
+
+  try {
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 8192,
+      system: MX_TRAINING_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }],
+    });
+
+    const raw = message.content[0]?.type === "text" ? message.content[0].text : "";
+    // Strip markdown fences if model adds them
+    const cleaned = raw
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/```\s*$/i, "")
+      .trim();
+
+    const plan = JSON.parse(cleaned);
+    return res.json(plan);
+  } catch (err) {
+    req.log.error({ err }, "Training plan generation failed");
+    return res.status(500).json({ error: "Failed to generate training plan. Please try again." });
+  }
+});
+
+// POST /rider/mechanic-chat — AI mechanic and riding coach conversational agent
+router.post("/rider/mechanic-chat", requireRiderAuth, async (req, res) => {
+  const { messages, riderContext, riderMemory } = req.body;
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: "messages array is required" });
+  }
+
+  const bikeStr = [riderContext?.bikeYear, riderContext?.bikeMake, riderContext?.bikeModel]
+    .filter(Boolean)
+    .join(" ");
+
+  const memorySection =
+    riderMemory && typeof riderMemory === "string" && riderMemory.trim().length > 0
+      ? `\nPAST CONVERSATION MEMORY (topics already covered with this rider — use this to avoid repeating the same advice and to follow up naturally on earlier issues):
+${riderMemory.trim()}
+
+`
+      : "";
+
+  const systemPrompt = `You are Rocky — an elite motocross and ATV mechanic and expert-level competitive rider with 25+ years of professional MX/SX/ATV racing experience at the highest levels.
+
+MECHANIC EXPERTISE:
+- Deep knowledge of all major MX/SX/ATV engine platforms: 2-stroke and 4-stroke, mini to open class
+- Suspension setup, tuning, and re-valving for all track conditions, rider weights, and riding styles
+- Carburetion, jetting, fuel injection, and EFI mapping
+- Chassis geometry, linkage ratios, triple-clamp offset, steering head bearings
+- Transmission, clutch pack setup, clutch diagnosis, and drivetrain issues
+- Electrical systems: ignition timing, stator/CDI/flywheel, wiring diagnosis
+- Brake systems: bleeding, pad compound selection, rotor warpage, master cylinder issues
+- Premix ratios, coolant systems, radiator flush, air filter maintenance
+- Preventive maintenance schedules by hour/race count
+
+RIDING COACH EXPERTISE:
+- Corner technique: late-apex vs. early-apex, braking points, entry speed, rut riding, off-camber sections
+- Body positioning: attack position, weight distribution fore-aft, foot placement on pegs
+- Jump technique: doubles, triples, rhythm section timing, scrubs, whips
+- Track reading: line selection, rut avoidance, switching lines during a moto
+- Gate starts: clutch engagement points, body position, throttle timing
+- Race strategy: managing pace, passing opportunities, conserving energy
+- Mental game: race-day nerves, managing pressure, crash recovery
+- Common beginner/intermediate mistakes and how to fix them
+
+RIDER CONTEXT (already known — never ask for this information):
+- Rider name: ${riderContext?.name ?? "Unknown"}
+- Bike: ${bikeStr || "not set — if relevant, ask what they're riding"}
+- Experience level: ${riderContext?.rideExperience ?? "not specified"}
+- Events raced: ${riderContext?.eventsRaced ?? "unknown"}
+- Best finish: ${riderContext?.bestPosition != null ? `P${riderContext.bestPosition}` : "N/A"}
+- Race class: ${riderContext?.recentClass ?? "not specified"}
+${memorySection}
+STYLE GUIDELINES:
+- Be direct, confident, and technical but accessible — like a trusted crew chief
+- Reference the rider's specific bike make/model when giving bike-specific advice
+- When troubleshooting, ask one focused clarifying question at a time — don't overwhelm
+- Tailor all advice to their experience level
+- Keep responses under 280 words unless a step-by-step technical breakdown is needed
+- Use MX terminology naturally (moto, gate pick, pinned, roosting, bucking, head-shake, etc.)
+- End with a follow-up question when appropriate to keep the diagnosis moving
+- When past memory entries exist, naturally reference them (e.g. "Last time we talked about your jetting — did that fix the bog?") rather than repeating the same advice from scratch`;
+
+  try {
+    const filtered = messages
+      .filter((m: any) => m.role === "user" || m.role === "assistant")
+      .map((m: any) => ({ role: m.role as "user" | "assistant", content: String(m.content) }));
+
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: filtered,
+    });
+
+    const reply =
+      response.content[0]?.type === "text"
+        ? response.content[0].text
+        : "Sorry, couldn't process that. Try again.";
+
+    return res.json({ reply });
+  } catch (err) {
+    req.log.error({ err }, "Mechanic chat failed");
+    return res.status(500).json({ error: "Chat failed. Please try again." });
+  }
+});
+
+// POST /rider/mechanic-memory-update — summarize the last exchange into a memory entry
+router.post("/rider/mechanic-memory-update", requireRiderAuth, async (req, res) => {
+  const { lastUserMessage, lastAssistantReply, riderContext } = req.body;
+
+  if (!lastUserMessage || !lastAssistantReply) {
+    return res.status(400).json({ error: "lastUserMessage and lastAssistantReply are required" });
+  }
+
+  const bikeStr = [riderContext?.bikeYear, riderContext?.bikeMake, riderContext?.bikeModel]
+    .filter(Boolean)
+    .join(" ");
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 120,
+      system: `You are a concise memory-writer for a motorcycle mechanic AI. Summarise a single Q&A exchange into ONE short bullet line (max 25 words) that captures: the topic/problem, the advice given, and the outcome if mentioned. Format: [${today}] <summary>. Output only the bullet line — no preamble, no markdown.`,
+      messages: [
+        {
+          role: "user",
+          content: `Rider${bikeStr ? ` (${bikeStr})` : ""} asked: "${lastUserMessage}"\n\nRocky replied: "${lastAssistantReply}"`,
+        },
+      ],
+    });
+
+    const memoryEntry =
+      response.content[0]?.type === "text" ? response.content[0].text.trim() : null;
+
+    return res.json({ memoryEntry });
+  } catch (err) {
+    req.log.error({ err }, "Memory update failed");
+    return res.status(500).json({ error: "Memory update failed" });
+  }
 });
 
 export default router;
