@@ -54,10 +54,12 @@ export default function Login() {
       { data: { email: data.email, password: data.password, rememberMe: data.rememberMe } },
       {
         onSuccess: async () => {
-          // After a successful local login on desktop, trigger an immediate sync so
-          // any data added via the web portal shows up right away.
+          // On desktop: wait for sync to finish pulling cloud data into SQLite,
+          // then wipe all cached query responses so the dashboard fetches fresh
+          // data instead of serving the empty-table snapshots taken before sync.
           if (isDesktop) {
-            void (window as any).electronAPI?.sync?.flush?.();
+            try { await (window as any).electronAPI?.sync?.flush?.(); } catch { /* non-fatal */ }
+            await queryClient.invalidateQueries();
           }
           await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
         },
@@ -77,12 +79,14 @@ export default function Login() {
               ) as { ok: boolean; error?: string };
 
               if (result.ok) {
-                // Cloud sync succeeded — retry local login with freshly synced data
+                // Cloud sync succeeded — retry local login with freshly synced data.
+                // cloudLogin already awaited flush(), so data is in SQLite.
+                // Invalidate all query caches so the dashboard refetches clean data.
                 loginMutation.mutate(
                   { data: { email: data.email, password: data.password, rememberMe: data.rememberMe } },
                   {
                     onSuccess: async () => {
-                      void (window as any).electronAPI?.sync?.flush?.();
+                      await queryClient.invalidateQueries();
                       await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
                     },
                     onError: (retryErr: any) => {
