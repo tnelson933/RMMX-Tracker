@@ -69,7 +69,9 @@ jobs:
 
       - name: Flatten local-server node_modules with npm (resolves pnpm transitive dep symlinks)
         working-directory: artifacts/local-server
-        run: npm install --omit=dev --no-package-lock
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.devDependencies;fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
+          npm install --omit=dev --no-package-lock
 
       - name: Rebuild local-server native modules for Electron
         working-directory: artifacts/desktop
@@ -152,7 +154,9 @@ jobs:
       - name: Flatten local-server node_modules with npm (resolves pnpm transitive dep symlinks)
         working-directory: artifacts/local-server
         shell: pwsh
-        run: npm install --omit=dev --no-package-lock
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.devDependencies;fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
+          npm install --omit=dev --no-package-lock
 
       - name: Rebuild local-server native modules for Electron
         working-directory: artifacts/desktop
