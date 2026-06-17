@@ -427,6 +427,7 @@ export class SyncEngine {
       pointsTables?: Record<string, unknown>[];
       discountCategories?: Record<string, unknown>[];
       practiceSessions?: Record<string, unknown>[];
+      practiceCrossings?: Record<string, unknown>[];
     };
 
     const now = new Date().toISOString();
@@ -446,6 +447,7 @@ export class SyncEngine {
           ["series_points",       data.seriesPoints        ?? []],
           ["discount_categories", data.discountCategories  ?? []],
           ["practice_sessions",   data.practiceSessions    ?? []],
+          ["practice_crossings",  data.practiceCrossings   ?? []],
           ["registrations",       data.registrations       ?? []],
           ["checkins",            data.checkins            ?? []],
           ["riders",              data.riders              ?? []],
