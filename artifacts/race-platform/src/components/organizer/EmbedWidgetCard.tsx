@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Copy, Check, Code2, ExternalLink } from "lucide-react";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 interface Props {
   eventId: number;
@@ -11,7 +12,7 @@ export function EmbedWidgetCard({ eventId }: Props) {
   const [copied, setCopied] = useState(false);
   const [previewSize, setPreviewSize] = useState<"sm" | "md" | "lg">("md");
 
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const origin = getPublicOrigin();
   const widgetUrl = `${origin}/widget/${eventId}`;
 
   const sizes = {
