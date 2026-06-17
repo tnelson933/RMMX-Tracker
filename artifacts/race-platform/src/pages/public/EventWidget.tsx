@@ -419,9 +419,9 @@ export default function EventWidget() {
       {/* Fixed footer */}
       <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#f8fafc", borderTop: "1px solid #e2e8f0", padding: "7px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <img src={rmLogo} alt="RMMX Tracker" style={{ width: 22, height: 22, objectFit: "contain" }} />
+          <img src={rmLogo} alt="RM Tracker" style={{ width: 22, height: 22, objectFit: "contain" }} />
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#dc2626" }}>RMMX</span>
+            <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#dc2626" }}>RM</span>
             <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "#dc2626" }}>Tracker</span>
           </div>
           {isLive && <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 4 }}>· auto-updates every 30s</span>}
