@@ -209,9 +209,9 @@ export default function ReaderSetup() {
     if (platform === "windows") {
       content = [
         "@echo off",
-        "title Rocky Mountain Race Timing Bridge",
+        "title RM Tracker Timing Bridge",
         "echo ================================================",
-        "echo   Rocky Mountain Race Timing Bridge",
+        "echo   RM Tracker Timing Bridge",
         "echo ================================================",
         "echo.",
         "echo Starting... Keep this window open while racing.",
@@ -229,7 +229,7 @@ export default function ReaderSetup() {
         "#!/bin/bash",
         'cd "$(dirname "$0")"',
         "echo '================================================'",
-        "echo '  Rocky Mountain Race Timing Bridge'",
+        "echo '  RM Tracker Timing Bridge'",
         "echo '================================================'",
         "echo ''",
         "echo 'Starting... Keep this window open while racing.'",
