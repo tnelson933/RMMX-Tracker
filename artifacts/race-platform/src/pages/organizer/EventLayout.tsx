@@ -1,7 +1,43 @@
 import { Switch, Route, Redirect, useRoute } from "wouter";
 import { Link } from "wouter";
+import { Component, type ReactNode } from "react";
 import { useGetEvent } from "@workspace/api-client-react";
-import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, CalendarDays } from "lucide-react";
+import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, CalendarDays, AlertTriangle } from "lucide-react";
+
+class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-8 flex flex-col items-center gap-4 text-center">
+          <AlertTriangle size={40} className="text-destructive" />
+          <div>
+            <p className="font-heading font-bold uppercase text-lg">This page crashed</p>
+            <p className="text-muted-foreground text-sm mt-1">
+              {this.state.error.message}
+            </p>
+            <pre className="mt-3 text-left text-xs bg-muted rounded p-3 max-w-xl overflow-auto whitespace-pre-wrap">
+              {this.state.error.stack}
+            </pre>
+          </div>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="px-4 py-2 rounded bg-primary text-primary-foreground text-sm font-bold uppercase tracking-wider"
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 import EventDetail from "./EventDetail";
 import Registrations from "./Registrations";
@@ -55,16 +91,18 @@ export default function EventLayout() {
       </div>
       
       <div className="flex-1 overflow-auto">
-        <Switch>
-          <Route path="/events/:eventId" component={EventDetail} />
-          <Route path="/events/:eventId/registrations" component={Registrations} />
-          <Route path="/events/:eventId/checkin" component={Checkin} />
-          <Route path="/events/:eventId/schedule" component={EventSchedule} />
-          <Route path="/events/:eventId/practice" component={PracticeRedirect} />
-          <Route path="/events/:eventId/motos" component={Motos} />
-          <Route path="/events/:eventId/results" component={EnterResults} />
-          <Route path="/events/:eventId/report" component={Report} />
-        </Switch>
+        <PageErrorBoundary>
+          <Switch>
+            <Route path="/events/:eventId" component={EventDetail} />
+            <Route path="/events/:eventId/registrations" component={Registrations} />
+            <Route path="/events/:eventId/checkin" component={Checkin} />
+            <Route path="/events/:eventId/schedule" component={EventSchedule} />
+            <Route path="/events/:eventId/practice" component={PracticeRedirect} />
+            <Route path="/events/:eventId/motos" component={Motos} />
+            <Route path="/events/:eventId/results" component={EnterResults} />
+            <Route path="/events/:eventId/report" component={Report} />
+          </Switch>
+        </PageErrorBoundary>
       </div>
     </div>
   );

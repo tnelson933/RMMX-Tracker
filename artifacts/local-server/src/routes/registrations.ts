@@ -168,7 +168,7 @@ router.patch("/registrations/:registrationId", (req, res) => {
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
   const id = Number(req.params.registrationId);
-  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod } = req.body;
+  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod, riderId, displayFirstName, displayLastName } = req.body;
 
   const updates: string[] = [];
   const params: unknown[] = [];
@@ -187,6 +187,9 @@ router.patch("/registrations/:registrationId", (req, res) => {
   if (bibNumber !== undefined) { updates.push("bib_number = ?"); params.push(bibNumber || null); }
   if (amountPaid !== undefined) { updates.push("amount_paid = ?"); params.push(amountPaid !== null ? String(amountPaid) : null); }
   if (paymentMethod !== undefined) { updates.push("payment_method = ?"); params.push(paymentMethod); }
+  if (riderId !== undefined) { updates.push("rider_id = ?"); params.push(Number(riderId)); }
+  if (displayFirstName !== undefined) { updates.push("display_first_name = ?"); params.push(displayFirstName || null); }
+  if (displayLastName !== undefined) { updates.push("display_last_name = ?"); params.push(displayLastName || null); }
 
   if (updates.length === 0) {
     return res.status(400).json({ error: "No fields to update" });
