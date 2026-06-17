@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { eq, gt, and, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@workspace/db";
+import { sseBroadcast, buildLeaderboard } from "./timing";
 import {
   usersTable,
   eventsTable,
@@ -69,6 +70,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   const payload = req.body as Record<string, Record<string, unknown>[]>;
   const results: Record<string, number> = {};
   let total = 0;
+  const affectedMotoIds = new Set<number>();
 
   await db.transaction(async (tx) => {
     // ── lap_crossings ─────────────────────────────────────────────────────────
@@ -135,6 +137,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         });
       }
       crossingsUpserted++;
+      affectedMotoIds.add(motoId);
     }
     results["lap_crossings"] = crossingsUpserted;
     total += crossingsUpserted;
@@ -210,6 +213,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         });
       }
       resultsUpserted++;
+      affectedMotoIds.add(motoId);
     }
     results["race_results"] = resultsUpserted;
     total += resultsUpserted;
@@ -261,6 +265,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           .update(motosTable)
           .set({ status, startedAt, completedAt })
           .where(eq(motosTable.id, existing.id));
+        affectedMotoIds.add(existing.id);
       } else {
         let lineup: number[] = [];
         try { lineup = JSON.parse(String(m.lineup ?? "[]")) as number[]; } catch { /* ignore */ }
@@ -280,6 +285,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           startedAt,
           completedAt,
         });
+        if (clientId) affectedMotoIds.add(clientId);
       }
       motosUpserted++;
     }
@@ -770,6 +776,22 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     results["practice_crossings"] = practiceCrossingsUpserted;
     total += practiceCrossingsUpserted;
   });
+
+  // Broadcast updated leaderboard to any SSE subscribers watching affected motos.
+  // Runs after the transaction commits so readers see the committed rows.
+  // Fire-and-forget: don't let broadcast errors fail the push response.
+  if (affectedMotoIds.size > 0) {
+    setImmediate(() => {
+      void (async () => {
+        for (const motoId of affectedMotoIds) {
+          try {
+            const snapshot = await buildLeaderboard(motoId);
+            if (snapshot) sseBroadcast(motoId, snapshot);
+          } catch { /* ignore — broadcast is best-effort */ }
+        }
+      })();
+    });
+  }
 
   req.log.info({ clubId, results, total }, "desktop-push complete");
   return res.json({ ok: true, results, total });
