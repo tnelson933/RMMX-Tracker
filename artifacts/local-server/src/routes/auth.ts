@@ -16,6 +16,7 @@ function formatUser(u: Record<string, unknown>) {
     clubId: u.club_id,
     tourCompleted: parseBool(u.tour_completed as number | null),
     createdAt: u.created_at,
+    permissions: [] as string[],
   };
 }
 
