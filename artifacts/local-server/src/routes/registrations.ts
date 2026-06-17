@@ -221,4 +221,77 @@ router.patch("/registrations/:registrationId", (req, res) => {
   return res.json(deserializeReg(updated));
 });
 
+// ── Public: look up a rider by email (walk-up registration pre-fill) ─────────
+router.get("/public/riders/lookup", (req, res) => {
+  const email = ((req.query.email as string) || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  const db = getDb();
+  const rider = db
+    .prepare("SELECT * FROM riders WHERE lower(email) = ? LIMIT 1")
+    .get(email) as Record<string, unknown> | undefined;
+
+  if (!rider) return res.json({ found: false });
+
+  const lastReg = db
+    .prepare(
+      `SELECT ama_number, club_id_number, bike_brand, bike_model, bike_year, bib_number, sponsors
+       FROM registrations WHERE rider_id = ? ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(rider.id) as Record<string, unknown> | undefined;
+
+  return res.json({
+    found: true,
+    firstName: rider.first_name ?? "",
+    lastName: rider.last_name ?? "",
+    phone: rider.phone ?? "",
+    dateOfBirth: rider.date_of_birth ?? "",
+    emergencyContact: rider.emergency_contact ?? "",
+    emergencyPhone: rider.emergency_phone ?? "",
+    streetAddress: rider.street_address ?? "",
+    city: rider.city ?? "",
+    homeState: rider.home_state ?? "",
+    zip: rider.zip ?? "",
+    amaNumber: lastReg?.ama_number ?? "",
+    clubIdNumber: lastReg?.club_id_number ?? "",
+    bikeBrand: lastReg?.bike_brand ?? "",
+    bikeModel: lastReg?.bike_model ?? "",
+    bikeYear: lastReg?.bike_year ?? "",
+    bibNumber: lastReg?.bib_number ? String(lastReg.bib_number) : "",
+    sponsors: lastReg?.sponsors ?? "",
+  });
+});
+
+// ── Public: check if a bib number is already taken for an event ───────────────
+router.get("/public/events/:eventId/check-bib", (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const bib = ((req.query.bib as string) || "").trim();
+  if (!bib) return res.status(400).json({ error: "bib required" });
+
+  const db = getDb();
+  const existing = db
+    .prepare(
+      `SELECT id FROM registrations
+       WHERE event_id = ? AND bib_number = ? AND status != 'void' LIMIT 1`,
+    )
+    .get(eventId, bib);
+
+  return res.json({ taken: !!existing });
+});
+
+// ── Stripe charge — not available on desktop; return graceful error ───────────
+router.post("/events/:eventId/registrations/:regId/charge", (req, res) => {
+  return res.status(503).json({
+    error:
+      "Online payment processing is not available in the desktop app. Collect payment manually and mark the registration as paid.",
+  });
+});
+
+// ── Stripe verify-payment — not available on desktop; return graceful error ───
+router.post("/public/registrations/:id/verify-payment", (req, res) => {
+  return res.status(503).json({
+    error: "Payment verification is not available in the desktop app.",
+  });
+});
+
 export default router;

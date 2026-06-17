@@ -1104,4 +1104,111 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", (req, res) => {
   return res.json(serializeMoto(updated));
 });
 
+// POST /events/:eventId/generate-practice-sessions
+router.post("/events/:eventId/generate-practice-sessions", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const eventId = Number(req.params.eventId);
+  const {
+    raceClass, raceClasses, maxRidersPerSession, timeLimitMs, scheduledTime,
+    name: customName, lapCount, countdownSeconds, practiceMode,
+  } = req.body;
+
+  const targetClasses: string[] = Array.isArray(raceClasses) && raceClasses.length > 0
+    ? raceClasses
+    : raceClass ? [raceClass] : [];
+
+  if (targetClasses.length === 0 || !maxRidersPerSession) {
+    return res.status(400).json({ error: "raceClasses (or raceClass) and maxRidersPerSession required" });
+  }
+
+  const max = Number(maxRidersPerSession);
+  if (isNaN(max) || max < 1) return res.status(400).json({ error: "maxRidersPerSession must be a positive integer" });
+
+  const isAllClasses = targetClasses.includes("All Classes");
+
+  const db = getDb();
+
+  let checkinRows: any[];
+  if (isAllClasses) {
+    checkinRows = db.prepare(
+      `SELECT c.rider_id, c.race_class, c.bib_number, c.rfid_number,
+              r.first_name, r.last_name
+       FROM checkins c LEFT JOIN riders r ON c.rider_id = r.id
+       WHERE c.event_id = ? AND c.checked_in = 1`,
+    ).all(eventId) as any[];
+  } else {
+    const placeholders = targetClasses.map(() => "?").join(", ");
+    checkinRows = db.prepare(
+      `SELECT c.rider_id, c.race_class, c.bib_number, c.rfid_number,
+              r.first_name, r.last_name
+       FROM checkins c LEFT JOIN riders r ON c.rider_id = r.id
+       WHERE c.event_id = ? AND c.checked_in = 1 AND c.race_class IN (${placeholders})`,
+    ).all(eventId, ...targetClasses) as any[];
+  }
+
+  if (checkinRows.length === 0) {
+    return res.status(400).json({ error: "No checked-in riders found for the selected class(es)" });
+  }
+
+  const existingMotos = db.prepare(
+    "SELECT moto_number FROM motos WHERE event_id = ?",
+  ).all(eventId) as any[];
+  const maxMotoNumber = existingMotos.reduce((mx: number, m: any) => Math.max(mx, m.moto_number ?? 0), 0);
+  let nextMotoNumber = maxMotoNumber + 1;
+
+  const sessionCount = Math.ceil(checkinRows.length / max);
+  const created: any[] = [];
+
+  const insert = db.prepare(
+    `INSERT INTO motos
+       (event_id, name, type, race_class, race_classes, moto_number, status,
+        lineup, time_limit_ms, scheduled_time, lap_count, practice_mode, countdown_seconds, created_at)
+     VALUES (?, ?, 'practice', ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  );
+
+  for (let i = 0; i < checkinRows.length; i += max) {
+    const group = checkinRows.slice(i, i + max);
+    const sessionNum = Math.floor(i / max) + 1;
+    const suffix = sessionCount > 1 ? ` – Group ${sessionNum}` : "";
+
+    const baseName = customName?.trim()
+      ? customName.trim()
+      : isAllClasses
+        ? "Open Practice"
+        : targetClasses.length > 1
+          ? "Mixed Practice"
+          : `${targetClasses[0]} Practice`;
+    const name = `${baseName}${suffix}`;
+
+    const lineup = group.map((r: any, idx: number) => ({
+      position: idx + 1,
+      riderId: r.rider_id,
+      riderName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || `Rider #${r.rider_id}`,
+      bibNumber: r.bib_number ?? null,
+      rfidNumber: r.rfid_number ?? null,
+    }));
+
+    const result = insert.run(
+      eventId,
+      name,
+      isAllClasses ? "" : targetClasses[0],
+      isAllClasses ? null : JSON.stringify(targetClasses),
+      nextMotoNumber++,
+      JSON.stringify(lineup),
+      timeLimitMs ? Number(timeLimitMs) : null,
+      scheduledTime ?? null,
+      lapCount ? Number(lapCount) : null,
+      practiceMode ?? "lap_count",
+      countdownSeconds ? Number(countdownSeconds) : null,
+    );
+
+    const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(result.lastInsertRowid) as any;
+    created.push(serializeMoto(moto));
+  }
+
+  return res.status(201).json(created);
+});
+
 export default router;
