@@ -1613,8 +1613,9 @@ export default function EventSchedule() {
       { eventId, data: { motoIds: newFullOrder } },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-          setLocalOrder(null);
+          queryClient.refetchQueries({ queryKey: getListMotosQueryKey(eventId) as any }).then(() => {
+            setLocalOrder(null);
+          });
         },
         onError: () => {
           setLocalOrder(null);
