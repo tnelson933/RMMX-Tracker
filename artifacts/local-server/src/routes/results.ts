@@ -121,9 +121,9 @@ router.post("/events/:eventId/results", (req, res) => {
     .get(Number(motoId)) as any;
   if (!moto) return res.status(404).json({ error: "Moto not found" });
 
-  // Look up scoring table for this event
+  // Look up scoring table + club auto-DNF for this event
   const event = db
-    .prepare("SELECT scoring_table_id FROM events WHERE id = ?")
+    .prepare("SELECT scoring_table_id, club_id FROM events WHERE id = ?")
     .get(eventId) as any;
 
   let scoringMethod = "highest_points";
@@ -144,6 +144,17 @@ router.post("/events/:eventId/results", (req, res) => {
       mainEventOnly = table.main_event_only === 1;
       autoDnfEnabled = table.auto_dnf_enabled === 1;
       autoDnfThreshold = table.auto_dnf_threshold ?? 75;
+    }
+  }
+
+  // Club-level auto-DNF overrides the scoring table setting (mirrors cloud behaviour)
+  if (event?.club_id) {
+    const club = db
+      .prepare("SELECT auto_dnf_enabled, auto_dnf_threshold FROM clubs WHERE id = ?")
+      .get(event.club_id) as any;
+    if (club) {
+      autoDnfEnabled = club.auto_dnf_enabled === 1;
+      autoDnfThreshold = club.auto_dnf_threshold ?? 75;
     }
   }
 

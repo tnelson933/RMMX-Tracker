@@ -123,6 +123,14 @@ router.patch("/motos/:motoId", (req, res) => {
     fields.push("race_class = ?");
     values.push(String(req.body.raceClass));
   }
+  if (req.body.practiceMode !== undefined) {
+    fields.push("practice_mode = ?");
+    values.push(req.body.practiceMode !== null ? String(req.body.practiceMode) : null);
+  }
+  if (req.body.countdownSeconds !== undefined) {
+    fields.push("countdown_seconds = ?");
+    values.push(req.body.countdownSeconds !== null ? Number(req.body.countdownSeconds) : null);
+  }
 
   if (fields.length === 0) return res.status(400).json({ error: "No fields to update" });
 

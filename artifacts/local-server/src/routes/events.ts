@@ -184,6 +184,7 @@ router.patch("/events/:eventId", (req, res) => {
     noDuplicateBibs: "no_duplicate_bibs",
     requireClubId: "require_club_id",
     scoringTableId: "scoring_table_id",
+    entryFeeCategoryId: "entry_fee_category_id",
     minLapMs: "min_lap_ms",
     imageUrl: "image_url",
     amaEventId: "ama_event_id",
