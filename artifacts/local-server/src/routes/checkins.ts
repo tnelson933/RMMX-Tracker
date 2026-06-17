@@ -24,7 +24,7 @@ router.get("/events/:eventId/checkins", (req, res) => {
         ri.phone
        FROM registrations r
        LEFT JOIN riders ri ON r.rider_id = ri.id
-       WHERE r.event_id = ? AND r.status != 'void'
+       WHERE r.event_id = ? AND COALESCE(r.status, 'confirmed') != 'void'
        ORDER BY ri.last_name`,
     )
     .all(eventId) as Record<string, unknown>[];
