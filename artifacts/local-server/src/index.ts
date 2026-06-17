@@ -17,7 +17,7 @@ server.listen(port, "127.0.0.1", () => {
   const staticDir = process.env.STATIC_FILES_DIR;
 
   console.log(`\n  ============================================`);
-  console.log(`   🏁  Rocky Mountain Race — Local Server`);
+  console.log(`   🏁  RM Tracker — Local Server`);
   console.log(`  ============================================`);
   console.log(`   URL:      http://localhost:${port}`);
   console.log(`   Database: ${dbFile}`);
