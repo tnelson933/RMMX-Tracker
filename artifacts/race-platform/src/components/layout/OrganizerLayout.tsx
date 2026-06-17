@@ -44,11 +44,11 @@ const NAV_ITEMS = [
   { href: "/riders", label: "Riders", icon: Users, permKey: "riders" },
   { href: "/series", label: "Series", icon: Trophy, permKey: "series" },
   { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, permKey: "points_tables" },
-  { href: "/payments", label: "Payments", icon: CreditCard, permKey: "payments", desktopHidden: true },
-  { href: "/discount-codes", label: "Discount Codes", icon: Tag, permKey: "discount_codes", desktopHidden: true },
-  { href: "/notifications", label: "Notifications", icon: Bell, permKey: "notifications", desktopHidden: true },
+  { href: "/payments", label: "Payments", icon: CreditCard, permKey: "payments" },
+  { href: "/discount-codes", label: "Discount Codes", icon: Tag, permKey: "discount_codes" },
+  { href: "/notifications", label: "Notifications", icon: Bell, permKey: "notifications" },
   { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, permKey: "reader_setup" },
-  { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, permKey: "offline_mode", desktopHidden: true },
+  { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, permKey: "offline_mode" },
 ] as const;
 
 export function OrganizerLayout({ children }: { children: React.ReactNode }) {
