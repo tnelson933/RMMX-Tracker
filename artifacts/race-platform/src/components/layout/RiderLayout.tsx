@@ -63,7 +63,7 @@ export function RiderLayout({ children, showBack, backTo = "/rider/portal", back
               <Link href="/" className="flex items-center gap-2">
                 <Mountain size={20} className="text-primary" />
                 <span className="flex flex-col leading-none">
-                  <span className="font-heading font-bold uppercase tracking-wider text-sm">RMMX</span>
+                  <span className="font-heading font-bold uppercase tracking-wider text-sm">RM</span>
                   <span className="font-heading font-semibold uppercase tracking-widest text-[10px] text-muted-foreground">Tracker</span>
                 </span>
               </Link>
@@ -92,7 +92,7 @@ export function RiderLayout({ children, showBack, backTo = "/rider/portal", back
       </main>
 
       <footer className="border-t py-3 text-center text-xs text-muted-foreground">
-        RMMX Tracker
+        RM Tracker
       </footer>
     </div>
   );
