@@ -57,6 +57,112 @@ router.get("/events/:eventId/registrations", (req, res) => {
   );
 });
 
+router.post("/events/:eventId/registrations", (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+  const eventId = Number(req.params.eventId);
+  const {
+    firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
+    streetAddress, city, homeState, zip,
+    raceClass, bibNumber, clubIdNumber, bikeBrand, rentTransponder,
+    myLapsTransponderNumber, selectedPurchaseOptions,
+    paymentMethod, amountPaid, status: reqStatus,
+  } = req.body;
+
+  if (!firstName || !lastName || !email || !raceClass) {
+    return res.status(400).json({ error: "firstName, lastName, email, raceClass required" });
+  }
+
+  const db = getDb();
+
+  // Find or create rider by email
+  let rider = db
+    .prepare("SELECT * FROM riders WHERE email = ? LIMIT 1")
+    .get(email) as Record<string, unknown> | undefined;
+
+  if (!rider) {
+    const r = db
+      .prepare(
+        `INSERT INTO riders (first_name, last_name, email, phone, date_of_birth,
+           emergency_contact, emergency_phone, street_address, city, home_state, zip)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        firstName, lastName, email,
+        phone || null, dateOfBirth || null, emergencyContact || null, emergencyPhone || null,
+        streetAddress || null, city || null, homeState || null, zip || null,
+      );
+    rider = db
+      .prepare("SELECT * FROM riders WHERE id = ?")
+      .get(r.lastInsertRowid) as Record<string, unknown>;
+  } else {
+    db.prepare(
+      `UPDATE riders SET first_name = ?, last_name = ?,
+         phone = COALESCE(?, phone), date_of_birth = COALESCE(?, date_of_birth),
+         emergency_contact = COALESCE(?, emergency_contact),
+         emergency_phone = COALESCE(?, emergency_phone)
+       WHERE id = ?`,
+    ).run(
+      firstName, lastName,
+      phone || null, dateOfBirth || null, emergencyContact || null, emergencyPhone || null,
+      rider.id,
+    );
+  }
+
+  const riderId = rider!.id as number;
+  const finalStatus = reqStatus || "confirmed";
+  const hasPaid =
+    paymentMethod && amountPaid != null && parseFloat(String(amountPaid)) >= 0;
+  const finalPaymentStatus = hasPaid ? "paid" : "unpaid";
+
+  const regResult = db
+    .prepare(
+      `INSERT INTO registrations
+         (event_id, rider_id, race_class, status, payment_status, payment_method, amount_paid,
+          bib_number, club_id_number, bike_brand, transponder_rental, mylaps_transponder_number,
+          selected_purchase_options, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    )
+    .run(
+      eventId, riderId, raceClass, finalStatus, finalPaymentStatus,
+      paymentMethod || null,
+      hasPaid ? String(amountPaid) : null,
+      bibNumber || null, clubIdNumber || null, bikeBrand || null,
+      rentTransponder ? 1 : 0,
+      myLapsTransponderNumber || null,
+      JSON.stringify(selectedPurchaseOptions || []),
+    );
+
+  const regId = regResult.lastInsertRowid as number;
+
+  // Auto-create checkin for confirmed registrations
+  if (finalStatus === "confirmed") {
+    const existingCheckin = db
+      .prepare("SELECT id FROM checkins WHERE event_id = ? AND rider_id = ? LIMIT 1")
+      .get(eventId, riderId);
+    if (!existingCheckin) {
+      db.prepare(
+        `INSERT INTO checkins (event_id, rider_id, race_class, bib_number, checked_in, rfid_linked, created_at)
+         VALUES (?, ?, ?, ?, 0, 0, datetime('now'))`,
+      ).run(eventId, riderId, raceClass, bibNumber || null);
+    }
+  }
+
+  const reg = db
+    .prepare("SELECT * FROM registrations WHERE id = ?")
+    .get(regId) as Record<string, unknown>;
+
+  return res.status(201).json({
+    ...deserializeReg(reg),
+    riderName: `${firstName} ${lastName}`.trim(),
+    firstName,
+    lastName,
+    email,
+    phone: phone || null,
+  });
+});
+
 router.patch("/registrations/:registrationId", (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
