@@ -40,8 +40,8 @@ export default defineConfig({
       },
       includeAssets: ["favicon.svg", "rm-logo.png"],
       manifest: {
-        name: "Rocky Mountain Race Platform",
-        short_name: "RM Racing",
+        name: "RM Tracker",
+        short_name: "RM Tracker",
         description:
           "Live RFID timing, race scoring, and series points for ATV and motorcycle clubs.",
         theme_color: "#ea580c",
