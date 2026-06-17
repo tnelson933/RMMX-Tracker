@@ -397,6 +397,14 @@ export function initDb() {
       INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('rfid_assignments', NEW.id, 'upsert');
     END;
 
+    -- events (new events created on desktop)
+    CREATE TRIGGER IF NOT EXISTS _wq_events_insert
+    AFTER INSERT ON events
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('events', NEW.id, 'upsert');
+    END;
+
     -- events (status changes, class list updates made on desktop)
     CREATE TRIGGER IF NOT EXISTS _wq_events_update
     AFTER UPDATE ON events
