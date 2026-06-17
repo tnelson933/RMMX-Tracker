@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { Link } from "wouter";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -263,7 +264,7 @@ export default function OfflineMode() {
   }, [tech]);
 
   const { user } = useAuth();
-  const cloudDomain = window.location.origin;
+  const cloudDomain = getPublicOrigin();
   const clubId = user?.clubId ?? "<your-club-id>";
 
   const handleExportRaceData = useCallback(async () => {
