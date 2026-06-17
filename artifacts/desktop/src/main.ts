@@ -562,6 +562,12 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("app:getVersion", () => app.getVersion());
 
+  // Synchronous IPC — preload calls this with sendSync to expose cloudUrl
+  // to the renderer before any React code runs (needed by getPublicOrigin()).
+  ipcMain.on("auth:getCloudUrlSync", (event) => {
+    event.returnValue = loadCredentials()?.cloudUrl ?? "";
+  });
+
   // ── AI Assistant conversation handlers (AIAssistant component) ───────────────
   // These route through the sync engine's authenticated cloudFetch so that the
   // floating AI Assistant panel works on desktop exactly as it does on the web.

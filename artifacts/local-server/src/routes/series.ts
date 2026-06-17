@@ -327,4 +327,155 @@ router.get("/series/:seriesId/points", (req, res) => {
   );
 });
 
+// ── Public: series info for embeddable widget (no auth required) ─────────────
+// Mirrors the cloud API's GET /public/series/:seriesId.
+// On the local server we show ALL series events (no publication gate) so the
+// organizer can preview the widget even before publishing to cloud.
+router.get("/public/series/:seriesId", (req, res) => {
+  const db = getDb();
+  const id = Number(req.params.seriesId);
+
+  const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
+  if (!series) return res.status(404).json({ error: "Not found" });
+
+  const eventIds: number[] = (() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })();
+
+  const events = eventIds.length > 0
+    ? (db.prepare(
+        `SELECT id, name, date, status, location, state FROM events WHERE id IN (${eventIds.map(() => "?").join(",")}) ORDER BY date ASC`
+      ).all(...eventIds) as any[])
+    : [];
+
+  const eventMap = new Map(events.map((e: any) => [e.id, e]));
+  const sortedEvents = eventIds.map(id => eventMap.get(id)).filter(Boolean);
+
+  return res.json({
+    id: series.id,
+    name: series.name,
+    season: series.season ?? String(series.year ?? ""),
+    classes: (() => { try { return JSON.parse(series.classes || "[]"); } catch { return []; } })(),
+    eventIds,
+    events: sortedEvents,
+  });
+});
+
+// ── Public: series standings (no auth required) ───────────────────────────────
+// Mirrors the cloud API's GET /public/series/:seriesId/standings.
+// Computes live from race_results + adds amaNumber/bikeBrand from registrations.
+router.get("/public/series/:seriesId/standings", (req, res) => {
+  const db = getDb();
+  const id = Number(req.params.seriesId);
+
+  const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
+  if (!series) return res.status(404).json({ error: "Not found" });
+
+  const eventIds: number[] = (() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })();
+  if (eventIds.length === 0) return res.json([]);
+
+  const ph = eventIds.map(() => "?").join(",");
+
+  const events = db.prepare(`SELECT id, name FROM events WHERE id IN (${ph})`).all(...eventIds) as any[];
+  const eventNameMap: Record<number, string> = {};
+  events.forEach((e: any) => { eventNameMap[e.id] = e.name; });
+
+  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed'`).all(...eventIds) as any[];
+  if (motos.length === 0) return res.json([]);
+
+  const motoIds = motos.map((m: any) => m.id);
+  const motoPh = motoIds.map(() => "?").join(",");
+
+  const results = db.prepare(`
+    SELECT rr.moto_id, rr.rider_id, r.first_name, r.last_name,
+           rr.race_class, rr.position, rr.points, rr.dnf, rr.dns
+    FROM race_results rr
+    LEFT JOIN riders r ON rr.rider_id = r.id
+    WHERE rr.moto_id IN (${motoPh})
+  `).all(...motoIds) as any[];
+
+  const classByEvent: Record<string, Record<number, { moto: any; results: any[] }[]>> = {};
+  for (const moto of motos) {
+    const cls = moto.race_class ?? "";
+    if (!classByEvent[cls]) classByEvent[cls] = {};
+    if (!classByEvent[cls][moto.event_id]) classByEvent[cls][moto.event_id] = [];
+    classByEvent[cls][moto.event_id].push({ moto, results: results.filter((r: any) => r.moto_id === moto.id) });
+  }
+
+  const standings: any[] = [];
+
+  for (const [raceClass, eventMap] of Object.entries(classByEvent)) {
+    const riderNames: Record<number, string> = {};
+    for (const motoEntries of Object.values(eventMap)) {
+      for (const { results: rs } of motoEntries) {
+        for (const r of rs) {
+          riderNames[r.rider_id] = `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim();
+        }
+      }
+    }
+
+    const classRows: any[] = [];
+    for (const riderId of Object.keys(riderNames).map(Number)) {
+      let totalScore = 0;
+      let eventsEntered = 0;
+      const eventBreakdowns: any[] = [];
+
+      for (const eventId of eventIds) {
+        const motoEntries = eventMap[eventId];
+        if (!motoEntries?.length) continue;
+        const sortedMotos = [...motoEntries].sort((a, b) => (a.moto.moto_number ?? 0) - (b.moto.moto_number ?? 0));
+        let eventScore = 0;
+        const motoPositions: number[] = [];
+        let attended = false;
+
+        for (const { results: motoResults } of sortedMotos) {
+          const result = motoResults.find((r: any) => r.rider_id === riderId);
+          if (result) {
+            attended = true;
+            const pts = (result.dnf || result.dns) ? 0 : (result.points ?? 0);
+            eventScore += pts;
+            motoPositions.push(pts);
+          } else {
+            motoPositions.push(0);
+          }
+        }
+
+        if (attended) eventsEntered++;
+        totalScore += eventScore;
+        eventBreakdowns.push({ eventId, eventName: eventNameMap[eventId] ?? `Event ${eventId}`, eventScore, attended, motos: motoPositions });
+      }
+
+      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, amaNumber: null, bikeBrand: null, events: eventBreakdowns });
+    }
+
+    classRows.sort((a, b) => b.totalScore - a.totalScore);
+    classRows.forEach((row, idx) => {
+      row.position = (idx > 0 && row.totalScore === classRows[idx - 1].totalScore)
+        ? classRows[idx - 1].position
+        : idx + 1;
+    });
+    standings.push(...classRows);
+  }
+
+  // Enrich with amaNumber and bikeBrand from registrations
+  const allRiderIds = [...new Set(standings.map((s: any) => s.riderId))];
+  if (allRiderIds.length > 0) {
+    const ridPh = allRiderIds.map(() => "?").join(",");
+    const regs = db.prepare(
+      `SELECT rider_id, ama_number, bike_brand FROM registrations WHERE rider_id IN (${ridPh}) AND event_id IN (${ph})`
+    ).all(...allRiderIds, ...eventIds) as any[];
+
+    const riderInfo: Record<number, { amaNumber: string | null; bikeBrand: string | null }> = {};
+    for (const reg of regs) {
+      if (!riderInfo[reg.rider_id]) riderInfo[reg.rider_id] = { amaNumber: null, bikeBrand: null };
+      if (!riderInfo[reg.rider_id].amaNumber && reg.ama_number) riderInfo[reg.rider_id].amaNumber = reg.ama_number;
+      if (!riderInfo[reg.rider_id].bikeBrand && reg.bike_brand) riderInfo[reg.rider_id].bikeBrand = reg.bike_brand;
+    }
+    for (const row of standings) {
+      row.amaNumber = riderInfo[row.riderId]?.amaNumber ?? null;
+      row.bikeBrand = riderInfo[row.riderId]?.bikeBrand ?? null;
+    }
+  }
+
+  return res.json(standings);
+});
+
 export default router;

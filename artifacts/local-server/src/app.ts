@@ -36,12 +36,21 @@ app.use(
 
 app.use("/api", router);
 
-// Redirect /register/:id to the cloud URL so shared registration links work
-// even when opened on the local machine (where VITE_CLOUD_URL may not be set).
+// Redirect shareable links to the cloud URL so they work when opened on the
+// local machine (where VITE_CLOUD_URL may not be baked into the build).
 const cloudUrl = process.env.CLOUD_URL ?? "";
 if (cloudUrl) {
   app.get("/register/:id", (req, res) => {
     res.redirect(302, `${cloudUrl}/register/${req.params.id}`);
+  });
+  // Widget embed previews and standalone links must load from the cloud so
+  // that (a) promoters get the correct embeddable URL and (b) the iframe
+  // preview inside the organizer portal shows live cloud data.
+  app.get("/widget/series/:seriesId", (req, res) => {
+    res.redirect(302, `${cloudUrl}/widget/series/${req.params.seriesId}`);
+  });
+  app.get("/widget/:eventId", (req, res) => {
+    res.redirect(302, `${cloudUrl}/widget/${req.params.eventId}`);
   });
 }
 

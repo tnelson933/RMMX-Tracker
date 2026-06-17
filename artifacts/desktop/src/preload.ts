@@ -93,6 +93,11 @@ const electronAPI = {
     getVersion: (): Promise<string> => ipcRenderer.invoke("app:getVersion"),
     platform: process.platform,
   },
+
+  // Synchronously resolved at page load — used by publicOrigin.ts so that
+  // widget embed URLs point to the cloud even when VITE_CLOUD_URL wasn't
+  // baked into the build at CI time.
+  cloudUrl: ipcRenderer.sendSync("auth:getCloudUrlSync") as string,
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

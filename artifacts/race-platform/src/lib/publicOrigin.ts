@@ -1,15 +1,22 @@
 /**
  * Returns the correct public-facing origin for building shareable links.
  *
- * On the desktop app the page runs at http://127.0.0.1:9090, so
- * window.location.origin would produce broken links. VITE_CLOUD_URL is
- * baked into desktop builds at CI time — prefer it when present.
- *
- * On the cloud web app VITE_CLOUD_URL is not set, so we fall back to
- * window.location.origin as before.
+ * Priority order:
+ *  1. VITE_CLOUD_URL — baked into the build by CI (most reliable)
+ *  2. window.electronAPI.cloudUrl — injected at runtime by the Electron
+ *     preload via synchronous IPC (works for installs that pre-date the
+ *     baked-URL feature or when the GitHub CLOUD_URL variable isn't set)
+ *  3. window.location.origin — fallback for the cloud web app
  */
 export function getPublicOrigin(): string {
-  const cloudUrl = (import.meta.env.VITE_CLOUD_URL as string | undefined) ?? "";
-  if (cloudUrl) return cloudUrl.replace(/\/$/, "");
+  const buildUrl = (import.meta.env.VITE_CLOUD_URL as string | undefined) ?? "";
+  if (buildUrl) return buildUrl.replace(/\/$/, "");
+
+  const runtimeUrl =
+    typeof window !== "undefined"
+      ? ((window as unknown as Record<string, unknown>).electronAPI as Record<string, unknown> | undefined)?.cloudUrl as string | undefined
+      : undefined;
+  if (runtimeUrl) return runtimeUrl.replace(/\/$/, "");
+
   return window.location.origin;
 }
