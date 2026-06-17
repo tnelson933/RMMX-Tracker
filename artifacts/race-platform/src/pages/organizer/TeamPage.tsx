@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useListTeamMembers, useCreateTeamMember, useUpdateTeamMember, useDeleteTeamMember } from "@workspace/api-client-react";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import type { TeamMember } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -127,7 +128,7 @@ export default function TeamPage() {
   const [gateLinkCopied, setGateLinkCopied] = useState(false);
 
   const gateUrl = user?.clubId
-    ? `${window.location.origin}/gate?club=${user.clubId}`
+    ? `${getPublicOrigin()}/gate?club=${user.clubId}`
     : null;
 
   const copyGateLink = () => {
