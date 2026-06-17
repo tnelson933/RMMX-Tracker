@@ -93,9 +93,26 @@ interface PendingPayment {
   entryFee: number;
 }
 
+const DESKTOP_CLOUD_URL = import.meta.env.VITE_CLOUD_URL as string | undefined;
+
 export default function Register() {
   const [, params] = useRoute("/register/:eventId");
   const eventId = params?.eventId;
+
+  // When running inside the desktop app (VITE_CLOUD_URL is baked in) and this
+  // page was opened on the local server (127.0.0.1), immediately redirect the
+  // visitor to the cloud registration page so they can actually sign up.
+  useEffect(() => {
+    if (!DESKTOP_CLOUD_URL || !eventId) return;
+    try {
+      const cloudOrigin = new URL(DESKTOP_CLOUD_URL).origin;
+      if (window.location.origin !== cloudOrigin) {
+        window.location.replace(`${cloudOrigin}/register/${eventId}`);
+      }
+    } catch {
+      // malformed VITE_CLOUD_URL — ignore and render normally
+    }
+  }, [eventId]);
 
   const [event, setEvent] = useState<EventInfo | null>(null);
   const [loading, setLoading] = useState(true);

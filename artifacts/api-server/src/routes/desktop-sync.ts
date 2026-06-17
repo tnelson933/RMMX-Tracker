@@ -219,7 +219,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     results["race_results"] = resultsUpserted;
     total += resultsUpserted;
 
-    // ── motos (status / start / complete updates) ─────────────────────────────
+    // ── motos (status / start / complete / reorder updates) ───────────────────
     const motos = (payload["motos"] ?? []) as Array<{
       id?: unknown;
       event_id?: unknown;
@@ -237,8 +237,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
 
     let motosUpserted = 0;
     for (const m of motos) {
-      const eventId    = Number(m.event_id);
-      const motoNumber = Number(m.moto_number ?? 0);
+      const eventId  = Number(m.event_id);
+      const clientId = m.id != null && Number(m.id) > 0 ? Number(m.id) : undefined;
       if (!eventId) continue;
 
       const [event] = await tx
@@ -247,31 +247,51 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         .where(eq(eventsTable.id, eventId));
       if (!event || event.clubId !== clubId) continue;
 
-      const [existing] = await tx
-        .select({ id: motosTable.id })
-        .from(motosTable)
-        .where(
-          and(
-            eq(motosTable.eventId, eventId),
-            eq(motosTable.motoNumber, motoNumber),
-          ),
-        );
-
+      const motoNumber  = m.moto_number != null ? Number(m.moto_number) : 0;
       const status      = String(m.status ?? "scheduled") as "scheduled" | "in_progress" | "completed";
       const startedAt   = toDate(m.started_at);
       const completedAt = toDate(m.completed_at);
 
-      if (existing) {
+      // Prefer lookup by id — this is stable across drag-and-drop reorders.
+      // Falling back to (eventId, motoNumber) when there is no client id is
+      // safe for legacy payloads; it must NOT be used when clientId is present
+      // because after a reorder the moto_number has changed on desktop but the
+      // cloud still holds the old value, so the lookup would find the wrong row.
+      let existingId: number | undefined;
+      if (clientId) {
+        const [row] = await tx
+          .select({ id: motosTable.id })
+          .from(motosTable)
+          .where(eq(motosTable.id, clientId));
+        existingId = row?.id;
+      } else {
+        const [row] = await tx
+          .select({ id: motosTable.id })
+          .from(motosTable)
+          .where(and(eq(motosTable.eventId, eventId), eq(motosTable.motoNumber, motoNumber)));
+        existingId = row?.id;
+      }
+
+      if (existingId) {
+        let lineup: number[] | undefined;
+        if (m.lineup !== undefined) {
+          try { lineup = JSON.parse(String(m.lineup)) as number[]; } catch { lineup = []; }
+        }
+        const updateSet: Record<string, unknown> = { status, startedAt, completedAt };
+        if (m.moto_number    != null)  updateSet.motoNumber    = motoNumber;
+        if (m.name           != null)  updateSet.name          = String(m.name);
+        if (m.lap_count      != null)  updateSet.lapCount      = Number(m.lap_count);
+        if (m.scheduled_time != null)  updateSet.scheduledTime = String(m.scheduled_time);
+        if (lineup !== undefined)      updateSet.lineup        = lineup;
         await tx
           .update(motosTable)
-          .set({ status, startedAt, completedAt })
-          .where(eq(motosTable.id, existing.id));
-        affectedMotoIds.add(existing.id);
+          .set(updateSet as any)
+          .where(eq(motosTable.id, existingId));
+        affectedMotoIds.add(existingId);
       } else {
         let lineup: number[] = [];
         try { lineup = JSON.parse(String(m.lineup ?? "[]")) as number[]; } catch { /* ignore */ }
 
-        const clientId = m.id != null && Number(m.id) > 0 ? Number(m.id) : undefined;
         await tx.insert(motosTable).values({
           ...(clientId ? { id: clientId } : {}),
           eventId,

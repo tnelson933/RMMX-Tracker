@@ -19,7 +19,7 @@ import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
 import { UpcomingNearMe } from "@/components/UpcomingNearMe";
 
-const FALLBACK_TAG = "desktop-v1.0.60";
+const FALLBACK_TAG = "desktop-v1.0.61";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
@@ -246,9 +246,9 @@ export default function Home() {
   const [showDownloads, setShowDownloads] = useState(false);
   const [selectedState, setSelectedState] = useState("all");
   const [downloads, setDownloads] = useState({
-    macArm:  `${FALLBACK_BASE}/RMMX-Tracker-arm64.dmg`,
-    macX64:  `${FALLBACK_BASE}/RMMX-Tracker-x64.dmg`,
-    windows: `${FALLBACK_BASE}/RMMX-Tracker-Setup.exe`,
+    macArm:  `${FALLBACK_BASE}/RM-Tracker-arm64.dmg`,
+    macX64:  `${FALLBACK_BASE}/RM-Tracker-x64.dmg`,
+    windows: `${FALLBACK_BASE}/RM-Tracker-Setup.exe`,
   });
 
   useEffect(() => {

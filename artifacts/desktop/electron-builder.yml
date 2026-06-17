@@ -1,6 +1,6 @@
-appId: com.rockymtn.rmmx-tracker
-productName: RMMX Tracker
-copyright: Copyright © 2026 RMMX Tracker
+appId: com.rockymtn.rm-tracker
+productName: RM Tracker
+copyright: Copyright © 2026 RM Tracker
 
 directories:
   output: release
@@ -52,7 +52,7 @@ win:
     - target: nsis
       arch:
         - x64
-  publisherName: RMMX Tracker
+  publisherName: RM Tracker
 
 linux:
   target:
@@ -68,10 +68,10 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  artifactName: "RMMX-Tracker-Setup.${ext}"
+  artifactName: "RM-Tracker-Setup.${ext}"
 
 dmg:
-  artifactName: "RMMX-Tracker-${arch}.${ext}"
+  artifactName: "RM-Tracker-${arch}.${ext}"
   contents:
     - x: 130
       y: 220
