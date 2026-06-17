@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRoute, Link } from "wouter";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import {
   useListMotos, useGenerateLineups, useGenerateMotoLineup, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables,
@@ -1786,7 +1787,7 @@ export default function Motos() {
   };
 
   const copyLiveLink = (motoId: number) => {
-    const url = `${window.location.origin}/live/${motoId}`;
+    const url = `${getPublicOrigin()}/live/${motoId}`;
     navigator.clipboard.writeText(url);
     setCopiedId(motoId);
     setTimeout(() => setCopiedId(null), 2000);
