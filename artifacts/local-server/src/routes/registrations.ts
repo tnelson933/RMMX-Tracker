@@ -62,15 +62,25 @@ router.patch("/registrations/:registrationId", (req, res) => {
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
   const id = Number(req.params.registrationId);
-  const { status, paymentStatus, raceClass, bibNumber } = req.body;
+  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod } = req.body;
 
   const updates: string[] = [];
   const params: unknown[] = [];
 
   if (status !== undefined) { updates.push("status = ?"); params.push(status); }
-  if (paymentStatus !== undefined) { updates.push("payment_status = ?"); params.push(paymentStatus); }
+  if (paymentStatus !== undefined) {
+    updates.push("payment_status = ?");
+    params.push(paymentStatus);
+    // Marking as paid without an explicit status change — auto-confirm the registration
+    if (paymentStatus === "paid" && status === undefined) {
+      updates.push("status = ?");
+      params.push("confirmed");
+    }
+  }
   if (raceClass !== undefined) { updates.push("race_class = ?"); params.push(raceClass); }
   if (bibNumber !== undefined) { updates.push("bib_number = ?"); params.push(bibNumber || null); }
+  if (amountPaid !== undefined) { updates.push("amount_paid = ?"); params.push(amountPaid !== null ? String(amountPaid) : null); }
+  if (paymentMethod !== undefined) { updates.push("payment_method = ?"); params.push(paymentMethod); }
 
   if (updates.length === 0) {
     return res.status(400).json({ error: "No fields to update" });
@@ -85,6 +95,20 @@ router.patch("/registrations/:registrationId", (req, res) => {
     .get(id) as Record<string, unknown> | undefined;
 
   if (!updated) return res.status(404).json({ error: "Not found" });
+
+  // Create a checkin record if the registration is now confirmed and one doesn't exist yet
+  if (updated.status === "confirmed") {
+    const existingCheckin = db
+      .prepare("SELECT id FROM checkins WHERE event_id = ? AND rider_id = ? LIMIT 1")
+      .get(updated.event_id as number, updated.rider_id as number);
+    if (!existingCheckin) {
+      db.prepare(
+        `INSERT INTO checkins (event_id, rider_id, race_class, bib_number, checked_in, rfid_linked, created_at)
+         VALUES (?, ?, ?, ?, 0, 0, datetime('now'))`
+      ).run(updated.event_id, updated.rider_id, updated.race_class, updated.bib_number ?? null);
+    }
+  }
+
   return res.json(deserializeReg(updated));
 });
 
