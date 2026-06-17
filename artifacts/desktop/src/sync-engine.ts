@@ -520,6 +520,12 @@ export class SyncEngine {
     const toSnake = (s: string) =>
       s.replace(/([A-Z])/g, "_$1").toLowerCase();
 
+    // Overrides for camelCase→snake_case conversions that don't match the
+    // local SQLite column names (e.g. acronyms stored as a single word).
+    const colOverrides: Record<string, string> = {
+      my_laps_transponder_number: "mylaps_transponder_number",
+    };
+
     // Normalize a value to a type better-sqlite3 can bind:
     //   array/object → JSON string, boolean → 0/1, Date → ISO string,
     //   null/undefined → null, number/string → pass through.
@@ -540,7 +546,7 @@ export class SyncEngine {
       // local schema doesn't know.
       const snakeRow: Record<string, string | number | null> = {};
       for (const [k, v] of Object.entries(row)) {
-        const col = toSnake(k);
+        const col = colOverrides[toSnake(k)] ?? toSnake(k);
         if (knownCols.has(col)) snakeRow[col] = normalize(v);
       }
 
