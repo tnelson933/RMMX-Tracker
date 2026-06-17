@@ -102,8 +102,8 @@ jobs:
       - name: Upload macOS installers to release
         run: |
           gh release upload "${{ github.ref_name }}" \
-            "artifacts/desktop/release/RMMX-Tracker-arm64.dmg" \
-            "artifacts/desktop/release/RMMX-Tracker-x64.dmg" \
+            "artifacts/desktop/release/RM-Tracker-arm64.dmg" \
+            "artifacts/desktop/release/RM-Tracker-x64.dmg" \
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -191,6 +191,6 @@ jobs:
       - name: Upload Windows installer to release
         shell: pwsh
         run: |
-          gh release upload "${{ github.ref_name }}" "artifacts/desktop/release/RMMX-Tracker-Setup.exe" --clobber
+          gh release upload "${{ github.ref_name }}" "artifacts/desktop/release/RM-Tracker-Setup.exe" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
