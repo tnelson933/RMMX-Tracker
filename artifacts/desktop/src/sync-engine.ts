@@ -425,6 +425,8 @@ export class SyncEngine {
       series?: Record<string, unknown>[];
       seriesPoints?: Record<string, unknown>[];
       pointsTables?: Record<string, unknown>[];
+      discountCategories?: Record<string, unknown>[];
+      practiceSessions?: Record<string, unknown>[];
     };
 
     const now = new Date().toISOString();
@@ -438,19 +440,21 @@ export class SyncEngine {
 
       try {
         const tableMap: Array<[string, Record<string, unknown>[]]> = [
-          ["clubs",            data.clubs            ?? []],
-          ["points_tables",    data.pointsTables     ?? []],
-          ["series",           data.series           ?? []],
-          ["series_points",    data.seriesPoints     ?? []],
-          ["registrations",    data.registrations    ?? []],
-          ["checkins",         data.checkins         ?? []],
-          ["riders",           data.riders           ?? []],
-          ["rfid_assignments", data.rfidAssignments  ?? []],
-          ["events",           data.events           ?? []],
-          ["motos",            data.motos            ?? []],
-          ["lap_crossings",    data.lapCrossings     ?? []],
-          ["race_results",     data.raceResults      ?? []],
-          ["users",            data.users            ?? []],
+          ["clubs",               data.clubs               ?? []],
+          ["points_tables",       data.pointsTables        ?? []],
+          ["series",              data.series              ?? []],
+          ["series_points",       data.seriesPoints        ?? []],
+          ["discount_categories", data.discountCategories  ?? []],
+          ["practice_sessions",   data.practiceSessions    ?? []],
+          ["registrations",       data.registrations       ?? []],
+          ["checkins",            data.checkins            ?? []],
+          ["riders",              data.riders              ?? []],
+          ["rfid_assignments",    data.rfidAssignments     ?? []],
+          ["events",              data.events              ?? []],
+          ["motos",               data.motos               ?? []],
+          ["lap_crossings",       data.lapCrossings        ?? []],
+          ["race_results",        data.raceResults         ?? []],
+          ["users",               data.users               ?? []],
         ];
 
         for (const [table, rows] of tableMap) {
