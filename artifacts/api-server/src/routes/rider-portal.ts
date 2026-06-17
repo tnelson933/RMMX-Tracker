@@ -1066,14 +1066,16 @@ Professional MX/SX athletes (Eli Tomac, Cooper Webb, Ken Roczen, Chase Sexton) f
 RULES:
 1. ONLY use standard commercial gym equipment: treadmills, free weights (barbells, dumbbells, EZ-curl bars), cable machines, pull-up bars, bench, squat rack, battle ropes, plyo boxes, resistance bands, foam rollers, exercise bikes, rowing machines
 2. NEVER reference motocross bikes, moto simulators, tracks, or specialized MX equipment
-3. EVERY exercise must include a specific, practical mxBenefit explaining exactly why it helps SX/MX performance — be specific (e.g. "Builds the forearm pump endurance needed for the last 10 minutes of a moto" not just "builds arm strength")
-4. Form tips must be extremely specific and practical — include common mistakes to avoid
-5. Time the workout realistically: warm-up 8–12 min, main work proportional to total duration, cool-down 5–8 min
-6. For HIIT/cardio exercises use treadmill or bike with specific speed/resistance settings
-7. progressionTip should give a concrete next step for the next session
+3. EVERY exercise must include a specific, practical mxBenefit explaining exactly why it helps SX/MX performance — MAX 15 words, extremely specific (e.g. "Builds forearm endurance to fight pump in the final moto minutes")
+4. formTips must be exactly 2–3 cues, each ≤ 12 words — brief, actionable, no fluff
+5. exerciseNote is ONE short sentence (≤ 20 words) combining the key setup detail AND the next-session progression tip
+6. Time the workout realistically: warm-up 8–12 min, main work proportional to total duration, cool-down 5–8 min
+7. For HIIT/cardio exercises use treadmill or bike with specific speed/resistance settings
+8. mxRelevance must be an array of exactly 2–3 short bullet strings, each ≤ 15 words
+9. proTip, nutritionTip, recoveryTip must each be ≤ 20 words — one punchy sentence
 
 Respond with ONLY a valid JSON object — no markdown fences, no explanation, no prefix text. Schema:
-{"planTitle":"string","totalMinutes":number,"focus":["3-4 specific focuses"],"mxRelevance":"2 sentences on why this helps SX/MX","phases":[{"name":"string","duration":number,"phaseColor":"hex (#22c55e warm-up, #3b82f6 strength, #ef4444 HIIT, #f97316 finisher, #8b5cf6 cool-down)","exercises":[{"name":"string","equipment":"string","duration":"string or null","sets":number_or_null,"reps":"string or null","restSeconds":number,"intensity":"string","muscleGroups":["string"],"mxBenefit":"specific MX performance benefit","formTips":["3-4 specific cues"],"equipmentSetup":"string","progressionTip":"string"}]}],"proTip":"pro SX/MX training insight","nutritionTip":"specific nutrition advice","recoveryTip":"specific recovery protocol"}`;
+{"planTitle":"string","totalMinutes":number,"focus":["3-4 specific focuses"],"mxRelevance":["bullet 1 ≤15 words","bullet 2 ≤15 words","optional bullet 3 ≤15 words"],"phases":[{"name":"string","duration":number,"phaseColor":"hex (#22c55e warm-up, #3b82f6 strength, #ef4444 HIIT, #f97316 finisher, #8b5cf6 cool-down)","exercises":[{"name":"string","equipment":"string","duration":"string or null","sets":number_or_null,"reps":"string or null","restSeconds":number,"intensity":"string","muscleGroups":["string"],"mxBenefit":"≤15 word specific MX benefit","formTips":["cue ≤12 words","cue ≤12 words","optional cue ≤12 words"],"exerciseNote":"one sentence setup+progression ≤20 words","equipmentSetup":"string","progressionTip":"string"}]}],"proTip":"≤20 word pro tip","nutritionTip":"≤20 word nutrition tip","recoveryTip":"≤20 word recovery tip"}`;
 
 router.post("/rider/training-plan", requireRiderAuth, async (req, res) => {
   const { goal, durationMinutes } = req.body as { goal?: string; durationMinutes?: number };
