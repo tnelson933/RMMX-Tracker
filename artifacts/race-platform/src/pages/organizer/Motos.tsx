@@ -1021,6 +1021,7 @@ export default function Motos() {
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
   const [classFilter, setClassFilter] = useState<string>("schedule");
   const [roundFilter, setRoundFilter] = useState<number | "all">("all");
+  const [localOrderIds, setLocalOrderIds] = useState<number[] | null>(null);
   const [lineupSorts, setLineupSorts] = useState<Record<number, LineupSort>>({});
   const getMotoSort = (id: number): LineupSort => lineupSorts[id] ?? "gate";
   const setMotoSort = (id: number, s: LineupSort) => setLineupSorts(p => ({ ...p, [id]: s }));
@@ -1181,6 +1182,8 @@ export default function Motos() {
     if (!movedMoto) return;
     const newOrder = [...without.slice(0, insertIdx), movedMoto, ...without.slice(insertIdx)];
 
+    setLocalOrderIds(newOrder.map(m => m.id));
+
     // Build motoNumber + name updates per moto
     const updateMap = new Map<number, Record<string, unknown>>();
     newOrder.forEach((m, i) => {
@@ -1216,9 +1219,12 @@ export default function Motos() {
       await Promise.all([...updateMap.entries()].map(([motoId, data]) =>
         updateMutation.mutateAsync({ motoId, data })
       ));
-      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      queryClient.refetchQueries({ queryKey: getListMotosQueryKey(eventId) as any }).then(() => {
+        setLocalOrderIds(null);
+      });
       toast({ title: "✅ Order updated" });
     } catch {
+      setLocalOrderIds(null);
       toast({ title: "Failed to reorder", variant: "destructive" });
     }
   };
@@ -2664,8 +2670,11 @@ export default function Motos() {
         })()}
 
         {viewMode === "run-order" && !isLoading && (() => {
-          const runOrderMotos = [...(motos ?? [])]
-            .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+          const runOrderMotos = [...(motos ?? [])].sort((a, b) =>
+            localOrderIds
+              ? localOrderIds.indexOf(a.id) - localOrderIds.indexOf(b.id)
+              : (a.motoNumber ?? 0) - (b.motoNumber ?? 0)
+          );
           if (!runOrderMotos.length) return null;
           const typeLabel = (type: string) =>
             type === "main" ? "Main Event" : type === "lcq" ? "LCQ" : type === "practice" ? "Practice" : isSupercrossFormat ? "Heat" : "Moto";
@@ -2859,6 +2868,9 @@ export default function Motos() {
               if (roundFilter !== "all" && roundMap.get(m.id) !== roundFilter) return false;
               return true;
             }).sort((a, b) => {
+              if (localOrderIds) {
+                return localOrderIds.indexOf(a.id) - localOrderIds.indexOf(b.id);
+              }
               const rank = (s: string) => s === "in_progress" ? 0 : s === "scheduled" ? 1 : s === "completed" ? 2 : 3;
               const rd = rank(a.status) - rank(b.status);
               if (rd !== 0) return rd;
