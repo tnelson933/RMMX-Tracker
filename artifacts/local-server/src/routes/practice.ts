@@ -104,6 +104,7 @@ function broadcast(sessionId: number, payload: object) {
   for (const res of clients) {
     try {
       (res as any).write(`data: ${data}\n\n`);
+      (res as any).flush?.();
     } catch {
       clients.delete(res);
     }
@@ -467,10 +468,12 @@ router.get("/practice/:id/live", (req, res) => {
     )
     .all(id) as PracticeCrossingRow[];
   (res as any).write(`data: ${JSON.stringify(buildLiveBoard(session, crossings))}\n\n`);
+  (res as any).flush?.();
 
   const heartbeat = setInterval(() => {
     try {
       (res as any).write(": heartbeat\n\n");
+      (res as any).flush?.();
     } catch {
       /* ignore */
     }
