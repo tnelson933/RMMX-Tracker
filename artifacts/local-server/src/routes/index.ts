@@ -16,6 +16,8 @@ import resultsRouter from "./results";
 import seriesRouter from "./series";
 import pointsTablesRouter from "./points-tables";
 import dashboardRouter from "./dashboard";
+import discountCategoriesRouter from "./discount-categories";
+import stripeRouter from "./stripe";
 
 const router = Router();
 
@@ -36,6 +38,8 @@ router.use(resultsRouter);
 router.use(seriesRouter);
 router.use(pointsTablesRouter);
 router.use(dashboardRouter);
+router.use(discountCategoriesRouter);
+router.use(stripeRouter);
 
 router.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
