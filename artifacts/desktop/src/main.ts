@@ -99,10 +99,18 @@ function startLocalServer(): Promise<void> {
     env.STATIC_FILES_DIR = staticDir;
   }
 
-  // Do NOT pass CLOUD_* credentials to the local-server subprocess.
-  // The Electron SyncEngine is the sole cloud sync path; injecting those env
-  // vars would activate local-server's startAutoSync() and create two competing
-  // sync loops hitting different API endpoints (/sync vs /desktop-push).
+  // Pass CLOUD_URL (but NOT auth credentials) to the local server so it can
+  // redirect /register/:id requests to the cloud registration page.
+  // CLOUD_URL alone does not activate startAutoSync() — that requires CLUB_ID
+  // plus auth credentials too.
+  const savedCreds = loadCredentials();
+  if (savedCreds?.cloudUrl) {
+    env.CLOUD_URL = savedCreds.cloudUrl;
+  }
+
+  // Do NOT pass CLOUD_EMAIL / CLOUD_PASSWORD / CLUB_ID / SYNC_TOKEN to the
+  // local-server subprocess — those would activate local-server's startAutoSync()
+  // and create two competing sync loops hitting different API endpoints.
 
   // ELECTRON_RUN_AS_NODE=1 is required in packaged builds: process.execPath
   // points to the Electron binary, not a bare Node executable. This flag makes
