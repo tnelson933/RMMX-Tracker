@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Upload, CalendarCheck2 } from "lucide-react";
 
-const SESSION_KEY = "rmmx.unpublishedResultsDismissed";
+const SESSION_KEY = "rmtracker.unpublishedResultsDismissed";
 
 interface UnpublishedEvent {
   id: number;

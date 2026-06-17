@@ -94,10 +94,11 @@ const electronAPI = {
     platform: process.platform,
   },
 
-  // Synchronously resolved at page load — used by publicOrigin.ts so that
-  // widget embed URLs point to the cloud even when VITE_CLOUD_URL wasn't
-  // baked into the build at CI time.
-  cloudUrl: ipcRenderer.sendSync("auth:getCloudUrlSync") as string,
+  // Called on-demand (not static) so it always reflects the current saved
+  // credentials — even if the user just logged in during this session.
+  // publicOrigin.ts calls this each time it builds a shareable URL so that
+  // widget embeds and registration links always point at the cloud.
+  getCloudUrl: (): string => ipcRenderer.sendSync("auth:getCloudUrlSync") as string,
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

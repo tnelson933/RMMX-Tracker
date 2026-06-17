@@ -93,7 +93,7 @@ export default function Login() {
           // no password hash (account not activated locally), automatically try to
           // log in to the cloud and pull all data down, then retry locally.
           if (isDesktop) {
-            const fallbackUrl = data.cloudUrl?.trim() || VITE_CLOUD_URL || (window as any).electronAPI?.cloudUrl || "";
+            const fallbackUrl = data.cloudUrl?.trim() || VITE_CLOUD_URL || (window as any).electronAPI?.getCloudUrl?.() || "";
             setCloudSyncing(true);
             setAuthError(null);
             try {

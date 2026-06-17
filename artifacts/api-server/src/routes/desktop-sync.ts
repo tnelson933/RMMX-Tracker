@@ -641,7 +641,44 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           imageUrl:                   e.image_url    != null ? String(e.image_url)    : null,
           amaEventId:                 e.ama_event_id != null ? String(e.ama_event_id) : null,
         };
-        await tx.insert(eventsTable).values(insertRow as any).onConflictDoNothing();
+        // Use a proper upsert so that:
+        //  (a) retries after a partial failure still write the event
+        //  (b) desktop-created IDs that collide with cloud IDs from another
+        //      session are updated rather than silently dropped.
+        // The setWhere guard ensures we only overwrite events that already
+        // belong to THIS club — never another club's event.
+        await tx.insert(eventsTable).values(insertRow as any)
+          .onConflictDoUpdate({
+            target: eventsTable.id,
+            set: {
+              name:                     insertRow.name             as string,
+              date:                     insertRow.date             as string,
+              state:                    insertRow.state            as string,
+              location:                 insertRow.location         as string | null,
+              trackName:                insertRow.trackName        as string | null,
+              status:                   insertRow.status           as string,
+              raceClasses:              raceClasses,
+              raceClassLimits:          raceClassLimits,
+              purchaseOptions:          purchaseOptions,
+              paymentEnabled:           insertRow.paymentEnabled   as boolean,
+              requireAma:               insertRow.requireAma       as boolean,
+              entryFee:                 insertRow.entryFee         as number | null,
+              maxRiders:                insertRow.maxRiders        as number | null,
+              timingTechnology:         insertRow.timingTechnology as string,
+              transponderRentalEnabled: insertRow.transponderRentalEnabled as boolean,
+              transponderRentalFee:     insertRow.transponderRentalFee    as number | null,
+              noDuplicateBibs:          insertRow.noDuplicateBibs  as boolean,
+              requireClubId:            insertRow.requireClubId    as boolean,
+              scoringTableId:           insertRow.scoringTableId   as number | null,
+              entryFeeCategoryId:       insertRow.entryFeeCategoryId as number | null,
+              minLapMs:                 insertRow.minLapMs         as number | null,
+              registrationOpen:         insertRow.registrationOpen as string | null,
+              registrationClose:        insertRow.registrationClose as string | null,
+              imageUrl:                 insertRow.imageUrl         as string | null,
+              amaEventId:               insertRow.amaEventId       as string | null,
+            } as any,
+            setWhere: eq(eventsTable.clubId, clubId),
+          });
         eventsUpserted++;
         continue;
       }

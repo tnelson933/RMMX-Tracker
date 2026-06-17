@@ -101,6 +101,16 @@ export class SyncEngine {
   }
 
   start(): void {
+    // Reset rows that hit the attempt cap on a previous run so they are
+    // retried on this startup cycle instead of being permanently stranded.
+    // (The reconnect-cycle reset only fires when the app goes offline then
+    //  back online; it never fires for errors that happen while always-online.)
+    this.db
+      .prepare(
+        "UPDATE _write_queue SET attempt_count = 0, error = NULL WHERE synced_at IS NULL AND attempt_count >= ?",
+      )
+      .run(MAX_ATTEMPTS);
+
     void this.flush();
     this.flushTimer = setInterval(() => void this.flush(), this.pollIntervalMs);
   }

@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { CheckCircle2, Calendar, Loader2, CalendarClock } from "lucide-react";
 import type { Event } from "@workspace/api-client-react";
 
-const SESSION_KEY = "rmmx.pastEventCheckDismissed";
+const SESSION_KEY = "rmtracker.pastEventCheckDismissed";
 
 interface EventRowProps {
   event: Event;

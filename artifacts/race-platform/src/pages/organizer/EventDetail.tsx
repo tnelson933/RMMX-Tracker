@@ -1277,7 +1277,7 @@ export default function EventDetail() {
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1">Code String</label>
                   <Input
-                    placeholder="e.g. RMMX2026"
+                    placeholder="e.g. RMTRACKER2026"
                     value={compCustomCode}
                     onChange={e => setCompCustomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
                     className="h-9 text-sm font-mono uppercase"
