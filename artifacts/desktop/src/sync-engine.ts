@@ -426,6 +426,7 @@ export class SyncEngine {
       seriesPoints?: Record<string, unknown>[];
       pointsTables?: Record<string, unknown>[];
       discountCategories?: Record<string, unknown>[];
+      compCodes?: Record<string, unknown>[];
       practiceSessions?: Record<string, unknown>[];
       practiceCrossings?: Record<string, unknown>[];
     };
@@ -446,6 +447,7 @@ export class SyncEngine {
           ["series",              data.series              ?? []],
           ["series_points",       data.seriesPoints        ?? []],
           ["discount_categories", data.discountCategories  ?? []],
+          ["comp_codes",          data.compCodes           ?? []],
           ["practice_sessions",   data.practiceSessions    ?? []],
           ["practice_crossings",  data.practiceCrossings   ?? []],
           ["registrations",       data.registrations       ?? []],
