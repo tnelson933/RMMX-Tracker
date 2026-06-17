@@ -288,25 +288,44 @@ router.post("/events/:eventId/registrations", (req, res) => {
     }
   }
 
+  const resolvedStatus = status ?? "confirmed";
+  // An explicit payment method means the organizer collected payment on-site (cash / waived / other)
+  const resolvedPaymentStatus = paymentMethod ? "paid" : "unpaid";
+
   const result = db.prepare(
     `INSERT INTO registrations (event_id, rider_id, race_class, bib_number, ama_number, club_id_number,
        bike_brand, bike_model, bike_year, mylaps_transponder_number, transponder_rental,
-       payment_method, amount_paid, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+       payment_method, amount_paid, payment_status, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
   ).run(
     eventId, riderId, String(raceClass),
     bibNumber ?? null, amaNumber ?? null, clubIdNumber ?? null,
     bikeBrand ?? null, bikeModel ?? null, bikeYear ?? null,
     myLapsTransponderNumber ?? null,
     rentTransponder ? 1 : 0,
-    paymentMethod ?? "cash",
+    paymentMethod ?? null,
     amountPaid ?? null,
-    status ?? "confirmed",
+    resolvedPaymentStatus,
+    resolvedStatus,
   );
 
   const reg = db.prepare("SELECT * FROM registrations WHERE id = ?").get(Number(result.lastInsertRowid)) as any;
   const rider = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(riderId) as any;
   const riderName = rider ? `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim() : "";
+
+  // Create a checkin record for confirmed registrations so the rider appears in the check-in list
+  // and the write-queue trigger fires to sync the checkin to cloud
+  if (resolvedStatus === "confirmed") {
+    const existingCheckin = db
+      .prepare("SELECT id FROM checkins WHERE event_id = ? AND rider_id = ? LIMIT 1")
+      .get(eventId, riderId);
+    if (!existingCheckin) {
+      db.prepare(
+        `INSERT INTO checkins (event_id, rider_id, race_class, bib_number, checked_in, rfid_linked, created_at)
+         VALUES (?, ?, ?, ?, 0, 0, datetime('now'))`
+      ).run(eventId, riderId, String(raceClass), bibNumber ?? null);
+    }
+  }
 
   return res.status(201).json({
     id: reg.id,
