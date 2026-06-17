@@ -19,17 +19,8 @@ import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
 import { UpcomingNearMe } from "@/components/UpcomingNearMe";
 
-// Direct links to the latest uploaded release assets on GitHub.
-// When a new release is published and assets upload successfully,
-// update RELEASE_TAG and the filenames below to match.
-const RELEASE_TAG = "desktop-v1.0.57";
-const RELEASE_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${RELEASE_TAG}`;
-const DOWNLOADS_READY = true;
-const DOWNLOADS = {
-  macArm: `${RELEASE_BASE}/RMMX-Tracker-arm64.dmg`,
-  macX64: `${RELEASE_BASE}/RMMX-Tracker-x64.dmg`,
-  windows: `${RELEASE_BASE}/RMMX-Tracker-Setup.exe`,
-};
+const FALLBACK_TAG = "desktop-v1.0.57";
+const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
 
@@ -254,6 +245,20 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("today");
   const [showDownloads, setShowDownloads] = useState(false);
   const [selectedState, setSelectedState] = useState("all");
+  const [downloads, setDownloads] = useState({
+    macArm:  `${FALLBACK_BASE}/RMMX-Tracker-arm64.dmg`,
+    macX64:  `${FALLBACK_BASE}/RMMX-Tracker-x64.dmg`,
+    windows: `${FALLBACK_BASE}/RMMX-Tracker-Setup.exe`,
+  });
+
+  useEffect(() => {
+    fetch("/api/config/desktop-release")
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { macArm: string; macX64: string; windows: string } | null) => {
+        if (data?.macArm) setDownloads({ macArm: data.macArm, macX64: data.macX64, windows: data.windows });
+      })
+      .catch(() => {});
+  }, []);
 
   const { data: upcomingAll, isLoading: upcomingLoading } = useListUpcomingEvents({ query: {} as any });
   const { data: states, isLoading: statesLoading } = useListStates();
@@ -491,19 +496,19 @@ export default function Home() {
           </button>
           {showDownloads && (
             <div className="flex flex-wrap justify-center gap-2">
-              <a href={DOWNLOADS.macArm} title="macOS Apple Silicon (M1/M2/M3)">
+              <a href={downloads.macArm} title="macOS Apple Silicon (M1/M2/M3)">
                 <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
                   <Apple size={13} />
                   Mac (Apple Silicon)
                 </Button>
               </a>
-              <a href={DOWNLOADS.macX64} title="macOS Intel">
+              <a href={downloads.macX64} title="macOS Intel">
                 <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
                   <Apple size={13} />
                   Mac (Intel)
                 </Button>
               </a>
-              <a href={DOWNLOADS.windows} title="Windows 10/11">
+              <a href={downloads.windows} title="Windows 10/11">
                 <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
                   <Monitor size={13} />
                   Windows
