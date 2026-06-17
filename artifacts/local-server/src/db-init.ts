@@ -256,6 +256,14 @@ export function initDb() {
     -- Guard flag set by the sync-engine during cloud-pull upserts.
     -- Triggers skip enqueue when this table has a row (active = 1) so that
     -- cloud-originated rows do not echo back into the push queue.
+    CREATE TABLE IF NOT EXISTS discount_categories (
+      id         INTEGER PRIMARY KEY,
+      club_id    INTEGER NOT NULL,
+      name       TEXT    NOT NULL,
+      description TEXT,
+      created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS _cloud_pull_guard (
       active INTEGER PRIMARY KEY
     );
@@ -488,6 +496,9 @@ export function initDb() {
     // _sync_watermarks — ensure new column names exist on older schemas
     ["_sync_watermarks", "last_pulled_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z'"],
     ["_sync_watermarks", "updated_at     TEXT NOT NULL DEFAULT (datetime('now'))"],
+    // clubs — Stripe Connect fields
+    ["clubs", "stripe_account_id          TEXT"],
+    ["clubs", "stripe_onboarding_complete INTEGER NOT NULL DEFAULT 0"],
     // _cloud_pull_guard — safety: ensure it exists (created above, but just in case)
   ];
 
