@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
 import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, useListDiscountCategories, useDeleteEvent } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -288,7 +289,7 @@ export default function EventDetail() {
     }
   };
 
-  const registrationUrl = `${window.location.origin}/register/${eventId}`;
+  const registrationUrl = `${getPublicOrigin()}/register/${eventId}`;
 
   const copyLink = () => {
     navigator.clipboard.writeText(registrationUrl);
