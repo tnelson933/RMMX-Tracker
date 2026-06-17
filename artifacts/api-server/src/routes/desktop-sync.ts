@@ -677,6 +677,98 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     }
     results["events"] = eventsUpserted;
     total += eventsUpserted;
+
+    // ── practice_sessions (create / start / stop on desktop) ─────────────────
+    const practiceSessions = (payload["practice_sessions"] ?? []) as Array<Record<string, unknown>>;
+
+    let practiceSessionsUpserted = 0;
+    for (const s of practiceSessions) {
+      const sessionId = Number(s.id);
+      if (!sessionId) continue;
+
+      const [existing] = await tx
+        .select({ id: practiceSessionsTable.id, clubId: practiceSessionsTable.clubId })
+        .from(practiceSessionsTable)
+        .where(eq(practiceSessionsTable.id, sessionId));
+
+      if (existing) {
+        if (existing.clubId !== clubId) continue;
+        const updateSet: Record<string, unknown> = {};
+        if (s.status      != null) updateSet.status     = String(s.status);
+        if (s.name        != null) updateSet.name        = String(s.name);
+        if (s.debounce_ms != null) updateSet.debounceMs  = Number(s.debounce_ms);
+        if (s.started_at  != null) updateSet.startedAt   = toDate(s.started_at);
+        if (s.ended_at    != null) updateSet.endedAt     = toDate(s.ended_at);
+        if (Object.keys(updateSet).length === 0) continue;
+        await tx
+          .update(practiceSessionsTable)
+          .set(updateSet as any)
+          .where(eq(practiceSessionsTable.id, sessionId));
+      } else {
+        const insertRow: Record<string, unknown> = {
+          id:         sessionId,
+          clubId,
+          name:       s.name        != null ? String(s.name)        : "Practice",
+          status:     s.status      != null ? String(s.status)      : "idle",
+          debounceMs: s.debounce_ms != null ? Number(s.debounce_ms) : 10000,
+          startedAt:  toDate(s.started_at),
+          endedAt:    toDate(s.ended_at),
+        };
+        await tx
+          .insert(practiceSessionsTable)
+          .values(insertRow as any)
+          .onConflictDoNothing();
+      }
+      practiceSessionsUpserted++;
+    }
+    results["practice_sessions"] = practiceSessionsUpserted;
+    total += practiceSessionsUpserted;
+
+    // ── practice_crossings (RFID reads during practice — insert-only) ─────────
+    const practiceCrossingsPayload = (payload["practice_crossings"] ?? []) as Array<Record<string, unknown>>;
+
+    let practiceCrossingsUpserted = 0;
+    for (const c of practiceCrossingsPayload) {
+      const crossingId = Number(c.id);
+      const sessionId  = Number(c.session_id);
+      const rfidNumber = String(c.rfid_number ?? "");
+      if (!sessionId || !rfidNumber) continue;
+
+      // Scope check: session must belong to this club
+      const [session] = await tx
+        .select({ clubId: practiceSessionsTable.clubId })
+        .from(practiceSessionsTable)
+        .where(eq(practiceSessionsTable.id, sessionId));
+      if (!session || session.clubId !== clubId) continue;
+
+      // Crossings are immutable — skip if already on cloud
+      if (crossingId) {
+        const [existingCrossing] = await tx
+          .select({ id: practiceCrossingsTable.id })
+          .from(practiceCrossingsTable)
+          .where(eq(practiceCrossingsTable.id, crossingId));
+        if (existingCrossing) { practiceCrossingsUpserted++; continue; }
+      }
+
+      const insertRow: Record<string, unknown> = {
+        ...(crossingId ? { id: crossingId } : {}),
+        sessionId,
+        rfidNumber,
+        riderId:     c.rider_id    != null ? Number(c.rider_id)    : null,
+        riderName:   c.rider_name  != null ? String(c.rider_name)  : null,
+        bibNumber:   c.bib_number  != null ? String(c.bib_number)  : null,
+        crossingTime: toDate(c.crossing_time) ?? new Date(),
+        lapNumber:   c.lap_number  != null ? Number(c.lap_number)  : 0,
+        lapTimeMs:   c.lap_time_ms != null ? Number(c.lap_time_ms) : null,
+      };
+      await tx
+        .insert(practiceCrossingsTable)
+        .values(insertRow as any)
+        .onConflictDoNothing();
+      practiceCrossingsUpserted++;
+    }
+    results["practice_crossings"] = practiceCrossingsUpserted;
+    total += practiceCrossingsUpserted;
   });
 
   req.log.info({ clubId, results, total }, "desktop-push complete");
