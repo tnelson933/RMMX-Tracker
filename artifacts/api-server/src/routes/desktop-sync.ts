@@ -551,16 +551,11 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     results["rfid_assignments"] = rfidUpserted;
     total += rfidUpserted;
 
-    // ── events (status / class-list updates made on desktop) ─────────────────
-    const events = (payload["events"] ?? []) as Array<{
-      id?: unknown;
-      status?: unknown;
-      // Accept both field names: desktop queue uses snake_case `race_classes`;
-      // legacy callers may send `classes`.
-      race_classes?: unknown;
-      classes?: unknown;
-      min_lap_times?: unknown;
-    }>;
+    // ── events (full field updates made on desktop) ───────────────────────────
+    // Desktop queue sends raw SQLite rows (snake_case).  Accept every field the
+    // organizer can edit in the desktop app so changes like race date, name, and
+    // location survive the next sync-pull.
+    const events = (payload["events"] ?? []) as Array<Record<string, unknown>>;
 
     let eventsUpserted = 0;
     for (const e of events) {
@@ -580,12 +575,32 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         try { raceClasses = JSON.parse(String(rawClasses)) as string[]; } catch { /* ignore */ }
       }
 
+      // Build the update set — only include fields present in this row so that
+      // a partial push (e.g. status-only) doesn't null-out unrelated columns.
+      const updateSet: Record<string, unknown> = {};
+      if (e.status   != null) updateSet.status   = String(e.status) as "draft" | "registration_open" | "race_day" | "completed";
+      if (raceClasses)        updateSet.raceClasses = raceClasses;
+      if (e.name     != null) updateSet.name      = String(e.name);
+      if (e.date     != null) updateSet.date      = String(e.date);
+      if (e.location != null) updateSet.location  = String(e.location);
+      if (e.state    != null) updateSet.state     = String(e.state);
+      if (e.track_name != null) updateSet.trackName = String(e.track_name);
+      if (e.entry_fee  != null) updateSet.entryFee  = Number(e.entry_fee) || null;
+      if (e.max_riders != null) updateSet.maxRiders = Number(e.max_riders) || null;
+      if (e.timing_technology != null) updateSet.timingTechnology = String(e.timing_technology);
+      if (e.transponder_rental_enabled != null) updateSet.transponderRentalEnabled = !!e.transponder_rental_enabled;
+      if (e.transponder_rental_fee != null) updateSet.transponderRentalFee = Number(e.transponder_rental_fee) || null;
+      if (e.no_duplicate_bibs != null) updateSet.noDuplicateBibs = !!e.no_duplicate_bibs;
+      if (e.require_club_id != null) updateSet.requireClubId = !!e.require_club_id;
+      if (e.min_lap_ms != null) updateSet.minLapMs = Number(e.min_lap_ms) || null;
+      if (e.image_url  != null) updateSet.imageUrl  = String(e.image_url);
+      if (e.ama_event_id != null) updateSet.amaEventId = String(e.ama_event_id);
+
+      if (Object.keys(updateSet).length === 0) continue;
+
       await tx
         .update(eventsTable)
-        .set({
-          status:      e.status != null ? String(e.status) as "draft" | "registration_open" | "race_day" | "completed" : undefined,
-          raceClasses: raceClasses,
-        })
+        .set(updateSet as any)
         .where(eq(eventsTable.id, eventId));
       eventsUpserted++;
     }
