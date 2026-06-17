@@ -19,6 +19,7 @@ import {
   practiceSessionsTable,
   practiceCrossingsTable,
   discountCategoriesTable,
+  compCodesTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -855,6 +856,11 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     .from(discountCategoriesTable)
     .where(eq(discountCategoriesTable.clubId, clubId));
 
+  const compCodes = await db
+    .select()
+    .from(compCodesTable)
+    .where(eq(compCodesTable.clubId, clubId));
+
   const practiceSessions = await db
     .select()
     .from(practiceSessionsTable)
@@ -879,6 +885,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       series: clubSeries,
       seriesPoints: [],
       discountCategories,
+      compCodes,
       practiceSessions,
       practiceCrossings,
     });
@@ -947,6 +954,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     series: clubSeries,
     seriesPoints,
     discountCategories,
+    compCodes,
     practiceSessions,
     practiceCrossings,
   });
