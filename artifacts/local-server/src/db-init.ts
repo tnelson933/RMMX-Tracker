@@ -264,6 +264,22 @@ export function initDb() {
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS comp_codes (
+      id            INTEGER PRIMARY KEY,
+      event_id      INTEGER,
+      club_id       INTEGER,
+      rider_id      INTEGER,
+      code          TEXT NOT NULL,
+      discount_type TEXT NOT NULL DEFAULT 'fixed',
+      amount        REAL NOT NULL DEFAULT 0,
+      max_uses      INTEGER NOT NULL DEFAULT 1,
+      uses_count    INTEGER NOT NULL DEFAULT 0,
+      is_active     INTEGER NOT NULL DEFAULT 1,
+      expires_at    TEXT,
+      category_ids  TEXT NOT NULL DEFAULT '[]',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS _cloud_pull_guard (
       active INTEGER PRIMARY KEY
     );
@@ -538,5 +554,19 @@ export function initDb() {
     } catch {
       // Column already exists — ignore
     }
+  }
+
+  // Seed autoincrement sequences so desktop-created rows start at a high ID range
+  // and never collide with cloud-assigned sequential IDs (1, 2, 3...).
+  // ON CONFLICT DO UPDATE uses MAX so an already-elevated sequence is never lowered.
+  try {
+    db.exec(`
+      INSERT INTO sqlite_sequence (name, seq) VALUES ('events', 9999999)
+        ON CONFLICT(name) DO UPDATE SET seq = MAX(seq, excluded.seq);
+      INSERT INTO sqlite_sequence (name, seq) VALUES ('practice_sessions', 9999999)
+        ON CONFLICT(name) DO UPDATE SET seq = MAX(seq, excluded.seq);
+    `);
+  } catch {
+    // sqlite_sequence doesn't exist until the first AUTOINCREMENT insert — safe to ignore on a brand-new DB
   }
 }
