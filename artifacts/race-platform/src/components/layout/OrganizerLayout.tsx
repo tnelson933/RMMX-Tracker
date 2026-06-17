@@ -125,7 +125,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
               key={item.href}
               href={item.href}
               onClick={close}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+              className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
                 isActive
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -142,7 +142,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           <Link
             href="/team"
             onClick={close}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+            className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
               location.startsWith("/team")
                 ? "bg-sidebar-primary text-sidebar-primary-foreground"
                 : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -164,7 +164,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             <Link
               href="/admin/users"
               onClick={close}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+              className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
                 location.startsWith("/admin/users")
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -176,7 +176,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             <Link
               href="/admin/clubs"
               onClick={close}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+              className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
                 location.startsWith("/admin/clubs")
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -188,7 +188,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             <Link
               href="/admin/notifications"
               onClick={close}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-md font-medium text-sm transition-colors ${
+              className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
                 location.startsWith("/admin/notifications")
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
