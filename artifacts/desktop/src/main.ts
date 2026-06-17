@@ -37,7 +37,7 @@ import {
 
 const LOCAL_PORT = 9090;
 const STARTUP_TIMEOUT_MS = 15_000;
-const WINDOW_TITLE = "Rocky Mountain Race Platform";
+const WINDOW_TITLE = "RM Tracker";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -688,7 +688,7 @@ function setupAutoUpdater(): void {
     dialog.showMessageBox({
       type: "info",
       title: "Update available",
-      message: `Rocky Mountain Race v${info.version} is available and will be installed automatically when you quit.`,
+      message: `RM Tracker v${info.version} is available and will be installed automatically when you quit.`,
       buttons: ["OK"],
     });
   });
