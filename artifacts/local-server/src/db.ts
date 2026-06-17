@@ -9,6 +9,7 @@ export function getDb(): Database.Database {
   _db = new Database(dbFile);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
+  _db.pragma("busy_timeout = 3000");
   return _db;
 }
 
