@@ -16,6 +16,7 @@ import {
   seriesPointsTable,
   pointsTablesTable,
   practiceSessionsTable,
+  practiceCrossingsTable,
   discountCategoriesTable,
 } from "@workspace/db";
 
@@ -568,7 +569,57 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         .select({ clubId: eventsTable.clubId })
         .from(eventsTable)
         .where(eq(eventsTable.id, eventId));
-      if (!event || event.clubId !== clubId) continue;
+
+      if (!event) {
+        // New event created on desktop — insert it into cloud, scoped to this club.
+        const rawClasses = e.race_classes ?? e.classes ?? null;
+        let raceClasses: string[] = [];
+        try { raceClasses = JSON.parse(String(rawClasses ?? "[]")) as string[]; } catch { /* ignore */ }
+
+        let raceClassLimits: Record<string, number | null> = {};
+        if (e.race_class_limits != null) {
+          try { raceClassLimits = JSON.parse(String(e.race_class_limits)) as Record<string, number | null>; } catch { /* ignore */ }
+        }
+        let purchaseOptions: unknown[] = [];
+        if (e.purchase_options != null) {
+          try { purchaseOptions = JSON.parse(String(e.purchase_options)) as unknown[]; } catch { /* ignore */ }
+        }
+
+        const insertRow: Record<string, unknown> = {
+          id: eventId,
+          clubId,
+          name:          e.name     != null ? String(e.name)     : "Untitled Event",
+          date:          e.date     != null ? String(e.date)     : new Date().toISOString().slice(0, 10),
+          state:         e.state    != null ? String(e.state)    : "",
+          location:      e.location != null ? String(e.location) : null,
+          trackName:     e.track_name != null ? String(e.track_name) : null,
+          status:        e.status   != null ? String(e.status)   : "draft",
+          raceClasses,
+          raceClassLimits,
+          purchaseOptions,
+          paymentEnabled:             !!e.payment_enabled,
+          requireAma:                 !!e.require_ama,
+          entryFee:                   e.entry_fee     != null ? Number(e.entry_fee)     || null : null,
+          maxRiders:                  e.max_riders    != null ? Number(e.max_riders)    || null : null,
+          timingTechnology:           e.timing_technology != null ? String(e.timing_technology) : "rfid",
+          transponderRentalEnabled:   !!e.transponder_rental_enabled,
+          transponderRentalFee:       e.transponder_rental_fee != null ? Number(e.transponder_rental_fee) || null : null,
+          noDuplicateBibs:            !!e.no_duplicate_bibs,
+          requireClubId:              !!e.require_club_id,
+          scoringTableId:             e.scoring_table_id      != null ? Number(e.scoring_table_id)      || null : null,
+          entryFeeCategoryId:         e.entry_fee_category_id != null ? Number(e.entry_fee_category_id) || null : null,
+          minLapMs:                   e.min_lap_ms    != null ? Number(e.min_lap_ms)    || null : null,
+          registrationOpen:           e.registration_open  != null ? String(e.registration_open)  : null,
+          registrationClose:          e.registration_close != null ? String(e.registration_close) : null,
+          imageUrl:                   e.image_url    != null ? String(e.image_url)    : null,
+          amaEventId:                 e.ama_event_id != null ? String(e.ama_event_id) : null,
+        };
+        await tx.insert(eventsTable).values(insertRow as any).onConflictDoNothing();
+        eventsUpserted++;
+        continue;
+      }
+
+      if (event.clubId !== clubId) continue;
 
       // Prefer `race_classes` (canonical queue key); fall back to `classes`.
       const rawClasses = e.race_classes ?? e.classes ?? null;
@@ -695,6 +746,15 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     .from(practiceSessionsTable)
     .where(eq(practiceSessionsTable.clubId, clubId));
 
+  const practiceSessionIds = practiceSessions.map((s) => s.id);
+  const practiceCrossings =
+    practiceSessionIds.length > 0
+      ? await db
+          .select()
+          .from(practiceCrossingsTable)
+          .where(inArray(practiceCrossingsTable.sessionId, practiceSessionIds))
+      : [];
+
   if (clubEvents.length === 0) {
     return res.json({
       registrations: [], checkins: [], riders: [],
@@ -706,6 +766,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       seriesPoints: [],
       discountCategories,
       practiceSessions,
+      practiceCrossings,
     });
   }
 
@@ -773,6 +834,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     seriesPoints,
     discountCategories,
     practiceSessions,
+    practiceCrossings,
   });
 });
 
