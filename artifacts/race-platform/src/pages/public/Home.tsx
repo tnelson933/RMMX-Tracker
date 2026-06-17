@@ -316,7 +316,7 @@ export default function Home() {
         />
         <div className="container mx-auto px-4 relative z-10">
           <div className="max-w-3xl mx-auto text-center">
-            <img src={rmLogo} alt="Rocky Mountain" className="w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-6 drop-shadow-2xl" />
+            <img src={rmLogo} alt="RM Tracker" className="w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-6 drop-shadow-2xl" />
             <h1 className="text-4xl sm:text-5xl md:text-7xl font-heading font-bold text-white mb-4 sm:mb-6 uppercase tracking-tight leading-tight">
               Precision Timing.<br />
               <span style={{ color: '#cf152d' }}>Ultimate Performance.</span>
