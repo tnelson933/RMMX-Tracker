@@ -13,7 +13,7 @@ function deserializeReg(r: Record<string, unknown>) {
     paymentStatus: r.payment_status,
     bibNumber: r.bib_number,
     bikeBrand: r.bike_brand,
-    myLapsTransponderNumber: r.my_laps_transponder_number,
+    myLapsTransponderNumber: r.mylaps_transponder_number,
     clubIdNumber: r.club_id_number,
     amountPaid: r.amount_paid,
     paymentMethod: r.payment_method,
@@ -48,6 +48,7 @@ router.get("/events/:eventId/registrations", (req, res) => {
   return res.json(
     rows.map((r) => ({
       ...deserializeReg(r),
+      riderName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim(),
       firstName: r.first_name,
       lastName: r.last_name,
       email: r.rider_email,
