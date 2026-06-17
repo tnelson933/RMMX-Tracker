@@ -128,6 +128,18 @@ router.delete("/points-tables/:tableId", (req, res) => {
   if (!row) return res.status(404).json({ error: "Not found" });
   if (row.is_system_default === 1) return res.status(409).json({ error: "Cannot delete system default table" });
 
+  const seriesUse = db
+    .prepare("SELECT id FROM series WHERE scoring_table_id = ? LIMIT 1")
+    .get(id) as any;
+  const eventUse = db
+    .prepare("SELECT id FROM events WHERE scoring_table_id = ? LIMIT 1")
+    .get(id) as any;
+  if (seriesUse || eventUse) {
+    return res.status(409).json({
+      error: "Cannot delete: scoring table is referenced by one or more series or events",
+    });
+  }
+
   db.prepare("DELETE FROM points_tables WHERE id = ?").run(id);
   return res.status(204).send();
 });

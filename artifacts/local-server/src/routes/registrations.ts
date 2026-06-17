@@ -37,9 +37,11 @@ router.get("/events/:eventId/registrations", (req, res) => {
     .prepare(
       `SELECT
         r.*,
-        ri.first_name, ri.last_name, ri.email AS rider_email, ri.phone
+        ri.first_name, ri.last_name, ri.email AS rider_email, ri.phone,
+        ra.rfid_number AS assigned_rfid_number
        FROM registrations r
        LEFT JOIN riders ri ON r.rider_id = ri.id
+       LEFT JOIN rfid_assignments ra ON ra.rider_id = r.rider_id AND ra.event_id = r.event_id
        WHERE r.event_id = ?
        ORDER BY ri.last_name`,
     )
@@ -48,6 +50,7 @@ router.get("/events/:eventId/registrations", (req, res) => {
   return res.json(
     rows.map((r) => ({
       ...deserializeReg(r),
+      rfidNumber: r.assigned_rfid_number ?? null,
       riderName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim(),
       firstName: r.first_name,
       lastName: r.last_name,

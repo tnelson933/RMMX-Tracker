@@ -126,4 +126,40 @@ router.post("/auth/complete-tour", (req, res) => {
   return res.json({ ok: true });
 });
 
+router.post("/auth/request-setup", (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email required" });
+  return res.json({ ok: true });
+});
+
+router.post("/auth/complete-setup", async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) {
+    return res.status(400).json({ error: "Token and password are required" });
+  }
+  if (String(password).length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  const db = getDb();
+  const record = db
+    .prepare("SELECT * FROM password_setup_tokens WHERE token = ?")
+    .get(String(token)) as Record<string, unknown> | undefined;
+
+  if (!record || record.used_at) {
+    return res.status(400).json({ error: "This link is invalid or has already been used." });
+  }
+  if (record.expires_at && new Date(record.expires_at as string) < new Date()) {
+    return res.status(400).json({ error: "This link has expired. Please request a new one." });
+  }
+
+  const hash = await bcrypt.hash(String(password), 12);
+  const now = new Date().toISOString();
+
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, record.user_id);
+  db.prepare("UPDATE password_setup_tokens SET used_at = ? WHERE id = ?").run(now, record.id);
+
+  return res.json({ ok: true });
+});
+
 export default router;

@@ -250,6 +250,89 @@ function getActiveMotoForAnyEvent(): any {
   );
 }
 
+function getActivePracticeSession(): any {
+  return (
+    getDb().prepare("SELECT * FROM practice_sessions WHERE status = 'active' LIMIT 1").get() ?? null
+  );
+}
+
+function processPracticeCrossing(opts: {
+  rfidNumber: string;
+  session: any;
+  crossingTime: Date;
+}): { id: number; lapNumber: number; lapTimeMs: number | null } | { debounced: true } | null {
+  const db = getDb();
+  const { rfidNumber, session, crossingTime } = opts;
+
+  const lastCrossing = db
+    .prepare(
+      "SELECT * FROM practice_crossings WHERE session_id = ? AND rfid_number = ? ORDER BY crossing_time DESC LIMIT 1",
+    )
+    .get(session.id, rfidNumber) as any;
+
+  if (lastCrossing) {
+    const elapsed = crossingTime.getTime() - new Date(lastCrossing.crossing_time).getTime();
+    if (elapsed < (session.debounce_ms ?? 30000)) return { debounced: true };
+  }
+
+  const assignment = db
+    .prepare(
+      `SELECT ra.rider_id, r.first_name, r.last_name, r.bib_number
+       FROM rfid_assignments ra
+       LEFT JOIN riders r ON ra.rider_id = r.id
+       LEFT JOIN events e ON ra.event_id = e.id
+       WHERE ra.rfid_number = ? AND e.club_id = ?
+       LIMIT 1`,
+    )
+    .get(rfidNumber, session.club_id) as any;
+
+  let riderId: number | null = null;
+  let riderName: string | null = null;
+  let bibNumber: string | null = null;
+
+  if (assignment) {
+    riderId = assignment.rider_id;
+    riderName = [assignment.first_name, assignment.last_name].filter(Boolean).join(" ") || null;
+    bibNumber = assignment.bib_number;
+  } else {
+    const directRider = db
+      .prepare(
+        "SELECT id, first_name, last_name, bib_number FROM riders WHERE rfid_number = ? LIMIT 1",
+      )
+      .get(rfidNumber) as any;
+    if (directRider) {
+      riderId = directRider.id;
+      riderName =
+        [directRider.first_name, directRider.last_name].filter(Boolean).join(" ") || null;
+      bibNumber = directRider.bib_number;
+    }
+  }
+
+  const lapNumber = (lastCrossing?.lap_number ?? 0) + 1;
+  const lapTimeMs = lastCrossing
+    ? crossingTime.getTime() - new Date(lastCrossing.crossing_time).getTime()
+    : null;
+
+  const ins = db
+    .prepare(
+      `INSERT INTO practice_crossings
+         (session_id, rfid_number, rider_id, rider_name, bib_number, crossing_time, lap_number, lap_time_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      session.id,
+      rfidNumber,
+      riderId,
+      riderName,
+      bibNumber,
+      crossingTime.toISOString(),
+      lapNumber,
+      lapTimeMs,
+    );
+
+  return { id: Number(ins.lastInsertRowid), lapNumber, lapTimeMs };
+}
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // POST /timing/crossing — direct motoId crossing (hardware or simulation)
@@ -285,40 +368,58 @@ router.post("/timing/active/crossing", (req, res) => {
       .map((e: any) => e.tagInventoryEvent as { epcHex: string; antennaPort?: number; firstSeenTime?: string });
     if (tagEvents.length === 0) return res.json({ ok: true, processed: 0, note: "No tagInventoryEvent entries" });
     const moto = getActiveMotoForAnyEvent();
-    if (!moto) return res.status(409).json({ error: "No moto in progress", hint: "Start a moto from the Race Day tab first." });
+    const practiceImpinj = !moto ? getActivePracticeSession() : null;
+    if (!moto && !practiceImpinj) return res.status(409).json({ error: "No moto or practice session in progress", hint: "Start a moto or practice session first." });
     const results: unknown[] = [];
     for (const tag of tagEvents) {
       const rfidNumber = tag.epcHex.toUpperCase();
       const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
       if (isNaN(crossingTime.getTime())) { results.push({ rfidNumber, error: "Invalid firstSeenTime" }); continue; }
-      try {
-        const r = processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "impinj-r700", antennaId: tag.antennaPort });
-        results.push(r.debounced ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
-      } catch (err: any) { results.push({ rfidNumber, error: err.message }); }
+      if (moto) {
+        try {
+          const r = processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "impinj-r700", antennaId: tag.antennaPort });
+          results.push(r.debounced ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
+        } catch (err: any) { results.push({ rfidNumber, error: err.message }); }
+      } else {
+        const r = processPracticeCrossing({ rfidNumber, session: practiceImpinj!, crossingTime });
+        results.push(!r || "debounced" in r ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
+      }
     }
-    const snapshot = buildLeaderboard(moto.id);
-    if (snapshot) sseBroadcast(moto.id, snapshot);
-    return res.json({ ok: true, processed: tagEvents.length, motoId: moto.id, results });
+    if (moto) {
+      const snapshot = buildLeaderboard(moto.id);
+      if (snapshot) sseBroadcast(moto.id, snapshot);
+      return res.json({ ok: true, processed: tagEvents.length, motoId: moto.id, results });
+    }
+    return res.json({ ok: true, processed: tagEvents.length, practiceSessionId: practiceImpinj!.id, results });
   }
 
   // Zebra FX7500 format
   const zebraTags: any[] = Array.isArray(body?.data?.tags) ? body.data.tags : Array.isArray(body?.tags) ? body.tags : [];
   if (zebraTags.length > 0) {
     const moto = getActiveMotoForAnyEvent();
-    if (!moto) return res.status(409).json({ error: "No moto in progress", hint: "Start a moto from the Race Day tab first." });
+    const practiceZebra = !moto ? getActivePracticeSession() : null;
+    if (!moto && !practiceZebra) return res.status(409).json({ error: "No moto or practice session in progress", hint: "Start a moto or practice session first." });
     const results: unknown[] = [];
     for (const tag of zebraTags) {
       const rfidNumber = ((tag.idHex || tag.epc) as string | undefined ?? "").toUpperCase();
       if (!rfidNumber) { results.push({ error: "Tag missing idHex/epc field" }); continue; }
       const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
-      try {
-        const r = processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "zebra-fx7500", antennaId: tag.antennaPort });
-        results.push(r.debounced ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
-      } catch (err: any) { results.push({ rfidNumber, error: err.message }); }
+      if (moto) {
+        try {
+          const r = processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "zebra-fx7500", antennaId: tag.antennaPort });
+          results.push(r.debounced ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
+        } catch (err: any) { results.push({ rfidNumber, error: err.message }); }
+      } else {
+        const r = processPracticeCrossing({ rfidNumber, session: practiceZebra!, crossingTime });
+        results.push(!r || "debounced" in r ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
+      }
     }
-    const snapshot = buildLeaderboard(moto.id);
-    if (snapshot) sseBroadcast(moto.id, snapshot);
-    return res.json({ ok: true, processed: zebraTags.length, motoId: moto.id, results });
+    if (moto) {
+      const snapshot = buildLeaderboard(moto.id);
+      if (snapshot) sseBroadcast(moto.id, snapshot);
+      return res.json({ ok: true, processed: zebraTags.length, motoId: moto.id, results });
+    }
+    return res.json({ ok: true, processed: zebraTags.length, practiceSessionId: practiceZebra!.id, results });
   }
 
   // Generic / AMBrc / MyLaps format
@@ -331,18 +432,27 @@ router.post("/timing/active/crossing", (req, res) => {
   if (isNaN(crossingTime.getTime())) return res.status(400).json({ error: "Invalid crossing time — must be ISO 8601" });
 
   const moto = getActiveMotoForAnyEvent();
-  if (!moto) return res.status(409).json({ error: "No moto in progress", hint: "Start a moto from the Race Day tab first." });
+  const practiceGeneric = !moto ? getActivePracticeSession() : null;
+  if (!moto && !practiceGeneric) return res.status(409).json({ error: "No moto or practice session in progress", hint: "Start a moto or practice session first." });
   const readerId: string = body?.loopId ?? body?.readerId ?? body?.readername ?? "rfid";
 
-  try {
-    const result = processCrossing({ rfidNumber: String(rfidNumber), motoId: moto.id, crossingTime, readerId });
-    if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });
-    const snapshot = buildLeaderboard(moto.id);
-    if (snapshot) sseBroadcast(moto.id, snapshot);
-    return res.json({ ok: true, motoId: moto.id, crossingId: result.crossing?.id, lapNumber: result.lapNumber, lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null, lapTimeMs: result.lapTimeMs });
-  } catch (err: any) {
-    return res.status(409).json({ error: err.message });
+  if (moto) {
+    try {
+      const result = processCrossing({ rfidNumber: String(rfidNumber), motoId: moto.id, crossingTime, readerId });
+      if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });
+      const snapshot = buildLeaderboard(moto.id);
+      if (snapshot) sseBroadcast(moto.id, snapshot);
+      return res.json({ ok: true, motoId: moto.id, crossingId: result.crossing?.id, lapNumber: result.lapNumber, lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null, lapTimeMs: result.lapTimeMs });
+    } catch (err: any) {
+      return res.status(409).json({ error: err.message });
+    }
   }
+
+  const practiceResult = processPracticeCrossing({ rfidNumber: String(rfidNumber), session: practiceGeneric!, crossingTime });
+  if (!practiceResult || "debounced" in practiceResult) {
+    return res.json({ ok: true, debounced: true, practiceSessionId: practiceGeneric!.id });
+  }
+  return res.json({ ok: true, practiceSessionId: practiceGeneric!.id, crossingId: practiceResult.id, lapNumber: practiceResult.lapNumber, lapTimeMs: practiceResult.lapTimeMs });
 });
 
 // POST /timing/mylaps-crossing?eventId=N — AMBrc / MyLaps native format

@@ -136,9 +136,21 @@ router.post("/events", (req, res) => {
       scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null,
     );
 
-  const event = db
-    .prepare("SELECT * FROM events WHERE id = ?")
-    .get(Number(result.lastInsertRowid)) as any;
+  const newEventId = Number(result.lastInsertRowid);
+
+  const entryFeesCat = db
+    .prepare(
+      "SELECT id FROM discount_categories WHERE club_id = ? AND lower(name) = 'entry fees' LIMIT 1",
+    )
+    .get(user.club_id) as { id: number } | undefined;
+  if (entryFeesCat) {
+    db.prepare("UPDATE events SET entry_fee_category_id = ? WHERE id = ?").run(
+      entryFeesCat.id,
+      newEventId,
+    );
+  }
+
+  const event = db.prepare("SELECT * FROM events WHERE id = ?").get(newEventId) as any;
   return res.status(201).json(serializeEvent(event));
 });
 

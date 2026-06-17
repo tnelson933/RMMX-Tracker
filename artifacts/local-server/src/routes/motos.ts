@@ -22,6 +22,7 @@ function serializeMoto(m: any) {
     completedAt: m.completed_at ?? null,
     staggeredWithMotoId: m.staggered_with_moto_id ?? null,
     staggeredOrder: m.staggered_order ?? null,
+    countdownSeconds: m.countdown_seconds ?? null,
     createdAt: m.created_at,
   };
 }
@@ -42,7 +43,7 @@ router.post("/events/:eventId/motos", (req, res) => {
   if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
   const db = getDb();
   const eventId = Number(req.params.eventId);
-  const { name, type, raceClass, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs } =
+  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, countdownSeconds } =
     req.body;
   if (!name || !type || !raceClass || motoNumber === undefined) {
     return res
@@ -51,19 +52,21 @@ router.post("/events/:eventId/motos", (req, res) => {
   }
   const result = db
     .prepare(
-      `INSERT INTO motos (event_id, name, type, race_class, moto_number, scheduled_time, lineup, lap_count, time_limit_ms, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', datetime('now'))`,
+      `INSERT INTO motos (event_id, name, type, race_class, race_classes, moto_number, scheduled_time, lineup, lap_count, time_limit_ms, countdown_seconds, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', datetime('now'))`,
     )
     .run(
       eventId,
       name,
       type,
       raceClass,
+      JSON.stringify(raceClasses ?? []),
       Number(motoNumber),
       scheduledTime ?? null,
       JSON.stringify(lineup ?? []),
       lapCount ? Number(lapCount) : null,
       timeLimitMs ? Number(timeLimitMs) : null,
+      countdownSeconds ? Number(countdownSeconds) : null,
     );
   const moto = db
     .prepare("SELECT * FROM motos WHERE id = ?")
