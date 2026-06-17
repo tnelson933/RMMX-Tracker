@@ -263,7 +263,7 @@ function createWindow(): void {
     width: 1400,
     height: 900,
     minWidth: 1024,
-    minHeight: 700,
+    minHeight: 800,
     title: WINDOW_TITLE,
     backgroundColor: "#0f172a",
     webPreferences: {
