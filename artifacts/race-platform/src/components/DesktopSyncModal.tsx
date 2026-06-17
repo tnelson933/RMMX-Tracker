@@ -26,7 +26,6 @@ export function DesktopSyncModal() {
   const [clubId, setClubId] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showUrlField, setShowUrlField] = useState(!BUILT_IN_CLOUD_URL);
   const [msg, setMsg] = useState<{ text: string; kind: "error" | "success" } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -154,43 +153,6 @@ export function DesktopSyncModal() {
             />
           </div>
 
-          {/* URL field — hidden when the cloud URL is already baked into the build */}
-          {showUrlField ? (
-            <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="sync-url" className="text-xs font-semibold uppercase tracking-wide">Cloud URL</Label>
-                {BUILT_IN_CLOUD_URL && (
-                  <button
-                    type="button"
-                    className="text-[11px] text-muted-foreground hover:text-foreground underline"
-                    onClick={() => { setUrl(BUILT_IN_CLOUD_URL); setShowUrlField(false); }}
-                  >
-                    Reset to default
-                  </button>
-                )}
-              </div>
-              <Input
-                id="sync-url"
-                type="url"
-                placeholder="https://your-app.replit.app"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                autoComplete="off"
-                className="mt-1 h-9 text-sm"
-              />
-            </div>
-          ) : (
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>Connecting to: <span className="font-mono">{url}</span></span>
-              <button
-                type="button"
-                className="underline hover:text-foreground ml-2 shrink-0"
-                onClick={() => setShowUrlField(true)}
-              >
-                Change
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="pt-2 flex flex-col gap-2">
