@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { ShieldAlert, KeyRound, Eye, EyeOff, Cloud, RefreshCw } from "lucide-react";
+import { ShieldAlert, KeyRound, Eye, EyeOff, RefreshCw } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -93,7 +93,7 @@ export default function Login() {
           // no password hash (account not activated locally), automatically try to
           // log in to the cloud and pull all data down, then retry locally.
           if (isDesktop) {
-            const fallbackUrl = data.cloudUrl?.trim() || VITE_CLOUD_URL || "";
+            const fallbackUrl = data.cloudUrl?.trim() || VITE_CLOUD_URL || (window as any).electronAPI?.cloudUrl || "";
             setCloudSyncing(true);
             setAuthError(null);
             try {
@@ -263,31 +263,6 @@ export default function Login() {
                 )}
               />
 
-              {isDesktop && (
-                <FormField
-                  control={form.control}
-                  name="cloudUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="font-heading uppercase tracking-wider text-muted-foreground font-bold flex items-center gap-2">
-                        <Cloud size={14} />
-                        Cloud Server URL
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="https://your-rmmx-app.replit.app"
-                          {...field}
-                          className="h-12 bg-muted/50 focus:bg-background border-muted-foreground/20 text-base font-mono"
-                        />
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Address of your deployed RM Tracker cloud server
-                      </p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
 
               <FormField
                 control={form.control}
