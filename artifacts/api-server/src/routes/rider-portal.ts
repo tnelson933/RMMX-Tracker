@@ -1,6 +1,8 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { randomBytes } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
+import { writeFile, mkdir } from "fs/promises";
+import { join } from "path";
 import { formatLapTime } from "./timing";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
@@ -1077,6 +1079,19 @@ RULES:
 Respond with ONLY a valid JSON object — no markdown fences, no explanation, no prefix text. Schema:
 {"planTitle":"string","totalMinutes":number,"focus":["3-4 specific focuses"],"mxRelevance":["bullet 1 ≤15 words","bullet 2 ≤15 words","optional bullet 3 ≤15 words"],"phases":[{"name":"string","duration":number,"phaseColor":"hex (#22c55e warm-up, #3b82f6 strength, #ef4444 HIIT, #f97316 finisher, #8b5cf6 cool-down)","exercises":[{"name":"string","equipment":"string","duration":"string or null","sets":number_or_null,"reps":"string or null","restSeconds":number,"intensity":"string","muscleGroups":["string"],"mxBenefit":"≤15 word specific MX benefit","formTips":["cue ≤12 words","cue ≤12 words","optional cue ≤12 words"],"exerciseNote":"one sentence setup+progression ≤20 words","equipmentSetup":"string","progressionTip":"string"}]}],"proTip":"≤20 word pro tip","nutritionTip":"≤20 word nutrition tip","recoveryTip":"≤20 word recovery tip"}`;
 
+const EXERCISE_IMG_DIR = join(process.cwd(), ".uploads");
+mkdir(EXERCISE_IMG_DIR, { recursive: true }).catch(() => {});
+
+async function generateExerciseImageBuffer(exerciseName: string, equipment: string): Promise<Buffer | null> {
+  try {
+    const { generateImageBuffer } = await import("@workspace/integrations-openai-ai-server/image");
+    const prompt = `Flat design illustration of a person performing ${exerciseName} using ${equipment}. Clean minimalist style, simple solid background, bold colors, no text, athletic figure showing correct form, equipment clearly visible. Vector art look.`;
+    return await generateImageBuffer(prompt, "1024x1024");
+  } catch {
+    return null;
+  }
+}
+
 router.post("/rider/training-plan", requireRiderAuth, async (req, res) => {
   const { goal, durationMinutes } = req.body as { goal?: string; durationMinutes?: number };
 
@@ -1108,6 +1123,40 @@ Total workout time: ${durationMinutes} minutes. Distribute phases logically (war
       .trim();
 
     const plan = JSON.parse(cleaned);
+
+    // Collect all exercises across all phases with their phase/exercise index
+    type ExerciseRef = { phaseIdx: number; exIdx: number; name: string; equipment: string };
+    const exerciseRefs: ExerciseRef[] = [];
+    for (let pi = 0; pi < (plan.phases ?? []).length; pi++) {
+      const phase = plan.phases[pi];
+      for (let ei = 0; ei < (phase.exercises ?? []).length; ei++) {
+        const ex = phase.exercises[ei];
+        exerciseRefs.push({ phaseIdx: pi, exIdx: ei, name: ex.name, equipment: ex.equipment });
+      }
+    }
+
+    // Generate all exercise images in parallel; failures silently become null
+    const imageBuffers = await Promise.allSettled(
+      exerciseRefs.map(ref => generateExerciseImageBuffer(ref.name, ref.equipment))
+    );
+
+    // Save each buffer to disk and attach the serving URL
+    const proto = (req.headers["x-forwarded-proto"] as string) || "https";
+    const host = req.headers.host as string;
+    const baseUrl = `${proto}://${host}`;
+
+    await Promise.allSettled(
+      exerciseRefs.map(async (ref, i) => {
+        const result = imageBuffers[i];
+        if (result.status !== "fulfilled" || !result.value) return;
+        const filename = `exercise-${randomUUID()}.png`;
+        const filepath = join(EXERCISE_IMG_DIR, filename);
+        await writeFile(filepath, result.value);
+        plan.phases[ref.phaseIdx].exercises[ref.exIdx].imageUrl =
+          `${baseUrl}/api/storage/uploads/${filename}`;
+      })
+    );
+
     return res.json(plan);
   } catch (err) {
     req.log.error({ err }, "Training plan generation failed");
