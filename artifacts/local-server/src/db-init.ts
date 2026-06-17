@@ -452,6 +452,16 @@ export function initDb() {
     END;
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS password_setup_tokens (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL,
+      token      TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   // Schema migrations — safely add any column that might be missing on older DBs.
   // Each entry is [table, "col_name  TYPE  DEFAULT ..."].
   // ALTER TABLE ADD COLUMN is idempotent: errors are swallowed when column already exists.
@@ -481,6 +491,8 @@ export function initDb() {
     ["events", "ama_event_id               TEXT"],
     // users
     ["users", "tour_completed INTEGER NOT NULL DEFAULT 0"],
+    ["users", "name           TEXT NOT NULL DEFAULT ''"],
+    ["users", "permissions    TEXT NOT NULL DEFAULT '[]'"],
     // clubs
     ["clubs", "contact_email    TEXT"],
     ["clubs", "contact_phone    TEXT"],

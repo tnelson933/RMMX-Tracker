@@ -291,6 +291,74 @@ router.patch("/events/:eventId/results/:resultId/laps", (req, res) => {
   });
 });
 
+// GET /events/:eventId/ama-export — CSV download for AMA reporting
+router.get("/events/:eventId/ama-export", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const db = getDb();
+  const eventId = Number(req.params.eventId);
+
+  const event = db.prepare("SELECT * FROM events WHERE id = ?").get(eventId) as any;
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const results = db
+    .prepare(
+      `SELECT
+         rr.rider_id, rr.moto_id, rr.position, rr.bib_number,
+         m.race_class, m.moto_number,
+         ri.first_name, ri.last_name, ri.city, ri.home_state, ri.ama_number AS rider_ama,
+         reg.ama_number AS reg_ama
+       FROM race_results rr
+       INNER JOIN motos m ON rr.moto_id = m.id
+       INNER JOIN riders ri ON rr.rider_id = ri.id
+       LEFT JOIN registrations reg ON reg.rider_id = rr.rider_id AND reg.event_id = ?
+       WHERE m.event_id = ?
+       ORDER BY m.id ASC, rr.position ASC`,
+    )
+    .all(eventId, eventId) as any[];
+
+  const amaEventId = event.ama_event_id ?? "";
+  const eventDate = event.date ? String(event.date).substring(0, 10) : "";
+  const trackName = event.track_name ?? event.name ?? "";
+
+  const escCsv = (v: unknown): string => {
+    const s = String(v ?? "");
+    if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+
+  const header = [
+    "AMA Event ID", "Event Name", "Event Date", "Track Name",
+    "Class", "Moto", "AMA #", "Bib #", "First Name", "Last Name",
+    "Hometown", "State", "Overall Position",
+  ].join(",");
+
+  const lines: string[] = [header];
+  for (const r of results) {
+    lines.push([
+      escCsv(amaEventId),
+      escCsv(event.name),
+      escCsv(eventDate),
+      escCsv(trackName),
+      escCsv(r.race_class),
+      escCsv(r.moto_number),
+      escCsv(r.reg_ama ?? r.rider_ama ?? ""),
+      escCsv(r.bib_number ?? ""),
+      escCsv(r.first_name ?? ""),
+      escCsv(r.last_name ?? ""),
+      escCsv(r.city ?? ""),
+      escCsv(r.home_state ?? ""),
+      escCsv(r.position ?? ""),
+    ].join(","));
+  }
+
+  const filename = `ama-export-event-${eventId}.csv`;
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  return res.send(lines.join("\n"));
+});
+
 // GET /events/:eventId/publication
 router.get("/events/:eventId/publication", (req, res) => {
   const db = getDb();
