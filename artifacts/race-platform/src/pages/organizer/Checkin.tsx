@@ -134,6 +134,8 @@ function CheckinButton({
   );
 }
 
+const isDesktop = typeof (window as any).electronAPI !== "undefined";
+
 export default function Checkin() {
   const params = useParams();
   const eventId = parseInt(params.eventId || "0");
@@ -145,6 +147,7 @@ export default function Checkin() {
   const [rfidInputOpenId, setRfidInputOpenId] = useState<number | null>(null);
   const [bibEditId, setBibEditId] = useState<number | null>(null);
   const [bibEdits, setBibEdits] = useState<Map<number, string>>(new Map());
+  const [syncingFromCloud, setSyncingFromCloud] = useState(false);
 
   // Close any open RFID panel when the search changes so it can't steal focus
   const handleSearchChange = (value: string) => {
@@ -155,16 +158,37 @@ export default function Checkin() {
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const isMylaps = ((event as any)?.timingTechnology ?? "rfid") === "mylaps";
   const { data: rawCheckins, isLoading: checkinsLoading, isError: checkinsError } = useListCheckins(eventId, {
-    query: { enabled: !!eventId, refetchInterval: 30000 } as any
+    query: { enabled: !!eventId, refetchInterval: 10000 } as any
   });
   const { data: checkins, isLoading: checkinsOfflineLoading, isFromCache: checkinsFromCache, cachedAt: checkinsCachedAt } =
     useOfflineAwareQuery(`checkins/${eventId}`, rawCheckins, checkinsLoading, checkinsError);
   const { data: summary } = useGetRaceDaySummary(eventId, {
-    query: { enabled: !!eventId, refetchInterval: 30000 } as any
+    query: { enabled: !!eventId, refetchInterval: 10000 } as any
   });
 
   const { isOffline } = useOfflineStatus();
   const { pendingRiderIds, pendingCount, isSyncing, syncError, queueCheckin } = useSyncQueue(eventId);
+
+  // On desktop: flush sync immediately when the page mounts so we always
+  // see fresh cloud data without waiting for the next 5-second cycle.
+  useEffect(() => {
+    if (!isDesktop) return;
+    const api = (window as any).electronAPI;
+    api?.sync?.flush?.().catch(() => {});
+  }, [eventId]);
+
+  // Desktop sync-now handler: flush + immediately refetch.
+  const handleSyncNow = async () => {
+    if (!isDesktop) return;
+    setSyncingFromCloud(true);
+    try {
+      await (window as any).electronAPI?.sync?.flush?.();
+      await queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+      await queryClient.invalidateQueries({ queryKey: getGetRaceDaySummaryQueryKey(eventId) });
+    } finally {
+      setSyncingFromCloud(false);
+    }
+  };
 
   const checkinMutation = useCheckinRider();
   const saveBibMutation = useUpdateRegistration();
@@ -296,7 +320,7 @@ export default function Checkin() {
               <CacheStatusBadge cachedAt={checkinsCachedAt} />
             )}
           </div>
-          <div className="flex gap-3 w-full md:w-auto">
+          <div className="flex gap-3 w-full md:w-auto items-center">
             <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
               <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">Checked In</div>
               <div className="text-xl md:text-2xl font-heading font-bold text-secondary">{summary?.checkedIn || 0} / {summary?.totalRegistered || 0}</div>
@@ -313,6 +337,16 @@ export default function Checkin() {
                   {pendingCount}
                 </div>
               </div>
+            )}
+            {isDesktop && (
+              <button
+                onClick={handleSyncNow}
+                disabled={syncingFromCloud}
+                title="Pull latest data from cloud"
+                className="p-2 rounded-lg bg-sidebar-accent/50 border border-sidebar-border text-sidebar-foreground/70 hover:text-white hover:bg-sidebar-accent transition-colors disabled:opacity-50 flex-shrink-0"
+              >
+                <RefreshCw size={18} className={syncingFromCloud ? "animate-spin" : ""} />
+              </button>
             )}
           </div>
         </div>
@@ -538,10 +572,22 @@ export default function Checkin() {
               );
             })}
 
-            {filteredCheckins.length === 0 && (
+            {filteredCheckins.length === 0 && allCheckins.length === 0 && (
               <div className="col-span-full py-12 text-center text-muted-foreground">
                 <Search size={40} className="mx-auto mb-3 opacity-20" />
-                <p className="text-base font-medium">No riders found matching criteria.</p>
+                <p className="text-base font-medium">No registrations found for this event.</p>
+                {isDesktop && (
+                  <p className="text-sm mt-1 opacity-70">
+                    If riders registered via the web portal, tap the&nbsp;
+                    <RefreshCw size={12} className="inline-block" />&nbsp;button above to pull the latest data from the cloud.
+                  </p>
+                )}
+              </div>
+            )}
+            {filteredCheckins.length === 0 && allCheckins.length > 0 && (
+              <div className="col-span-full py-12 text-center text-muted-foreground">
+                <Search size={40} className="mx-auto mb-3 opacity-20" />
+                <p className="text-base font-medium">No riders found matching your search or filter.</p>
               </div>
             )}
           </div>
