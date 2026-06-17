@@ -17,7 +17,7 @@ router.get("/events/:eventId/checkins", (req, res) => {
         r.rider_id    AS riderId,
         r.race_class  AS raceClass,
         r.bib_number  AS registrationBib,
-        r.my_laps_transponder_number AS myLapsTransponderNumber,
+        r.mylaps_transponder_number AS myLapsTransponderNumber,
         ri.first_name AS firstName,
         ri.last_name  AS lastName,
         ri.email,
