@@ -77,12 +77,12 @@ export default function WatchLive() {
   const activeMotoIdRef = useRef<number | null>(null);
   const prevSseStatusRef = useRef<string | null>(null);
 
-  // Live moto + results — poll every 15 s; no burst on window focus
+  // Live moto + results — poll every 5 s so moto start/complete is detected quickly
   const { data: motos } = useListMotos(eventId, {
-    query: { enabled: !!eventId, refetchInterval: 15_000, refetchOnWindowFocus: false, staleTime: 10_000 } as any,
+    query: { enabled: !!eventId, refetchInterval: 5_000, refetchOnWindowFocus: false, staleTime: 3_000 } as any,
   });
   const { data: results } = useListResults(eventId, {
-    query: { enabled: !!eventId, refetchInterval: 15_000, refetchOnWindowFocus: false, staleTime: 10_000 } as any,
+    query: { enabled: !!eventId, refetchInterval: 5_000, refetchOnWindowFocus: false, staleTime: 3_000 } as any,
   });
 
   // Active moto: prefer in_progress, fall back to most-recently-completed
