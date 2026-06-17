@@ -17,6 +17,7 @@ import seriesRouter from "./series";
 import pointsTablesRouter from "./points-tables";
 import dashboardRouter from "./dashboard";
 import discountCategoriesRouter from "./discount-categories";
+import discountCodesRouter from "./discount-codes";
 import stripeRouter from "./stripe";
 
 const router = Router();
@@ -39,6 +40,7 @@ router.use(seriesRouter);
 router.use(pointsTablesRouter);
 router.use(dashboardRouter);
 router.use(discountCategoriesRouter);
+router.use(discountCodesRouter);
 router.use(stripeRouter);
 
 router.use((_req, res) => {
