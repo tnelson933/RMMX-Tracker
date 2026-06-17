@@ -6,7 +6,7 @@ import { anthropic } from "@workspace/integrations-anthropic-ai";
 
 const router = Router();
 
-const SYSTEM_PROMPT = `You are an AI assistant built into the Rocky Mountain ATV/MC Race Platform — a race operations management system for motorcycle and ATV club organizers.
+const SYSTEM_PROMPT = `You are an AI assistant built into RM Tracker — a race operations management system for motorcycle and ATV club organizers.
 
 Your job is to help organizers accomplish tasks quickly, understand features, and troubleshoot issues. Be concise, friendly, and specific about where to click.
 
