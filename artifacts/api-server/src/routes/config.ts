@@ -17,9 +17,9 @@ function buildFromTag(tag: string): Omit<ReleaseInfo, "fetchedAt"> {
   const base = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${tag}`;
   return {
     tag,
-    macArm:  `${base}/RMMX-Tracker-arm64.dmg`,
-    macX64:  `${base}/RMMX-Tracker-x64.dmg`,
-    windows: `${base}/RMMX-Tracker-Setup.exe`,
+    macArm:  `${base}/RM-Tracker-arm64.dmg`,
+    macX64:  `${base}/RM-Tracker-x64.dmg`,
+    windows: `${base}/RM-Tracker-Setup.exe`,
   };
 }
 
@@ -40,7 +40,7 @@ router.get("/config/desktop-release", async (_req, res) => {
     cache = { ...info, fetchedAt: Date.now() };
     return res.json(info);
   } catch {
-    const info = buildFromTag("desktop-v1.0.57");
+    const info = buildFromTag("desktop-v1.0.62");
     return res.json(info);
   }
 });
