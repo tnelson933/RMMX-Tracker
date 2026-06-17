@@ -412,6 +412,28 @@ export function initDb() {
     BEGIN
       INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('events', NEW.id, 'upsert');
     END;
+
+    -- practice_sessions (start / stop / name changes on desktop)
+    CREATE TRIGGER IF NOT EXISTS _wq_practice_sessions_insert
+    AFTER INSERT ON practice_sessions
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('practice_sessions', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_practice_sessions_update
+    AFTER UPDATE ON practice_sessions
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('practice_sessions', NEW.id, 'upsert');
+    END;
+
+    -- practice_crossings (RFID reads during practice mode — insert-only, immutable)
+    CREATE TRIGGER IF NOT EXISTS _wq_practice_crossings_insert
+    AFTER INSERT ON practice_crossings
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('practice_crossings', NEW.id, 'insert');
+    END;
   `);
 
   // Schema migrations — safely add any column that might be missing on older DBs.
