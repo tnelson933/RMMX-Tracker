@@ -62,6 +62,7 @@ export class SyncEngine {
 
     this.db = new Database(opts.dbPath, { readonly: false });
     this.db.pragma("journal_mode = WAL");
+    this.db.pragma("busy_timeout = 5000");
     this.ensureQueueSchema();
   }
 
@@ -189,7 +190,6 @@ export class SyncEngine {
         .run(MAX_ATTEMPTS);
     }
 
-    const pending = this.getPendingCount();
     // Always set "syncing" — even when there are no pending local writes we
     // still call pullCloud(), so the cycle is never a no-op.  This guarantees
     // the syncing→idle transition that DesktopSyncWatcher uses to call
@@ -198,6 +198,11 @@ export class SyncEngine {
 
     try {
       await this.ensureSession();
+      // Check pending count AFTER ensureSession() so we don't miss writes
+      // that arrived while waiting for the network round-trip to verify the
+      // session cookie.  A stale count of 0 would skip pushQueue() and the
+      // subsequent pullCloud() would overwrite the unsaved local change.
+      const pending = this.getPendingCount();
       // Always push pending writes first, then pull cloud changes.
       // pullCloud() runs unconditionally so web-portal changes (e.g. new
       // registrations added online) are synced down on every online cycle,
@@ -498,6 +503,20 @@ export class SyncEngine {
   ): void {
     if (!rows.length) return;
 
+    // Never overwrite rows that have unsynced local writes.  Without this
+    // guard, a write that arrived after getPendingCount() was sampled (but
+    // before pullCloud() ran) would be silently reverted by the pull upsert.
+    const pendingIds = new Set<number>(
+      (
+        this.db
+          .prepare(
+            `SELECT record_id FROM _write_queue
+             WHERE table_name = ? AND synced_at IS NULL AND attempt_count < ?`,
+          )
+          .all(table, MAX_ATTEMPTS) as Array<{ record_id: number }>
+      ).map((r) => r.record_id),
+    );
+
     const toSnake = (s: string) =>
       s.replace(/([A-Z])/g, "_$1").toLowerCase();
 
@@ -527,6 +546,10 @@ export class SyncEngine {
 
       const cols = Object.keys(snakeRow);
       if (!cols.includes("id") || cols.length < 2) continue; // can't upsert without id
+
+      // Skip rows with a pending local write — their local version wins until
+      // successfully pushed to the cloud.
+      if (pendingIds.has(snakeRow.id as number)) continue;
 
       const vals = Object.values(snakeRow);
       const placeholders = cols.map(() => "?").join(", ");
