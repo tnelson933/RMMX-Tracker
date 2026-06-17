@@ -22,7 +22,10 @@ import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRigh
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
-const isDesktop = typeof (window as any).electronAPI !== "undefined";
+const isDesktop =
+  typeof (window as any).electronAPI !== "undefined" ||
+  window.location.hostname === "127.0.0.1" ||
+  window.location.hostname === "localhost";
 
 function DesktopStripeRedirect() {
   const [cloudUrl, setCloudUrl] = useState<string | null>(null);
@@ -164,7 +167,7 @@ export default function StripeConnect() {
     onError: (err: Error) => {
       const isConnectNotEnabled = err.message?.toLowerCase().includes("signed up for connect");
       toast({
-        title: "Stripe Connect not enabled",
+        title: isConnectNotEnabled ? "Stripe Connect not enabled" : "Could not start Stripe Connect",
         description: isConnectNotEnabled
           ? "Your Stripe account hasn't enabled Connect yet. Visit dashboard.stripe.com/connect to activate it, then try again."
           : err.message,
