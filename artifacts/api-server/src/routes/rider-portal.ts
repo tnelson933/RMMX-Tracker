@@ -19,6 +19,8 @@ import {
   checkinsTable,
   riderMobileTokensTable,
   riderPushTokensTable,
+  seriesTable,
+  seriesPointsTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql } from "drizzle-orm";
 
@@ -1340,6 +1342,98 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
     req.log.error({ err }, "Mechanic chat failed");
     return res.status(500).json({ error: "Chat failed. Please try again." });
   }
+});
+
+// GET /rider/series — list all series the rider is enrolled in, with position
+router.get("/rider/series", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  // Find all rider profiles linked to this account's email
+  const riders = await db
+    .select({ id: ridersTable.id })
+    .from(ridersTable)
+    .where(sql`LOWER(${ridersTable.email}) = ${account.email}`);
+
+  if (riders.length === 0) return res.json([]);
+
+  const riderIds = riders.map(r => r.id);
+
+  // Find all series_points rows for these riders (only with actual points)
+  const myPoints = await db
+    .select()
+    .from(seriesPointsTable)
+    .where(and(
+      inArray(seriesPointsTable.riderId, riderIds),
+      sql`${seriesPointsTable.totalPoints} > 0`,
+    ));
+
+  if (myPoints.length === 0) return res.json([]);
+
+  // Fetch series names
+  const seriesIds = [...new Set(myPoints.map(p => p.seriesId))];
+  const seriesList = await db
+    .select({ id: seriesTable.id, name: seriesTable.name })
+    .from(seriesTable)
+    .where(inArray(seriesTable.id, seriesIds));
+  const seriesNameMap = new Map(seriesList.map(s => [s.id, s.name]));
+
+  // Deduplicate: if multiple riderIds appear in same seriesId+raceClass, pick the highest-points one
+  const grouped = new Map<string, typeof myPoints[0]>();
+  for (const row of myPoints) {
+    const key = `${row.seriesId}:${row.raceClass}`;
+    const existing = grouped.get(key);
+    if (!existing || row.totalPoints > existing.totalPoints) {
+      grouped.set(key, row);
+    }
+  }
+
+  // For each unique series+class, compute the rider's position from all series_points
+  const result: Array<{
+    seriesId: number;
+    seriesName: string;
+    raceClass: string;
+    totalPoints: number;
+    position: number;
+  }> = [];
+
+  for (const [, myRow] of grouped) {
+    const allInClass = await db
+      .select({ riderId: seriesPointsTable.riderId, totalPoints: seriesPointsTable.totalPoints })
+      .from(seriesPointsTable)
+      .where(and(
+        eq(seriesPointsTable.seriesId, myRow.seriesId),
+        eq(seriesPointsTable.raceClass, myRow.raceClass),
+      ));
+
+    // Sort by totalPoints descending, compute positions with tie handling
+    allInClass.sort((a, b) => b.totalPoints - a.totalPoints);
+
+    let position = 1;
+    let assignedPos = 1;
+    for (let i = 0; i < allInClass.length; i++) {
+      if (i > 0 && allInClass[i].totalPoints < allInClass[i - 1].totalPoints) {
+        assignedPos = i + 1;
+      }
+      if (riderIds.includes(allInClass[i].riderId)) {
+        position = assignedPos;
+        break;
+      }
+    }
+
+    result.push({
+      seriesId: myRow.seriesId,
+      seriesName: seriesNameMap.get(myRow.seriesId) ?? `Series ${myRow.seriesId}`,
+      raceClass: myRow.raceClass,
+      totalPoints: myRow.totalPoints,
+      position,
+    });
+  }
+
+  result.sort((a, b) => a.seriesName.localeCompare(b.seriesName) || a.raceClass.localeCompare(b.raceClass));
+
+  return res.json(result);
 });
 
 // POST /rider/mechanic-memory-update — summarize the last exchange into a memory entry
