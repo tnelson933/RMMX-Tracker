@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListEvents, useUpdateEvent } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, isBefore, startOfDay } from "date-fns";
 import {
   Dialog,
@@ -27,6 +28,7 @@ function EventRow({ event, onResolved }: EventRowProps) {
   const [newDate, setNewDate] = useState(event.date.substring(0, 10));
   const update = useUpdateEvent();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const invalidate = () => queryClient.invalidateQueries();
 
@@ -37,6 +39,9 @@ function EventRow({ event, onResolved }: EventRowProps) {
         onSuccess: () => {
           invalidate();
           onResolved(event.id);
+        },
+        onError: (err) => {
+          toast({ title: "Update failed", description: err.message, variant: "destructive" });
         },
       }
     );
@@ -50,6 +55,9 @@ function EventRow({ event, onResolved }: EventRowProps) {
         onSuccess: () => {
           invalidate();
           onResolved(event.id);
+        },
+        onError: (err) => {
+          toast({ title: "Date update failed", description: err.message, variant: "destructive" });
         },
       }
     );
