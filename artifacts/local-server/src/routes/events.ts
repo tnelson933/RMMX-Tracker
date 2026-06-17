@@ -3,6 +3,21 @@ import { getDb } from "../db";
 
 const router = Router();
 
+function computeAutoStatus(event: any): string | null {
+  const { status } = event;
+  if (!["draft", "registration_open", "registration_closed"].includes(status)) return null;
+  const now = new Date();
+  const open = event.registration_open ? new Date(event.registration_open) : null;
+  const close = event.registration_close ? new Date(event.registration_close) : null;
+  let correct: string;
+  if (open && now >= open) {
+    correct = (!close || now < close) ? "registration_open" : "registration_closed";
+  } else {
+    correct = "draft";
+  }
+  return correct !== status ? correct : null;
+}
+
 function serializeEvent(e: any) {
   return {
     id: e.id,
@@ -57,6 +72,14 @@ router.get("/events", (req, res) => {
           .prepare("SELECT * FROM events WHERE club_id = ? ORDER BY date DESC")
           .all(user.club_id) as any[])
       : [];
+  }
+  // Auto-advance statuses based on registration dates
+  for (const e of events) {
+    const nextStatus = computeAutoStatus(e);
+    if (nextStatus) {
+      db.prepare("UPDATE events SET status = ? WHERE id = ?").run(nextStatus, e.id);
+      e.status = nextStatus;
+    }
   }
   return res.json(events.map(serializeEvent));
 });
@@ -127,6 +150,11 @@ router.get("/events/:eventId", (req, res) => {
   const id = Number(req.params.eventId);
   const event = db.prepare("SELECT * FROM events WHERE id = ?").get(id) as any;
   if (!event) return res.status(404).json({ error: "Not found" });
+  const nextStatus = computeAutoStatus(event);
+  if (nextStatus) {
+    db.prepare("UPDATE events SET status = ? WHERE id = ?").run(nextStatus, id);
+    event.status = nextStatus;
+  }
   return res.json(serializeEvent(event));
 });
 
@@ -208,6 +236,11 @@ router.patch("/events/:eventId", (req, res) => {
 
   const event = db.prepare("SELECT * FROM events WHERE id = ?").get(id) as any;
   if (!event) return res.status(404).json({ error: "Not found" });
+  const nextStatus = computeAutoStatus(event);
+  if (nextStatus) {
+    db.prepare("UPDATE events SET status = ? WHERE id = ?").run(nextStatus, id);
+    event.status = nextStatus;
+  }
   return res.json(serializeEvent(event));
 });
 
