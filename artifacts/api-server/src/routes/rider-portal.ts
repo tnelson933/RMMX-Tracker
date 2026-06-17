@@ -1174,7 +1174,13 @@ STYLE GUIDELINES:
 - Keep responses under 280 words unless a step-by-step technical breakdown is needed
 - Use MX terminology naturally (moto, gate pick, pinned, roosting, bucking, head-shake, etc.)
 - End with a follow-up question when appropriate to keep the diagnosis moving
-- When past memory entries exist, naturally reference them (e.g. "Last time we talked about your jetting — did that fix the bog?") rather than repeating the same advice from scratch`;
+- When past memory entries exist, naturally reference them (e.g. "Last time we talked about your jetting — did that fix the bog?") rather than repeating the same advice from scratch
+
+OUTPUT FORMAT:
+You MUST respond with a valid JSON object and nothing else — no markdown fences, no preamble. Use this exact shape:
+{"reply":"<your full conversational response here>","suggestedFollowUps":["<question 1>","<question 2>","<question 3>"]}
+- reply: your complete answer, exactly as you would normally write it (line breaks are fine inside the string)
+- suggestedFollowUps: exactly 3 concise follow-up questions the rider is likely to ask next, each ≤40 characters, directly related to what was just discussed`;
 
   try {
     const filtered = messages
@@ -1188,12 +1194,37 @@ STYLE GUIDELINES:
       messages: filtered,
     });
 
-    const reply =
+    const raw =
       response.content[0]?.type === "text"
-        ? response.content[0].text
-        : "Sorry, couldn't process that. Try again.";
+        ? response.content[0].text.trim()
+        : "";
 
-    return res.json({ reply });
+    let reply = raw;
+    let suggestedFollowUps: string[] = [];
+
+    if (raw) {
+      try {
+        // Strip markdown code fences if Claude wraps anyway
+        const stripped = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+        const parsed = JSON.parse(stripped);
+        if (parsed && typeof parsed.reply === "string") {
+          reply = parsed.reply;
+          if (Array.isArray(parsed.suggestedFollowUps)) {
+            suggestedFollowUps = (parsed.suggestedFollowUps as unknown[])
+              .filter((s): s is string => typeof s === "string" && s.trim().length > 0 && s.trim().length <= 40)
+              .map((s) => s.trim())
+              .slice(0, 3);
+          }
+        }
+      } catch {
+        // Claude didn't return JSON — fall back to treating the whole response as the reply
+        reply = raw;
+      }
+    }
+
+    if (!reply) reply = "Sorry, couldn't process that. Try again.";
+
+    return res.json({ reply, suggestedFollowUps });
   } catch (err) {
     req.log.error({ err }, "Mechanic chat failed");
     return res.status(500).json({ error: "Chat failed. Please try again." });
