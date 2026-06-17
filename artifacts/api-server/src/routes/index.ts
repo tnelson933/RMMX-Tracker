@@ -28,6 +28,7 @@ import discountCategoriesRouter from "./discount-categories";
 import discountCodesRouter from "./discount-codes";
 import teamRouter from "./team";
 import anthropicRouter from "./anthropic/index";
+import configRouter from "./config";
 import notificationsRouter from "./notifications";
 import desktopSyncRouter from "./desktop-sync";
 
@@ -64,5 +65,6 @@ router.use(teamRouter);
 router.use(anthropicRouter);
 router.use(notificationsRouter);
 router.use(desktopSyncRouter);
+router.use(configRouter);
 
 export default router;
