@@ -154,9 +154,9 @@ export default function EventDetail() {
       if (!res.ok) return { connected: false, onboardingComplete: false };
       return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean }>;
     },
-    enabled: !isSuperAdmin && !isDesktop,
+    enabled: !isSuperAdmin,
   });
-  const stripeReady = !isSuperAdmin && !isDesktop && (stripeStatus?.connected ?? false);
+  const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
 
 
   const [isEditing, setIsEditing] = useState(false);
