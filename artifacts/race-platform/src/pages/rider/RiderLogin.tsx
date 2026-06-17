@@ -76,7 +76,7 @@ export default function RiderLogin() {
         <div className="flex items-center justify-center gap-3 mb-8">
           <Mountain size={32} className="text-primary" />
           <div>
-            <h1 className="font-heading font-bold text-2xl uppercase tracking-wider leading-none">Rocky Mountain MX</h1>
+            <h1 className="font-heading font-bold text-2xl uppercase tracking-wider leading-none">RM Tracker</h1>
             <p className="text-muted-foreground text-sm">Rider Portal</p>
           </div>
         </div>
