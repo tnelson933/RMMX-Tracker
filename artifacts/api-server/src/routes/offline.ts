@@ -140,7 +140,7 @@ function buildPackageJson(mtimeMs: number): Buffer {
 }
 
 function buildReadme(): Buffer {
-  const text = `# Rocky Mountain Race — Local Server
+  const text = `# RM Tracker — Local Server
 
 Self-contained offline race server for use at venues without internet access.
 
@@ -174,7 +174,7 @@ a completed event is detected and the cloud is reachable.
 
 | Variable          | Description                                              |
 |-------------------|----------------------------------------------------------|
-| \`CLOUD_URL\`       | Base URL of the Rocky Mountain cloud portal, e.g. \`https://your-replit-app.replit.app\` |
+| \`CLOUD_URL\`       | Base URL of the RM Tracker cloud portal, e.g. \`https://your-replit-app.replit.app\` |
 | \`CLOUD_EMAIL\`     | Email address of your organizer account                  |
 | \`CLOUD_PASSWORD\`  | Password for your organizer account                      |
 | \`CLUB_ID\`         | Your club's numeric ID (required for auto-sync)          |
