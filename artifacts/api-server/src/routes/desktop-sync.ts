@@ -15,6 +15,8 @@ import {
   seriesTable,
   seriesPointsTable,
   pointsTablesTable,
+  practiceSessionsTable,
+  discountCategoriesTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -683,6 +685,16 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     .from(seriesTable)
     .where(eq(seriesTable.clubId, clubId));
 
+  const discountCategories = await db
+    .select()
+    .from(discountCategoriesTable)
+    .where(eq(discountCategoriesTable.clubId, clubId));
+
+  const practiceSessions = await db
+    .select()
+    .from(practiceSessionsTable)
+    .where(eq(practiceSessionsTable.clubId, clubId));
+
   if (clubEvents.length === 0) {
     return res.json({
       registrations: [], checkins: [], riders: [],
@@ -692,6 +704,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       pointsTables,
       series: clubSeries,
       seriesPoints: [],
+      discountCategories,
+      practiceSessions,
     });
   }
 
@@ -757,6 +771,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     pointsTables,
     series: clubSeries,
     seriesPoints,
+    discountCategories,
+    practiceSessions,
   });
 });
 
