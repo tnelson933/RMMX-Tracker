@@ -575,16 +575,32 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         try { raceClasses = JSON.parse(String(rawClasses)) as string[]; } catch { /* ignore */ }
       }
 
+      // race_class_limits and purchase_options are stored as JSON strings in SQLite.
+      let raceClassLimits: Record<string, number | null> | undefined;
+      if (e.race_class_limits != null) {
+        try { raceClassLimits = JSON.parse(String(e.race_class_limits)) as Record<string, number | null>; } catch { /* ignore */ }
+      }
+      let purchaseOptions: unknown[] | undefined;
+      if (e.purchase_options != null) {
+        try { purchaseOptions = JSON.parse(String(e.purchase_options)) as unknown[]; } catch { /* ignore */ }
+      }
+
       // Build the update set — only include fields present in this row so that
       // a partial push (e.g. status-only) doesn't null-out unrelated columns.
       const updateSet: Record<string, unknown> = {};
       if (e.status   != null) updateSet.status   = String(e.status) as "draft" | "registration_open" | "race_day" | "completed";
       if (raceClasses)        updateSet.raceClasses = raceClasses;
+      if (raceClassLimits)    updateSet.raceClassLimits = raceClassLimits;
+      if (purchaseOptions)    updateSet.purchaseOptions = purchaseOptions;
       if (e.name     != null) updateSet.name      = String(e.name);
       if (e.date     != null) updateSet.date      = String(e.date);
       if (e.location != null) updateSet.location  = String(e.location);
       if (e.state    != null) updateSet.state     = String(e.state);
       if (e.track_name != null) updateSet.trackName = String(e.track_name);
+      if (e.registration_open  != null) updateSet.registrationOpen  = String(e.registration_open);
+      if (e.registration_close != null) updateSet.registrationClose = String(e.registration_close);
+      if (e.payment_enabled != null) updateSet.paymentEnabled = !!e.payment_enabled;
+      if (e.require_ama     != null) updateSet.requireAma     = !!e.require_ama;
       if (e.entry_fee  != null) updateSet.entryFee  = Number(e.entry_fee) || null;
       if (e.max_riders != null) updateSet.maxRiders = Number(e.max_riders) || null;
       if (e.timing_technology != null) updateSet.timingTechnology = String(e.timing_technology);
@@ -592,6 +608,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (e.transponder_rental_fee != null) updateSet.transponderRentalFee = Number(e.transponder_rental_fee) || null;
       if (e.no_duplicate_bibs != null) updateSet.noDuplicateBibs = !!e.no_duplicate_bibs;
       if (e.require_club_id != null) updateSet.requireClubId = !!e.require_club_id;
+      if (e.scoring_table_id != null) updateSet.scoringTableId = Number(e.scoring_table_id) || null;
+      if (e.entry_fee_category_id != null) updateSet.entryFeeCategoryId = Number(e.entry_fee_category_id) || null;
       if (e.min_lap_ms != null) updateSet.minLapMs = Number(e.min_lap_ms) || null;
       if (e.image_url  != null) updateSet.imageUrl  = String(e.image_url);
       if (e.ama_event_id != null) updateSet.amaEventId = String(e.ama_event_id);
