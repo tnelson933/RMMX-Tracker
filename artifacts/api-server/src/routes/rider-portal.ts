@@ -1043,7 +1043,7 @@ router.get("/rider/race-gas-balance", requireRiderAuth, async (_req, res) => {
   return res.json({ balance: 0, currency: "USD" });
 });
 
-// POST /rider/training-plan — AI-powered MX/SX gym workout plan generator
+// POST /rider/training-plan — AI-powered MX/SX workout plan generator
 const MX_TRAINING_SYSTEM_PROMPT = `You are an elite Supercross and Motocross physical conditioning coach with 20+ years of experience training professional and amateur racers at all levels from local amateur to AMA Pro.
 
 Your knowledge is deeply specialized in the unique physical demands of SX/MX racing:
@@ -1079,6 +1079,40 @@ RULES:
 Respond with ONLY a valid JSON object — no markdown fences, no explanation, no prefix text. Schema:
 {"planTitle":"string","totalMinutes":number,"focus":["3-4 specific focuses"],"mxRelevance":["bullet 1 ≤15 words","bullet 2 ≤15 words","optional bullet 3 ≤15 words"],"phases":[{"name":"string","duration":number,"phaseColor":"hex (#22c55e warm-up, #3b82f6 strength, #ef4444 HIIT, #f97316 finisher, #8b5cf6 cool-down)","exercises":[{"name":"string","equipment":"string","duration":"string or null","sets":number_or_null,"reps":"string or null","restSeconds":number,"intensity":"string","muscleGroups":["string"],"mxBenefit":"≤15 word specific MX benefit","formTips":["cue ≤12 words","cue ≤12 words","optional cue ≤12 words"],"exerciseNote":"one sentence setup+progression ≤20 words","equipmentSetup":"string","progressionTip":"string"}]}],"proTip":"≤20 word pro tip","nutritionTip":"≤20 word nutrition tip","recoveryTip":"≤20 word recovery tip"}`;
 
+const BIKE_PRACTICE_SYSTEM_PROMPT = `You are an elite Supercross and Motocross riding coach with 20+ years of professional on-track coaching experience. You design structured track practice sessions for amateur and professional MX/SX racers.
+
+Your practice plans are built around timed drill blocks on the track — not gym exercises. Every drill should be something a rider on their bike can do during a practice session at an MX track.
+
+RULES:
+1. ALL drills are performed ON A MOTOCROSS BIKE on a real MX/SX track — no gym equipment
+2. Each drill block must specify: name, durationMinutes, reps (number of attempts/runs per set), technique cues (2-3 bullet cues for what to focus on), mxFocus (the specific skill being trained, ≤12 words), and a trackSection (where on the track to do this — e.g. "gate area", "rhythm section", "corner exit", "whoops", "full lap")
+3. Structure the plan: warm-up lap(s), technique drill blocks, race-simulation blocks, cool-down
+4. Time the session realistically — warm-up 5-10 min, main drills proportional to total time, cool-down 5 min
+5. mxRelevance must be an array of exactly 2–3 short bullet strings, each ≤ 15 words
+6. phaseColor: use #22c55e for warm-up, #f97316 for technique drills, #ef4444 for race simulation/intensity blocks, #8b5cf6 for cool-down
+7. proTip, nutritionTip, recoveryTip must each be ≤ 20 words — one punchy sentence
+8. Each phase uses "drillBlocks" (not "exercises")
+
+Respond with ONLY a valid JSON object — no markdown fences, no explanation. Schema:
+{"planTitle":"string","totalMinutes":number,"focus":["3-4 specific focuses"],"mxRelevance":["bullet 1","bullet 2","optional bullet 3"],"phases":[{"name":"string","duration":number,"phaseColor":"hex color","drillBlocks":[{"name":"string","durationMinutes":number,"reps":number,"trackSection":"string","mxFocus":"≤12 word skill focus","cues":["cue 1","cue 2","optional cue 3"]}]}],"proTip":"≤20 words","nutritionTip":"≤20 words","recoveryTip":"≤20 words"}`;
+
+const MIX_SYSTEM_PROMPT = `You are an elite Supercross and Motocross coach who designs combined track + gym sessions. You split the rider's available time roughly 50/50: the FIRST half is an on-bike practice block at the track, and the SECOND half is a gym workout targeting the same goal.
+
+RULES:
+1. First half of phases are ON-BIKE DRILL BLOCKS (same rules as a pure bike session) — use "drillBlocks" array in those phases
+2. Second half of phases are GYM EXERCISES (same rules as a pure gym session) — use "exercises" array in those phases
+3. Do NOT mix drillBlocks and exercises within the same phase
+4. Mark bike phases with phaseColor: #f97316 (drills) or #22c55e (warm-up ride) or #8b5cf6 (cool-down stretch)
+5. Mark gym phases with phaseColor: #3b82f6 (strength), #ef4444 (HIIT/finisher), #8b5cf6 (cool-down)
+6. Time the plan so total bike time ≈ total gym time (50/50 split); include a short transition note in the plan title
+7. mxRelevance must be an array of exactly 2–3 short bullet strings, each ≤ 15 words
+8. proTip, nutritionTip, recoveryTip must each be ≤ 20 words
+9. For gym exercises: include name, equipment, duration, sets, reps, restSeconds, intensity, muscleGroups, mxBenefit, formTips, exerciseNote
+10. For drill blocks: include name, durationMinutes, reps, trackSection, mxFocus, cues
+
+Respond with ONLY a valid JSON object — no markdown fences, no explanation. Schema:
+{"planTitle":"string","totalMinutes":number,"focus":["3-4 specific focuses"],"mxRelevance":["bullet 1","bullet 2","optional bullet 3"],"phases":[{"name":"string","duration":number,"phaseColor":"hex","drillBlocks":[...] or "exercises":[...]}],"proTip":"≤20 words","nutritionTip":"≤20 words","recoveryTip":"≤20 words"}`;
+
 const EXERCISE_IMG_DIR = join(process.cwd(), ".uploads");
 mkdir(EXERCISE_IMG_DIR, { recursive: true }).catch(() => {});
 
@@ -1093,29 +1127,56 @@ async function generateExerciseImageBuffer(exerciseName: string, equipment: stri
 }
 
 router.post("/rider/training-plan", requireRiderAuth, async (req, res) => {
-  const { goal, durationMinutes } = req.body as { goal?: string; durationMinutes?: number };
+  const { goal, durationMinutes, workoutType } = req.body as {
+    goal?: string;
+    durationMinutes?: number;
+    workoutType?: string;
+  };
 
   if (!goal?.trim()) return res.status(400).json({ error: "goal is required" });
   if (!durationMinutes || durationMinutes < 15 || durationMinutes > 180) {
     return res.status(400).json({ error: "durationMinutes must be between 15 and 180" });
   }
 
-  const userPrompt = `Generate a complete ${durationMinutes}-minute gym workout plan for a Supercross/Motocross racer who wants to improve: "${goal.trim()}"
+  const type = workoutType === "bike" ? "bike" : workoutType === "mix" ? "mix" : "gym";
+
+  const systemPrompt =
+    type === "bike" ? BIKE_PRACTICE_SYSTEM_PROMPT :
+    type === "mix"  ? MIX_SYSTEM_PROMPT :
+    MX_TRAINING_SYSTEM_PROMPT;
+
+  const userPrompt =
+    type === "gym"
+      ? `Generate a complete ${durationMinutes}-minute gym workout plan for a Supercross/Motocross racer who wants to improve: "${goal.trim()}"
 
 Make this workout extremely targeted to what they asked about. If they mention arm pump, make the grip/forearm work the centerpiece. If they mention starts, make explosive power the focus. If they mention endurance, structure it as interval-based cardio with strength support.
 
-Total workout time: ${durationMinutes} minutes. Distribute phases logically (warm-up ~10 min, main work proportional, finisher and cool-down at end).`;
+Total workout time: ${durationMinutes} minutes. Distribute phases logically (warm-up ~10 min, main work proportional, finisher and cool-down at end).`
+
+      : type === "bike"
+      ? `Generate a complete ${durationMinutes}-minute on-bike practice session plan for a Supercross/Motocross racer who wants to improve: "${goal.trim()}"
+
+Build a structured track session with timed drill blocks. Make it extremely targeted — if they mention gate starts, center the session on start drills. If they mention cornering, focus on corner entry/exit drills.
+
+Total practice time: ${durationMinutes} minutes. Include a warm-up lap block, 3-5 focused drill blocks, and a cool-down.`
+
+      : `Generate a complete ${durationMinutes}-minute combined track + gym session for a Supercross/Motocross racer who wants to improve: "${goal.trim()}"
+
+Split the time roughly 50/50: approximately ${Math.round(durationMinutes / 2)} minutes of on-bike practice at the track first, then approximately ${Math.round(durationMinutes / 2)} minutes of gym work targeting the same goal.
+
+For the bike half: structured drill blocks on the track. For the gym half: targeted exercises using standard gym equipment. Both halves should reinforce each other toward the stated goal.
+
+Total session time: ${durationMinutes} minutes.`;
 
   try {
     const message = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 8192,
-      system: MX_TRAINING_SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     });
 
     const raw = message.content[0]?.type === "text" ? message.content[0].text : "";
-    // Strip markdown fences if model adds them
     const cleaned = raw
       .replace(/^```json\s*/i, "")
       .replace(/^```\s*/i, "")
@@ -1124,38 +1185,39 @@ Total workout time: ${durationMinutes} minutes. Distribute phases logically (war
 
     const plan = JSON.parse(cleaned);
 
-    // Collect all exercises across all phases with their phase/exercise index
+    // Only generate exercise images for gym phases (phases with "exercises", not "drillBlocks")
     type ExerciseRef = { phaseIdx: number; exIdx: number; name: string; equipment: string };
     const exerciseRefs: ExerciseRef[] = [];
     for (let pi = 0; pi < (plan.phases ?? []).length; pi++) {
       const phase = plan.phases[pi];
-      for (let ei = 0; ei < (phase.exercises ?? []).length; ei++) {
+      if (!Array.isArray(phase.exercises)) continue;
+      for (let ei = 0; ei < phase.exercises.length; ei++) {
         const ex = phase.exercises[ei];
         exerciseRefs.push({ phaseIdx: pi, exIdx: ei, name: ex.name, equipment: ex.equipment });
       }
     }
 
-    // Generate all exercise images in parallel; failures silently become null
-    const imageBuffers = await Promise.allSettled(
-      exerciseRefs.map(ref => generateExerciseImageBuffer(ref.name, ref.equipment))
-    );
+    if (exerciseRefs.length > 0) {
+      const imageBuffers = await Promise.allSettled(
+        exerciseRefs.map(ref => generateExerciseImageBuffer(ref.name, ref.equipment))
+      );
 
-    // Save each buffer to disk and attach the serving URL
-    const proto = (req.headers["x-forwarded-proto"] as string) || "https";
-    const host = req.headers.host as string;
-    const baseUrl = `${proto}://${host}`;
+      const proto = (req.headers["x-forwarded-proto"] as string) || "https";
+      const host = req.headers.host as string;
+      const baseUrl = `${proto}://${host}`;
 
-    await Promise.allSettled(
-      exerciseRefs.map(async (ref, i) => {
-        const result = imageBuffers[i];
-        if (result.status !== "fulfilled" || !result.value) return;
-        const filename = `exercise-${randomUUID()}.png`;
-        const filepath = join(EXERCISE_IMG_DIR, filename);
-        await writeFile(filepath, result.value);
-        plan.phases[ref.phaseIdx].exercises[ref.exIdx].imageUrl =
-          `${baseUrl}/api/storage/uploads/${filename}`;
-      })
-    );
+      await Promise.allSettled(
+        exerciseRefs.map(async (ref, i) => {
+          const result = imageBuffers[i];
+          if (result.status !== "fulfilled" || !result.value) return;
+          const filename = `exercise-${randomUUID()}.png`;
+          const filepath = join(EXERCISE_IMG_DIR, filename);
+          await writeFile(filepath, result.value);
+          plan.phases[ref.phaseIdx].exercises[ref.exIdx].imageUrl =
+            `${baseUrl}/api/storage/uploads/${filename}`;
+        })
+      );
+    }
 
     return res.json(plan);
   } catch (err) {
