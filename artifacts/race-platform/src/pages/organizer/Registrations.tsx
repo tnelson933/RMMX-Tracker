@@ -398,7 +398,7 @@ export default function Registrations() {
 
   const filteredRegs = (registrations ?? []).filter(r =>
     r.riderName.toLowerCase().includes(search.toLowerCase()) ||
-    (r.bibNumber && r.bibNumber.includes(search)) ||
+    (r.bibNumber != null && String(r.bibNumber).includes(search)) ||
     (suggestions.get(r.id) ?? "").includes(search)
   );
 
