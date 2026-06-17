@@ -56,9 +56,9 @@ export class SyncEngine {
     this.loadCachedCookie  = opts.loadCachedCookie  ?? null;
     this.saveCachedCookie  = opts.saveCachedCookie  ?? null;
     this.clearCachedCookie = opts.clearCachedCookie ?? null;
-    // Default: check for pending writes every 5 s so local changes are pushed
-    // within seconds rather than waiting a full 30-second interval.
-    this.pollIntervalMs = opts.pollIntervalMs ?? 5_000;
+    // Default: check for pending writes every 2 s so lap crossings reach the
+    // cloud (and SSE subscribers) within ~2 s of the RFID read.
+    this.pollIntervalMs = opts.pollIntervalMs ?? 2_000;
 
     this.db = new Database(opts.dbPath, { readonly: false });
     this.db.pragma("journal_mode = WAL");
