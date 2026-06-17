@@ -36,6 +36,15 @@ app.use(
 
 app.use("/api", router);
 
+// Redirect /register/:id to the cloud URL so shared registration links work
+// even when opened on the local machine (where VITE_CLOUD_URL may not be set).
+const cloudUrl = process.env.CLOUD_URL ?? "";
+if (cloudUrl) {
+  app.get("/register/:id", (req, res) => {
+    res.redirect(302, `${cloudUrl}/register/${req.params.id}`);
+  });
+}
+
 const staticDir = process.env.STATIC_FILES_DIR;
 if (staticDir) {
   const resolvedStatic = path.resolve(staticDir);
