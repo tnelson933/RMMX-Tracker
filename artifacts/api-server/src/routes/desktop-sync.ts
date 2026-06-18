@@ -72,6 +72,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   const results: Record<string, number> = {};
   let total = 0;
   const affectedMotoIds = new Set<number>();
+  const eventIdRemaps: Array<{ localId: number; cloudId: number }> = [];
 
   await db.transaction(async (tx) => {
     // ── lap_crossings ─────────────────────────────────────────────────────────
@@ -592,17 +593,11 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       const eventId = Number(e.id);
       if (!eventId) continue;
 
-      const [event] = await tx
-        .select({ clubId: eventsTable.clubId })
-        .from(eventsTable)
-        .where(eq(eventsTable.id, eventId));
-
-      if (!event) {
-        // New event created on desktop — insert it into cloud, scoped to this club.
+      // Helper: parse a SQLite JSON string stored in e into the proper JS type.
+      const parseEventFields = () => {
         const rawClasses = e.race_classes ?? e.classes ?? null;
         let raceClasses: string[] = [];
         try { raceClasses = JSON.parse(String(rawClasses ?? "[]")) as string[]; } catch { /* ignore */ }
-
         let raceClassLimits: Record<string, number | null> = {};
         if (e.race_class_limits != null) {
           try { raceClassLimits = JSON.parse(String(e.race_class_limits)) as Record<string, number | null>; } catch { /* ignore */ }
@@ -611,71 +606,82 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         if (e.purchase_options != null) {
           try { purchaseOptions = JSON.parse(String(e.purchase_options)) as unknown[]; } catch { /* ignore */ }
         }
+        return { raceClasses, raceClassLimits, purchaseOptions };
+      };
 
-        const insertRow: Record<string, unknown> = {
-          id: eventId,
+      const buildEventValues = (withId: number | null) => {
+        const { raceClasses, raceClassLimits, purchaseOptions } = parseEventFields();
+        const row: Record<string, unknown> = {
+          ...(withId !== null ? { id: withId } : {}),
           clubId,
-          name:          e.name     != null ? String(e.name)     : "Untitled Event",
-          date:          e.date     != null ? String(e.date)     : new Date().toISOString().slice(0, 10),
-          state:         e.state    != null ? String(e.state)    : "",
-          location:      e.location != null ? String(e.location) : null,
-          trackName:     e.track_name != null ? String(e.track_name) : null,
-          status:        e.status   != null ? String(e.status)   : "draft",
+          name:                     e.name       != null ? String(e.name)       : "Untitled Event",
+          date:                     e.date       != null ? String(e.date)       : new Date().toISOString().slice(0, 10),
+          state:                    e.state      != null ? String(e.state)      : "",
+          location:                 e.location   != null ? String(e.location)   : null,
+          trackName:                e.track_name != null ? String(e.track_name) : null,
+          status:                   e.status     != null ? String(e.status)     : "draft",
           raceClasses,
           raceClassLimits,
           purchaseOptions,
-          paymentEnabled:             !!e.payment_enabled,
-          requireAma:                 !!e.require_ama,
-          entryFee:                   e.entry_fee     != null ? Number(e.entry_fee)     || null : null,
-          maxRiders:                  e.max_riders    != null ? Number(e.max_riders)    || null : null,
-          timingTechnology:           e.timing_technology != null ? String(e.timing_technology) : "rfid",
-          transponderRentalEnabled:   !!e.transponder_rental_enabled,
-          transponderRentalFee:       e.transponder_rental_fee != null ? Number(e.transponder_rental_fee) || null : null,
-          noDuplicateBibs:            !!e.no_duplicate_bibs,
-          requireClubId:              !!e.require_club_id,
-          scoringTableId:             e.scoring_table_id      != null ? Number(e.scoring_table_id)      || null : null,
-          entryFeeCategoryId:         e.entry_fee_category_id != null ? Number(e.entry_fee_category_id) || null : null,
-          minLapMs:                   e.min_lap_ms    != null ? Number(e.min_lap_ms)    || null : null,
-          registrationOpen:           e.registration_open  != null ? String(e.registration_open)  : null,
-          registrationClose:          e.registration_close != null ? String(e.registration_close) : null,
-          imageUrl:                   e.image_url    != null ? String(e.image_url)    : null,
-          amaEventId:                 e.ama_event_id != null ? String(e.ama_event_id) : null,
+          paymentEnabled:           !!e.payment_enabled,
+          requireAma:               !!e.require_ama,
+          entryFee:                 e.entry_fee             != null ? Number(e.entry_fee)             || null : null,
+          maxRiders:                e.max_riders            != null ? Number(e.max_riders)            || null : null,
+          timingTechnology:         e.timing_technology     != null ? String(e.timing_technology)     : "rfid",
+          transponderRentalEnabled: !!e.transponder_rental_enabled,
+          transponderRentalFee:     e.transponder_rental_fee != null ? Number(e.transponder_rental_fee) || null : null,
+          noDuplicateBibs:          !!e.no_duplicate_bibs,
+          requireClubId:            !!e.require_club_id,
+          scoringTableId:           e.scoring_table_id      != null ? Number(e.scoring_table_id)      || null : null,
+          entryFeeCategoryId:       e.entry_fee_category_id != null ? Number(e.entry_fee_category_id) || null : null,
+          minLapMs:                 e.min_lap_ms            != null ? Number(e.min_lap_ms)            || null : null,
+          registrationOpen:         e.registration_open  != null ? String(e.registration_open)  : null,
+          registrationClose:        e.registration_close != null ? String(e.registration_close) : null,
+          imageUrl:                 e.image_url   != null ? String(e.image_url)   : null,
+          amaEventId:               e.ama_event_id != null ? String(e.ama_event_id) : null,
         };
-        // Use a proper upsert so that:
-        //  (a) retries after a partial failure still write the event
-        //  (b) desktop-created IDs that collide with cloud IDs from another
-        //      session are updated rather than silently dropped.
-        // The setWhere guard ensures we only overwrite events that already
-        // belong to THIS club — never another club's event.
-        await tx.insert(eventsTable).values(insertRow as any)
+        return { row, ...parseEventFields() };
+      };
+
+      const [event] = await tx
+        .select({ clubId: eventsTable.clubId })
+        .from(eventsTable)
+        .where(eq(eventsTable.id, eventId));
+
+      if (!event) {
+        // New event created on desktop — insert into cloud with the desktop's id.
+        // onConflictDoUpdate handles idempotent retries after a partial failure.
+        // setWhere ensures we never overwrite another club's event in a race.
+        const { row, raceClasses, raceClassLimits, purchaseOptions } = buildEventValues(eventId);
+        await tx.insert(eventsTable).values(row as any)
           .onConflictDoUpdate({
             target: eventsTable.id,
             set: {
-              name:                     insertRow.name             as string,
-              date:                     insertRow.date             as string,
-              state:                    insertRow.state            as string,
-              location:                 insertRow.location         as string | null,
-              trackName:                insertRow.trackName        as string | null,
-              status:                   insertRow.status           as string,
-              raceClasses:              raceClasses,
-              raceClassLimits:          raceClassLimits,
-              purchaseOptions:          purchaseOptions,
-              paymentEnabled:           insertRow.paymentEnabled   as boolean,
-              requireAma:               insertRow.requireAma       as boolean,
-              entryFee:                 insertRow.entryFee         as number | null,
-              maxRiders:                insertRow.maxRiders        as number | null,
-              timingTechnology:         insertRow.timingTechnology as string,
-              transponderRentalEnabled: insertRow.transponderRentalEnabled as boolean,
-              transponderRentalFee:     insertRow.transponderRentalFee    as number | null,
-              noDuplicateBibs:          insertRow.noDuplicateBibs  as boolean,
-              requireClubId:            insertRow.requireClubId    as boolean,
-              scoringTableId:           insertRow.scoringTableId   as number | null,
-              entryFeeCategoryId:       insertRow.entryFeeCategoryId as number | null,
-              minLapMs:                 insertRow.minLapMs         as number | null,
-              registrationOpen:         insertRow.registrationOpen as string | null,
-              registrationClose:        insertRow.registrationClose as string | null,
-              imageUrl:                 insertRow.imageUrl         as string | null,
-              amaEventId:               insertRow.amaEventId       as string | null,
+              name:                     row.name                     as string,
+              date:                     row.date                     as string,
+              state:                    row.state                    as string,
+              location:                 row.location                 as string | null,
+              trackName:                row.trackName                as string | null,
+              status:                   row.status                   as string,
+              raceClasses,
+              raceClassLimits,
+              purchaseOptions,
+              paymentEnabled:           row.paymentEnabled           as boolean,
+              requireAma:               row.requireAma               as boolean,
+              entryFee:                 row.entryFee                 as number | null,
+              maxRiders:                row.maxRiders                as number | null,
+              timingTechnology:         row.timingTechnology         as string,
+              transponderRentalEnabled: row.transponderRentalEnabled as boolean,
+              transponderRentalFee:     row.transponderRentalFee     as number | null,
+              noDuplicateBibs:          row.noDuplicateBibs          as boolean,
+              requireClubId:            row.requireClubId            as boolean,
+              scoringTableId:           row.scoringTableId           as number | null,
+              entryFeeCategoryId:       row.entryFeeCategoryId       as number | null,
+              minLapMs:                 row.minLapMs                 as number | null,
+              registrationOpen:         row.registrationOpen         as string | null,
+              registrationClose:        row.registrationClose        as string | null,
+              imageUrl:                 row.imageUrl                 as string | null,
+              amaEventId:               row.amaEventId               as string | null,
             } as any,
             setWhere: eq(eventsTable.clubId, clubId),
           });
@@ -683,7 +689,22 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         continue;
       }
 
-      if (event.clubId !== clubId) continue;
+      if (event.clubId !== clubId) {
+        // ID collision: this exact id belongs to a different club in the cloud.
+        // Let Postgres assign a fresh id so neither club's event is lost.
+        // Return the mapping so the desktop can update its local SQLite.
+        const { row } = buildEventValues(null);
+        const [remapped] = await tx
+          .insert(eventsTable)
+          .values(row as any)
+          .returning({ id: eventsTable.id });
+        if (remapped?.id) {
+          eventIdRemaps.push({ localId: eventId, cloudId: remapped.id });
+          req.log.info({ clubId, localId: eventId, cloudId: remapped.id }, "event id collision — remapped");
+          eventsUpserted++;
+        }
+        continue;
+      }
 
       // Prefer `race_classes` (canonical queue key); fall back to `classes`.
       const rawClasses = e.race_classes ?? e.classes ?? null;
@@ -851,8 +872,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     });
   }
 
-  req.log.info({ clubId, results, total }, "desktop-push complete");
-  return res.json({ ok: true, results, total });
+  req.log.info({ clubId, results, total, eventIdRemaps }, "desktop-push complete");
+  return res.json({ ok: true, results, total, idRemaps: { events: eventIdRemaps } });
 });
 
 // ─── POST /clubs/:clubId/sync-pull ────────────────────────────────────────────
