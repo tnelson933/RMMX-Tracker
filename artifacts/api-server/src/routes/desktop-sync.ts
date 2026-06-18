@@ -22,6 +22,7 @@ import {
   compCodesTable,
   riderAccountsTable,
   riderPushTokensTable,
+  eventPublicationTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -583,6 +584,29 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     }
     results["rfid_assignments"] = rfidUpserted;
     total += rfidUpserted;
+
+    // ── event deletes (deletions made on desktop) ────────────────────────────
+    const deletes = (payload["_deletes"] ?? {}) as unknown as Record<string, unknown>;
+    const eventIdsToDelete = ((deletes["events"] ?? []) as unknown[]).map(Number).filter(Boolean);
+    let eventsDeleted = 0;
+    for (const eventId of eventIdsToDelete) {
+      const [ev] = await tx.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+      if (!ev || ev.clubId !== clubId) continue;
+      await tx.delete(raceResultsTable).where(eq(raceResultsTable.eventId, eventId));
+      await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.eventId, eventId));
+      await tx.delete(motosTable).where(eq(motosTable.eventId, eventId));
+      await tx.delete(checkinsTable).where(eq(checkinsTable.eventId, eventId));
+      await tx.delete(registrationsTable).where(eq(registrationsTable.eventId, eventId));
+      await tx.delete(rfidAssignmentsTable).where(eq(rfidAssignmentsTable.eventId, eventId));
+      await tx.delete(compCodesTable).where(eq(compCodesTable.eventId, eventId));
+      await tx.delete(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
+      await tx.delete(eventsTable).where(eq(eventsTable.id, eventId));
+      eventsDeleted++;
+    }
+    if (eventsDeleted > 0) {
+      results["events_deleted"] = eventsDeleted;
+      total += eventsDeleted;
+    }
 
     // ── events (full field updates made on desktop) ───────────────────────────
     // Desktop queue sends raw SQLite rows (snake_case).  Accept every field the
