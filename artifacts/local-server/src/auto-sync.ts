@@ -88,6 +88,56 @@ function normalizeRows(rows: Record<string, unknown>[]): Record<string, unknown>
   });
 }
 
+// Convert a value to something SQLite can store
+function toSQLiteScalar(v: unknown): string | number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "boolean") return v ? 1 : 0;
+  if (v instanceof Date) return v.toISOString();
+  if (Array.isArray(v) || (typeof v === "object")) return JSON.stringify(v);
+  return v as string | number;
+}
+
+function toDateStr(v: unknown): string | null {
+  if (!v) return null;
+  if (v instanceof Date) return v.toISOString();
+  return String(v);
+}
+
+function toJsonStr(v: unknown, fallback = "{}"): string {
+  if (v === null || v === undefined) return fallback;
+  if (typeof v === "string") return v;
+  return JSON.stringify(v);
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+async function getAuthHeader(): Promise<Record<string, string>> {
+  if (SYNC_TOKEN) {
+    return { Authorization: `Bearer ${SYNC_TOKEN}` };
+  }
+
+  const loginRes = await fetch(`${CLOUD_URL}/api/auth/login`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ email: EMAIL, password: PASSWORD }),
+  });
+
+  if (!loginRes.ok) {
+    const body = await loginRes.text();
+    throw new Error(`Login failed (${loginRes.status}): ${body}`);
+  }
+
+  const rawSetCookie = loginRes.headers.get("set-cookie") ?? "";
+  const cookieValue = rawSetCookie
+    .split(",")
+    .map((c) => c.trim().split(";")[0].trim())
+    .filter(Boolean)
+    .join("; ");
+
+  if (!cookieValue) throw new Error("Login succeeded but no session cookie received");
+  return { Cookie: cookieValue };
+}
+
 // ─── Connectivity probe ───────────────────────────────────────────────────────
 
 async function isCloudReachable(): Promise<boolean> {
@@ -102,17 +152,19 @@ async function isCloudReachable(): Promise<boolean> {
   }
 }
 
-// ─── Completed-event gate ─────────────────────────────────────────────────────
+// ─── Event gate ───────────────────────────────────────────────────────────────
+// Allow sync once registration opens so cloud-registered riders appear on
+// the desktop before race day begins.
 
 function hasActiveOrCompletedEvent(): boolean {
   const db  = getDb();
   const row = db
-    .prepare("SELECT COUNT(*) as cnt FROM events WHERE status IN ('race_day', 'completed')")
+    .prepare("SELECT COUNT(*) as cnt FROM events WHERE status IN ('registration_open', 'race_day', 'completed')")
     .get() as { cnt: number };
   return row.cnt > 0;
 }
 
-// ─── Core sync logic (shared with CLI sync.ts) ───────────────────────────────
+// ─── Push sync (local → cloud) ───────────────────────────────────────────────
 
 type SyncResult = {
   ok: boolean;
@@ -143,32 +195,7 @@ export async function runSync(): Promise<SyncResult> {
   const registrations   = normalizeRows(db.prepare("SELECT * FROM registrations").all()   as Record<string, unknown>[]);
   const riders          = normalizeRows(db.prepare("SELECT * FROM riders").all()           as Record<string, unknown>[]);
 
-  let authHeader: Record<string, string>;
-
-  if (SYNC_TOKEN) {
-    authHeader = { Authorization: `Bearer ${SYNC_TOKEN}` };
-  } else {
-    const loginRes = await fetch(`${CLOUD_URL}/api/auth/login`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ email: EMAIL, password: PASSWORD }),
-    });
-
-    if (!loginRes.ok) {
-      const body = await loginRes.text();
-      throw new Error(`Login failed (${loginRes.status}): ${body}`);
-    }
-
-    const rawSetCookie = loginRes.headers.get("set-cookie") ?? "";
-    const cookieValue = rawSetCookie
-      .split(",")
-      .map((c) => c.trim().split(";")[0].trim())
-      .filter(Boolean)
-      .join("; ");
-
-    if (!cookieValue) throw new Error("Login succeeded but no session cookie received");
-    authHeader = { Cookie: cookieValue };
-  }
+  const authHeader = await getAuthHeader();
 
   const syncRes = await fetch(`${CLOUD_URL}/api/clubs/${CLUB_ID}/sync`, {
     method:  "POST",
@@ -184,6 +211,302 @@ export async function runSync(): Promise<SyncResult> {
   return syncRes.json() as Promise<SyncResult>;
 }
 
+// ─── Pull sync (cloud → local) ───────────────────────────────────────────────
+// Calls the cloud sync-pull endpoint and upserts the returned rows into local
+// SQLite.  All writes are wrapped in _cloud_pull_guard so the write-queue
+// triggers are suppressed — pulled cloud rows must never be re-pushed.
+
+type PullRegistration = {
+  id: number; eventId: number; riderId: number; raceClass: string;
+  status?: string | null; paymentStatus?: string | null; paymentMethod?: string | null;
+  amountPaid?: string | null; bibNumber?: string | null; amaNumber?: string | null;
+  clubIdNumber?: string | null; bikeBrand?: string | null; bikeModel?: string | null;
+  bikeYear?: string | null; sponsors?: string | null;
+  statsEmailOptIn?: boolean | number | null; transponderRental?: boolean | number | null;
+  myLapsTransponderNumber?: string | null;
+  selectedPurchaseOptions?: string | unknown[] | null;
+  compCode?: string | null; compDiscount?: string | null;
+  displayFirstName?: string | null; displayLastName?: string | null;
+  createdAt?: string | Date | null;
+};
+
+type PullRider = {
+  id: number; firstName?: string | null; lastName?: string | null; rfidNumber?: string | null;
+};
+
+type PullEvent = Record<string, unknown>;
+type PullMoto  = Record<string, unknown>;
+type PullCheckin = Record<string, unknown>;
+type PullRfid  = Record<string, unknown>;
+
+type PullResponse = {
+  registrations?: PullRegistration[];
+  riders?:        PullRider[];
+  events?:        PullEvent[];
+  motos?:         PullMoto[];
+  checkins?:      PullCheckin[];
+  rfidAssignments?: PullRfid[];
+};
+
+export async function runPull(): Promise<{ ok: boolean; rows: Record<string, number> }> {
+  const db = getDb();
+  const authHeader = await getAuthHeader();
+
+  const pullRes = await fetch(`${CLOUD_URL}/api/clubs/${CLUB_ID}/sync-pull`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", ...authHeader },
+    body:    JSON.stringify({}),
+  });
+
+  if (!pullRes.ok) {
+    const body = await pullRes.text();
+    throw new Error(`Pull failed (${pullRes.status}): ${body}`);
+  }
+
+  const data = await pullRes.json() as PullResponse;
+
+  const rows: Record<string, number> = {
+    registrationsPulled: 0,
+    ridersPulled:        0,
+    eventsPulled:        0,
+    motosPulled:         0,
+    checkinsPulled:      0,
+    rfidPulled:          0,
+  };
+
+  // Suppress write-queue triggers so pulled cloud rows are not re-queued
+  db.prepare("INSERT OR REPLACE INTO _cloud_pull_guard (active) VALUES (1)").run();
+
+  try {
+    // ── Registrations ──────────────────────────────────────────────────────────
+    const regStmt = db.prepare(`
+      INSERT INTO registrations (
+        id, event_id, rider_id, race_class, status, payment_status,
+        payment_method, amount_paid, bib_number, ama_number, club_id_number,
+        bike_brand, bike_model, bike_year, sponsors, stats_email_opt_in,
+        transponder_rental, mylaps_transponder_number, selected_purchase_options,
+        comp_code, comp_discount, display_first_name, display_last_name, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        status                    = excluded.status,
+        payment_status            = excluded.payment_status,
+        payment_method            = excluded.payment_method,
+        amount_paid               = excluded.amount_paid,
+        bib_number                = excluded.bib_number,
+        ama_number                = excluded.ama_number,
+        club_id_number            = excluded.club_id_number,
+        bike_brand                = excluded.bike_brand,
+        bike_model                = excluded.bike_model,
+        bike_year                 = excluded.bike_year,
+        sponsors                  = excluded.sponsors,
+        stats_email_opt_in        = excluded.stats_email_opt_in,
+        transponder_rental        = excluded.transponder_rental,
+        mylaps_transponder_number = excluded.mylaps_transponder_number,
+        selected_purchase_options = excluded.selected_purchase_options,
+        comp_code                 = excluded.comp_code,
+        comp_discount             = excluded.comp_discount,
+        display_first_name        = excluded.display_first_name,
+        display_last_name         = excluded.display_last_name
+    `);
+
+    for (const reg of data.registrations ?? []) {
+      const spo = reg.selectedPurchaseOptions;
+      regStmt.run(
+        reg.id, reg.eventId, reg.riderId, reg.raceClass,
+        reg.status ?? "confirmed", reg.paymentStatus ?? "unpaid",
+        reg.paymentMethod ?? null, reg.amountPaid ?? null,
+        reg.bibNumber ?? null, reg.amaNumber ?? null, reg.clubIdNumber ?? null,
+        reg.bikeBrand ?? null, reg.bikeModel ?? null, reg.bikeYear ?? null,
+        reg.sponsors ?? null,
+        reg.statsEmailOptIn ? 1 : 0,
+        reg.transponderRental ? 1 : 0,
+        reg.myLapsTransponderNumber ?? null,
+        Array.isArray(spo) ? JSON.stringify(spo) : (spo ?? "[]"),
+        reg.compCode ?? null, reg.compDiscount ?? null,
+        reg.displayFirstName ?? null, reg.displayLastName ?? null,
+        toDateStr(reg.createdAt) ?? new Date().toISOString(),
+      );
+      rows.registrationsPulled++;
+    }
+
+    // ── Riders (minimal: id, first_name, last_name, rfid_number) ──────────────
+    // The sync-pull endpoint only returns id/name/rfid for privacy reasons; the
+    // email field is required NOT NULL so we store '' for new cloud-only riders.
+    const riderStmt = db.prepare(`
+      INSERT INTO riders (id, email, first_name, last_name, rfid_number)
+      VALUES (?, '', ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        first_name  = excluded.first_name,
+        last_name   = excluded.last_name,
+        rfid_number = excluded.rfid_number
+    `);
+
+    for (const rider of data.riders ?? []) {
+      riderStmt.run(
+        rider.id, rider.firstName ?? "", rider.lastName ?? "", rider.rfidNumber ?? null,
+      );
+      rows.ridersPulled++;
+    }
+
+    // ── Events ─────────────────────────────────────────────────────────────────
+    const eventStmt = db.prepare(`
+      INSERT INTO events (
+        id, club_id, name, date, state, status, location, description,
+        track_name, race_classes, registration_open, registration_close,
+        payment_enabled, require_ama, entry_fee, max_riders,
+        race_class_limits, purchase_options, image_url, timing_technology,
+        transponder_rental_enabled, transponder_rental_fee,
+        no_duplicate_bibs, require_club_id, scoring_table_id,
+        entry_fee_category_id, min_lap_ms, ama_event_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name                       = excluded.name,
+        date                       = excluded.date,
+        state                      = excluded.state,
+        status                     = excluded.status,
+        location                   = excluded.location,
+        description                = excluded.description,
+        track_name                 = excluded.track_name,
+        race_classes               = excluded.race_classes,
+        registration_open          = excluded.registration_open,
+        registration_close         = excluded.registration_close,
+        payment_enabled            = excluded.payment_enabled,
+        require_ama                = excluded.require_ama,
+        entry_fee                  = excluded.entry_fee,
+        max_riders                 = excluded.max_riders,
+        race_class_limits          = excluded.race_class_limits,
+        purchase_options           = excluded.purchase_options,
+        image_url                  = excluded.image_url,
+        timing_technology          = excluded.timing_technology,
+        transponder_rental_enabled = excluded.transponder_rental_enabled,
+        transponder_rental_fee     = excluded.transponder_rental_fee,
+        no_duplicate_bibs          = excluded.no_duplicate_bibs,
+        require_club_id            = excluded.require_club_id,
+        scoring_table_id           = excluded.scoring_table_id,
+        entry_fee_category_id      = excluded.entry_fee_category_id,
+        min_lap_ms                 = excluded.min_lap_ms,
+        ama_event_id               = excluded.ama_event_id
+    `);
+
+    for (const ev of data.events ?? []) {
+      eventStmt.run(
+        toSQLiteScalar(ev.id), toSQLiteScalar(ev.clubId),
+        toSQLiteScalar(ev.name), toDateStr(ev.date),
+        toSQLiteScalar(ev.state) ?? "", toSQLiteScalar(ev.status) ?? "draft",
+        toSQLiteScalar(ev.location) ?? null, toSQLiteScalar(ev.description) ?? null,
+        toSQLiteScalar(ev.trackName) ?? null,
+        toJsonStr(ev.raceClasses, "[]"),
+        toDateStr(ev.registrationOpen), toDateStr(ev.registrationClose),
+        ev.paymentEnabled ? 1 : 0, ev.requireAma ? 1 : 0,
+        toSQLiteScalar(ev.entryFee) ?? null, toSQLiteScalar(ev.maxRiders) ?? null,
+        toJsonStr(ev.raceClassLimits), toJsonStr(ev.purchaseOptions, "[]"),
+        toSQLiteScalar(ev.imageUrl) ?? null,
+        toSQLiteScalar(ev.timingTechnology) ?? "rfid",
+        ev.transponderRentalEnabled ? 1 : 0,
+        toSQLiteScalar(ev.transponderRentalFee) ?? null,
+        ev.noDuplicateBibs ? 1 : 0, ev.requireClubId ? 1 : 0,
+        toSQLiteScalar(ev.scoringTableId) ?? null,
+        toSQLiteScalar(ev.entryFeeCategoryId) ?? null,
+        toSQLiteScalar(ev.minLapMs) ?? null,
+        toSQLiteScalar(ev.amaEventId) ?? null,
+        toDateStr(ev.createdAt) ?? new Date().toISOString(),
+      );
+      rows.eventsPulled++;
+    }
+
+    // ── Motos ──────────────────────────────────────────────────────────────────
+    const motoStmt = db.prepare(`
+      INSERT INTO motos (
+        id, event_id, name, type, status, race_class, race_classes,
+        scheduled_time, lap_count, time_limit_ms, practice_mode,
+        countdown_seconds, staggered_with_moto_id, staggered_order, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name                   = excluded.name,
+        type                   = excluded.type,
+        status                 = excluded.status,
+        race_class             = excluded.race_class,
+        race_classes           = excluded.race_classes,
+        scheduled_time         = excluded.scheduled_time,
+        lap_count              = excluded.lap_count,
+        time_limit_ms          = excluded.time_limit_ms,
+        practice_mode          = excluded.practice_mode,
+        countdown_seconds      = excluded.countdown_seconds,
+        staggered_with_moto_id = excluded.staggered_with_moto_id,
+        staggered_order        = excluded.staggered_order
+    `);
+
+    for (const m of data.motos ?? []) {
+      motoStmt.run(
+        toSQLiteScalar(m.id), toSQLiteScalar(m.eventId),
+        toSQLiteScalar(m.name) ?? "", toSQLiteScalar(m.type) ?? "moto",
+        toSQLiteScalar(m.status) ?? "pending",
+        toSQLiteScalar(m.raceClass) ?? null, toJsonStr(m.raceClasses, "[]"),
+        toDateStr(m.scheduledTime), toSQLiteScalar(m.lapCount) ?? null,
+        toSQLiteScalar(m.timeLimitMs) ?? null,
+        toSQLiteScalar(m.practiceMode) ?? null,
+        toSQLiteScalar(m.countdownSeconds) ?? null,
+        toSQLiteScalar(m.staggeredWithMotoId) ?? null,
+        toSQLiteScalar(m.staggeredOrder) ?? null,
+        toDateStr(m.createdAt) ?? new Date().toISOString(),
+      );
+      rows.motosPulled++;
+    }
+
+    // ── Checkins ───────────────────────────────────────────────────────────────
+    const checkinStmt = db.prepare(`
+      INSERT INTO checkins (
+        id, event_id, rider_id, race_class, bib_number, checked_in,
+        checked_in_at, rfid_number, rfid_linked, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        bib_number    = excluded.bib_number,
+        checked_in    = excluded.checked_in,
+        checked_in_at = excluded.checked_in_at,
+        rfid_number   = excluded.rfid_number,
+        rfid_linked   = excluded.rfid_linked
+    `);
+
+    for (const c of data.checkins ?? []) {
+      checkinStmt.run(
+        toSQLiteScalar(c.id), toSQLiteScalar(c.eventId), toSQLiteScalar(c.riderId),
+        toSQLiteScalar(c.raceClass) ?? "",
+        toSQLiteScalar(c.bibNumber) ?? null,
+        c.checkedIn ? 1 : 0,
+        toDateStr(c.checkedInAt),
+        toSQLiteScalar(c.rfidNumber) ?? null,
+        c.rfidLinked ? 1 : 0,
+        toDateStr(c.createdAt) ?? new Date().toISOString(),
+      );
+      rows.checkinsPulled++;
+    }
+
+    // ── RFID Assignments ───────────────────────────────────────────────────────
+    const rfidStmt = db.prepare(`
+      INSERT INTO rfid_assignments (id, rider_id, event_id, rfid_number, assigned_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        rfid_number = excluded.rfid_number,
+        assigned_at = excluded.assigned_at
+    `);
+
+    for (const r of data.rfidAssignments ?? []) {
+      rfidStmt.run(
+        toSQLiteScalar(r.id), toSQLiteScalar(r.riderId),
+        toSQLiteScalar(r.eventId) ?? null,
+        toSQLiteScalar(r.rfidNumber) ?? null,
+        toDateStr(r.assignedAt) ?? new Date().toISOString(),
+      );
+      rows.rfidPulled++;
+    }
+
+  } finally {
+    db.prepare("DELETE FROM _cloud_pull_guard WHERE active = 1").run();
+  }
+
+  return { ok: true, rows };
+}
+
 // ─── Auto-sync loop ───────────────────────────────────────────────────────────
 
 async function syncOnce() {
@@ -197,18 +520,19 @@ async function syncOnce() {
   }
 
   if (!hasActiveOrCompletedEvent()) {
-    console.log("[auto-sync] No active or completed events — skipping sync");
+    console.log("[auto-sync] No active or open events — skipping sync");
     getDb()
       .prepare("UPDATE _sync_state SET last_error = NULL WHERE id = 1")
       .run();
     return;
   }
 
-  console.log("[auto-sync] Cloud reachable and completed event found — syncing…");
+  console.log("[auto-sync] Cloud reachable and open/active event found — syncing…");
   try {
-    const result = await runSync();
-    const r = result.results;
-    const rowsSynced = {
+    const pushResult = await runSync();
+    const pullResult = await runPull();
+    const r = pushResult.results;
+    writeSyncSuccess({
       checkinsUpdated:       r.checkinsUpdated,
       checkinsInserted:      r.checkinsInserted,
       rfidUpserted:          r.rfidUpserted,
@@ -216,9 +540,9 @@ async function syncOnce() {
       registrationsInserted: r.registrationsInserted,
       ridersUpdated:         r.ridersUpdated,
       skipped:               r.skipped,
-    };
-    writeSyncSuccess(rowsSynced);
-    console.log(`[auto-sync] ✓ Sync complete (${result.syncedAt})`);
+      ...pullResult.rows,
+    });
+    console.log(`[auto-sync] ✓ Sync complete (pushed + pulled)`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     writeSyncError(msg);

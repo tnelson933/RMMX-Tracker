@@ -1,3 +1,5 @@
+import { useState, useEffect } from "react";
+
 /**
  * Returns the correct public-facing origin for building shareable links.
  *
@@ -22,4 +24,34 @@ export function getPublicOrigin(): string {
   }
 
   return window.location.origin;
+}
+
+/**
+ * Reactive hook that returns the correct public-facing origin for shareable links.
+ *
+ * In the desktop app, the sync after mount re-reads the cloud URL from the
+ * local-server status endpoint, so the link is correct even when credentials
+ * are saved after the component first renders (e.g. first launch before
+ * cloud sync is configured).
+ *
+ * In the cloud web app, window.location.origin is always correct so the fetch
+ * is skipped entirely.
+ */
+export function usePublicOrigin(): string {
+  const [origin, setOrigin] = useState<string>(() => getPublicOrigin());
+
+  useEffect(() => {
+    const isDesktop = typeof (window as any).electronAPI !== "undefined";
+    if (!isDesktop) return;
+
+    fetch("/api/status")
+      .then(r => r.json())
+      .then((data: { autoSync?: { cloudUrl?: string | null } }) => {
+        const url = data?.autoSync?.cloudUrl;
+        if (url) setOrigin(url.replace(/\/$/, ""));
+      })
+      .catch(() => {});
+  }, []);
+
+  return origin;
 }

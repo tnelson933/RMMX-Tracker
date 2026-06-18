@@ -38,7 +38,7 @@ router.get("/status", (_req, res) => {
     rows: rowCounts,
     autoSync: {
       enabled:        AUTO_SYNC_ENABLED,
-      cloudUrl:       AUTO_SYNC_ENABLED ? CLOUD_URL : null,
+      cloudUrl:       CLOUD_URL || null,
       clubId:         AUTO_SYNC_ENABLED ? CLUB_ID   : null,
       lastAttemptAt:  syncState.lastAttemptAt,
       lastSuccessAt:  syncState.lastSuccessAt,

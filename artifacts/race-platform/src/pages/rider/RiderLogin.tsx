@@ -63,11 +63,11 @@ export default function RiderLogin() {
 
   return (
     <div className="min-h-screen h-screen overflow-y-auto hide-scrollbar bg-background flex flex-col items-center justify-center p-4">
-      {/* Race Gas — always top-right */}
+      {/* RM Cash — always top-right */}
       <div className="fixed top-4 right-4 flex items-center gap-1.5 bg-muted border border-border rounded-lg px-2.5 py-1.5 select-none z-50">
         <Zap size={11} className="text-green-600 fill-green-600" />
         <div className="flex flex-col leading-none">
-          <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground">Race Gas</span>
+          <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground">RM Cash</span>
           <span className="text-sm font-extrabold text-green-600">$0.00</span>
         </div>
       </div>

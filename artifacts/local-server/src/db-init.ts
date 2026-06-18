@@ -524,13 +524,20 @@ export function initDb() {
     ["riders", "mylaps_transponder_id TEXT"],
     // registrations
     ["registrations", "ama_number                TEXT"],
+    ["registrations", "bike_brand                TEXT"],
     ["registrations", "bike_model                TEXT"],
     ["registrations", "bike_year                 TEXT"],
     ["registrations", "sponsors                  TEXT"],
+    ["registrations", "club_id_number            TEXT"],
+    ["registrations", "stats_email_opt_in        INTEGER NOT NULL DEFAULT 0"],
+    ["registrations", "transponder_rental        INTEGER NOT NULL DEFAULT 0"],
     ["registrations", "comp_code                 TEXT"],
     ["registrations", "comp_discount             TEXT"],
     // rename old mylaps column (keep old for compat)
     ["registrations", "mylaps_transponder_number TEXT"],
+    ["registrations", "selected_purchase_options TEXT NOT NULL DEFAULT '[]'"],
+    ["registrations", "display_first_name        TEXT"],
+    ["registrations", "display_last_name         TEXT"],
     // motos
     ["motos", "name                   TEXT NOT NULL DEFAULT ''"],
     ["motos", "type                   TEXT NOT NULL DEFAULT 'moto'"],

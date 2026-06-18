@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
-import { getPublicOrigin } from "@/lib/publicOrigin";
+import { usePublicOrigin } from "@/lib/publicOrigin";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
 import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, useListDiscountCategories, useDeleteEvent } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -132,6 +132,7 @@ export default function EventDetail() {
   const deleteMutation = useDeleteEvent();
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
+  const publicOrigin = usePublicOrigin();
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
@@ -289,7 +290,7 @@ export default function EventDetail() {
     }
   };
 
-  const registrationUrl = `${getPublicOrigin()}/register/${eventId}`;
+  const registrationUrl = `${publicOrigin}/register/${eventId}`;
 
   const copyLink = () => {
     navigator.clipboard.writeText(registrationUrl);
