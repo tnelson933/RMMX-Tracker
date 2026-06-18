@@ -79,6 +79,8 @@ function DateTimePicker({ value, onChange }: { value: string; onChange: (v: stri
 const createEventSchema = z.object({
   name: z.string().min(1, "Name is required"),
   date: z.string().min(1, "Date is required"),
+  multiDay: z.boolean().default(false),
+  endDate: z.string().optional(),
   state: z.string().min(1, "State is required"),
   location: z.string().optional(),
   trackName: z.string().optional(),
@@ -104,7 +106,10 @@ const createEventSchema = z.object({
     categoryId: z.number().nullable().optional(),
   })).default([]),
   amaEventId: z.string().optional(),
-});
+}).refine(
+  (data) => !data.multiDay || !data.endDate || data.endDate >= data.date,
+  { message: "End date must be on or after start date", path: ["endDate"] },
+);
 
 export default function EventsList() {
   const { user } = useAuth();
@@ -157,6 +162,8 @@ export default function EventsList() {
     defaultValues: {
       name: "",
       date: format(new Date(), "yyyy-MM-dd"),
+      multiDay: false,
+      endDate: "",
       state: "",
       location: "",
       trackName: "",
@@ -178,6 +185,8 @@ export default function EventsList() {
     }
   });
 
+  const watchMultiDay = form.watch("multiDay");
+
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "raceClasses" });
   const { fields: purchaseOptionFields, append: appendPurchaseOption, remove: removePurchaseOption } = useFieldArray({ control: form.control, name: "purchaseOptions" });
 
@@ -197,6 +206,7 @@ export default function EventsList() {
           clubId: data.clubId,
           name: data.name,
           date: data.date,
+          endDate: data.multiDay && data.endDate ? data.endDate : null,
           state: data.state,
           location: data.location,
           trackName: data.trackName,
@@ -233,8 +243,8 @@ export default function EventsList() {
       }
     }
 
-    // Upload image if one was selected — cloud only (object storage not available on desktop)
-    if (pendingImageFile && !isDesktop) {
+    // Upload image if one was selected
+    if (pendingImageFile) {
       try {
         setCreateImgState("processing");
         let cleanBlob: Blob = pendingImageFile;
@@ -243,21 +253,45 @@ export default function EventsList() {
           cleanBlob = await removeBackground(pendingImageFile);
         }
         setCreateImgState("uploading");
-        const ext = "png";
-        const uploadRes = await fetch("/api/storage/uploads/request-url", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: `event-${newEvent.id}-image.${ext}`, size: cleanBlob.size, contentType: "image/png" }),
-        });
-        if (!uploadRes.ok) throw new Error("Failed to get upload URL");
-        const { uploadURL, objectPath } = await uploadRes.json() as { uploadURL: string; objectPath: string };
-        await fetch(uploadURL, { method: "PUT", body: cleanBlob, headers: { "Content-Type": "image/png" } });
-        const imageUrl = `/api/storage${objectPath}`;
-        await fetch(`/api/events/${newEvent.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageUrl }),
-        });
+        if (isDesktop) {
+          // Desktop: direct binary upload (local server saves to .uploads/, syncs to cloud on next cycle)
+          const uploadRes = await fetch("/api/storage/uploads/file", {
+            method: "POST",
+            headers: {
+              "Content-Type": "image/png",
+              "x-file-name": `event-${newEvent.id}-image.png`,
+              "x-content-type": "image/png",
+            },
+            credentials: "include",
+            body: cleanBlob,
+          });
+          if (!uploadRes.ok) throw new Error("Upload failed");
+          const { objectPath } = await uploadRes.json() as { objectPath: string };
+          await fetch(`/api/events/${newEvent.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ imageUrl: `/api/storage${objectPath}` }),
+          });
+        } else {
+          // Cloud: presigned URL flow via object storage
+          const ext = "png";
+          const uploadRes = await fetch("/api/storage/uploads/request-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: `event-${newEvent.id}-image.${ext}`, size: cleanBlob.size, contentType: "image/png" }),
+          });
+          if (!uploadRes.ok) throw new Error("Failed to get upload URL");
+          const { uploadURL, objectPath } = await uploadRes.json() as { uploadURL: string; objectPath: string };
+          await fetch(uploadURL, { method: "PUT", body: cleanBlob, headers: { "Content-Type": "image/png" } });
+          const imageUrl = `/api/storage${objectPath}`;
+          await fetch(`/api/events/${newEvent.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ imageUrl }),
+          });
+        }
         setCreateImgState("done");
       } catch {
         toast({ title: "Event created, but image upload failed", variant: "destructive" });
@@ -365,6 +399,33 @@ export default function EventsList() {
                     </FormItem>
                   )}
                 />
+
+                {/* Multi-day toggle + end date */}
+                <FormField
+                  control={form.control}
+                  name="multiDay"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center gap-2 space-y-0">
+                      <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                      <FormLabel className="cursor-pointer font-normal">Multi-day event</FormLabel>
+                    </FormItem>
+                  )}
+                />
+                {watchMultiDay && (
+                  <FormField
+                    control={form.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Date</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 {/* Registration window + Collect Payments */}
                 <div className="space-y-3">
