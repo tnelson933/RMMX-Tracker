@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -13,9 +14,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, Send, Smartphone, Info, Clock, AlertCircle } from "lucide-react";
+import { Bell, Send, Smartphone, Info, Clock } from "lucide-react";
 
-const RATE_LIMIT_MS = 4 * 60 * 60 * 1000; // 4 hours in ms
+const RATE_LIMIT_MS = 4 * 60 * 60 * 1000;
 
 function formatCountdown(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
@@ -25,43 +26,86 @@ function formatCountdown(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function getEventTimingStatus(eventDate: string): {
-  allowed: boolean;
-  message: string;
-} {
+function isEventInWindow(eventDate: string): boolean {
   const [year, month, day] = eventDate.split("-").map(Number);
   const windowStart = new Date(year, month - 1, day, 0, 0, 0, 0);
   windowStart.setTime(windowStart.getTime() - 24 * 60 * 60 * 1000);
-  const windowEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
+  const windowEnd = new Date(year, month - 1, day, 0, 0, 0, 0);
+  windowEnd.setTime(windowEnd.getTime() + 48 * 60 * 60 * 1000);
   const now = new Date();
+  return now >= windowStart && now <= windowEnd;
+}
 
-  if (now < windowStart) {
-    const dateStr = windowStart.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+function formatContinuationDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function formatTime12h(timeStr: string): string {
+  if (!timeStr) return "";
+  const [hStr, mStr] = timeStr.split(":");
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+type NotifType = "" | "schedule_delay" | "weather_alert";
+type DelayReason = "" | "Weather" | "Track Maintenance" | "Timing Delay";
+
+function generateMessage(
+  type: NotifType,
+  eventName: string,
+  delayReason: DelayReason,
+  resumptionTime: string,
+  cancelForDay: boolean,
+  continuationDate: string,
+  weatherConditions: string
+): { title: string; body: string } {
+  if (type === "schedule_delay") {
+    const reasonLabel = delayReason || "Unexpected";
+    if (cancelForDay) {
+      const contLabel = continuationDate
+        ? ` We plan to continue on ${formatContinuationDate(continuationDate)}.`
+        : "";
+      return {
+        title: `⚠️ ${eventName} — Canceled for Today`,
+        body: `Racing has been canceled for today due to ${reasonLabel.toLowerCase()} conditions.${contLabel}`,
+      };
+    }
+    const resumeLabel = resumptionTime
+      ? ` Racing is expected to resume at ${formatTime12h(resumptionTime)}.`
+      : "";
     return {
-      allowed: false,
-      message: `Notifications open on ${dateStr} (24 hours before race day)`,
+      title: `⚠️ Schedule Change — ${eventName}`,
+      body: `${reasonLabel} delay in effect.${resumeLabel} Stay tuned for updates.`,
     };
   }
-  if (now > windowEnd) {
+  if (type === "weather_alert") {
     return {
-      allowed: false,
-      message: "This event has ended. Notifications are no longer allowed.",
+      title: `⛈ Weather Advisory — ${eventName}`,
+      body: weatherConditions.trim() || "Severe weather conditions approaching. Stay alert.",
     };
   }
-  return { allowed: true, message: "" };
+  return { title: "", body: "" };
 }
 
 export function Notifications() {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
   const [eventId, setEventId] = useState<string>("");
+  const [notifType, setNotifType] = useState<NotifType>("");
+  const [delayReason, setDelayReason] = useState<DelayReason>("");
+  const [resumptionTime, setResumptionTime] = useState("");
+  const [cancelForDay, setCancelForDay] = useState(false);
+  const [continuationDate, setContinuationDate] = useState("");
+  const [weatherConditions, setWeatherConditions] = useState("");
   const [sending, setSending] = useState(false);
   const [pushCount, setPushCount] = useState<number | null>(null);
-  const [lastSentAt, setLastSentAt] = useState<Date | null>(null);
   const [countdown, setCountdown] = useState<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
@@ -71,7 +115,8 @@ export function Notifications() {
     { params: { query: { clubId: user?.clubId } } } as any,
   );
 
-  // Load push stats and any persisted lastPushSentAt from localStorage
+  const eligibleEvents = events?.filter((e) => isEventInWindow(e.date)) ?? [];
+
   useEffect(() => {
     fetch("/api/admin/notifications/push-stats")
       .then((r) => r.json())
@@ -83,7 +128,6 @@ export function Notifications() {
       const d = new Date(stored);
       const elapsed = Date.now() - d.getTime();
       if (elapsed < RATE_LIMIT_MS) {
-        setLastSentAt(d);
         setCountdown(RATE_LIMIT_MS - elapsed);
       } else {
         localStorage.removeItem("lastPushSentAt");
@@ -91,7 +135,6 @@ export function Notifications() {
     }
   }, []);
 
-  // Countdown ticker
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     if (countdown > 0) {
@@ -112,19 +155,41 @@ export function Notifications() {
     };
   }, [countdown > 0]);
 
-  const selectedEvent = events?.find((e) => String(e.id) === eventId);
-  const timingStatus = selectedEvent
-    ? getEventTimingStatus(selectedEvent.date)
-    : null;
+  const selectedEvent = eligibleEvents.find((e) => String(e.id) === eventId);
+
+  const { title: generatedTitle, body: generatedBody } = generateMessage(
+    notifType,
+    selectedEvent?.name ?? "",
+    delayReason,
+    resumptionTime,
+    cancelForDay,
+    continuationDate,
+    weatherConditions
+  );
+
+  const isMessageReady = (() => {
+    if (!selectedEvent || !notifType) return false;
+    if (notifType === "schedule_delay") {
+      if (!delayReason) return false;
+      if (cancelForDay) return true;
+      return !!resumptionTime;
+    }
+    if (notifType === "weather_alert") {
+      return weatherConditions.trim().length > 0;
+    }
+    return false;
+  })();
 
   const isRateLimited = countdown > 0;
-  const canSend =
-    !isRateLimited &&
-    !!eventId &&
-    !!title.trim() &&
-    !!body.trim() &&
-    !sending &&
-    (timingStatus?.allowed ?? false);
+  const canSend = !isRateLimited && isMessageReady && !sending;
+
+  function resetTypeFields() {
+    setDelayReason("");
+    setResumptionTime("");
+    setCancelForDay(false);
+    setContinuationDate("");
+    setWeatherConditions("");
+  }
 
   async function handleSend() {
     if (!canSend) return;
@@ -134,8 +199,8 @@ export function Notifications() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: title.trim(),
-          body: body.trim(),
+          title: generatedTitle,
+          body: generatedBody,
           eventId: parseInt(eventId),
         }),
       });
@@ -143,17 +208,16 @@ export function Notifications() {
       if (res.status === 429) {
         const retryMs = (data.retryAfterSeconds ?? 14400) * 1000;
         setCountdown(retryMs);
-        const sentAt = data.lastSentAt ? new Date(data.lastSentAt) : new Date(Date.now() - (RATE_LIMIT_MS - retryMs));
-        setLastSentAt(sentAt);
+        const sentAt = data.lastSentAt
+          ? new Date(data.lastSentAt)
+          : new Date(Date.now() - (RATE_LIMIT_MS - retryMs));
         localStorage.setItem("lastPushSentAt", sentAt.toISOString());
         throw new Error(`Rate limit active. Try again in ${formatCountdown(retryMs)}.`);
       }
       if (!res.ok) throw new Error(data.error || "Failed to send");
 
-      // Persist rate limit from server response
       if (data.lastPushSentAt) {
         const sentAt = new Date(data.lastPushSentAt);
-        setLastSentAt(sentAt);
         const remaining = RATE_LIMIT_MS - (Date.now() - sentAt.getTime());
         setCountdown(Math.max(0, remaining));
         localStorage.setItem("lastPushSentAt", sentAt.toISOString());
@@ -163,8 +227,8 @@ export function Notifications() {
         title: "Notifications sent",
         description: `${data.sent} rider${data.sent !== 1 ? "s" : ""} notified`,
       });
-      setTitle("");
-      setBody("");
+      setNotifType("");
+      resetTypeFields();
     } catch (e: any) {
       toast({
         title: "Failed to send",
@@ -206,10 +270,12 @@ export function Notifications() {
             <li>You must select a specific event — you cannot blast all riders.</li>
             <li>
               Notifications can only be sent within 24 hours before the event
-              through end of race day.
+              through 24 hours after race day ends.
             </li>
+            <li>You may send at most 1 manual notification every 4 hours.</li>
             <li>
-              You may send at most 1 manual notification every 4 hours.
+              Supported types: <strong>Schedule Change / Delay</strong> and{" "}
+              <strong>Weather Alert</strong>.
             </li>
           </ul>
         </div>
@@ -227,68 +293,156 @@ export function Notifications() {
       )}
 
       <div className="bg-card border rounded-lg p-6 space-y-5">
+        {/* Event selector — only shows eligible events */}
         <div className="space-y-2">
           <Label>Send to</Label>
-          <Select value={eventId} onValueChange={setEventId}>
+          <Select
+            value={eventId}
+            onValueChange={(v) => {
+              setEventId(v);
+              setNotifType("");
+              resetTypeFields();
+            }}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Select an event…" />
             </SelectTrigger>
             <SelectContent>
-              {events?.map((event) => (
-                <SelectItem key={event.id} value={String(event.id)}>
-                  {event.name}
-                </SelectItem>
-              ))}
+              {eligibleEvents.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  No events in the notification window right now.
+                </div>
+              ) : (
+                eligibleEvents.map((event) => (
+                  <SelectItem key={event.id} value={String(event.id)}>
+                    {event.name}
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
           {!eventId && (
             <p className="text-xs text-muted-foreground">
-              Select an event to notify its registered riders.
+              Only events within the 24h-before through 24h-after window are shown.
             </p>
           )}
-          {eventId && timingStatus && !timingStatus.allowed && (
-            <div className="flex items-start gap-2 text-xs text-destructive mt-1">
-              <AlertCircle size={13} className="shrink-0 mt-0.5" />
-              <span>{timingStatus.message}</span>
-            </div>
-          )}
-          {eventId && timingStatus?.allowed && (
+          {eventId && (
             <p className="text-xs text-muted-foreground">
-              Only riders registered for this event will receive this.
+              Only riders registered for this event will receive this notification.
             </p>
           )}
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="notif-title">Title</Label>
-          <Input
-            id="notif-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Race day announcement…"
-            maxLength={100}
-            disabled={!eventId || !timingStatus?.allowed || isRateLimited}
-          />
-          <p className="text-xs text-muted-foreground text-right">
-            {title.length}/100
-          </p>
-        </div>
+        {/* Notification type selector */}
+        {eventId && (
+          <div className="space-y-2">
+            <Label>Notification type</Label>
+            <Select
+              value={notifType}
+              onValueChange={(v) => {
+                setNotifType(v as NotifType);
+                resetTypeFields();
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a type…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="schedule_delay">⚠️ Schedule Change / Delay</SelectItem>
+                <SelectItem value="weather_alert">⛈ Weather Alert</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
-        <div className="space-y-2">
-          <Label htmlFor="notif-body">Message</Label>
-          <Textarea
-            id="notif-body"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Gates open at 8am, first moto at 9am…"
-            rows={3}
-            maxLength={500}
-            disabled={!eventId || !timingStatus?.allowed || isRateLimited}
-          />
-          <p className="text-xs text-muted-foreground text-right">
-            {body.length}/500
-          </p>
-        </div>
+        {/* Schedule Change / Delay fields */}
+        {notifType === "schedule_delay" && (
+          <div className="space-y-4 pt-1">
+            <div className="space-y-2">
+              <Label>Delay reason</Label>
+              <Select
+                value={delayReason}
+                onValueChange={(v) => setDelayReason(v as DelayReason)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a reason…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Weather">Weather</SelectItem>
+                  <SelectItem value="Track Maintenance">Track Maintenance</SelectItem>
+                  <SelectItem value="Timing Delay">Timing Delay</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {!cancelForDay && (
+              <div className="space-y-2">
+                <Label htmlFor="resumption-time">Expected resumption time</Label>
+                <Input
+                  id="resumption-time"
+                  type="time"
+                  value={resumptionTime}
+                  onChange={(e) => setResumptionTime(e.target.value)}
+                />
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="cancel-for-day"
+                checked={cancelForDay}
+                onCheckedChange={(checked) => {
+                  setCancelForDay(!!checked);
+                  if (!checked) setContinuationDate("");
+                }}
+              />
+              <Label htmlFor="cancel-for-day" className="cursor-pointer font-normal">
+                Cancel racing for the day
+              </Label>
+            </div>
+
+            {cancelForDay && (
+              <div className="space-y-2">
+                <Label htmlFor="continuation-date">Continuation date (optional)</Label>
+                <Input
+                  id="continuation-date"
+                  type="date"
+                  value={continuationDate}
+                  onChange={(e) => setContinuationDate(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Weather Alert fields */}
+        {notifType === "weather_alert" && (
+          <div className="space-y-2">
+            <Label htmlFor="weather-conditions">Describe the incoming conditions</Label>
+            <Textarea
+              id="weather-conditions"
+              value={weatherConditions}
+              onChange={(e) => setWeatherConditions(e.target.value)}
+              placeholder="e.g. Thunderstorms moving in from the west. Lightning in the area — racing suspended until further notice."
+              rows={3}
+              maxLength={400}
+            />
+            <p className="text-xs text-muted-foreground text-right">
+              {weatherConditions.length}/400
+            </p>
+          </div>
+        )}
+
+        {/* Message preview */}
+        {isMessageReady && (
+          <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Preview — what riders will receive
+            </p>
+            <p className="font-semibold text-sm">{generatedTitle}</p>
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{generatedBody}</p>
+          </div>
+        )}
 
         <Button
           onClick={handleSend}
