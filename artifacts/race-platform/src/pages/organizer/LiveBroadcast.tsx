@@ -283,7 +283,6 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
           </>
         ) : (
           <>
-<<<<<<< HEAD
             {/* Shareable spectator link — built from the cloud origin so it works outside the desktop app */}
             <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 space-y-1.5">
               <p className="text-xs font-medium text-muted-foreground">Share with spectators</p>
@@ -309,6 +308,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
               <Button
                 variant="ghost" size="sm"
                 onClick={toggleMic}
+                disabled={isReconnecting}
                 className={micEnabled ? "text-foreground" : "text-destructive"}
                 title={micEnabled ? "Mute mic" : "Unmute mic"}
               >
@@ -318,6 +318,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
               <Button
                 variant="ghost" size="sm"
                 onClick={toggleCam}
+                disabled={isReconnecting}
                 className={camEnabled ? "text-foreground" : "text-destructive"}
                 title={camEnabled ? "Hide camera" : "Show camera"}
               >
@@ -332,35 +333,6 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
                 End Stream
               </Button>
             </div>
-=======
-            <Button
-              variant="ghost" size="sm"
-              onClick={toggleMic}
-              disabled={isReconnecting}
-              className={micEnabled ? "text-foreground" : "text-destructive"}
-              title={micEnabled ? "Mute mic" : "Unmute mic"}
-            >
-              {micEnabled ? <Mic size={16} /> : <MicOff size={16} />}
-              <span className="ml-1.5 text-xs">{micEnabled ? "Mic on" : "Muted"}</span>
-            </Button>
-            <Button
-              variant="ghost" size="sm"
-              onClick={toggleCam}
-              disabled={isReconnecting}
-              className={camEnabled ? "text-foreground" : "text-destructive"}
-              title={camEnabled ? "Hide camera" : "Show camera"}
-            >
-              {camEnabled ? <Video size={16} /> : <VideoOff size={16} />}
-              <span className="ml-1.5 text-xs">{camEnabled ? "Cam on" : "Cam off"}</span>
-            </Button>
-            <Button
-              variant="outline" size="sm"
-              onClick={handleStop}
-              className="font-heading uppercase text-xs text-destructive border-destructive/40 hover:bg-destructive/10 ml-2"
-            >
-              End Stream
-            </Button>
->>>>>>> d99f16b (Add auto-reconnect to live broadcast on transient WebSocket drops)
           </>
         )}
       </div>
