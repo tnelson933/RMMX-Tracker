@@ -221,6 +221,7 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
         bikeManufacturer: rider.bikeManufacturer ?? null,
         bikeModel: rider.bikeModel ?? null,
         bikeYear: rider.bikeYear ?? null,
+        skillLevel: rider.skillLevel ?? null,
         eventsRaced: uniqueEvents.size,
         totalPoints,
         bestPosition,
@@ -442,6 +443,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     "emergencyContact", "emergencyPhone",
     "bibNumber", "amaNumber", "bikeManufacturer", "bikeModel", "bikeYear", "sponsors",
     "streetAddress", "city", "homeState", "zip",
+    "skillLevel",
   ] as const;
 
   type AllowedKey = typeof allowed[number];
