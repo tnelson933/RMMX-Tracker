@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, MapPin, Trophy, Flag, ChevronRight, Search } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { formatEventDates } from "@/lib/eventDates";
 
 export default function Results() {
   const [location] = useLocation();
@@ -66,13 +67,20 @@ export default function Results() {
                 <CardContent className="p-0 flex flex-col sm:flex-row">
                   <div className="bg-sidebar p-6 flex flex-col justify-center items-center text-sidebar-foreground sm:w-48 shrink-0 relative overflow-hidden">
                     <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    <div className="relative z-10 flex flex-col items-center">
+                    <div className="relative z-10 flex flex-col items-center text-center">
                       <span className="text-sm font-bold text-sidebar-foreground/70 uppercase tracking-widest mb-1">
                         {format(parseISO(event.date.substring(0, 10)), 'MMM yyyy')}
                       </span>
-                      <span className="text-5xl font-heading font-bold leading-none">
-                        {format(parseISO(event.date.substring(0, 10)), 'dd')}
-                      </span>
+                      {(event as any).endDate ? (
+                        <span className="text-3xl font-heading font-bold leading-none">
+                          {format(parseISO(event.date.substring(0, 10)), 'd')}–{format(parseISO(((event as any).endDate as string).substring(0, 10)), 'd')}
+                        </span>
+                      ) : (
+                        <span className="text-5xl font-heading font-bold leading-none">
+                          {format(parseISO(event.date.substring(0, 10)), 'dd')}
+                        </span>
+                      )}
+                      <span className="text-xs text-sidebar-foreground/60 mt-1 font-medium">{formatEventDates(event.date, (event as any).endDate)}</span>
                     </div>
                   </div>
                   
