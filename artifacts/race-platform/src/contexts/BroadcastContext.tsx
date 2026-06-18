@@ -1,7 +1,7 @@
 import { createContext, useContext, useRef, useState, useCallback, useEffect } from "react";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 
-export type BroadcastState = "idle" | "live" | "error" | "stopped";
+export type BroadcastState = "idle" | "live" | "reconnecting" | "error" | "stopped";
 
 interface BroadcastContextValue {
   broadcastState: BroadcastState;
@@ -37,6 +37,9 @@ function getWsUrl(eventId: number): string {
   return `${proto}//${host}/api/video/broadcast/${eventId}`;
 }
 
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_DELAY_MS = 1500;
+
 export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const [broadcastState, setBroadcastState] = useState<BroadcastState>("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -59,8 +62,22 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   // When true, the manual choice wins over auto-detection in startBroadcast.
   const is360ManuallySetRef = useRef(false);
   const isDualFisheyeManuallySetRef = useRef(false);
+  // Reconnect state: active=true while live/reconnecting, attempts counts failures,
+  // timer holds the pending retry so stopBroadcast can cancel it.
+  const reconnectRef = useRef<{
+    active: boolean;
+    attempts: number;
+    timer: ReturnType<typeof setTimeout> | null;
+  }>({ active: false, attempts: 0, timer: null });
 
   const stopBroadcast = useCallback(() => {
+    // Disable reconnect before closing so ws.onclose doesn't trigger a retry.
+    reconnectRef.current.active = false;
+    if (reconnectRef.current.timer) {
+      clearTimeout(reconnectRef.current.timer);
+      reconnectRef.current.timer = null;
+    }
+
     recorderRef.current?.stop();
     recorderRef.current = null;
 
@@ -135,75 +152,112 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     liveStreamRef.current = stream;
     setActiveEventId(eventId);
 
-    const ws = new WebSocket(getWsUrl(eventId));
-    wsRef.current = ws;
+    // Determine MIME type once — reused for every reconnect attempt so the
+    // server always receives a consistent codec declaration.
+    const mimeType = [
+      'video/webm; codecs="vp9,opus"',
+      'video/webm; codecs="vp8,opus"',
+      'video/webm',
+    ].find(m => MediaRecorder.isTypeSupported(m)) ?? 'video/webm';
 
-    ws.onopen = () => {
-      const mimeType = [
-        'video/webm; codecs="vp9,opus"',
-        'video/webm; codecs="vp8,opus"',
-        'video/webm',
-      ].find(m => MediaRecorder.isTypeSupported(m)) ?? 'video/webm';
+    // Arm reconnect tracking.
+    reconnectRef.current = { active: true, attempts: 0, timer: null };
 
-      ws.send(JSON.stringify({ type: "init", mimeType, is360: is360Ref.current, isDualFisheye: isDualFisheyeRef.current }));
+    // connectWs opens a WebSocket and wires up handlers.
+    // On the first call (isReconnect=false) it also creates the MediaRecorder.
+    // On subsequent calls (isReconnect=true) it only replaces the socket —
+    // the recorder keeps running uninterrupted, and its ondataavailable handler
+    // reads wsRef.current so it automatically routes chunks to the new socket.
+    function connectWs(isReconnect: boolean) {
+      const ws = new WebSocket(getWsUrl(eventId));
+      wsRef.current = ws;
 
-      const recorder = new MediaRecorder(stream, {
-        mimeType,
-        // Lower bitrate keeps chunk sizes small so the Replit proxy can relay
-        // them without dropping the WebSocket connection on burst.
-        videoBitsPerSecond: 500_000,
-        audioBitsPerSecond: 64_000,
-        // Force a keyframe every 2 s.  Without this, VP9 MediaRecorder only
-        // emits ONE keyframe (the very first chunk = the init segment).  Every
-        // subsequent 500 ms timeslice is a P-frame.  The server parks late
-        // viewers in a "pending" queue and graduates them on the next keyframe;
-        // without periodic keyframes, pending viewers are never graduated and
-        // the fallback sends them stale init data that the decoder can't use
-        // with the current live P-frames → video starts then immediately freezes.
-        // Chrome 94+ honours videoKeyFrameIntervalDuration (milliseconds);
-        // older/other browsers silently ignore it.
-        videoKeyFrameIntervalDuration: 2_000,
-      } as MediaRecorderOptions);
-      recorderRef.current = recorder;
+      ws.onopen = () => {
+        // Successful (re)connect — reset attempt counter.
+        reconnectRef.current.attempts = 0;
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-          ws.send(e.data);
+        ws.send(JSON.stringify({
+          type: "init",
+          mimeType,
+          is360: is360Ref.current,
+          isDualFisheye: isDualFisheyeRef.current,
+        }));
+
+        if (!isReconnect) {
+          const recorder = new MediaRecorder(stream, {
+            mimeType,
+            // Lower bitrate keeps chunk sizes small so the Replit proxy can relay
+            // them without dropping the WebSocket connection on burst.
+            videoBitsPerSecond: 500_000,
+            audioBitsPerSecond: 64_000,
+            // Force a keyframe every 2 s.  Without this, VP9 MediaRecorder only
+            // emits ONE keyframe (the very first chunk = the init segment).  Every
+            // subsequent 500 ms timeslice is a P-frame.  The server parks late
+            // viewers in a "pending" queue and graduates them on the next keyframe;
+            // without periodic keyframes, pending viewers are never graduated and
+            // the fallback sends them stale init data that the decoder can't use
+            // with the current live P-frames → video starts then immediately freezes.
+            // Chrome 94+ honours videoKeyFrameIntervalDuration (milliseconds);
+            // older/other browsers silently ignore it.
+            videoKeyFrameIntervalDuration: 2_000,
+          } as MediaRecorderOptions);
+          recorderRef.current = recorder;
+
+          // Use wsRef.current (not the captured ws variable) so that when we
+          // reconnect and swap in a new WebSocket, chunks automatically route
+          // to the fresh connection without restarting the recorder.
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(e.data);
+            }
+          };
+
+          recorder.onerror = () => {
+            setErrorMsg("Recording error. The stream was interrupted.");
+            setBroadcastState("error");
+            stopBroadcast();
+          };
+
+          recorder.start(500);
+          timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
         }
+
+        setBroadcastState("live");
       };
 
-      recorder.onerror = () => {
-        setErrorMsg("Recording error. The stream was interrupted.");
-        setBroadcastState("error");
-        stopBroadcast();
+      // The server sends {"type":"heartbeat"} every second to keep the
+      // server→broadcaster proxy direction alive. Consume silently.
+      ws.onmessage = () => {};
+
+      ws.onerror = () => {
+        // onclose always fires after onerror — retry logic lives there.
       };
 
-      recorder.start(500);
-      setBroadcastState("live");
-      timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
-    };
+      ws.onclose = () => {
+        // If stopBroadcast was called, reconnectRef.current.active is already
+        // false — nothing to do.
+        if (!reconnectRef.current.active) return;
 
-    // The server sends {"type":"heartbeat"} every second to keep the
-    // server→broadcaster proxy direction alive. Consume silently.
-    ws.onmessage = () => {};
+        const nextAttempt = reconnectRef.current.attempts + 1;
+        reconnectRef.current.attempts = nextAttempt;
 
-    ws.onerror = () => {
-      setErrorMsg("Connection to the server was lost. Please try again.");
-      setBroadcastState("error");
-      stopBroadcast();
-    };
-
-    ws.onclose = () => {
-      // Only act if we're still in "live" state — onerror may have already cleaned up.
-      setBroadcastState(prev => {
-        if (prev === "live") {
-          setErrorMsg("Stream connection closed unexpectedly. Please try again.");
+        if (nextAttempt <= MAX_RECONNECT_ATTEMPTS) {
+          // Transient drop — show reconnecting state and schedule a retry.
+          setBroadcastState("reconnecting");
+          reconnectRef.current.timer = setTimeout(() => {
+            if (reconnectRef.current.active) connectWs(true);
+          }, RECONNECT_DELAY_MS);
+        } else {
+          // All retries exhausted — surface the error UI.
+          reconnectRef.current.active = false;
+          setErrorMsg("Stream connection lost. Please try again.");
+          setBroadcastState("error");
           stopBroadcast();
-          return "error";
         }
-        return prev;
-      });
-    };
+      };
+    }
+
+    connectWs(false);
   }, [stopBroadcast]);
 
   const toggleMic = useCallback(() => {
