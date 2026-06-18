@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { Video, VideoOff, Mic, MicOff, Radio, AlertCircle } from "lucide-react";
+import { Video, VideoOff, Mic, MicOff, Radio, AlertCircle, Copy, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useBroadcast } from "@/contexts/BroadcastContext";
-import { getPublicOrigin } from "@/lib/publicOrigin";
+import { usePublicOrigin } from "@/lib/publicOrigin";
 
 interface LiveBroadcastProps {
   eventId: number;
@@ -27,20 +27,29 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [permissionState, setPermissionState] = useState<"requesting" | "granted" | "denied">("requesting");
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Reactive public origin — resolves to the cloud URL even when running from the
+  // desktop app so any shareable links we show work for spectators.
+  const publicOrigin = usePublicOrigin();
+  const watchLink = `${publicOrigin}/watch/${eventId}`;
 
   // Detect whether we're running in the desktop app without cloud sync configured.
   // In that case the WebSocket relay is unavailable — warn the organizer instead of
   // letting them hit a cryptic "connection lost" error.
   const isLocalHost = typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-  const cloudOrigin = getPublicOrigin();
   const cloudUnconfigured = isLocalHost &&
-    (cloudOrigin === window.location.origin || cloudOrigin.startsWith("http://localhost") || cloudOrigin.startsWith("http://127.0.0.1"));
+    (publicOrigin === window.location.origin || publicOrigin.startsWith("http://localhost") || publicOrigin.startsWith("http://127.0.0.1"));
 
   const previewRef = useRef<HTMLVideoElement>(null);
   const previewStreamRef = useRef<MediaStream | null>(null);
 
   const isLive = broadcastState === "live";
+  const isReconnecting = broadcastState === "reconnecting";
+  // Treat reconnecting like live for layout/controls — the recorder is still
+  // running and we don't want the organizer to interact with camera/device selects.
+  const isActiveStream = isLive || isReconnecting;
 
   // On mount: request permission + enumerate devices + start preview
   useEffect(() => {
@@ -81,7 +90,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
 
   // If already live when this page mounts, attach live stream to preview
   useEffect(() => {
-    if (isLive && previewRef.current) {
+    if (isActiveStream && previewRef.current) {
       const stream = getLiveStream();
       if (stream) {
         previewRef.current.srcObject = stream;
@@ -90,11 +99,11 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLive]);
+  }, [isActiveStream]);
 
   // Restart preview when camera selection changes (only when not live)
   useEffect(() => {
-    if (permissionState !== "granted" || !selectedDeviceId || isLive) return;
+    if (permissionState !== "granted" || !selectedDeviceId || isActiveStream) return;
     startPreview(selectedDeviceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDeviceId]);
@@ -181,9 +190,18 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
             <span className="text-sm font-heading uppercase tracking-wider">Camera access denied</span>
           </div>
         )}
-        {!camEnabled && isLive && (
+        {!camEnabled && isActiveStream && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70">
             <VideoOff size={32} className="text-white/40" />
+          </div>
+        )}
+
+        {isReconnecting && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <div className="flex flex-col items-center gap-2 text-white">
+              <Loader2 size={28} className="animate-spin" />
+              <span className="text-xs font-heading uppercase tracking-wider">Reconnecting…</span>
+            </div>
           </div>
         )}
 
@@ -198,7 +216,15 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
             </span>
           </div>
         )}
-        {!isLive && permissionState === "granted" && (
+        {isReconnecting && (
+          <div className="absolute top-3 left-3">
+            <span className="flex items-center gap-1.5 bg-amber-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow">
+              <Loader2 size={10} className="animate-spin" />
+              RECONNECTING · {formatDuration(duration)}
+            </span>
+          </div>
+        )}
+        {!isActiveStream && permissionState === "granted" && (
           <div className="absolute top-3 left-3">
             <span className="bg-black/60 text-white/70 text-xs font-bold px-2.5 py-1 rounded-full font-heading uppercase tracking-wider">
               Preview
@@ -208,7 +234,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
       </div>
 
       {/* Camera selector */}
-      {permissionState === "granted" && !isLive && videoDevices.length > 0 && (
+      {permissionState === "granted" && !isActiveStream && videoDevices.length > 0 && (
         <div className="flex items-center gap-3 max-w-xl">
           <label className="text-sm font-medium text-muted-foreground whitespace-nowrap flex items-center gap-1.5">
             <Video size={14} /> Camera
@@ -237,7 +263,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
 
       {/* Action controls */}
       <div className="flex flex-col gap-2 max-w-xl">
-        {!isLive ? (
+        {!isActiveStream ? (
           <>
             <div className="flex items-center gap-2 flex-wrap">
               <Button
@@ -257,9 +283,60 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
           </>
         ) : (
           <>
+<<<<<<< HEAD
+            {/* Shareable spectator link — built from the cloud origin so it works outside the desktop app */}
+            <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Share with spectators</p>
+              <div className="flex items-center gap-2">
+                <span className="flex-1 truncate font-mono text-xs text-foreground select-all">{watchLink}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 h-7 px-2 text-xs"
+                  onClick={() => {
+                    navigator.clipboard.writeText(watchLink);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
+                  }}
+                >
+                  {linkCopied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+                  <span className="ml-1">{linkCopied ? "Copied!" : "Copy"}</span>
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="ghost" size="sm"
+                onClick={toggleMic}
+                className={micEnabled ? "text-foreground" : "text-destructive"}
+                title={micEnabled ? "Mute mic" : "Unmute mic"}
+              >
+                {micEnabled ? <Mic size={16} /> : <MicOff size={16} />}
+                <span className="ml-1.5 text-xs">{micEnabled ? "Mic on" : "Muted"}</span>
+              </Button>
+              <Button
+                variant="ghost" size="sm"
+                onClick={toggleCam}
+                className={camEnabled ? "text-foreground" : "text-destructive"}
+                title={camEnabled ? "Hide camera" : "Show camera"}
+              >
+                {camEnabled ? <Video size={16} /> : <VideoOff size={16} />}
+                <span className="ml-1.5 text-xs">{camEnabled ? "Cam on" : "Cam off"}</span>
+              </Button>
+              <Button
+                variant="outline" size="sm"
+                onClick={handleStop}
+                className="font-heading uppercase text-xs text-destructive border-destructive/40 hover:bg-destructive/10 ml-2"
+              >
+                End Stream
+              </Button>
+            </div>
+=======
             <Button
               variant="ghost" size="sm"
               onClick={toggleMic}
+              disabled={isReconnecting}
               className={micEnabled ? "text-foreground" : "text-destructive"}
               title={micEnabled ? "Mute mic" : "Unmute mic"}
             >
@@ -269,6 +346,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
             <Button
               variant="ghost" size="sm"
               onClick={toggleCam}
+              disabled={isReconnecting}
               className={camEnabled ? "text-foreground" : "text-destructive"}
               title={camEnabled ? "Hide camera" : "Show camera"}
             >
@@ -282,6 +360,7 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
             >
               End Stream
             </Button>
+>>>>>>> d99f16b (Add auto-reconnect to live broadcast on transient WebSocket drops)
           </>
         )}
       </div>
