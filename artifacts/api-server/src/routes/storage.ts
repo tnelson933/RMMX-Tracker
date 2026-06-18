@@ -40,9 +40,17 @@ router.post(
     }
 
     try {
-      await fs.writeFile(filepath, req.body);
-      req.log.info({ filename, size: req.body.length, contentType }, "File uploaded");
-      res.json({ objectPath: `/uploads/${filename}` });
+      let objectPath: string;
+      try {
+        objectPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext);
+        req.log.info({ size: req.body.length, contentType, objectPath }, "File uploaded to object storage");
+      } catch (storageErr) {
+        req.log.warn({ err: storageErr }, "Object storage unavailable — falling back to local disk");
+        await fs.writeFile(filepath, req.body);
+        objectPath = `/uploads/${filename}`;
+        req.log.info({ filename, size: req.body.length }, "File saved to local disk (fallback)");
+      }
+      res.json({ objectPath });
     } catch (error) {
       req.log.error({ err: error }, "Error saving uploaded file");
       res.status(500).json({ error: "Failed to save file" });
