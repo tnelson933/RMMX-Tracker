@@ -19,7 +19,7 @@ import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
 import { UpcomingNearMe } from "@/components/UpcomingNearMe";
 
-const FALLBACK_TAG = "desktop-v1.0.64";
+const FALLBACK_TAG = "desktop-v1.0.65";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
