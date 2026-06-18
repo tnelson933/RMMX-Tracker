@@ -18,8 +18,9 @@ import {
 import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
 import { UpcomingNearMe } from "@/components/UpcomingNearMe";
+import { formatEventDatesFull } from "@/lib/eventDates";
 
-const FALLBACK_TAG = "desktop-v1.0.65";
+const FALLBACK_TAG = "desktop-v1.0.66";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
@@ -111,7 +112,7 @@ function TodayCard({ event }: { event: UpcomingEventItem }) {
             <div className="space-y-1.5 text-sm text-muted-foreground mb-3">
               <div className="flex items-center gap-1.5">
                 <Calendar size={13} className="flex-shrink-0 text-muted-foreground/60" />
-                {format(parseISO(event.date.substring(0, 10)), "EEEE, MMMM d, yyyy")}
+                {formatEventDatesFull(event.date, (event as any).endDate)}
               </div>
               {(event.location || event.trackName) && (
                 <div className="flex items-center gap-1.5">
@@ -159,7 +160,7 @@ function UpcomingCard({ event }: { event: UpcomingEventItem }) {
           <div className="space-y-1.5 text-sm text-muted-foreground mb-4 flex-1">
             <div className="flex items-center gap-1.5">
               <Calendar size={13} className="flex-shrink-0 text-muted-foreground/60" />
-              {format(parseISO(event.date.substring(0, 10)), "EEEE, MMMM d, yyyy")}
+              {formatEventDatesFull(event.date, (event as any).endDate)}
             </div>
             {(event.location || event.trackName) && (
               <div className="flex items-center gap-1.5">
