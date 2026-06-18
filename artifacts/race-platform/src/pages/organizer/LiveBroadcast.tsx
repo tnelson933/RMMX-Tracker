@@ -3,6 +3,7 @@ import { Video, VideoOff, Mic, MicOff, Radio, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useBroadcast } from "@/contexts/BroadcastContext";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 interface LiveBroadcastProps {
   eventId: number;
@@ -26,6 +27,15 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [permissionState, setPermissionState] = useState<"requesting" | "granted" | "denied">("requesting");
+
+  // Detect whether we're running in the desktop app without cloud sync configured.
+  // In that case the WebSocket relay is unavailable — warn the organizer instead of
+  // letting them hit a cryptic "connection lost" error.
+  const isLocalHost = typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  const cloudOrigin = getPublicOrigin();
+  const cloudUnconfigured = isLocalHost &&
+    (cloudOrigin === window.location.origin || cloudOrigin.startsWith("http://localhost") || cloudOrigin.startsWith("http://127.0.0.1"));
 
   const previewRef = useRef<HTMLVideoElement>(null);
   const previewStreamRef = useRef<MediaStream | null>(null);
@@ -226,16 +236,24 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
       )}
 
       {/* Action controls */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-col gap-2 max-w-xl">
         {!isLive ? (
           <>
-            <Button
-              onClick={handleGoLive}
-              disabled={permissionState !== "granted"}
-              className="font-heading uppercase tracking-wider gap-2 bg-red-600 hover:bg-red-700 text-white"
-            >
-              <Radio size={16} /> Go Live
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                onClick={handleGoLive}
+                disabled={permissionState !== "granted" || cloudUnconfigured}
+                className="font-heading uppercase tracking-wider gap-2 bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+              >
+                <Radio size={16} /> Go Live
+              </Button>
+            </div>
+            {cloudUnconfigured && (
+              <p className="text-sm text-muted-foreground flex items-start gap-1.5">
+                <AlertCircle size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
+                Live streaming requires cloud sync to be configured. Go to Settings → Cloud Sync to set it up.
+              </p>
+            )}
           </>
         ) : (
           <>
