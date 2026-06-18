@@ -370,9 +370,9 @@ export class SyncEngine {
     );
 
     const now = new Date().toISOString();
+    const body = await res.text();
 
     if (!res.ok) {
-      const body = await res.text();
       const errMsg = `Push failed (${res.status}): ${body}`;
       this.db
         .prepare(
@@ -391,6 +391,115 @@ export class SyncEngine {
           ")",
       )
       .run(now, ...rows.map((r) => r.id));
+
+    // Apply any id remaps returned by the cloud (e.g. event id collisions).
+    type PushResponse = { idRemaps?: { events?: Array<{ localId: number; cloudId: number }> } };
+    let pushResponse: PushResponse | null = null;
+    try { pushResponse = JSON.parse(body) as PushResponse; } catch { /* ignore */ }
+    const eventRemaps = pushResponse?.idRemaps?.events ?? [];
+    if (eventRemaps.length > 0) {
+      this.applyEventIdRemaps(eventRemaps);
+    }
+  }
+
+  // Child tables that carry an event_id FK and must be updated when
+  // a desktop event id is remapped to a cloud-assigned id.
+  private static readonly EVENT_CHILD_TABLES: ReadonlyArray<[string, string]> = [
+    ["motos",             "event_id"],
+    ["registrations",     "event_id"],
+    ["checkins",          "event_id"],
+    ["rfid_assignments",  "event_id"],
+    ["race_results",      "event_id"],
+    ["lap_crossings",     "event_id"],
+    ["practice_sessions", "event_id"],
+  ];
+
+  /**
+   * When a desktop-created event collides with an existing cloud event from a
+   * different club, the cloud assigns a new Postgres id and returns the mapping.
+   * This method patches the local SQLite event id and all child FK columns to
+   * match the cloud-assigned id, then restamps the write-queue row.
+   *
+   * Runs inside a _cloud_pull_guard transaction so the UPDATE on the events
+   * table does not re-enqueue the row into _write_queue.
+   */
+  private applyEventIdRemaps(
+    remaps: Array<{ localId: number; cloudId: number }>,
+  ): void {
+    if (!remaps.length) return;
+
+    const doRemap = this.db.transaction(() => {
+      this.db.prepare("INSERT OR IGNORE INTO _cloud_pull_guard VALUES(1)").run();
+      try {
+        for (const { localId, cloudId } of remaps) {
+          // Patch the event's primary key.
+          this.db
+            .prepare("UPDATE events SET id = ? WHERE id = ?")
+            .run(cloudId, localId);
+
+          // Patch FK columns in all child tables.
+          for (const [childTable, fkCol] of SyncEngine.EVENT_CHILD_TABLES) {
+            this.db
+              .prepare(`UPDATE ${childTable} SET ${fkCol} = ? WHERE ${fkCol} = ?`)
+              .run(cloudId, localId);
+          }
+
+          // Keep the write-queue entry pointing at the new id.
+          this.db
+            .prepare(
+              "UPDATE _write_queue SET record_id = ? WHERE table_name = 'events' AND record_id = ?",
+            )
+            .run(cloudId, localId);
+        }
+      } finally {
+        this.db.prepare("DELETE FROM _cloud_pull_guard").run();
+      }
+    });
+
+    doRemap();
+  }
+
+  /**
+   * After a pull, verify that every local event owned by this club also appears
+   * in the cloud response.  If an event is missing (e.g. it was silently dropped
+   * by a previous push due to an id collision that predates this fix), reset or
+   * insert its write-queue entry so the next push cycle retries it.
+   */
+  private recoverMissingClubEvents(cloudEventIds: Set<number>): void {
+    const clubId = Number(this.clubId);
+    if (!clubId) return;
+
+    const localClubEvents = this.db
+      .prepare("SELECT id FROM events WHERE club_id = ?")
+      .all(clubId) as Array<{ id: number }>;
+
+    for (const { id: localId } of localClubEvents) {
+      if (cloudEventIds.has(localId)) continue;
+
+      // Event exists locally but is missing from cloud — ensure it gets pushed.
+      const existing = this.db
+        .prepare(
+          "SELECT id, synced_at FROM _write_queue WHERE table_name = 'events' AND record_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .get(localId) as { id: number; synced_at: string | null } | undefined;
+
+      if (existing && existing.synced_at !== null) {
+        // Was falsely marked synced (silent push failure) — reset for retry.
+        this.db
+          .prepare(
+            "UPDATE _write_queue SET synced_at = NULL, attempt_count = 0, error = NULL WHERE id = ?",
+          )
+          .run(existing.id);
+      } else if (!existing) {
+        // No write-queue entry at all — create one.
+        this.db
+          .prepare(
+            "INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('events', ?, 'upsert')",
+          )
+          .run(localId);
+      }
+      // If existing and synced_at IS NULL — already queued for retry, no action needed.
+    }
   }
 
   private async pullCloud(): Promise<void> {
@@ -490,6 +599,16 @@ export class SyncEngine {
     });
 
     upsertAll();
+
+    // After every pull, verify that every local event owned by this club also
+    // exists in the cloud response.  Any that are missing were silently dropped
+    // by a previous push (e.g. an id collision); re-queue them for retry.
+    const pulledEventIds = new Set<number>(
+      (data.events ?? [])
+        .map((ev) => Number(ev["id"]))
+        .filter((n) => n > 0),
+    );
+    this.recoverMissingClubEvents(pulledEventIds);
   }
 
   /**
