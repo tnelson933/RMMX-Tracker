@@ -65,8 +65,9 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
     // Window start: 24h before event date (midnight of event date - 24h)
     const windowStart = new Date(year, month - 1, day, 0, 0, 0, 0);
     windowStart.setTime(windowStart.getTime() - WINDOW_BEFORE_MS);
-    // Window end: end of event date
-    const windowEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
+    // Window end: midnight of event date + 48h (24h after end of event day)
+    const windowEnd = new Date(year, month - 1, day, 0, 0, 0, 0);
+    windowEnd.setTime(windowEnd.getTime() + 48 * 60 * 60 * 1000);
 
     if (now < windowStart || now > windowEnd) {
       const windowStartStr = windowStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
