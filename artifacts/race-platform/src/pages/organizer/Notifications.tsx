@@ -16,7 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Bell, Send, Smartphone, Info, Clock } from "lucide-react";
 
-const RATE_LIMIT_MS = 4 * 60 * 60 * 1000;
+const RATE_LIMIT_MS = 1 * 60 * 60 * 1000;
 
 function formatCountdown(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
