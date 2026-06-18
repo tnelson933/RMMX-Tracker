@@ -460,6 +460,19 @@ export function initDb() {
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS rider_accounts (
+      id            INTEGER PRIMARY KEY,
+      email         TEXT    NOT NULL UNIQUE,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS rider_push_tokens (
+      id                INTEGER PRIMARY KEY,
+      rider_account_id  INTEGER NOT NULL REFERENCES rider_accounts(id) ON DELETE CASCADE,
+      expo_push_token   TEXT    NOT NULL UNIQUE,
+      created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Schema migrations — safely add any column that might be missing on older DBs.
@@ -564,6 +577,8 @@ export function initDb() {
     // clubs — Stripe Connect fields
     ["clubs", "stripe_account_id          TEXT"],
     ["clubs", "stripe_onboarding_complete INTEGER NOT NULL DEFAULT 0"],
+    // users — push notification rate limiting
+    ["users", "last_push_sent_at TEXT"],
     // _cloud_pull_guard — safety: ensure it exists (created above, but just in case)
   ];
 
