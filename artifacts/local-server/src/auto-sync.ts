@@ -1,4 +1,8 @@
 import { getDb } from "./db";
+import fs from "fs/promises";
+import path from "path";
+
+const UPLOADS_DIR = path.join(process.cwd(), ".uploads");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -356,17 +360,18 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
     // ── Events ─────────────────────────────────────────────────────────────────
     const eventStmt = db.prepare(`
       INSERT INTO events (
-        id, club_id, name, date, state, status, location, description,
+        id, club_id, name, date, end_date, state, status, location, description,
         track_name, race_classes, registration_open, registration_close,
         payment_enabled, require_ama, entry_fee, max_riders,
         race_class_limits, purchase_options, image_url, timing_technology,
         transponder_rental_enabled, transponder_rental_fee,
         no_duplicate_bibs, require_club_id, scoring_table_id,
         entry_fee_category_id, min_lap_ms, ama_event_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name                       = excluded.name,
         date                       = excluded.date,
+        end_date                   = excluded.end_date,
         state                      = excluded.state,
         status                     = excluded.status,
         location                   = excluded.location,
@@ -397,6 +402,7 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
       eventStmt.run(
         toSQLiteScalar(ev.id), toSQLiteScalar(ev.clubId),
         toSQLiteScalar(ev.name), toDateStr(ev.date),
+        toSQLiteScalar((ev as any).endDate) ?? null,
         toSQLiteScalar(ev.state) ?? "", toSQLiteScalar(ev.status) ?? "draft",
         toSQLiteScalar(ev.location) ?? null, toSQLiteScalar(ev.description) ?? null,
         toSQLiteScalar(ev.trackName) ?? null,
@@ -542,6 +548,151 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
   return { ok: true, rows };
 }
 
+// ─── Image sync (local uploads → cloud object storage) ───────────────────────
+
+const LOCAL_UPLOAD_PREFIX = "/api/storage/uploads/";
+const IMAGE_SYNC_MAX_ATTEMPTS = 5;
+
+async function runImageSync(): Promise<{ imagesUploaded: number }> {
+  const db = getDb();
+  const authHeader = await getAuthHeader();
+  let imagesUploaded = 0;
+
+  // Events with locally-stored image_url that haven't hit the retry cap
+  const events = db
+    .prepare(`SELECT id, image_url, image_sync_attempts FROM events WHERE image_url LIKE '${LOCAL_UPLOAD_PREFIX}%' AND image_sync_attempts < ${IMAGE_SYNC_MAX_ATTEMPTS}`)
+    .all() as { id: number; image_url: string; image_sync_attempts: number }[];
+
+  // Clubs with locally-stored logo_url that haven't hit the retry cap
+  const clubs = db
+    .prepare(`SELECT id, logo_url, image_sync_attempts FROM clubs WHERE logo_url LIKE '${LOCAL_UPLOAD_PREFIX}%' AND image_sync_attempts < ${IMAGE_SYNC_MAX_ATTEMPTS}`)
+    .all() as { id: number; logo_url: string; image_sync_attempts: number }[];
+
+  for (const ev of events) {
+    const filename = ev.image_url.slice(LOCAL_UPLOAD_PREFIX.length);
+    const filepath = path.join(UPLOADS_DIR, filename);
+    try {
+      const buffer = await fs.readFile(filepath);
+      const ext = path.extname(filename) || ".png";
+      const contentType = ext === ".png" ? "image/png" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
+
+      const uploadRes = await fetch(`${CLOUD_URL}/api/storage/uploads/file`, {
+        method: "POST",
+        headers: {
+          "Content-Type": contentType,
+          "x-file-name": filename,
+          "x-content-type": contentType,
+          ...authHeader,
+        },
+        body: buffer,
+      });
+      if (!uploadRes.ok) {
+        const nextAttempts = ev.image_sync_attempts + 1;
+        db.prepare("UPDATE events SET image_sync_attempts = ? WHERE id = ?").run(nextAttempts, ev.id);
+        if (nextAttempts >= IMAGE_SYNC_MAX_ATTEMPTS) {
+          console.warn(`[image-sync] Event ${ev.id} image upload failed ${nextAttempts} times — giving up (${uploadRes.status})`);
+        } else {
+          console.warn(`[image-sync] Failed to upload event ${ev.id} image (${uploadRes.status}); attempt ${nextAttempts}/${IMAGE_SYNC_MAX_ATTEMPTS}`);
+        }
+        continue;
+      }
+      const { objectPath } = await uploadRes.json() as { objectPath: string };
+      const newImageUrl = `/api/storage${objectPath}`;
+
+      const patchRes = await fetch(`${CLOUD_URL}/api/events/${ev.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ imageUrl: newImageUrl }),
+      });
+      if (!patchRes.ok) {
+        const nextAttempts = ev.image_sync_attempts + 1;
+        db.prepare("UPDATE events SET image_sync_attempts = ? WHERE id = ?").run(nextAttempts, ev.id);
+        if (nextAttempts >= IMAGE_SYNC_MAX_ATTEMPTS) {
+          console.warn(`[image-sync] Event ${ev.id} imageUrl cloud patch failed ${nextAttempts} times — giving up (${patchRes.status})`);
+        } else {
+          console.warn(`[image-sync] Failed to update event ${ev.id} imageUrl on cloud (${patchRes.status}); attempt ${nextAttempts}/${IMAGE_SYNC_MAX_ATTEMPTS}`);
+        }
+        continue;
+      }
+
+      db.prepare("UPDATE events SET image_url = ?, image_sync_attempts = 0 WHERE id = ?").run(newImageUrl, ev.id);
+      console.log(`[image-sync] ✓ Event ${ev.id} image synced → ${newImageUrl}`);
+      imagesUploaded++;
+    } catch (err) {
+      const nextAttempts = ev.image_sync_attempts + 1;
+      db.prepare("UPDATE events SET image_sync_attempts = ? WHERE id = ?").run(nextAttempts, ev.id);
+      if (nextAttempts >= IMAGE_SYNC_MAX_ATTEMPTS) {
+        console.warn(`[image-sync] Event ${ev.id} image sync failed ${nextAttempts} times — giving up: ${err instanceof Error ? err.message : String(err)}`);
+      } else {
+        console.warn(`[image-sync] Event ${ev.id} image error (attempt ${nextAttempts}/${IMAGE_SYNC_MAX_ATTEMPTS}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  for (const club of clubs) {
+    const filename = club.logo_url.slice(LOCAL_UPLOAD_PREFIX.length);
+    const filepath = path.join(UPLOADS_DIR, filename);
+    try {
+      const buffer = await fs.readFile(filepath);
+      const ext = path.extname(filename) || ".png";
+      const contentType = ext === ".png" ? "image/png" : ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
+
+      const uploadRes = await fetch(`${CLOUD_URL}/api/storage/uploads/file`, {
+        method: "POST",
+        headers: {
+          "Content-Type": contentType,
+          "x-file-name": filename,
+          "x-content-type": contentType,
+          ...authHeader,
+        },
+        body: buffer,
+      });
+      if (!uploadRes.ok) {
+        const nextAttempts = club.image_sync_attempts + 1;
+        db.prepare("UPDATE clubs SET image_sync_attempts = ? WHERE id = ?").run(nextAttempts, club.id);
+        if (nextAttempts >= IMAGE_SYNC_MAX_ATTEMPTS) {
+          console.warn(`[image-sync] Club ${club.id} logo upload failed ${nextAttempts} times — giving up (${uploadRes.status})`);
+        } else {
+          console.warn(`[image-sync] Failed to upload club ${club.id} logo (${uploadRes.status}); attempt ${nextAttempts}/${IMAGE_SYNC_MAX_ATTEMPTS}`);
+        }
+        continue;
+      }
+      const { objectPath } = await uploadRes.json() as { objectPath: string };
+      const newLogoUrl = `/api/storage${objectPath}`;
+
+      const patchRes = await fetch(`${CLOUD_URL}/api/clubs/${club.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ logoUrl: newLogoUrl }),
+      });
+      if (!patchRes.ok) {
+        const nextAttempts = club.image_sync_attempts + 1;
+        db.prepare("UPDATE clubs SET image_sync_attempts = ? WHERE id = ?").run(nextAttempts, club.id);
+        if (nextAttempts >= IMAGE_SYNC_MAX_ATTEMPTS) {
+          console.warn(`[image-sync] Club ${club.id} logoUrl cloud patch failed ${nextAttempts} times — giving up (${patchRes.status})`);
+        } else {
+          console.warn(`[image-sync] Failed to update club ${club.id} logoUrl on cloud (${patchRes.status}); attempt ${nextAttempts}/${IMAGE_SYNC_MAX_ATTEMPTS}`);
+        }
+        continue;
+      }
+
+      db.prepare("UPDATE clubs SET logo_url = ?, image_sync_attempts = 0 WHERE id = ?").run(newLogoUrl, club.id);
+      console.log(`[image-sync] ✓ Club ${club.id} logo synced → ${newLogoUrl}`);
+      imagesUploaded++;
+    } catch (err) {
+      const nextAttempts = club.image_sync_attempts + 1;
+      db.prepare("UPDATE clubs SET image_sync_attempts = ? WHERE id = ?").run(nextAttempts, club.id);
+      if (nextAttempts >= IMAGE_SYNC_MAX_ATTEMPTS) {
+        console.warn(`[image-sync] Club ${club.id} logo sync failed ${nextAttempts} times — giving up: ${err instanceof Error ? err.message : String(err)}`);
+      } else {
+        console.warn(`[image-sync] Club ${club.id} logo error (attempt ${nextAttempts}/${IMAGE_SYNC_MAX_ATTEMPTS}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  return { imagesUploaded };
+}
+
 // ─── Auto-sync loop ───────────────────────────────────────────────────────────
 
 async function syncOnce() {
@@ -566,6 +717,7 @@ async function syncOnce() {
   try {
     const pushResult = await runSync();
     const pullResult = await runPull();
+    const imageResult = await runImageSync();
     const r = pushResult.results;
     writeSyncSuccess({
       checkinsUpdated:       r.checkinsUpdated,
@@ -575,9 +727,10 @@ async function syncOnce() {
       registrationsInserted: r.registrationsInserted,
       ridersUpdated:         r.ridersUpdated,
       skipped:               r.skipped,
+      imagesUploaded:        imageResult.imagesUploaded,
       ...pullResult.rows,
     });
-    console.log(`[auto-sync] ✓ Sync complete (pushed + pulled)`);
+    console.log(`[auto-sync] ✓ Sync complete (pushed + pulled + ${imageResult.imagesUploaded} images)`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     writeSyncError(msg);
