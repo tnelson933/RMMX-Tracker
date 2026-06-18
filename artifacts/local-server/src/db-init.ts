@@ -50,6 +50,7 @@ export function initDb() {
       entry_fee_category_id      INTEGER,
       min_lap_ms                 INTEGER,
       ama_event_id               TEXT,
+      end_date                   TEXT,
       created_at                 TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -587,6 +588,11 @@ export function initDb() {
     ["clubs", "stripe_onboarding_complete INTEGER NOT NULL DEFAULT 0"],
     // users — push notification rate limiting
     ["users", "last_push_sent_at TEXT"],
+    // events — multi-day support
+    ["events", "end_date TEXT"],
+    // image sync retry counters — stops runaway retries for permanently-broken images
+    ["events", "image_sync_attempts INTEGER NOT NULL DEFAULT 0"],
+    ["clubs",  "image_sync_attempts INTEGER NOT NULL DEFAULT 0"],
     // _cloud_pull_guard — safety: ensure it exists (created above, but just in case)
   ];
 
