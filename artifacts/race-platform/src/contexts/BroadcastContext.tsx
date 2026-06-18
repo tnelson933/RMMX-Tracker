@@ -1,4 +1,5 @@
 import { createContext, useContext, useRef, useState, useCallback, useEffect } from "react";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 export type BroadcastState = "idle" | "live" | "error" | "stopped";
 
@@ -30,8 +31,10 @@ export function useBroadcast() {
 }
 
 function getWsUrl(eventId: number): string {
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}/api/video/broadcast/${eventId}`;
+  const origin = getPublicOrigin();
+  const proto = origin.startsWith("https:") ? "wss:" : "ws:";
+  const host = origin.replace(/^https?:\/\//, "");
+  return `${proto}//${host}/api/video/broadcast/${eventId}`;
 }
 
 export function BroadcastProvider({ children }: { children: React.ReactNode }) {
@@ -188,6 +191,18 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
       setErrorMsg("Connection to the server was lost. Please try again.");
       setBroadcastState("error");
       stopBroadcast();
+    };
+
+    ws.onclose = () => {
+      // Only act if we're still in "live" state — onerror may have already cleaned up.
+      setBroadcastState(prev => {
+        if (prev === "live") {
+          setErrorMsg("Stream connection closed unexpectedly. Please try again.");
+          stopBroadcast();
+          return "error";
+        }
+        return prev;
+      });
     };
   }, [stopBroadcast]);
 
