@@ -46,6 +46,7 @@ function serializeEvent(e: any) {
     scoringTableId: e.scoring_table_id ?? null,
     minLapMs: e.min_lap_ms ?? null,
     amaEventId: e.ama_event_id ?? null,
+    endDate: e.end_date ?? null,
     createdAt: e.created_at,
   };
 }
@@ -102,7 +103,7 @@ router.post("/events", (req, res) => {
     registrationOpen, registrationClose, paymentEnabled,
     requireAma, entryFee, maxRiders, raceClassLimits, purchaseOptions,
     timingTechnology, transponderRentalEnabled, transponderRentalFee,
-    noDuplicateBibs, requireClubId, scoringTableId, minLapMs, amaEventId,
+    noDuplicateBibs, requireClubId, scoringTableId, minLapMs, amaEventId, endDate,
   } = req.body;
 
   if (!name || !date) {
@@ -117,8 +118,8 @@ router.post("/events", (req, res) => {
           entry_fee, max_riders, race_class_limits, purchase_options,
           timing_technology, transponder_rental_enabled, transponder_rental_fee,
           no_duplicate_bibs, require_club_id, scoring_table_id, min_lap_ms,
-          ama_event_id, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
+          ama_event_id, end_date, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
     )
     .run(
       user.club_id, String(name), String(date),
@@ -133,7 +134,7 @@ router.post("/events", (req, res) => {
       transponderRentalEnabled ? 1 : 0,
       transponderRentalFee ?? null,
       noDuplicateBibs ? 1 : 0, requireClubId ? 1 : 0,
-      scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null,
+      scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null, endDate ?? null,
     );
 
   const newEventId = Number(result.lastInsertRowid);
@@ -200,6 +201,7 @@ router.patch("/events/:eventId", (req, res) => {
     minLapMs: "min_lap_ms",
     imageUrl: "image_url",
     amaEventId: "ama_event_id",
+    endDate: "end_date",
   };
 
   const jsonFields: Record<string, string> = {
