@@ -20,6 +20,8 @@ import {
   practiceCrossingsTable,
   discountCategoriesTable,
   compCodesTable,
+  riderAccountsTable,
+  riderPushTokensTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -966,6 +968,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       compCodes,
       practiceSessions,
       practiceCrossings,
+      riderAccounts: [],
+      riderPushTokens: [],
     });
   }
 
@@ -1001,7 +1005,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
   // Riders: only return riders who have a registration for a club event.
   // Return minimal fields (no email/phone) to avoid cross-club PII exposure.
   const regRiderIds = [...new Set(registrations.map((r) => r.riderId))];
-  const riders =
+  const ridersWithEmail =
     regRiderIds.length > 0
       ? await db
           .select({
@@ -1009,10 +1013,41 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
             firstName:  ridersTable.firstName,
             lastName:   ridersTable.lastName,
             rfidNumber: ridersTable.rfidNumber,
+            email:      ridersTable.email,
           })
           .from(ridersTable)
           .where(inArray(ridersTable.id, regRiderIds))
       : [];
+
+  const riders = ridersWithEmail.map(({ email: _email, ...rest }) => rest);
+
+  // Push tokens: resolve rider emails → rider_accounts → rider_push_tokens
+  // so the desktop can send notifications without round-tripping to the cloud.
+  const riderEmails = ridersWithEmail
+    .map((r) => (r.email ?? "").toLowerCase())
+    .filter((e) => e.length > 0);
+
+  let riderAccounts: Array<{ id: number; email: string }> = [];
+  let riderPushTokens: Array<{ id: number; riderAccountId: number; expoPushToken: string }> = [];
+
+  if (riderEmails.length > 0) {
+    riderAccounts = await db
+      .select({ id: riderAccountsTable.id, email: riderAccountsTable.email })
+      .from(riderAccountsTable)
+      .where(inArray(riderAccountsTable.email, riderEmails));
+
+    const accountIds = riderAccounts.map((a) => a.id);
+    if (accountIds.length > 0) {
+      riderPushTokens = await db
+        .select({
+          id:              riderPushTokensTable.id,
+          riderAccountId:  riderPushTokensTable.riderAccountId,
+          expoPushToken:   riderPushTokensTable.expoPushToken,
+        })
+        .from(riderPushTokensTable)
+        .where(inArray(riderPushTokensTable.riderAccountId, accountIds));
+    }
+  }
 
   // Series points for all club series
   const seriesIds = clubSeries.map((s) => s.id);
@@ -1035,6 +1070,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     compCodes,
     practiceSessions,
     practiceCrossings,
+    riderAccounts,
+    riderPushTokens,
   });
 });
 
