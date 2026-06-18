@@ -99,6 +99,7 @@ router.get("/events", async (req, res) => {
     entryFeeCategoryId: eventsTable.entryFeeCategoryId,
     minLapMs: eventsTable.minLapMs,
     amaEventId: eventsTable.amaEventId,
+    endDate: eventsTable.endDate,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -124,11 +125,12 @@ router.get("/events", async (req, res) => {
 });
 
 router.post("/events", async (req, res) => {
-  const { name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, purchaseOptions, scoringTableId } = req.body;
+  const { name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, purchaseOptions, scoringTableId, endDate } = req.body;
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
   if (!clubId || !name || !date || !state) return res.status(400).json({ error: "clubId, name, date, state required" });
+  if (endDate && endDate < date) return res.status(400).json({ error: "endDate must be on or after date" });
 
   // Determine the correct initial status based on the registration window
   const initialStatus = (() => {
@@ -163,6 +165,7 @@ router.post("/events", async (req, res) => {
     scoringTableId: scoringTableId ?? null,
     entryFeeCategoryId: entryFeeCat?.id ?? null,
     amaEventId: amaEventId ?? null,
+    endDate: endDate ?? null,
   }).returning();
 
   return res.status(201).json({
@@ -204,6 +207,7 @@ router.get("/events/:eventId", async (req, res) => {
     entryFeeCategoryId: eventsTable.entryFeeCategoryId,
     minLapMs: eventsTable.minLapMs,
     amaEventId: eventsTable.amaEventId,
+    endDate: eventsTable.endDate,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -227,15 +231,20 @@ router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
 
   // Capture previous status before update; also check club ownership for staff.
-  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, id));
+  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date }).from(eventsTable).where(eq(eventsTable.id, id));
   const previousStatus = before?.status;
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
     if (!before || before.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   }
 
+  const patchDate = req.body.date ?? before?.date;
+  if (req.body.endDate && patchDate && req.body.endDate < patchDate) {
+    return res.status(400).json({ error: "endDate must be on or after date" });
+  }
+
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
