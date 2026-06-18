@@ -13,6 +13,7 @@ import {
   ChevronDown, ChevronUp, Users, Timer, Zap,
 } from "lucide-react";
 import { format, parseISO, isToday } from "date-fns";
+import { formatEventDatesFull } from "@/lib/eventDates";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -466,7 +467,7 @@ export default function EventResults() {
               <div className="flex flex-wrap gap-x-8 gap-y-3 text-sidebar-foreground/80">
                 <div className="flex items-center gap-2">
                   <Calendar size={18} className="text-primary" />
-                  <span className="font-medium">{format(parseISO(event.date.substring(0, 10)), "EEEE, MMMM d, yyyy")}</span>
+                  <span className="font-medium">{formatEventDatesFull(event.date, (event as any).endDate)}</span>
                 </div>
                 {event.location && (
                   <div className="flex items-center gap-2">
