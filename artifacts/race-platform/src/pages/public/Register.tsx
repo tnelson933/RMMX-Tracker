@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { formatEventDatesFull } from "@/lib/eventDates";
 
 const BIKE_BRANDS = [
   { name: "KTM",       color: "#FF6600", text: "#ffffff" },
@@ -55,6 +56,7 @@ interface EventInfo {
   id: number;
   name: string;
   date: string;
+  endDate?: string | null;
   state: string;
   location: string | null;
   trackName: string | null;
@@ -588,7 +590,7 @@ export default function Register() {
               <p className="text-white/50 text-sm font-bold uppercase tracking-widest mb-2">{event.clubName}</p>
               <h1 className="text-4xl md:text-5xl font-heading font-bold uppercase tracking-tight leading-none">{event.name}</h1>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-4 text-white/70 text-sm">
-                <span className="flex items-center gap-1.5"><Calendar size={14} /> {format(parseISO(event.date.substring(0, 10)), 'EEEE, MMMM d, yyyy')}</span>
+                <span className="flex items-center gap-1.5"><Calendar size={14} /> {formatEventDatesFull(event.date, event.endDate)}</span>
                 {event.location && <span className="flex items-center gap-1.5"><MapPin size={14} /> {event.location}, {event.state}</span>}
                 {event.trackName && <span className="flex items-center gap-1.5"><Flag size={14} /> {event.trackName}</span>}
               </div>
