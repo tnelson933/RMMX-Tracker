@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { usePublicOrigin } from "@/lib/publicOrigin";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
-import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, useListDiscountCategories, useDeleteEvent } from "@workspace/api-client-react";
+import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, getListEventsQueryKey, useListDiscountCategories, useDeleteEvent } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -139,6 +139,7 @@ export default function EventDetail() {
   const handleDeleteEvent = () => {
     deleteMutation.mutate({ eventId }, {
       onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListEventsQueryKey({}) });
         toast({ title: "Event deleted" });
         navigate("/events");
       },
