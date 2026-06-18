@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/button";
 import { useListMotos, useListResults } from "@workspace/api-client-react";
 import { SplitView360 } from "@/components/SplitView360";
 import { StackedSplitView } from "@/components/StackedSplitView";
+import { getPublicOrigin } from "@/lib/publicOrigin";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
 function getWsUrl(eventId: number): string {
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const host = window.location.host;
+  const origin = getPublicOrigin();
+  const proto = origin.startsWith("https:") ? "wss:" : "ws:";
+  const host = origin.replace(/^https?:\/\//, "");
   return `${proto}//${host}/api/video/watch/${eventId}`;
 }
 
