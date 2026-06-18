@@ -429,6 +429,14 @@ export function initDb() {
       INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('events', NEW.id, 'upsert');
     END;
 
+    -- events (deletions on desktop — record the id before the row disappears)
+    CREATE TRIGGER IF NOT EXISTS _wq_events_delete
+    AFTER DELETE ON events
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('events', OLD.id, 'delete');
+    END;
+
     -- practice_sessions (start / stop / name changes on desktop)
     CREATE TRIGGER IF NOT EXISTS _wq_practice_sessions_insert
     AFTER INSERT ON practice_sessions
