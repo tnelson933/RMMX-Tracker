@@ -85,6 +85,8 @@ function DateTimePicker({ value, onChange }: { value: string; onChange: (v: stri
 const updateEventSchema = z.object({
   name: z.string().min(1, "Name is required"),
   date: z.string().min(1, "Date is required"),
+  multiDay: z.boolean().default(false),
+  endDate: z.string().optional(),
   state: z.string().min(1, "State is required"),
   location: z.string().optional(),
   trackName: z.string().optional(),
@@ -110,7 +112,10 @@ const updateEventSchema = z.object({
     categoryId: z.number().nullable().optional(),
   })).default([]),
   amaEventId: z.string().optional(),
-});
+}).refine(
+  (data) => !data.multiDay || !data.endDate || data.endDate >= data.date,
+  { message: "End date must be on or after start date", path: ["endDate"] },
+);
 
 type FormValues = z.infer<typeof updateEventSchema>;
 
@@ -305,6 +310,8 @@ export default function EventDetail() {
     defaultValues: {
       name: "",
       date: "",
+      multiDay: false,
+      endDate: "",
       state: "",
       location: "",
       trackName: "",
@@ -326,6 +333,8 @@ export default function EventDetail() {
     }
   });
 
+  const watchMultiDay = form.watch("multiDay");
+
   const watchPaymentEnabled = form.watch("paymentEnabled");
   const watchTimingTechnology = form.watch("timingTechnology");
   const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
@@ -345,9 +354,12 @@ export default function EventDetail() {
   const resetFormFromEvent = (evt: typeof event) => {
     if (!evt) return;
     const limits = (evt.raceClassLimits ?? {}) as Record<string, number | null>;
+    const evtEndDate = (evt as any).endDate ?? null;
     form.reset({
       name: evt.name,
       date: evt.date.substring(0, 10),
+      multiDay: !!evtEndDate,
+      endDate: evtEndDate ? evtEndDate.substring(0, 10) : "",
       state: evt.state,
       location: evt.location || "",
       trackName: evt.trackName || "",
@@ -388,6 +400,7 @@ export default function EventDetail() {
       data: {
         name: data.name,
         date: data.date,
+        endDate: data.multiDay && data.endDate ? data.endDate : null,
         state: data.state,
         location: data.location,
         trackName: data.trackName,
@@ -577,7 +590,7 @@ export default function EventDetail() {
                         name="date"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Date</FormLabel>
+                            <FormLabel>Start Date</FormLabel>
                             <FormControl><Input type="date" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
@@ -607,6 +620,32 @@ export default function EventDetail() {
                         )}
                       />
                     </div>
+                    {/* Multi-day toggle + end date */}
+                    <FormField
+                      control={form.control}
+                      name="multiDay"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                          <FormLabel className="cursor-pointer font-normal">Multi-day event</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    {watchMultiDay && (
+                      <FormField
+                        control={form.control}
+                        name="endDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>End Date</FormLabel>
+                            <FormControl><Input type="date" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
