@@ -239,6 +239,9 @@ type PullMoto  = Record<string, unknown>;
 type PullCheckin = Record<string, unknown>;
 type PullRfid  = Record<string, unknown>;
 
+type PullRiderAccount = { id: number; email: string };
+type PullRiderPushToken = { id: number; riderAccountId: number; expoPushToken: string };
+
 type PullResponse = {
   registrations?: PullRegistration[];
   riders?:        PullRider[];
@@ -246,6 +249,8 @@ type PullResponse = {
   motos?:         PullMoto[];
   checkins?:      PullCheckin[];
   rfidAssignments?: PullRfid[];
+  riderAccounts?: PullRiderAccount[];
+  riderPushTokens?: PullRiderPushToken[];
 };
 
 export async function runPull(): Promise<{ ok: boolean; rows: Record<string, number> }> {
@@ -499,6 +504,36 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
       );
       rows.rfidPulled++;
     }
+
+    // ── Rider Accounts (email-only — needed for push token resolution) ─────────
+    const riderAccountStmt = db.prepare(`
+      INSERT INTO rider_accounts (id, email)
+      VALUES (?, ?)
+      ON CONFLICT(id) DO UPDATE SET email = excluded.email
+    `);
+
+    let riderAccountsPulled = 0;
+    for (const a of data.riderAccounts ?? []) {
+      riderAccountStmt.run(a.id, a.email);
+      riderAccountsPulled++;
+    }
+    rows.riderAccountsPulled = riderAccountsPulled;
+
+    // ── Rider Push Tokens ──────────────────────────────────────────────────────
+    const pushTokenStmt = db.prepare(`
+      INSERT INTO rider_push_tokens (id, rider_account_id, expo_push_token)
+      VALUES (?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        rider_account_id = excluded.rider_account_id,
+        expo_push_token  = excluded.expo_push_token
+    `);
+
+    let pushTokensPulled = 0;
+    for (const t of data.riderPushTokens ?? []) {
+      pushTokenStmt.run(t.id, t.riderAccountId, t.expoPushToken);
+      pushTokensPulled++;
+    }
+    rows.pushTokensPulled = pushTokensPulled;
 
   } finally {
     db.prepare("DELETE FROM _cloud_pull_guard WHERE active = 1").run();
