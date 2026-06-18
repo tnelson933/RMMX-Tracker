@@ -4,7 +4,7 @@ import { sendPushNotifications } from "../lib/push";
 
 const router = Router();
 
-const RATE_LIMIT_MS = 4 * 60 * 60 * 1000; // 4 hours
+const RATE_LIMIT_MS = 1 * 60 * 60 * 1000; // 1 hour
 const WINDOW_BEFORE_MS = 24 * 60 * 60 * 1000; // 24h before event
 
 // POST /admin/notifications/broadcast
