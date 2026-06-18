@@ -341,13 +341,21 @@ export class SyncEngine {
 
     if (rows.length === 0) return;
 
+    // Separate deletes from upserts — deleted rows are gone from SQLite,
+    // so we can't SELECT them; we just forward their IDs to the cloud.
+    const deletesByTable: Record<string, number[]> = {};
     const grouped: Record<string, number[]> = {};
     for (const row of rows) {
-      if (!grouped[row.table_name]) grouped[row.table_name] = [];
-      grouped[row.table_name].push(row.record_id);
+      if (row.operation === "delete") {
+        if (!deletesByTable[row.table_name]) deletesByTable[row.table_name] = [];
+        deletesByTable[row.table_name].push(row.record_id);
+      } else {
+        if (!grouped[row.table_name]) grouped[row.table_name] = [];
+        grouped[row.table_name].push(row.record_id);
+      }
     }
 
-    const payload: Record<string, unknown[]> = {};
+    const payload: Record<string, unknown> = {};
 
     for (const [table, ids] of Object.entries(grouped)) {
       const placeholders = ids.map(() => "?").join(",");
@@ -355,6 +363,10 @@ export class SyncEngine {
         .prepare(`SELECT * FROM ${table} WHERE id IN (${placeholders})`)
         .all(...ids) as Record<string, unknown>[];
       payload[table] = tableRows;
+    }
+
+    if (Object.keys(deletesByTable).length > 0) {
+      payload["_deletes"] = deletesByTable;
     }
 
     const res = await fetch(
