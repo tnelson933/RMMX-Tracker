@@ -1040,9 +1040,12 @@ router.patch("/rider/memory", requireRiderAuth, async (req, res) => {
   return res.json({ ok: true });
 });
 
-// GET /rider/race-gas-balance — stub; returns 0 until race gas system is wired up
-router.get("/rider/race-gas-balance", requireRiderAuth, async (_req, res) => {
-  return res.json({ balance: 0, currency: "USD" });
+// GET /rider/rm-cash-balance — returns the rider's current RM Cash balance
+router.get("/rider/rm-cash-balance", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const [account] = await db.select({ rmCashBalance: riderAccountsTable.rmCashBalance }).from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  return res.json({ balance: parseFloat(account.rmCashBalance ?? "0"), currency: "USD" });
 });
 
 // POST /rider/training-plan — AI-powered MX/SX workout plan generator
