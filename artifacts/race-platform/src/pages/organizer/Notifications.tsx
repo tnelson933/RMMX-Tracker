@@ -27,7 +27,7 @@ function formatCountdown(ms: number): string {
 }
 
 function isEventInWindow(eventDate: string): boolean {
-  const [year, month, day] = eventDate.split("-").map(Number);
+  const [year, month, day] = eventDate.slice(0, 10).split("-").map(Number);
   const windowStart = new Date(year, month - 1, day, 0, 0, 0, 0);
   windowStart.setTime(windowStart.getTime() - 24 * 60 * 60 * 1000);
   const windowEnd = new Date(year, month - 1, day, 0, 0, 0, 0);
