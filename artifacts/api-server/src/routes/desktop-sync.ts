@@ -237,6 +237,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       lineup?: unknown;
       lap_count?: unknown;
       scheduled_time?: unknown;
+      staggered_group_id?: unknown;
+      staggered_order?: unknown;
     }>;
 
     let motosUpserted = 0;
@@ -282,11 +284,15 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           try { lineup = JSON.parse(String(m.lineup)) as number[]; } catch { lineup = []; }
         }
         const updateSet: Record<string, unknown> = { status, startedAt, completedAt };
-        if (m.moto_number    != null)  updateSet.motoNumber    = motoNumber;
-        if (m.name           != null)  updateSet.name          = String(m.name);
-        if (m.lap_count      != null)  updateSet.lapCount      = Number(m.lap_count);
-        if (m.scheduled_time != null)  updateSet.scheduledTime = String(m.scheduled_time);
-        if (lineup !== undefined)      updateSet.lineup        = lineup;
+        if (m.moto_number         != null)  updateSet.motoNumber        = motoNumber;
+        if (m.name                != null)  updateSet.name              = String(m.name);
+        if (m.lap_count           != null)  updateSet.lapCount          = Number(m.lap_count);
+        if (m.scheduled_time      != null)  updateSet.scheduledTime     = String(m.scheduled_time);
+        if (lineup !== undefined)           updateSet.lineup            = lineup;
+        if (m.staggered_group_id  != null)  updateSet.staggeredGroupId  = Number(m.staggered_group_id);
+        else if (m.staggered_group_id === null) updateSet.staggeredGroupId = null;
+        if (m.staggered_order     != null)  updateSet.staggeredOrder    = Number(m.staggered_order);
+        else if (m.staggered_order === null)    updateSet.staggeredOrder = null;
         await tx
           .update(motosTable)
           .set(updateSet as any)
@@ -299,16 +305,18 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         await tx.insert(motosTable).values({
           ...(clientId ? { id: clientId } : {}),
           eventId,
-          name:          m.name != null ? String(m.name) : "",
-          type:          m.type != null ? String(m.type) : "moto",
-          raceClass:     m.race_class != null ? String(m.race_class) : "",
+          name:             m.name != null ? String(m.name) : "",
+          type:             m.type != null ? String(m.type) : "moto",
+          raceClass:        m.race_class != null ? String(m.race_class) : "",
           motoNumber,
-          scheduledTime: m.scheduled_time != null ? String(m.scheduled_time) : null,
+          scheduledTime:    m.scheduled_time != null ? String(m.scheduled_time) : null,
           lineup,
-          lapCount:      m.lap_count != null ? Number(m.lap_count) : null,
+          lapCount:         m.lap_count != null ? Number(m.lap_count) : null,
           status,
           startedAt,
           completedAt,
+          staggeredGroupId: m.staggered_group_id != null ? Number(m.staggered_group_id) : null,
+          staggeredOrder:   m.staggered_order    != null ? Number(m.staggered_order)    : null,
         });
         if (clientId) affectedMotoIds.add(clientId);
       }
