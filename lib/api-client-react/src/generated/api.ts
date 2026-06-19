@@ -36,10 +36,13 @@ import type {
   Club,
   ClubDashboard,
   ClubInput,
+  ClubSettings,
+  ClubSettingsInput,
   ClubUpdate,
   CompleteAccountSetup200,
   CompleteSetupInput,
   CompleteTour200,
+  CreatePracticeSessionInput,
   CreateTeamMemberInput,
   CreateUserInput,
   DeleteDiscountCategory200,
@@ -61,6 +64,7 @@ import type {
   GenerateMotoLineupInput,
   GeneratePracticeSessionsInput,
   GenerateRiderDiscountCodeInput,
+  GetNotificationAudienceCountParams,
   HealthStatus,
   LineupGenerateInput,
   ListDiscountCodesParams,
@@ -74,12 +78,16 @@ import type {
   MotoInput,
   MotoReorderInput,
   MotoUpdate,
+  NotificationAudienceCount,
+  NotificationLogEntry,
   OfflinePackageInfo,
   OfflineSyncUpload200,
   OrganizerUser,
   PointsTable,
   PointsTableInput,
+  PracticeSession,
   PublicSeriesItem,
+  PublicSeriesStanding,
   PublishInput,
   RaceDaySummary,
   RaceResult,
@@ -95,6 +103,10 @@ import type {
   RiderDetail,
   RiderDiscountCode,
   RiderInput,
+  RiderMaintenanceHistoryEntry,
+  RiderNotificationPrefResult,
+  RiderOrganization,
+  RiderSeriesEntry,
   RiderUpdate,
   Series,
   SeriesInput,
@@ -109,8 +121,10 @@ import type {
   TeamMember,
   UpcomingEventItem,
   UpdateMe,
+  UpdatePracticeSessionInput,
   UpdateResultLaps200,
   UpdateResultLapsInput,
+  UpdateRiderNotificationPrefInput,
   UpdateTeamMemberInput,
   UploadUrlRequest,
   UploadUrlResponse,
@@ -1799,6 +1813,155 @@ export const useDeleteClub = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteClubMutationOptions(options));
+    }
+
+export const getGetClubSettingsUrl = (clubId: number,) => {
+
+
+
+
+  return `/api/clubs/${clubId}/settings`
+}
+
+/**
+ * @summary Get club settings (rider acknowledgement, default classes)
+ */
+export const getClubSettings = async (clubId: number, options?: RequestInit): Promise<ClubSettings> => {
+
+  return customFetch<ClubSettings>(getGetClubSettingsUrl(clubId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetClubSettingsQueryKey = (clubId: number,) => {
+    return [
+    `/api/clubs/${clubId}/settings`
+    ] as const;
+    }
+
+
+export const getGetClubSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getClubSettings>>, TError = ErrorType<ErrorEnvelope>>(clubId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClubSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetClubSettingsQueryKey(clubId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getClubSettings>>> = ({ signal }) => getClubSettings(clubId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(clubId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getClubSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetClubSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getClubSettings>>>
+export type GetClubSettingsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Get club settings (rider acknowledgement, default classes)
+ */
+
+export function useGetClubSettings<TData = Awaited<ReturnType<typeof getClubSettings>>, TError = ErrorType<ErrorEnvelope>>(
+ clubId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getClubSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetClubSettingsQueryOptions(clubId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPutClubSettingsUrl = (clubId: number,) => {
+
+
+
+
+  return `/api/clubs/${clubId}/settings`
+}
+
+/**
+ * @summary Upsert club settings (rider acknowledgement, default classes)
+ */
+export const putClubSettings = async (clubId: number,
+    clubSettingsInput: ClubSettingsInput, options?: RequestInit): Promise<ClubSettings> => {
+
+  return customFetch<ClubSettings>(getPutClubSettingsUrl(clubId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      clubSettingsInput,)
+  }
+);}
+
+
+
+
+export const getPutClubSettingsMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof putClubSettings>>, TError,{clubId: number;data: BodyType<ClubSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof putClubSettings>>, TError,{clubId: number;data: BodyType<ClubSettingsInput>}, TContext> => {
+
+const mutationKey = ['putClubSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof putClubSettings>>, {clubId: number;data: BodyType<ClubSettingsInput>}> = (props) => {
+          const {clubId,data} = props ?? {};
+
+          return  putClubSettings(clubId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PutClubSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof putClubSettings>>>
+    export type PutClubSettingsMutationBody = BodyType<ClubSettingsInput>
+    export type PutClubSettingsMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Upsert club settings (rider acknowledgement, default classes)
+ */
+export const usePutClubSettings = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof putClubSettings>>, TError,{clubId: number;data: BodyType<ClubSettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof putClubSettings>>,
+        TError,
+        {clubId: number;data: BodyType<ClubSettingsInput>},
+        TContext
+      > => {
+      return useMutation(getPutClubSettingsMutationOptions(options));
     }
 
 export const getListEventsUrl = (params?: ListEventsParams,) => {
@@ -5191,6 +5354,373 @@ export const useDeletePointsTable = <TError = ErrorType<unknown>,
       return useMutation(getDeletePointsTableMutationOptions(options));
     }
 
+export const getListPracticeSessionsUrl = () => {
+
+
+
+
+  return `/api/practice`
+}
+
+/**
+ * @summary List open-practice sessions for the organizer's club
+ */
+export const listPracticeSessions = async ( options?: RequestInit): Promise<PracticeSession[]> => {
+
+  return customFetch<PracticeSession[]>(getListPracticeSessionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPracticeSessionsQueryKey = () => {
+    return [
+    `/api/practice`
+    ] as const;
+    }
+
+
+export const getListPracticeSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listPracticeSessions>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPracticeSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPracticeSessionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPracticeSessions>>> = ({ signal }) => listPracticeSessions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPracticeSessions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPracticeSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPracticeSessions>>>
+export type ListPracticeSessionsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List open-practice sessions for the organizer's club
+ */
+
+export function useListPracticeSessions<TData = Awaited<ReturnType<typeof listPracticeSessions>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPracticeSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPracticeSessionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreatePracticeSessionUrl = () => {
+
+
+
+
+  return `/api/practice`
+}
+
+/**
+ * @summary Create a new open-practice session (snapshots the club's track name)
+ */
+export const createPracticeSession = async (createPracticeSessionInput: CreatePracticeSessionInput, options?: RequestInit): Promise<PracticeSession> => {
+
+  return customFetch<PracticeSession>(getCreatePracticeSessionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createPracticeSessionInput,)
+  }
+);}
+
+
+
+
+export const getCreatePracticeSessionMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPracticeSession>>, TError,{data: BodyType<CreatePracticeSessionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPracticeSession>>, TError,{data: BodyType<CreatePracticeSessionInput>}, TContext> => {
+
+const mutationKey = ['createPracticeSession'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPracticeSession>>, {data: BodyType<CreatePracticeSessionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createPracticeSession(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePracticeSessionMutationResult = NonNullable<Awaited<ReturnType<typeof createPracticeSession>>>
+    export type CreatePracticeSessionMutationBody = BodyType<CreatePracticeSessionInput>
+    export type CreatePracticeSessionMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Create a new open-practice session (snapshots the club's track name)
+ */
+export const useCreatePracticeSession = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPracticeSession>>, TError,{data: BodyType<CreatePracticeSessionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPracticeSession>>,
+        TError,
+        {data: BodyType<CreatePracticeSessionInput>},
+        TContext
+      > => {
+      return useMutation(getCreatePracticeSessionMutationOptions(options));
+    }
+
+export const getGetPracticeSessionUrl = (sessionId: number,) => {
+
+
+
+
+  return `/api/practice/${sessionId}`
+}
+
+/**
+ * @summary Get a single practice session by ID
+ */
+export const getPracticeSession = async (sessionId: number, options?: RequestInit): Promise<PracticeSession> => {
+
+  return customFetch<PracticeSession>(getGetPracticeSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPracticeSessionQueryKey = (sessionId: number,) => {
+    return [
+    `/api/practice/${sessionId}`
+    ] as const;
+    }
+
+
+export const getGetPracticeSessionQueryOptions = <TData = Awaited<ReturnType<typeof getPracticeSession>>, TError = ErrorType<ErrorEnvelope>>(sessionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPracticeSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPracticeSessionQueryKey(sessionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPracticeSession>>> = ({ signal }) => getPracticeSession(sessionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(sessionId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPracticeSession>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPracticeSessionQueryResult = NonNullable<Awaited<ReturnType<typeof getPracticeSession>>>
+export type GetPracticeSessionQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Get a single practice session by ID
+ */
+
+export function useGetPracticeSession<TData = Awaited<ReturnType<typeof getPracticeSession>>, TError = ErrorType<ErrorEnvelope>>(
+ sessionId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPracticeSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPracticeSessionQueryOptions(sessionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdatePracticeSessionUrl = (sessionId: number,) => {
+
+
+
+
+  return `/api/practice/${sessionId}`
+}
+
+/**
+ * @summary Update a practice session (start, end, rename)
+ */
+export const updatePracticeSession = async (sessionId: number,
+    updatePracticeSessionInput: UpdatePracticeSessionInput, options?: RequestInit): Promise<PracticeSession> => {
+
+  return customFetch<PracticeSession>(getUpdatePracticeSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updatePracticeSessionInput,)
+  }
+);}
+
+
+
+
+export const getUpdatePracticeSessionMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePracticeSession>>, TError,{sessionId: number;data: BodyType<UpdatePracticeSessionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePracticeSession>>, TError,{sessionId: number;data: BodyType<UpdatePracticeSessionInput>}, TContext> => {
+
+const mutationKey = ['updatePracticeSession'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePracticeSession>>, {sessionId: number;data: BodyType<UpdatePracticeSessionInput>}> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  updatePracticeSession(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePracticeSessionMutationResult = NonNullable<Awaited<ReturnType<typeof updatePracticeSession>>>
+    export type UpdatePracticeSessionMutationBody = BodyType<UpdatePracticeSessionInput>
+    export type UpdatePracticeSessionMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Update a practice session (start, end, rename)
+ */
+export const useUpdatePracticeSession = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePracticeSession>>, TError,{sessionId: number;data: BodyType<UpdatePracticeSessionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePracticeSession>>,
+        TError,
+        {sessionId: number;data: BodyType<UpdatePracticeSessionInput>},
+        TContext
+      > => {
+      return useMutation(getUpdatePracticeSessionMutationOptions(options));
+    }
+
+export const getDeletePracticeSessionUrl = (sessionId: number,) => {
+
+
+
+
+  return `/api/practice/${sessionId}`
+}
+
+/**
+ * @summary Delete a practice session and all its crossings
+ */
+export const deletePracticeSession = async (sessionId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeletePracticeSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeletePracticeSessionMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePracticeSession>>, TError,{sessionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePracticeSession>>, TError,{sessionId: number}, TContext> => {
+
+const mutationKey = ['deletePracticeSession'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePracticeSession>>, {sessionId: number}> = (props) => {
+          const {sessionId} = props ?? {};
+
+          return  deletePracticeSession(sessionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePracticeSessionMutationResult = NonNullable<Awaited<ReturnType<typeof deletePracticeSession>>>
+
+    export type DeletePracticeSessionMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Delete a practice session and all its crossings
+ */
+export const useDeletePracticeSession = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePracticeSession>>, TError,{sessionId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePracticeSession>>,
+        TError,
+        {sessionId: number},
+        TContext
+      > => {
+      return useMutation(getDeletePracticeSessionMutationOptions(options));
+    }
+
 export const getGetClubDashboardUrl = (clubId: number,) => {
 
 
@@ -5505,6 +6035,386 @@ export function useListPublicSeries<TData = Awaited<ReturnType<typeof listPublic
 
 
 
+
+export const getGetPublicSeriesStandingsUrl = (seriesId: number,) => {
+
+
+
+
+  return `/api/public/series/${seriesId}/standings`
+}
+
+/**
+ * @summary Public series standings — top riders per class with AMA# and bike brand
+ */
+export const getPublicSeriesStandings = async (seriesId: number, options?: RequestInit): Promise<PublicSeriesStanding[]> => {
+
+  return customFetch<PublicSeriesStanding[]>(getGetPublicSeriesStandingsUrl(seriesId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicSeriesStandingsQueryKey = (seriesId: number,) => {
+    return [
+    `/api/public/series/${seriesId}/standings`
+    ] as const;
+    }
+
+
+export const getGetPublicSeriesStandingsQueryOptions = <TData = Awaited<ReturnType<typeof getPublicSeriesStandings>>, TError = ErrorType<ErrorEnvelope>>(seriesId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicSeriesStandings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicSeriesStandingsQueryKey(seriesId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicSeriesStandings>>> = ({ signal }) => getPublicSeriesStandings(seriesId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(seriesId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicSeriesStandings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicSeriesStandingsQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicSeriesStandings>>>
+export type GetPublicSeriesStandingsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary Public series standings — top riders per class with AMA# and bike brand
+ */
+
+export function useGetPublicSeriesStandings<TData = Awaited<ReturnType<typeof getPublicSeriesStandings>>, TError = ErrorType<ErrorEnvelope>>(
+ seriesId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicSeriesStandings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicSeriesStandingsQueryOptions(seriesId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetRiderMaintenanceHistoryUrl = (riderId: number,) => {
+
+
+
+
+  return `/api/rider/maintenance/${riderId}/history`
+}
+
+/**
+ * @summary List all maintenance history records for a rider, newest first
+ */
+export const getRiderMaintenanceHistory = async (riderId: number, options?: RequestInit): Promise<RiderMaintenanceHistoryEntry[]> => {
+
+  return customFetch<RiderMaintenanceHistoryEntry[]>(getGetRiderMaintenanceHistoryUrl(riderId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRiderMaintenanceHistoryQueryKey = (riderId: number,) => {
+    return [
+    `/api/rider/maintenance/${riderId}/history`
+    ] as const;
+    }
+
+
+export const getGetRiderMaintenanceHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getRiderMaintenanceHistory>>, TError = ErrorType<ErrorEnvelope>>(riderId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderMaintenanceHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRiderMaintenanceHistoryQueryKey(riderId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRiderMaintenanceHistory>>> = ({ signal }) => getRiderMaintenanceHistory(riderId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(riderId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRiderMaintenanceHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRiderMaintenanceHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getRiderMaintenanceHistory>>>
+export type GetRiderMaintenanceHistoryQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List all maintenance history records for a rider, newest first
+ */
+
+export function useGetRiderMaintenanceHistory<TData = Awaited<ReturnType<typeof getRiderMaintenanceHistory>>, TError = ErrorType<ErrorEnvelope>>(
+ riderId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderMaintenanceHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRiderMaintenanceHistoryQueryOptions(riderId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetRiderSeriesUrl = () => {
+
+
+
+
+  return `/api/rider/series`
+}
+
+/**
+ * @summary List all series the authenticated rider is enrolled in, with their points and position
+ */
+export const getRiderSeries = async ( options?: RequestInit): Promise<RiderSeriesEntry[]> => {
+
+  return customFetch<RiderSeriesEntry[]>(getGetRiderSeriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRiderSeriesQueryKey = () => {
+    return [
+    `/api/rider/series`
+    ] as const;
+    }
+
+
+export const getGetRiderSeriesQueryOptions = <TData = Awaited<ReturnType<typeof getRiderSeries>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderSeries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRiderSeriesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRiderSeries>>> = ({ signal }) => getRiderSeries({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRiderSeries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRiderSeriesQueryResult = NonNullable<Awaited<ReturnType<typeof getRiderSeries>>>
+export type GetRiderSeriesQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List all series the authenticated rider is enrolled in, with their points and position
+ */
+
+export function useGetRiderSeries<TData = Awaited<ReturnType<typeof getRiderSeries>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderSeries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRiderSeriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetRiderOrganizationsUrl = () => {
+
+
+
+
+  return `/api/rider/my-organizations`
+}
+
+/**
+ * @summary List all clubs the authenticated rider has ever registered with, with notification prefs
+ */
+export const getRiderOrganizations = async ( options?: RequestInit): Promise<RiderOrganization[]> => {
+
+  return customFetch<RiderOrganization[]>(getGetRiderOrganizationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRiderOrganizationsQueryKey = () => {
+    return [
+    `/api/rider/my-organizations`
+    ] as const;
+    }
+
+
+export const getGetRiderOrganizationsQueryOptions = <TData = Awaited<ReturnType<typeof getRiderOrganizations>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderOrganizations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRiderOrganizationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRiderOrganizations>>> = ({ signal }) => getRiderOrganizations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRiderOrganizations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRiderOrganizationsQueryResult = NonNullable<Awaited<ReturnType<typeof getRiderOrganizations>>>
+export type GetRiderOrganizationsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List all clubs the authenticated rider has ever registered with, with notification prefs
+ */
+
+export function useGetRiderOrganizations<TData = Awaited<ReturnType<typeof getRiderOrganizations>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderOrganizations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRiderOrganizationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateRiderOrganizationNotificationsUrl = (clubId: number,) => {
+
+
+
+
+  return `/api/rider/my-organizations/${clubId}/notifications`
+}
+
+/**
+ * @summary Update notification preference for a specific club
+ */
+export const updateRiderOrganizationNotifications = async (clubId: number,
+    updateRiderNotificationPrefInput: UpdateRiderNotificationPrefInput, options?: RequestInit): Promise<RiderNotificationPrefResult> => {
+
+  return customFetch<RiderNotificationPrefResult>(getUpdateRiderOrganizationNotificationsUrl(clubId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateRiderNotificationPrefInput,)
+  }
+);}
+
+
+
+
+export const getUpdateRiderOrganizationNotificationsMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRiderOrganizationNotifications>>, TError,{clubId: number;data: BodyType<UpdateRiderNotificationPrefInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateRiderOrganizationNotifications>>, TError,{clubId: number;data: BodyType<UpdateRiderNotificationPrefInput>}, TContext> => {
+
+const mutationKey = ['updateRiderOrganizationNotifications'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateRiderOrganizationNotifications>>, {clubId: number;data: BodyType<UpdateRiderNotificationPrefInput>}> = (props) => {
+          const {clubId,data} = props ?? {};
+
+          return  updateRiderOrganizationNotifications(clubId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateRiderOrganizationNotificationsMutationResult = NonNullable<Awaited<ReturnType<typeof updateRiderOrganizationNotifications>>>
+    export type UpdateRiderOrganizationNotificationsMutationBody = BodyType<UpdateRiderNotificationPrefInput>
+    export type UpdateRiderOrganizationNotificationsMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Update notification preference for a specific club
+ */
+export const useUpdateRiderOrganizationNotifications = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRiderOrganizationNotifications>>, TError,{clubId: number;data: BodyType<UpdateRiderNotificationPrefInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateRiderOrganizationNotifications>>,
+        TError,
+        {clubId: number;data: BodyType<UpdateRiderNotificationPrefInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateRiderOrganizationNotificationsMutationOptions(options));
+    }
 
 export const getListStatesUrl = () => {
 
@@ -7441,4 +8351,165 @@ export const useSendAnthropicMessage = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getSendAnthropicMessageMutationOptions(options));
     }
+
+export const getGetNotificationAudienceCountUrl = (params: GetNotificationAudienceCountParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/notifications/audience-count?${stringifiedParams}` : `/api/admin/notifications/audience-count`
+}
+
+/**
+ * @summary Get recipient count for a notification audience
+ */
+export const getNotificationAudienceCount = async (params: GetNotificationAudienceCountParams, options?: RequestInit): Promise<NotificationAudienceCount> => {
+
+  return customFetch<NotificationAudienceCount>(getGetNotificationAudienceCountUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNotificationAudienceCountQueryKey = (params?: GetNotificationAudienceCountParams,) => {
+    return [
+    `/api/admin/notifications/audience-count`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetNotificationAudienceCountQueryOptions = <TData = Awaited<ReturnType<typeof getNotificationAudienceCount>>, TError = ErrorType<void>>(params: GetNotificationAudienceCountParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNotificationAudienceCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNotificationAudienceCountQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNotificationAudienceCount>>> = ({ signal }) => getNotificationAudienceCount(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNotificationAudienceCount>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNotificationAudienceCountQueryResult = NonNullable<Awaited<ReturnType<typeof getNotificationAudienceCount>>>
+export type GetNotificationAudienceCountQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get recipient count for a notification audience
+ */
+
+export function useGetNotificationAudienceCount<TData = Awaited<ReturnType<typeof getNotificationAudienceCount>>, TError = ErrorType<void>>(
+ params: GetNotificationAudienceCountParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNotificationAudienceCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNotificationAudienceCountQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetNotificationHistoryUrl = () => {
+
+
+
+
+  return `/api/admin/notifications/history`
+}
+
+/**
+ * @summary Get recent notification send history
+ */
+export const getNotificationHistory = async ( options?: RequestInit): Promise<NotificationLogEntry[]> => {
+
+  return customFetch<NotificationLogEntry[]>(getGetNotificationHistoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNotificationHistoryQueryKey = () => {
+    return [
+    `/api/admin/notifications/history`
+    ] as const;
+    }
+
+
+export const getGetNotificationHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getNotificationHistory>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNotificationHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNotificationHistoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNotificationHistory>>> = ({ signal }) => getNotificationHistory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNotificationHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetNotificationHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getNotificationHistory>>>
+export type GetNotificationHistoryQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get recent notification send history
+ */
+
+export function useGetNotificationHistory<TData = Awaited<ReturnType<typeof getNotificationHistory>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNotificationHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetNotificationHistoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
