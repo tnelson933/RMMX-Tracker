@@ -206,6 +206,8 @@ export class SyncEngine {
     // queryClient.invalidateQueries() and refresh the UI after cloud pulls.
     this.setStatus("syncing");
 
+    let pushErrorMsg: string | undefined;
+
     try {
       await this.ensureSession();
       // Check pending count AFTER ensureSession() so we don't miss writes
@@ -213,16 +215,29 @@ export class SyncEngine {
       // session cookie.  A stale count of 0 would skip pushQueue() and the
       // subsequent pullCloud() would overwrite the unsaved local change.
       const pending = this.getPendingCount();
-      // Always push pending writes first, then pull cloud changes.
-      // pullCloud() runs unconditionally so web-portal changes (e.g. new
-      // registrations added online) are synced down on every online cycle,
-      // not only when there is a local write pending.
       if (pending > 0) {
-        await this.pushQueue();
+        try {
+          await this.pushQueue();
+        } catch (pushErr) {
+          // Push failed — capture the error but do NOT re-throw.
+          // pullCloud() is always safe to run even with pending local writes
+          // because upsertPulled() skips rows whose ids are in _write_queue
+          // (pendingIds guard), so local changes are never overwritten.
+          // Blocking the pull on push failures means cloud-created events
+          // (or any web-portal changes) can never appear on the desktop
+          // while a push is stuck — that is the bug this fixes.
+          pushErrorMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+        }
       }
       await this.pullCloud();
       this.lastSyncedAt = new Date().toISOString();
-      this.setStatus("idle", "");
+      if (pushErrorMsg) {
+        // Pull succeeded but push has outstanding failures — stay in error so
+        // the sync bar keeps showing the push problem until it clears.
+        this.setStatus("error", pushErrorMsg);
+      } else {
+        this.setStatus("idle", "");
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.setStatus("error", msg);
@@ -369,23 +384,10 @@ export class SyncEngine {
       payload["_deletes"] = deletesByTable;
     }
 
-    const res = await fetch(
-      `${this.cloudUrl}/api/clubs/${this.clubId}/desktop-push`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: this.sessionCookie!,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
-
-    const now = new Date().toISOString();
-    const body = await res.text();
-
-    if (!res.ok) {
-      const errMsg = `Push failed (${res.status}): ${body}`;
+    // Helper to mark all queued rows as failed (increments attempt_count).
+    // Called for both HTTP-level errors and network-level fetch() throws so
+    // that rows are eventually dead-lettered and no longer block the pull.
+    const markFailed = (errMsg: string) => {
       this.db
         .prepare(
           "UPDATE _write_queue SET attempt_count = attempt_count + 1, error = ? WHERE id IN (" +
@@ -393,6 +395,36 @@ export class SyncEngine {
             ")",
         )
         .run(errMsg, ...rows.map((r) => r.id));
+    };
+
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.cloudUrl}/api/clubs/${this.clubId}/desktop-push`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Cookie: this.sessionCookie!,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+    } catch (fetchErr) {
+      // Network-level error (ECONNREFUSED, timeout, etc.) — increment attempt
+      // counts so rows are eventually dead-lettered after MAX_ATTEMPTS and
+      // no longer block pullCloud().
+      const errMsg = `Push network error: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`;
+      markFailed(errMsg);
+      throw new Error(errMsg);
+    }
+
+    const now = new Date().toISOString();
+    const body = await res.text();
+
+    if (!res.ok) {
+      const errMsg = `Push failed (${res.status}): ${body}`;
+      markFailed(errMsg);
       throw new Error(errMsg);
     }
 
