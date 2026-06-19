@@ -36,6 +36,7 @@ export interface BikeInfo {
   bikeModel: string;
   bikeYear: string;
   rideExperience: string; // "beginner" | "intermediate" | "advanced" | "expert"
+  bikeHours: string; // current engine hours on the bike
 }
 
 interface AuthContextType {
