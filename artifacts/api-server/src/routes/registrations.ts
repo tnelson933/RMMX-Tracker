@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable } from "@workspace/db";
+import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable } from "@workspace/db";
 import { eq, and, sql, desc, ne, isNull } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 
@@ -105,6 +105,7 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     displayLastName: registrationsTable.displayLastName,
     myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
     transponderRental: registrationsTable.transponderRental,
+    waiverAcknowledgedAt: registrationsTable.waiverAcknowledgedAt,
     riderFirstName: ridersTable.firstName,
     riderLastName: ridersTable.lastName,
     email: ridersTable.email,
@@ -145,6 +146,7 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     myLapsTransponderNumber: r.myLapsTransponderNumber ?? null,
     transponderRental: r.transponderRental ?? false,
     rfidNumber: r.rfidNumber ?? null,
+    waiverAcknowledgedAt: r.waiverAcknowledgedAt ? r.waiverAcknowledgedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
     };
   }));
@@ -403,6 +405,49 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
   }
 });
 
+// ── Organizer: waiver acknowledgment history for a rider ──────────────────────
+router.get("/clubs/:clubId/riders/:riderId/waiver-acknowledgments", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const clubId = Number(req.params.clubId);
+  const riderId = Number(req.params.riderId);
+
+  // Enforce club scope: non-super-admin staff may only query their own club
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null && staffCId !== clubId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const rows = await db.select({
+    id: registrationsTable.id,
+    waiverAcknowledgedAt: registrationsTable.waiverAcknowledgedAt,
+    waiverSnapshot: registrationsTable.waiverSnapshot,
+    eventId: eventsTable.id,
+    eventName: eventsTable.name,
+    eventDate: eventsTable.date,
+  })
+    .from(registrationsTable)
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(
+      and(
+        eq(registrationsTable.riderId, riderId),
+        eq(eventsTable.clubId, clubId),
+        sql`${registrationsTable.waiverAcknowledgedAt} IS NOT NULL`,
+      )
+    )
+    .orderBy(desc(registrationsTable.waiverAcknowledgedAt));
+
+  return res.json(rows.map(r => ({
+    id: r.id,
+    eventId: r.eventId,
+    eventName: r.eventName,
+    eventDate: typeof r.eventDate === "string" ? r.eventDate : (r.eventDate as Date).toISOString(),
+    waiverAcknowledgedAt: r.waiverAcknowledgedAt ? r.waiverAcknowledgedAt.toISOString() : null,
+    waiverSnapshot: r.waiverSnapshot,
+  })));
+});
+
 // ── Public: check if a bib number is already taken for an event ───────────────
 router.get("/public/events/:eventId/check-bib", async (req, res) => {
   const eventId = Number(req.params.eventId);
@@ -426,6 +471,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const rows = await db.select({
     id: eventsTable.id,
+    clubId: eventsTable.clubId,
     name: eventsTable.name,
     date: eventsTable.date,
     state: eventsTable.state,
@@ -448,23 +494,35 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     purchaseOptions: eventsTable.purchaseOptions,
     noDuplicateBibs: eventsTable.noDuplicateBibs,
     requireClubId: eventsTable.requireClubId,
+    requireWaiver: eventsTable.requireWaiver,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));
 
   if (!rows[0]) return res.status(404).json({ error: "Event not found" });
   const e = rows[0];
+
+  // If waiver is required, fetch the club's waiver text
+  let waiverText: string | null = null;
+  if (e.requireWaiver) {
+    const [settings] = await db.select({ riderAcknowledgement: clubSettingsTable.riderAcknowledgement })
+      .from(clubSettingsTable)
+      .where(eq(clubSettingsTable.clubId, e.clubId));
+    waiverText = settings?.riderAcknowledgement ?? null;
+  }
+
   return res.json({
     ...e,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
     transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
+    waiverText,
   });
 });
 
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, hometown, homeState, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode, categoryId } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, hometown, homeState, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode, categoryId, waiverAcknowledgedAt } = req.body;
 
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, and raceClass are required" });
@@ -478,6 +536,21 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   }
   if (events[0].requireClubId && !clubIdNumber) {
     return res.status(400).json({ error: "Club ID # is required for this event" });
+  }
+  if (events[0].requireWaiver && !waiverAcknowledgedAt) {
+    return res.status(400).json({ error: "You must accept the club waiver to complete registration" });
+  }
+
+  // Fetch waiver text server-side so the snapshot can't be spoofed by the client
+  let serverWaiverSnapshot: string | null = null;
+  if (events[0].requireWaiver && waiverAcknowledgedAt) {
+    const [settings] = await db.select({ riderAcknowledgement: clubSettingsTable.riderAcknowledgement })
+      .from(clubSettingsTable)
+      .where(eq(clubSettingsTable.clubId, events[0].clubId));
+    serverWaiverSnapshot = settings?.riderAcknowledgement ?? null;
+    if (!serverWaiverSnapshot) {
+      return res.status(400).json({ error: "No waiver text configured for this event's club" });
+    }
   }
   if (events[0].status !== "registration_open") {
     return res.status(409).json({ error: "Registration is not currently open for this event" });
@@ -645,6 +718,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     selectedPurchaseOptions: Array.isArray(selectedPurchaseOptions) ? selectedPurchaseOptions : [],
     compCode: validatedCompCode,
     compDiscount: compDiscount > 0 ? String(compDiscount) : null,
+    waiverAcknowledgedAt: waiverAcknowledgedAt ? new Date(waiverAcknowledgedAt) : null,
+    waiverSnapshot: serverWaiverSnapshot,
   }).returning();
 
   // Mark comp code as used
