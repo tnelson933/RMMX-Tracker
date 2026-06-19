@@ -3,6 +3,94 @@ import { getDb } from "./db";
 export function initDb() {
   const db = getDb();
 
+  // ── MIGRATION: Add AUTOINCREMENT to the events table ─────────────────────
+  // Without AUTOINCREMENT, desktop-created events start at ID=1 and collide
+  // with cloud events (Postgres also starts at 1).  The collision puts the
+  // desktop event ID into _write_queue, which then appears in pendingIds and
+  // permanently blocks the cloud version from being upserted during pull.
+  // The migration must run BEFORE the CREATE TRIGGER statements below so that
+  // the triggers (re)created by CREATE TRIGGER IF NOT EXISTS are on the new table.
+  {
+    const row = db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='events'",
+      )
+      .get() as { sql: string } | undefined;
+
+    if (row && !row.sql.toUpperCase().includes("AUTOINCREMENT")) {
+      // Determine which columns the old table actually has so we only copy what
+      // both old and new tables share (avoids "no such column" errors on older DBs).
+      const existingCols = (
+        db.prepare("PRAGMA table_info(events)").all() as Array<{ name: string }>
+      ).map((r) => r.name);
+
+      const newCols = [
+        "id", "club_id", "name", "date", "location", "state", "track_name",
+        "race_classes", "registration_open", "registration_close", "status",
+        "payment_enabled", "require_ama", "entry_fee", "max_riders",
+        "race_class_limits", "purchase_options", "image_url",
+        "timing_technology", "transponder_rental_enabled",
+        "transponder_rental_fee", "no_duplicate_bibs", "require_club_id",
+        "scoring_table_id", "entry_fee_category_id", "min_lap_ms",
+        "ama_event_id", "end_date", "created_at", "image_sync_attempts",
+      ];
+      const colsToCopy = newCols.filter((c) => existingCols.includes(c));
+      const colList = colsToCopy.join(", ");
+
+      // Wrap in a transaction: if anything fails, the original table is untouched.
+      db.transaction(() => {
+        db.prepare("DROP TABLE IF EXISTS events_new").run();
+        db.prepare(`
+          CREATE TABLE events_new (
+            id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+            club_id                    INTEGER NOT NULL,
+            name                       TEXT NOT NULL,
+            date                       TEXT NOT NULL,
+            location                   TEXT,
+            state                      TEXT NOT NULL DEFAULT '',
+            track_name                 TEXT,
+            race_classes               TEXT NOT NULL DEFAULT '[]',
+            registration_open          TEXT,
+            registration_close         TEXT,
+            status                     TEXT NOT NULL DEFAULT 'draft',
+            payment_enabled            INTEGER NOT NULL DEFAULT 0,
+            require_ama                INTEGER NOT NULL DEFAULT 0,
+            entry_fee                  TEXT,
+            max_riders                 INTEGER,
+            race_class_limits          TEXT NOT NULL DEFAULT '{}',
+            purchase_options           TEXT NOT NULL DEFAULT '[]',
+            image_url                  TEXT,
+            timing_technology          TEXT NOT NULL DEFAULT 'rfid',
+            transponder_rental_enabled INTEGER NOT NULL DEFAULT 0,
+            transponder_rental_fee     TEXT,
+            no_duplicate_bibs          INTEGER NOT NULL DEFAULT 0,
+            require_club_id            INTEGER NOT NULL DEFAULT 0,
+            scoring_table_id           INTEGER,
+            entry_fee_category_id      INTEGER,
+            min_lap_ms                 INTEGER,
+            ama_event_id               TEXT,
+            end_date                   TEXT,
+            created_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+            image_sync_attempts        INTEGER NOT NULL DEFAULT 0
+          )
+        `).run();
+        db.prepare(
+          `INSERT INTO events_new (${colList}) SELECT ${colList} FROM events`,
+        ).run();
+        // Fix up sqlite_sequence so the new table knows its max-seen ID
+        try {
+          db.prepare(
+            "UPDATE sqlite_sequence SET name = 'events' WHERE name = 'events_new'",
+          ).run();
+        } catch { /* sqlite_sequence may not exist yet */ }
+        db.prepare("DROP TABLE events").run();
+        db.prepare("ALTER TABLE events_new RENAME TO events").run();
+      })();
+      // Triggers on the old table were dropped with it; CREATE TRIGGER IF NOT
+      // EXISTS below will recreate them on the new table.
+    }
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS clubs (
       id         INTEGER PRIMARY KEY,
@@ -23,7 +111,7 @@ export function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS events (
-      id                         INTEGER PRIMARY KEY,
+      id                         INTEGER PRIMARY KEY AUTOINCREMENT,
       club_id                    INTEGER NOT NULL,
       name                       TEXT NOT NULL,
       date                       TEXT NOT NULL,
