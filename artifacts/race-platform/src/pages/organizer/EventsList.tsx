@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw } from "lucide-react";
 import { format, parseISO } from "date-fns";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -156,13 +156,17 @@ export default function EventsList() {
     }
   }
 
-  // Auto-open create dialog when navigated here with ?create=true (e.g. from Dashboard "New Event" button)
+  const search = useSearch();
+
+  // Auto-open create dialog when navigated here with ?create=true.
+  // Depends on `search` so it re-fires even when the component is already mounted
+  // (e.g. clicking "New Event" from Dashboard while already on the Events page).
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("create") === "true") {
+    if (new URLSearchParams(search).get("create") === "true") {
       setIsCreateOpen(true);
       window.history.replaceState({}, "", window.location.pathname);
     }
-  }, []);
+  }, [search]);
 
   // Check Stripe Connect status — works on both cloud and local server
   const { data: stripeStatus } = useQuery({
