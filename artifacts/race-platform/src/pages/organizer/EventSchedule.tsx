@@ -545,15 +545,15 @@ interface MotoCardProps {
   onCountdownExpire?: () => void;
   onDelete?: () => void;
   isMotoCardDragging?: boolean;
-  staggerPartner?: Moto | null;
-  onUnstagger?: () => void;
+  staggerGroup?: Moto[];
+  onUnstaggerMoto?: (motoId: number) => void;
 }
 
 function SortableMotoCard({
   moto, index, eventId, isPoolDropTarget,
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
   isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire, onDelete,
-  isMotoCardDragging, staggerPartner, onUnstagger,
+  isMotoCardDragging, staggerGroup, onUnstaggerMoto,
 }: MotoCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: moto.id });
 
@@ -572,7 +572,9 @@ function SortableMotoCard({
   const isCountdownActive = isCountdownMode && moto.status === "in_progress" && countdownSeconds != null;
   const isCountdownComplete = isCountdownMode && isCompleted && (moto as any).startedAt != null;
 
-  const isAlreadyStaggered = !!(moto as any).staggeredWithMotoId;
+  const isAlreadyStaggered = !!(moto as any).staggeredGroupId;
+  const staggerOrder: number = (moto as any).staggeredOrder ?? 0;
+  const groupMembers = staggerGroup ?? [];
 
   return (
     <div
@@ -583,7 +585,7 @@ function SortableMotoCard({
           ? "border-muted bg-muted/10"
           : isPoolDropTarget
           ? "border-primary/60 bg-primary/5 ring-2 ring-inset ring-primary/20"
-          : staggerPartner
+          : groupMembers.length > 0
           ? "border-primary/40 ring-1 ring-primary/20"
           : "border-sidebar-border hover:border-primary/40"
       }`}
@@ -593,22 +595,29 @@ function SortableMotoCard({
         <StaggerDropZone motoId={moto.id} />
       )}
 
-      {/* ── Stagger partner banner ── */}
-      {staggerPartner && (
-        <div className="flex items-center gap-2 px-4 py-1.5 bg-primary/5 border-b border-primary/20 rounded-t-lg">
-          <Link2 size={12} className="text-primary shrink-0" />
-          <span className="text-xs font-semibold text-primary">Staggered start with {staggerPartner.name}</span>
-          <span className="text-[10px] text-muted-foreground">(starts first)</span>
-          {onUnstagger && (
-            <button
-              onClick={onUnstagger}
-              className="ml-auto shrink-0 text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1 text-[10px]"
-              title="Remove stagger link"
-            >
-              <Unlink2 size={11} />
-              Unlink
-            </button>
-          )}
+      {/* ── Stagger group banner ── */}
+      {groupMembers.length > 0 && (
+        <div className="px-4 py-1.5 bg-primary/5 border-b border-primary/20 rounded-t-lg">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link2 size={12} className="text-primary shrink-0" />
+            <span className="text-xs font-semibold text-primary">
+              Staggered Group — {groupMembers.length} motos
+            </span>
+            <span className="text-[10px] text-muted-foreground">starts {staggerOrder === 1 ? "1st" : `${staggerOrder}${staggerOrder === 2 ? "nd" : staggerOrder === 3 ? "rd" : "th"}`}</span>
+            <div className="ml-auto flex items-center gap-1">
+              {groupMembers.map(gm => (
+                <button
+                  key={gm.id}
+                  onClick={() => onUnstaggerMoto?.(gm.id)}
+                  className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-border hover:border-destructive/60 hover:text-destructive text-muted-foreground transition-colors"
+                  title={`Remove ${gm.name} from group`}
+                >
+                  <X size={9} />
+                  {gm.name}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -742,21 +751,27 @@ function SortableMotoCard({
         </div>
       )}
 
-      {/* ── Partner moto lineup (stagger order=1 card shows partner riders) ── */}
-      {staggerPartner && isExpanded && (() => {
-        const partnerLineup = Array.isArray(staggerPartner.lineup)
-          ? (staggerPartner.lineup as LineupEntry[])
-          : [];
+      {/* ── Group member lineups (order=1 card shows all other members' riders) ── */}
+      {staggerOrder === 1 && groupMembers.length > 1 && isExpanded && (() => {
+        const others = groupMembers.filter(gm => gm.id !== moto.id);
         return (
-          <div className="border-t-2 border-primary/30 px-4 py-2">
+          <>
+            {others.map((partner, pIdx) => {
+              const partnerLineup = Array.isArray(partner.lineup)
+                ? (partner.lineup as LineupEntry[])
+                : [];
+              const startPos = (partner as any).staggeredOrder ?? (pIdx + 2);
+              const posSuffix = startPos === 2 ? "nd" : startPos === 3 ? "rd" : "th";
+              return (
+          <div key={partner.id} className="border-t-2 border-primary/30 px-4 py-2">
             <div className="flex items-center gap-1.5 mb-1.5">
               <Link2 size={10} className="text-primary" />
               <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                {staggerPartner.name} — starts second
+                {partner.name} — starts {startPos}{posSuffix}
               </span>
             </div>
             {partnerLineup.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-1">No riders in partner moto yet</p>
+              <p className="text-xs text-muted-foreground py-1">No riders in this moto yet</p>
             ) : (
               <div className="space-y-0.5 opacity-80">
                 {partnerLineup.map((entry, i) => (
@@ -772,7 +787,10 @@ function SortableMotoCard({
             )}
           </div>
         );
-      })()}
+      })}
+    </>
+  );
+})()}
     </div>
   );
 }
@@ -1144,7 +1162,7 @@ export default function EventSchedule() {
   // ── Delete confirm state ──
   const [deleteConfirmMotoId, setDeleteConfirmMotoId] = useState<number | null>(null);
   const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
-  const [staggerPendingPair, setStaggerPendingPair] = useState<{ motoId1: number; motoId2: number } | null>(null);
+  const [staggerPendingGroup, setStaggerPendingGroup] = useState<{ orderedMotoIds: number[] } | null>(null);
 
   // ── Mutations ──
   const reorderMutation = useReorderMotos();
@@ -1355,7 +1373,11 @@ export default function EventSchedule() {
   // Compute each moto's position in the full day's run order (excluding stagger-2 motos),
   // so the number shown on each card never changes when a filter pill is active.
   const globalMotoIndexMap = useMemo(() => {
-    const allVisible = sortedMotos.filter(m => (m as any).staggeredOrder !== 2);
+    const allVisible = sortedMotos.filter(m => {
+      const gid = (m as any).staggeredGroupId;
+      const ord = (m as any).staggeredOrder;
+      return !(gid && ord > 1);
+    });
     return new Map(allVisible.map((m, i) => [m.id, i]));
   }, [sortedMotos]);
 
@@ -1587,7 +1609,20 @@ export default function EventSchedule() {
     if (overStr2.startsWith("stagger-") && typeof active.id === "number") {
       const targetMotoId = parseInt(overStr2.replace("stagger-", ""));
       if (!isNaN(targetMotoId) && active.id !== targetMotoId) {
-        setStaggerPendingPair({ motoId1: active.id, motoId2: targetMotoId });
+        const draggedMoto = rawMotos.find(m => m.id === (active.id as number));
+        const targetMoto = rawMotos.find(m => m.id === targetMotoId);
+        // If either is already in a group, seed dialog with that group + the new moto
+        const existingGroupMembers: number[] =
+          (draggedMoto as any)?.staggeredGroupMembers ||
+          (targetMoto as any)?.staggeredGroupMembers || [];
+        let seedIds: number[];
+        if (existingGroupMembers.length > 0) {
+          const extra = [active.id as number, targetMotoId].find(id => !existingGroupMembers.includes(id));
+          seedIds = extra ? [...existingGroupMembers, extra] : existingGroupMembers;
+        } else {
+          seedIds = [active.id as number, targetMotoId];
+        }
+        setStaggerPendingGroup({ orderedMotoIds: seedIds });
         return;
       }
     }
@@ -2174,8 +2209,12 @@ export default function EventSchedule() {
 
             {/* ── Run-order view ── */}
             {viewMode === "run-order" && filteredMotos.length > 0 && (() => {
-              // Stagger order=2 motos are rendered inside their order=1 partner; exclude them
-              const visibleMotos = filteredMotos.filter(m => (m as any).staggeredOrder !== 2);
+              // Stagger order>1 motos are rendered inside the order=1 card; exclude them
+              const visibleMotos = filteredMotos.filter(m => {
+                const gid = (m as any).staggeredGroupId;
+                const ord = (m as any).staggeredOrder;
+                return !(gid && ord > 1);
+              });
               const isMotoBeingDragged = activeDrag?.source === "moto";
               return (
                 <SortableContext items={visibleMotos.map(m => m.id)} strategy={verticalListSortingStrategy}>
@@ -2185,9 +2224,10 @@ export default function EventSchedule() {
                       return visibleMotos.map((moto, index) => {
                         const showSection = moto.type !== lastType;
                         lastType = moto.type;
-                        const staggerPartner = (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
-                          ? (rawMotos.find(m => m.id === (moto as any).staggeredWithMotoId) ?? null)
-                          : null;
+                        const groupMemberIds: number[] = (moto as any).staggeredGroupMembers ?? [];
+                        const staggerGroup: Moto[] = groupMemberIds
+                          .map(id => rawMotos.find(m => m.id === id))
+                          .filter((m): m is Moto => !!m);
                         const globalIndex = globalMotoIndexMap.get(moto.id) ?? index;
                         return (
                           <div key={moto.id}>
@@ -2216,10 +2256,10 @@ export default function EventSchedule() {
                               onCountdownExpire={() => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) })}
                               onDelete={() => setDeleteConfirmMotoId(moto.id)}
                               isMotoCardDragging={isMotoBeingDragged && activeDrag?.motoId !== moto.id}
-                              staggerPartner={staggerPartner}
-                              onUnstagger={staggerPartner ? () => {
+                              staggerGroup={staggerGroup.length > 0 ? staggerGroup : undefined}
+                              onUnstaggerMoto={staggerGroup.length > 0 ? (motoId: number) => {
                                 unlinkStaggerMutation.mutate(
-                                  { motoId: moto.id },
+                                  { motoId },
                                   { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any }) }
                                 );
                               } : undefined}
@@ -2295,56 +2335,131 @@ export default function EventSchedule() {
         ) : null}
       </DragOverlay>
 
-      {/* ── Stagger "which starts first?" dialog ── */}
-      {staggerPendingPair && (() => {
-        const m1 = rawMotos.find(m => m.id === staggerPendingPair.motoId1);
-        const m2 = rawMotos.find(m => m.id === staggerPendingPair.motoId2);
-        if (!m1 || !m2) return null;
+      {/* ── Stagger group dialog ── */}
+      {staggerPendingGroup && (() => {
+        const orderedIds = staggerPendingGroup.orderedMotoIds;
+        const orderedMotos = orderedIds.map(id => rawMotos.find(m => m.id === id)).filter((m): m is Moto => !!m);
+        const moveMoto = (fromIdx: number, toIdx: number) => {
+          setStaggerPendingGroup(prev => {
+            if (!prev) return null;
+            const ids = [...prev.orderedMotoIds];
+            [ids[fromIdx], ids[toIdx]] = [ids[toIdx], ids[fromIdx]];
+            return { orderedMotoIds: ids };
+          });
+        };
+        const removeMoto = (motoId: number) => {
+          setStaggerPendingGroup(prev => {
+            if (!prev) return null;
+            const ids = prev.orderedMotoIds.filter(id => id !== motoId);
+            return ids.length >= 2 ? { orderedMotoIds: ids } : null;
+          });
+        };
+        const addMoto = (motoId: number) => {
+          setStaggerPendingGroup(prev => {
+            if (!prev || prev.orderedMotoIds.includes(motoId)) return prev;
+            return { orderedMotoIds: [...prev.orderedMotoIds, motoId] };
+          });
+        };
+        const availableToAdd = rawMotos.filter(m =>
+          !orderedIds.includes(m.id) &&
+          m.type !== "practice" &&
+          m.status !== "completed" &&
+          !(m as any).staggeredGroupId  // exclude motos already in a different group
+        );
+        const ordSuffix = (n: number) => n === 1 ? "1st" : n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`;
         return (
-          <AlertDialog open onOpenChange={open => { if (!open) setStaggerPendingPair(null); }}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle className="flex items-center gap-2">
+          <Dialog open onOpenChange={open => { if (!open) setStaggerPendingGroup(null); }}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 font-heading uppercase tracking-wider">
                   <Link2 size={16} className="text-primary" />
-                  Link staggered start
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  These two motos will run simultaneously but be scored independently. Which one starts first?
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <div className="flex flex-col gap-2 py-2">
-                {[m1, m2].map(m => (
-                  <button
-                    key={m.id}
-                    className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:border-primary/60 hover:bg-primary/5 transition-colors text-left"
-                    onClick={() => {
-                      const otherId = m.id === m1.id ? m2.id : m1.id;
-                      linkStaggerMutation.mutate(
-                        { eventId, data: { motoId1: m.id, motoId2: otherId, firstMotoId: m.id } },
-                        {
-                          onSuccess: () => {
-                            queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
-                            toast({ title: `${m.name} starts first — stagger linked` });
-                          },
-                          onError: () => toast({ title: "Failed to link stagger", variant: "destructive" }),
-                        }
-                      );
-                      setStaggerPendingPair(null);
-                    }}
-                  >
-                    <Flag size={14} className="text-primary shrink-0" />
-                    <div>
-                      <div className="font-semibold text-sm">{m.name}</div>
+                  Link Staggered Start Group
+                </DialogTitle>
+                <DialogDescription>
+                  Set the start order. All motos run simultaneously but are scored independently.
+                  Drag motos to reorder, or use the arrows.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1.5 py-1">
+                {orderedMotos.map((m, idx) => (
+                  <div key={m.id} className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-border bg-card">
+                    <span className="w-7 text-center text-xs font-bold text-primary font-mono shrink-0">
+                      {ordSuffix(idx + 1)}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate">{m.name}</div>
                       <div className="text-xs text-muted-foreground">{m.raceClass} · {typeLabel(m.type)}</div>
                     </div>
-                  </button>
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <button
+                        disabled={idx === 0}
+                        onClick={() => moveMoto(idx, idx - 1)}
+                        className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        title="Move up"
+                      >
+                        <ChevronLeft size={13} className="rotate-90" />
+                      </button>
+                      <button
+                        disabled={idx === orderedMotos.length - 1}
+                        onClick={() => moveMoto(idx, idx + 1)}
+                        className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        title="Move down"
+                      >
+                        <ChevronRight size={13} className="rotate-90" />
+                      </button>
+                    </div>
+                    {orderedMotos.length > 2 && (
+                      <button
+                        onClick={() => removeMoto(m.id)}
+                        className="p-1 rounded text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                        title="Remove from group"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
                 ))}
+                {availableToAdd.length > 0 && (
+                  <Select onValueChange={v => addMoto(Number(v))}>
+                    <SelectTrigger className="h-9 text-muted-foreground border-dashed">
+                      <Plus size={13} className="mr-1.5 shrink-0" />
+                      <SelectValue placeholder="Add another moto to group…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableToAdd.map(m => (
+                        <SelectItem key={m.id} value={String(m.id)}>
+                          {m.name} {m.raceClass ? `(${m.raceClass})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setStaggerPendingGroup(null)}>Cancel</Button>
+                <Button
+                  disabled={orderedMotos.length < 2 || linkStaggerMutation.isPending}
+                  onClick={() => {
+                    linkStaggerMutation.mutate(
+                      { eventId, data: { orderedMotoIds: orderedIds } as any },
+                      {
+                        onSuccess: () => {
+                          queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+                          toast({ title: `🔗 Stagger group linked — ${orderedIds.length} motos` });
+                        },
+                        onError: () => toast({ title: "Failed to link stagger", variant: "destructive" }),
+                      }
+                    );
+                    setStaggerPendingGroup(null);
+                  }}
+                  className="font-heading uppercase tracking-wider gap-1.5"
+                >
+                  <Link2 size={13} />
+                  {linkStaggerMutation.isPending ? "Linking…" : `Link Group (${orderedIds.length})`}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         );
       })()}
 
