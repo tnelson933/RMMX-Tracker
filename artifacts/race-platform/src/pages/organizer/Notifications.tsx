@@ -26,11 +26,14 @@ function formatCountdown(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function isEventInWindow(eventDate: string): boolean {
+function isEventInWindow(eventDate: string, eventEndDate?: string | null): boolean {
   const [year, month, day] = eventDate.slice(0, 10).split("-").map(Number);
   const windowStart = new Date(year, month - 1, day, 0, 0, 0, 0);
   windowStart.setTime(windowStart.getTime() - 24 * 60 * 60 * 1000);
-  const windowEnd = new Date(year, month - 1, day, 0, 0, 0, 0);
+  // For multi-day events, extend window end to 48h after the last day
+  const endStr = (eventEndDate || eventDate).slice(0, 10);
+  const [ey, em, ed] = endStr.split("-").map(Number);
+  const windowEnd = new Date(ey, em - 1, ed, 0, 0, 0, 0);
   windowEnd.setTime(windowEnd.getTime() + 48 * 60 * 60 * 1000);
   const now = new Date();
   return now >= windowStart && now <= windowEnd;
@@ -115,7 +118,7 @@ export function Notifications() {
     { params: { query: { clubId: user?.clubId } } } as any,
   );
 
-  const eligibleEvents = events?.filter((e) => isEventInWindow(e.date)) ?? [];
+  const eligibleEvents = events?.filter((e) => isEventInWindow(e.date, (e as any).endDate)) ?? [];
 
   useEffect(() => {
     fetch("/api/admin/notifications/push-stats")
