@@ -12,7 +12,7 @@ function getStaffClubId(res: Response): number | null {
   return typeof id === "number" ? id : null;
 }
 
-type EventRow = { id: number; status: string; registrationOpen: string | null; registrationClose: string | null };
+type EventRow = { id: number; date: string; status: string; registrationOpen: string | null; registrationClose: string | null };
 
 function computeAutoStatus(event: EventRow): string | null {
   const now = new Date();
@@ -23,6 +23,11 @@ function computeAutoStatus(event: EventRow): string | null {
   }
   if (status === "registration_open") {
     if (registrationClose && now >= new Date(registrationClose)) return "registration_closed";
+  }
+  if (status === "registration_closed") {
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
+    if (eventDateStr && eventDateStr <= todayStr) return "race_day";
   }
   return null;
 }
@@ -257,6 +262,7 @@ router.patch("/events/:eventId", async (req, res) => {
   // Recompute status from the updated registration window (bidirectional)
   const nextStatus = computeCorrectStatus({
     id: event.id,
+    date: event.date,
     status: event.status,
     registrationOpen: event.registrationOpen,
     registrationClose: event.registrationClose,
