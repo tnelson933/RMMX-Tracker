@@ -146,7 +146,7 @@ function ProfileList() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedGarageId, setExpandedGarageId] = useState<number | null>(null);
-  const [garageEdit, setGarageEdit] = useState<{ rideExperience: string }>({ rideExperience: "" });
+  const [garageEdit, setGarageEdit] = useState<{ rideExperience: string; bikeHours: string }>({ rideExperience: "", bikeHours: "" });
   const [garageSaving, setGarageSaving] = useState(false);
 
   async function handleRefresh() {
@@ -481,7 +481,7 @@ function ProfileList() {
                       setExpandedGarageId(null);
                     } else {
                       setExpandedGarageId(profile.id);
-                      setGarageEdit({ rideExperience: info.rideExperience ?? "" });
+                      setGarageEdit({ rideExperience: info.rideExperience ?? "", bikeHours: info.bikeHours ?? "" });
                     }
                   }}
                   style={({ pressed }) => ({
@@ -537,6 +537,27 @@ function ProfileList() {
                       </Pressable>
                     </View>
 
+                    {/* Engine Hours */}
+                    <View>
+                      <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+                        Current Engine Hours — used for maintenance intervals
+                      </Text>
+                      <TextInput
+                        keyboardType="numeric"
+                        returnKeyType="done"
+                        placeholder="e.g. 48"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={garageEdit.bikeHours}
+                        onChangeText={v => setGarageEdit(prev => ({ ...prev, bikeHours: v.replace(/[^0-9]/g, "") }))}
+                        style={{
+                          borderWidth: 1, borderColor: colors.border, borderRadius: 10,
+                          paddingHorizontal: 12, paddingVertical: 10,
+                          fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular",
+                          backgroundColor: colors.background,
+                        }}
+                      />
+                    </View>
+
                     {/* Experience Level */}
                     <View>
                       <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
@@ -548,7 +569,7 @@ function ProfileList() {
                           return (
                             <Pressable
                               key={lvl}
-                              onPress={() => setGarageEdit({ rideExperience: lvl.toLowerCase() })}
+                              onPress={() => setGarageEdit(prev => ({ ...prev, rideExperience: lvl.toLowerCase() }))}
                               style={({ pressed }) => ({
                                 paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
                                 backgroundColor: selected ? ACCENT : colors.background,
@@ -567,7 +588,7 @@ function ProfileList() {
                     <Pressable
                       onPress={async () => {
                         setGarageSaving(true);
-                        await setBikeInfo(profile.id, { rideExperience: garageEdit.rideExperience });
+                        await setBikeInfo(profile.id, { rideExperience: garageEdit.rideExperience, bikeHours: garageEdit.bikeHours });
                         setGarageSaving(false);
                         setExpandedGarageId(null);
                         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -581,7 +602,7 @@ function ProfileList() {
                       {garageSaving ? (
                         <ActivityIndicator color="#fff" size="small" />
                       ) : (
-                        <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Save Experience Level</Text>
+                        <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Save Garage Settings</Text>
                       )}
                     </Pressable>
                   </View>
