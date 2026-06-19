@@ -27,6 +27,8 @@ const SCAN_DIRS = [
   "artifacts/api-server/src/routes",
   // Full race-platform src — covers pages, components, lib, hooks, etc.
   "artifacts/race-platform/src",
+  // Generated API client — must stay in sync or CI builds fail
+  "lib/api-client-react/src/generated",
 ];
 
 /** Individual files outside the scan dirs that must also be checked. */
