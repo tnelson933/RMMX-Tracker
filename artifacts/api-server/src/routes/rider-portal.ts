@@ -21,6 +21,7 @@ import {
   riderPushTokensTable,
   seriesTable,
   seriesPointsTable,
+  riderMaintenanceTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql } from "drizzle-orm";
 
@@ -1475,6 +1476,203 @@ router.post("/rider/mechanic-memory-update", requireRiderAuth, async (req, res) 
   } catch (err) {
     req.log.error({ err }, "Memory update failed");
     return res.status(500).json({ error: "Memory update failed" });
+  }
+});
+
+// ─── Bike Maintenance ────────────────────────────────────────────────────────
+
+// GET /rider/maintenance/:riderId — list all maintenance items for a rider
+router.get("/rider/maintenance/:riderId", async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  const items = await db
+    .select()
+    .from(riderMaintenanceTable)
+    .where(eq(riderMaintenanceTable.riderId, riderId))
+    .orderBy(asc(riderMaintenanceTable.sortOrder), asc(riderMaintenanceTable.id));
+
+  return res.json(items);
+});
+
+// PUT /rider/maintenance/:riderId/:itemKey — upsert a maintenance item
+router.put("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  const { itemName, intervalDesc, intervalDays, lastServicedAt, notes, sortOrder } = req.body;
+  const itemKey = req.params.itemKey;
+
+  const [upserted] = await db
+    .insert(riderMaintenanceTable)
+    .values({
+      riderId,
+      itemKey,
+      itemName: itemName ?? itemKey,
+      intervalDesc: intervalDesc ?? null,
+      intervalDays: typeof intervalDays === "number" ? intervalDays : null,
+      lastServicedAt: lastServicedAt ?? null,
+      notes: notes ?? null,
+      sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
+    })
+    .onConflictDoUpdate({
+      target: [riderMaintenanceTable.riderId, riderMaintenanceTable.itemKey],
+      set: {
+        itemName: sql`EXCLUDED.item_name`,
+        intervalDesc: sql`EXCLUDED.interval_desc`,
+        intervalDays: sql`EXCLUDED.interval_days`,
+        lastServicedAt: sql`EXCLUDED.last_serviced_at`,
+        notes: sql`EXCLUDED.notes`,
+        sortOrder: sql`EXCLUDED.sort_order`,
+      },
+    })
+    .returning();
+
+  return res.json(upserted);
+});
+
+// DELETE /rider/maintenance/:riderId/:itemKey — remove a maintenance item
+router.delete("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  await db
+    .delete(riderMaintenanceTable)
+    .where(
+      and(
+        eq(riderMaintenanceTable.riderId, riderId),
+        eq(riderMaintenanceTable.itemKey, req.params.itemKey),
+      ),
+    );
+
+  return res.json({ ok: true });
+});
+
+// POST /rider/maintenance/:riderId/ai-generate — AI-generate a maintenance schedule for the rider's bike
+router.post("/rider/maintenance/:riderId/ai-generate", async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  const bikeStr = [rider.bikeYear, rider.bikeManufacturer, rider.bikeModel].filter(Boolean).join(" ");
+  if (!bikeStr) return res.status(400).json({ error: "No bike on file. Add your bike make/model first." });
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8192,
+      messages: [
+        {
+          role: "user",
+          content: `You are a motorcycle and ATV maintenance expert. Generate a maintenance schedule for a ${bikeStr}.
+
+Return ONLY a valid JSON array — no markdown, no explanation, no code fences.
+
+Each item must have these exact fields:
+- "itemKey": unique snake_case identifier (e.g. "engine_oil")
+- "itemName": human-readable name (e.g. "Engine Oil Change")
+- "intervalDesc": concise interval description (e.g. "Every 15 hours or 3 months")
+- "intervalDays": approximate calendar days between services as an integer (e.g. 90)
+- "notes": one short sentence of important notes, or null
+- "sortOrder": integer 1–20 for display ordering
+
+Include 10–15 items tailored to this specific make and model. Common categories: engine oil, oil filter, air filter, spark plug, chain/drive system, coolant, brake pads, brake fluid, fork oil, valve clearances, throttle/cable, fuel filter, tires, suspension linkage, coolant system (if liquid-cooled), clutch. Omit items not applicable (e.g. no chain for shaft-drive, no coolant for air-cooled). Output ONLY the JSON array.`,
+        },
+      ],
+    });
+
+    const raw = response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
+    const clean = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+    const items: Array<{
+      itemKey: string; itemName: string; intervalDesc?: string;
+      intervalDays?: number; notes?: string; sortOrder?: number;
+    }> = JSON.parse(clean);
+
+    // Upsert all generated items into the DB (preserve lastServicedAt if already set)
+    const saved = await Promise.all(
+      items.map(async (item) => {
+        const [existing] = await db
+          .select({ lastServicedAt: riderMaintenanceTable.lastServicedAt })
+          .from(riderMaintenanceTable)
+          .where(and(
+            eq(riderMaintenanceTable.riderId, riderId),
+            eq(riderMaintenanceTable.itemKey, item.itemKey),
+          ));
+
+        const [row] = await db
+          .insert(riderMaintenanceTable)
+          .values({
+            riderId,
+            itemKey: item.itemKey,
+            itemName: item.itemName,
+            intervalDesc: item.intervalDesc ?? null,
+            intervalDays: item.intervalDays ?? null,
+            lastServicedAt: existing?.lastServicedAt ?? null,
+            notes: item.notes ?? null,
+            sortOrder: item.sortOrder ?? 0,
+          })
+          .onConflictDoUpdate({
+            target: [riderMaintenanceTable.riderId, riderMaintenanceTable.itemKey],
+            set: {
+              itemName: sql`EXCLUDED.item_name`,
+              intervalDesc: sql`EXCLUDED.interval_desc`,
+              intervalDays: sql`EXCLUDED.interval_days`,
+              notes: sql`EXCLUDED.notes`,
+              sortOrder: sql`EXCLUDED.sort_order`,
+            },
+          })
+          .returning();
+        return row;
+      }),
+    );
+
+    return res.json(saved.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
+  } catch (err) {
+    req.log.error({ err }, "Maintenance AI generate failed");
+    return res.status(500).json({ error: "Failed to generate maintenance schedule" });
   }
 });
 
