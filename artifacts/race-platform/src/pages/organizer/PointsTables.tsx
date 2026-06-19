@@ -8,6 +8,7 @@ import {
   useAiSuggestPointsTable,
   useAiTweakPointsTable,
   getListPointsTablesQueryKey,
+  getListClubsQueryKey,
   useListClubs,
   useUpdateClub,
 } from "@workspace/api-client-react";
@@ -1209,8 +1210,7 @@ export default function PointsTables() {
       setDnfEnabled(club.autoDnfEnabled ?? false);
       setDnfThreshold(String(club.autoDnfThreshold ?? 75));
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [club?.id]);
+  }, [club?.id, club?.autoDnfEnabled, club?.autoDnfThreshold]);
 
   const systemTables = tables.filter((t) => t.isSystemDefault);
   const customTables = tables.filter((t) => !t.isSystemDefault);
@@ -1279,6 +1279,7 @@ export default function PointsTables() {
                   clubId: club.id,
                   data: { autoDnfEnabled: v, autoDnfThreshold: Math.min(100, Math.max(1, parseInt(dnfThreshold, 10) || 75)) },
                 });
+                queryClient.invalidateQueries({ queryKey: getListClubsQueryKey() });
                 toast({ title: v ? "Auto DNF enabled for all races" : "Auto DNF disabled" });
               } catch {
                 setDnfEnabled(!v);
@@ -1317,6 +1318,7 @@ export default function PointsTables() {
                     setDnfSaving(true);
                     try {
                       await updateClubMutation.mutateAsync({ clubId: club.id, data: { autoDnfEnabled: true, autoDnfThreshold: t } });
+                      queryClient.invalidateQueries({ queryKey: getListClubsQueryKey() });
                       toast({ title: "Threshold saved" });
                     } catch {
                       toast({ title: "Failed to save threshold", variant: "destructive" });
