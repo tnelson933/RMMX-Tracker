@@ -298,7 +298,7 @@ export default function EventsList() {
       }
     }
 
-    queryClient.invalidateQueries({ queryKey: getListEventsQueryKey({}) });
+    queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
     setIsCreateOpen(false);
     setCreateSeriesId("none");
     setPendingImageFile(null);
