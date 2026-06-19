@@ -615,14 +615,16 @@ function registerIpcHandlers(): void {
 
   // ai:sendMessage collects the full SSE stream from the cloud streaming endpoint
   // and returns the assembled text in one shot — no token-by-token streaming on desktop.
-  ipcMain.handle("ai:sendMessage", async (_event, convId: number, content: string) => {
+  ipcMain.handle("ai:sendMessage", async (_event, convId: number, content: string, eventId?: number) => {
     if (!syncEngine) {
       return { ok: false, error: "Cloud sync not configured. Please connect via Cloud Sync Settings." };
     }
     try {
+      const body: Record<string, unknown> = { content };
+      if (eventId) body.eventId = eventId;
       const result = await syncEngine.cloudFetch(
         `/api/anthropic/conversations/${convId}/messages`,
-        { method: "POST", body: { content } },
+        { method: "POST", body },
       );
       if (!result.ok) {
         const errData = result.data as any;
