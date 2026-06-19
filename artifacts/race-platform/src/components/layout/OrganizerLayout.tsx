@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { LocalModeBanner } from "@/components/LocalModeBanner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
 import { PastEventCheckDialog } from "@/components/organizer/PastEventCheckDialog";
@@ -31,6 +30,7 @@ import {
   Tag,
   UsersRound,
   Bell,
+  Flag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import rmLogo from "@assets/rm-logo.png";
@@ -40,6 +40,7 @@ const isDesktop = typeof (window as any).electronAPI !== "undefined";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permKey: "dashboard" },
   { href: "/events", label: "Events", icon: CalendarDays, permKey: "events" },
+  { href: "/gate", label: "Gate Schedule", icon: Flag, permKey: "gate_schedule" },
   { href: "/practice", label: "Practice", icon: Timer, permKey: "practice" },
   { href: "/riders", label: "Riders", icon: Users, permKey: "riders" },
   { href: "/series", label: "Series", icon: Trophy, permKey: "series" },
@@ -137,8 +138,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           );
         })}
 
-        {/* Team link — visible to organizers only on cloud (not on desktop, not staff, not super_admin) */}
-        {isOrganizer && !isDesktop && (
+        {/* Team link — visible to organizers in both cloud and desktop modes (not staff, not super_admin) */}
+        {isOrganizer && (
           <Link
             href="/team"
             onClick={close}
@@ -257,7 +258,6 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           </span>
         </div>
 
-        <LocalModeBanner />
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>
@@ -316,7 +316,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
       {showTour && <ProductTour onComplete={() => {}} />}
 
       {/* AI Assistant — cloud only (requires Anthropic API, not available offline) */}
-      {!isDesktop && <AIAssistant />}
+      <AIAssistant />
     </div>
   );
 }
