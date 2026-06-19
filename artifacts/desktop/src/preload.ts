@@ -85,8 +85,8 @@ const electronAPI = {
       ipcRenderer.invoke("ai:getConversation", id),
     deleteConversation: (id: number): Promise<{ ok: boolean; status: number; data: unknown }> =>
       ipcRenderer.invoke("ai:deleteConversation", id),
-    sendMessage: (convId: number, content: string): Promise<{ ok: boolean; text?: string; error?: string }> =>
-      ipcRenderer.invoke("ai:sendMessage", convId, content),
+    sendMessage: (convId: number, content: string, eventId?: number): Promise<{ ok: boolean; text?: string; error?: string }> =>
+      ipcRenderer.invoke("ai:sendMessage", convId, content, eventId),
   },
 
   app: {
