@@ -1236,6 +1236,7 @@ Total session time: ${durationMinutes} minutes.`;
 
 // POST /rider/mechanic-chat — AI mechanic and riding coach conversational agent
 router.post("/rider/mechanic-chat", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
   const { messages, riderContext, riderMemory } = req.body;
 
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -1246,9 +1247,45 @@ router.post("/rider/mechanic-chat", requireRiderAuth, async (req, res) => {
     .filter(Boolean)
     .join(" ");
 
+  // Load maintenance items for this rider so Rocky can reference and log them
+  let maintenanceItems: typeof riderMaintenanceTable.$inferSelect[] = [];
+  if (riderContext?.riderId && riderAccountId) {
+    const riderId = Number(riderContext.riderId);
+    if (!isNaN(riderId)) {
+      const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+      const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+      if (account && rider && rider.email && rider.email.toLowerCase() === account.email.toLowerCase()) {
+        maintenanceItems = await db
+          .select()
+          .from(riderMaintenanceTable)
+          .where(eq(riderMaintenanceTable.riderId, riderId))
+          .orderBy(asc(riderMaintenanceTable.sortOrder));
+      }
+    }
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const maintenanceSection = maintenanceItems.length > 0
+    ? `\nBIKE MAINTENANCE SCHEDULE (${maintenanceItems.length} items tracked — reference itemKey when logging):
+${maintenanceItems.map(item => {
+  const daysSince = item.lastServicedAt
+    ? Math.floor((Date.now() - new Date(item.lastServicedAt).getTime()) / 86400000)
+    : null;
+  const status = daysSince === null ? "NEVER SERVICED"
+    : item.intervalDays && daysSince >= item.intervalDays ? "OVERDUE"
+    : item.intervalDays && daysSince >= item.intervalDays * 0.8 ? "DUE SOON"
+    : "OK";
+  return `  - ${item.itemKey}: ${item.itemName}${item.intervalDesc ? ` (${item.intervalDesc})` : ""}${daysSince !== null ? ` — ${daysSince}d ago` : " — never serviced"} [${status}]`;
+}).join("\n")}
+
+MAINTENANCE LOGGING: When the rider explicitly says they completed a maintenance task (e.g. "just changed my oil", "done the chain", "finished the air filter"), match it to the closest itemKey above and include it in maintenanceUpdates. Today: ${today}. Only log what they explicitly confirm as done — never assume.
+`
+    : "";
+
   const memorySection =
     riderMemory && typeof riderMemory === "string" && riderMemory.trim().length > 0
-      ? `\nPAST CONVERSATION MEMORY (topics already covered with this rider — use this to avoid repeating the same advice and to follow up naturally on earlier issues):
+      ? `\nPAST CONVERSATION MEMORY (topics already covered — avoid repeating the same advice, follow up naturally):
 ${riderMemory.trim()}
 
 `
@@ -1277,15 +1314,14 @@ RIDING COACH EXPERTISE:
 - Mental game: race-day nerves, managing pressure, crash recovery
 - Common beginner/intermediate mistakes and how to fix them
 
-RIDER CONTEXT (already known — never ask for this information):
+RIDER CONTEXT (already known — never ask for this):
 - Rider name: ${riderContext?.name ?? "Unknown"}
 - Bike: ${bikeStr || "not set — if relevant, ask what they're riding"}
 - Experience level: ${riderContext?.rideExperience ?? "not specified"}
 - Events raced: ${riderContext?.eventsRaced ?? "unknown"}
 - Best finish: ${riderContext?.bestPosition != null ? `P${riderContext.bestPosition}` : "N/A"}
 - Race class: ${riderContext?.recentClass ?? "not specified"}
-${memorySection}
-STYLE GUIDELINES:
+${maintenanceSection}${memorySection}STYLE GUIDELINES:
 - Be direct, confident, and technical but accessible — like a trusted crew chief
 - Reference the rider's specific bike make/model when giving bike-specific advice
 - When troubleshooting, ask one focused clarifying question at a time — don't overwhelm
@@ -1293,13 +1329,15 @@ STYLE GUIDELINES:
 - Keep responses under 280 words unless a step-by-step technical breakdown is needed
 - Use MX terminology naturally (moto, gate pick, pinned, roosting, bucking, head-shake, etc.)
 - End with a follow-up question when appropriate to keep the diagnosis moving
-- When past memory entries exist, naturally reference them (e.g. "Last time we talked about your jetting — did that fix the bog?") rather than repeating the same advice from scratch
+- When past memory entries exist, naturally reference them rather than repeating the same advice
+- When you log a maintenance item, briefly confirm it in your reply (e.g. "✓ Logged your oil change — clock reset.")
 
 OUTPUT FORMAT:
-You MUST respond with a valid JSON object and nothing else — no markdown fences, no preamble. Use this exact shape:
-{"reply":"<your full conversational response here>","suggestedFollowUps":["<question 1>","<question 2>","<question 3>"]}
-- reply: your complete answer, exactly as you would normally write it (line breaks are fine inside the string)
-- suggestedFollowUps: exactly 3 concise follow-up questions the rider is likely to ask next, each ≤40 characters, directly related to what was just discussed`;
+You MUST respond with a valid JSON object and nothing else — no markdown fences, no preamble:
+{"reply":"<your full response>","suggestedFollowUps":["<q1>","<q2>","<q3>"],"maintenanceUpdates":[{"itemKey":"<key>","action":"log_service"}]}
+- reply: your complete answer (line breaks OK)
+- suggestedFollowUps: exactly 3 concise follow-up questions ≤40 chars each
+- maintenanceUpdates: items the rider explicitly confirmed as done. Use [] when no maintenance was performed.`;
 
   try {
     const filtered = messages
@@ -1320,10 +1358,10 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
 
     let reply = raw;
     let suggestedFollowUps: string[] = [];
+    let maintenanceUpdates: Array<{ itemKey: string; action: string }> = [];
 
     if (raw) {
       try {
-        // Strip markdown code fences if Claude wraps anyway
         const stripped = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
         const parsed = JSON.parse(stripped);
         if (parsed && typeof parsed.reply === "string") {
@@ -1334,20 +1372,101 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
               .map((s) => s.trim())
               .slice(0, 3);
           }
+          if (Array.isArray(parsed.maintenanceUpdates)) {
+            maintenanceUpdates = (parsed.maintenanceUpdates as unknown[])
+              .filter((u: any) => u && typeof u.itemKey === "string" && typeof u.action === "string")
+              .map((u: any) => ({ itemKey: String(u.itemKey), action: String(u.action) }));
+          }
         }
       } catch {
-        // Claude didn't return JSON — fall back to treating the whole response as the reply
         reply = raw;
       }
     }
 
     if (!reply) reply = "Sorry, couldn't process that. Try again.";
 
-    return res.json({ reply, suggestedFollowUps });
+    // Process maintenance updates server-side — log service date for each confirmed item
+    const loggedItems: string[] = [];
+    if (maintenanceUpdates.length > 0 && maintenanceItems.length > 0) {
+      for (const update of maintenanceUpdates) {
+        if (update.action !== "log_service") continue;
+        const item = maintenanceItems.find(i => i.itemKey === update.itemKey);
+        if (!item) continue;
+        try {
+          await db
+            .insert(riderMaintenanceTable)
+            .values({ ...item, id: undefined as any, lastServicedAt: today, createdAt: undefined as any })
+            .onConflictDoUpdate({
+              target: [riderMaintenanceTable.riderId, riderMaintenanceTable.itemKey],
+              set: { lastServicedAt: sql`${today}` },
+            });
+          loggedItems.push(item.itemName);
+        } catch { /* non-fatal */ }
+      }
+    }
+
+    return res.json({ reply, suggestedFollowUps, maintenanceUpdates, loggedItems });
   } catch (err) {
     req.log.error({ err }, "Mechanic chat failed");
     return res.status(500).json({ error: "Chat failed. Please try again." });
   }
+});
+
+// GET /rider/maintenance-check — proactive check: return Rocky message if items are due/overdue
+router.get("/rider/maintenance-check", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const riders = await db
+    .select({ id: ridersTable.id, firstName: ridersTable.firstName })
+    .from(ridersTable)
+    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+
+  if (riders.length === 0) return res.json({ hasItems: false, message: null, items: [] });
+
+  type ItemWithRider = typeof riderMaintenanceTable.$inferSelect & { riderFirstName: string };
+  const allItems: ItemWithRider[] = [];
+  for (const rider of riders) {
+    const items = await db
+      .select()
+      .from(riderMaintenanceTable)
+      .where(eq(riderMaintenanceTable.riderId, rider.id));
+    for (const item of items) allItems.push({ ...item, riderFirstName: rider.firstName });
+  }
+
+  const dueItems = allItems.filter(item => {
+    if (!item.intervalDays) return false;
+    const daysSince = item.lastServicedAt
+      ? Math.floor((Date.now() - new Date(item.lastServicedAt).getTime()) / 86400000)
+      : item.intervalDays; // treat never-logged items as at-interval
+    return daysSince >= item.intervalDays * 0.8;
+  });
+
+  if (dueItems.length === 0) return res.json({ hasItems: false, message: null, items: [] });
+
+  const overdue = dueItems.filter(item => {
+    const days = item.lastServicedAt
+      ? Math.floor((Date.now() - new Date(item.lastServicedAt).getTime()) / 86400000)
+      : (item.intervalDays ?? 0);
+    return days >= (item.intervalDays ?? 0);
+  });
+  const dueSoon = dueItems.filter(item => !overdue.includes(item));
+
+  const parts: string[] = [];
+  if (overdue.length > 0) parts.push(`🔴 Overdue: ${overdue.map(i => i.itemName).join(", ")}`);
+  if (dueSoon.length > 0) parts.push(`🟡 Due soon: ${dueSoon.map(i => i.itemName).join(", ")}`);
+
+  const firstName = riders[0]?.firstName ?? "Rider";
+  const message = `Hey ${firstName} — quick heads-up before you ride:\n\n${parts.join("\n")}\n\nWant me to walk through any of these, or just tell me when you've done them and I'll log it for you.`;
+
+  return res.json({
+    hasItems: true,
+    message,
+    items: dueItems.map(i => ({ itemKey: i.itemKey, itemName: i.itemName, riderId: i.riderId })),
+  });
 });
 
 // GET /rider/series — list all series the rider is enrolled in, with position
