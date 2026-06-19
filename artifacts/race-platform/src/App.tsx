@@ -63,7 +63,13 @@ const queryClient = new QueryClient({
 
 /**
  * Listens for Electron sync-engine state changes and invalidates all React
- * Query caches whenever a cloud pull completes (syncing → idle transition).
+ * Query caches whenever a cloud pull completes.
+ *
+ * Triggers on syncing → idle  (push + pull both succeeded)
+ *         and syncing → error (push failed but pull still ran — new cloud
+ *                              data is in SQLite even though local writes
+ *                              are still queued for retry).
+ *
  * This ensures events/riders/etc appear immediately after the first sync
  * without requiring the user to navigate away and back.
  */
@@ -77,7 +83,7 @@ function DesktopSyncWatcher() {
       prevStatus = state.status;
     }).catch(() => {});
     const unsub = api.sync.onChange((state: { status: string }) => {
-      if (prevStatus === "syncing" && state.status === "idle") {
+      if (prevStatus === "syncing" && (state.status === "idle" || state.status === "error")) {
         queryClient.invalidateQueries();
       }
       prevStatus = state.status;
