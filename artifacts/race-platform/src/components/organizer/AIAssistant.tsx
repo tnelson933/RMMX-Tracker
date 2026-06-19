@@ -88,7 +88,7 @@ const QUICK_PROMPTS = [
 
 const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
-export function AIAssistant() {
+export function AIAssistant({ eventId }: { eventId?: number }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"list" | "chat">("list");
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -229,7 +229,7 @@ export function AIAssistant() {
     if (isDesktop) {
       try {
         setStreamBuffer("Thinking…");
-        const result = await (window as any).electronAPI.ai.sendMessage(convId, content);
+        const result = await (window as any).electronAPI.ai.sendMessage(convId, content, eventId);
         if (!result.ok) {
           setMessages((prev) => [
             ...prev,
@@ -266,7 +266,7 @@ export function AIAssistant() {
       const res = await fetch(`/api/anthropic/conversations/${convId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, eventId }),
         signal: abort.signal,
       });
 
