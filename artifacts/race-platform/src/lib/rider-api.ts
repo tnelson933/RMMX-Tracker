@@ -123,6 +123,8 @@ export interface PracticeLap {
 export interface PracticeSessionHistory {
   sessionId: number;
   sessionName: string;
+  venueName: string | null;
+  status: string;
   startedAt: string | null;
   endedAt: string | null;
   lapCount: number;
