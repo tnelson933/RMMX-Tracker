@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useListEvents, useListMotos } from "@workspace/api-client-react";
 import type { Moto, Event } from "@workspace/api-client-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Flag, Timer, CheckCircle2, Clock, Users, ChevronRight } from "lucide-react";
@@ -132,11 +133,14 @@ function MotoCard({ moto, index }: { moto: Moto; index: number }) {
 
 export default function GateSchedulePage() {
   // Read clubId from the URL query string — e.g. /gate?club=1
+  // Fall back to the authenticated user's club so organizers can navigate here directly.
+  const { user } = useAuth();
   const clubId = useMemo(() => {
     const p = new URLSearchParams(window.location.search);
     const c = p.get("club");
-    return c ? Number(c) : null;
-  }, []);
+    if (c) return Number(c);
+    return user?.clubId ?? null;
+  }, [user?.clubId]);
 
   const { data: events = [] } = useListEvents(
     { clubId: clubId ?? undefined, status: "race_day" } as any,
