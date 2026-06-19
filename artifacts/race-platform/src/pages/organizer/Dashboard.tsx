@@ -18,75 +18,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Calendar, Users, CheckCircle, Plus, Tag, Activity,
   Upload, ImageIcon, Loader2, X, Sparkles, Save, Building2, LayoutDashboard, Mail, Copy, ClipboardCheck,
-  Cloud, AlertTriangle,
 } from "lucide-react";
 import { Link } from "wouter";
 import { format, parseISO } from "date-fns";
-
-interface SyncState {
-  enabled: boolean;
-  cloudUrl: string | null;
-  clubId: number | null;
-  lastAttemptAt: string | null;
-  lastSuccessAt: string | null;
-  lastError: string | null;
-  rowsSynced: Record<string, number> | null;
-}
-
-const SYNC_STALE_MS = 3 * 60 * 1000; // 3 minutes
-
-function SyncPill({ syncStatus }: { syncStatus: SyncState | null }) {
-  const hasElectron = typeof (window as any).electronAPI !== "undefined";
-  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
-  const [isStale, setIsStale] = useState(false);
-
-  // Electron: pull lastSyncedAt from the sync engine directly
-  useEffect(() => {
-    if (!hasElectron) return;
-    const api = (window as any).electronAPI;
-    if (!api?.sync?.getState) return;
-    api.sync.getState().then((state: any) => {
-      if (state.lastSyncedAt) setLastSyncedAt(new Date(state.lastSyncedAt));
-    }).catch(() => {});
-    const unsub = api.sync.onChange((state: any) => {
-      if (state.lastSyncedAt) setLastSyncedAt(new Date(state.lastSyncedAt));
-    });
-    return () => { if (typeof unsub === "function") unsub(); };
-  }, [hasElectron]);
-
-  // Local server (non-Electron): use polled syncStatus.lastSuccessAt
-  useEffect(() => {
-    if (hasElectron) return;
-    if (syncStatus?.lastSuccessAt) setLastSyncedAt(new Date(syncStatus.lastSuccessAt));
-  }, [syncStatus?.lastSuccessAt, hasElectron]);
-
-  // Re-evaluate staleness every 30 s without causing any visual flash
-  useEffect(() => {
-    const check = () => setIsStale(!lastSyncedAt || Date.now() - lastSyncedAt.getTime() > SYNC_STALE_MS);
-    check();
-    const id = setInterval(check, 30_000);
-    return () => clearInterval(id);
-  }, [lastSyncedAt]);
-
-  // Hide in local-server mode when sync isn't configured
-  if (!hasElectron && (!syncStatus || !syncStatus.enabled)) return null;
-
-  if (isStale) {
-    return (
-      <div className="flex items-center gap-1.5 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-full px-3 py-1.5 select-none">
-        <AlertTriangle size={11} className="shrink-0" />
-        Sync error — check connection
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-500/10 border border-green-500/20 rounded-full px-3 py-1.5 select-none">
-      <Cloud size={11} className="shrink-0" />
-      Synced
-    </div>
-  );
-}
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -94,47 +28,6 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const clubId = user?.clubId;
 
-  // ── Local-mode sync status ────────────────────────────────────────────────
-  const [isLocalMode, setIsLocalMode] = useState<boolean>(false);
-  const [syncStatus, setSyncStatus] = useState<SyncState | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    async function checkMode() {
-      try {
-        const res = await fetch("/api/healthz", { credentials: "include" });
-        if (!res.ok || cancelled) return;
-        const data = await res.json() as { mode?: string };
-        if (data.mode === "local" && !cancelled) {
-          setIsLocalMode(true);
-          fetchSyncStatus();
-          intervalId = setInterval(fetchSyncStatus, 30_000);
-        }
-      } catch {
-        // not local mode or unreachable — stay hidden
-      }
-    }
-
-    async function fetchSyncStatus() {
-      if (cancelled) return;
-      try {
-        const res = await fetch("/api/status", { credentials: "include" });
-        if (!res.ok || cancelled) return;
-        const data = await res.json() as { autoSync: SyncState };
-        if (!cancelled) setSyncStatus(data.autoSync);
-      } catch {
-        // silent — keep last known state
-      }
-    }
-
-    checkMode();
-    return () => {
-      cancelled = true;
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, []);
 
   const { data: dashboard, isLoading } = useGetClubDashboard(clubId || 0, {
     query: { enabled: !!clubId } as any,
@@ -281,7 +174,6 @@ export default function Dashboard() {
           <p className="text-muted-foreground mt-1">{club?.name || "Club"} — organizer portal</p>
         </div>
         <div className="flex items-center gap-3">
-          {(isLocalMode || isDesktop) && <SyncPill syncStatus={syncStatus} />}
           <Link href="/events?create=true">
             <Button className="font-heading uppercase tracking-wider">
               <Plus size={16} className="mr-2" /> New Event
