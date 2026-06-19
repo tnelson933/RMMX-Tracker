@@ -5,8 +5,72 @@
  * RM Tracker API
  * OpenAPI spec version: 0.1.0
  */
+export interface NotificationAudienceCount {
+  count: number;
+}
+
 export interface HealthStatus {
   status: string;
+}
+
+export type PracticeSessionStatus = typeof PracticeSessionStatus[keyof typeof PracticeSessionStatus];
+
+
+export const PracticeSessionStatus = {
+  idle: 'idle',
+  active: 'active',
+  ended: 'ended',
+} as const;
+
+export interface PracticeSession {
+  id: number;
+  clubId: number;
+  name: string;
+  status: PracticeSessionStatus;
+  debounceMs: number;
+  /** Track/venue name snapshotted from club settings at session creation time */
+  venueName?: string | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  createdAt: string;
+}
+
+export interface CreatePracticeSessionInput {
+  name: string;
+  debounceMs?: number;
+}
+
+export type UpdatePracticeSessionInputStatus = typeof UpdatePracticeSessionInputStatus[keyof typeof UpdatePracticeSessionInputStatus];
+
+
+export const UpdatePracticeSessionInputStatus = {
+  idle: 'idle',
+  active: 'active',
+  ended: 'ended',
+} as const;
+
+export interface UpdatePracticeSessionInput {
+  name?: string;
+  status?: UpdatePracticeSessionInputStatus;
+  debounceMs?: number;
+}
+
+export interface DefaultRaceClass {
+  id: string;
+  name: string;
+}
+
+export interface ClubSettings {
+  clubId: number;
+  riderAcknowledgement: string | null;
+  defaultClasses: DefaultRaceClass[];
+  trackName?: string | null;
+}
+
+export interface ClubSettingsInput {
+  riderAcknowledgement?: string | null;
+  defaultClasses?: DefaultRaceClass[];
+  trackName?: string | null;
 }
 
 export interface UpdateMe {
@@ -127,6 +191,11 @@ export const EventTimingTechnology = {
   mylaps: 'mylaps',
 } as const;
 
+/**
+ * Maps each race class name to an array of series IDs that should award points for that class.
+ */
+export type EventRaceClassSeriesMap = {[key: string]: number[]};
+
 export interface Event {
   id: number;
   clubId: number;
@@ -162,6 +231,8 @@ export interface Event {
   transponderRentalFee?: number | null;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, riders must read and accept the club waiver before completing registration */
+  requireWaiver?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
   /**
@@ -180,6 +251,13 @@ export interface Event {
      * @nullable
      */
   defaultGateConfigId?: string | null;
+  /**
+     * End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+     * @nullable
+     */
+  endDate?: string | null;
+  /** Maps each race class name to an array of series IDs that should award points for that class. */
+  raceClassSeriesMap?: EventRaceClassSeriesMap;
   createdAt?: string;
 }
 
@@ -192,6 +270,11 @@ export const EventInputTimingTechnology = {
   rfid: 'rfid',
   mylaps: 'mylaps',
 } as const;
+
+/**
+ * Maps each race class name to an array of series IDs that should award points for that class.
+ */
+export type EventInputRaceClassSeriesMap = {[key: string]: number[]};
 
 export interface EventInput {
   clubId: number;
@@ -214,6 +297,8 @@ export interface EventInput {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, riders must read and accept the club waiver before completing registration */
+  requireWaiver?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
   /**
@@ -229,6 +314,13 @@ export interface EventInput {
   minLapMs?: number | null;
   /** ID of the gate configuration to pre-select when generating lineups */
   defaultGateConfigId?: string;
+  /**
+     * End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+     * @nullable
+     */
+  endDate?: string | null;
+  /** Maps each race class name to an array of series IDs that should award points for that class. */
+  raceClassSeriesMap?: EventInputRaceClassSeriesMap;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -240,6 +332,11 @@ export const EventUpdateTimingTechnology = {
   rfid: 'rfid',
   mylaps: 'mylaps',
 } as const;
+
+/**
+ * Maps each race class name to an array of series IDs that should award points for that class.
+ */
+export type EventUpdateRaceClassSeriesMap = {[key: string]: number[]};
 
 export interface EventUpdate {
   name?: string;
@@ -262,6 +359,8 @@ export interface EventUpdate {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, riders must read and accept the club waiver before completing registration */
+  requireWaiver?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
   /**
@@ -280,6 +379,13 @@ export interface EventUpdate {
      * @nullable
      */
   defaultGateConfigId?: string | null;
+  /**
+     * End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+     * @nullable
+     */
+  endDate?: string | null;
+  /** Maps each race class name to an array of series IDs that should award points for that class. */
+  raceClassSeriesMap?: EventUpdateRaceClassSeriesMap;
 }
 
 export interface Rider {
@@ -321,6 +427,10 @@ export interface Rider {
      * @nullable
      */
   clubIdNumber?: string | null;
+  /** @nullable */
+  skillLevel?: string | null;
+  /** Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert) */
+  raceTypes?: string[];
   createdAt?: string;
 }
 
@@ -378,6 +488,10 @@ export interface RiderDetail {
   homeState?: string | null;
   /** @nullable */
   zip?: string | null;
+  /** @nullable */
+  skillLevel?: string | null;
+  /** Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert) */
+  raceTypes?: string[];
   recentResults?: RaceResult[];
   totalEvents?: number;
   createdAt?: string;
@@ -421,6 +535,9 @@ export interface RiderUpdate {
   city?: string;
   homeState?: string;
   zip?: string;
+  skillLevel?: string;
+  /** Race disciplines the rider competes in */
+  raceTypes?: string[];
 }
 
 export type RegistrationStatus = typeof RegistrationStatus[keyof typeof RegistrationStatus];
@@ -460,6 +577,16 @@ export interface Registration {
   /** @nullable */
   bikeBrand?: string | null;
   selectedPurchaseOptions?: PurchaseOption[];
+  /**
+     * ISO timestamp of when the rider accepted the club waiver, or null if not required/accepted
+     * @nullable
+     */
+  waiverAcknowledgedAt?: string | null;
+  /**
+     * Full text of the club waiver at the time of acceptance
+     * @nullable
+     */
+  waiverSnapshot?: string | null;
   createdAt?: string;
 }
 
@@ -607,15 +734,17 @@ export interface Moto {
   /** @nullable */
   completedAt?: string | null;
   /**
-     * ID of the paired moto in a staggered start
-     * @nullable
-     */
-  staggeredWithMotoId?: number | null;
-  /**
-     * 1 = starts first, 2 = starts second in a staggered pair
+     * 1 = starts first, 2+ = subsequent start positions in a staggered group
      * @nullable
      */
   staggeredOrder?: number | null;
+  /**
+     * Shared group identifier for all motos in a staggered start group
+     * @nullable
+     */
+  staggeredGroupId?: number | null;
+  /** Ordered list of moto IDs in the staggered group (sorted by staggeredOrder) */
+  staggeredGroupMembers?: number[] | null;
 }
 
 export type MotoInputType = typeof MotoInputType[keyof typeof MotoInputType];
@@ -687,10 +816,11 @@ export interface MotoUpdate {
 }
 
 export interface StaggerLinkInput {
-  motoId1: number;
-  motoId2: number;
-  /** Which of the two motos starts first */
-  firstMotoId: number;
+  /**
+     * Ordered list of moto IDs — first element starts first, last starts last
+     * @minItems 2
+     */
+  orderedMotoIds: number[];
 }
 
 export interface MotoReorderInput {
@@ -899,6 +1029,43 @@ export interface RaceDaySummary {
   paymentSummary?: RaceDaySummaryPaymentSummary;
 }
 
+export interface PublicSeriesStanding {
+  position: number;
+  riderId: number;
+  riderName: string;
+  raceClass: string;
+  totalScore: number;
+  eventsEntered: number;
+  amaNumber?: string | null;
+  bikeBrand?: string | null;
+  events?: SeriesEventBreakdown[];
+}
+
+export interface RiderSeriesEntry {
+  seriesId: number;
+  seriesName: string;
+  raceClass: string;
+  totalPoints: number;
+  position: number;
+}
+
+export interface RiderOrganization {
+  clubId: number;
+  clubName: string;
+  state: string;
+  logoUrl?: string | null;
+  notificationsEnabled: boolean;
+}
+
+export interface UpdateRiderNotificationPrefInput {
+  enabled: boolean;
+}
+
+export interface RiderNotificationPrefResult {
+  clubId: number;
+  notificationsEnabled: boolean;
+}
+
 export interface PublicSeriesItem {
   id: number;
   name: string;
@@ -919,6 +1086,11 @@ export interface UpcomingEventItem {
   name: string;
   state: string;
   date: string;
+  /**
+     * End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+     * @nullable
+     */
+  endDate?: string | null;
   location?: string;
   trackName?: string;
   status: string;
@@ -933,6 +1105,8 @@ export interface RecentResultItem {
   topRider: string;
   raceClass: string;
   clubName?: string;
+  location?: string;
+  trackName?: string;
 }
 
 export type EventReportData = { [key: string]: unknown };
@@ -1331,6 +1505,26 @@ export interface AnthropicError {
   error: string;
 }
 
+export interface RiderMaintenanceHistoryEntry {
+  id: number;
+  riderId: number;
+  itemKey: string;
+  itemName: string;
+  servicedAt: string;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface NotificationLogEntry {
+  id: number;
+  title: string;
+  body: string;
+  audienceType: string;
+  eventId?: number | null;
+  sentCount: number;
+  sentAt: string;
+}
+
 export type RequestAccountSetup200 = {
   ok?: boolean;
 };
@@ -1404,4 +1598,17 @@ riderId?: number;
 export type DeleteDiscountCode200 = {
   ok?: boolean;
 };
+
+export type GetNotificationAudienceCountParams = {
+audience: GetNotificationAudienceCountAudience;
+eventId?: number;
+};
+
+export type GetNotificationAudienceCountAudience = typeof GetNotificationAudienceCountAudience[keyof typeof GetNotificationAudienceCountAudience];
+
+
+export const GetNotificationAudienceCountAudience = {
+  all: 'all',
+  event: 'event',
+} as const;
 
