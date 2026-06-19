@@ -196,7 +196,20 @@ function PackageInfoBanner({ builtAt, version, etag, lastEtag }: { builtAt: stri
 }
 
 export default function OfflineMode() {
-  const { data: pkgInfo, isError: pkgError, isPending: pkgPending, isFetching: pkgFetching, refetch: refetchPkgInfo } = useGetOfflinePackageInfo({ query: { staleTime: 60_000 } as any });
+  // When accessed via the local server (localhost / 127.0.0.1), the
+  // /offline/package-info endpoint does not exist.  Disable the query
+  // entirely in that context so it never fires, never errors, and never
+  // flashes the "Download info unavailable" banner.
+  const isLocalServer = typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+  const { data: pkgInfo, isError: pkgError, isPending: pkgPending, isFetching: pkgFetching, refetch: refetchPkgInfo } = useGetOfflinePackageInfo({
+    query: {
+      staleTime: 60_000,
+      enabled: !isLocalServer,
+      retry: false,
+    } as any,
+  });
 
   const [lastDownloadedEtag, setLastDownloadedEtag] = useState<string | null>(() =>
     localStorage.getItem(LAST_DOWNLOAD_KEY),
@@ -557,7 +570,16 @@ export default function OfflineMode() {
           <div className="space-y-3">
             <p className="text-foreground font-semibold">Download the software to your laptop</p>
 
-            {pkgInfo && (
+            {isLocalServer && (
+              <div className="rounded-lg border-2 border-green-500/40 bg-green-500/10 p-3 flex gap-2 text-xs">
+                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
+                <span className="text-foreground/90">
+                  You're already running the local server — no download needed. To get the installer for a different laptop, visit this page from the <strong>cloud portal</strong>.
+                </span>
+              </div>
+            )}
+
+            {!isLocalServer && pkgInfo && (
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <PackageInfoBanner
@@ -587,7 +609,7 @@ export default function OfflineMode() {
                 </button>
               </div>
             )}
-            {!pkgInfo && !pkgError && !pkgPending && !pkgFetching && (
+            {!isLocalServer && !pkgInfo && !pkgError && !pkgPending && !pkgFetching && (
               <button
                 type="button"
                 onClick={handleRebuild}
@@ -607,13 +629,13 @@ export default function OfflineMode() {
                 )}
               </button>
             )}
-            {pkgError && !pkgPending && !pkgFetching && (
+            {!isLocalServer && pkgError && !pkgPending && !pkgFetching && (
               <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
                 <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
                 <span className="text-muted-foreground">Download info unavailable — contact support if this persists.</span>
               </div>
             )}
-            {rebuildFailed && (
+            {!isLocalServer && rebuildFailed && (
               <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
                 <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
                 <span className="text-muted-foreground">
@@ -622,23 +644,27 @@ export default function OfflineMode() {
               </div>
             )}
 
-            <a
-              href="/api/offline/package"
-              download="rocky-mountain-local-server-latest.zip"
-              onClick={handleDownload}
-              className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
-            >
-              <Download size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
-              <span className="text-xs font-mono text-primary flex-1">rocky-mountain-local-server-latest.zip</span>
-              {pkgInfo ? (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-auto font-mono text-muted-foreground">v{pkgInfo.version}</Badge>
-              ) : (
-                <Badge variant="default" className="text-[10px] px-1.5 py-0 ml-auto">Download</Badge>
-              )}
-            </a>
-            <p className="text-xs text-muted-foreground">
-              Save it to your <strong>Downloads</strong> folder — the install script will look for it there.
-            </p>
+            {!isLocalServer && (
+              <>
+                <a
+                  href="/api/offline/package"
+                  download="rocky-mountain-local-server-latest.zip"
+                  onClick={handleDownload}
+                  className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
+                >
+                  <Download size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
+                  <span className="text-xs font-mono text-primary flex-1">rocky-mountain-local-server-latest.zip</span>
+                  {pkgInfo ? (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-auto font-mono text-muted-foreground">v{pkgInfo.version}</Badge>
+                  ) : (
+                    <Badge variant="default" className="text-[10px] px-1.5 py-0 ml-auto">Download</Badge>
+                  )}
+                </a>
+                <p className="text-xs text-muted-foreground">
+                  Save it to your <strong>Downloads</strong> folder — the install script will look for it there.
+                </p>
+              </>
+            )}
           </div>
 
           {/* 1b — Install */}
