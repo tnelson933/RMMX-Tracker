@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, useListPointsTables, getListEventsQueryKey, useListDiscountCategories } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X } from "lucide-react";
 import { format, parseISO } from "date-fns";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -134,8 +134,17 @@ export default function EventsList() {
   const { data: clubs } = useListClubs({ query: { enabled: isSuperAdmin } as any });
 
   const isDesktop = typeof (window as any).electronAPI !== "undefined";
+  const [, setLocation] = useLocation();
 
-  // Check Stripe Connect status — cloud only, never on desktop
+  // Auto-open create dialog when navigated here with ?create=true (e.g. from Dashboard "New Event" button)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("create") === "true") {
+      setIsCreateOpen(true);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  // Check Stripe Connect status — works on both cloud and local server
   const { data: stripeStatus } = useQuery({
     queryKey: ["stripe-connect-status"],
     queryFn: async () => {
@@ -143,10 +152,10 @@ export default function EventsList() {
       if (!res.ok) return { connected: false, onboardingComplete: false, accountId: null };
       return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null }>;
     },
-    enabled: !isSuperAdmin && !isDesktop,
+    enabled: !isSuperAdmin,
   });
 
-  const stripeReady = !isSuperAdmin && !isDesktop && (stripeStatus?.connected ?? false);
+  const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
 
   const { data: seriesList } = useListSeries({ query: {} as any });
   const updateSeriesMutation = useUpdateSeries();
@@ -306,6 +315,7 @@ export default function EventsList() {
     setRemoveBgOnCreate(false);
     form.reset();
     toast({ title: "Event created successfully" });
+    setLocation(`/events/${newEvent.id}`);
   };
 
   const todayStr = format(new Date(), "yyyy-MM-dd");
@@ -315,7 +325,7 @@ export default function EventsList() {
       return [...all]
         .filter(e => e.status !== "completed")
         .sort((a, b) => a.date.localeCompare(b.date))
-        .slice(0, 5);
+        .slice(0, 10);
     }
     return all.filter(e => {
       if (filter === "all") return true;
@@ -486,8 +496,10 @@ export default function EventsList() {
                               <Info size={14} className="text-muted-foreground" />
                             </div>
                           </TooltipTrigger>
-                          <TooltipContent side="right" className="max-w-56">
-                            Set up Stripe Connect under <strong>Payments</strong> in the sidebar to collect entry fees.
+                          <TooltipContent side="right" className="max-w-64">
+                            {isDesktop
+                              ? "Connect Stripe in the cloud portal, then sync your data to enable payments here."
+                              : <>Set up Stripe Connect under <strong>Payments</strong> in the sidebar to collect entry fees.</>}
                           </TooltipContent>
                         </Tooltip>
                       )}
