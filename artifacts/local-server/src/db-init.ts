@@ -231,7 +231,6 @@ export function initDb() {
       countdown_seconds      INTEGER,
       started_at             TEXT,
       completed_at           TEXT,
-      staggered_with_moto_id INTEGER,
       staggered_order        INTEGER,
       created_at             TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -677,8 +676,8 @@ export function initDb() {
     ["motos", "time_limit_ms          INTEGER"],
     ["motos", "practice_mode          TEXT"],
     ["motos", "countdown_seconds      INTEGER"],
-    ["motos", "staggered_with_moto_id INTEGER"],
     ["motos", "staggered_order        INTEGER"],
+    ["motos", "staggered_group_id     INTEGER"],
     // race_results
     ["race_results", "event_id   INTEGER"],
     ["race_results", "race_class TEXT"],
