@@ -20,7 +20,7 @@ import { format, parseISO } from "date-fns";
 import { UpcomingNearMe } from "@/components/UpcomingNearMe";
 import { formatEventDatesFull } from "@/lib/eventDates";
 
-const FALLBACK_TAG = "desktop-v1.0.74";
+const FALLBACK_TAG = "desktop-v1.0.75";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
@@ -224,6 +224,18 @@ function PastCard({ result }: { result: RecentResultItem }) {
                 <Calendar size={13} />
                 {format(parseISO(result.date.substring(0, 10)), "MMM d, yyyy")}
               </span>
+              {(result.trackName || result.location) && (
+                <span className="flex items-center gap-1.5 truncate">
+                  <MapPin size={13} />
+                  <span className="truncate">
+                    {result.trackName
+                      ? result.location
+                        ? `${result.trackName}, ${result.location}`
+                        : result.trackName
+                      : result.location}
+                  </span>
+                </span>
+              )}
               {result.clubName && (
                 <span className="flex items-center gap-1.5 truncate">
                   <Trophy size={13} />
