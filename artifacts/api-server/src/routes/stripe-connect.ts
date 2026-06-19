@@ -67,6 +67,28 @@ router.get("/stripe/connect/status", async (req, res) => {
   });
 });
 
+// Public endpoint — no auth required — used by desktop local server to check
+// real-time Stripe status without relying solely on the sync cycle.
+router.get("/stripe/clubs/:clubId/status", async (req, res) => {
+  const clubId = Number(req.params.clubId);
+  if (isNaN(clubId) || clubId <= 0) return res.status(400).json({ error: "Invalid clubId" });
+
+  const [club] = await db
+    .select({
+      stripeAccountId: clubsTable.stripeAccountId,
+      stripeOnboardingComplete: clubsTable.stripeOnboardingComplete,
+    })
+    .from(clubsTable)
+    .where(eq(clubsTable.id, clubId));
+
+  if (!club) return res.json({ connected: false, onboardingComplete: false });
+
+  return res.json({
+    connected: !!club.stripeAccountId,
+    onboardingComplete: club.stripeOnboardingComplete ?? false,
+  });
+});
+
 router.post("/stripe/connect/start", async (req, res) => {
   const auth = await requireAuth(req, res);
   if (!auth) return;
