@@ -644,14 +644,50 @@ export class SyncEngine {
 
     upsertAll();
 
-    // After every pull, verify that every local event owned by this club also
-    // exists in the cloud response.  Any that are missing were silently dropped
-    // by a previous push (e.g. an id collision); re-queue them for retry.
     const pulledEventIds = new Set<number>(
       (data.events ?? [])
         .map((ev) => Number(ev["id"]))
         .filter((n) => n > 0),
     );
+
+    // ── Clear stuck write-queue entries for cloud-confirmed events ────────────
+    // Write-queue entries accumulate when:
+    //   (a) a desktop event was created with a low ID that collides with a cloud
+    //       event ID (Postgres serial starts at 1), or
+    //   (b) the GET /events auto-status update fired without the _cloud_pull_guard
+    //       active (now fixed), stuffing the event ID back into the queue.
+    //
+    // These stuck entries appear in pendingIds inside upsertPulled and prevent
+    // upsertAll() from applying the canonical cloud version.  We break the cycle
+    // here: if the cloud just told us it has event ID=X, any failed write-queue
+    // entry for that same ID is stale — clear it so the NEXT pull can upsert.
+    //
+    // Safety: only entries with attempt_count > 0 are cleared.  A fresh,
+    // un-attempted entry (attempt_count = 0) represents a locally-created event
+    // that has never been pushed; we preserve those so the push queue can still
+    // send them to the cloud.
+    if (pulledEventIds.size > 0) {
+      const idList = Array.from(pulledEventIds).join(",");
+      const cleared = this.db
+        .prepare(
+          `DELETE FROM _write_queue
+           WHERE table_name  = 'events'
+             AND record_id   IN (${idList})
+             AND synced_at   IS NULL
+             AND attempt_count > 0`,
+        )
+        .run();
+      if (cleared.changes > 0) {
+        console.log(
+          `[sync] Cleared ${cleared.changes} stuck write-queue entry(s) for ` +
+          `cloud-confirmed event IDs — they will be re-upserted on next pull`,
+        );
+      }
+    }
+
+    // After every pull, verify that every local event owned by this club also
+    // exists in the cloud response.  Any that are missing were silently dropped
+    // by a previous push (e.g. an id collision); re-queue them for retry.
     this.recoverMissingClubEvents(pulledEventIds);
   }
 
@@ -736,7 +772,15 @@ export class SyncEngine {
 
       // Skip rows with a pending local write — their local version wins until
       // successfully pushed to the cloud.
-      if (pendingIds.has(snakeRow.id as number)) continue;
+      if (pendingIds.has(snakeRow.id as number)) {
+        if (table === "events") {
+          console.warn(
+            `[sync] upsertPulled: skipping cloud event id=${snakeRow.id as number} ` +
+            `— blocked by pending local write-queue entry`,
+          );
+        }
+        continue;
+      }
 
       const vals = Object.values(snakeRow);
       const placeholders = cols.map(() => "?").join(", ");
