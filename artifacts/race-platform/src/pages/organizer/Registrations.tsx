@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Plus, Search, Check, X, Download, Pencil, Loader2, AlertCircle,
   CheckCircle2, Banknote, CreditCard, ExternalLink, DollarSign, Smartphone,
+  ShieldCheck, ShieldAlert, Minus,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { QRCodeSVG } from "qrcode.react";
@@ -1511,12 +1512,13 @@ export default function Registrations() {
                 <TableHead className="font-heading font-bold uppercase tracking-wider">#</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">{isMyLaps ? "Transponder" : "RFID"}</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Status</TableHead>
+                <TableHead className="font-heading font-bold uppercase tracking-wider">Waiver</TableHead>
                 <TableHead className="text-right font-heading font-bold uppercase tracking-wider">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {registrationsOfflineLoading ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-8">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center py-8">Loading...</TableCell></TableRow>
               ) : sortedRegs.length > 0 ? (
                 sortedRegs.map(reg => {
                   const suggested = suggestions.get(reg.id);
@@ -1649,6 +1651,38 @@ export default function Registrations() {
                           )}
                         </div>
                       </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const waiverAcknowledgedAt = (reg as any).waiverAcknowledgedAt as string | null;
+                          const requireWaiver = !!(event as any)?.requireWaiver;
+                          if (waiverAcknowledgedAt) {
+                            const ts = format(new Date(waiverAcknowledgedAt), "MMM d, yyyy h:mm a");
+                            return (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold bg-green-500/10 text-green-700 border border-green-500/20 cursor-default"
+                                title={`Accepted ${ts}`}
+                              >
+                                <ShieldCheck size={13} />
+                                Accepted
+                              </span>
+                            );
+                          }
+                          if (requireWaiver) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold bg-destructive/10 text-destructive border border-destructive/20">
+                                <ShieldAlert size={13} />
+                                Missing
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                              <Minus size={13} />
+                              N/A
+                            </span>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell className="text-right">
                         {reg.status !== 'confirmed' && (
                           <Button variant="ghost" size="icon" onClick={() => handleUpdateStatus(reg.id, 'confirmed')} className="text-secondary hover:text-secondary hover:bg-secondary/10">
@@ -1665,7 +1699,7 @@ export default function Registrations() {
                   );
                 })
               ) : (
-                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No registrations found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No registrations found.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
