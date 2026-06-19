@@ -1295,52 +1295,65 @@ export default function PointsTables() {
             <p className="text-xs text-muted-foreground mt-0.5">
               Applies to <strong>all races</strong> across every scoring system — riders completing fewer than the threshold % of the leader's laps score 0 points
             </p>
-            {dnfEnabled && (
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={dnfThreshold}
-                    onChange={(e) => setDnfThreshold(e.target.value)}
-                    className="h-8 w-20 font-mono text-sm"
-                  />
-                  <span className="text-sm text-muted-foreground">% of leader laps</span>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={dnfSaving}
-                  onClick={async () => {
+            <div className={`mt-3 flex flex-wrap items-center gap-3 transition-opacity ${dnfEnabled ? "" : "opacity-50 pointer-events-none"}`}>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={dnfThreshold}
+                  disabled={!dnfEnabled}
+                  onChange={(e) => setDnfThreshold(e.target.value)}
+                  onBlur={async () => {
+                    if (!dnfEnabled) return;
                     const t = Math.min(100, Math.max(1, parseInt(dnfThreshold, 10) || 75));
                     setDnfThreshold(String(t));
                     setDnfSaving(true);
                     try {
                       await updateClubMutation.mutateAsync({ clubId: club.id, data: { autoDnfEnabled: true, autoDnfThreshold: t } });
                       queryClient.invalidateQueries({ queryKey: getListClubsQueryKey() });
-                      toast({ title: "Threshold saved" });
                     } catch {
                       toast({ title: "Failed to save threshold", variant: "destructive" });
                     } finally {
                       setDnfSaving(false);
                     }
                   }}
-                >
-                  {dnfSaving ? "Saving…" : "Save"}
-                </Button>
-                {(() => {
-                  const pct = parseInt(dnfThreshold, 10);
-                  if (isNaN(pct) || pct < 1 || pct > 100) return null;
-                  const minLaps = Math.floor(10 * pct / 100);
-                  return (
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
-                      e.g. leader completes <strong>10 laps</strong> → riders below <strong>{minLaps} lap{minLaps !== 1 ? "s" : ""}</strong> score 0 pts
-                    </p>
-                  );
-                })()}
+                  className="h-8 w-20 font-mono text-sm"
+                />
+                <span className="text-sm text-muted-foreground">% of leader laps</span>
               </div>
-            )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={dnfSaving || !dnfEnabled}
+                onClick={async () => {
+                  const t = Math.min(100, Math.max(1, parseInt(dnfThreshold, 10) || 75));
+                  setDnfThreshold(String(t));
+                  setDnfSaving(true);
+                  try {
+                    await updateClubMutation.mutateAsync({ clubId: club.id, data: { autoDnfEnabled: true, autoDnfThreshold: t } });
+                    queryClient.invalidateQueries({ queryKey: getListClubsQueryKey() });
+                    toast({ title: "Threshold saved" });
+                  } catch {
+                    toast({ title: "Failed to save threshold", variant: "destructive" });
+                  } finally {
+                    setDnfSaving(false);
+                  }
+                }}
+              >
+                {dnfSaving ? "Saving…" : "Save"}
+              </Button>
+              {(() => {
+                const pct = parseInt(dnfThreshold, 10);
+                if (isNaN(pct) || pct < 1 || pct > 100) return null;
+                const minLaps = Math.floor(10 * pct / 100);
+                return (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
+                    e.g. leader completes <strong>10 laps</strong> → riders below <strong>{minLaps} lap{minLaps !== 1 ? "s" : ""}</strong> score 0 pts
+                  </p>
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}
