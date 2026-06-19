@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useGetRider, useUpdateRider, useAssignRfid, useListDiscountCodes, getGetRiderQueryKey } from "@workspace/api-client-react";
 import type { DiscountCode as DiscountCodeType } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,8 +13,86 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ticket, Copy, Check, Trash2, Plus, Loader2 } from "lucide-react";
+import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ticket, Copy, Check, Trash2, Plus, Loader2, FileText, ShieldCheck, ChevronDown } from "lucide-react";
+import { format } from "date-fns";
 import { useGetMe } from "@workspace/api-client-react";
+
+interface WaiverAck {
+  id: number;
+  eventId: number;
+  eventName: string;
+  eventDate: string;
+  waiverAcknowledgedAt: string;
+  waiverSnapshot: string | null;
+}
+
+function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubId: number }) {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const { data: acks, isLoading } = useQuery<WaiverAck[]>({
+    queryKey: ["waiver-acknowledgments", clubId, riderId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clubs/${clubId}/riders/${riderId}/waiver-acknowledgments`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch waiver acknowledgments");
+      return res.json();
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader className="border-b pb-4">
+        <CardTitle className="font-heading uppercase text-xl flex items-center gap-2">
+          <ShieldCheck className="text-primary" size={20} />
+          Waiver History
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 size={18} className="animate-spin text-muted-foreground" />
+          </div>
+        ) : !acks || acks.length === 0 ? (
+          <div className="p-6 text-center text-muted-foreground text-sm">No waiver acknowledgments on record.</div>
+        ) : (
+          <div className="divide-y">
+            {acks.map(ack => (
+              <div key={ack.id} className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{ack.eventName}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                      <ShieldCheck size={11} className="text-green-600 shrink-0" />
+                      Accepted {format(new Date(ack.waiverAcknowledgedAt), "MMM d, yyyy 'at' h:mm a")}
+                    </p>
+                  </div>
+                  {ack.waiverSnapshot && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-muted-foreground"
+                      onClick={() => setExpandedId(expandedId === ack.id ? null : ack.id)}
+                    >
+                      <FileText size={12} className="mr-1" />
+                      {expandedId === ack.id ? "Hide" : "View"}
+                      <ChevronDown size={12} className={`ml-1 transition-transform ${expandedId === ack.id ? "rotate-180" : ""}`} />
+                    </Button>
+                  )}
+                </div>
+                {expandedId === ack.id && ack.waiverSnapshot && (
+                  <div className="mt-3 rounded-md bg-muted/50 border px-3 py-3 max-h-48 overflow-y-auto">
+                    <pre className="whitespace-pre-wrap font-sans text-xs text-muted-foreground leading-relaxed">
+                      {ack.waiverSnapshot}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 const updateRiderSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -745,6 +823,11 @@ export default function RiderDetail() {
           {/* Discount Code — cloud-only feature */}
           {!isDesktop && clubId && (
             <DiscountCodeCard riderId={riderId} clubId={clubId} />
+          )}
+
+          {/* Waiver acknowledgment history */}
+          {clubId && (
+            <WaiverAcknowledgmentsCard riderId={riderId} clubId={clubId} />
           )}
 
           {/* MyLaps quick view */}
