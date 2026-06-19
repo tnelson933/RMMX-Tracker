@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { usePublicOrigin } from "@/lib/publicOrigin";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
-import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, getListEventsQueryKey, useListDiscountCategories, useDeleteEvent } from "@workspace/api-client-react";
+import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, getListEventsQueryKey, useListDiscountCategories, useDeleteEvent, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info, Upload, ImageIcon, X, Loader2, Sparkles, Ticket } from "lucide-react";
+import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info, Upload, ImageIcon, X, Loader2, Sparkles, Ticket, ChevronsUpDown } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, parseISO } from "date-fns";
 
 const TIME_OPTIONS: string[] = [];
@@ -95,6 +96,7 @@ const updateEventSchema = z.object({
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
+    seriesIds: z.array(z.number()).default([]),
   })),
   paymentEnabled: z.boolean().default(false),
   requireAma: z.boolean().default(false),
@@ -105,6 +107,7 @@ const updateEventSchema = z.object({
   transponderRentalFee: z.string().optional(),
   noDuplicateBibs: z.boolean().default(false),
   requireClubId: z.boolean().default(false),
+  requireWaiver: z.boolean().default(false),
   scoringTableId: z.number().optional(),
   purchaseOptions: z.array(z.object({
     name: z.string().min(1, "Name required"),
@@ -138,6 +141,14 @@ export default function EventDetail() {
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
   const publicOrigin = usePublicOrigin();
+
+  const clubId = (event as any)?.clubId ?? user?.clubId ?? null;
+  const { data: clubSettingsData } = useGetClubSettings(clubId ?? 0, { query: { enabled: !!clubId && !isSuperAdmin } as any });
+  const putClubSettings = usePutClubSettings();
+  const defaultClasses = useMemo<{ id: string; name: string }[]>(
+    () => (clubSettingsData?.defaultClasses as { id: string; name: string }[] | undefined) ?? [],
+    [clubSettingsData]
+  );
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
@@ -327,6 +338,7 @@ export default function EventDetail() {
       transponderRentalFee: "",
       noDuplicateBibs: false,
       requireClubId: false,
+      requireWaiver: false,
       scoringTableId: undefined,
       purchaseOptions: [],
       amaEventId: "",
@@ -355,6 +367,7 @@ export default function EventDetail() {
     if (!evt) return;
     const limits = (evt.raceClassLimits ?? {}) as Record<string, number | null>;
     const evtEndDate = (evt as any).endDate ?? null;
+    const evtClassSeriesMap = ((evt as any).raceClassSeriesMap ?? {}) as Record<string, number[]>;
     form.reset({
       name: evt.name,
       date: evt.date.substring(0, 10),
@@ -368,6 +381,7 @@ export default function EventDetail() {
       raceClasses: (evt.raceClasses ?? []).map((cls) => ({
         name: cls,
         maxRiders: limits[cls] ?? "",
+        seriesIds: evtClassSeriesMap[cls] ?? [],
       })),
       paymentEnabled: evt.entryFee != null,
       requireAma: evt.requireAma ?? false,
@@ -378,6 +392,7 @@ export default function EventDetail() {
       transponderRentalFee: (evt as any).transponderRentalFee != null ? String((evt as any).transponderRentalFee) : "",
       noDuplicateBibs: (evt as any).noDuplicateBibs ?? false,
       requireClubId: (evt as any).requireClubId ?? false,
+      requireWaiver: (evt as any).requireWaiver ?? false,
       scoringTableId: (evt as any).scoringTableId ?? undefined,
       purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number; categoryId?: number | null }) => ({ name: o.name, amount: String(o.amount), categoryId: o.categoryId ?? null })),
       amaEventId: (evt as any).amaEventId ?? "",
@@ -389,11 +404,25 @@ export default function EventDetail() {
   const onSubmit = (data: FormValues) => {
     const classNames = data.raceClasses.map((r) => r.name.trim()).filter(Boolean);
     const classLimits: Record<string, number | null> = {};
+    const classSeriesMap: Record<string, number[]> = {};
     data.raceClasses.forEach((r) => {
       const key = r.name.trim();
       if (!key) return;
       classLimits[key] = r.maxRiders !== "" && r.maxRiders != null ? Number(r.maxRiders) : null;
+      if (r.seriesIds && r.seriesIds.length > 0) {
+        classSeriesMap[key] = r.seriesIds;
+      }
     });
+
+    // Silently save any brand-new class names back to club defaults
+    if (clubId && !isSuperAdmin) {
+      const existingDefaultNames = new Set(defaultClasses.map(c => c.name));
+      const newClassNames = data.raceClasses.map(r => r.name.trim()).filter(n => n && !existingDefaultNames.has(n));
+      if (newClassNames.length > 0) {
+        const updated = [...defaultClasses, ...newClassNames.map(n => ({ id: crypto.randomUUID(), name: n }))];
+        putClubSettings.mutate({ clubId, data: { defaultClasses: updated } });
+      }
+    }
 
     updateMutation.mutate({
       eventId,
@@ -408,10 +437,12 @@ export default function EventDetail() {
         timingTechnology: data.timingTechnology,
         raceClasses: classNames,
         raceClassLimits: classLimits,
+        raceClassSeriesMap: classSeriesMap,
         paymentEnabled: data.paymentEnabled,
         requireAma: data.requireAma,
         noDuplicateBibs: data.noDuplicateBibs,
         requireClubId: data.requireClubId,
+        requireWaiver: data.requireWaiver,
         scoringTableId: data.scoringTableId ?? null,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
@@ -724,15 +755,47 @@ export default function EventDetail() {
                         </p>
                       </div>
                       <div className="space-y-2">
+                        {defaultClasses.length > 0 && (
+                          <div className="mb-3">
+                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Club Classes</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {defaultClasses.map(cls => {
+                                const isActive = fields.some(f => f.name === cls.name);
+                                return (
+                                  <button
+                                    key={cls.id}
+                                    type="button"
+                                    onClick={() => {
+                                      if (isActive) {
+                                        const idx = fields.findIndex(f => f.name === cls.name);
+                                        if (idx !== -1) remove(idx);
+                                      } else {
+                                        append({ name: cls.name, maxRiders: "", seriesIds: [] });
+                                      }
+                                    }}
+                                    className={
+                                      isActive
+                                        ? "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors bg-primary text-primary-foreground border-primary"
+                                        : "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                                    }
+                                  >
+                                    {cls.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                         {fields.length > 0 && (
-                          <div className="grid grid-cols-[1fr_140px_32px] gap-2 mb-1">
+                          <div className="grid grid-cols-[1fr_1fr_140px_32px] gap-2 mb-1">
                             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Class Name</span>
+                            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Series</span>
                             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Max Riders</span>
                             <span />
                           </div>
                         )}
                         {fields.map((field, index) => (
-                          <div key={field.id} className="grid grid-cols-[1fr_140px_32px] gap-2 items-start">
+                          <div key={field.id} className="grid grid-cols-[1fr_1fr_140px_32px] gap-2 items-start">
                             <FormField
                               control={form.control}
                               name={`raceClasses.${index}.name`}
@@ -744,6 +807,64 @@ export default function EventDetail() {
                                   <FormMessage />
                                 </FormItem>
                               )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name={`raceClasses.${index}.seriesIds`}
+                              render={({ field: seriesField }) => {
+                                const selected: number[] = seriesField.value ?? [];
+                                const seriesOptions = clubSeriesList ?? [];
+                                const label = selected.length === 0
+                                  ? "None"
+                                  : selected.length === 1
+                                    ? (seriesOptions.find(s => s.id === selected[0])?.name ?? "1 series")
+                                    : `${selected.length} series`;
+                                return (
+                                  <FormItem>
+                                    <Popover>
+                                      <PopoverTrigger asChild>
+                                        <Button
+                                          variant="outline"
+                                          role="combobox"
+                                          className="w-full justify-between h-9 font-normal"
+                                          type="button"
+                                        >
+                                          <span className="truncate text-sm">{label}</span>
+                                          <ChevronsUpDown size={14} className="ml-1 shrink-0 opacity-50" />
+                                        </Button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-60 p-2" align="start">
+                                        {seriesOptions.length === 0 ? (
+                                          <p className="text-xs text-muted-foreground p-1">No series found for this club.</p>
+                                        ) : (
+                                          seriesOptions.map(s => {
+                                            const checked = selected.includes(s.id);
+                                            return (
+                                              <div
+                                                key={s.id}
+                                                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
+                                                onClick={() => {
+                                                  if (checked) {
+                                                    seriesField.onChange(selected.filter(id => id !== s.id));
+                                                  } else {
+                                                    seriesField.onChange([...selected, s.id]);
+                                                  }
+                                                }}
+                                              >
+                                                <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${checked ? "bg-primary border-primary" : "border-input"}`}>
+                                                  {checked && <Check size={10} className="text-primary-foreground" />}
+                                                </div>
+                                                <span className="text-sm">{s.name}</span>
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </PopoverContent>
+                                    </Popover>
+                                    <FormMessage />
+                                  </FormItem>
+                                );
+                              }}
                             />
                             <FormField
                               control={form.control}
@@ -779,7 +900,7 @@ export default function EventDetail() {
                           variant="outline"
                           size="sm"
                           className="w-full gap-2 border-dashed font-heading uppercase tracking-wider text-muted-foreground hover:text-foreground mt-1"
-                          onClick={() => append({ name: "", maxRiders: "" })}
+                          onClick={() => append({ name: "", maxRiders: "", seriesIds: [] })}
                         >
                           <Plus size={14} /> Add Class
                         </Button>
@@ -843,6 +964,41 @@ export default function EventDetail() {
                           )}
                         />
                       </div>
+
+                      {/* Require Waiver checkbox */}
+                      {!isSuperAdmin && (() => {
+                        const hasWaiverText = !!(clubSettingsData?.riderAcknowledgement?.trim());
+                        return hasWaiverText ? (
+                          <FormField
+                            control={form.control}
+                            name="requireWaiver"
+                            render={({ field }) => (
+                              <FormItem className="flex items-center gap-2 space-y-0">
+                                <FormControl>
+                                  <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                                <FormLabel className="cursor-pointer font-normal">Require waiver acknowledgment</FormLabel>
+                              </FormItem>
+                            )}
+                          />
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-2 cursor-default">
+                                <Checkbox disabled checked={false} />
+                                <span className="text-sm text-muted-foreground">Require waiver acknowledgment</span>
+                                <Info size={14} className="text-muted-foreground" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-64">
+                              Set waiver text in Admin settings first.
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })()}
 
                       {/* Scoring Format dropdown */}
                       <FormField
