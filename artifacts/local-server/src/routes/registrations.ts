@@ -15,7 +15,7 @@ function deserializeReg(r: Record<string, unknown>) {
     bikeBrand: r.bike_brand,
     myLapsTransponderNumber: r.mylaps_transponder_number,
     clubIdNumber: r.club_id_number,
-    amountPaid: r.amount_paid,
+    amountPaid: r.amount_paid != null ? Number(r.amount_paid) : null,
     paymentMethod: r.payment_method,
     statsEmailOptIn: parseBool(r.stats_email_opt_in as number),
     transponderRental: parseBool(r.transponder_rental as number),
