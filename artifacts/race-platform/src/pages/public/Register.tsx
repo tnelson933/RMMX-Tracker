@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRoute, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 
@@ -66,6 +67,8 @@ interface EventInfo {
   paymentEnabled: boolean;
   requireAma: boolean;
   requireClubId: boolean;
+  requireWaiver: boolean;
+  waiverText: string | null;
   clubName: string | null;
   clubLogoUrl: string | null;
   registrationOpen: string | null;
@@ -134,6 +137,42 @@ export default function Register() {
   const [compError, setCompError] = useState<string | null>(null);
 
   const [bibCheckState, setBibCheckState] = useState<"idle" | "checking" | "taken" | "available">("idle");
+
+  // Waiver state
+  const [waiverModalOpen, setWaiverModalOpen] = useState(false);
+  const [waiverAccepted, setWaiverAccepted] = useState(false);
+  const [waiverScrolledToBottom, setWaiverScrolledToBottom] = useState(false);
+  const [waiverTimestamp, setWaiverTimestamp] = useState<string | null>(null);
+  const waiverScrollRef = useRef<HTMLDivElement>(null);
+
+  const handleWaiverScroll = useCallback(() => {
+    const el = waiverScrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 40;
+    if (atBottom) setWaiverScrolledToBottom(true);
+  }, []);
+
+  // If the waiver text is short enough that no scrolling is needed, unlock immediately
+  const checkWaiverScrollable = useCallback(() => {
+    const el = waiverScrollRef.current;
+    if (!el) return;
+    if (el.scrollHeight <= el.clientHeight + 40) setWaiverScrolledToBottom(true);
+  }, []);
+
+  // Auto-unlock when the modal opens if the content fits without scrolling
+  useEffect(() => {
+    if (!waiverModalOpen) return;
+    // Give the dialog one frame to render before measuring
+    const id = requestAnimationFrame(() => checkWaiverScrollable());
+    return () => cancelAnimationFrame(id);
+  }, [waiverModalOpen, checkWaiverScrollable]);
+
+  const handleAcceptWaiver = () => {
+    const ts = new Date().toISOString();
+    setWaiverTimestamp(ts);
+    setWaiverAccepted(true);
+    setWaiverModalOpen(false);
+  };
 
   const handleApplyComp = async () => {
     const code = compCodeInput.trim().toUpperCase();
@@ -349,6 +388,10 @@ export default function Register() {
       form.setError("clubIdNumber", { message: "Club ID # is required for this event" });
       return;
     }
+    if (event?.requireWaiver && !waiverAccepted) {
+      setSubmitError("You must read and accept the club waiver before registering.");
+      return;
+    }
     // MyLaps events require either a transponder number or a rental
     if (event?.timingTechnology === "mylaps") {
       const hasNumber = !!data.myLapsTransponderNumber?.trim();
@@ -371,6 +414,8 @@ export default function Register() {
           ...data,
           selectedPurchaseOptions: (event?.purchaseOptions ?? []).filter(o => data.selectedPurchaseOptions.includes(o.id)),
           compCode: appliedComp?.code ?? null,
+          waiverAcknowledgedAt: waiverAccepted ? waiverTimestamp : null,
+          waiverSnapshot: waiverAccepted ? (event?.waiverText ?? null) : null,
         }),
       });
       const json = await res.json();
@@ -1170,9 +1215,54 @@ export default function Register() {
                   </div>
                 )}
 
+                {/* Waiver acknowledgment */}
+                {event.requireWaiver && event.waiverText && (
+                  <div className={`rounded-lg border px-4 py-4 space-y-3 transition-colors ${waiverAccepted ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
+                    <div className="flex items-start gap-3">
+                      <FileText size={18} className={`mt-0.5 shrink-0 ${waiverAccepted ? "text-green-600" : "text-amber-600"}`} />
+                      <div className="flex-1 space-y-1">
+                        <p className="text-sm font-semibold">
+                          {waiverAccepted ? "Waiver Accepted" : "Club Waiver Required"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {waiverAccepted
+                            ? `Accepted on ${waiverTimestamp ? format(new Date(waiverTimestamp), "MMM d, yyyy 'at' h:mm a") : "—"}`
+                            : "You must read and acknowledge the club waiver before registering."}
+                        </p>
+                      </div>
+                      {waiverAccepted ? (
+                        <ShieldCheck size={18} className="text-green-600 shrink-0 mt-0.5" />
+                      ) : null}
+                    </div>
+                    {!waiverAccepted && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full font-heading uppercase tracking-wider border-amber-400 text-amber-700 hover:bg-amber-100"
+                        onClick={() => { setWaiverScrolledToBottom(false); setWaiverModalOpen(true); }}
+                      >
+                        <FileText size={14} className="mr-2" />
+                        Read &amp; Acknowledge Waiver
+                      </Button>
+                    )}
+                    {waiverAccepted && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-xs text-muted-foreground"
+                        onClick={() => { setWaiverScrolledToBottom(false); setWaiverModalOpen(true); }}
+                      >
+                        View waiver text
+                      </Button>
+                    )}
+                  </div>
+                )}
+
                 <Button
                   type="submit"
-                  disabled={submitting || bibCheckState === "taken" || bibCheckState === "checking"}
+                  disabled={submitting || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted)}
                   className="w-full font-heading uppercase tracking-wider text-base h-12"
                 >
                   {submitting ? (
@@ -1186,6 +1276,53 @@ export default function Register() {
                 <p className="text-center text-xs text-muted-foreground">By registering you agree to the event's waiver and rules.</p>
               </form>
             </Form>
+
+            {/* Waiver modal */}
+            <Dialog open={waiverModalOpen} onOpenChange={setWaiverModalOpen}>
+              <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
+                <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+                  <DialogTitle className="font-heading uppercase tracking-wide text-base flex items-center gap-2">
+                    <FileText size={18} className="text-primary" />
+                    Club Waiver &amp; Release
+                  </DialogTitle>
+                  {!waiverScrolledToBottom && <p className="text-xs text-muted-foreground mt-1">Scroll to the bottom to accept the waiver.</p>}
+                </DialogHeader>
+                <div
+                  ref={waiverScrollRef}
+                  onScroll={handleWaiverScroll}
+                  className="flex-1 overflow-y-auto px-6 py-4"
+                  style={{ minHeight: 0 }}
+                >
+                  <pre className="whitespace-pre-wrap font-sans text-sm text-foreground leading-relaxed">
+                    {event.waiverText}
+                  </pre>
+                </div>
+                <div className="px-6 py-4 border-t shrink-0 space-y-3">
+                  {!waiverScrolledToBottom && (
+                    <p className="text-xs text-amber-600 text-center">↓ Scroll to the bottom to enable the Accept button</p>
+                  )}
+                  <div className="flex gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setWaiverModalOpen(false)}
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      type="button"
+                      className="flex-1 font-heading uppercase tracking-wider"
+                      disabled={!waiverScrolledToBottom}
+                      onClick={handleAcceptWaiver}
+                    >
+                      <ShieldCheck size={16} className="mr-2" />
+                      I Accept
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         )}
       </div>
