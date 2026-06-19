@@ -549,6 +549,26 @@ export function initDb() {
     END;
   `);
 
+  // ── MIGRATION: Add auto_dnf_enabled / auto_dnf_threshold to clubs ────────
+  // Existing installs have a 4-column clubs table; these columns were added
+  // later. ALTER TABLE is idempotent via the PRAGMA table_info guard.
+  {
+    const clubCols = (
+      db.prepare("PRAGMA table_info(clubs)").all() as Array<{ name: string }>
+    ).map((r) => r.name);
+
+    if (!clubCols.includes("auto_dnf_enabled")) {
+      db.prepare(
+        "ALTER TABLE clubs ADD COLUMN auto_dnf_enabled INTEGER NOT NULL DEFAULT 0",
+      ).run();
+    }
+    if (!clubCols.includes("auto_dnf_threshold")) {
+      db.prepare(
+        "ALTER TABLE clubs ADD COLUMN auto_dnf_threshold INTEGER NOT NULL DEFAULT 75",
+      ).run();
+    }
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS password_setup_tokens (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
