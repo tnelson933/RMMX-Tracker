@@ -36,6 +36,7 @@ type PracticeSession = {
   name: string;
   status: "idle" | "active" | "ended";
   debounceMs: number;
+  venueName: string | null;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
@@ -426,6 +427,12 @@ export default function StandalonePractice() {
                       </div>
                     )}
                   </div>
+                  {selectedSession.venueName && (
+                    <div className="text-xs text-sidebar-foreground/60 mt-0.5 flex items-center gap-1">
+                      <Tag size={10} />
+                      {selectedSession.venueName}
+                    </div>
+                  )}
                   {selectedSession.startedAt && (
                     <div className="text-xs text-sidebar-foreground/50 mt-0.5">
                       Started {new Date(selectedSession.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
