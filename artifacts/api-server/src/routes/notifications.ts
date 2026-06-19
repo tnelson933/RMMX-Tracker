@@ -7,24 +7,25 @@ import {
   registrationsTable,
   eventsTable,
   usersTable,
+  riderNotificationPrefsTable,
+  notificationLogsTable,
 } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, and, countDistinct, desc } from "drizzle-orm";
 import { sendPushNotifications } from "../lib/push";
 
 const router = Router();
 
-const RATE_LIMIT_MS = 1 * 60 * 60 * 1000; // 1 hour
-const WINDOW_BEFORE_MS = 24 * 60 * 60 * 1000; // 24 hours before event
-
 // POST /admin/notifications/broadcast
-// Organizer-scoped: requires eventId, enforces timing window and 4-hour rate limit.
-// Super admins bypass timing/rate but still require eventId (use /broadcast-all for unrestricted sends).
+// Organizer-scoped: no timing window, no rate limit.
+// When eventId is absent or null, sends to all riders registered across any event in the organizer's club.
+// When eventId is provided, sends only to riders registered for that event.
+// Super admins bypass club scoping (use /broadcast-all for unrestricted sends).
 router.post("/admin/notifications/broadcast", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
   const [callingUser] = await db
-    .select({ role: usersTable.role, lastPushSentAt: usersTable.lastPushSentAt })
+    .select({ role: usersTable.role, clubId: usersTable.clubId })
     .from(usersTable)
     .where(eq(usersTable.id, userId));
 
@@ -35,23 +36,26 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
   const { title, body, eventId } = req.body as {
     title?: string;
     body?: string;
-    eventId?: number;
+    eventId?: number | null;
   };
 
   if (!title?.trim() || !body?.trim()) {
     return res.status(400).json({ error: "title and body are required" });
   }
 
-  // Non-super-admins must provide an eventId
-  if (!isSuperAdmin && !eventId) {
-    return res.status(400).json({ error: "eventId is required" });
+  // Non-super-admins must belong to a club
+  if (!isSuperAdmin && !callingUser.clubId) {
+    return res.status(403).json({ error: "No club associated with your account" });
   }
 
-  // Timing window and rate limit checks for non-super-admins
-  if (!isSuperAdmin && eventId) {
-    // Verify event exists and check timing window
+  let accountIds: number[] | null = null;
+  let audienceType = "all";
+  let resolvedEventId: number | null = null;
+
+  if (eventId) {
+    // Single-event path: verify event belongs to the organizer's club (skip for super admins)
     const [event] = await db
-      .select({ date: eventsTable.date })
+      .select({ id: eventsTable.id, clubId: eventsTable.clubId })
       .from(eventsTable)
       .where(eq(eventsTable.id, eventId));
 
@@ -59,43 +63,10 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
       return res.status(404).json({ error: "Event not found" });
     }
 
-    const now = new Date();
-    // Parse event date as local date (YYYY-MM-DD)
-    const [year, month, day] = event.date.split("-").map(Number);
-    // Window start: 24h before event date (midnight of event date - 24h)
-    const windowStart = new Date(year, month - 1, day, 0, 0, 0, 0);
-    windowStart.setTime(windowStart.getTime() - WINDOW_BEFORE_MS);
-    // Window end: midnight of event date + 48h (24h after end of event day)
-    const windowEnd = new Date(year, month - 1, day, 0, 0, 0, 0);
-    windowEnd.setTime(windowEnd.getTime() + 48 * 60 * 60 * 1000);
-
-    if (now < windowStart || now > windowEnd) {
-      const windowStartStr = windowStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      const windowEndStr = windowEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      return res.status(403).json({
-        error: `Notifications can only be sent between ${windowStartStr} and ${windowEndStr}`,
-        windowStart: windowStart.toISOString(),
-        windowEnd: windowEnd.toISOString(),
-      });
+    if (!isSuperAdmin && event.clubId !== callingUser.clubId) {
+      return res.status(403).json({ error: "Event does not belong to your club" });
     }
 
-    // Rate limit check
-    if (callingUser.lastPushSentAt) {
-      const elapsed = now.getTime() - callingUser.lastPushSentAt.getTime();
-      if (elapsed < RATE_LIMIT_MS) {
-        const retryAfterSeconds = Math.ceil((RATE_LIMIT_MS - elapsed) / 1000);
-        return res.status(429).json({
-          error: "Rate limit exceeded",
-          retryAfterSeconds,
-          lastSentAt: callingUser.lastPushSentAt.toISOString(),
-        });
-      }
-    }
-  }
-
-  let accountIds: number[] | null = null;
-
-  if (eventId) {
     const regs = await db
       .select({ riderId: registrationsTable.riderId })
       .from(registrationsTable)
@@ -103,7 +74,16 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
 
     const riderIds = regs.map((r) => r.riderId).filter(Boolean) as number[];
     if (riderIds.length === 0) {
-      return res.json({ ok: true, sent: 0, lastPushSentAt: callingUser.lastPushSentAt?.toISOString() ?? null });
+      await db.insert(notificationLogsTable).values({
+        clubId: callingUser.clubId ?? null,
+        userId,
+        title: title.trim(),
+        body: body.trim(),
+        audienceType: "event",
+        eventId,
+        sentCount: 0,
+      });
+      return res.json({ ok: true, sent: 0 });
     }
 
     const riders = await db
@@ -116,7 +96,16 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
       .filter((e): e is string => !!e);
 
     if (emails.length === 0) {
-      return res.json({ ok: true, sent: 0, lastPushSentAt: callingUser.lastPushSentAt?.toISOString() ?? null });
+      await db.insert(notificationLogsTable).values({
+        clubId: callingUser.clubId ?? null,
+        userId,
+        title: title.trim(),
+        body: body.trim(),
+        audienceType: "event",
+        eventId,
+        sentCount: 0,
+      });
+      return res.json({ ok: true, sent: 0 });
     }
 
     const accounts = await db
@@ -125,21 +114,160 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
       .where(inArray(riderAccountsTable.email, emails));
 
     accountIds = accounts.map((a) => a.id);
+    audienceType = "event";
+    resolvedEventId = eventId;
+  } else {
+    // All-riders path: gather registrations across all events in the organizer's club
+    const clubId = isSuperAdmin ? null : callingUser.clubId;
+
+    let eventIds: number[];
+
+    if (clubId !== null) {
+      const clubEvents = await db
+        .select({ id: eventsTable.id })
+        .from(eventsTable)
+        .where(eq(eventsTable.clubId, clubId));
+
+      eventIds = clubEvents.map((e) => e.id);
+    } else {
+      // Super admin with no eventId — treat as broadcast-all (no account filter)
+      eventIds = [];
+    }
+
+    if (clubId !== null && eventIds.length === 0) {
+      await db.insert(notificationLogsTable).values({
+        clubId: callingUser.clubId ?? null,
+        userId,
+        title: title.trim(),
+        body: body.trim(),
+        audienceType: isSuperAdmin ? "all_global" : "all",
+        eventId: null,
+        sentCount: 0,
+      });
+      return res.json({ ok: true, sent: 0 });
+    }
+
+    if (eventIds.length > 0) {
+      const regs = await db
+        .select({ riderId: registrationsTable.riderId })
+        .from(registrationsTable)
+        .where(inArray(registrationsTable.eventId, eventIds));
+
+      const riderIds = [...new Set(regs.map((r) => r.riderId).filter(Boolean) as number[])];
+      if (riderIds.length === 0) {
+        await db.insert(notificationLogsTable).values({
+          clubId: callingUser.clubId ?? null,
+          userId,
+          title: title.trim(),
+          body: body.trim(),
+          audienceType: "all",
+          eventId: null,
+          sentCount: 0,
+        });
+        return res.json({ ok: true, sent: 0 });
+      }
+
+      const riders = await db
+        .select({ email: ridersTable.email })
+        .from(ridersTable)
+        .where(inArray(ridersTable.id, riderIds));
+
+      const emails = [...new Set(
+        riders.map((r) => r.email?.toLowerCase()).filter((e): e is string => !!e)
+      )];
+
+      if (emails.length === 0) {
+        await db.insert(notificationLogsTable).values({
+          clubId: callingUser.clubId ?? null,
+          userId,
+          title: title.trim(),
+          body: body.trim(),
+          audienceType: "all",
+          eventId: null,
+          sentCount: 0,
+        });
+        return res.json({ ok: true, sent: 0 });
+      }
+
+      const accounts = await db
+        .select({ id: riderAccountsTable.id })
+        .from(riderAccountsTable)
+        .where(inArray(riderAccountsTable.email, emails));
+
+      accountIds = accounts.map((a) => a.id);
+    }
+    audienceType = isSuperAdmin ? "all_global" : "all";
+    // accountIds remains null → push to all tokens (super admin no-eventId case)
   }
 
-  const pushQuery = db
-    .select({ expoPushToken: riderPushTokensTable.expoPushToken })
-    .from(riderPushTokensTable);
+  // Determine the broadcasting club ID for opt-out filtering
+  const broadcastingClubId: number | null = isSuperAdmin && !eventId
+    ? null
+    : (eventId
+      ? (await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId)).then(r => r[0]?.clubId ?? null))
+      : callingUser.clubId ?? null);
 
-  const pushRows =
-    accountIds !== null
-      ? await pushQuery.where(
-          inArray(riderPushTokensTable.riderAccountId, accountIds),
-        )
-      : await pushQuery;
+  // Collect opted-out account IDs for this club
+  let optedOutAccountIds: number[] = [];
+  if (broadcastingClubId !== null) {
+    const optOuts = await db
+      .select({ riderAccountId: riderNotificationPrefsTable.riderAccountId })
+      .from(riderNotificationPrefsTable)
+      .where(
+        and(
+          eq(riderNotificationPrefsTable.clubId, broadcastingClubId),
+          eq(riderNotificationPrefsTable.enabled, false),
+        ),
+      );
+    optedOutAccountIds = optOuts.map((o) => o.riderAccountId);
+  }
+
+  // Build effective account filter: intersection of target accounts minus opt-outs
+  let effectiveAccountIds: number[] | null = accountIds;
+  if (optedOutAccountIds.length > 0) {
+    if (effectiveAccountIds !== null) {
+      effectiveAccountIds = effectiveAccountIds.filter(
+        (id) => !optedOutAccountIds.includes(id),
+      );
+    } else {
+      effectiveAccountIds = null; // will filter below
+    }
+  }
+
+  let pushRows: { expoPushToken: string }[];
+  if (effectiveAccountIds !== null) {
+    if (effectiveAccountIds.length === 0) {
+      return res.json({ ok: true, sent: 0 });
+    }
+    pushRows = await db
+      .select({ expoPushToken: riderPushTokensTable.expoPushToken })
+      .from(riderPushTokensTable)
+      .where(inArray(riderPushTokensTable.riderAccountId, effectiveAccountIds));
+  } else if (optedOutAccountIds.length > 0) {
+    // Super admin broadcast-all: exclude only opted-out accounts
+    const all = await db
+      .select({ riderAccountId: riderPushTokensTable.riderAccountId, expoPushToken: riderPushTokensTable.expoPushToken })
+      .from(riderPushTokensTable);
+    pushRows = all
+      .filter((r) => !optedOutAccountIds.includes(r.riderAccountId))
+      .map((r) => ({ expoPushToken: r.expoPushToken }));
+  } else {
+    pushRows = await db
+      .select({ expoPushToken: riderPushTokensTable.expoPushToken })
+      .from(riderPushTokensTable);
+  }
 
   if (pushRows.length === 0) {
-    return res.json({ ok: true, sent: 0, lastPushSentAt: callingUser.lastPushSentAt?.toISOString() ?? null });
+    await db.insert(notificationLogsTable).values({
+      clubId: callingUser.clubId ?? null,
+      userId,
+      title: title.trim(),
+      body: body.trim(),
+      audienceType,
+      eventId: resolvedEventId,
+      sentCount: 0,
+    });
+    return res.json({ ok: true, sent: 0 });
   }
 
   await sendPushNotifications(
@@ -150,16 +278,17 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
     })),
   );
 
-  // Update lastPushSentAt for non-super-admins (rate limit tracking)
-  const now = new Date();
-  if (!isSuperAdmin) {
-    await db
-      .update(usersTable)
-      .set({ lastPushSentAt: now })
-      .where(eq(usersTable.id, userId));
-  }
+  await db.insert(notificationLogsTable).values({
+    clubId: callingUser.clubId ?? null,
+    userId,
+    title: title.trim(),
+    body: body.trim(),
+    audienceType,
+    eventId: resolvedEventId,
+    sentCount: pushRows.length,
+  });
 
-  return res.json({ ok: true, sent: pushRows.length, lastPushSentAt: isSuperAdmin ? null : now.toISOString() });
+  return res.json({ ok: true, sent: pushRows.length });
 });
 
 // POST /admin/notifications/broadcast-all
@@ -188,6 +317,15 @@ router.post("/admin/notifications/broadcast-all", async (req, res) => {
     .from(riderPushTokensTable);
 
   if (pushRows.length === 0) {
+    await db.insert(notificationLogsTable).values({
+      clubId: null,
+      userId,
+      title: title.trim(),
+      body: body.trim(),
+      audienceType: "all_global",
+      eventId: null,
+      sentCount: 0,
+    });
     return res.json({ ok: true, sent: 0 });
   }
 
@@ -199,7 +337,154 @@ router.post("/admin/notifications/broadcast-all", async (req, res) => {
     })),
   );
 
+  await db.insert(notificationLogsTable).values({
+    clubId: null,
+    userId,
+    title: title.trim(),
+    body: body.trim(),
+    audienceType: "all_global",
+    eventId: null,
+    sentCount: pushRows.length,
+  });
+
   return res.json({ ok: true, sent: pushRows.length });
+});
+
+// GET /admin/notifications/audience-count
+// Returns the number of distinct riders who will receive a push notification for the given scope.
+// "Riders" = distinct riderAccountId values that have at least one push token.
+// A rider with multiple devices is counted once.
+router.get("/admin/notifications/audience-count", async (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+  const [callingUser] = await db
+    .select({ role: usersTable.role, clubId: usersTable.clubId })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+
+  if (!callingUser) return res.status(401).json({ error: "Not authenticated" });
+
+  const isSuperAdmin = callingUser.role === "super_admin";
+
+  // --- Input validation ---
+  const audience = req.query.audience as string | undefined;
+  if (audience !== "all" && audience !== "event") {
+    return res.status(400).json({ error: "audience must be 'all' or 'event'" });
+  }
+
+  let eventId: number | null = null;
+  if (audience === "event") {
+    const eventIdRaw = req.query.eventId as string | undefined;
+    if (!eventIdRaw || !/^\d+$/.test(eventIdRaw.trim())) {
+      return res.status(400).json({ error: "eventId must be a positive integer when audience is 'event'" });
+    }
+    eventId = parseInt(eventIdRaw, 10);
+  }
+
+  if (!isSuperAdmin && !callingUser.clubId) {
+    return res.status(403).json({ error: "No club associated with your account" });
+  }
+
+  // Build the set of riderAccount IDs in scope, then count distinct accounts with a token.
+  let accountIds: number[] | null = null;
+
+  if (audience === "event" && eventId !== null) {
+    const [event] = await db
+      .select({ id: eventsTable.id, clubId: eventsTable.clubId })
+      .from(eventsTable)
+      .where(eq(eventsTable.id, eventId));
+
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    if (!isSuperAdmin && event.clubId !== callingUser.clubId) {
+      return res.status(403).json({ error: "Event does not belong to your club" });
+    }
+
+    const regs = await db
+      .select({ riderId: registrationsTable.riderId })
+      .from(registrationsTable)
+      .where(eq(registrationsTable.eventId, eventId));
+
+    const riderIds = regs.map((r) => r.riderId).filter(Boolean) as number[];
+    if (riderIds.length === 0) return res.json({ count: 0 });
+
+    const riders = await db
+      .select({ email: ridersTable.email })
+      .from(ridersTable)
+      .where(inArray(ridersTable.id, riderIds));
+
+    const emails = riders
+      .map((r) => r.email?.toLowerCase())
+      .filter((e): e is string => !!e);
+
+    if (emails.length === 0) return res.json({ count: 0 });
+
+    const accounts = await db
+      .select({ id: riderAccountsTable.id })
+      .from(riderAccountsTable)
+      .where(inArray(riderAccountsTable.email, emails));
+
+    accountIds = accounts.map((a) => a.id);
+  } else {
+    // audience === "all": all riders across the organizer's club events
+    const clubId = isSuperAdmin ? null : callingUser.clubId;
+    let eventIds: number[];
+
+    if (clubId !== null) {
+      const clubEvents = await db
+        .select({ id: eventsTable.id })
+        .from(eventsTable)
+        .where(eq(eventsTable.clubId, clubId));
+      eventIds = clubEvents.map((e) => e.id);
+    } else {
+      eventIds = [];
+    }
+
+    if (clubId !== null && eventIds.length === 0) return res.json({ count: 0 });
+
+    if (eventIds.length > 0) {
+      const regs = await db
+        .select({ riderId: registrationsTable.riderId })
+        .from(registrationsTable)
+        .where(inArray(registrationsTable.eventId, eventIds));
+
+      const riderIds = [...new Set(regs.map((r) => r.riderId).filter(Boolean) as number[])];
+      if (riderIds.length === 0) return res.json({ count: 0 });
+
+      const riders = await db
+        .select({ email: ridersTable.email })
+        .from(ridersTable)
+        .where(inArray(ridersTable.id, riderIds));
+
+      const emails = [...new Set(
+        riders.map((r) => r.email?.toLowerCase()).filter((e): e is string => !!e)
+      )];
+
+      if (emails.length === 0) return res.json({ count: 0 });
+
+      const accounts = await db
+        .select({ id: riderAccountsTable.id })
+        .from(riderAccountsTable)
+        .where(inArray(riderAccountsTable.email, emails));
+
+      accountIds = accounts.map((a) => a.id);
+    }
+    // accountIds remains null → super admin broadcast-all: count all distinct account holders
+  }
+
+  // Count DISTINCT riderAccountId — a rider with multiple devices is counted once
+  const [result] =
+    accountIds !== null
+      ? await db
+          .select({ count: countDistinct(riderPushTokensTable.riderAccountId) })
+          .from(riderPushTokensTable)
+          .where(inArray(riderPushTokensTable.riderAccountId, accountIds))
+      : await db
+          .select({ count: countDistinct(riderPushTokensTable.riderAccountId) })
+          .from(riderPushTokensTable);
+
+  return res.json({ count: result?.count ?? 0 });
 });
 
 // GET /admin/notifications/push-stats
@@ -212,6 +497,62 @@ router.get("/admin/notifications/push-stats", async (req, res) => {
     .from(riderPushTokensTable);
 
   return res.json({ total: rows.length });
+});
+
+// GET /admin/notifications/history
+// Returns the last 10 notification sends for the organizer's club.
+router.get("/admin/notifications/history", async (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+  const [callingUser] = await db
+    .select({ role: usersTable.role, clubId: usersTable.clubId })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+
+  if (!callingUser) return res.status(401).json({ error: "Not authenticated" });
+
+  const isSuperAdmin = callingUser.role === "super_admin";
+
+  let rows;
+  if (isSuperAdmin) {
+    rows = await db
+      .select({
+        id: notificationLogsTable.id,
+        title: notificationLogsTable.title,
+        body: notificationLogsTable.body,
+        audienceType: notificationLogsTable.audienceType,
+        eventId: notificationLogsTable.eventId,
+        sentCount: notificationLogsTable.sentCount,
+        sentAt: notificationLogsTable.sentAt,
+      })
+      .from(notificationLogsTable)
+      .orderBy(desc(notificationLogsTable.sentAt))
+      .limit(10);
+  } else {
+    if (!callingUser.clubId) {
+      return res.status(403).json({ error: "No club associated with your account" });
+    }
+    rows = await db
+      .select({
+        id: notificationLogsTable.id,
+        title: notificationLogsTable.title,
+        body: notificationLogsTable.body,
+        audienceType: notificationLogsTable.audienceType,
+        eventId: notificationLogsTable.eventId,
+        sentCount: notificationLogsTable.sentCount,
+        sentAt: notificationLogsTable.sentAt,
+      })
+      .from(notificationLogsTable)
+      .where(eq(notificationLogsTable.clubId, callingUser.clubId))
+      .orderBy(desc(notificationLogsTable.sentAt))
+      .limit(10);
+  }
+
+  return res.json(rows.map((r) => ({
+    ...r,
+    sentAt: r.sentAt.toISOString(),
+  })));
 });
 
 export default router;
