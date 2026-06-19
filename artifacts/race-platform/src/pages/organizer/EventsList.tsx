@@ -11,7 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X } from "lucide-react";
+import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link, useLocation } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -134,7 +134,27 @@ export default function EventsList() {
   const { data: clubs } = useListClubs({ query: { enabled: isSuperAdmin } as any });
 
   const isDesktop = typeof (window as any).electronAPI !== "undefined";
+  const [isSyncing, setIsSyncing] = useState(false);
   const [, setLocation] = useLocation();
+
+  async function handleSyncFromCloud() {
+    setIsSyncing(true);
+    try {
+      const res = await fetch("/api/admin/sync/pull", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Sync failed");
+      queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: ["stripe-connect-status"] });
+      toast({ title: "Synced from cloud", description: "Events and data are up to date." });
+    } catch (err: any) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSyncing(false);
+    }
+  }
 
   // Auto-open create dialog when navigated here with ?create=true (e.g. from Dashboard "New Event" button)
   useEffect(() => {
@@ -345,6 +365,22 @@ export default function EventsList() {
           <p className="text-muted-foreground mt-1">Manage your club's race events.</p>
         </div>
         
+        <div className="flex items-center gap-2">
+          {isDesktop && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncFromCloud}
+              disabled={isSyncing}
+              className="font-heading uppercase tracking-wider"
+            >
+              {isSyncing ? (
+                <><Loader2 size={14} className="mr-1.5 animate-spin" /> Syncing...</>
+              ) : (
+                <><RefreshCw size={14} className="mr-1.5" /> Sync from Cloud</>
+              )}
+            </Button>
+          )}
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button className="font-heading uppercase tracking-wider">
@@ -949,6 +985,7 @@ export default function EventsList() {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Tabs value={filter} onValueChange={setFilter} className="w-full">
