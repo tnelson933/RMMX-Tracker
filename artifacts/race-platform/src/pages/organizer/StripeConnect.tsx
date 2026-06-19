@@ -18,7 +18,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRight, Unlink, Globe } from "lucide-react";
+import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRight, Unlink, Globe, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -29,6 +29,9 @@ const isDesktop =
 
 function DesktopStripeRedirect() {
   const [cloudUrl, setCloudUrl] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   useEffect(() => {
     (window as any).electronAPI?.sync?.getState?.()
@@ -36,51 +39,139 @@ function DesktopStripeRedirect() {
       .catch(() => {});
   }, []);
 
+  const { data: status, isLoading, refetch } = useQuery({
+    queryKey: ["stripe-connect-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/stripe/connect/status", { credentials: "include" });
+      if (!res.ok) return { connected: false, onboardingComplete: false, accountId: null };
+      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null }>;
+    },
+  });
+
   const paymentsUrl = cloudUrl ? `${cloudUrl.replace(/\/$/, "")}/payments` : null;
+
+  async function handleSyncFromCloud() {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/admin/sync/pull", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Sync failed");
+      await queryClient.invalidateQueries({ queryKey: ["stripe-connect-status"] });
+      await refetch();
+      toast({ title: "Synced from cloud", description: "Payment status is up to date." });
+    } catch (err: any) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-4xl font-heading font-bold uppercase tracking-tight">Payments</h1>
-        <p className="text-muted-foreground mt-1">
-          Connect your Stripe account to collect entry fees from riders at registration.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-heading font-bold uppercase tracking-tight">Payments</h1>
+          <p className="text-muted-foreground mt-1">
+            Connect your Stripe account to collect entry fees from riders at registration.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSyncFromCloud}
+          disabled={syncing}
+          className="font-heading uppercase tracking-wider shrink-0 mt-1"
+        >
+          {syncing ? (
+            <><Loader2 size={14} className="mr-1.5 animate-spin" /> Syncing...</>
+          ) : (
+            <><RefreshCw size={14} className="mr-1.5" /> Refresh from Cloud</>
+          )}
+        </Button>
       </div>
 
-      <Card className="border-blue-500/30 bg-blue-500/5">
-        <CardContent className="pt-6 space-y-4">
-          <div className="flex items-start gap-4">
-            <div className="bg-blue-500/15 rounded-full p-3 shrink-0">
-              <Globe size={24} className="text-blue-400" />
+      {isLoading ? (
+        <Card>
+          <CardContent className="flex items-center justify-center h-28">
+            <Loader2 className="animate-spin text-muted-foreground" size={24} />
+          </CardContent>
+        </Card>
+      ) : status?.connected ? (
+        <Card className="border-green-500/30">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-3">
+              <div className="bg-green-500/10 rounded-full p-3">
+                <CheckCircle2 size={24} className="text-green-600" />
+              </div>
+              <div>
+                <CardTitle className="font-heading uppercase flex items-center gap-2">
+                  Stripe Connected
+                  <Badge className="bg-green-500/15 text-green-700 border-green-500/30 text-xs normal-case font-normal">Active</Badge>
+                </CardTitle>
+                <CardDescription>Payment collection is enabled for your club</CardDescription>
+              </div>
             </div>
-            <div className="space-y-1">
-              <h2 className="font-heading font-semibold uppercase tracking-wide text-base">
-                Manage Stripe via Cloud Portal
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Stripe Connect requires your cloud server to handle the OAuth flow and hold your API keys securely.
-                Connect or manage your account from the web portal — your connection status syncs automatically to the desktop.
-              </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!status.onboardingComplete && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700">
+                <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                <span>Stripe account setup is incomplete. Visit the cloud portal to finish setup and activate payouts.</span>
+              </div>
+            )}
+            <p className="text-sm text-muted-foreground">
+              Payment collection is active. On any event, open the edit form and check <strong>Collect Payments</strong> to charge riders an entry fee at registration.
+            </p>
+            {paymentsUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(paymentsUrl, "_blank")}
+                className="font-heading uppercase tracking-wider"
+              >
+                <ExternalLink size={14} className="mr-1.5" /> Open in Cloud Portal
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-blue-500/30 bg-blue-500/5">
+          <CardContent className="pt-6 space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="bg-blue-500/15 rounded-full p-3 shrink-0">
+                <Globe size={24} className="text-blue-400" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="font-heading font-semibold uppercase tracking-wide text-base">
+                  Payments Not Connected
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Stripe Connect requires your cloud server to handle the OAuth flow.
+                  Set up your account from the web portal — your connection status syncs automatically to the desktop via the button above.
+                </p>
+              </div>
             </div>
-          </div>
-
-          {paymentsUrl ? (
-            <Button
-              className="font-heading uppercase tracking-wider"
-              size="lg"
-              onClick={() => window.open(paymentsUrl, "_blank")}
-            >
-              <ExternalLink size={16} className="mr-2" />
-              Open Payments in Cloud Portal
-            </Button>
-          ) : (
-            <div className="text-sm text-muted-foreground rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center gap-2">
-              <AlertCircle size={14} className="text-amber-400 shrink-0" />
-              No cloud URL configured. Log out and log back in to connect this app to your cloud account.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            {paymentsUrl ? (
+              <Button
+                className="font-heading uppercase tracking-wider"
+                size="lg"
+                onClick={() => window.open(paymentsUrl, "_blank")}
+              >
+                <ExternalLink size={16} className="mr-2" />
+                Set Up Payments in Cloud Portal
+              </Button>
+            ) : (
+              <div className="text-sm text-muted-foreground rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center gap-2">
+                <AlertCircle size={14} className="text-amber-400 shrink-0" />
+                No cloud URL configured. Log out and log back in to connect this app to your cloud account.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="bg-muted/30">
         <CardContent className="pt-6">
