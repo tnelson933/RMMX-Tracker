@@ -53,12 +53,17 @@ function DesktopStripeRedirect() {
   async function handleSyncFromCloud() {
     setSyncing(true);
     try {
-      const res = await fetch("/api/admin/sync/pull", {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Sync failed");
+      const api = (window as any).electronAPI;
+      if (isDesktop && api?.sync?.flush) {
+        await api.sync.flush();
+      } else {
+        const res = await fetch("/api/admin/sync/pull", {
+          method: "POST",
+          credentials: "include",
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Sync failed");
+      }
       await queryClient.invalidateQueries({ queryKey: ["stripe-connect-status"] });
       await refetch();
       toast({ title: "Synced from cloud", description: "Payment status is up to date." });
