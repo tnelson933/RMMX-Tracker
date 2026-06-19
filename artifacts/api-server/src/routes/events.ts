@@ -86,6 +86,7 @@ router.get("/events", async (req, res) => {
     trackName: eventsTable.trackName,
     raceClasses: eventsTable.raceClasses,
     raceClassLimits: eventsTable.raceClassLimits,
+    raceClassSeriesMap: eventsTable.raceClassSeriesMap,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
     status: eventsTable.status,
@@ -93,6 +94,7 @@ router.get("/events", async (req, res) => {
     requireAma: eventsTable.requireAma,
     noDuplicateBibs: eventsTable.noDuplicateBibs,
     requireClubId: eventsTable.requireClubId,
+    requireWaiver: eventsTable.requireWaiver,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
     imageUrl: eventsTable.imageUrl,
@@ -130,7 +132,7 @@ router.get("/events", async (req, res) => {
 });
 
 router.post("/events", async (req, res) => {
-  const { name, date, state, location, trackName, raceClasses, raceClassLimits, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, purchaseOptions, scoringTableId, endDate } = req.body;
+  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, purchaseOptions, scoringTableId, endDate, requireWaiver } = req.body;
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
@@ -157,10 +159,12 @@ router.post("/events", async (req, res) => {
     clubId, name, date, state, location, trackName,
     raceClasses: raceClasses || [],
     raceClassLimits: raceClassLimits || {},
+    raceClassSeriesMap: raceClassSeriesMap || {},
     registrationOpen, registrationClose,
     status: initialStatus,
     paymentEnabled: paymentEnabled || false,
     requireAma: requireAma || false,
+    requireWaiver: requireWaiver || false,
     entryFee: entryFee ? String(entryFee) : null,
     maxRiders,
     timingTechnology: timingTechnology || "rfid",
@@ -194,6 +198,7 @@ router.get("/events/:eventId", async (req, res) => {
     trackName: eventsTable.trackName,
     raceClasses: eventsTable.raceClasses,
     raceClassLimits: eventsTable.raceClassLimits,
+    raceClassSeriesMap: eventsTable.raceClassSeriesMap,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
     status: eventsTable.status,
@@ -201,6 +206,7 @@ router.get("/events/:eventId", async (req, res) => {
     requireAma: eventsTable.requireAma,
     noDuplicateBibs: eventsTable.noDuplicateBibs,
     requireClubId: eventsTable.requireClubId,
+    requireWaiver: eventsTable.requireWaiver,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
     imageUrl: eventsTable.imageUrl,
@@ -249,7 +255,7 @@ router.patch("/events/:eventId", async (req, res) => {
   }
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
