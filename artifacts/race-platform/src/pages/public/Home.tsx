@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   useListStates,
   useListRecentResults,
@@ -72,6 +72,7 @@ function StateChips({
 
 function TodayCard({ event }: { event: UpcomingEventItem }) {
   const [isLive, setIsLive] = useState(false);
+  const [, navigate] = useLocation();
   useEffect(() => {
     const check = () =>
       fetch(`/api/video/status/${event.eventId}`)
@@ -84,8 +85,14 @@ function TodayCard({ event }: { event: UpcomingEventItem }) {
   }, [event.eventId]);
 
   return (
-    <Link href={`/results/${event.eventId}`}>
-      <Card className="hover-elevate cursor-pointer transition-all h-full group border-red-500/40 shadow-md shadow-red-500/5 overflow-hidden">
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => navigate(`/results/${event.eventId}`)}
+      onKeyDown={e => e.key === "Enter" && navigate(`/results/${event.eventId}`)}
+      className="cursor-pointer h-full"
+    >
+      <Card className="hover-elevate transition-all h-full group border-red-500/40 shadow-md shadow-red-500/5 overflow-hidden">
         <CardContent className="p-0">
           <div className="bg-red-600 px-4 py-2.5 flex items-center justify-between">
             <span className="flex items-center gap-2 text-white text-sm font-bold uppercase tracking-wider">
@@ -136,7 +143,7 @@ function TodayCard({ event }: { event: UpcomingEventItem }) {
           </div>
         </CardContent>
       </Card>
-    </Link>
+    </div>
   );
 }
 
