@@ -19,3 +19,4 @@ export * from "./conversations";
 export * from "./messages";
 export * from "./rider_mobile_tokens";
 export * from "./rider_push_tokens";
+export * from "./maintenance";
