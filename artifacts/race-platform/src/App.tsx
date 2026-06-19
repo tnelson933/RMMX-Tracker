@@ -42,6 +42,7 @@ import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
 import TeamPage from "@/pages/organizer/TeamPage";
 import { Notifications } from "@/pages/organizer/Notifications";
 import GateSchedulePage from "@/pages/organizer/GateSchedulePage";
+import MobileGateSchedulePage from "@/pages/organizer/MobileGateSchedulePage";
 import RaceDayDisplayPage from "@/pages/organizer/RaceDayDisplayPage";
 import NoAccessPage from "@/pages/organizer/NoAccessPage";
 import RiderLogin from "@/pages/rider/RiderLogin";
@@ -196,6 +197,11 @@ function Router() {
       {/* ── Gate Schedule — public shareable link, no login required ── */}
       <Route path="/gate">
         <GateSchedulePage />
+      </Route>
+
+      {/* ── Mobile gate schedule — shared from Admin page, mobile-optimised ── */}
+      <Route path="/gate-mobile">
+        <MobileGateSchedulePage />
       </Route>
 
       {/* ── No-access landing for restricted staff ── */}
