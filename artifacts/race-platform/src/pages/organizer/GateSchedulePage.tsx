@@ -281,14 +281,14 @@ export default function GateSchedulePage() {
   const featuredMoto = useMemo(() => {
     const inProg = motos.find((m) => m.status === "in_progress");
     if (inProg) return inProg;
-    const upcoming = motos.find((m) => m.status === "upcoming" || m.status === "scheduled");
+    const upcoming = motos.find((m) => m.status === "scheduled");
     if (upcoming) return upcoming;
     const lastCompleted = [...motos].filter((m) => m.status === "completed").pop();
     return lastCompleted ?? null;
   }, [motos]);
 
   const upcomingQueue = useMemo(
-    () => motos.filter((m) => m.id !== featuredMoto?.id && (m.status === "upcoming" || m.status === "scheduled")),
+    () => motos.filter((m) => m.id !== featuredMoto?.id && m.status === "scheduled"),
     [motos, featuredMoto]
   );
 
