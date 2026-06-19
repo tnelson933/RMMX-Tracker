@@ -1616,21 +1616,19 @@ export default function Motos() {
 
   const doStartMoto = async (motoId: number, _motoName?: string) => {
     const motoObj = (motos ?? []).find(m => m.id === motoId);
-    const partnerId: number | null =
-      (motoObj as any)?.staggeredOrder === 1 && (motoObj as any)?.staggeredWithMotoId
-        ? Number((motoObj as any).staggeredWithMotoId)
-        : null;
+    const groupMembers: number[] = (motoObj as any)?.staggeredGroupMembers ?? [];
+    const partnerIds = groupMembers.filter(id => id !== motoId);
 
     const timingLabel = (event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID";
 
     try {
-      // Fire both start requests simultaneously so neither moto briefly shows "Waiting".
+      // Fire all group start requests simultaneously so no moto briefly shows "Waiting".
       await Promise.all([
         updateMoto(motoId, { status: "in_progress" } as any),
-        ...(partnerId ? [updateMoto(partnerId, { status: "in_progress" } as any)] : []),
+        ...partnerIds.map(pid => updateMoto(pid, { status: "in_progress" } as any)),
       ]);
       await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-      toast({ title: partnerId ? `🏁 Staggered start — both motos now live` : `🏁 Moto started — ${timingLabel} timing active` });
+      toast({ title: partnerIds.length > 0 ? `🏁 Staggered start — ${groupMembers.length} motos now live` : `🏁 Moto started — ${timingLabel} timing active` });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not start moto";
       toast({ title: "Failed to start moto", description: msg, variant: "destructive" });
@@ -1677,20 +1675,18 @@ export default function Motos() {
     );
   };
 
-  // Finish a moto — if it's a stagger order=1 card, also finish the partner simultaneously.
+  // Finish a moto — finish all motos in the stagger group simultaneously.
   const doFinishMoto = async (motoId: number) => {
     const motoObj = (motos ?? []).find(m => m.id === motoId);
-    const partnerId: number | null =
-      (motoObj as any)?.staggeredOrder === 1 && (motoObj as any)?.staggeredWithMotoId
-        ? Number((motoObj as any).staggeredWithMotoId)
-        : null;
+    const groupMembers: number[] = (motoObj as any)?.staggeredGroupMembers ?? [];
+    const partnerIds = groupMembers.filter(id => id !== motoId);
     try {
       await Promise.all([
         updateMoto(motoId, { status: "completed" } as any),
-        ...(partnerId ? [updateMoto(partnerId, { status: "completed" } as any)] : []),
+        ...partnerIds.map(pid => updateMoto(pid, { status: "completed" } as any)),
       ]);
       await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-      toast({ title: partnerId ? "🏁 Both motos finished" : "Moto finished" });
+      toast({ title: partnerIds.length > 0 ? `🏁 Group finished — ${groupMembers.length} motos completed` : "Moto finished" });
       if (autoStartEnabled) {
         const sorted = [...(motos ?? [])].sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
         const finishedIdx = sorted.findIndex(m => m.id === motoId);
@@ -1706,11 +1702,8 @@ export default function Motos() {
   };
 
   const handleStartMoto = (moto: Moto) => {
-    const partnerId: number | null =
-      (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
-        ? Number((moto as any).staggeredWithMotoId)
-        : null;
-    const existing = motos?.find(m => m.status === "in_progress" && m.id !== moto.id && m.id !== partnerId);
+    const groupMembers: number[] = (moto as any)?.staggeredGroupMembers ?? [];
+    const existing = motos?.find(m => m.status === "in_progress" && !groupMembers.includes(m.id) && m.id !== moto.id);
     if (existing) {
       setConflictDialog({ open: true, existingMoto: existing, pendingMotoId: moto.id });
       return;
@@ -1755,19 +1748,18 @@ export default function Motos() {
     if (motoId === null) return;
     setRestartDialog({ open: false, motoId: null, motoName: "" });
 
-    // Find the stagger partner (works whether organizer clicked restart on order=1 or order=2)
+    // Find all group members and restart them simultaneously
     const motoObj = (motos ?? []).find(m => m.id === motoId);
-    const partnerId: number | null = (motoObj as any)?.staggeredWithMotoId
-      ? Number((motoObj as any).staggeredWithMotoId)
-      : null;
+    const groupMembers: number[] = (motoObj as any)?.staggeredGroupMembers ?? [];
+    const partnerIds = groupMembers.filter(id => id !== motoId);
 
     try {
       await Promise.all([
         fetch(`/api/motos/${motoId}/restart`, { method: "POST" }).then(r => { if (!r.ok) throw new Error("Failed"); }),
-        ...(partnerId ? [fetch(`/api/motos/${partnerId}/restart`, { method: "POST" }).then(r => { if (!r.ok) throw new Error("Failed"); })] : []),
+        ...partnerIds.map(pid => fetch(`/api/motos/${pid}/restart`, { method: "POST" }).then(r => { if (!r.ok) throw new Error("Failed"); })),
       ]);
       await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-      toast({ title: partnerId ? `🔄 Both motos restarted` : `🔄 Moto restarted: ${motoName}` });
+      toast({ title: partnerIds.length > 0 ? `🔄 Group restarted — ${groupMembers.length} motos` : `🔄 Moto restarted: ${motoName}` });
     } catch {
       toast({ title: "Failed to restart moto", variant: "destructive" });
     }
@@ -2861,8 +2853,8 @@ export default function Motos() {
         ) : viewMode === "grid" && motos?.length ? (
         <div className="space-y-0">
           {motos.filter(m => {
-              // stagger order=2 motos are rendered inside their order=1 partner card
-              if ((m as any).staggeredOrder === 2) return false;
+              // stagger order>1 motos are rendered inside the order=1 card
+              if ((m as any).staggeredGroupId && (m as any).staggeredOrder > 1) return false;
               if (m.type === "practice") return classFilter === "schedule" && roundFilter === "all";
               if (classFilter !== "schedule" && m.raceClass !== classFilter) return false;
               if (roundFilter !== "all" && roundMap.get(m.id) !== roundFilter) return false;
@@ -2926,7 +2918,7 @@ export default function Motos() {
                       <Flag size={11} /> {Array.isArray(moto.lineup) ? moto.lineup.length : 0} riders
                     </span>
                     {/* Staggered start badge */}
-                    {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId && (
+                    {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId && (
                       <span className="text-xs px-1.5 py-0.5 rounded border bg-primary/15 text-primary border-primary/30 flex items-center gap-1 font-semibold">
                         <Link2 size={9} /> Staggered
                       </span>
@@ -2939,12 +2931,12 @@ export default function Motos() {
                   {/* Start/Finish/Restart — compact pill in header */}
                   {moto.status === "scheduled" && (
                     <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs h-7 px-2.5 gap-1">
-                      <Play size={12} /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Start Both" : "Start"}
+                      <Play size={12} /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId ? "Start Group" : "Start"}
                     </Button>
                   )}
                   {moto.status === "in_progress" && (
                     <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs h-7 px-2.5 gap-1" onClick={() => doFinishMoto(moto.id)}>
-                      <CheckCircle size={12} /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Finish Both" : "Finish"}
+                      <CheckCircle size={12} /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId ? "Finish Group" : "Finish"}
                     </Button>
                   )}
                   {/* Icon buttons */}
@@ -3029,19 +3021,28 @@ export default function Motos() {
                   </>
                 )}
 
-                {/* Stagger partner lineup — shown on order=1 card */}
-                {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId && (() => {
-                  const partner = (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId);
-                  if (!partner) return null;
+                {/* Stagger group lineups — shown on order=1 card for all group members */}
+                {(moto as any).staggeredOrder === 1 && ((moto as any).staggeredGroupMembers as number[] | undefined)?.length && (() => {
+                  const groupMemberIds: number[] = (moto as any).staggeredGroupMembers ?? [];
+                  const partners = groupMemberIds
+                    .filter(id => id !== moto.id)
+                    .map(id => (motos ?? []).find(m => m.id === id))
+                    .filter((m): m is typeof motos extends (infer T)[] | undefined ? NonNullable<T> : never => !!m);
+                  if (partners.length === 0) return null;
+                  return (
+                    <>
+                      {partners.map((partner, pIdx) => {
+                        const startPos = (partner as any).staggeredOrder ?? (pIdx + 2);
+                        const posSuffix = startPos === 2 ? "nd" : startPos === 3 ? "rd" : `${startPos}th`;
                   const partnerRunning = partner.status === "in_progress";
                   const isSorted = getMotoSort(partner.id) !== "gate";
                   const isSlotActive = !isSorted && activeDragMotoId === partner.id && partner.status !== "completed";
                   const slotColSpan = partnerRunning ? 6 : 5;
                   return (
-                    <div className="border-t-2 border-primary/20">
+                    <div key={partner.id} className="border-t-2 border-primary/20">
                       <div className="px-3 py-1.5 flex items-center gap-2 bg-primary/5 border-b border-primary/10">
                         <Link2 size={11} className="text-primary shrink-0" />
-                        <span className="text-xs font-semibold text-primary flex-1 truncate">{partner.name} — starts 2nd</span>
+                        <span className="text-xs font-semibold text-primary flex-1 truncate">{partner.name} — starts {startPos}{posSuffix}</span>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border font-bold uppercase ${
                           partner.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30" :
                           partner.status === "completed"   ? "bg-muted text-muted-foreground border-border" :
@@ -3089,6 +3090,9 @@ export default function Motos() {
                       </DroppableMotoLineup>
                     </div>
                   );
+                })}
+                  </>
+                  );
                 })()}
 
                 {/* Practice time limit countdown — banner (shown only for practice motos) */}
@@ -3117,17 +3121,19 @@ export default function Motos() {
 
                 {/* Live leaderboard + crossings — hidden when expanded dialog is open to prevent double pings */}
                 {expandedMotoId !== moto.id && (() => {
-                  const staggerPartner = (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
-                    ? (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId) ?? null
-                    : null;
+                  const groupMemberIds: number[] = (moto as any).staggeredGroupMembers ?? [];
+                  const staggerPartners = groupMemberIds
+                    .filter(id => id !== moto.id)
+                    .map(id => (motos ?? []).find(m => m.id === id))
+                    .filter((m): m is NonNullable<typeof m> => !!m && m.status === "in_progress");
                   const showMoto1 = moto.status === "in_progress";
-                  const showMoto2 = staggerPartner?.status === "in_progress";
-                  if (!showMoto1 && !showMoto2) return null;
+                  const showAny = showMoto1 || staggerPartners.length > 0;
+                  if (!showAny) return null;
                   return (
                     <>
                       {showMoto1 && (
                         <div className="border-t">
-                          {staggerPartner && (
+                          {staggerPartners.length > 0 && (
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
                           <div className="grid grid-cols-2 divide-x">
@@ -3136,15 +3142,15 @@ export default function Motos() {
                           </div>
                         </div>
                       )}
-                      {showMoto2 && staggerPartner && (
-                        <div className="border-t">
-                          <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{staggerPartner.name}</div>
+                      {staggerPartners.map(partner => (
+                        <div key={partner.id} className="border-t">
+                          <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{partner.name}</div>
                           <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={staggerPartner.id} />
-                            <LiveCrossingsFeed motoId={staggerPartner.id} minLapTimeMs={minLapMs ?? null} />
+                            <LiveLeaderboard motoId={partner.id} />
+                            <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} />
                           </div>
                         </div>
-                      )}
+                      ))}
                     </>
                   );
                 })()}
@@ -3411,20 +3417,29 @@ export default function Motos() {
                   </div>
                 )}
 
-                {/* Stagger partner lineup — expanded dialog */}
-                {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId && (() => {
-                  const partner = (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId);
-                  if (!partner) return null;
+                {/* Stagger group lineups — expanded dialog, all group members */}
+                {(moto as any).staggeredOrder === 1 && ((moto as any).staggeredGroupMembers as number[] | undefined)?.length && (() => {
+                  const groupMemberIds: number[] = (moto as any).staggeredGroupMembers ?? [];
+                  const expandedPartners = groupMemberIds
+                    .filter(id => id !== moto.id)
+                    .map(id => (motos ?? []).find(m => m.id === id))
+                    .filter((m): m is NonNullable<typeof m> => !!m);
+                  if (expandedPartners.length === 0) return null;
+                  return (
+                    <>
+                      {expandedPartners.map((partner, pIdx) => {
+                        const startPos = (partner as any).staggeredOrder ?? (pIdx + 2);
+                        const posSuffix = startPos === 2 ? "nd" : startPos === 3 ? "rd" : `${startPos}th`;
                   const partnerRunning = partner.status === "in_progress";
                   const isSorted = getMotoSort(partner.id) !== "gate";
                   const isSlotActive = !isSorted && activeDragMotoId === partner.id && partner.status !== "completed";
                   const slotColSpan = partnerRunning ? 6 : 5;
                   return (
-                    <div className="border-t-2 border-primary/25">
+                    <div key={partner.id} className="border-t-2 border-primary/25">
                       <div className="px-5 py-3 flex items-center gap-2 bg-primary/5 border-b border-primary/15">
                         <Link2 size={13} className="text-primary shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-primary truncate">{partner.name} — starts 2nd</div>
+                          <div className="text-sm font-semibold text-primary truncate">{partner.name} — starts {startPos}{posSuffix}</div>
                           <div className="text-xs text-muted-foreground">{partner.raceClass ?? ""}</div>
                         </div>
                         <span className={`text-xs px-2 py-0.5 rounded border font-bold uppercase ${
@@ -3474,6 +3489,9 @@ export default function Motos() {
                       </DroppableMotoLineup>
                     </div>
                   );
+                })}
+                    </>
+                  );
                 })()}
 
                 {/* First place finish countdown — not shown for practice motos */}
@@ -3496,30 +3514,32 @@ export default function Motos() {
                   </div>
                 )}
 
-                {/* Live crossing feed — for staggered pairs show both */}
+                {/* Live crossing feed — for staggered groups show all running members */}
                 {(() => {
-                  const staggerPartner = (moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId
-                    ? (motos ?? []).find(m => m.id === (moto as any).staggeredWithMotoId) ?? null
-                    : null;
+                  const groupMemberIds: number[] = (moto as any).staggeredGroupMembers ?? [];
+                  const runningPartners = groupMemberIds
+                    .filter(id => id !== moto.id)
+                    .map(id => (motos ?? []).find(m => m.id === id))
+                    .filter((m): m is NonNullable<typeof m> => !!m && m.status === "in_progress");
                   const showMoto1 = moto.status === "in_progress";
-                  const showMoto2 = staggerPartner?.status === "in_progress";
-                  if (!showMoto1 && !showMoto2) return null;
+                  const hasPartners = runningPartners.length > 0;
+                  if (!showMoto1 && !hasPartners) return null;
                   return (
                     <>
                       {showMoto1 && (
-                        <div className={staggerPartner ? "border-t" : ""}>
-                          {staggerPartner && (
+                        <div className={hasPartners ? "border-t" : ""}>
+                          {hasPartners && (
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
                           <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} />
                         </div>
                       )}
-                      {showMoto2 && staggerPartner && (
-                        <div className="border-t">
-                          <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{staggerPartner.name}</div>
-                          <LiveCrossingsFeed motoId={staggerPartner.id} minLapTimeMs={minLapMs ?? null} />
+                      {runningPartners.map(partner => (
+                        <div key={partner.id} className="border-t">
+                          <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{partner.name}</div>
+                          <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} />
                         </div>
-                      )}
+                      ))}
                     </>
                   );
                 })()}
@@ -3529,12 +3549,12 @@ export default function Motos() {
               <div className="p-3 bg-muted/30 border-t flex gap-2 items-center flex-wrap shrink-0">
                 {moto.status === "scheduled" && (
                   <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs">
-                    <Play size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Start Both Motos" : moto.type === "practice" ? "Start Practice" : "Start Moto"}
+                    <Play size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId ? "Start Group" : moto.type === "practice" ? "Start Practice" : "Start Moto"}
                   </Button>
                 )}
                 {moto.status === "in_progress" && (
                   <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs" onClick={() => doFinishMoto(moto.id)}>
-                    <CheckCircle size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredWithMotoId ? "Finish Both Motos" : moto.type === "practice" ? "Finish Practice" : "Finish Moto"}
+                    <CheckCircle size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId ? "Finish Group" : moto.type === "practice" ? "Finish Practice" : "Finish Moto"}
                   </Button>
                 )}
                 {moto.status === "in_progress" && (
@@ -3663,17 +3683,19 @@ export default function Motos() {
             <DialogTitle className="font-heading uppercase tracking-wider text-destructive">
               {(() => {
                 const m = (motos ?? []).find(x => x.id === restartDialog.motoId);
-                return (m as any)?.staggeredWithMotoId ? "Restart Both Motos?" : "Restart Moto?";
+                return ((m as any)?.staggeredGroupMembers as number[] | undefined)?.length ? "Restart Group?" : "Restart Moto?";
               })()}
             </DialogTitle>
             <DialogDescription className="pt-1">
               {(() => {
                 const m = (motos ?? []).find(x => x.id === restartDialog.motoId);
-                const partner = (m as any)?.staggeredWithMotoId
-                  ? (motos ?? []).find(x => x.id === Number((m as any).staggeredWithMotoId))
-                  : null;
-                return partner ? (
-                  <>This will clear all lap times and crossings for <span className="font-semibold text-foreground">"{restartDialog.motoName}"</span> and its staggered partner <span className="font-semibold text-foreground">"{partner.name}"</span>, and restart both clocks from zero.</>
+                const groupMemberIds: number[] = (m as any)?.staggeredGroupMembers ?? [];
+                const groupPartners = groupMemberIds
+                  .filter(id => id !== m?.id)
+                  .map(id => (motos ?? []).find(x => x.id === id))
+                  .filter(Boolean);
+                return groupPartners.length > 0 ? (
+                  <>This will clear all lap times and crossings for all {groupMemberIds.length} motos in this staggered group and restart their clocks from zero.</>
                 ) : (
                   <>This will clear all lap times and crossings for <span className="font-semibold text-foreground">"{restartDialog.motoName}"</span> and restart the clock from zero.</>
                 );
