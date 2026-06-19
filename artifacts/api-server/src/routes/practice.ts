@@ -7,6 +7,7 @@ import {
   ridersTable,
   eventsTable,
   usersTable,
+  clubSettingsTable,
 } from "@workspace/db";
 import { eq, and, desc, asc } from "drizzle-orm";
 import type { Response } from "express";
@@ -80,6 +81,7 @@ function buildLiveBoard(crossings: (typeof practiceCrossingsTable.$inferSelect)[
 function toJson(s: typeof practiceSessionsTable.$inferSelect) {
   return {
     ...s,
+    venueName: s.venueName ?? null,
     startedAt: s.startedAt?.toISOString() ?? null,
     endedAt: s.endedAt?.toISOString() ?? null,
     createdAt: s.createdAt.toISOString(),
@@ -264,11 +266,18 @@ router.post("/practice", async (req, res) => {
   const { name, debounceMs } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
 
+  // Snapshot the club's current track name onto the session
+  const [settings] = await db.select({ trackName: clubSettingsTable.trackName })
+    .from(clubSettingsTable)
+    .where(eq(clubSettingsTable.clubId, clubId));
+  const venueName = settings?.trackName ?? null;
+
   const [session] = await db.insert(practiceSessionsTable).values({
     clubId,
     name,
     status: "idle",
     debounceMs: debounceMs ? Number(debounceMs) : 10000,
+    venueName,
   }).returning();
   return res.status(201).json(toJson(session));
 });
