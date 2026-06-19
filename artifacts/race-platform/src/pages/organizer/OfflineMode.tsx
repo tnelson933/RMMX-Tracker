@@ -196,7 +196,7 @@ function PackageInfoBanner({ builtAt, version, etag, lastEtag }: { builtAt: stri
 }
 
 export default function OfflineMode() {
-  const { data: pkgInfo, isError: pkgError, refetch: refetchPkgInfo } = useGetOfflinePackageInfo({ query: { staleTime: 60_000 } as any });
+  const { data: pkgInfo, isError: pkgError, isPending: pkgPending, refetch: refetchPkgInfo } = useGetOfflinePackageInfo({ query: { staleTime: 60_000 } as any });
 
   const [lastDownloadedEtag, setLastDownloadedEtag] = useState<string | null>(() =>
     localStorage.getItem(LAST_DOWNLOAD_KEY),
@@ -587,7 +587,7 @@ export default function OfflineMode() {
                 </button>
               </div>
             )}
-            {!pkgInfo && !pkgError && (
+            {!pkgInfo && !pkgError && !pkgPending && (
               <button
                 type="button"
                 onClick={handleRebuild}
@@ -607,7 +607,7 @@ export default function OfflineMode() {
                 )}
               </button>
             )}
-            {pkgError && (
+            {pkgError && !pkgPending && (
               <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
                 <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
                 <span className="text-muted-foreground">Download info unavailable — contact support if this persists.</span>
