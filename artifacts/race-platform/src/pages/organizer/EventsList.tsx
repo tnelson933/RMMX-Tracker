@@ -140,15 +140,31 @@ export default function EventsList() {
   async function handleSyncFromCloud() {
     setIsSyncing(true);
     try {
-      const res = await fetch("/api/admin/sync/pull", {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Sync failed");
-      queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
-      queryClient.invalidateQueries({ queryKey: ["stripe-connect-status"] });
-      toast({ title: "Synced from cloud", description: "Events and data are up to date." });
+      const api = (window as any).electronAPI;
+      if (isDesktop && api?.sync?.flush) {
+        // Desktop: trigger the real SyncEngine pull (cloud → local SQLite).
+        // The broken /api/admin/sync/pull endpoint always returns 503 on desktop
+        // because AUTO_SYNC_ENABLED=false (CLUB_ID is never passed to the local
+        // server process — that would create two competing sync loops).
+        const syncState = await api.sync.getState?.();
+        if (syncState && !syncState.cloudUrl) {
+          throw new Error("Cloud sync not configured. Open Cloud Sync Settings from the app menu.");
+        }
+        await api.sync.flush();
+        // Invalidate everything — a full pull refreshes events, registrations, riders, motos, etc.
+        queryClient.invalidateQueries();
+        toast({ title: "Synced from cloud", description: "All data pulled from your cloud account." });
+      } else {
+        const res = await fetch("/api/admin/sync/pull", {
+          method: "POST",
+          credentials: "include",
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Sync failed");
+        queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["stripe-connect-status"] });
+        toast({ title: "Synced from cloud", description: "Events and data are up to date." });
+      }
     } catch (err: any) {
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
     } finally {
