@@ -255,6 +255,7 @@ type PullResponse = {
   rfidAssignments?: PullRfid[];
   riderAccounts?: PullRiderAccount[];
   riderPushTokens?: PullRiderPushToken[];
+  clubs?:         Record<string, unknown>[];
 };
 
 export async function runPull(): Promise<{ ok: boolean; rows: Record<string, number> }> {
@@ -540,6 +541,45 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
       pushTokensPulled++;
     }
     rows.pushTokensPulled = pushTokensPulled;
+
+    // ── Clubs (stripe status + config) ────────────────────────────────────────
+    const clubStmt = db.prepare(`
+      INSERT INTO clubs (
+        id, name, state, contact_email, contact_phone, logo_url,
+        website, description, auto_dnf_enabled, auto_dnf_threshold,
+        stripe_account_id, stripe_onboarding_complete
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name                       = excluded.name,
+        state                      = excluded.state,
+        contact_email              = excluded.contact_email,
+        contact_phone              = excluded.contact_phone,
+        website                    = excluded.website,
+        description                = excluded.description,
+        auto_dnf_enabled           = excluded.auto_dnf_enabled,
+        auto_dnf_threshold         = excluded.auto_dnf_threshold,
+        stripe_account_id          = excluded.stripe_account_id,
+        stripe_onboarding_complete = excluded.stripe_onboarding_complete
+    `);
+    let clubsPulled = 0;
+    for (const club of data.clubs ?? []) {
+      clubStmt.run(
+        toSQLiteScalar(club.id),
+        toSQLiteScalar(club.name) ?? "",
+        toSQLiteScalar(club.state) ?? "",
+        toSQLiteScalar(club.contactEmail) ?? null,
+        toSQLiteScalar(club.contactPhone) ?? null,
+        toSQLiteScalar(club.logoUrl) ?? null,
+        toSQLiteScalar(club.website) ?? null,
+        toSQLiteScalar(club.description) ?? null,
+        club.autoDnfEnabled ? 1 : 0,
+        toSQLiteScalar(club.autoDnfThreshold) ?? 75,
+        toSQLiteScalar(club.stripeAccountId) ?? null,
+        club.stripeOnboardingComplete ? 1 : 0,
+      );
+      clubsPulled++;
+    }
+    rows.clubsPulled = clubsPulled;
 
   } finally {
     db.prepare("DELETE FROM _cloud_pull_guard WHERE active = 1").run();
