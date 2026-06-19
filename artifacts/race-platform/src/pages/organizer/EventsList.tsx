@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, useListPointsTables, getListEventsQueryKey, useListDiscountCategories } from "@workspace/api-client-react";
+import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, useListPointsTables, getListEventsQueryKey, useListDiscountCategories, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw } from "lucide-react";
+import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw, Check, ChevronsUpDown } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, parseISO } from "date-fns";
 import { Link, useLocation, useSearch } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -88,6 +89,7 @@ const createEventSchema = z.object({
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
+    seriesIds: z.array(z.number()).default([]),
   })),
   clubId: z.number({ invalid_type_error: "Club is required" }).min(1, "Club is required"),
   registrationOpen: z.string().optional(),
@@ -96,6 +98,7 @@ const createEventSchema = z.object({
   requireAma: z.boolean().default(false),
   requireClubId: z.boolean().default(false),
   noDuplicateBibs: z.boolean().default(false),
+  requireWaiver: z.boolean().default(false),
   scoringTableId: z.number().optional(),
   entryFee: z.string().optional(),
   transponderRentalEnabled: z.boolean().default(false),
@@ -119,7 +122,7 @@ export default function EventsList() {
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [filter, setFilter] = useState("upcoming");
-  const [createSeriesId, setCreateSeriesId] = useState<string>("none");
+  const [createSeriesIds, setCreateSeriesIds] = useState<number[]>([]);
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [createImgState, setCreateImgState] = useState<"idle" | "processing" | "uploading" | "done">("idle");
   const [removeBgOnCreate, setRemoveBgOnCreate] = useState(false);
@@ -205,6 +208,21 @@ export default function EventsList() {
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
 
+  const { data: clubSettingsData } = useGetClubSettings(sessionClubId ?? 0, { query: { enabled: !!sessionClubId && !isSuperAdmin } as any });
+  const putClubSettings = usePutClubSettings();
+  const defaultClasses = useMemo<{ id: string; name: string }[]>(
+    () => (clubSettingsData?.defaultClasses as { id: string; name: string }[] | undefined) ?? [],
+    [clubSettingsData]
+  );
+
+  // Pre-fill trackName from club settings when dialog opens and settings load
+  useEffect(() => {
+    const savedTrackName = (clubSettingsData as any)?.trackName as string | null | undefined;
+    if (savedTrackName && !form.getValues("trackName")) {
+      form.setValue("trackName", savedTrackName);
+    }
+  }, [clubSettingsData, isCreateOpen]);
+
 
   const form = useForm<z.infer<typeof createEventSchema>>({
     resolver: zodResolver(createEventSchema),
@@ -225,6 +243,7 @@ export default function EventsList() {
       requireAma: false,
       requireClubId: false,
       noDuplicateBibs: false,
+      requireWaiver: false,
       scoringTableId: undefined,
       entryFee: "",
       transponderRentalEnabled: false,
@@ -261,12 +280,21 @@ export default function EventsList() {
           trackName: data.trackName,
           timingTechnology: data.timingTechnology,
           raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
+          raceClassSeriesMap: Object.fromEntries(
+            data.raceClasses
+              .map(r => {
+                const merged = Array.from(new Set([...(r.seriesIds ?? []), ...createSeriesIds]));
+                return [r.name.trim(), merged] as [string, number[]];
+              })
+              .filter(([, ids]) => ids.length > 0)
+          ),
           registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
           registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
           paymentEnabled: data.paymentEnabled,
           requireAma: data.requireAma,
           requireClubId: data.requireClubId,
           noDuplicateBibs: data.noDuplicateBibs,
+          requireWaiver: data.requireWaiver,
           scoringTableId: data.scoringTableId ?? null,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
           transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
@@ -280,9 +308,19 @@ export default function EventsList() {
       return;
     }
 
+    // Silently save any brand-new class names back to club defaults
+    if (sessionClubId && !isSuperAdmin) {
+      const existingDefaultNames = new Set(defaultClasses.map(c => c.name));
+      const newClassNames = data.raceClasses.map(r => r.name.trim()).filter(n => n && !existingDefaultNames.has(n));
+      if (newClassNames.length > 0) {
+        const updated = [...defaultClasses, ...newClassNames.map(n => ({ id: crypto.randomUUID(), name: n }))];
+        putClubSettings.mutate({ clubId: sessionClubId, data: { defaultClasses: updated } });
+      }
+    }
+
     // Link to series if selected
-    if (createSeriesId !== "none") {
-      const targetSeries = seriesList?.find(s => s.id === Number(createSeriesId));
+    for (const sid of createSeriesIds) {
+      const targetSeries = seriesList?.find(s => s.id === sid);
       if (targetSeries) {
         const currentIds = (targetSeries.eventIds as number[]) ?? [];
         updateSeriesMutation.mutate({
@@ -349,7 +387,7 @@ export default function EventsList() {
 
     queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
     setIsCreateOpen(false);
-    setCreateSeriesId("none");
+    setCreateSeriesIds([]);
     setPendingImageFile(null);
     setCreateImgState("idle");
     setRemoveBgOnCreate(false);
@@ -401,7 +439,7 @@ export default function EventsList() {
               )}
             </Button>
           )}
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) setCreateSeriesIds([]); }}>
           <DialogTrigger asChild>
             <Button className="font-heading uppercase tracking-wider">
               <Plus size={16} className="mr-2" /> Create Event
@@ -609,6 +647,39 @@ export default function EventsList() {
                         </FormItem>
                       )}
                     />
+                    {!isSuperAdmin && (() => {
+                      const hasWaiverText = !!(clubSettingsData?.riderAcknowledgement?.trim());
+                      return hasWaiverText ? (
+                        <FormField
+                          control={form.control}
+                          name="requireWaiver"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Require waiver acknowledgment</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-2 cursor-default">
+                              <Checkbox disabled checked={false} />
+                              <span className="text-sm text-muted-foreground">Require waiver acknowledgment</span>
+                              <Info size={14} className="text-muted-foreground" />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-64">
+                            Set waiver text in Admin settings first.
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })()}
                   </div>
 
                   {/* Scoring Format dropdown */}
@@ -883,15 +954,47 @@ export default function EventsList() {
                     </p>
                   </div>
                   <div className="space-y-2">
+                    {defaultClasses.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Club Classes</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {defaultClasses.map(cls => {
+                            const isActive = fields.some(f => f.name === cls.name);
+                            return (
+                              <button
+                                key={cls.id}
+                                type="button"
+                                onClick={() => {
+                                  if (isActive) {
+                                    const idx = fields.findIndex(f => f.name === cls.name);
+                                    if (idx !== -1) remove(idx);
+                                  } else {
+                                    append({ name: cls.name, maxRiders: "", seriesIds: [] });
+                                  }
+                                }}
+                                className={
+                                  isActive
+                                    ? "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors bg-primary text-primary-foreground border-primary"
+                                    : "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                                }
+                              >
+                                {cls.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     {fields.length > 0 && (
-                      <div className="grid grid-cols-[1fr_140px_32px] gap-2 mb-1">
+                      <div className="grid grid-cols-[1fr_1fr_140px_32px] gap-2 mb-1">
                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Class Name</span>
+                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Series</span>
                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Max Riders</span>
                         <span />
                       </div>
                     )}
                     {fields.map((field, index) => (
-                      <div key={field.id} className="grid grid-cols-[1fr_140px_32px] gap-2 items-start">
+                      <div key={field.id} className="grid grid-cols-[1fr_1fr_140px_32px] gap-2 items-start">
                         <FormField
                           control={form.control}
                           name={`raceClasses.${index}.name`}
@@ -903,6 +1006,64 @@ export default function EventsList() {
                               <FormMessage />
                             </FormItem>
                           )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`raceClasses.${index}.seriesIds`}
+                          render={({ field: seriesField }) => {
+                            const selected: number[] = seriesField.value ?? [];
+                            const seriesOptions = clubSeriesList ?? [];
+                            const label = selected.length === 0
+                              ? "None"
+                              : selected.length === 1
+                                ? (seriesOptions.find(s => s.id === selected[0])?.name ?? "1 series")
+                                : `${selected.length} series`;
+                            return (
+                              <FormItem>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      role="combobox"
+                                      className="w-full justify-between h-9 font-normal"
+                                      type="button"
+                                    >
+                                      <span className="truncate text-sm">{label}</span>
+                                      <ChevronsUpDown size={14} className="ml-1 shrink-0 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-60 p-2" align="start">
+                                    {seriesOptions.length === 0 ? (
+                                      <p className="text-xs text-muted-foreground p-1">No series found for this club.</p>
+                                    ) : (
+                                      seriesOptions.map(s => {
+                                        const checked = selected.includes(s.id);
+                                        return (
+                                          <div
+                                            key={s.id}
+                                            className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
+                                            onClick={() => {
+                                              if (checked) {
+                                                seriesField.onChange(selected.filter(id => id !== s.id));
+                                              } else {
+                                                seriesField.onChange([...selected, s.id]);
+                                              }
+                                            }}
+                                          >
+                                            <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${checked ? "bg-primary border-primary" : "border-input"}`}>
+                                              {checked && <Check size={10} className="text-primary-foreground" />}
+                                            </div>
+                                            <span className="text-sm">{s.name}</span>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </PopoverContent>
+                                </Popover>
+                                <FormMessage />
+                              </FormItem>
+                            );
+                          }}
                         />
                         <FormField
                           control={form.control}
@@ -938,7 +1099,7 @@ export default function EventsList() {
                       variant="outline"
                       size="sm"
                       className="w-full gap-2 border-dashed font-heading uppercase tracking-wider text-muted-foreground hover:text-foreground mt-1"
-                      onClick={() => append({ name: "", maxRiders: "" })}
+                      onClick={() => append({ name: "", maxRiders: "", seriesIds: [] })}
                     >
                       <Plus size={14} /> Add Class
                     </Button>
@@ -947,18 +1108,47 @@ export default function EventsList() {
 
                 {filteredSeriesList.length > 0 && (
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Series</label>
-                    <Select value={createSeriesId} onValueChange={setCreateSeriesId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="None" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {filteredSeriesList.map(s => (
-                          <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.season})</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <label className="text-sm font-medium">Apply Series to All Classes</label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className="w-full justify-between font-normal"
+                          type="button"
+                        >
+                          <span className="truncate text-sm">
+                            {createSeriesIds.length === 0
+                              ? "None"
+                              : createSeriesIds.length === 1
+                                ? (filteredSeriesList.find(s => s.id === createSeriesIds[0])?.name ?? "1 series")
+                                : `${createSeriesIds.length} series`}
+                          </span>
+                          <ChevronsUpDown size={14} className="ml-1 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-72 p-2" align="start">
+                        {filteredSeriesList.map(s => {
+                          const checked = createSeriesIds.includes(s.id);
+                          return (
+                            <div
+                              key={s.id}
+                              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
+                              onClick={() => setCreateSeriesIds(checked
+                                ? createSeriesIds.filter(id => id !== s.id)
+                                : [...createSeriesIds, s.id]
+                              )}
+                            >
+                              <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${checked ? "bg-primary border-primary" : "border-input"}`}>
+                                {checked && <Check size={10} className="text-primary-foreground" />}
+                              </div>
+                              <span className="text-sm">{s.name} <span className="text-muted-foreground">({s.season})</span></span>
+                            </div>
+                          );
+                        })}
+                      </PopoverContent>
+                    </Popover>
+                    <p className="text-xs text-muted-foreground">Selected series are applied to every class above. Use the per-class dropdown for individual overrides.</p>
                     {clubSeriesList.length > filteredSeriesList.length && (
                       <p className="text-xs text-muted-foreground">Only series with a matching scoring format are shown.</p>
                     )}
