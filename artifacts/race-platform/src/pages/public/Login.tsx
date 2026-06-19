@@ -42,12 +42,14 @@ export default function Login() {
     if (isAuthenticated) setLocation("/dashboard");
   }, [isAuthenticated, setLocation]);
 
+  const savedEmail = typeof localStorage !== "undefined" ? (localStorage.getItem("rmmx_saved_email") ?? "") : "";
+
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      email: savedEmail,
       password: "",
-      rememberMe: false,
+      rememberMe: !!savedEmail,
       cloudUrl: VITE_CLOUD_URL ?? "",
     },
   });
@@ -57,6 +59,11 @@ export default function Login() {
       { data: { email: data.email, password: data.password, rememberMe: data.rememberMe } },
       {
         onSuccess: async () => {
+          if (data.rememberMe) {
+            localStorage.setItem("rmmx_saved_email", data.email);
+          } else {
+            localStorage.removeItem("rmmx_saved_email");
+          }
           if (isDesktop) {
             const api = (window as any).electronAPI;
 
