@@ -12,7 +12,7 @@ function formatUser(u: Record<string, unknown>) {
     id: u.id,
     email: u.email,
     name: fullName,
-    role: u.role ?? "organizer",
+    role: u.role ?? "club_organizer",
     clubId: u.club_id,
     tourCompleted: parseBool(u.tour_completed as number | null),
     createdAt: u.created_at,
