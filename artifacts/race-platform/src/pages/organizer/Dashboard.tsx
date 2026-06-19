@@ -325,7 +325,7 @@ export default function Dashboard() {
           <p className="text-muted-foreground mt-1">{club?.name || "Club"} — organizer portal</p>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/events">
+          <Link href="/events?create=true">
             <Button className="font-heading uppercase tracking-wider">
               <Plus size={16} className="mr-2" /> New Event
             </Button>
