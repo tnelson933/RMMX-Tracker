@@ -301,7 +301,7 @@ export default function MechanicScreen() {
       {/* Disclaimer */}
       <View style={{ paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.background }}>
         <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 14 }}>
-          Rocky's advice is for informational purposes only. Always consult a qualified mechanic for safety-critical repairs.
+          Rocky's advice is for informational purposes only. Always consult a qualified mechanic for safety-critical repairs and a certified riding coach before making technique changes.
         </Text>
       </View>
 
