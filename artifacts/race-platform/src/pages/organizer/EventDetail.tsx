@@ -476,8 +476,8 @@ export default function EventDetail() {
 
         <div className="lg:col-span-2 space-y-6">
 
-          {/* Event Image upload card — cloud-only feature, hidden on desktop */}
-          {!isDesktop && <Card>
+          {/* Event Image upload card */}
+          {<Card>
             <CardHeader className="pb-3 border-b">
               <CardTitle className="font-heading uppercase text-base flex items-center gap-2">
                 <ImageIcon size={16} className="text-primary" /> Event Image
