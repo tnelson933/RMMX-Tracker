@@ -22,8 +22,11 @@ import {
   seriesTable,
   seriesPointsTable,
   riderMaintenanceTable,
+  riderMaintenanceHistoryTable,
+  riderNotificationPrefsTable,
+  clubsTable,
 } from "@workspace/db";
-import { eq, desc, asc, or, and, ne, inArray, sql } from "drizzle-orm";
+import { eq, desc, asc, or, and, ne, inArray, sql, ilike } from "drizzle-orm";
 
 const router = Router();
 
@@ -223,6 +226,7 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
         bikeModel: rider.bikeModel ?? null,
         bikeYear: rider.bikeYear ?? null,
         skillLevel: rider.skillLevel ?? null,
+        raceTypes: (rider.raceTypes as string[] | null) ?? [],
         eventsRaced: uniqueEvents.size,
         totalPoints,
         bestPosition,
@@ -394,6 +398,7 @@ router.get("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     city: rider.city ?? null,
     homeState: rider.homeState ?? null,
     zip: rider.zip ?? null,
+    raceTypes: (rider.raceTypes as string[] | null) ?? [],
   });
 });
 
@@ -448,7 +453,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
   ] as const;
 
   type AllowedKey = typeof allowed[number];
-  const patch: Partial<Record<AllowedKey, string | null>> & { mylapsTransponderId?: string | null } = {};
+  const patch: Partial<Record<AllowedKey, string | null>> & { mylapsTransponderId?: string | null; raceTypes?: string[] | null } = {};
 
   for (const key of allowed) {
     if (key in req.body) {
@@ -461,6 +466,16 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
   if ("myLapsTransponderNumber" in req.body) {
     const val = req.body.myLapsTransponderNumber;
     patch.mylapsTransponderId = typeof val === "string" ? val.trim() || null : null;
+  }
+
+  // raceTypes: array of discipline strings
+  if ("raceTypes" in req.body) {
+    const val = req.body.raceTypes;
+    if (Array.isArray(val)) {
+      patch.raceTypes = val.filter((v: unknown) => typeof v === "string") as string[];
+    } else {
+      patch.raceTypes = null;
+    }
   }
 
   if (("firstName" in patch && !patch.firstName) || ("lastName" in patch && !patch.lastName)) {
@@ -477,7 +492,11 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     .where(eq(ridersTable.id, riderId))
     .returning();
 
-  return res.json({ ...updated, myLapsTransponderNumber: updated.mylapsTransponderId ?? null });
+  return res.json({
+    ...updated,
+    myLapsTransponderNumber: updated.mylapsTransponderId ?? null,
+    raceTypes: (updated.raceTypes as string[] | null) ?? [],
+  });
 });
 
 // POST /rider/profiles — create a new rider profile linked to this account's email
@@ -545,6 +564,7 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
     sessionStatus: practiceSessionsTable.status,
     sessionStartedAt: practiceSessionsTable.startedAt,
     sessionEndedAt: practiceSessionsTable.endedAt,
+    sessionVenueName: practiceSessionsTable.venueName,
   })
     .from(practiceCrossingsTable)
     .leftJoin(practiceSessionsTable, eq(practiceCrossingsTable.sessionId, practiceSessionsTable.id))
@@ -555,6 +575,8 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
   const sessionMap = new Map<number, {
     sessionId: number;
     sessionName: string;
+    venueName: string | null;
+    status: string;
     startedAt: string | null;
     endedAt: string | null;
     laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
@@ -565,6 +587,8 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
       sessionMap.set(c.sessionId, {
         sessionId: c.sessionId,
         sessionName: c.sessionName ?? `Session ${c.sessionId}`,
+        venueName: c.sessionVenueName ?? null,
+        status: c.sessionStatus ?? "ended",
         startedAt: c.sessionStartedAt?.toISOString() ?? null,
         endedAt: c.sessionEndedAt?.toISOString() ?? null,
         laps: [],
@@ -1321,6 +1345,9 @@ RIDER CONTEXT (already known — never ask for this):
 - Events raced: ${riderContext?.eventsRaced ?? "unknown"}
 - Best finish: ${riderContext?.bestPosition != null ? `P${riderContext.bestPosition}` : "N/A"}
 - Race class: ${riderContext?.recentClass ?? "not specified"}
+- Race disciplines: ${Array.isArray(riderContext?.raceTypes) && riderContext.raceTypes.length > 0 ? riderContext.raceTypes.join(", ") : "not specified"}
+
+DISCIPLINE-TAILORED COACHING: Always tailor technique, suspension, fitness, and setup advice to the rider's specific disciplines above. For example: desert/cross-country riders need enduro-specific endurance tips and long-travel suspension advice; supercross riders need tight-rhythm-section technique and stadium-specific setup; flat track riders need slide technique and tire-compound advice; motocross riders get standard MX coaching. If the rider competes in multiple disciplines, connect how training or setup in one discipline transfers to others.
 ${maintenanceSection}${memorySection}STYLE GUIDELINES:
 - Be direct, confident, and technical but accessible — like a trusted crew chief
 - Reference the rider's specific bike make/model when giving bike-specific advice
@@ -1331,6 +1358,7 @@ ${maintenanceSection}${memorySection}STYLE GUIDELINES:
 - End with a follow-up question when appropriate to keep the diagnosis moving
 - When past memory entries exist, naturally reference them rather than repeating the same advice
 - When you log a maintenance item, briefly confirm it in your reply (e.g. "✓ Logged your oil change — clock reset.")
+- When you recommend or mention any specific product (part, oil, filter, gear, tool, accessory, or consumable), include a direct Rocky Mountain ATV/MC link formatted as: https://www.rockymountainatvmc.com/search#q=<product name url-encoded> — always show the link inline so the rider can tap it. Example: "Grab some Maxima 10W-40 — https://www.rockymountainatvmc.com/search#q=Maxima+10W-40"
 
 OUTPUT FORMAT:
 You MUST respond with a valid JSON object and nothing else — no markdown fences, no preamble:
@@ -1400,6 +1428,13 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
               target: [riderMaintenanceTable.riderId, riderMaintenanceTable.itemKey],
               set: { lastServicedAt: sql`${today}` },
             });
+          await db.insert(riderMaintenanceHistoryTable).values({
+            riderId: item.riderId,
+            itemKey: item.itemKey,
+            itemName: item.itemName,
+            servicedAt: today,
+            notes: null,
+          });
           loggedItems.push(item.itemName);
         } catch { /* non-fatal */ }
       }
@@ -1641,7 +1676,7 @@ router.put("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
     return res.status(403).json({ error: "Access denied" });
   }
 
-  const { itemName, intervalDesc, intervalDays, lastServicedAt, notes, sortOrder } = req.body;
+  const { itemName, intervalDesc, intervalDays, lastServicedAt, notes, serviceNotes, sortOrder } = req.body;
   const itemKey = req.params.itemKey;
 
   const [upserted] = await db
@@ -1668,6 +1703,20 @@ router.put("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
       },
     })
     .returning();
+
+  // Write a history record whenever lastServicedAt is being set.
+  // Use serviceNotes (the user's per-log input) if provided; fall back to notes only when
+  // serviceNotes is not present in the payload (e.g. direct API calls).
+  if (lastServicedAt) {
+    const historyNotes = "serviceNotes" in req.body ? (serviceNotes ?? null) : (notes ?? null);
+    await db.insert(riderMaintenanceHistoryTable).values({
+      riderId,
+      itemKey,
+      itemName: itemName ?? itemKey,
+      servicedAt: lastServicedAt,
+      notes: historyNotes,
+    });
+  }
 
   return res.json(upserted);
 });
@@ -1696,6 +1745,96 @@ router.delete("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
         eq(riderMaintenanceTable.itemKey, req.params.itemKey),
       ),
     );
+
+  return res.json({ ok: true });
+});
+
+// GET /rider/maintenance/:riderId/history — list all history records for a rider
+router.get("/rider/maintenance/:riderId/history", async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  const history = await db
+    .select()
+    .from(riderMaintenanceHistoryTable)
+    .where(eq(riderMaintenanceHistoryTable.riderId, riderId))
+    .orderBy(desc(riderMaintenanceHistoryTable.servicedAt), desc(riderMaintenanceHistoryTable.id));
+
+  return res.json(history);
+});
+
+// PATCH /rider/maintenance/:riderId/history/:historyId — edit notes or serviced date of a history entry
+router.patch("/rider/maintenance/:riderId/history/:historyId", async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+
+  const riderId = parseInt(req.params.riderId, 10);
+  const historyId = parseInt(req.params.historyId, 10);
+  if (isNaN(riderId) || isNaN(historyId)) return res.status(400).json({ error: "Invalid ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  const [entry] = await db.select().from(riderMaintenanceHistoryTable).where(
+    and(eq(riderMaintenanceHistoryTable.id, historyId), eq(riderMaintenanceHistoryTable.riderId, riderId))
+  );
+  if (!entry) return res.status(404).json({ error: "Entry not found" });
+
+  const updates: { notes?: string | null; servicedAt?: string } = {};
+  if (typeof req.body.notes !== "undefined") updates.notes = req.body.notes ?? null;
+  if (typeof req.body.servicedAt === "string" && req.body.servicedAt.trim()) {
+    updates.servicedAt = req.body.servicedAt.trim();
+  }
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to update" });
+
+  const [updated] = await db
+    .update(riderMaintenanceHistoryTable)
+    .set(updates)
+    .where(eq(riderMaintenanceHistoryTable.id, historyId))
+    .returning();
+
+  return res.json(updated);
+});
+
+// DELETE /rider/maintenance/:riderId/history/:historyId — delete a history entry
+router.delete("/rider/maintenance/:riderId/history/:historyId", async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+
+  const riderId = parseInt(req.params.riderId, 10);
+  const historyId = parseInt(req.params.historyId, 10);
+  if (isNaN(riderId) || isNaN(historyId)) return res.status(400).json({ error: "Invalid ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
+  const [entry] = await db.select().from(riderMaintenanceHistoryTable).where(
+    and(eq(riderMaintenanceHistoryTable.id, historyId), eq(riderMaintenanceHistoryTable.riderId, riderId))
+  );
+  if (!entry) return res.status(404).json({ error: "Entry not found" });
+
+  await db.delete(riderMaintenanceHistoryTable).where(eq(riderMaintenanceHistoryTable.id, historyId));
 
   return res.json({ ok: true });
 });
@@ -1799,6 +1938,97 @@ Include 10–15 items tailored to this specific make and model. Common categorie
     req.log.error({ err }, "Maintenance AI generate failed");
     return res.status(500).json({ error: "Failed to generate maintenance schedule" });
   }
+});
+
+// GET /rider/my-organizations
+// Returns every club the rider's account has ever registered with, plus their notification pref for each.
+router.get("/rider/my-organizations", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId as number;
+
+  // Find all rider profiles linked to this account (by email)
+  const [account] = await db
+    .select({ email: riderAccountsTable.email })
+    .from(riderAccountsTable)
+    .where(eq(riderAccountsTable.id, riderAccountId));
+
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  // Get all riders with this email (case-insensitive to handle mixed-case stored records)
+  const linkedRiders = await db
+    .select({ id: ridersTable.id })
+    .from(ridersTable)
+    .where(ilike(ridersTable.email, account.email));
+
+  if (linkedRiders.length === 0) {
+    return res.json([]);
+  }
+
+  const riderIds = linkedRiders.map((r) => r.id);
+
+  // Find distinct clubs via registrations → events → clubs
+  const regs = await db
+    .selectDistinct({ clubId: eventsTable.clubId })
+    .from(registrationsTable)
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(inArray(registrationsTable.riderId, riderIds));
+
+  if (regs.length === 0) return res.json([]);
+
+  const clubIds = regs.map((r) => r.clubId).filter((id): id is number => id !== null);
+  if (clubIds.length === 0) return res.json([]);
+
+  // Fetch club details
+  const clubs = await db
+    .select({
+      id: clubsTable.id,
+      name: clubsTable.name,
+      state: clubsTable.state,
+      logoUrl: clubsTable.logoUrl,
+    })
+    .from(clubsTable)
+    .where(inArray(clubsTable.id, clubIds));
+
+  // Fetch notification prefs for this account
+  const prefs = await db
+    .select({ clubId: riderNotificationPrefsTable.clubId, enabled: riderNotificationPrefsTable.enabled })
+    .from(riderNotificationPrefsTable)
+    .where(eq(riderNotificationPrefsTable.riderAccountId, riderAccountId));
+
+  const prefMap = new Map<number, boolean>(prefs.map((p) => [p.clubId, p.enabled]));
+
+  const result = clubs.map((club) => ({
+    clubId: club.id,
+    clubName: club.name,
+    state: club.state,
+    logoUrl: club.logoUrl ?? null,
+    notificationsEnabled: prefMap.has(club.id) ? prefMap.get(club.id)! : true,
+  }));
+
+  return res.json(result);
+});
+
+// PATCH /rider/my-organizations/:clubId/notifications
+// Upsert the notification preference for a specific club.
+router.patch("/rider/my-organizations/:clubId/notifications", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId as number;
+  const clubId = parseInt(req.params.clubId, 10);
+  if (isNaN(clubId)) return res.status(400).json({ error: "Invalid clubId" });
+
+  const { enabled } = req.body as { enabled?: boolean };
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled (boolean) is required" });
+  }
+
+  const [row] = await db
+    .insert(riderNotificationPrefsTable)
+    .values({ riderAccountId, clubId, enabled, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: [riderNotificationPrefsTable.riderAccountId, riderNotificationPrefsTable.clubId],
+      set: { enabled, updatedAt: new Date() },
+    })
+    .returning();
+
+  return res.json({ clubId: row.clubId, notificationsEnabled: row.enabled });
 });
 
 export default router;
