@@ -259,6 +259,8 @@ router.get("/public/recent-results", async (req, res) => {
     name: eventsTable.name,
     state: eventsTable.state,
     date: eventsTable.date,
+    location: eventsTable.location,
+    trackName: eventsTable.trackName,
     clubName: clubsTable.name,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
@@ -283,6 +285,8 @@ router.get("/public/recent-results", async (req, res) => {
       eventName: e.name,
       state: e.state,
       date: e.date,
+      location: e.location || "",
+      trackName: e.trackName || "",
       clubName: e.clubName || "",
       topRider: topResult[0] ? `${topResult[0].firstName} ${topResult[0].lastName}` : "TBD",
       raceClass: topResult[0]?.raceClass || "All Classes",
