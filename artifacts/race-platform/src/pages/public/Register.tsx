@@ -175,7 +175,12 @@ export default function Register() {
     if (!eventId) return;
     fetch(`/api/public/events/${eventId}/register-info`)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(setEvent)
+      .then((json: any) => setEvent({
+        ...json,
+        entryFee: json.entryFee != null ? Number(json.entryFee) : null,
+        transponderRentalFee: json.transponderRentalFee != null ? Number(json.transponderRentalFee) : null,
+        purchaseOptions: (json.purchaseOptions ?? []).map((o: any) => ({ ...o, amount: Number(o.amount) })),
+      }))
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [eventId]);
@@ -379,12 +384,12 @@ export default function Register() {
           riderName: json.riderName,
           raceClass: json.raceClass,
           eventName: json.eventName,
-          entryFee: json.entryFee,
+          entryFee: Number(json.entryFee),
         });
         // Open Stripe Checkout in a new tab
         window.open(json.checkoutUrl, "_blank");
       } else {
-        setSuccess(json);
+        setSuccess({ ...json, amountPaid: json.amountPaid != null ? Number(json.amountPaid) : null });
       }
     } catch (e: any) {
       setSubmitError(e.message || "Something went wrong. Please try again.");
