@@ -1719,6 +1719,12 @@ router.post("/rider/maintenance/:riderId/ai-generate", async (req, res) => {
   const bikeStr = [rider.bikeYear, rider.bikeManufacturer, rider.bikeModel].filter(Boolean).join(" ");
   if (!bikeStr) return res.status(400).json({ error: "No bike on file. Add your bike make/model first." });
 
+  // Optional engine hours from client — improves interval accuracy
+  const bikeHours = typeof req.body?.bikeHours === "number" ? req.body.bikeHours : null;
+  const hoursContext = bikeHours !== null
+    ? `\nThe bike currently has ${bikeHours} engine hours on it. Use this to set accurate lastServicedAt estimates where reasonable (e.g. if oil is every 15 hours and bike has 48 hours, it was likely last done around 3 hours ago — use today's date minus expected gap). Where the hours tell you nothing useful, leave lastServicedAt as null.`
+    : "";
+
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
@@ -1726,14 +1732,14 @@ router.post("/rider/maintenance/:riderId/ai-generate", async (req, res) => {
       messages: [
         {
           role: "user",
-          content: `You are a motorcycle and ATV maintenance expert. Generate a maintenance schedule for a ${bikeStr}.
+          content: `You are a motorcycle and ATV maintenance expert. Generate a maintenance schedule for a ${bikeStr}.${hoursContext}
 
 Return ONLY a valid JSON array — no markdown, no explanation, no code fences.
 
 Each item must have these exact fields:
 - "itemKey": unique snake_case identifier (e.g. "engine_oil")
 - "itemName": human-readable name (e.g. "Engine Oil Change")
-- "intervalDesc": concise interval description (e.g. "Every 15 hours or 3 months")
+- "intervalDesc": concise interval description including hours AND calendar time where applicable (e.g. "Every 15 hours or 3 months")
 - "intervalDays": approximate calendar days between services as an integer (e.g. 90)
 - "notes": one short sentence of important notes, or null
 - "sortOrder": integer 1–20 for display ordering
