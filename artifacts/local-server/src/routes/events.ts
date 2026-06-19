@@ -15,6 +15,11 @@ function computeAutoStatus(event: any): string | null {
   } else {
     correct = "draft";
   }
+  if (correct === "registration_closed") {
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
+    if (eventDateStr && eventDateStr <= todayStr) correct = "race_day";
+  }
   return correct !== status ? correct : null;
 }
 
@@ -33,14 +38,14 @@ function serializeEvent(e: any) {
     registrationClose: e.registration_close ?? null,
     paymentEnabled: e.payment_enabled === 1,
     requireAma: e.require_ama === 1,
-    entryFee: e.entry_fee ?? null,
+    entryFee: e.entry_fee != null ? Number(e.entry_fee) : null,
     maxRiders: e.max_riders ?? null,
     raceClassLimits: (() => { try { return JSON.parse(e.race_class_limits || "{}"); } catch { return {}; } })(),
     purchaseOptions: (() => { try { return JSON.parse(e.purchase_options || "[]"); } catch { return []; } })(),
     imageUrl: e.image_url ?? null,
     timingTechnology: e.timing_technology ?? "rfid",
     transponderRentalEnabled: e.transponder_rental_enabled === 1,
-    transponderRentalFee: e.transponder_rental_fee ?? null,
+    transponderRentalFee: e.transponder_rental_fee != null ? Number(e.transponder_rental_fee) : null,
     noDuplicateBibs: e.no_duplicate_bibs === 1,
     requireClubId: e.require_club_id === 1,
     scoringTableId: e.scoring_table_id ?? null,
@@ -74,11 +79,15 @@ router.get("/events", (req, res) => {
           .all(user.club_id) as any[])
       : [];
   }
-  // Auto-advance statuses based on registration dates
+  // Auto-advance statuses based on registration dates.
+  // NOTE: Only update in-memory — do NOT write to the database here.
+  // Writing via UPDATE triggers the _wq_events_update SQLite trigger (no guard
+  // is active during a regular API request), which stuffs the event IDs into
+  // _write_queue.  Those IDs then appear in pendingIds during the next cloud
+  // pull and prevent cloud-created events from ever being upserted locally.
   for (const e of events) {
     const nextStatus = computeAutoStatus(e);
     if (nextStatus) {
-      db.prepare("UPDATE events SET status = ? WHERE id = ?").run(nextStatus, e.id);
       e.status = nextStatus;
     }
   }
