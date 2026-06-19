@@ -748,23 +748,194 @@ function EventPracticePanel({
 
 // ─── Open practice history components ─────────────────────────────────────────
 
-function PracticeSessionCard({ session }: { session: PracticeSessionHistory }) {
+function PracticeSessionCard({
+  session,
+  riderId,
+  venueBestBeforeSessionMs,
+}: {
+  session: PracticeSessionHistory;
+  riderId: number;
+  venueBestBeforeSessionMs: number | null;
+}) {
   const [open, setOpen] = useState(false);
-  const lapsWithTime = session.laps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
+  const isLive = session.status === "active";
+
+  // Live SSE state
+  const [liveLaps, setLiveLaps] = useState<{ lapNumber: number; lapTimeMs: number | null; crossingTime: string }[] | null>(null);
+  const [sseConnected, setSseConnected] = useState(false);
+  const [pbFlash, setPbFlash] = useState(false);
+
+  // Refs to track PB across SSE updates without stale closures
+  const prevBestMsRef = useRef<number | null>(venueBestBeforeSessionMs);
+  const isFirstMessageRef = useRef(true);
+  const pbTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryDelayRef = useRef(2000);
+
+  useEffect(() => {
+    if (!isLive) return;
+    prevBestMsRef.current = venueBestBeforeSessionMs;
+    isFirstMessageRef.current = true;
+    retryDelayRef.current = 2000;
+
+    let es: EventSource;
+    let destroyed = false;
+
+    // Heartbeat: send a no-op fetch every 22 s while visible to prevent the
+    // browser/OS from suspending the SSE connection when the screen locks.
+    function startHeartbeat() {
+      if (heartbeatTimerRef.current) return;
+      heartbeatTimerRef.current = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          fetch('/api/auth/me', { credentials: 'include' }).catch(() => { /* ignore */ });
+        }
+      }, 22000);
+    }
+
+    function stopHeartbeat() {
+      if (heartbeatTimerRef.current) {
+        clearInterval(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = null;
+      }
+    }
+
+    function connect() {
+      if (destroyed) return;
+      isFirstMessageRef.current = true;
+      es = new EventSource(`/api/practice/${session.sessionId}/live`, { withCredentials: true });
+
+      es.onopen = () => {
+        retryDelayRef.current = 2000;
+        setSseConnected(true);
+      };
+
+      es.onerror = () => {
+        es.close();
+        setSseConnected(false);
+        if (destroyed) return;
+        // Schedule reconnect with exponential backoff, capped at 16 s
+        reconnectTimerRef.current = setTimeout(() => {
+          retryDelayRef.current = Math.min(retryDelayRef.current * 2, 16000);
+          connect();
+        }, retryDelayRef.current);
+      };
+
+      es.onmessage = (evt) => {
+        try {
+          const data = JSON.parse(evt.data);
+          if (!data?.riders) return;
+          setSseConnected(true);
+
+          // Find my rider entry in the board by riderId
+          const myRider = (data.riders as any[]).find((r: any) => r.riderId === riderId);
+          if (!myRider) return;
+
+          const newLaps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[] = myRider.laps ?? [];
+          setLiveLaps(newLaps);
+
+          const myBestMs: number | null = myRider.bestLapMs ?? null;
+
+          // On initial SSE message (including after reconnect), absorb existing laps without flashing
+          if (isFirstMessageRef.current) {
+            isFirstMessageRef.current = false;
+            if (myBestMs != null) {
+              prevBestMsRef.current = prevBestMsRef.current == null
+                ? myBestMs
+                : Math.min(prevBestMsRef.current, myBestMs);
+            }
+            return;
+          }
+
+          // On subsequent messages: check if a new personal best was just set
+          if (myBestMs != null) {
+            const baseline = prevBestMsRef.current;
+            if (baseline == null || myBestMs < baseline) {
+              prevBestMsRef.current = myBestMs;
+              if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
+              setPbFlash(true);
+              pbTimerRef.current = setTimeout(() => setPbFlash(false), 3500);
+            }
+          }
+        } catch { /* ignore parse errors */ }
+      };
+    }
+
+    connect();
+    startHeartbeat();
+
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        // Tab/screen came back — cancel any pending backoff, reconnect, and resume heartbeat
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+        es?.close();
+        retryDelayRef.current = 2000;
+        connect();
+        startHeartbeat();
+      } else {
+        // Screen locked or tab hidden — pause the heartbeat
+        stopHeartbeat();
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      destroyed = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      es?.close();
+      setSseConnected(false);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
+      stopHeartbeat();
+    };
+  }, [session.sessionId, isLive, riderId, venueBestBeforeSessionMs]);
+
+  // Merge live laps into display (live overrides static when connected)
+  const displayLaps = (liveLaps ?? session.laps).filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
+  const displayLapCount = liveLaps != null ? liveLaps.length : session.lapCount;
+  const displayBestMs = displayLaps.length > 0 ? Math.min(...displayLaps.map(l => l.lapTimeMs!)) : null;
+
+  // Persistent venue-PB indicator: true whenever this session's best is better than all prior sessions
+  const isVenuePb = displayBestMs != null &&
+    (venueBestBeforeSessionMs == null || displayBestMs < venueBestBeforeSessionMs);
 
   return (
-    <Card>
+    <Card className={`transition-shadow duration-500 ${pbFlash ? "ring-2 ring-yellow-400 shadow-yellow-400/20 shadow-lg" : ""}`}>
       <CardHeader
         className="cursor-pointer select-none py-4"
         onClick={() => setOpen(v => !v)}
       >
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Timer size={15} className="text-primary shrink-0" />
               <CardTitle className="font-heading font-bold text-base uppercase tracking-tight truncate">
                 {session.sessionName}
               </CardTitle>
+              {isLive && (
+                <span className={`flex items-center gap-1.5 text-xs font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
+                  sseConnected
+                    ? "text-primary bg-primary/10 border-primary/20"
+                    : "text-muted-foreground bg-muted border-border"
+                }`}>
+                  <Radio size={9} className={sseConnected ? "animate-pulse" : ""} />
+                  {sseConnected ? "Live" : "Connecting…"}
+                </span>
+              )}
+              {isVenuePb && !pbFlash && (
+                <span className="flex items-center gap-1 bg-yellow-400/20 text-yellow-700 border border-yellow-400/50 text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
+                  <Ribbon size={10} /> PB ★
+                </span>
+              )}
+              {pbFlash && (
+                <span className="flex items-center gap-1 bg-yellow-400 text-yellow-950 text-xs font-bold px-2.5 py-0.5 rounded-full animate-bounce shrink-0">
+                  <Ribbon size={10} /> Personal Best!
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3 mt-1 flex-wrap">
               {session.startedAt && (
@@ -778,18 +949,24 @@ function PracticeSessionCard({ session }: { session: PracticeSessionHistory }) {
                   {new Date(session.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </span>
               )}
+              {session.venueName && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <MapPin size={11} />
+                  {session.venueName}
+                </span>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-5 flex-shrink-0">
             <div className="text-center">
               <div className="text-xs text-muted-foreground mb-0.5">Laps</div>
-              <div className="font-heading font-bold text-xl">{session.lapCount}</div>
+              <div className="font-heading font-bold text-xl">{displayLapCount}</div>
             </div>
             <div className="text-center">
               <div className="text-xs text-muted-foreground mb-0.5">Best Lap</div>
-              <div className="font-mono font-bold text-primary text-sm">
-                {formatMs(session.bestLapMs)}
+              <div className={`font-mono font-bold text-sm transition-colors duration-300 ${pbFlash ? "text-yellow-500" : "text-primary"}`}>
+                {formatMs(displayBestMs)}
               </div>
             </div>
             {open ? <ChevronUp size={16} className="text-muted-foreground" /> : <ChevronDown size={16} className="text-muted-foreground" />}
@@ -797,31 +974,33 @@ function PracticeSessionCard({ session }: { session: PracticeSessionHistory }) {
         </div>
       </CardHeader>
 
-      {open && lapsWithTime.length > 0 && (
+      {open && displayLaps.length > 0 && (
         <CardContent className="pt-0">
           <div className="border-t pt-3">
             <div className="text-xs text-muted-foreground mb-3 font-heading uppercase tracking-wider">
               Lap Times
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {lapsWithTime.map((lap) => {
-                const isBest = lap.lapTimeMs === session.bestLapMs;
+              {displayLaps.map((lap) => {
+                const isSessionBest = lap.lapTimeMs === displayBestMs;
+                const isVenuePb = isSessionBest && (venueBestBeforeSessionMs == null || (lap.lapTimeMs != null && lap.lapTimeMs < venueBestBeforeSessionMs));
                 return (
                   <div
                     key={lap.lapNumber}
-                    className={`rounded px-2 py-2 text-center border ${
-                      isBest
-                        ? "bg-primary/10 border-primary/30"
-                        : "bg-muted border-transparent"
+                    className={`rounded px-2 py-2 text-center border transition-colors ${
+                      isVenuePb
+                        ? "bg-yellow-400/15 border-yellow-400/40"
+                        : isSessionBest
+                          ? "bg-primary/10 border-primary/30"
+                          : "bg-muted border-transparent"
                     }`}
                   >
                     <div className="text-xs text-muted-foreground">Lap {lap.lapNumber}</div>
-                    <div className={`font-mono text-xs font-bold mt-0.5 ${isBest ? "text-primary" : ""}`}>
+                    <div className={`font-mono text-xs font-bold mt-0.5 ${isVenuePb ? "text-yellow-600" : isSessionBest ? "text-primary" : ""}`}>
                       {formatMs(lap.lapTimeMs)}
                     </div>
-                    {isBest && (
-                      <div className="text-xs text-primary font-bold mt-0.5">Best</div>
-                    )}
+                    {isVenuePb && <div className="text-xs text-yellow-600 font-bold mt-0.5">PB ★</div>}
+                    {!isVenuePb && isSessionBest && <div className="text-xs text-primary font-bold mt-0.5">Best</div>}
                   </div>
                 );
               })}
@@ -830,7 +1009,7 @@ function PracticeSessionCard({ session }: { session: PracticeSessionHistory }) {
         </CardContent>
       )}
 
-      {open && lapsWithTime.length === 0 && (
+      {open && displayLaps.length === 0 && (
         <CardContent className="pt-0">
           <div className="border-t pt-3 text-center text-sm text-muted-foreground py-4">
             No timed laps recorded in this session
@@ -1818,6 +1997,7 @@ export default function RiderHistory() {
   const initialTab = validTabs.includes(tabParam as any) ? (tabParam as typeof validTabs[number]) : "today";
   const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(initialTab);
   const [practiceMode, setPracticeMode] = useState<"event" | "open">("event");
+  const [practiceVenueFilter, setPracticeVenueFilter] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery<RiderHistoryResponse>({
     queryKey: ["rider-history", riderId],
@@ -1849,6 +2029,12 @@ export default function RiderHistory() {
   const rider = data?.rider;
   const history = data?.history ?? [];
   const practiceSessions = practiceData?.sessions ?? [];
+  const uniquePracticeVenues = Array.from(new Set(
+    practiceSessions.map(s => s.venueName).filter((v): v is string => v != null)
+  ));
+  const filteredPracticeSessions = practiceVenueFilter
+    ? practiceSessions.filter(s => s.venueName === practiceVenueFilter)
+    : practiceSessions;
 
   // Split schedule events: today = race_day status OR date is today; upcoming = everything else
   const _todayStr = new Date().toLocaleDateString("en-CA");
@@ -1883,9 +2069,20 @@ export default function RiderHistory() {
   const allFinishes = history.flatMap((e) => e.motos).filter((m) => !m.dnf && !m.dns);
   const bestPosition = allFinishes.length > 0 ? Math.min(...allFinishes.map((m) => m.position)) : null;
 
-  const totalPracticeLaps = practiceSessions.reduce((s, sess) => s + sess.lapCount, 0);
-  const allPracticeTimes = practiceSessions.flatMap(s => s.laps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0).map(l => l.lapTimeMs!));
+  const totalPracticeLaps = filteredPracticeSessions.reduce((s, sess) => s + sess.lapCount, 0);
+  const allPracticeTimes = filteredPracticeSessions.flatMap(s => s.laps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0).map(l => l.lapTimeMs!));
   const overallBestPracticeMs = allPracticeTimes.length > 0 ? Math.min(...allPracticeTimes) : null;
+
+  const venueBestLapMs = new Map<string, number>();
+  for (const sess of practiceSessions) {
+    if (!sess.venueName) continue;
+    for (const lap of sess.laps) {
+      if (lap.lapTimeMs == null || lap.lapTimeMs <= 0) continue;
+      const cur = venueBestLapMs.get(sess.venueName);
+      if (cur == null || lap.lapTimeMs < cur) venueBestLapMs.set(sess.venueName, lap.lapTimeMs);
+    }
+  }
+  const allTracksBestMs = venueBestLapMs.size > 0 ? Math.min(...Array.from(venueBestLapMs.values())) : null;
 
   return (
     <RiderLayout showBack backTo="/rider/portal" backLabel="My Profiles">
@@ -1959,6 +2156,27 @@ export default function RiderHistory() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Track records */}
+          {venueBestLapMs.size > 0 && (
+            <Card>
+              <CardContent className="px-4 py-3">
+                <div className="flex items-center gap-2 mb-3 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
+                  <MapPin size={11} /> Track Records
+                </div>
+                <div className="space-y-1.5">
+                  {Array.from(venueBestLapMs.entries())
+                    .sort((a, b) => a[0].localeCompare(b[0]))
+                    .map(([venue, bestMs]) => (
+                      <div key={venue} className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-foreground truncate">{venue}</span>
+                        <span className="font-mono text-sm font-medium text-primary shrink-0">{formatMs(bestMs)}</span>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Tab switcher */}
           <div className="flex gap-1 border-b border-border overflow-x-auto">
@@ -2259,13 +2477,56 @@ export default function RiderHistory() {
                   </Card>
                 ) : (
                   <div className="space-y-3">
+                    {/* Venue filter — only shown when sessions span more than one track */}
+                    {uniquePracticeVenues.length > 1 && (
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                          <MapPin size={11} /> Track:
+                        </span>
+                        <button
+                          onClick={() => setPracticeVenueFilter(null)}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors flex items-center gap-1.5 ${
+                            practiceVenueFilter === null
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                          }`}
+                        >
+                          All Tracks
+                          {allTracksBestMs != null && (
+                            <span className={`font-mono font-normal ${practiceVenueFilter === null ? "text-primary-foreground/80" : "text-muted-foreground/70"}`}>
+                              {formatMs(allTracksBestMs)}
+                            </span>
+                          )}
+                        </button>
+                        {uniquePracticeVenues.map(venue => (
+                          <button
+                            key={venue}
+                            onClick={() => setPracticeVenueFilter(venue)}
+                            className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors flex items-center gap-1.5 ${
+                              practiceVenueFilter === venue
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                            }`}
+                          >
+                            {venue}
+                            {venueBestLapMs.get(venue) != null && (
+                              <span className={`font-mono font-normal ${practiceVenueFilter === venue ? "text-primary-foreground/80" : "text-muted-foreground/70"}`}>
+                                {formatMs(venueBestLapMs.get(venue))}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Stats tiles — update when a venue filter is active */}
                     <div className="grid grid-cols-3 gap-3 mb-4">
                       <Card>
                         <CardContent className="p-4 text-center">
                           <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
                             <Timer size={11} /> Sessions
                           </div>
-                          <div className="font-heading font-bold text-3xl">{practiceSessions.length}</div>
+                          <div className="font-heading font-bold text-3xl">{filteredPracticeSessions.length}</div>
                         </CardContent>
                       </Card>
                       <Card>
@@ -2287,14 +2548,40 @@ export default function RiderHistory() {
                         </CardContent>
                       </Card>
                     </div>
-                    {[...practiceSessions].sort((a, b) => {
-                      if (a.bestLapMs == null && b.bestLapMs == null) return 0;
-                      if (a.bestLapMs == null) return 1;
-                      if (b.bestLapMs == null) return -1;
-                      return a.bestLapMs - b.bestLapMs;
-                    }).map((session) => (
-                      <PracticeSessionCard key={session.sessionId} session={session} />
-                    ))}
+
+                    {filteredPracticeSessions.length === 0 ? (
+                      <Card>
+                        <CardContent className="p-10 text-center">
+                          <MapPin size={32} className="mx-auto text-muted-foreground/30 mb-3" />
+                          <p className="text-muted-foreground text-sm">No sessions at this track yet</p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      [...filteredPracticeSessions].sort((a, b) => {
+                        if (a.bestLapMs == null && b.bestLapMs == null) return 0;
+                        if (a.bestLapMs == null) return 1;
+                        if (b.bestLapMs == null) return -1;
+                        return a.bestLapMs - b.bestLapMs;
+                      }).map((session) => {
+                        // Best lap at this venue from all OTHER sessions (the personal record to beat)
+                        const venueBestBeforeSessionMs = session.venueName
+                          ? (() => {
+                              const otherLaps = practiceSessions
+                                .filter(s => s.sessionId !== session.sessionId && s.venueName === session.venueName)
+                                .flatMap(s => s.laps.filter(l => l.lapTimeMs != null && l.lapTimeMs > 0).map(l => l.lapTimeMs!));
+                              return otherLaps.length > 0 ? Math.min(...otherLaps) : null;
+                            })()
+                          : null;
+                        return (
+                          <PracticeSessionCard
+                            key={session.sessionId}
+                            session={session}
+                            riderId={riderId}
+                            venueBestBeforeSessionMs={venueBestBeforeSessionMs}
+                          />
+                        );
+                      })
+                    )}
                   </div>
                 )
               )}
