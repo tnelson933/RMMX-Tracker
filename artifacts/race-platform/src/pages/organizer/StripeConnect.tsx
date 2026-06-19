@@ -27,9 +27,27 @@ const isDesktop =
   window.location.hostname === "127.0.0.1" ||
   window.location.hostname === "localhost";
 
+function useRelativeTime(ts: number) {
+  const [label, setLabel] = useState(() => formatRelative(ts));
+  useEffect(() => {
+    const id = setInterval(() => setLabel(formatRelative(ts)), 10_000);
+    return () => clearInterval(id);
+  }, [ts]);
+  return label;
+}
+
+function formatRelative(ts: number) {
+  if (!ts) return "";
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
 function DesktopStripeRedirect() {
   const [cloudUrl, setCloudUrl] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -39,38 +57,39 @@ function DesktopStripeRedirect() {
       .catch(() => {});
   }, []);
 
-  const { data: status, isLoading, refetch } = useQuery({
+  const {
+    data: status,
+    isLoading,
+    isFetching,
+    dataUpdatedAt,
+    refetch,
+  } = useQuery({
     queryKey: ["stripe-connect-status"],
     queryFn: async () => {
       const res = await fetch("/api/stripe/connect/status", { credentials: "include" });
-      if (!res.ok) return { connected: false, onboardingComplete: false, accountId: null };
-      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null }>;
+      if (!res.ok) return { connected: false, onboardingComplete: false, accountId: null, source: "local" as const };
+      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null; source: "cloud" | "local" }>;
     },
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
+  const lastCheckedLabel = useRelativeTime(dataUpdatedAt);
   const paymentsUrl = cloudUrl ? `${cloudUrl.replace(/\/$/, "")}/payments` : null;
+  const fromCloud = status?.source === "cloud";
 
-  async function handleSyncFromCloud() {
-    setSyncing(true);
+  async function handleRefresh() {
+    setRefreshing(true);
     try {
-      const api = (window as any).electronAPI;
-      if (isDesktop && api?.sync?.flush) {
-        await api.sync.flush();
-      } else {
-        const res = await fetch("/api/admin/sync/pull", {
-          method: "POST",
-          credentials: "include",
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Sync failed");
-      }
-      await queryClient.invalidateQueries({ queryKey: ["stripe-connect-status"] });
       await refetch();
-      toast({ title: "Synced from cloud", description: "Payment status is up to date." });
+      const api = (window as any).electronAPI;
+      if (api?.sync?.flush) await api.sync.flush();
+      await queryClient.invalidateQueries({ queryKey: ["stripe-connect-status"] });
+      toast({ title: "Status refreshed", description: "Stripe payment status is up to date." });
     } catch (err: any) {
-      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+      toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
     } finally {
-      setSyncing(false);
+      setRefreshing(false);
     }
   }
 
@@ -86,17 +105,27 @@ function DesktopStripeRedirect() {
         <Button
           variant="outline"
           size="sm"
-          onClick={handleSyncFromCloud}
-          disabled={syncing}
+          onClick={handleRefresh}
+          disabled={refreshing || isFetching}
           className="font-heading uppercase tracking-wider shrink-0 mt-1"
         >
-          {syncing ? (
-            <><Loader2 size={14} className="mr-1.5 animate-spin" /> Syncing...</>
+          {(refreshing || isFetching) ? (
+            <><Loader2 size={14} className="mr-1.5 animate-spin" /> Checking...</>
           ) : (
-            <><RefreshCw size={14} className="mr-1.5" /> Refresh from Cloud</>
+            <><RefreshCw size={14} className="mr-1.5" /> Refresh Status</>
           )}
         </Button>
       </div>
+
+      {/* Status source indicator */}
+      {!isLoading && dataUpdatedAt > 0 && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className={`w-1.5 h-1.5 rounded-full ${fromCloud ? "bg-green-500" : "bg-amber-400"}`} />
+          {fromCloud ? "Live from cloud" : "From local cache — cloud unreachable"}
+          <span className="text-muted-foreground/60">· checked {lastCheckedLabel}</span>
+          <span className="text-muted-foreground/40">· auto-refreshes every 30s</span>
+        </div>
+      )}
 
       {isLoading ? (
         <Card>
@@ -154,8 +183,8 @@ function DesktopStripeRedirect() {
                   Payments Not Connected
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Stripe Connect requires your cloud server to handle the OAuth flow.
-                  Set up your account from the web portal — your connection status syncs automatically to the desktop via the button above.
+                  Stripe Connect must be set up from the web portal — it handles the OAuth flow.
+                  Once connected there, this page updates automatically within 30 seconds.
                 </p>
               </div>
             </div>
