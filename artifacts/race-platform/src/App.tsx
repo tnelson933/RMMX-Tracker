@@ -42,6 +42,7 @@ import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
 import TeamPage from "@/pages/organizer/TeamPage";
 import { Notifications } from "@/pages/organizer/Notifications";
 import GateSchedulePage from "@/pages/organizer/GateSchedulePage";
+import RaceDayDisplayPage from "@/pages/organizer/RaceDayDisplayPage";
 import NoAccessPage from "@/pages/organizer/NoAccessPage";
 import RiderLogin from "@/pages/rider/RiderLogin";
 import RiderPortal from "@/pages/rider/RiderPortal";
@@ -248,6 +249,9 @@ function Router() {
 
       <Route path="/notifications">
         <ProtectedRoute permKey="notifications"><Notifications /></ProtectedRoute>
+      </Route>
+      <Route path="/race-day-display">
+        <ProtectedRoute permKey="gate_schedule"><RaceDayDisplayPage /></ProtectedRoute>
       </Route>
 
       {/* ── Organizer / admin only ── */}
