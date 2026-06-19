@@ -6,6 +6,7 @@ import { PastEventCheckDialog } from "@/components/organizer/PastEventCheckDialo
 import { UnpublishedResultsDialog } from "@/components/organizer/UnpublishedResultsDialog";
 import { ProductTour } from "@/components/organizer/ProductTour";
 import { AIAssistant } from "@/components/organizer/AIAssistant";
+import { LocalSyncBadge } from "@/components/LocalSyncBadge";
 import { useBroadcast } from "@/contexts/BroadcastContext";
 import {
   LayoutDashboard,
@@ -66,6 +67,9 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const isOrganizer = user?.role === "club_organizer";
   const clubId = user?.clubId;
 
+  const eventRouteMatch = location.match(/^\/events\/(\d+)/);
+  const currentEventId = eventRouteMatch ? parseInt(eventRouteMatch[1]) : undefined;
+
   const formatDuration = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -115,6 +119,9 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
         <div className="text-xs text-sidebar-foreground/70 uppercase tracking-wider">
           {user?.role.replace("_", " ")}
         </div>
+        <div className="mt-2">
+          <LocalSyncBadge />
+        </div>
       </div>
 
       <nav className="flex-1 py-4 flex flex-col gap-1 px-3 overflow-y-auto">
@@ -138,7 +145,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           );
         })}
 
-        {/* Team link — visible to organizers in both cloud and desktop modes (not staff, not super_admin) */}
+        {/* Admin link — visible to organizers in both cloud and desktop modes (not staff, not super_admin) */}
         {isOrganizer && (
           <Link
             href="/team"
@@ -150,7 +157,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             }`}
           >
             <UsersRound size={18} />
-            Team
+            Admin
           </Link>
         )}
 
@@ -256,6 +263,9 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             <span className="font-heading font-bold text-base uppercase tracking-wider text-sidebar-primary">RM</span>
             <span className="font-heading font-semibold text-[10px] uppercase tracking-widest text-sidebar-primary/60">Tracker</span>
           </span>
+          <div className="ml-auto">
+            <LocalSyncBadge />
+          </div>
         </div>
 
         <main className="flex-1 overflow-y-auto">
@@ -316,7 +326,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
       {showTour && <ProductTour onComplete={() => {}} />}
 
       {/* AI Assistant — cloud only (requires Anthropic API, not available offline) */}
-      <AIAssistant />
+      <AIAssistant eventId={currentEventId} />
     </div>
   );
 }
