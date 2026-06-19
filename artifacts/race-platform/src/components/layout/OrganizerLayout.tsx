@@ -30,7 +30,7 @@ import {
   Tag,
   UsersRound,
   Bell,
-  Flag,
+  Monitor,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import rmLogo from "@assets/rm-logo.png";
@@ -40,7 +40,6 @@ const isDesktop = typeof (window as any).electronAPI !== "undefined";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permKey: "dashboard" },
   { href: "/events", label: "Events", icon: CalendarDays, permKey: "events" },
-  { href: "/gate", label: "Gate Schedule", icon: Flag, permKey: "gate_schedule" },
   { href: "/practice", label: "Practice", icon: Timer, permKey: "practice" },
   { href: "/riders", label: "Riders", icon: Users, permKey: "riders" },
   { href: "/series", label: "Series", icon: Trophy, permKey: "series" },
@@ -48,6 +47,7 @@ const NAV_ITEMS = [
   { href: "/payments", label: "Payments", icon: CreditCard, permKey: "payments" },
   { href: "/discount-codes", label: "Discount Codes", icon: Tag, permKey: "discount_codes" },
   { href: "/notifications", label: "Notifications", icon: Bell, permKey: "notifications" },
+  { href: "/race-day-display", label: "Race Day Display", icon: Monitor, permKey: "gate_schedule" },
   { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, permKey: "reader_setup" },
   { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, permKey: "offline_mode" },
 ] as const;
