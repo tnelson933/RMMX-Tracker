@@ -4,7 +4,8 @@ import { sseBroadcast, buildLeaderboard } from "./timing";
 
 const router = Router();
 
-function serializeMoto(m: any) {
+function serializeMoto(m: any, groupMembersMap?: Map<number, number[]>) {
+  const groupId: number | null = m.staggered_group_id ?? null;
   return {
     id: m.id,
     eventId: m.event_id,
@@ -20,8 +21,9 @@ function serializeMoto(m: any) {
     status: m.status,
     startedAt: m.started_at ?? null,
     completedAt: m.completed_at ?? null,
-    staggeredWithMotoId: m.staggered_with_moto_id ?? null,
     staggeredOrder: m.staggered_order ?? null,
+    staggeredGroupId: groupId,
+    staggeredGroupMembers: groupId != null && groupMembersMap ? (groupMembersMap.get(groupId) ?? null) : null,
     countdownSeconds: m.countdown_seconds ?? null,
     createdAt: m.created_at,
   };
@@ -34,7 +36,22 @@ router.get("/events/:eventId/motos", (req, res) => {
   const motos = db
     .prepare("SELECT * FROM motos WHERE event_id = ? ORDER BY moto_number ASC")
     .all(eventId) as any[];
-  return res.json(motos.map(serializeMoto));
+
+  // Build staggeredGroupMembers map: groupId -> motoIds ordered by staggered_order
+  const groupIdToMembers = new Map<number, Array<{ id: number; order: number }>>();
+  for (const m of motos) {
+    const gid: number | null = m.staggered_group_id ?? null;
+    if (gid != null) {
+      if (!groupIdToMembers.has(gid)) groupIdToMembers.set(gid, []);
+      groupIdToMembers.get(gid)!.push({ id: m.id, order: m.staggered_order ?? 0 });
+    }
+  }
+  const groupMembersMap = new Map<number, number[]>();
+  for (const [gid, entries] of groupIdToMembers.entries()) {
+    groupMembersMap.set(gid, entries.sort((a, b) => a.order - b.order).map(e => e.id));
+  }
+
+  return res.json(motos.map((m: any) => serializeMoto(m, groupMembersMap)));
 });
 
 // POST /events/:eventId/motos
@@ -226,51 +243,83 @@ router.post("/motos/:motoId/restart", (req, res) => {
   return res.json({ ok: true, moto: serializeMoto(updated) });
 });
 
-// POST /events/:eventId/stagger — link two motos as staggered start pair
+// POST /events/:eventId/stagger — link N motos as a staggered start group
 router.post("/events/:eventId/stagger", (req, res) => {
   const session = req.session as any;
   if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
   const db = getDb();
-  const { motoId1, motoId2, firstMotoId } = req.body;
-  if (!motoId1 || !motoId2 || !firstMotoId) {
-    return res
-      .status(400)
-      .json({ error: "motoId1, motoId2, firstMotoId required" });
+  const { orderedMotoIds } = req.body;
+  if (!Array.isArray(orderedMotoIds) || orderedMotoIds.length < 2) {
+    return res.status(400).json({ error: "orderedMotoIds must be an array of at least 2 moto IDs" });
   }
-  const id1 = Number(motoId1);
-  const id2 = Number(motoId2);
-  const firstId = Number(firstMotoId);
-  if (id1 === id2) {
-    return res.status(400).json({ error: "Cannot stagger a moto with itself" });
+  const ids = orderedMotoIds.map(Number);
+  const unique = new Set(ids);
+  if (unique.size !== ids.length) {
+    return res.status(400).json({ error: "orderedMotoIds must not contain duplicates" });
   }
-  const secondId = firstId === id1 ? id2 : id1;
-  db.prepare(
-    "UPDATE motos SET staggered_with_moto_id = ?, staggered_order = 1 WHERE id = ?",
-  ).run(secondId, firstId);
-  db.prepare(
-    "UPDATE motos SET staggered_with_moto_id = ?, staggered_order = 2 WHERE id = ?",
-  ).run(firstId, secondId);
+
+  // Clear existing group memberships for any groups that overlap with these IDs
+  const placeholders = ids.map(() => "?").join(",");
+  const existing = db
+    .prepare(`SELECT staggered_group_id FROM motos WHERE id IN (${placeholders})`)
+    .all(...ids) as any[];
+  const oldGroupIds = [...new Set(existing.map((m: any) => m.staggered_group_id).filter((g: any) => g != null))] as number[];
+  if (oldGroupIds.length > 0) {
+    const gPlaceholders = oldGroupIds.map(() => "?").join(",");
+    db.prepare(
+      `UPDATE motos SET staggered_group_id = NULL, staggered_order = NULL WHERE staggered_group_id IN (${gPlaceholders})`,
+    ).run(...oldGroupIds);
+  }
+
+  // Use min ID as stable group identifier
+  const groupId = Math.min(...ids);
+  const updateStmt = db.prepare(
+    "UPDATE motos SET staggered_group_id = ?, staggered_order = ? WHERE id = ?",
+  );
+  for (let i = 0; i < ids.length; i++) {
+    updateStmt.run(groupId, i + 1, ids[i]);
+  }
   return res.json({ ok: true });
 });
 
-// DELETE /motos/:motoId/stagger — unlink stagger pair
+// DELETE /motos/:motoId/stagger — remove one moto from its stagger group; re-normalizes remaining order
 router.delete("/motos/:motoId/stagger", (req, res) => {
   const session = req.session as any;
   if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
   const db = getDb();
   const id = Number(req.params.motoId);
   const moto = db
-    .prepare("SELECT staggered_with_moto_id FROM motos WHERE id = ?")
+    .prepare("SELECT staggered_group_id FROM motos WHERE id = ?")
     .get(id) as any;
   if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto.staggered_group_id) return res.json({ ok: true });
 
+  // Find remaining group members sorted by current order
+  const remaining = db
+    .prepare(
+      "SELECT id FROM motos WHERE staggered_group_id = ? AND id != ? ORDER BY staggered_order ASC",
+    )
+    .all(moto.staggered_group_id, id) as any[];
+
+  // Clear this moto
   db.prepare(
-    "UPDATE motos SET staggered_with_moto_id = NULL, staggered_order = NULL WHERE id = ?",
+    "UPDATE motos SET staggered_group_id = NULL, staggered_order = NULL WHERE id = ?",
   ).run(id);
-  if (moto.staggered_with_moto_id) {
-    db.prepare(
-      "UPDATE motos SET staggered_with_moto_id = NULL, staggered_order = NULL WHERE id = ?",
-    ).run(moto.staggered_with_moto_id);
+
+  if (remaining.length <= 1) {
+    // Group dissolves
+    if (remaining.length === 1) {
+      db.prepare(
+        "UPDATE motos SET staggered_group_id = NULL, staggered_order = NULL WHERE id = ?",
+      ).run(remaining[0].id);
+    }
+    return res.json({ ok: true });
+  }
+
+  // Re-normalize order for remaining group members
+  const updateOrder = db.prepare("UPDATE motos SET staggered_order = ? WHERE id = ?");
+  for (let i = 0; i < remaining.length; i++) {
+    updateOrder.run(i + 1, remaining[i].id);
   }
   return res.json({ ok: true });
 });
@@ -318,7 +367,7 @@ router.post("/events/:eventId/motos/reorder", (req, res) => {
   const motos = db
     .prepare("SELECT * FROM motos WHERE event_id = ? ORDER BY moto_number ASC")
     .all(eventId) as any[];
-  return res.json(motos.map(serializeMoto));
+  return res.json(motos.map(m => serializeMoto(m)));
 });
 
 // GET /motos/:motoId/results — race results for a moto (used by results tab + results entry)
@@ -979,7 +1028,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
     .map((id) => db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any)
     .filter(Boolean);
 
-  return res.json(motos.map(serializeMoto));
+  return res.json(motos.map(m => serializeMoto(m)));
 });
 
 // POST /events/:eventId/motos/:motoId/generate-lineup — regenerate lineup for single moto
