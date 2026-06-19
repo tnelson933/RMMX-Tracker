@@ -98,10 +98,12 @@ export default function Results() {
                         {event.name}
                       </h3>
                       <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-                        {event.location && (
+                        {(event.location || event.trackName) && (
                           <div className="flex items-center gap-1.5">
                             <MapPin size={16} className="text-muted-foreground/70" />
-                            {event.location}
+                            {event.trackName
+                              ? `${event.trackName}, ${event.location}`
+                              : event.location}
                           </div>
                         )}
                         {event.clubName && (
