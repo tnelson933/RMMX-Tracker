@@ -1,8 +1,29 @@
 import { Router } from "express";
 import { getDb } from "../db";
-import { readSyncState, AUTO_SYNC_ENABLED, CLOUD_URL, CLUB_ID } from "../auto-sync";
+import { readSyncState, AUTO_SYNC_ENABLED, CLOUD_URL, CLUB_ID, runPull } from "../auto-sync";
 
 const router = Router();
+
+// POST /api/admin/sync/pull — trigger an immediate cloud→local pull
+// Requires an active session (desktop organizer must be logged in).
+router.post("/admin/sync/pull", async (req, res) => {
+  const userId = (req.session as any).userId;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  if (!AUTO_SYNC_ENABLED) {
+    return res.status(503).json({
+      ok: false,
+      error: "Cloud sync not configured — CLOUD_URL and CLUB_ID must be set",
+    });
+  }
+
+  try {
+    const result = await runPull();
+    return res.json({ ok: true, rows: result.rows });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
+  }
+});
 
 router.get("/status", (_req, res) => {
   const db = getDb();
