@@ -1,106 +1,15 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { conversations, messages } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { conversations, messages, eventsTable, motosTable, checkinsTable, usersTable } from "@workspace/db";
+import { eq, and, desc, count, asc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import SYSTEM_PROMPT from "./SYSTEM_PROMPT.md";
 
 const router = Router();
 
-const SYSTEM_PROMPT = `You are an AI assistant built into RM Tracker — a race operations management system for motorcycle and ATV club organizers.
-
-Your job is to help organizers accomplish tasks quickly, understand features, and troubleshoot issues. Be concise, friendly, and specific about where to click.
-
-## Platform Overview
-This is a full race-ops SaaS: live RFID timing, race scoring, series points, and public results. Organizers manage everything from event creation through publishing final results.
-
-## Event Lifecycle
-Events move through these statuses in order:
-1. **Draft** — private, not visible to riders
-2. **Registration Open** — riders can register via the public event page
-3. **Race Day** — registration closed, check-in and timing active
-4. **Completed** — racing done, enter and publish results
-
-To change status: Events → click the event → Edit → change the Status field.
-
-## Navigation (left sidebar)
-- **Dashboard** — club stats, upcoming events, recent registrations
-- **Events** — create and manage all events; click an event to enter its detail view
-- **Practice** — standalone timed practice sessions (separate from race events)
-- **Riders** — full rider database; click a rider to see their history
-- **Series** — championship series spanning multiple events
-- **Points Scoring Tables** — configure how series points are calculated
-- **Payments** — Stripe Connect setup, payment history, payout management
-- **Discount Codes** — promo codes for reduced entry fees
-- **Reader Setup** — configure RFID timing hardware (MyLaps, AMB, etc.)
-- **Offline Mode** — download event data for use without internet
-- **Team** — manage staff accounts with role-based permissions
-
-## Event Detail Tabs (inside an event)
-- **Overview** — edit event details, registration settings, entry fees
-- **Registrations** — see all registered riders; apply comp codes; export list
-- **Check-In** — mark riders as checked in on race day; assign RFID transponders
-- **Motos** — create heats/mains; manage race classes and heat assignments
-- **Enter Results** — enter finish positions and lap times after each moto
-- **Report** — view standings, publish results publicly, download reports
-
-## Common Tasks
-
-### Create a new event
-Events → **+ New Event** button → fill in name, date, location, state, entry fee, race classes → Save.
-
-### Open registration for an event
-Events → click the event → **Edit** → set Status to "Registration Open" → Save.
-Or use the quick action buttons on the Events list.
-
-### Add race classes to an event
-Edit the event → find the "Race Classes" field → type a class name and press Enter to add it. Common classes: "250cc Open", "Pro", "Beginner", "Youth 65cc", "ATV Pro", etc.
-
-### Check in riders on race day
-Event → **Check-In** tab → find rider by name or bib number → click check-in. You can also assign RFID transponders from this tab.
-
-### Create motos (heats/mains)
-Event → **Motos** tab → **+ Add Moto** → select race class, moto type (Heat 1, Heat 2, Main, etc.), and number of riders. Motos appear in the timing/results workflow.
-
-### Enter race results
-Event → **Enter Results** tab → select the moto → enter finish positions for each rider → Save.
-
-### Publish results publicly
-Event → **Report** tab → review standings → click **Publish Results**. Published results appear on the public-facing results pages.
-
-### Set up a series
-**Series** (sidebar) → **+ New Series** → name it, select which events count, choose a Points Scoring Table → Save.
-Series standings update automatically as results are published.
-
-### Create a Points Scoring Table
-**Points Scoring Tables** → **+ New Table** → describe the scoring system in plain English (e.g., "AMA style: 25 points for first, 22 for second...") → the AI will suggest a configuration → review and save.
-
-### Set up Stripe payments
-**Payments** → connect your Stripe account via the Connect button → once connected, entry fees will automatically be charged during registration.
-
-### Create discount codes
-**Discount Codes** → **+ New Code** → set the code, discount amount or percentage, usage limit, and expiry.
-
-### Manage team/staff
-**Team** → **+ Invite Member** → enter their email and set which pages they can access.
-
-### Set up RFID timing
-**Reader Setup** → configure your reader IP address and timing system (MyLaps, AMB, etc.). Riders need transponder numbers assigned in Check-In before timing starts.
-
-## Registration Requirements
-When creating an event you can require:
-- **AMA # (membership number)** — riders must enter their AMA number to register
-- **Club ID** — riders must enter their club membership ID
-
-These are set in the event's registration settings (Edit event → scroll to Registration section).
-
-## Tips
-- Use **comp codes** (Registrations tab) to waive entry fees for specific riders
-- The **offline mode** package lets you run an event with no internet — download it from Offline Mode in the sidebar before you leave
-- Results are only public after you explicitly publish them from the Report tab
-- Bib numbers can be auto-assigned or set manually during registration/check-in
-- The public event registration page URL is shown on the event's Overview tab
-
-If asked something you don't know or that's outside the platform, say so honestly and suggest where the user might find the answer.`;
+// SYSTEM_PROMPT is loaded from SYSTEM_PROMPT.md at build time (esbuild text loader).
+// When you add a new organizer-facing feature, update SYSTEM_PROMPT.md — do NOT edit
+// an inline string here. See the feature-coverage list at the top of that file.
 
 router.get("/anthropic/conversations", async (req, res) => {
   const userId = (req.session as any).userId;
@@ -200,7 +109,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
 
   if (!conv) { res.status(404).json({ error: "Not found" }); return; }
 
-  const { content } = req.body as { content?: string };
+  const { content, eventId } = req.body as { content?: string; eventId?: number };
   if (!content?.trim()) { res.status(400).json({ error: "content is required" }); return; }
 
   await db.insert(messages).values({
@@ -220,6 +129,81 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
     content: m.content,
   }));
 
+  let systemPrompt = SYSTEM_PROMPT;
+
+  if (eventId && Number.isInteger(Number(eventId))) {
+    const numericEventId = Number(eventId);
+
+    const [user] = await db
+      .select({ clubId: usersTable.clubId })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId));
+
+    const userClubId = user?.clubId;
+
+    const [event] = userClubId
+      ? await db
+          .select()
+          .from(eventsTable)
+          .where(and(eq(eventsTable.id, numericEventId), eq(eventsTable.clubId, userClubId)))
+      : [];
+
+    if (event) {
+      const [motoCountRow] = await db
+        .select({ count: count() })
+        .from(motosTable)
+        .where(eq(motosTable.eventId, numericEventId));
+
+      const [checkinCountRow] = await db
+        .select({ count: count() })
+        .from(checkinsTable)
+        .where(and(eq(checkinsTable.eventId, numericEventId), eq(checkinsTable.checkedIn, true)));
+
+      const [inProgressMoto] = await db
+        .select()
+        .from(motosTable)
+        .where(and(eq(motosTable.eventId, numericEventId), eq(motosTable.status, "in_progress")))
+        .limit(1);
+
+      const [nextScheduledMoto] = await db
+        .select()
+        .from(motosTable)
+        .where(and(eq(motosTable.eventId, numericEventId), eq(motosTable.status, "scheduled")))
+        .orderBy(asc(motosTable.motoNumber))
+        .limit(1);
+
+      const classes = Array.isArray(event.raceClasses) ? event.raceClasses : [];
+      const contextLines: string[] = [
+        `## Current Event Context`,
+        ``,
+        `The organizer currently has the following event open:`,
+        ``,
+        `- **Event name:** ${event.name}`,
+        `- **Date:** ${event.date}`,
+        `- **Status:** ${event.status.replace(/_/g, " ")}`,
+        `- **Race classes:** ${classes.length > 0 ? classes.join(", ") : "none set"}`,
+        `- **Total motos:** ${motoCountRow?.count ?? 0}`,
+        `- **Riders checked in:** ${checkinCountRow?.count ?? 0}`,
+      ];
+
+      if (inProgressMoto) {
+        contextLines.push(`- **Currently racing:** ${inProgressMoto.name} (${inProgressMoto.raceClass}, moto #${inProgressMoto.motoNumber})`);
+      }
+
+      if (nextScheduledMoto) {
+        contextLines.push(`- **Next up (scheduled):** ${nextScheduledMoto.name} (${nextScheduledMoto.raceClass}, moto #${nextScheduledMoto.motoNumber})`);
+      }
+
+      if (!inProgressMoto && !nextScheduledMoto) {
+        contextLines.push(`- **Moto status:** No motos currently in progress or scheduled`);
+      }
+
+      contextLines.push(``, `When answering, reference this event by name and use these numbers to give specific, accurate answers.`, ``);
+
+      systemPrompt = contextLines.join("\n") + "\n---\n\n" + SYSTEM_PROMPT;
+    }
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -230,7 +214,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
     const stream = anthropic.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: chatMessages,
     });
 
