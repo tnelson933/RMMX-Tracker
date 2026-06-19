@@ -1,6 +1,6 @@
 {
   "name": "@workspace/desktop",
-  "version": "1.0.68",
+  "version": "1.0.69",
   "private": true,
   "description": "RM Tracker — Electron desktop app",
   "main": "dist/main.js",
