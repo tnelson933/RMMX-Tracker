@@ -201,12 +201,32 @@ router.get("/events/:eventId/motos", async (req, res) => {
   }
 
   const motos = await db.select().from(motosTable).where(eq(motosTable.eventId, eventId)).orderBy(motosTable.motoNumber);
+
+  // Build staggeredGroupMembers map: groupId -> motoIds ordered by staggeredOrder
+  const groupIdToMembers = new Map<number, number[]>();
+  for (const m of motos) {
+    if (m.staggeredGroupId != null) {
+      if (!groupIdToMembers.has(m.staggeredGroupId)) groupIdToMembers.set(m.staggeredGroupId, []);
+      groupIdToMembers.get(m.staggeredGroupId)!.push(m.id);
+    }
+  }
+  for (const [gid, ids] of groupIdToMembers.entries()) {
+    const sorted = motos
+      .filter(m => m.staggeredGroupId === gid)
+      .sort((a, b) => (a.staggeredOrder ?? 0) - (b.staggeredOrder ?? 0))
+      .map(m => m.id);
+    groupIdToMembers.set(gid, sorted);
+  }
+
   return res.json(motos.map(m => ({
     ...m,
     lineup: Array.isArray(m.lineup) ? m.lineup : [],
     createdAt: m.createdAt.toISOString(),
     startedAt: m.startedAt?.toISOString() ?? null,
     completedAt: m.completedAt?.toISOString() ?? null,
+    staggeredGroupId: m.staggeredGroupId,
+    staggeredOrder: m.staggeredOrder,
+    staggeredGroupMembers: m.staggeredGroupId != null ? (groupIdToMembers.get(m.staggeredGroupId) ?? null) : null,
   })));
 });
 
@@ -370,28 +390,70 @@ router.delete("/motos/:motoId", async (req, res) => {
   return res.status(204).send();
 });
 
-// Link two motos as a staggered start pair
+// Link N motos as a staggered start group
 router.post("/events/:eventId/stagger", async (req, res) => {
-  const { motoId1, motoId2, firstMotoId } = req.body;
-  if (!motoId1 || !motoId2 || !firstMotoId) return res.status(400).json({ error: "motoId1, motoId2, firstMotoId required" });
-  const id1 = Number(motoId1);
-  const id2 = Number(motoId2);
-  const firstId = Number(firstMotoId);
-  if (id1 === id2) return res.status(400).json({ error: "Cannot stagger a moto with itself" });
-  const secondId = firstId === id1 ? id2 : id1;
-  await db.update(motosTable).set({ staggeredWithMotoId: secondId, staggeredOrder: 1 }).where(eq(motosTable.id, firstId));
-  await db.update(motosTable).set({ staggeredWithMotoId: firstId, staggeredOrder: 2 }).where(eq(motosTable.id, secondId));
+  const { orderedMotoIds } = req.body;
+  if (!Array.isArray(orderedMotoIds) || orderedMotoIds.length < 2) {
+    return res.status(400).json({ error: "orderedMotoIds must be an array of at least 2 moto IDs" });
+  }
+  const ids = orderedMotoIds.map(Number);
+  const unique = new Set(ids);
+  if (unique.size !== ids.length) return res.status(400).json({ error: "orderedMotoIds must not contain duplicates" });
+
+  // Clear any existing group memberships for motos in this list
+  const existing = await db.select({ staggeredGroupId: motosTable.staggeredGroupId })
+    .from(motosTable).where(inArray(motosTable.id, ids));
+  const oldGroupIds = [...new Set(existing.map(m => m.staggeredGroupId).filter((g): g is number => g != null))];
+  if (oldGroupIds.length > 0) {
+    await db.update(motosTable)
+      .set({ staggeredGroupId: null, staggeredOrder: null })
+      .where(inArray(motosTable.staggeredGroupId, oldGroupIds));
+  }
+
+  // Use min ID as stable group identifier
+  const groupId = Math.min(...ids);
+
+  for (let i = 0; i < ids.length; i++) {
+    await db.update(motosTable)
+      .set({ staggeredGroupId: groupId, staggeredOrder: i + 1 })
+      .where(eq(motosTable.id, ids[i]));
+  }
   return res.json({ ok: true });
 });
 
-// Unlink stagger for a moto (also unlinks partner)
+// Unlink a single moto from its stagger group; re-normalizes the remaining group order
 router.delete("/motos/:motoId/stagger", async (req, res) => {
   const id = Number(req.params.motoId);
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
   if (!moto) return res.status(404).json({ error: "Not found" });
-  await db.update(motosTable).set({ staggeredWithMotoId: null, staggeredOrder: null }).where(eq(motosTable.id, id));
-  if (moto.staggeredWithMotoId) {
-    await db.update(motosTable).set({ staggeredWithMotoId: null, staggeredOrder: null }).where(eq(motosTable.id, moto.staggeredWithMotoId));
+  if (!moto.staggeredGroupId) return res.json({ ok: true });
+
+  // Find remaining group members (excluding this moto), sorted by current order
+  const remaining = await db.select()
+    .from(motosTable)
+    .where(and(eq(motosTable.staggeredGroupId, moto.staggeredGroupId), ne(motosTable.id, id)))
+    .orderBy(asc(motosTable.staggeredOrder));
+
+  // Clear this moto's group membership
+  await db.update(motosTable)
+    .set({ staggeredGroupId: null, staggeredOrder: null })
+    .where(eq(motosTable.id, id));
+
+  if (remaining.length <= 1) {
+    // Group dissolves — clear the last remaining member too
+    if (remaining.length === 1) {
+      await db.update(motosTable)
+        .set({ staggeredGroupId: null, staggeredOrder: null })
+        .where(eq(motosTable.id, remaining[0].id));
+    }
+    return res.json({ ok: true });
+  }
+
+  // Re-normalize order for the remaining group members
+  for (let i = 0; i < remaining.length; i++) {
+    await db.update(motosTable)
+      .set({ staggeredOrder: i + 1 })
+      .where(eq(motosTable.id, remaining[i].id));
   }
   return res.json({ ok: true });
 });
