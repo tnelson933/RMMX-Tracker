@@ -126,6 +126,13 @@ export interface PurchaseOption {
   categoryId?: number | null;
 }
 
+export interface ClubOrganizer {
+  id: number;
+  name: string;
+  email: string;
+  hasPassword: boolean;
+}
+
 export interface Club {
   id: number;
   name: string;
@@ -144,6 +151,9 @@ export interface Club {
   autoDnfEnabled: boolean;
   /** Minimum % of leader laps required to score points (1-100) */
   autoDnfThreshold: number;
+  /** When false, the club is suspended and its organizers cannot log in */
+  active: boolean;
+  organizer?: ClubOrganizer | null;
   createdAt?: string;
 }
 
@@ -155,6 +165,10 @@ export interface ClubInput {
   logoUrl?: string;
   website?: string;
   description?: string;
+  /** Name of the primary organizer — creates a club_organizer user account */
+  organizerName?: string;
+  /** Email of the primary organizer — sends an invite email to set their password */
+  organizerEmail?: string;
 }
 
 export interface ClubUpdate {
@@ -167,6 +181,8 @@ export interface ClubUpdate {
   description?: string;
   autoDnfEnabled?: boolean;
   autoDnfThreshold?: number;
+  /** Set false to suspend the club */
+  active?: boolean;
 }
 
 export type EventRaceClassLimits = {[key: string]: number | null};
