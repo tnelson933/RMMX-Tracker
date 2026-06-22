@@ -32,6 +32,9 @@ export class SyncEngine {
   private lastSyncedAt: string | null = null;
   private lastError: string | null = null;
   private lastRowsChanged = false;
+  /** Stable JSON fingerprint of the last successful sync-pull response.
+   *  Used to skip upserts (and UI invalidations) on no-op cycles. */
+  private lastPullHash: string | null = null;
   private sessionCookie: string | null = null;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private listeners: StateChangeCallback[] = [];
@@ -579,7 +582,35 @@ export class SyncEngine {
       throw new Error(`sync-pull failed (${res.status}): ${body}`);
     }
 
-    const data = (await res.json()) as {
+    // Read as text first so we can build a stable hash for change detection.
+    // ON CONFLICT DO UPDATE always counts as a SQLite "change" even when values
+    // are identical, so we compare a sorted fingerprint of the response to skip
+    // upserts entirely on no-op cycles — keeping rowsChanged === false and
+    // preventing DesktopSyncWatcher from calling invalidateQueries every 2 s.
+    const responseText = await res.text();
+    const rawData = JSON.parse(responseText) as Record<string, unknown[]>;
+
+    // Sort each array by id for a stable comparison that is order-independent
+    // (PostgreSQL does not guarantee heap-scan order across calls).
+    const stableHash = JSON.stringify(
+      Object.keys(rawData)
+        .sort()
+        .reduce<Record<string, unknown[]>>((acc, key) => {
+          const arr = rawData[key];
+          acc[key] = Array.isArray(arr)
+            ? [...arr].sort((a: any, b: any) => (a.id ?? 0) - (b.id ?? 0))
+            : arr;
+          return acc;
+        }, {}),
+    );
+
+    if (stableHash === this.lastPullHash) {
+      // Identical response — nothing to upsert, nothing changed.
+      return false;
+    }
+    this.lastPullHash = stableHash;
+
+    const data = rawData as {
       registrations?: Record<string, unknown>[];
       checkins?: Record<string, unknown>[];
       riders?: Record<string, unknown>[];
