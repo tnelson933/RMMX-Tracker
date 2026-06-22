@@ -191,9 +191,9 @@ function SetPasswordForm({ token }: { token: string }) {
         className="w-full h-12 font-heading uppercase tracking-widest gap-2"
       >
         {loading ? (
-          <><span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> Activating...</>
+          <><span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> Saving...</>
         ) : (
-          <><KeyRound size={18} /> Activate Account</>
+          <><KeyRound size={18} /> Save Password</>
         )}
       </Button>
     </form>
