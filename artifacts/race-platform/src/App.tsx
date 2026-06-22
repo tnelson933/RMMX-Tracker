@@ -18,6 +18,7 @@ import Results from "@/pages/public/Results";
 import EventResults from "@/pages/public/EventResults";
 import Leaderboard from "@/pages/public/Leaderboard";
 import Login from "@/pages/public/Login";
+import ForgotPassword from "@/pages/public/ForgotPassword";
 import Register from "@/pages/public/Register";
 import LiveLeaderboard from "@/pages/public/LiveLeaderboard";
 
@@ -84,9 +85,15 @@ function DesktopSyncWatcher() {
     api.sync.getState?.().then((state: { status: string }) => {
       prevStatus = state.status;
     }).catch(() => {});
-    const unsub = api.sync.onChange((state: { status: string }) => {
+    const unsub = api.sync.onChange((state: { status: string; rowsChanged?: boolean }) => {
       if (prevStatus === "syncing" && (state.status === "idle" || state.status === "error")) {
-        queryClient.invalidateQueries();
+        // Only invalidate when rows actually changed in the pull.
+        // rowsChanged === false means it was a no-op cycle — skip the refetch
+        // so the UI doesn't jump every 2 seconds when nothing is new.
+        // undefined means an older desktop build that doesn't send the flag — default to invalidating.
+        if (state.rowsChanged !== false) {
+          queryClient.invalidateQueries();
+        }
       }
       prevStatus = state.status;
     });
@@ -160,6 +167,9 @@ function Router() {
       </Route>
       <Route path="/setup-account">
         <PublicLayout><SetPassword /></PublicLayout>
+      </Route>
+      <Route path="/forgot-password">
+        <PublicLayout><ForgotPassword /></PublicLayout>
       </Route>
       <Route path="/register/:eventId">
         <Register />
