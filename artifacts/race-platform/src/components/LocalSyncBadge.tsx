@@ -12,10 +12,40 @@ interface StatusResponse {
   };
 }
 
+type SyncInfo = { lastSyncedAt: string | null; status: string };
+
 export function LocalSyncBadge() {
-  const [lastSuccessAt, setLastSuccessAt] = useState<string | number | null | undefined>(undefined);
+  // null = not yet loaded, string = ISO timestamp of last sync, false = never synced / error
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null | false>(null);
 
   useEffect(() => {
+    const electronAPI = (window as any).electronAPI;
+
+    // ── Electron desktop app: read sync state directly from IPC ──────────────
+    // The desktop sync-engine writes to its own SQLite DB (not the local
+    // server's DB), so the HTTP /api/status endpoint never reflects the
+    // desktop sync.  IPC is the only reliable source of truth here.
+    if (electronAPI?.sync?.getState) {
+      const update = (info: SyncInfo) => {
+        setLastSyncedAt(info.lastSyncedAt ?? false);
+      };
+
+      electronAPI.sync.getState()
+        .then(update)
+        .catch(() => setLastSyncedAt(false));
+
+      const unsub = electronAPI.sync.onChange?.((state: SyncInfo) => {
+        // Only update on completed cycles (idle or error) — ignore the
+        // transient "syncing" state so the badge doesn't flicker.
+        if (state.status === "idle" || state.status === "error") {
+          update(state);
+        }
+      });
+
+      return () => { if (typeof unsub === "function") unsub(); };
+    }
+
+    // ── Browser / local HTTP server: poll /api/status ─────────────────────
     if (!isLocalServer()) return;
 
     let cancelled = false;
@@ -25,11 +55,12 @@ export function LocalSyncBadge() {
         .then((r) => r.json())
         .then((data: StatusResponse) => {
           if (!cancelled) {
-            setLastSuccessAt(data?.autoSync?.lastSuccessAt ?? null);
+            const ts = data?.autoSync?.lastSuccessAt;
+            setLastSyncedAt(ts != null ? String(ts) : false);
           }
         })
         .catch(() => {
-          if (!cancelled) setLastSuccessAt(null);
+          if (!cancelled) setLastSyncedAt(false);
         });
     };
 
@@ -41,17 +72,21 @@ export function LocalSyncBadge() {
     };
   }, []);
 
-  if (!isLocalServer()) return null;
-  if (lastSuccessAt === undefined) return null;
+  // Still loading initial state — render nothing
+  if (lastSyncedAt === null) return null;
 
-  const lastSuccessMs =
-    lastSuccessAt === null
+  // Not running against local server or desktop app
+  if (!isLocalServer() && !(window as any).electronAPI) return null;
+
+  const lastMs =
+    lastSyncedAt === false
       ? null
-      : typeof lastSuccessAt === "number"
-      ? lastSuccessAt
-      : new Date(lastSuccessAt).getTime();
+      : new Date(lastSyncedAt).getTime();
 
-  const synced = lastSuccessMs !== null && !isNaN(lastSuccessMs) && Date.now() - lastSuccessMs < 60_000;
+  // "Synced" if last successful sync was within the last 30 seconds.
+  // The desktop sync-engine polls every 2 s, so 30 s gives plenty of margin
+  // for network latency and a few missed cycles before declaring "not synced."
+  const synced = lastMs !== null && !isNaN(lastMs) && Date.now() - lastMs < 30_000;
 
   if (synced) {
     return (
