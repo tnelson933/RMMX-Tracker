@@ -228,7 +228,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
 
       {/* Desktop sidebar — always visible */}
       <aside className="hidden md:flex w-64 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border shrink-0">
-        <SidebarContent />
+        {SidebarContent()}
       </aside>
 
       {/* Mobile sidebar — slide-in drawer */}
@@ -241,7 +241,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           />
           {/* Drawer */}
           <aside className="md:hidden fixed inset-y-0 left-0 z-50 w-72 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border shadow-2xl">
-            <SidebarContent />
+            {SidebarContent()}
           </aside>
         </>
       )}
