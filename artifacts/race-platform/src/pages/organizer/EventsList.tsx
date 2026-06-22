@@ -11,7 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw, Check, ChevronsUpDown } from "lucide-react";
+import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw, Check, ChevronsUpDown, Search } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, parseISO } from "date-fns";
 import { Link, useLocation, useSearch } from "wouter";
@@ -121,6 +121,7 @@ export default function EventsList() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState("upcoming");
   const [createSeriesIds, setCreateSeriesIds] = useState<number[]>([]);
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
@@ -398,7 +399,16 @@ export default function EventsList() {
 
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const filteredEvents = (() => {
-    const all = events ?? [];
+    const q = isAdmin ? searchQuery.trim().toLowerCase() : "";
+    let all = (events ?? []).filter(e => {
+      if (!q) return true;
+      return (
+        e.name?.toLowerCase().includes(q) ||
+        (e.location ?? "").toLowerCase().includes(q) ||
+        (e.state ?? "").toLowerCase().includes(q) ||
+        ((e as any).clubName ?? "").toLowerCase().includes(q)
+      );
+    });
     if (filter === "upcoming") {
       return [...all]
         .filter(e => e.status !== "completed")
@@ -1208,6 +1218,27 @@ export default function EventsList() {
           <TabsTrigger value="completed" className="font-heading uppercase">Completed</TabsTrigger>
         </TabsList>
         
+        {isAdmin && (
+          <div className="relative mt-4">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search by event name, location, or track…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9 pr-8"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
+
         <TabsContent value={filter} className="mt-6 space-y-4">
           {isLoading ? (
             <div className="space-y-4">
