@@ -3514,7 +3514,7 @@ export default function Motos() {
                   </div>
                 )}
 
-                {/* Live crossing feed — for staggered groups show all running members */}
+                {/* Live leaderboard + crossing feed — shown in expanded view too */}
                 {(() => {
                   const groupMemberIds: number[] = (moto as any).staggeredGroupMembers ?? [];
                   const runningPartners = groupMemberIds
@@ -3531,13 +3531,19 @@ export default function Motos() {
                           {hasPartners && (
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
-                          <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} />
+                          <div className="grid grid-cols-2 divide-x">
+                            <LiveLeaderboard motoId={moto.id} />
+                            <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} />
+                          </div>
                         </div>
                       )}
                       {runningPartners.map(partner => (
                         <div key={partner.id} className="border-t">
                           <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{partner.name}</div>
-                          <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} />
+                          <div className="grid grid-cols-2 divide-x">
+                            <LiveLeaderboard motoId={partner.id} />
+                            <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} />
+                          </div>
                         </div>
                       ))}
                     </>
