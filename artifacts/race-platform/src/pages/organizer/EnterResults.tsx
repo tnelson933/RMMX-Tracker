@@ -55,7 +55,10 @@ export default function EnterResults() {
       });
       setResultsData(initialData);
     }
-  }, [selectedMotoId, existingResults, activeMoto]);
+  // Only re-initialize when the user picks a different moto — not on every
+  // existingResults refetch, which would silently overwrite in-progress edits.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMotoId]);
 
   // ── Overall standings computation ─────────────────────────────────────────
   const raceClasses = [...new Set((motos || []).map(m => m.raceClass))].sort();
