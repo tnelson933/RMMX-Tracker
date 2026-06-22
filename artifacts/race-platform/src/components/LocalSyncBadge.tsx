@@ -72,8 +72,16 @@ export function LocalSyncBadge() {
     };
   }, []);
 
-  // Still loading initial state — render nothing
-  if (lastSyncedAt === null) return null;
+  // Still loading initial state — render an invisible placeholder so the
+  // layout doesn't shift when the badge mounts with its real content.
+  if (lastSyncedAt === null) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium invisible" aria-hidden="true">
+        <span className="h-1.5 w-1.5 rounded-full shrink-0" />
+        Synced
+      </span>
+    );
+  }
 
   // Not running against local server or desktop app
   if (!isLocalServer() && !(window as any).electronAPI) return null;
@@ -83,10 +91,11 @@ export function LocalSyncBadge() {
       ? null
       : new Date(lastSyncedAt).getTime();
 
-  // "Synced" if last successful sync was within the last 30 seconds.
-  // The desktop sync-engine polls every 2 s, so 30 s gives plenty of margin
-  // for network latency and a few missed cycles before declaring "not synced."
-  const synced = lastMs !== null && !isNaN(lastMs) && Date.now() - lastMs < 30_000;
+  // "Synced" if last successful sync was within the last 3 minutes.
+  // The Electron sync-engine polls every 2 s (well within this window).
+  // The local-server HTTP auto-sync runs every 2 minutes, so we need at least
+  // 2 min + margin before declaring "not synced" — 3 min covers both cases.
+  const synced = lastMs !== null && !isNaN(lastMs) && Date.now() - lastMs < 3 * 60 * 1000;
 
   if (synced) {
     return (
