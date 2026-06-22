@@ -82,17 +82,26 @@ function DesktopSyncWatcher() {
     const api = (window as any).electronAPI;
     if (!api?.sync?.onChange) return;
     let prevStatus = "";
+    // Throttle invalidations: even when rowsChanged is true we won't hammer
+    // every 2 s.  The desktop sync-engine's upserts count identical rows as
+    // "changed" (SQLite ON CONFLICT DO UPDATE has no WHERE guard), so
+    // rowsChanged is often true on no-op cycles.  We cap at one invalidation
+    // per 5 s so waiver history / auth / etc. don't refetch constantly.
+    let lastInvalidateMs = 0;
     api.sync.getState?.().then((state: { status: string }) => {
       prevStatus = state.status;
     }).catch(() => {});
     const unsub = api.sync.onChange((state: { status: string; rowsChanged?: boolean }) => {
       if (prevStatus === "syncing" && (state.status === "idle" || state.status === "error")) {
-        // Only invalidate when rows actually changed in the pull.
-        // rowsChanged === false means it was a no-op cycle — skip the refetch
-        // so the UI doesn't jump every 2 seconds when nothing is new.
-        // undefined means an older desktop build that doesn't send the flag — default to invalidating.
+        // rowsChanged === false → confirmed no-op, skip.
+        // rowsChanged === true/undefined → rows may have changed; invalidate,
+        // but no more than once every 5 seconds to prevent UI churn.
         if (state.rowsChanged !== false) {
-          queryClient.invalidateQueries();
+          const now = Date.now();
+          if (now - lastInvalidateMs >= 5_000) {
+            lastInvalidateMs = now;
+            queryClient.invalidateQueries();
+          }
         }
       }
       prevStatus = state.status;
