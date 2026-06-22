@@ -14,7 +14,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Search, Plus, ChevronRight, Tag, Download, FileSpreadsheet, FileText, File } from "lucide-react";
+import { Users, Search, Plus, ChevronRight, Tag, Download, FileSpreadsheet, FileText, File, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 
 const createRiderSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -53,6 +53,9 @@ type ExportRider = {
   emergencyContact?: string | null;
   emergencyPhone?: string | null;
 };
+
+type SortKey = "name" | "bib" | "cityState" | "bike" | "ama" | "rfid" | "mylaps";
+type SortDir = "asc" | "desc";
 
 function toExportRows(riders: ExportRider[]) {
   return riders.map((r) => ({
@@ -122,6 +125,67 @@ async function exportPDF(riders: ExportRider[]) {
   doc.save("rider-database.pdf");
 }
 
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (col !== sortKey) return <ArrowUpDown size={13} className="ml-1 opacity-30 shrink-0" />;
+  return sortDir === "asc"
+    ? <ArrowUp size={13} className="ml-1 text-primary shrink-0" />
+    : <ArrowDown size={13} className="ml-1 text-primary shrink-0" />;
+}
+
+function sortRiders<T extends ExportRider>(riders: T[], key: SortKey, dir: SortDir): T[] {
+  const d = dir === "asc" ? 1 : -1;
+  return [...riders].sort((a, b) => {
+    const nullLast = (va: string, vb: string) => {
+      if (!va && !vb) return 0;
+      if (!va) return 1;
+      if (!vb) return -1;
+      return va.localeCompare(vb) * d;
+    };
+
+    switch (key) {
+      case "name":
+        return `${a.firstName} ${a.lastName}`.toLowerCase()
+          .localeCompare(`${b.firstName} ${b.lastName}`.toLowerCase()) * d;
+      case "bib": {
+        const na = a.bibNumber ? Number(a.bibNumber) : NaN;
+        const nb = b.bibNumber ? Number(b.bibNumber) : NaN;
+        if (!a.bibNumber && !b.bibNumber) return 0;
+        if (!a.bibNumber) return 1;
+        if (!b.bibNumber) return -1;
+        if (!isNaN(na) && !isNaN(nb)) return (na - nb) * d;
+        return (a.bibNumber ?? "").localeCompare(b.bibNumber ?? "") * d;
+      }
+      case "cityState":
+        return nullLast(
+          [(a as any).city, (a as any).homeState].filter(Boolean).join(", ").toLowerCase(),
+          [(b as any).city, (b as any).homeState].filter(Boolean).join(", ").toLowerCase(),
+        );
+      case "bike":
+        return nullLast(
+          ((a as any).bikeManufacturer ?? "").toLowerCase(),
+          ((b as any).bikeManufacturer ?? "").toLowerCase(),
+        );
+      case "ama":
+        return nullLast(
+          ((a as any).amaNumber ?? "").toLowerCase(),
+          ((b as any).amaNumber ?? "").toLowerCase(),
+        );
+      case "rfid": {
+        const hasA = a.rfidNumber ? 1 : 0;
+        const hasB = b.rfidNumber ? 1 : 0;
+        return (hasA - hasB) * d;
+      }
+      case "mylaps":
+        return nullLast(
+          ((a as any).mylapsTransponderId ?? "").toLowerCase(),
+          ((b as any).mylapsTransponderId ?? "").toLowerCase(),
+        );
+      default:
+        return 0;
+    }
+  });
+}
+
 export default function RidersList() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
@@ -131,13 +195,24 @@ export default function RidersList() {
 
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  // Super-admin: no clubId filter, always enabled — sees all riders across all clubs.
-  // Club organizer / staff: scoped to their club on the server; pass clubId so cache key is stable.
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const trimmedSearch = search.trim();
+
   const { data: riders, isLoading } = useListRiders(
     isSuperAdmin
-      ? { search: search.length > 2 ? search : undefined }
-      : { clubId: clubId ?? 0, search: search.length > 2 ? search : undefined },
+      ? { search: trimmedSearch.length > 2 ? trimmedSearch : undefined }
+      : { clubId: clubId ?? 0, search: trimmedSearch.length > 2 ? trimmedSearch : undefined },
     { query: { enabled: isSuperAdmin || !!clubId } as any }
   );
 
@@ -182,10 +257,13 @@ export default function RidersList() {
     );
   };
 
-  const displayRiders = riders?.filter((r) => {
-    if (search.length <= 2) {
-      const s = search.toLowerCase();
+  const filteredRiders = (riders ?? []).filter((r) => {
+    if (trimmedSearch.length <= 2) {
+      const s = trimmedSearch.toLowerCase();
+      if (!s) return true;
+      const fullName = `${r.firstName} ${r.lastName}`.toLowerCase();
       return (
+        fullName.includes(s) ||
         r.firstName.toLowerCase().includes(s) ||
         r.lastName.toLowerCase().includes(s) ||
         (r.bibNumber && r.bibNumber.toLowerCase().includes(s)) ||
@@ -193,27 +271,32 @@ export default function RidersList() {
         (r.phone && r.phone.toLowerCase().includes(s))
       );
     }
-    return true; // server-side search already filtered for searches > 2 chars
-  }) || [];
+    return true;
+  });
+
+  const displayRiders = sortRiders(filteredRiders as ExportRider[], sortKey, sortDir);
 
   const handleExportCSV = () => {
     if (!displayRiders.length) { toast({ title: "No riders to export" }); return; }
-    exportCSV(displayRiders as ExportRider[]);
+    exportCSV(displayRiders);
   };
 
   const handleExportExcel = () => {
     if (!displayRiders.length) { toast({ title: "No riders to export" }); return; }
-    exportExcel(displayRiders as ExportRider[]).catch(() =>
+    exportExcel(displayRiders).catch(() =>
       toast({ title: "Excel export failed", variant: "destructive" })
     );
   };
 
   const handleExportPDF = () => {
     if (!displayRiders.length) { toast({ title: "No riders to export" }); return; }
-    exportPDF(displayRiders as ExportRider[]).catch(() =>
+    exportPDF(displayRiders).catch(() =>
       toast({ title: "PDF export failed", variant: "destructive" })
     );
   };
+
+  const thClass = "text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider select-none";
+  const thSortable = `${thClass} cursor-pointer hover:text-sidebar-foreground transition-colors`;
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
@@ -341,13 +424,62 @@ export default function RidersList() {
           <Table>
             <TableHeader className="bg-sidebar text-sidebar-foreground">
               <TableRow className="hover:bg-sidebar">
-                <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">Name</TableHead>
-                <TableHead className="w-20 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">#</TableHead>
-                <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">City / State</TableHead>
-                <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider">Bike</TableHead>
-                <TableHead className="w-28 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">AMA #</TableHead>
-                <TableHead className="w-28 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">RFID</TableHead>
-                <TableHead className="w-36 text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider text-center">MyLaps</TableHead>
+                <TableHead
+                  className={thSortable}
+                  onClick={() => handleSort("name")}
+                >
+                  <span className="inline-flex items-center">
+                    Name <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
+                  </span>
+                </TableHead>
+                <TableHead
+                  className={`w-20 text-center ${thSortable}`}
+                  onClick={() => handleSort("bib")}
+                >
+                  <span className="inline-flex items-center justify-center w-full">
+                    # <SortIcon col="bib" sortKey={sortKey} sortDir={sortDir} />
+                  </span>
+                </TableHead>
+                <TableHead
+                  className={thSortable}
+                  onClick={() => handleSort("cityState")}
+                >
+                  <span className="inline-flex items-center">
+                    City / State <SortIcon col="cityState" sortKey={sortKey} sortDir={sortDir} />
+                  </span>
+                </TableHead>
+                <TableHead
+                  className={thSortable}
+                  onClick={() => handleSort("bike")}
+                >
+                  <span className="inline-flex items-center">
+                    Bike <SortIcon col="bike" sortKey={sortKey} sortDir={sortDir} />
+                  </span>
+                </TableHead>
+                <TableHead
+                  className={`w-28 text-center ${thSortable}`}
+                  onClick={() => handleSort("ama")}
+                >
+                  <span className="inline-flex items-center justify-center w-full">
+                    AMA # <SortIcon col="ama" sortKey={sortKey} sortDir={sortDir} />
+                  </span>
+                </TableHead>
+                <TableHead
+                  className={`w-28 text-center ${thSortable}`}
+                  onClick={() => handleSort("rfid")}
+                >
+                  <span className="inline-flex items-center justify-center w-full">
+                    RFID <SortIcon col="rfid" sortKey={sortKey} sortDir={sortDir} />
+                  </span>
+                </TableHead>
+                <TableHead
+                  className={`w-36 text-center ${thSortable}`}
+                  onClick={() => handleSort("mylaps")}
+                >
+                  <span className="inline-flex items-center justify-center w-full">
+                    MyLaps <SortIcon col="mylaps" sortKey={sortKey} sortDir={sortDir} />
+                  </span>
+                </TableHead>
                 <TableHead className="w-8"></TableHead>
               </TableRow>
             </TableHeader>
