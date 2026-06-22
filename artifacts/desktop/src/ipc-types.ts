@@ -7,6 +7,8 @@ export interface SyncState {
   lastError: string | null;
   cloudUrl: string | null;
   clubId: string | null;
+  /** True when the most-recent pull actually upserted ≥1 row into local SQLite. */
+  rowsChanged: boolean;
 }
 
 export interface SerialPortInfo {
