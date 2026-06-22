@@ -116,7 +116,7 @@ const createEventSchema = z.object({
 
 export default function EventsList() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "super_admin" || user?.role === "club_organizer";
+  const isSuperAdmin = user?.role === "super_admin";
   const sessionClubId = user?.clubId ?? null;
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -128,14 +128,14 @@ export default function EventsList() {
   const [createImgState, setCreateImgState] = useState<"idle" | "processing" | "uploading" | "done">("idle");
   const [removeBgOnCreate, setRemoveBgOnCreate] = useState(false);
 
-  // Admins (super_admin + club_organizer) see all events; staff see only their club's events
-  const eventsQuery = isAdmin
+  // Super-admin sees all events; club_organizer and staff see only their own club's events
+  const eventsQuery = isSuperAdmin
     ? useListEvents({})
     : useListEvents({ clubId: sessionClubId ?? undefined }, { query: { enabled: !!sessionClubId } as any });
   const { data: events, isLoading } = eventsQuery;
 
   // Clubs list for the super_admin club selector
-  const { data: clubs } = useListClubs({ query: { enabled: isAdmin } as any });
+  const { data: clubs } = useListClubs({ query: { enabled: isSuperAdmin } as any });
 
   const isDesktop = typeof (window as any).electronAPI !== "undefined";
   const [isSyncing, setIsSyncing] = useState(false);
@@ -196,10 +196,10 @@ export default function EventsList() {
       if (!res.ok) return { connected: false, onboardingComplete: false, accountId: null };
       return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null }>;
     },
-    enabled: !isAdmin,
+    enabled: !isSuperAdmin,
   });
 
-  const stripeReady = !isAdmin && (stripeStatus?.connected ?? false);
+  const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
 
   const { data: seriesList } = useListSeries({ query: {} as any });
   const updateSeriesMutation = useUpdateSeries();
@@ -209,7 +209,7 @@ export default function EventsList() {
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
 
-  const { data: clubSettingsData } = useGetClubSettings(sessionClubId ?? 0, { query: { enabled: !!sessionClubId && !isAdmin } as any });
+  const { data: clubSettingsData } = useGetClubSettings(sessionClubId ?? 0, { query: { enabled: !!sessionClubId && !isSuperAdmin } as any });
   const putClubSettings = usePutClubSettings();
   const defaultClasses = useMemo<{ id: string; name: string }[]>(
     () => (clubSettingsData?.defaultClasses as { id: string; name: string }[] | undefined) ?? [],
@@ -310,7 +310,7 @@ export default function EventsList() {
     }
 
     // Silently save any brand-new class names back to club defaults
-    if (sessionClubId && !isAdmin) {
+    if (sessionClubId && !isSuperAdmin) {
       const existingDefaultNames = new Set(defaultClasses.map(c => c.name));
       const newClassNames = data.raceClasses.map(r => r.name.trim()).filter(n => n && !existingDefaultNames.has(n));
       if (newClassNames.length > 0) {
@@ -399,7 +399,7 @@ export default function EventsList() {
 
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const filteredEvents = (() => {
-    const q = isAdmin ? searchQuery.trim().toLowerCase() : "";
+    const q = isSuperAdmin ? searchQuery.trim().toLowerCase() : "";
     let all = (events ?? []).filter(e => {
       if (!q) return true;
       return (
@@ -462,7 +462,7 @@ export default function EventsList() {
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
 
-                {isAdmin && (
+                {isSuperAdmin && (
                   <FormField
                     control={form.control}
                     name="clubId"
@@ -573,7 +573,7 @@ export default function EventsList() {
                   </div>
 
                   {/* Collect Payments checkbox */}
-                  {!isAdmin && (
+                  {!isSuperAdmin && (
                     <div className="flex items-center gap-2 pt-1">
                       {stripeReady ? (
                         <FormField
@@ -657,7 +657,7 @@ export default function EventsList() {
                         </FormItem>
                       )}
                     />
-                    {!isAdmin && (() => {
+                    {!isSuperAdmin && (() => {
                       const hasWaiverText = !!(clubSettingsData?.riderAcknowledgement?.trim());
                       return hasWaiverText ? (
                         <FormField
@@ -1218,7 +1218,7 @@ export default function EventsList() {
           <TabsTrigger value="completed" className="font-heading uppercase">Completed</TabsTrigger>
         </TabsList>
         
-        {isAdmin && (
+        {isSuperAdmin && (
           <div className="relative mt-4">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <Input
@@ -1258,7 +1258,7 @@ export default function EventsList() {
                         <h3 className="text-xl font-heading font-bold uppercase">{event.name}</h3>
                         <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
                           <span className="flex items-center gap-1"><MapPin size={14} /> {event.location || "TBA"}, {event.state}</span>
-                          {isAdmin && event.clubName && (
+                          {isSuperAdmin && event.clubName && (
                             <span className="text-xs bg-muted px-2 py-0.5 rounded">{event.clubName}</span>
                           )}
                         </div>
