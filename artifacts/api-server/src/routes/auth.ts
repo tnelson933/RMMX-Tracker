@@ -2,7 +2,7 @@ import { Router } from "express";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
-import { usersTable, passwordSetupTokensTable } from "@workspace/db";
+import { usersTable, passwordSetupTokensTable, clubsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { sendSetupEmail } from "../lib/email";
 
@@ -37,6 +37,17 @@ router.post("/auth/login", async (req, res) => {
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
     return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  // Check if the club is active (non-super_admin users with a club)
+  if (user.clubId && user.role !== "super_admin") {
+    const [club] = await db.select({ active: clubsTable.active }).from(clubsTable).where(eq(clubsTable.id, user.clubId));
+    if (club && club.active === false) {
+      return res.status(403).json({
+        error: "CLUB_INACTIVE",
+        message: "Your club membership has been deactivated. Please call Rocky Mountain ATV/MC to reactivate your membership.",
+      });
+    }
   }
 
   (req.session as any).userId = user.id;
