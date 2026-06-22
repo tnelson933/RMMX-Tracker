@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListUsers, useCreateUser, useDeleteUser, useResendUserInvite, useListClubs, getListUsersQueryKey } from "@workspace/api-client-react";
+import { useListUsers, useCreateUser, useDeleteUser, useResendUserInvite, getListUsersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { UserCog, Plus, Mail, Trash2, CheckCircle, Clock, RefreshCw, Copy, Check, AlertTriangle } from "lucide-react";
+import { UserCog, Plus, Mail, Trash2, CheckCircle, Clock, RefreshCw, Copy, Check, AlertTriangle, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
-const ROLES = [
-  { value: "club_organizer", label: "Club Organizer" },
+const INTERNAL_ROLES = [
   { value: "staff", label: "Staff" },
   { value: "super_admin", label: "Super Admin" },
 ];
@@ -29,17 +28,16 @@ export default function UsersAdmin() {
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("club_organizer");
-  const [clubIdStr, setClubIdStr] = useState("");
+  const [role, setRole] = useState("staff");
 
-  const { data: users = [], isLoading } = useListUsers({ query: {} as any });
-  const { data: clubs = [] } = useListClubs({ query: { enabled: isCreateOpen } as any });
+  const { data: allUsers = [], isLoading } = useListUsers({ query: {} as any });
+  const users = allUsers.filter((u) => u.role !== "club_organizer");
 
   const createMutation = useCreateUser();
   const deleteMutation = useDeleteUser();
   const resendMutation = useResendUserInvite();
 
-  const resetForm = () => { setName(""); setEmail(""); setRole("club_organizer"); setClubIdStr(""); };
+  const resetForm = () => { setName(""); setEmail(""); setRole("staff"); };
 
   const copyLink = (url: string) => {
     navigator.clipboard.writeText(url);
@@ -50,14 +48,7 @@ export default function UsersAdmin() {
   const handleCreate = () => {
     if (!name || !email || !role) return;
     createMutation.mutate(
-      {
-        data: {
-          name,
-          email,
-          role,
-          clubId: clubIdStr ? parseInt(clubIdStr) : undefined,
-        },
-      },
+      { data: { name, email, role } },
       {
         onSuccess: (data: any) => {
           queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
@@ -67,11 +58,11 @@ export default function UsersAdmin() {
             setSetupLinkName(data.name ?? email);
             setSetupLinkUrl(data.setupUrl);
           } else {
-            toast({ title: "User created", description: "A setup email has been sent to their inbox." });
+            toast({ title: "Account created", description: "A setup email has been sent to their inbox." });
           }
         },
         onError: (err: any) => {
-          toast({ title: "Failed to create user", description: err?.message || "Unknown error", variant: "destructive" });
+          toast({ title: "Failed to create account", description: err?.message || "Unknown error", variant: "destructive" });
         },
       }
     );
@@ -89,9 +80,7 @@ export default function UsersAdmin() {
             toast({ title: "Invite resent", description: `Setup email sent to ${userName}.` });
           }
         },
-        onError: () => {
-          toast({ title: "Failed to resend", variant: "destructive" });
-        },
+        onError: () => toast({ title: "Failed to resend", variant: "destructive" }),
       }
     );
   };
@@ -102,75 +91,68 @@ export default function UsersAdmin() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() });
-          toast({ title: "User deleted" });
+          toast({ title: "Account deleted" });
         },
         onError: (err: any) => {
-          toast({ title: "Failed to delete user", description: err?.message, variant: "destructive" });
+          toast({ title: "Failed to delete", description: err?.message, variant: "destructive" });
         },
       }
     );
   };
 
-  const roleLabel = (r: string) => ROLES.find((x) => x.value === r)?.label ?? r;
+  const roleLabel = (r: string) => INTERNAL_ROLES.find((x) => x.value === r)?.label ?? r;
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
-            <UserCog className="text-primary" size={32} /> Users
+            <UserCog className="text-primary" size={32} /> Internal Staff
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage organizer accounts. New users receive an email to set their password.
+            Manage employee accounts for Rocky Mountain ATV/MC staff. Club organizer accounts are managed from the Clubs tab.
           </p>
         </div>
 
         <Dialog open={isCreateOpen} onOpenChange={(v) => { setIsCreateOpen(v); if (!v) resetForm(); }}>
           <DialogTrigger asChild>
             <Button className="font-heading uppercase tracking-wider h-12 px-6 gap-2">
-              <Plus size={16} /> Add User
+              <Plus size={16} /> Add Staff Account
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle className="font-heading uppercase text-xl">Add Organizer Account</DialogTitle>
+              <DialogTitle className="font-heading uppercase text-xl">Add Staff Account</DialogTitle>
             </DialogHeader>
             <div className="space-y-5 py-2">
+              <div className="bg-primary/5 border border-primary/20 rounded-sm px-3 py-2.5 text-xs text-muted-foreground flex gap-2">
+                <ShieldCheck size={14} className="shrink-0 mt-0.5 text-primary" />
+                <span>This creates an internal account for Rocky Mountain ATV/MC staff. To create a club organizer account, use the <strong>Clubs</strong> tab instead.</span>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Full Name</label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" className="h-11" autoFocus />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Email Address</label>
-                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@club.com" className="h-11" />
+                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@rockymountainatv.com" className="h-11" />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Role</label>
                 <Select value={role} onValueChange={setRole}>
                   <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {ROLES.map((r) => (
+                    {INTERNAL_ROLES.map((r) => (
                       <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Club (optional)</label>
-                <Select value={clubIdStr} onValueChange={setClubIdStr}>
-                  <SelectTrigger className="h-11"><SelectValue placeholder="No club assigned" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">No club assigned</SelectItem>
-                    {clubs.map((c) => (
-                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
-              <div className="bg-muted/50 rounded-md p-3 text-sm text-muted-foreground flex gap-2">
+              <div className="bg-muted/50 rounded-sm p-3 text-sm text-muted-foreground flex gap-2">
                 <Mail size={16} className="shrink-0 mt-0.5 text-primary" />
-                A setup email with a password link will be sent automatically when the account is created.
+                A setup email with a password link will be sent automatically.
               </div>
 
               <Button
@@ -178,14 +160,16 @@ export default function UsersAdmin() {
                 disabled={createMutation.isPending || !name || !email || !role}
                 className="w-full h-12 font-heading uppercase tracking-wider gap-2"
               >
-                {createMutation.isPending ? <><RefreshCw size={16} className="animate-spin" /> Creating...</> : <><Plus size={16} /> Create & Send Invite</>}
+                {createMutation.isPending
+                  ? <><RefreshCw size={16} className="animate-spin" /> Creating...</>
+                  : <><Plus size={16} /> Create & Send Invite</>}
               </Button>
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Setup link fallback dialog — shown when email delivery fails */}
+      {/* Setup link fallback */}
       <Dialog open={!!setupLinkUrl} onOpenChange={(v) => { if (!v) { setSetupLinkUrl(null); setCopied(false); } }}>
         <DialogContent>
           <DialogHeader>
@@ -195,7 +179,7 @@ export default function UsersAdmin() {
           </DialogHeader>
           <div className="space-y-4 py-1">
             <p className="text-sm text-muted-foreground">
-              The setup email for <span className="font-semibold text-foreground">{setupLinkName}</span> couldn't be delivered — your Resend account needs a verified domain to send to external addresses. Copy this link and share it with them directly.
+              The setup email for <span className="font-semibold text-foreground">{setupLinkName}</span> couldn't be delivered — your Resend account needs a verified domain to send to external addresses. Copy this link and share it directly.
             </p>
             <div className="bg-muted rounded-md p-3 flex items-center gap-2">
               <code className="text-xs flex-1 break-all text-foreground">{setupLinkUrl}</code>
@@ -223,20 +207,20 @@ export default function UsersAdmin() {
               <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Name</TableHead>
               <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Email</TableHead>
               <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Role</TableHead>
-              <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Club</TableHead>
               <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Status</TableHead>
               <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Added</TableHead>
-              <TableHead className="w-32" />
+              <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-16">Loading users...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-16">Loading...</TableCell></TableRow>
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-16 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-16 text-muted-foreground">
                   <UserCog size={48} className="mx-auto opacity-20 mb-4" />
-                  <p className="text-lg font-medium">No users yet</p>
+                  <p className="text-lg font-medium">No internal staff yet</p>
+                  <p className="text-sm mt-1">Add the first staff account to get started.</p>
                 </TableCell>
               </TableRow>
             ) : (
@@ -245,11 +229,13 @@ export default function UsersAdmin() {
                   <TableCell className="font-bold">{user.name}</TableCell>
                   <TableCell className="text-muted-foreground font-mono text-sm">{user.email}</TableCell>
                   <TableCell>
-                    <Badge variant={user.role === "super_admin" ? "default" : "secondary"} className="font-mono text-xs">
+                    <Badge
+                      variant={user.role === "super_admin" ? "default" : "secondary"}
+                      className="font-mono text-xs"
+                    >
                       {roleLabel(user.role)}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-sm">{user.clubName ?? <span className="text-muted-foreground italic">—</span>}</TableCell>
                   <TableCell>
                     {user.hasPassword ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-secondary/10 text-secondary border border-secondary/20">
