@@ -130,6 +130,8 @@ export default function Registrations() {
 
   // ── Table state ─────────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
+  const [showVoided, setShowVoided] = useState(false);
+  const [confirmVoid, setConfirmVoid] = useState<{ id: number; riderName: string; raceClass: string } | null>(null);
 
   // Inline bib editing
   const [editingBibId, setEditingBibId] = useState<number | null>(null);
@@ -397,11 +399,16 @@ export default function Registrations() {
     bibCount.set(bib, (bibCount.get(bib) ?? 0) + 1);
   }
 
-  const filteredRegs = (registrations ?? []).filter(r =>
-    (r.riderName ?? "").toLowerCase().includes(search.toLowerCase()) ||
-    String(r.bibNumber ?? "").includes(search) ||
-    (suggestions.get(r.id) ?? "").includes(search)
-  );
+  const voidedCount = (registrations ?? []).filter(r => r.status === 'void').length;
+
+  const filteredRegs = (registrations ?? []).filter(r => {
+    if (!showVoided && r.status === 'void') return false;
+    return (
+      (r.riderName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      String(r.bibNumber ?? "").includes(search) ||
+      (suggestions.get(r.id) ?? "").includes(search)
+    );
+  });
 
   // Float registrations with invalid transponder/RFID numbers to the top.
   const sortedRegs = [...filteredRegs].sort((a, b) => {
@@ -1369,6 +1376,15 @@ export default function Registrations() {
         </div>
 
         <div className="flex gap-2 w-full sm:w-auto">
+          {voidedCount > 0 && (
+            <Button
+              variant={showVoided ? "secondary" : "outline"}
+              onClick={() => setShowVoided(v => !v)}
+              className="font-heading uppercase tracking-wider w-full sm:w-auto"
+            >
+              {showVoided ? `Hide Voided (${voidedCount})` : `Show Voided (${voidedCount})`}
+            </Button>
+          )}
           {(registrations?.length ?? 0) > 0 && (
             <Button variant="outline" onClick={handleExport} className="font-heading uppercase tracking-wider w-full sm:w-auto">
               <Download size={16} className="mr-2" /> Export Excel
@@ -1498,6 +1514,41 @@ export default function Registrations() {
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Void confirmation dialog ─────────────────────────────────────────── */}
+      <Dialog open={!!confirmVoid} onOpenChange={open => { if (!open) setConfirmVoid(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase text-lg">Void Registration?</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-1 text-sm">
+            <p className="text-muted-foreground">This will mark the following registration as void:</p>
+            <div className="mt-3 rounded-lg bg-muted px-4 py-3 space-y-1 border">
+              <p className="font-bold">{confirmVoid?.riderName}</p>
+              <p className="text-muted-foreground text-xs uppercase tracking-wider">{confirmVoid?.raceClass}</p>
+              <p className="font-mono text-xs text-muted-foreground">Reg #{confirmVoid?.id}</p>
+            </div>
+            <p className="text-muted-foreground pt-1">The registration will be hidden by default but can be shown with "Show Voided".</p>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => setConfirmVoid(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 font-heading uppercase"
+              onClick={() => {
+                if (confirmVoid) {
+                  handleUpdateStatus(confirmVoid.id, 'void');
+                  setConfirmVoid(null);
+                }
+              }}
+            >
+              Void Registration
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1690,7 +1741,13 @@ export default function Registrations() {
                           </Button>
                         )}
                         {reg.status !== 'void' && (
-                          <Button variant="ghost" size="icon" onClick={() => handleUpdateStatus(reg.id, 'void')} className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setConfirmVoid({ id: reg.id, riderName: reg.riderName, raceClass: reg.raceClass })}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            title="Void this registration"
+                          >
                             <X size={18} />
                           </Button>
                         )}
