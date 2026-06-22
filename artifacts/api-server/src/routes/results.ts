@@ -376,42 +376,44 @@ router.post("/events/:eventId/results", async (req, res) => {
     }
   }
 
-  // ── Delete existing results for this moto then re-insert ─────────────────
-  await db.delete(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
+  // ── Delete existing results for this moto then re-insert (atomic) ────────
+  const inserted: Record<string, unknown>[] = [];
+  await db.transaction(async (tx) => {
+    await tx.delete(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
 
-  const inserted = [];
-  for (const r of riderResults) {
-    const lapsCompleted = Array.isArray(r.lapTimes) ? r.lapTimes.length : 0;
-    const points = calcPoints({
-      position:      r.position,
-      dnf:           !!r.dnf,
-      dns:           !!r.dns,
-      totalStarters,
-      scoringMethod,
-      pointsScale,
-      scoringFormula,
-      mainEventOnly,
-      motoType,
-      autoDnfEnabled,
-      autoDnfThreshold,
-      lapsCompleted,
-      leaderLapsCompleted,
-    });
+    for (const r of riderResults) {
+      const lapsCompleted = Array.isArray(r.lapTimes) ? r.lapTimes.length : 0;
+      const points = calcPoints({
+        position:      r.position,
+        dnf:           !!r.dnf,
+        dns:           !!r.dns,
+        totalStarters,
+        scoringMethod,
+        pointsScale,
+        scoringFormula,
+        mainEventOnly,
+        motoType,
+        autoDnfEnabled,
+        autoDnfThreshold,
+        lapsCompleted,
+        leaderLapsCompleted,
+      });
 
-    const [result] = await db.insert(raceResultsTable).values({
-      eventId, motoId, riderId: r.riderId, raceClass,
-      position:  r.position,
-      totalTime: r.totalTime || null,
-      lapTimes:  r.lapTimes || [],
-      points,
-      dnf: r.dnf || false,
-      dns: r.dns || false,
-    }).returning();
-    inserted.push(result);
-  }
+      const [result] = await tx.insert(raceResultsTable).values({
+        eventId, motoId, riderId: r.riderId, raceClass,
+        position:  r.position,
+        totalTime: r.totalTime || null,
+        lapTimes:  r.lapTimes || [],
+        points,
+        dnf: r.dnf || false,
+        dns: r.dns || false,
+      }).returning();
+      inserted.push(result as Record<string, unknown>);
+    }
 
-  // Mark moto as completed
-  await db.update(motosTable).set({ status: "completed" }).where(eq(motosTable.id, motoId));
+    // Mark moto as completed
+    await tx.update(motosTable).set({ status: "completed" }).where(eq(motosTable.id, motoId));
+  });
 
   // Award series points — union of:
   //  (a) per-class series from this event's raceClassSeriesMap[raceClass] (new)
