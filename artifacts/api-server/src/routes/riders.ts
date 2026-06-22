@@ -10,48 +10,92 @@ function getStaffClubId(res: any): number | null {
   return typeof v === "number" ? v : null;
 }
 
+function getOrganizerClubId(res: any): number | null {
+  const v = res.locals?.organizerClubId;
+  return typeof v === "number" ? v : null;
+}
+
+/**
+ * Returns all rider IDs visible to a club:
+ *  1. Riders who registered for any of the club's events.
+ *  2. Riders directly added through the club's rider tab (club_id on the rider).
+ */
 async function getClubRiderIds(clubId: number): Promise<number[]> {
   const events = await db.select({ id: eventsTable.id }).from(eventsTable).where(eq(eventsTable.clubId, clubId));
-  if (events.length === 0) return [];
-  const regs = await db.selectDistinct({ riderId: registrationsTable.riderId }).from(registrationsTable)
-    .where(inArray(registrationsTable.eventId, events.map(e => e.id)));
-  return regs.map(r => r.riderId).filter((id): id is number => id !== null);
+
+  const registeredIds: number[] = [];
+  if (events.length > 0) {
+    const regs = await db.selectDistinct({ riderId: registrationsTable.riderId }).from(registrationsTable)
+      .where(inArray(registrationsTable.eventId, events.map(e => e.id)));
+    registeredIds.push(...regs.map(r => r.riderId).filter((id): id is number => id !== null));
+  }
+
+  // Riders directly added by this club (club_id column on riders table)
+  const directRows = await db.select({ id: ridersTable.id }).from(ridersTable)
+    .where(eq(ridersTable.clubId, clubId));
+  const directIds = directRows.map(r => r.id);
+
+  // Union and deduplicate
+  return Array.from(new Set([...registeredIds, ...directIds]));
+}
+
+/**
+ * Builds a search condition matching firstName, lastName, bibNumber, email, and phone.
+ */
+function searchCond(s: string) {
+  const p = `%${s}%`;
+  return or(
+    ilike(ridersTable.firstName, p),
+    ilike(ridersTable.lastName, p),
+    ilike(ridersTable.bibNumber, p),
+    ilike(ridersTable.email, p),
+    ilike(ridersTable.phone, p),
+  );
 }
 
 router.get("/riders", async (req, res) => {
   const { search } = req.query;
   const staffCId = getStaffClubId(res);
+  const orgCId = getOrganizerClubId(res);
+
+  // Determine the effective club scope (staff OR club_organizer — whichever applies)
+  const scopedClubId = staffCId ?? orgCId;
 
   let riders;
-  if (staffCId !== null) {
-    const riderIds = await getClubRiderIds(staffCId);
+  if (scopedClubId !== null) {
+    const riderIds = await getClubRiderIds(scopedClubId);
     if (riderIds.length === 0) return res.json([]);
+
     const cond = search
-      ? and(
-          inArray(ridersTable.id, riderIds),
-          or(
-            ilike(ridersTable.firstName, `%${String(search)}%`),
-            ilike(ridersTable.lastName, `%${String(search)}%`),
-            ilike(ridersTable.bibNumber, `%${String(search)}%`)
-          )
-        )
+      ? and(inArray(ridersTable.id, riderIds), searchCond(String(search)))
       : inArray(ridersTable.id, riderIds);
     riders = await db.select().from(ridersTable).where(cond).orderBy(ridersTable.lastName);
   } else if (search) {
-    const s = `%${String(search)}%`;
-    riders = await db.select().from(ridersTable).where(
-      or(ilike(ridersTable.firstName, s), ilike(ridersTable.lastName, s), ilike(ridersTable.bibNumber, s))
-    ).orderBy(ridersTable.lastName);
+    // Super-admin with search — apply search across all riders
+    riders = await db.select().from(ridersTable)
+      .where(searchCond(String(search)))
+      .orderBy(ridersTable.lastName);
   } else {
+    // Super-admin, no search — return all riders
     riders = await db.select().from(ridersTable).orderBy(ridersTable.lastName);
   }
+
   return res.json(riders.map(r => ({ ...r, createdAt: r.createdAt.toISOString() })));
 });
 
 router.post("/riders", async (req, res) => {
   const { firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact, emergencyPhone, rfidNumber, bikeManufacturer, bikeModel, bikeYear, sponsors, amaNumber, mylapsTransponderId, streetAddress, city, homeState, zip } = req.body;
   if (!firstName || !lastName) return res.status(400).json({ error: "firstName and lastName required" });
-  const [rider] = await db.insert(ridersTable).values({ firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact, emergencyPhone, rfidNumber, bikeManufacturer, bikeModel, bikeYear, sponsors, amaNumber, mylapsTransponderId, streetAddress, city, homeState, zip }).returning();
+
+  // Tag the rider with the organizer's club so they remain visible in that club's rider list
+  const orgCId = getOrganizerClubId(res);
+
+  const [rider] = await db.insert(ridersTable).values({
+    firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact,
+    emergencyPhone, rfidNumber, bikeManufacturer, bikeModel, bikeYear, sponsors,
+    amaNumber, mylapsTransponderId, streetAddress, city, homeState, zip,
+    ...(orgCId != null ? { clubId: orgCId } : {}),
+  }).returning();
   return res.status(201).json({ ...rider, createdAt: rider.createdAt.toISOString() });
 });
 
@@ -62,8 +106,11 @@ router.get("/riders/:riderId", async (req, res) => {
   const rider = riders[0];
 
   const staffCId = getStaffClubId(res);
-  if (staffCId !== null) {
-    const riderIds = await getClubRiderIds(staffCId);
+  const orgCId = getOrganizerClubId(res);
+  const scopedClubId = staffCId ?? orgCId;
+
+  if (scopedClubId !== null) {
+    const riderIds = await getClubRiderIds(scopedClubId);
     if (!riderIds.includes(id)) return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -110,8 +157,11 @@ router.patch("/riders/:riderId", async (req, res) => {
   const id = Number(req.params.riderId);
 
   const staffCId = getStaffClubId(res);
-  if (staffCId !== null) {
-    const riderIds = await getClubRiderIds(staffCId);
+  const orgCId = getOrganizerClubId(res);
+  const scopedClubId = staffCId ?? orgCId;
+
+  if (scopedClubId !== null) {
+    const riderIds = await getClubRiderIds(scopedClubId);
     if (!riderIds.includes(id)) return res.status(403).json({ error: "Forbidden" });
   }
 
