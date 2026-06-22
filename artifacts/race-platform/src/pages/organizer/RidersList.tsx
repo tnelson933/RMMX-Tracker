@@ -124,16 +124,21 @@ async function exportPDF(riders: ExportRider[]) {
 
 export default function RidersList() {
   const { user } = useAuth();
-  const clubId = user?.clubId || 0;
+  const isSuperAdmin = user?.role === "super_admin";
+  const clubId = user?.clubId ?? null;
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
 
+  // Super-admin: no clubId filter, always enabled — sees all riders across all clubs.
+  // Club organizer / staff: scoped to their club on the server; pass clubId so cache key is stable.
   const { data: riders, isLoading } = useListRiders(
-    { clubId, search: search.length > 2 ? search : undefined },
-    { query: { enabled: !!clubId } as any }
+    isSuperAdmin
+      ? { search: search.length > 2 ? search : undefined }
+      : { clubId: clubId ?? 0, search: search.length > 2 ? search : undefined },
+    { query: { enabled: isSuperAdmin || !!clubId } as any }
   );
 
   const createMutation = useCreateRider();
@@ -163,7 +168,9 @@ export default function RidersList() {
       { data },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListRidersQueryKey({ clubId }) });
+          queryClient.invalidateQueries({
+            queryKey: isSuperAdmin ? getListRidersQueryKey({}) : getListRidersQueryKey({ clubId: clubId ?? 0 }),
+          });
           setIsAddOpen(false);
           form.reset();
           toast({ title: "Rider added successfully" });
@@ -181,10 +188,12 @@ export default function RidersList() {
       return (
         r.firstName.toLowerCase().includes(s) ||
         r.lastName.toLowerCase().includes(s) ||
-        (r.bibNumber && r.bibNumber.includes(s))
+        (r.bibNumber && r.bibNumber.toLowerCase().includes(s)) ||
+        (r.email && r.email.toLowerCase().includes(s)) ||
+        (r.phone && r.phone.toLowerCase().includes(s))
       );
     }
-    return true;
+    return true; // server-side search already filtered for searches > 2 chars
   }) || [];
 
   const handleExportCSV = () => {
@@ -323,7 +332,7 @@ export default function RidersList() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name or bib number..."
+              placeholder="Search by name, bib, phone, or email..."
               className="pl-10"
             />
           </div>
