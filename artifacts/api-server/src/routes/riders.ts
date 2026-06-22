@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { ridersTable, raceResultsTable, motosTable, eventsTable, registrationsTable } from "@workspace/db";
-import { eq, ilike, or, desc, and, inArray } from "drizzle-orm";
+import { eq, ilike, or, desc, and, inArray, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -40,13 +40,17 @@ async function getClubRiderIds(clubId: number): Promise<number[]> {
 }
 
 /**
- * Builds a search condition matching firstName, lastName, bibNumber, email, and phone.
+ * Builds a search condition matching firstName, lastName, full name, bibNumber, email, and phone.
+ * Input is trimmed so trailing/leading whitespace does not break matches.
  */
 function searchCond(s: string) {
-  const p = `%${s}%`;
+  const term = s.trim();
+  const p = `%${term}%`;
   return or(
     ilike(ridersTable.firstName, p),
     ilike(ridersTable.lastName, p),
+    // Match "First Last" as a combined string — handles "trent nelson" style queries
+    ilike(sql<string>`${ridersTable.firstName} || ' ' || ${ridersTable.lastName}`, p),
     ilike(ridersTable.bibNumber, p),
     ilike(ridersTable.email, p),
     ilike(ridersTable.phone, p),
