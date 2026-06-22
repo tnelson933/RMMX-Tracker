@@ -129,7 +129,7 @@ export default function EventDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
-  const isSuperAdmin = user?.role === "super_admin";
+  const isAdmin = user?.role === "super_admin" || user?.role === "club_organizer";
   const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
   const { data: event, isLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
@@ -143,7 +143,7 @@ export default function EventDetail() {
   const publicOrigin = usePublicOrigin();
 
   const clubId = (event as any)?.clubId ?? user?.clubId ?? null;
-  const { data: clubSettingsData } = useGetClubSettings(clubId ?? 0, { query: { enabled: !!clubId && !isSuperAdmin } as any });
+  const { data: clubSettingsData } = useGetClubSettings(clubId ?? 0, { query: { enabled: !!clubId && !isAdmin } as any });
   const putClubSettings = usePutClubSettings();
   const defaultClasses = useMemo<{ id: string; name: string }[]>(
     () => (clubSettingsData?.defaultClasses as { id: string; name: string }[] | undefined) ?? [],
@@ -172,9 +172,9 @@ export default function EventDetail() {
       if (!res.ok) return { connected: false, onboardingComplete: false };
       return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean }>;
     },
-    enabled: !isSuperAdmin,
+    enabled: !isAdmin,
   });
-  const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
+  const stripeReady = !isAdmin && (stripeStatus?.connected ?? false);
 
 
   const [isEditing, setIsEditing] = useState(false);
@@ -415,7 +415,7 @@ export default function EventDetail() {
     });
 
     // Silently save any brand-new class names back to club defaults
-    if (clubId && !isSuperAdmin) {
+    if (clubId && !isAdmin) {
       const existingDefaultNames = new Set(defaultClasses.map(c => c.name));
       const newClassNames = data.raceClasses.map(r => r.name.trim()).filter(n => n && !existingDefaultNames.has(n));
       if (newClassNames.length > 0) {
@@ -966,7 +966,7 @@ export default function EventDetail() {
                       </div>
 
                       {/* Require Waiver checkbox */}
-                      {!isSuperAdmin && (() => {
+                      {!isAdmin && (() => {
                         const hasWaiverText = !!(clubSettingsData?.riderAcknowledgement?.trim());
                         return hasWaiverText ? (
                           <FormField
@@ -1049,7 +1049,7 @@ export default function EventDetail() {
 
 
                       {/* Collect Payments toggle */}
-                      {!isSuperAdmin && (
+                      {!isAdmin && (
                         <div className="flex items-center gap-2">
                           {stripeReady ? (
                             <FormField
