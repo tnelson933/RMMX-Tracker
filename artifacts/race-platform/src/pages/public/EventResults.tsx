@@ -188,7 +188,12 @@ function MotoScheduleRow({
   const [expanded, setExpanded] = useState(false);
   const lineup = moto.lineup ?? [];
 
-  const motoResults = results?.filter(r => r.motoId === moto.id).sort((a, b) => a.position - b.position) ?? [];
+  const motoResults = results?.filter(r => r.motoId === moto.id).sort((a, b) => {
+    // DNF/DNS entries may have null position — sort them after finishers
+    const pa = a.position ?? 9999;
+    const pb = b.position ?? 9999;
+    return pa - pb;
+  }) ?? [];
   const isCompleted = moto.status === "completed";
   const hasStandings = isCompleted && motoResults.length > 0;
   const hasLineup = lineup.length > 0;
