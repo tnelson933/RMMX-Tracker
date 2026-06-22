@@ -133,7 +133,8 @@ router.post("/users/:userId/resend-invite", async (req, res) => {
 
   const emailResult = await sendSetupEmail({ to: user.email, name: user.name, token, appUrl: getAppUrl(), isNew: !user.passwordHash });
 
-  return res.json({ ok: true, emailSent: emailResult.ok, setupUrl: emailResult.ok ? undefined : emailResult.setupUrl });
+  const url = `${getAppUrl()}/setup-account?token=${token}`;
+  return res.json({ ok: true, emailSent: emailResult.ok, setupUrl: emailResult.setupUrl ?? url });
 });
 
 export default router;
