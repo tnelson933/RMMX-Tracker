@@ -556,9 +556,21 @@ router.post("/timing/manual-crossing", (req, res) => {
 router.get("/timing/live/:motoId", (req, res) => {
   const motoId = Number(req.params.motoId);
 
+  // Disable Nagle buffering so each write() is immediately flushed to the
+  // client without waiting for a full TCP packet.  Without this, SSE events
+  // are buffered on direct localhost connections (no reverse proxy to force
+  // the flush) and the browser only sees them in bulk once the buffer fills.
+  const sock = (req as any).socket;
+  if (sock) {
+    sock.setNoDelay(true);
+    sock.setTimeout(0);
+    sock.setKeepAlive(true, 0);
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.setHeader("Access-Control-Allow-Origin", "*");
   (res as any).flushHeaders?.();
 
@@ -573,8 +585,8 @@ router.get("/timing/live/:motoId", (req, res) => {
 
   const heartbeat = setInterval(() => {
     try { (res as any).write(": heartbeat\n\n"); }
-    catch { clearInterval(heartbeat); }
-  }, 20_000);
+    catch { clearInterval(heartbeat); sseUnsubscribe(motoId, res); }
+  }, 15_000);
 
   req.on("close", () => {
     clearInterval(heartbeat);
