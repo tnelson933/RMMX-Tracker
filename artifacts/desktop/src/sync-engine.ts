@@ -31,6 +31,7 @@ export class SyncEngine {
   private wasOffline = false;
   private lastSyncedAt: string | null = null;
   private lastError: string | null = null;
+  private lastRowsChanged = false;
   private sessionCookie: string | null = null;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private listeners: StateChangeCallback[] = [];
@@ -145,6 +146,7 @@ export class SyncEngine {
       lastError: this.lastError,
       cloudUrl: this.cloudUrl,
       clubId: this.clubId,
+      rowsChanged: this.lastRowsChanged,
     };
   }
 
@@ -181,6 +183,10 @@ export class SyncEngine {
   }
 
   private async _flush(): Promise<void> {
+    // Reset per-cycle flag so stale "true" from a previous cycle never leaks
+    // into a no-data cycle and triggers a spurious queryClient.invalidateQueries().
+    this.lastRowsChanged = false;
+
     const reachable = await this.probe();
     if (!reachable) {
       this.wasOffline = true;
@@ -200,10 +206,6 @@ export class SyncEngine {
         .run(MAX_ATTEMPTS);
     }
 
-    // Always set "syncing" — even when there are no pending local writes we
-    // still call pullCloud(), so the cycle is never a no-op.  This guarantees
-    // the syncing→idle transition that DesktopSyncWatcher uses to call
-    // queryClient.invalidateQueries() and refresh the UI after cloud pulls.
     this.setStatus("syncing");
 
     let pushErrorMsg: string | undefined;
@@ -229,7 +231,10 @@ export class SyncEngine {
           pushErrorMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
         }
       }
-      await this.pullCloud();
+      // pullCloud() returns true only when ≥1 SQLite row was actually changed.
+      // DesktopSyncWatcher reads this flag and skips queryClient.invalidateQueries()
+      // when nothing changed — preventing the 2-second UI jump on idle cycles.
+      this.lastRowsChanged = await this.pullCloud();
       this.lastSyncedAt = new Date().toISOString();
       if (pushErrorMsg) {
         // Pull succeeded but push has outstanding failures — stay in error so
@@ -546,7 +551,7 @@ export class SyncEngine {
     }
   }
 
-  private async pullCloud(): Promise<void> {
+  private async pullCloud(): Promise<boolean> {
     // Send last_pulled_at per table so the server can log/filter in the future,
     // but the server currently returns ALL club rows so that edits to existing
     // rows (not just new inserts) are always applied to the local DB.
@@ -599,6 +604,7 @@ export class SyncEngine {
     // Upsert all tables inside one transaction and advance watermarks atomically.
     // The _cloud_pull_guard flag prevents SQLite triggers from re-enqueueing
     // cloud-originated rows back into _write_queue (echo suppression).
+    let totalChanged = 0;
     const upsertAll = this.db.transaction(() => {
       // Set guard: triggers will skip enqueue while this row exists.
       this.db.prepare("INSERT OR IGNORE INTO _cloud_pull_guard VALUES(1)").run();
@@ -625,7 +631,7 @@ export class SyncEngine {
         ];
 
         for (const [table, rows] of tableMap) {
-          this.upsertPulled(table, rows);
+          totalChanged += this.upsertPulled(table, rows);
           this.db
             .prepare(
               `INSERT INTO _sync_watermarks (table_name, last_pulled_at, updated_at)
@@ -643,6 +649,11 @@ export class SyncEngine {
     });
 
     upsertAll();
+
+    // Return whether any SQLite rows were actually inserted or updated.
+    // The caller (_flush) stores this in lastRowsChanged so DesktopSyncWatcher
+    // can skip queryClient.invalidateQueries() on no-op cycles.
+    const rowsChanged = totalChanged > 0;
 
     const pulledEventIds = new Set<number>(
       (data.events ?? [])
@@ -689,6 +700,8 @@ export class SyncEngine {
     // exists in the cloud response.  Any that are missing were silently dropped
     // by a previous push (e.g. an id collision); re-queue them for retry.
     this.recoverMissingClubEvents(pulledEventIds);
+
+    return rowsChanged;
   }
 
   /**
@@ -717,8 +730,8 @@ export class SyncEngine {
   private upsertPulled(
     table: string,
     rows: Record<string, unknown>[],
-  ): void {
-    if (!rows.length) return;
+  ): number {
+    if (!rows.length) return 0;
 
     // Never overwrite rows that have unsynced local writes.  Without this
     // guard, a write that arrived after getPendingCount() was sampled (but
@@ -758,6 +771,8 @@ export class SyncEngine {
 
     const knownCols = this.localColumns(table);
 
+    let changed = 0;
+
     for (const row of rows) {
       // Convert camelCase → snake_case, normalize values, and drop columns the
       // local schema doesn't know.
@@ -791,14 +806,17 @@ export class SyncEngine {
 
       // Let errors propagate — caller wraps in transaction; any failure rolls
       // back the whole pull cycle and sets sync status to "error".
-      this.db
+      const result = this.db
         .prepare(
           `INSERT INTO ${table} (${cols.join(", ")})
            VALUES (${placeholders})
            ON CONFLICT(id) DO UPDATE SET ${assignments}`,
         )
         .run(...vals);
+      changed += result.changes;
     }
+
+    return changed;
   }
 
   destroy(): void {
