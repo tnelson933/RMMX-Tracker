@@ -392,6 +392,7 @@ router.delete("/motos/:motoId", async (req, res) => {
 
 // Link N motos as a staggered start group
 router.post("/events/:eventId/stagger", async (req, res) => {
+  const eventId = Number(req.params.eventId);
   const { orderedMotoIds } = req.body;
   if (!Array.isArray(orderedMotoIds) || orderedMotoIds.length < 2) {
     return res.status(400).json({ error: "orderedMotoIds must be an array of at least 2 moto IDs" });
@@ -399,6 +400,19 @@ router.post("/events/:eventId/stagger", async (req, res) => {
   const ids = orderedMotoIds.map(Number);
   const unique = new Set(ids);
   if (unique.size !== ids.length) return res.status(400).json({ error: "orderedMotoIds must not contain duplicates" });
+
+  // Verify event exists and user's club owns it
+  const [event] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const staffClubId = getStaffClubId(res);
+  if (staffClubId !== null && event.clubId !== staffClubId) return res.status(403).json({ error: "Forbidden" });
+
+  // Verify all provided moto IDs actually belong to this event
+  const ownedMotos = await db.select({ id: motosTable.id }).from(motosTable)
+    .where(and(inArray(motosTable.id, ids), eq(motosTable.eventId, eventId)));
+  if (ownedMotos.length !== ids.length) {
+    return res.status(400).json({ error: "One or more motos do not belong to this event" });
+  }
 
   // Clear any existing group memberships for motos in this list
   const existing = await db.select({ staggeredGroupId: motosTable.staggeredGroupId })
