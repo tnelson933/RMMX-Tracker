@@ -124,7 +124,14 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (existing) {
         await tx
           .update(lapCrossingsTable)
-          .set({ lapTimeMs: Number(c.lap_time_ms), crossingTime })
+          .set({
+            lapTimeMs:   Number(c.lap_time_ms),
+            crossingTime,
+            // Always carry riderId forward so a re-sync of a manual crossing
+            // does not lose the rider association (rider name would show as the
+            // raw rfidNumber on the crossings feed if riderId is dropped).
+            ...(c.rider_id != null ? { riderId: Number(c.rider_id) } : {}),
+          })
           .where(eq(lapCrossingsTable.id, existing.id));
       } else {
         const clientId = c.id != null && Number(c.id) > 0 ? Number(c.id) : undefined;
