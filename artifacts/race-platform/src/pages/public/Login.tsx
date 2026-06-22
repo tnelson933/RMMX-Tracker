@@ -93,9 +93,18 @@ export default function Login() {
             // now-populated SQLite rather than serving stale empty snapshots.
             await queryClient.invalidateQueries();
           }
+          // Always invalidate first to clear any cached 401 error state from
+          // before login, then refetch so isAuthenticated flips to true and
+          // the redirect useEffect fires reliably on the first attempt.
+          await queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
           await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
         },
         onError: async (error: any) => {
+          // Club suspended — show specific message regardless of platform
+          if (error?.error === "CLUB_INACTIVE" || error?.message?.includes("CLUB_INACTIVE") || error?.response?.data?.error === "CLUB_INACTIVE") {
+            setAuthError("CLUB_INACTIVE");
+            return;
+          }
           // On desktop: if the local user doesn't exist yet (first install) or has
           // no password hash (account not activated locally), automatically try to
           // log in to the cloud and pull all data down, then retry locally.
@@ -195,29 +204,39 @@ export default function Login() {
           )}
 
           {authError && !cloudSyncing && (
-            <Alert variant="destructive" className="mb-6 rounded-sm">
-              <AlertDescription className="font-medium text-sm flex flex-col gap-2">
-                <span className="flex items-center gap-2">
-                  <ShieldAlert size={16} />
-                  {authError}
-                </span>
-                {isDesktop && (
-                  <span className="text-xs opacity-90">
-                    If the problem persists, open{" "}
-                    <button
-                      type="button"
-                      className="underline font-semibold"
-                      onClick={() =>
-                        window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))
-                      }
-                    >
-                      Cloud Sync Settings
-                    </button>
-                    {" "}to verify your cloud URL and club ID.
+            authError === "CLUB_INACTIVE" ? (
+              <div className="mb-6 rounded-sm border border-orange-400 bg-orange-400/10 px-4 py-3 flex items-start gap-3">
+                <ShieldAlert size={16} className="text-orange-500 shrink-0 mt-0.5" />
+                <div className="text-sm text-orange-700 dark:text-orange-400">
+                  <p className="font-bold mb-1">Club Membership Inactive</p>
+                  <p>Your club has been marked as inactive. Please call Rocky Mountain ATV/MC to reactivate your membership.</p>
+                </div>
+              </div>
+            ) : (
+              <Alert variant="destructive" className="mb-6 rounded-sm">
+                <AlertDescription className="font-medium text-sm flex flex-col gap-2">
+                  <span className="flex items-center gap-2">
+                    <ShieldAlert size={16} />
+                    {authError}
                   </span>
-                )}
-              </AlertDescription>
-            </Alert>
+                  {isDesktop && (
+                    <span className="text-xs opacity-90">
+                      If the problem persists, open{" "}
+                      <button
+                        type="button"
+                        className="underline font-semibold"
+                        onClick={() =>
+                          window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))
+                        }
+                      >
+                        Cloud Sync Settings
+                      </button>
+                      {" "}to verify your cloud URL and club ID.
+                    </span>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )
           )}
 
           <Form {...form}>
@@ -320,23 +339,42 @@ export default function Login() {
         </CardContent>
         <CardFooter className="bg-muted/30 border-t p-6 text-center text-sm text-muted-foreground font-medium flex flex-col gap-2">
           {isDesktop ? (
-            <span>
-              First time on this device?{" "}
+            <>
+              <span>
+                First time on this device?{" "}
+                <button
+                  type="button"
+                  className="text-primary hover:underline font-semibold"
+                  onClick={() =>
+                    window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))
+                  }
+                >
+                  Open Cloud Sync Settings →
+                </button>
+              </span>
               <button
                 type="button"
-                className="text-primary hover:underline font-semibold"
-                onClick={() =>
-                  window.dispatchEvent(new CustomEvent("rm-open-sync-settings"))
-                }
+                className="text-muted-foreground hover:text-primary transition-colors"
+                onClick={() => {
+                  const cloudUrl = (window as any).electronAPI?.getCloudUrl?.() as string | undefined;
+                  if (cloudUrl) {
+                    window.open(`${cloudUrl}/forgot-password`);
+                  } else {
+                    window.dispatchEvent(new CustomEvent("rm-open-sync-settings"));
+                  }
+                }}
               >
-                Open Cloud Sync Settings →
+                Forgot your password?
               </button>
-            </span>
+            </>
           ) : (
             <>
               <span>Authorized personnel only. All access is logged.</span>
               <a href="/setup-account" className="text-primary hover:underline font-semibold">
                 First time signing in? Set up your account →
+              </a>
+              <a href="/forgot-password" className="text-muted-foreground hover:text-primary transition-colors">
+                Forgot your password?
               </a>
             </>
           )}
