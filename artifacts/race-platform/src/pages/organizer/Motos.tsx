@@ -32,6 +32,7 @@ import { format } from "date-fns";
 type RawCrossing = {
   id: number;
   rfidNumber: string;
+  riderId: number | null;
   riderName: string | null;
   lapNumber: number;
   lapTime: string | null;
@@ -86,9 +87,16 @@ function getAudioCtx(): AudioContext | null {
 // Prevents the SSE handler from double-pinging when a manual lap was just clicked.
 let _lastManualPingAt = 0;
 
-function playRfidPing(count: number) {
+async function playRfidPing(count: number) {
   const ctx = getAudioCtx();
   if (!ctx) return;
+  // Await resume so ctx.currentTime is advancing before we schedule notes.
+  // Without this, oscillators scheduled at time 0 are in the past by the time
+  // the context actually starts and are silently dropped.
+  if (ctx.state === "suspended") {
+    try { await ctx.resume(); } catch { return; }
+  }
+  if (ctx.state !== "running") return;
   const pings = Math.min(count, 4);
   for (let i = 0; i < pings; i++) {
     const osc = ctx.createOscillator();
@@ -97,7 +105,9 @@ function playRfidPing(count: number) {
     gain.connect(ctx.destination);
     osc.type = "sine";
     osc.frequency.value = 1046;
-    const t = ctx.currentTime + i * 0.18;
+    // Small leading offset (0.01 s) so the first note is never scheduled at
+    // exactly currentTime, which can be dropped on some Chromium builds.
+    const t = ctx.currentTime + 0.01 + i * 0.18;
     gain.gain.setValueAtTime(0, t);
     gain.gain.linearRampToValueAtTime(0.35, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
@@ -136,7 +146,7 @@ function LiveLeaderboard({ motoId }: { motoId: number }) {
             // Suppress if a manual lap button was just clicked (≤1.5 s ago)
             // to avoid double-pinging alongside the optimistic click sound.
             if (Date.now() - _lastManualPingAt > 1500) {
-              playRfidPing(totalLaps - prev);
+              void playRfidPing(totalLaps - prev);
             }
           }
           prevLapTotalRef.current = totalLaps;
@@ -343,7 +353,8 @@ function LiveCrossingsFeed({ motoId, minLapTimeMs }: { motoId: number; minLapTim
             </TableHeader>
             <TableBody>
               {crossings.map((c, idx) => {
-                const isFlagged = minLapTimeMs != null && c.lapTimeMs != null && c.lapTimeMs < minLapTimeMs;
+                // Lap #1 is the start-gate crossing, not a full lap — never flag it.
+                const isFlagged = minLapTimeMs != null && c.lapTimeMs != null && c.lapNumber !== 1 && c.lapTimeMs < minLapTimeMs;
                 return (
                   <TableRow
                     key={c.id}
@@ -447,10 +458,12 @@ function FirstPlaceCountdown({ motoId, lapCount, variant = "banner" }: { motoId:
 
   if (allCrossings.length === 0) return null;
 
-  // Find the leader: rider with highest lapNumber, tie-broken by most-recent crossingTime
+  // Find the leader: rider with highest lapNumber, tie-broken by most-recent crossingTime.
+  // Group by riderId when available, falling back to rfidNumber as a stable key.
+  // This prevents bib numbers from leaking into the display name.
   const byRider = new Map<string, RawCrossing[]>();
   for (const c of allCrossings) {
-    const key = c.riderName ?? c.rfidNumber;
+    const key = c.riderId != null ? `rider:${c.riderId}` : `rfid:${c.rfidNumber}`;
     if (!byRider.has(key)) byRider.set(key, []);
     byRider.get(key)!.push(c);
   }
@@ -460,7 +473,7 @@ function FirstPlaceCountdown({ motoId, lapCount, variant = "banner" }: { motoId:
   let leaderLastCrossing: RawCrossing | null = null;
   let leaderLapTimes: number[] = [];
 
-  for (const [name, crossings] of byRider) {
+  for (const [, crossings] of byRider) {
     const maxLap = Math.max(...crossings.map(c => c.lapNumber));
     const latest = crossings.filter(c => c.lapNumber === maxLap).sort(
       (a, b) => new Date(b.crossingTime).getTime() - new Date(a.crossingTime).getTime()
@@ -471,7 +484,8 @@ function FirstPlaceCountdown({ motoId, lapCount, variant = "banner" }: { motoId:
         new Date(latest.crossingTime) < new Date(leaderLastCrossing.crossingTime))
     ) {
       leaderMaxLap = maxLap;
-      leaderName = name;
+      // Use the actual rider name from any crossing in the group; never the rfidNumber
+      leaderName = crossings.find(c => c.riderName)?.riderName ?? crossings[0].rfidNumber;
       leaderLastCrossing = latest;
       leaderLapTimes = crossings.map(c => c.lapTimeMs).filter((v): v is number => v != null && v > 0);
     }
@@ -755,7 +769,8 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
             <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
               {laps.map((lap, i) => {
                 const lapMsValue = parseLapInput(lap);
-                const isBelowMin = target.minLapTimeMs != null && lapMsValue > 0 && lapMsValue < target.minLapTimeMs;
+                // i === 0 is the start-gate crossing, not a full lap — never flag it below minimum.
+                const isBelowMin = i !== 0 && target.minLapTimeMs != null && lapMsValue > 0 && lapMsValue < target.minLapTimeMs;
                 return (
                   <div key={i} className={`flex items-center gap-2 ${isBelowMin ? "rounded px-1 -mx-1 bg-red-50 dark:bg-red-950/30" : ""}`}>
                     <span className={`w-8 text-xs text-right font-mono shrink-0 ${isBelowMin ? "text-red-600 dark:text-red-400 font-bold" : "text-muted-foreground"}`}>
@@ -1126,7 +1141,8 @@ export default function Motos() {
     if (!results || !minLapMs) return set;
     for (const r of results) {
       const laps = Array.isArray((r as any).lapTimes) ? (r as any).lapTimes as number[] : [];
-      if (laps.some(t => t > 0 && t < minLapMs)) set.add(`${(r as any).motoId}-${(r as any).riderId}`);
+      // Skip laps[0] — it's the start-gate crossing (not a full lap).
+      if (laps.slice(1).some(t => t > 0 && t < minLapMs)) set.add(`${(r as any).motoId}-${(r as any).riderId}`);
     }
     return set;
   }, [results, minLapMs]);
@@ -1797,7 +1813,7 @@ export default function Motos() {
     // Play the ping immediately on click — no waiting for the network round-trip.
     // Set the guard so the SSE handler doesn't double-ping within 1.5s.
     _lastManualPingAt = Date.now();
-    playRfidPing(1);
+    void playRfidPing(1);
     setManualLapCooldown(prev => new Set(prev).add(key));
     try {
       const res = await fetch("/api/timing/manual-crossing", {
