@@ -14,6 +14,7 @@ import { DesktopSerialModal } from "@/components/DesktopSerialModal";
 import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/public/Home";
+import RiderAppLanding from "@/pages/public/RiderAppLanding";
 import Results from "@/pages/public/Results";
 import EventResults from "@/pages/public/EventResults";
 import Leaderboard from "@/pages/public/Leaderboard";
@@ -161,6 +162,9 @@ function Router() {
       {/* ── Public routes ── */}
       <Route path="/">
         <PublicLayout><Home /></PublicLayout>
+      </Route>
+      <Route path="/rider-app">
+        <RiderAppLanding />
       </Route>
       <Route path="/results">
         <PublicLayout><Results /></PublicLayout>
