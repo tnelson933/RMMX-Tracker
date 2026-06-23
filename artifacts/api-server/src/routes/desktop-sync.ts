@@ -772,7 +772,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (raceClassLimits)    updateSet.raceClassLimits = raceClassLimits;
       if (purchaseOptions)    updateSet.purchaseOptions = purchaseOptions;
       if (e.name     != null) updateSet.name      = String(e.name);
-      if (e.date     != null) updateSet.date      = String(e.date);
+      if (e.date     != null) updateSet.date      = String(e.date).substring(0, 10);
       if (e.location != null) updateSet.location  = String(e.location);
       if (e.state    != null) updateSet.state     = String(e.state);
       if (e.track_name != null) updateSet.trackName = String(e.track_name);
