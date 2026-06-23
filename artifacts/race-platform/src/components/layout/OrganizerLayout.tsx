@@ -39,19 +39,19 @@ import rmLogo from "@assets/rm-logo.png";
 const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permKey: "dashboard" },
-  { href: "/events", label: "Events", icon: CalendarDays, permKey: "events" },
-  { href: "/practice", label: "Practice", icon: Timer, permKey: "practice" },
-  { href: "/riders", label: "Riders", icon: Users, permKey: "riders" },
-  { href: "/series", label: "Series", icon: Trophy, permKey: "series" },
-  { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, permKey: "points_tables" },
-  { href: "/payments", label: "Payments", icon: CreditCard, permKey: "payments" },
-  { href: "/discount-codes", label: "Discount Codes", icon: Tag, permKey: "discount_codes" },
-  { href: "/notifications", label: "Notifications", icon: Bell, permKey: "notifications" },
-  { href: "/race-day-display", label: "Race Day Display", icon: Monitor, permKey: "gate_schedule" },
-  { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, permKey: "reader_setup" },
-  { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, permKey: "offline_mode" },
-] as const;
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permKey: "dashboard", tourId: undefined },
+  { href: "/events", label: "Events", icon: CalendarDays, permKey: "events", tourId: "nav-events" },
+  { href: "/practice", label: "Practice", icon: Timer, permKey: "practice", tourId: "nav-practice" },
+  { href: "/riders", label: "Riders", icon: Users, permKey: "riders", tourId: "nav-riders" },
+  { href: "/series", label: "Series", icon: Trophy, permKey: "series", tourId: "nav-series" },
+  { href: "/points-tables", label: "Points Scoring Tables", icon: ListOrdered, permKey: "points_tables", tourId: undefined },
+  { href: "/payments", label: "Payments", icon: CreditCard, permKey: "payments", tourId: "nav-payments" },
+  { href: "/discount-codes", label: "Discount Codes", icon: Tag, permKey: "discount_codes", tourId: "nav-discount-codes" },
+  { href: "/notifications", label: "Notifications", icon: Bell, permKey: "notifications", tourId: "nav-notifications" },
+  { href: "/race-day-display", label: "Race Day Display", icon: Monitor, permKey: "gate_schedule", tourId: "nav-race-day-display" },
+  { href: "/rfid/setup", label: "Reader Setup", icon: Wifi, permKey: "reader_setup", tourId: "nav-rfid" },
+  { href: "/offline-mode", label: "Offline Mode", icon: WifiOff, permKey: "offline_mode", tourId: "nav-offline" },
+];
 
 export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -133,6 +133,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
               key={item.href}
               href={item.href}
               onClick={close}
+              {...(item.tourId ? { "data-tour": item.tourId } : {})}
               className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
                 isActive
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
