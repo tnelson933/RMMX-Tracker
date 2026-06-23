@@ -263,19 +263,23 @@ router.post("/practice", async (req, res) => {
   const clubId = await getClubId(req);
   if (!clubId) return res.status(403).json({ error: "No club" });
 
-  const { name, debounceMs } = req.body;
+  const { name, debounceMs, venueName: venueNameOverride } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
 
-  // Snapshot the club's current track name onto the session
-  const [settings] = await db.select({ trackName: clubSettingsTable.trackName })
-    .from(clubSettingsTable)
-    .where(eq(clubSettingsTable.clubId, clubId));
-  const venueName = settings?.trackName ?? null;
+  // Use explicitly passed venueName; fall back to club's default track name
+  let venueName: string | null = venueNameOverride?.trim() || null;
+  if (!venueName) {
+    const [settings] = await db.select({ trackName: clubSettingsTable.trackName })
+      .from(clubSettingsTable)
+      .where(eq(clubSettingsTable.clubId, clubId));
+    venueName = settings?.trackName ?? null;
+  }
 
   const [session] = await db.insert(practiceSessionsTable).values({
     clubId,
     name,
-    status: "idle",
+    status: "active",
+    startedAt: new Date(),
     debounceMs: debounceMs ? Number(debounceMs) : 10000,
     venueName,
   }).returning();
