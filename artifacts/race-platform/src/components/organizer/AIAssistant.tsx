@@ -379,6 +379,7 @@ export function AIAssistant({ eventId }: { eventId?: number }) {
     <>
       {/* Floating trigger button */}
       <button
+        data-tour="ai-assistant"
         onClick={handleOpen}
         className={cn(
           "fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full px-4 py-3 shadow-lg transition-all",
