@@ -104,4 +104,72 @@ router.patch("/clubs/:clubId", (req, res) => {
   return res.json(serializeClub(club));
 });
 
+// GET /clubs/:clubId/settings
+router.get("/clubs/:clubId/settings", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const db = getDb();
+  const id = Number(req.params.clubId);
+  const club = db
+    .prepare("SELECT id, rider_acknowledgement, default_classes, track_name FROM clubs WHERE id = ?")
+    .get(id) as any;
+  if (!club) return res.status(404).json({ error: "Not found" });
+
+  let defaultClasses: unknown[] = [];
+  try { defaultClasses = JSON.parse(club.default_classes ?? "[]"); } catch { /* ignore */ }
+
+  return res.json({
+    clubId: club.id,
+    riderAcknowledgement: club.rider_acknowledgement ?? null,
+    defaultClasses,
+    trackName: club.track_name ?? null,
+  });
+});
+
+// PUT /clubs/:clubId/settings
+router.put("/clubs/:clubId/settings", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const db = getDb();
+  const id = Number(req.params.clubId);
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (req.body.riderAcknowledgement !== undefined) {
+    fields.push("rider_acknowledgement = ?");
+    values.push(req.body.riderAcknowledgement ?? null);
+  }
+  if (req.body.defaultClasses !== undefined) {
+    fields.push("default_classes = ?");
+    values.push(JSON.stringify(Array.isArray(req.body.defaultClasses) ? req.body.defaultClasses : []));
+  }
+  if (req.body.trackName !== undefined) {
+    fields.push("track_name = ?");
+    values.push(req.body.trackName ?? null);
+  }
+
+  if (fields.length > 0) {
+    values.push(id);
+    db.prepare(`UPDATE clubs SET ${fields.join(", ")} WHERE id = ?`).run(...(values as any[]));
+  }
+
+  const club = db
+    .prepare("SELECT id, rider_acknowledgement, default_classes, track_name FROM clubs WHERE id = ?")
+    .get(id) as any;
+  if (!club) return res.status(404).json({ error: "Not found" });
+
+  let defaultClasses: unknown[] = [];
+  try { defaultClasses = JSON.parse(club.default_classes ?? "[]"); } catch { /* ignore */ }
+
+  return res.json({
+    clubId: club.id,
+    riderAcknowledgement: club.rider_acknowledgement ?? null,
+    defaultClasses,
+    trackName: club.track_name ?? null,
+  });
+});
+
 export default router;
