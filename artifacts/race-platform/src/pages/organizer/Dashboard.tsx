@@ -478,7 +478,7 @@ export default function Dashboard() {
                 <Label htmlFor="website" className="font-heading uppercase tracking-wider text-xs">Website</Label>
                 <Input
                   id="website"
-                  type="url"
+                  type="text"
                   value={website}
                   onChange={e => setWebsite(e.target.value)}
                   placeholder="https://yourclub.com"
