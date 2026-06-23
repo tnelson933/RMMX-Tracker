@@ -3,7 +3,8 @@ import { Link } from "wouter";
 import { useListUpcomingEvents } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, MapPin, Trophy, Navigation, CheckCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Calendar, MapPin, Trophy, Navigation, CheckCircle, LocateFixed, ChevronRight } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { haversineDistance } from "@/lib/haversine";
@@ -66,8 +67,8 @@ function NearMeCard({ event }: { event: EventWithDistance }) {
               <span className="text-xs font-bold uppercase tracking-wider bg-muted px-2 py-0.5 rounded">
                 {event.state}
               </span>
-              <span className="text-primary text-xs font-heading font-bold uppercase tracking-wide group-hover:underline">
-                Register Now →
+              <span className="text-primary text-xs font-heading font-bold uppercase tracking-wide group-hover:underline flex items-center gap-0.5">
+                Register Now <ChevronRight size={12} />
               </span>
             </div>
           </div>
@@ -81,10 +82,17 @@ export function UpcomingNearMe() {
   const location = useUserLocation();
   const { data: allEvents, isLoading } = useListUpcomingEvents({ query: {} as any });
   const [radiusMi, setRadiusMi] = useState<RadiusMi>(100);
+  const [selectedState, setSelectedState] = useState("all");
 
   const events = useMemo(
     () => allEvents?.filter((e) => e.status === "registration_open") ?? [],
     [allEvents]
+  );
+
+  // All states available in the open-registration events
+  const availableStates = useMemo(
+    () => [...new Set(events.map((e) => e.state))].sort(),
+    [events]
   );
 
   const sorted = useMemo<EventWithDistance[]>(() => {
@@ -110,67 +118,130 @@ export function UpcomingNearMe() {
   }, [events, location]);
 
   const filtered = useMemo<EventWithDistance[]>(() => {
-    if (location.status !== "granted" || radiusMi === null) return sorted;
-    return sorted.filter((e) => e.distanceMi === null || e.distanceMi <= radiusMi);
-  }, [sorted, radiusMi, location.status]);
+    let result = sorted;
+    // radius filter (only when location is known)
+    if (location.status === "granted" && radiusMi !== null) {
+      result = result.filter((e) => e.distanceMi === null || e.distanceMi <= radiusMi);
+    }
+    // state filter
+    if (selectedState !== "all") {
+      result = result.filter((e) => e.state === selectedState);
+    }
+    return result;
+  }, [sorted, radiusMi, location.status, selectedState]);
 
   const isPending = location.status === "pending" || isLoading;
   const locationGranted = !isPending && location.status === "granted";
+  const locationDenied = !isPending && (location.status === "denied" || location.status === "unavailable");
 
   const emptyStateLabel =
-    locationGranted && radiusMi !== null
-      ? `No races within ${radiusMi} miles right now`
+    locationGranted && radiusMi !== null && selectedState === "all"
+      ? `No races within ${radiusMi} miles with open registration`
+      : selectedState !== "all"
+      ? `No races in ${selectedState} with open registration right now`
       : "No races with open registration right now";
 
   return (
     <section className="container mx-auto px-4">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-6">
+      {/* Header row */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
         <div>
           <h2 className="text-2xl font-heading font-bold uppercase tracking-tight">
             Upcoming Races Near Me
           </h2>
-          {!isPending && location.status === "denied" && (
-            <p className="text-sm text-muted-foreground mt-1">
-              Location access not granted — showing events by date.
-            </p>
-          )}
-          {!isPending && location.status === "unavailable" && (
-            <p className="text-sm text-muted-foreground mt-1">
-              Location unavailable — showing events by date.
-            </p>
-          )}
           {locationGranted && (
             <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
               <Navigation size={12} /> Sorted by distance from your location.
             </p>
           )}
+          {locationDenied && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Showing events by date — enable location for distance sorting.
+            </p>
+          )}
         </div>
-        <Badge variant="outline" className="self-start sm:self-auto text-green-600 border-green-600/40 bg-green-600/5 font-semibold">
-          Registration Open
-        </Badge>
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Allow Location button — shown when denied/unavailable */}
+          {locationDenied && location.status === "denied" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 font-heading uppercase tracking-wider text-xs border-primary/40 text-primary hover:bg-primary/5"
+              onClick={() => location.retry()}
+            >
+              <LocateFixed size={13} />
+              Allow Location
+            </Button>
+          )}
+          <Badge
+            variant="outline"
+            className="text-green-600 border-green-600/40 bg-green-600/5 font-semibold self-start sm:self-auto"
+          >
+            Registration Open
+          </Badge>
+        </div>
       </div>
 
-      {locationGranted && (
-        <div className="flex items-center gap-2 mb-5">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mr-1">
-            Within:
-          </span>
-          {RADIUS_OPTIONS.map((opt) => {
-            const active = radiusMi === opt.value;
-            return (
+      {/* Controls row: radius pills (location) + state chips */}
+      {!isPending && (locationGranted || availableStates.length > 0) && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-5">
+          {/* Radius pills — only when location granted */}
+          {locationGranted && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Within:
+              </span>
+              {RADIUS_OPTIONS.map((opt) => {
+                const active = radiusMi === opt.value;
+                return (
+                  <button
+                    key={opt.label}
+                    onClick={() => setRadiusMi(opt.value as RadiusMi)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                      active
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* State chips */}
+          {availableStates.length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {locationGranted && <span className="text-muted-foreground/40 text-sm hidden sm:block">|</span>}
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                State:
+              </span>
               <button
-                key={opt.label}
-                onClick={() => setRadiusMi(opt.value as RadiusMi)}
-                className={`px-3 py-1 rounded-full text-xs font-bold border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                  active
+                onClick={() => setSelectedState("all")}
+                className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border transition-colors ${
+                  selectedState === "all"
                     ? "bg-primary text-primary-foreground border-primary"
                     : "bg-background text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
                 }`}
               >
-                {opt.label}
+                All
               </button>
-            );
-          })}
+              {availableStates.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSelectedState(s)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border transition-colors ${
+                    selectedState === s
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground border-border hover:border-primary/60 hover:text-foreground"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -186,11 +257,21 @@ export function UpcomingNearMe() {
           <p className="font-heading font-bold uppercase text-muted-foreground">
             {emptyStateLabel}
           </p>
-          <p className="text-sm text-muted-foreground mt-1">
-            {locationGranted && radiusMi !== null
-              ? "Try a larger radius or check back soon!"
-              : "Check back soon!"}
-          </p>
+          <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
+            {locationGranted && radiusMi !== null && (
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setRadiusMi(null)}>
+                Show all distances
+              </Button>
+            )}
+            {selectedState !== "all" && (
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setSelectedState("all")}>
+                Clear state filter
+              </Button>
+            )}
+            {!locationGranted && (
+              <p className="text-sm text-muted-foreground">Check back soon!</p>
+            )}
+          </div>
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
