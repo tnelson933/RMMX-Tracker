@@ -12,6 +12,7 @@ type PracticeSessionRow = {
   name: string;
   status: string;
   debounce_ms: number;
+  venue_name: string | null;
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
@@ -37,6 +38,7 @@ function serializeSession(s: PracticeSessionRow) {
     name: s.name,
     status: s.status,
     debounceMs: s.debounce_ms,
+    venueName: s.venue_name ?? null,
     startedAt: s.started_at ?? null,
     endedAt: s.ended_at ?? null,
     createdAt: s.created_at,
@@ -282,15 +284,15 @@ router.post("/practice", (req, res) => {
   const clubId = getClubId(req);
   if (!clubId) return res.status(403).json({ error: "No club" });
 
-  const { name, debounceMs } = req.body as { name?: string; debounceMs?: number };
+  const { name, debounceMs, venueName } = req.body as { name?: string; debounceMs?: number; venueName?: string };
   if (!name) return res.status(400).json({ error: "name required" });
 
   const db = getDb();
   const ins = db
     .prepare(
-      "INSERT INTO practice_sessions (club_id, name, debounce_ms, status, started_at) VALUES (?, ?, ?, 'active', datetime('now'))",
+      "INSERT INTO practice_sessions (club_id, name, debounce_ms, venue_name, status, started_at) VALUES (?, ?, ?, ?, 'active', datetime('now'))",
     )
-    .run(clubId, name, debounceMs ? Number(debounceMs) : 10000);
+    .run(clubId, name, debounceMs ? Number(debounceMs) : 10000, venueName?.trim() || null);
 
   const session = db
     .prepare("SELECT * FROM practice_sessions WHERE id = ?")
@@ -318,6 +320,10 @@ router.patch("/practice/:id", (req, res) => {
   if (req.body.name !== undefined) {
     sets.push("name = ?");
     vals.push(req.body.name);
+  }
+  if (req.body.venueName !== undefined) {
+    sets.push("venue_name = ?");
+    vals.push(req.body.venueName?.trim() || null);
   }
   if (req.body.debounceMs !== undefined) {
     sets.push("debounce_ms = ?");
