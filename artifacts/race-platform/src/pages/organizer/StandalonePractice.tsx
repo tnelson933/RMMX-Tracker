@@ -74,6 +74,8 @@ export default function StandalonePractice() {
   const [expandedRfids, setExpandedRfids] = useState<Set<string>>(new Set());
   const [mobilePanel, setMobilePanel] = useState<"sidebar" | "board">("board");
   const [expandedDates, setExpandedDates] = useState<Set<string>>(() => new Set([new Date().toISOString().slice(0, 10)]));
+  const [tracks, setTracks] = useState<{ id: number; name: string }[]>([]);
+  const [selectedVenue, setSelectedVenue] = useState("");
   const esRef = useRef<EventSource | null>(null);
 
   const loadSessions = useCallback(async () => {
@@ -108,6 +110,14 @@ export default function StandalonePractice() {
     loadSessions();
     const interval = setInterval(loadSessions, 10_000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Load track library for picker
+  useEffect(() => {
+    fetch("/api/tracks", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then(setTracks)
+      .catch(() => {});
   }, []);
 
   // SSE connection for selected session
@@ -149,7 +159,7 @@ export default function StandalonePractice() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim() }),
+        body: JSON.stringify({ name: newName.trim(), ...(selectedVenue ? { venueName: selectedVenue } : {}) }),
       });
       if (!res.ok) throw new Error();
       const session: PracticeSession = await res.json();
@@ -295,18 +305,30 @@ export default function StandalonePractice() {
             </div>
 
             {showNewForm && (
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 space-y-2">
                 <Input
                   value={newName}
                   onChange={e => setNewName(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") createSession(); if (e.key === "Escape") setShowNewForm(false); }}
+                  onKeyDown={e => { if (e.key === "Enter" && newName.trim()) createSession(); if (e.key === "Escape") setShowNewForm(false); }}
                   placeholder="Session name…"
-                  className="h-8 text-sm bg-sidebar-accent border-sidebar-border text-white placeholder:text-sidebar-foreground/40 flex-1"
+                  className="h-8 text-sm bg-sidebar-accent border-sidebar-border text-white placeholder:text-sidebar-foreground/40 w-full"
                   autoFocus
                 />
+                {tracks.length > 0 && (
+                  <select
+                    value={selectedVenue}
+                    onChange={e => setSelectedVenue(e.target.value)}
+                    className="h-8 w-full text-sm bg-sidebar-accent border border-sidebar-border text-white rounded-md px-2 focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">No track selected</option>
+                    {tracks.map(t => (
+                      <option key={t.id} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
                 <Button
                   size="sm"
-                  className="h-8 font-heading uppercase px-2 text-xs"
+                  className="h-8 w-full font-heading uppercase text-xs"
                   onClick={createSession}
                   disabled={creating || !newName.trim()}
                 >
@@ -441,15 +463,6 @@ export default function StandalonePractice() {
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  {selectedSession.status === "idle" && (
-                    <Button
-                      size="sm"
-                      onClick={() => startSession(selectedSession.id)}
-                      className="font-heading uppercase tracking-wider h-10 min-w-[7rem] bg-primary hover:bg-primary/90 text-xs"
-                    >
-                      <Play size={14} className="mr-1.5" /> Start Session
-                    </Button>
-                  )}
                   {selectedSession.status === "active" && (
                     <Button
                       variant="outline"
@@ -483,16 +496,12 @@ export default function StandalonePractice() {
                     </div>
                     <div>
                       <div className="font-heading font-bold uppercase tracking-wider text-foreground text-xl mb-1">
-                        {selectedSession.status === "idle"
-                          ? "Session Not Started"
-                          : selectedSession.status === "active"
+                        {selectedSession.status === "active"
                           ? "Waiting for Crossings…"
                           : "No Crossings Recorded"}
                       </div>
                       <div className="text-muted-foreground text-sm max-w-sm">
-                        {selectedSession.status === "idle"
-                          ? "Start the session and riders will appear automatically as they cross the timing gate. Names are matched from your RFID assignments and rider profiles."
-                          : selectedSession.status === "active"
+                        {selectedSession.status === "active"
                           ? "Riders will appear here as they cross the timing gate. Make sure your RFID reader is powered on and the bridge is running."
                           : "No lap data was captured in this session."}
                       </div>
