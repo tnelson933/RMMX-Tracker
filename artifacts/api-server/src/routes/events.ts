@@ -137,7 +137,10 @@ router.post("/events", async (req, res) => {
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
   if (!clubId || !name || !date || !state) return res.status(400).json({ error: "clubId, name, date, state required" });
-  if (endDate && endDate < date) return res.status(400).json({ error: "endDate must be on or after date" });
+  // Strip any time component — always store as plain YYYY-MM-DD
+  const cleanDate = String(date).substring(0, 10);
+  const cleanEndDate = endDate ? String(endDate).substring(0, 10) : undefined;
+  if (cleanEndDate && cleanEndDate < cleanDate) return res.status(400).json({ error: "endDate must be on or after date" });
 
   // Determine the correct initial status based on the registration window
   const initialStatus = (() => {
@@ -156,7 +159,7 @@ router.post("/events", async (req, res) => {
 
   const { amaEventId } = req.body;
   const [event] = await db.insert(eventsTable).values({
-    clubId, name, date, state, location, trackName,
+    clubId, name, date: cleanDate, state, location, trackName,
     raceClasses: raceClasses || [],
     raceClassLimits: raceClassLimits || {},
     raceClassSeriesMap: raceClassSeriesMap || {},
@@ -174,7 +177,7 @@ router.post("/events", async (req, res) => {
     scoringTableId: scoringTableId ?? null,
     entryFeeCategoryId: entryFeeCat?.id ?? null,
     amaEventId: amaEventId ?? null,
-    endDate: endDate ?? null,
+    endDate: cleanEndDate ?? null,
   }).returning();
 
   return res.status(201).json({
@@ -259,6 +262,10 @@ router.patch("/events/:eventId", async (req, res) => {
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
+  // Always store date fields as plain YYYY-MM-DD — strip any time component that
+  // may arrive from a datetime-local input or ISO timestamp (e.g. "2026-06-23T18:00:00.000Z").
+  if (typeof updates.date === "string") updates.date = updates.date.substring(0, 10);
+  if (typeof updates.endDate === "string") updates.endDate = updates.endDate.substring(0, 10);
   if (req.body.entryFee !== undefined) updates.entryFee = req.body.entryFee ? String(req.body.entryFee) : null;
   if (req.body.transponderRentalFee !== undefined) updates.transponderRentalFee = req.body.transponderRentalFee ? String(req.body.transponderRentalFee) : null;
 
