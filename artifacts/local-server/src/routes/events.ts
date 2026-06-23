@@ -119,6 +119,11 @@ router.post("/events", (req, res) => {
     return res.status(400).json({ error: "name and date are required" });
   }
 
+  // Always store dates as plain YYYY-MM-DD — strip any time component that may
+  // arrive from a datetime-local input or ISO timestamp (e.g. "2026-06-23T18:00").
+  const cleanDate = String(date).substring(0, 10);
+  const cleanEndDate = endDate ? String(endDate).substring(0, 10) : null;
+
   const result = db
     .prepare(
       `INSERT INTO events
@@ -131,7 +136,7 @@ router.post("/events", (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
     )
     .run(
-      user.club_id, String(name), String(date),
+      user.club_id, String(name), cleanDate,
       location ?? null, state ?? "", trackName ?? null,
       JSON.stringify(raceClasses ?? []),
       registrationOpen ?? null, registrationClose ?? null,
@@ -143,7 +148,7 @@ router.post("/events", (req, res) => {
       transponderRentalEnabled ? 1 : 0,
       transponderRentalFee ?? null,
       noDuplicateBibs ? 1 : 0, requireClubId ? 1 : 0,
-      scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null, endDate ?? null,
+      scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null, cleanEndDate ?? null,
     );
 
   const newEventId = Number(result.lastInsertRowid);
@@ -230,14 +235,18 @@ router.patch("/events/:eventId", (req, res) => {
   const fields: string[] = [];
   const values: unknown[] = [];
 
+  // Date-only fields must be stored as YYYY-MM-DD — strip any time component.
+  const dateOnlyFields = new Set(["date", "endDate"]);
+
   for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
     if (req.body[jsKey] !== undefined) {
       if (boolFields[jsKey]) {
         fields.push(`${dbCol} = ?`);
         values.push(req.body[jsKey] ? 1 : 0);
       } else {
+        const raw = req.body[jsKey];
         fields.push(`${dbCol} = ?`);
-        values.push(req.body[jsKey]);
+        values.push(dateOnlyFields.has(jsKey) && typeof raw === "string" ? raw.substring(0, 10) : raw);
       }
     }
   }
