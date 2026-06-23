@@ -20,7 +20,7 @@ import { format, parseISO } from "date-fns";
 import { UpcomingNearMe } from "@/components/UpcomingNearMe";
 import { formatEventDatesFull } from "@/lib/eventDates";
 
-const FALLBACK_TAG = "desktop-v1.0.78";
+const FALLBACK_TAG = "desktop-v1.0.79";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
@@ -280,7 +280,7 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  const { data: upcomingAll, isLoading: upcomingLoading } = useListUpcomingEvents({ query: {} as any });
+  const { data: upcomingAll, isLoading: upcomingLoading } = useListUpcomingEvents({ query: { refetchInterval: 30_000 } as any });
   const { data: states, isLoading: statesLoading } = useListStates();
   const { data: recentResults, isLoading: pastLoading } = useListRecentResults({
     state: selectedState === "all" ? undefined : selectedState,
@@ -288,11 +288,16 @@ export default function Home() {
   } as any);
 
   const todayStr = format(new Date(), "yyyy-MM-dd");
-  const todayEvents = upcomingAll?.filter(e =>
-    e.date.substring(0, 10) === todayStr || e.status === "race_day"
-  ) ?? [];
+  // "Today" = today falls within the event's date range (start ≤ today ≤ end).
+  // Using date range instead of `status === "race_day"` prevents stale events
+  // whose race day has passed but haven't been finalized from staying on screen.
+  const todayEvents = upcomingAll?.filter(e => {
+    const dateStr = e.date.substring(0, 10);
+    const endStr  = e.endDate ? String(e.endDate).substring(0, 10) : dateStr;
+    return dateStr <= todayStr && endStr >= todayStr;
+  }) ?? [];
   const futureEvents = upcomingAll?.filter(e =>
-    e.date.substring(0, 10) > todayStr && e.status !== "race_day"
+    e.date.substring(0, 10) > todayStr
   ) ?? [];
 
   const todayStates = [...new Set(todayEvents.map(e => e.state))].sort();
