@@ -279,6 +279,10 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Allow Web Audio API (AudioContext) to play without requiring a prior
+      // user gesture — needed so RFID crossing pings fire reliably even when
+      // the organizer hasn't clicked recently.
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
 
