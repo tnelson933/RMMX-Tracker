@@ -572,7 +572,9 @@ export default function ClubsAdmin() {
                   name="website"
                   render={({ field }) => (
                     <FormItem className="col-span-2">
-                      <FormLabel className="font-heading uppercase text-xs tracking-wider text-muted-foreground font-bold">Website</FormLabel>
+                      <FormLabel className="font-heading uppercase text-xs tracking-wider text-muted-foreground font-bold">
+                        Website <span className="normal-case font-normal tracking-normal text-muted-foreground/60">(optional)</span>
+                      </FormLabel>
                       <FormControl>
                         <Input placeholder="https://club.com" {...field} />
                       </FormControl>
