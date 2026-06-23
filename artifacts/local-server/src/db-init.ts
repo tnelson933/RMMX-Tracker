@@ -292,6 +292,14 @@ export function initDb() {
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS tracks (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      club_id    INTEGER NOT NULL,
+      name       TEXT NOT NULL,
+      state      TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_practice_crossings_session
       ON practice_crossings (session_id, rfid_number);
 
@@ -703,7 +711,8 @@ export function initDb() {
     // image sync retry counters — stops runaway retries for permanently-broken images
     ["events", "image_sync_attempts INTEGER NOT NULL DEFAULT 0"],
     ["clubs",  "image_sync_attempts INTEGER NOT NULL DEFAULT 0"],
-    // _cloud_pull_guard — safety: ensure it exists (created above, but just in case)
+    // practice_sessions — track/venue name stored on the session
+    ["practice_sessions", "venue_name TEXT"],
   ];
 
   for (const [table, colDef] of migrations) {
