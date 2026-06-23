@@ -143,6 +143,16 @@ function processCrossing(opts: {
       riderId = assignment?.rider_id ?? null;
     }
 
+    // Bib-number fallback: if the rfidNumber didn't match an RFID assignment (e.g.
+    // the scanner is sending bib numbers instead of transponder hex IDs), try to
+    // resolve the rider via the checked-in bib number for this event.
+    if (!riderId) {
+      const bibMatch = db
+        .prepare("SELECT rider_id FROM checkins WHERE event_id = ? AND bib_number = ? AND checked_in = 1 LIMIT 1")
+        .get(moto.event_id, rfidNumber) as any;
+      riderId = bibMatch?.rider_id ?? null;
+    }
+
     // Previous crossings for this tag+moto (ordered oldest → newest)
     const prevCrossings = db
       .prepare("SELECT * FROM lap_crossings WHERE moto_id = ? AND rfid_number = ? ORDER BY crossing_time ASC")
@@ -605,17 +615,28 @@ router.get("/timing/leaderboard/:motoId", (req, res) => {
 router.get("/timing/crossings/:motoId", (req, res) => {
   const db = getDb();
   const motoId = Number(req.params.motoId);
+  // Primary JOIN: resolve rider via rider_id stored on the crossing.
+  // Secondary JOIN: bib-number fallback for crossings where rider_id was not
+  // resolved at recording time (e.g. scanner sends bib numbers, not hex IDs).
   const crossings = db.prepare(`
-    SELECT lc.*, r.first_name, r.last_name
+    SELECT lc.*,
+      COALESCE(r.first_name,  r2.first_name)  AS first_name,
+      COALESCE(r.last_name,   r2.last_name)   AS last_name,
+      COALESCE(lc.rider_id,   chk.rider_id)   AS resolved_rider_id
     FROM lap_crossings lc
-    LEFT JOIN riders r ON lc.rider_id = r.id
+    LEFT JOIN riders r   ON r.id = lc.rider_id
+    LEFT JOIN checkins chk
+           ON chk.event_id   = lc.event_id
+          AND chk.bib_number = lc.rfid_number
+          AND chk.checked_in = 1
+    LEFT JOIN riders r2  ON r2.id = chk.rider_id
     WHERE lc.moto_id = ?
     ORDER BY lc.crossing_time ASC
   `).all(motoId) as any[];
   return res.json(crossings.map((c: any) => ({
     id: c.id,
     rfidNumber: c.rfid_number,
-    riderId: c.rider_id,
+    riderId: c.resolved_rider_id ?? c.rider_id,
     crossingTime: c.crossing_time,
     lapNumber: c.lap_number,
     lapTimeMs: c.lap_time_ms,
