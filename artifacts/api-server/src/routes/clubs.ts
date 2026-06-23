@@ -118,6 +118,31 @@ router.post("/clubs", async (req, res) => {
       emailSent = emailResult.ok;
       setupUrl = (emailResult as any).setupUrl ?? `${getAppUrl()}/setup-account?token=${token}`;
       organizer = { id: newUser.id, name: newUser.name, email: newUser.email, hasPassword: false };
+    } else {
+      // User already exists — link them to this club
+      const existingUser = existing[0];
+      const requesterId = (req.session as any).userId;
+      const [requester] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, requesterId));
+      const isSuperAdmin = requester?.role === "super_admin";
+
+      if (existingUser.clubId && existingUser.clubId !== club.id && !isSuperAdmin) {
+        return res.status(409).json({ error: `A user with email ${trimmedEmail} already belongs to another club.` });
+      }
+      // Reassign (or assign for first time) to this club
+      await db.update(usersTable)
+        .set({ clubId: club.id, role: "club_organizer" })
+        .where(eq(usersTable.id, existingUser.id));
+      // Issue a new setup token if they haven't set a password yet
+      if (!existingUser.passwordHash) {
+        const token = crypto.randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+        await db.delete(passwordSetupTokensTable).where(eq(passwordSetupTokensTable.userId, existingUser.id));
+        await db.insert(passwordSetupTokensTable).values({ userId: existingUser.id, token, expiresAt });
+        const emailResult = await sendSetupEmail({ to: existingUser.email, name: existingUser.name, token, appUrl: getAppUrl(), isNew: false });
+        emailSent = emailResult.ok;
+        setupUrl = (emailResult as any).setupUrl ?? `${getAppUrl()}/setup-account?token=${token}`;
+      }
+      organizer = { id: existingUser.id, name: existingUser.name, email: existingUser.email, hasPassword: !!existingUser.passwordHash };
     }
   }
 
@@ -206,14 +231,16 @@ router.patch("/clubs/:clubId", async (req, res) => {
 
   if (organizerName && organizerEmail) {
     const existingOrg = await db
-      .select({ id: usersTable.id })
+      .select()
       .from(usersTable)
       .where(eq(usersTable.clubId, id));
 
     if (existingOrg.length === 0) {
       const trimmedEmail = String(organizerEmail).toLowerCase().trim();
-      const emailTaken = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, trimmedEmail));
-      if (!emailTaken[0]) {
+      const [emailMatch] = await db.select().from(usersTable).where(eq(usersTable.email, trimmedEmail));
+
+      if (!emailMatch) {
+        // Brand-new user — create and send invite
         const [newUser] = await db
           .insert(usersTable)
           .values({ email: trimmedEmail, name: String(organizerName), role: "club_organizer", clubId: id, passwordHash: null })
@@ -225,6 +252,26 @@ router.patch("/clubs/:clubId", async (req, res) => {
         emailSent = emailResult.ok;
         setupUrl = (emailResult as any).setupUrl ?? `${getAppUrl()}/setup-account?token=${token}`;
         organizer = { id: newUser.id, name: newUser.name, email: newUser.email, hasPassword: false };
+      } else {
+        // User already exists — link them to this club
+        const isSuperAdmin = sessionUser?.role === "super_admin";
+        if (emailMatch.clubId && emailMatch.clubId !== id && !isSuperAdmin) {
+          return res.status(409).json({ error: `A user with email ${trimmedEmail} already belongs to another club.` });
+        }
+        // Reassign (or assign for first time) to this club
+        await db.update(usersTable)
+          .set({ clubId: id, role: "club_organizer" })
+          .where(eq(usersTable.id, emailMatch.id));
+        if (!emailMatch.passwordHash) {
+          const token = crypto.randomBytes(32).toString("hex");
+          const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+          await db.delete(passwordSetupTokensTable).where(eq(passwordSetupTokensTable.userId, emailMatch.id));
+          await db.insert(passwordSetupTokensTable).values({ userId: emailMatch.id, token, expiresAt });
+          const emailResult = await sendSetupEmail({ to: emailMatch.email, name: emailMatch.name, token, appUrl: getAppUrl(), isNew: false });
+          emailSent = emailResult.ok;
+          setupUrl = (emailResult as any).setupUrl ?? `${getAppUrl()}/setup-account?token=${token}`;
+        }
+        organizer = { id: emailMatch.id, name: emailMatch.name, email: emailMatch.email, hasPassword: !!emailMatch.passwordHash };
       }
     }
   }
