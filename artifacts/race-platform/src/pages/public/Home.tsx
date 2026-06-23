@@ -20,7 +20,7 @@ import { format, parseISO } from "date-fns";
 import { UpcomingNearMe } from "@/components/UpcomingNearMe";
 import { formatEventDatesFull } from "@/lib/eventDates";
 
-const FALLBACK_TAG = "desktop-v1.0.80";
+const FALLBACK_TAG = "desktop-v1.0.81";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
