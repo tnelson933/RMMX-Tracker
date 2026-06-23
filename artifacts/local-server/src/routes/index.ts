@@ -23,6 +23,7 @@ import stripeRouter from "./stripe";
 import teamRouter from "./team";
 import storageRouter from "./storage";
 import notificationsRouter from "./notifications";
+import tracksRouter from "./tracks";
 
 const router = Router();
 
@@ -50,6 +51,7 @@ router.use(stripeRouter);
 router.use(teamRouter);
 router.use(storageRouter);
 router.use(notificationsRouter);
+router.use(tracksRouter);
 
 router.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
