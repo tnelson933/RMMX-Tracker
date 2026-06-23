@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 export type LocationStatus = "pending" | "granted" | "denied" | "unavailable";
 
@@ -8,16 +8,17 @@ export interface UserLocation {
   status: LocationStatus;
 }
 
-export function useUserLocation(): UserLocation | { status: LocationStatus } {
+export function useUserLocation(): (UserLocation | { status: LocationStatus }) & { retry: () => void } {
   const [result, setResult] = useState<{ lat?: number; lng?: number; status: LocationStatus }>({
     status: "pending",
   });
 
-  useEffect(() => {
+  const request = useCallback(() => {
     if (!navigator.geolocation) {
       setResult({ status: "unavailable" });
       return;
     }
+    setResult(prev => ({ ...prev, status: "pending" }));
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setResult({ lat: pos.coords.latitude, lng: pos.coords.longitude, status: "granted" });
@@ -29,5 +30,10 @@ export function useUserLocation(): UserLocation | { status: LocationStatus } {
     );
   }, []);
 
-  return result as UserLocation | { status: LocationStatus };
+  useEffect(() => {
+    request();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return { ...(result as UserLocation | { status: LocationStatus }), retry: request };
 }
