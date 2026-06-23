@@ -219,7 +219,42 @@ router.get("/public/states", async (req, res) => {
   return res.json(stateData.map(s => ({ state: s.state, eventCount: s.count })));
 });
 
+// ── Status auto-advancement helpers (mirrors events.ts) ──────────────────────
+function _computeAutoStatus(event: { id: number; date: string; status: string; registrationOpen: string | null; registrationClose: string | null }): string | null {
+  const now = new Date();
+  const { status, registrationOpen, registrationClose } = event;
+  if (status === "draft") {
+    if (registrationOpen && now >= new Date(registrationOpen)) return "registration_open";
+  }
+  if (status === "registration_open") {
+    if (registrationClose && now >= new Date(registrationClose)) return "registration_closed";
+  }
+  if (status === "registration_closed") {
+    const todayStr = now.toISOString().slice(0, 10);
+    const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
+    if (eventDateStr && eventDateStr <= todayStr) return "race_day";
+  }
+  return null;
+}
+
+async function _advanceStatuses(events: Array<{ id: number; date: string; status: string; registrationOpen: string | null; registrationClose: string | null }>): Promise<Map<number, string>> {
+  const updates = new Map<number, string>();
+  for (const e of events) {
+    const next = _computeAutoStatus(e);
+    if (next) updates.set(e.id, next);
+  }
+  if (updates.size > 0) {
+    await Promise.all(
+      [...updates.entries()].map(([id, status]) =>
+        db.update(eventsTable).set({ status }).where(eq(eventsTable.id, id))
+      )
+    );
+  }
+  return updates;
+}
+
 router.get("/public/upcoming", async (req, res) => {
+  // Fetch including registration window fields needed for status auto-advancement.
   const events = await db.select({
     id: eventsTable.id,
     name: eventsTable.name,
@@ -229,26 +264,45 @@ router.get("/public/upcoming", async (req, res) => {
     location: eventsTable.location,
     trackName: eventsTable.trackName,
     status: eventsTable.status,
+    registrationOpen: eventsTable.registrationOpen,
+    registrationClose: eventsTable.registrationClose,
     clubName: clubsTable.name,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(and(
-      sql`${eventsTable.status} != 'draft'`,
+      // Include draft events too so we can advance their status below; filter
+      // them back out after advancement.
       sql`${eventsTable.status} != 'completed'`,
+      // Exclude events whose race day has already passed — even if the
+      // organizer hasn't finalized/published the event yet.  Use endDate
+      // when set (multi-day events) so they show until the last day.
+      // SUBSTRING(...,1,10) guards against dates stored as full ISO timestamps
+      // (e.g. "2026-06-23T18:00:00.000Z") vs plain "YYYY-MM-DD" strings.
+      sql`SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')`,
     ))
     .orderBy(eventsTable.date);
 
-  return res.json(events.map(e => ({
-    eventId: e.id,
-    name: e.name,
-    state: e.state,
-    date: e.date,
-    endDate: e.endDate ?? null,
-    location: e.location,
-    trackName: e.trackName,
-    status: e.status,
-    clubName: e.clubName || "",
-  })));
+  // Advance statuses (draft→registration_open→registration_closed→race_day)
+  // so the public page always reflects the current registration window state.
+  const advanced = await _advanceStatuses(events);
+
+  return res.json(
+    events
+      // Apply any status advances computed above, then filter out drafts.
+      .map(e => ({ ...e, status: advanced.get(e.id) ?? e.status }))
+      .filter(e => e.status !== "draft")
+      .map(e => ({
+        eventId: e.id,
+        name: e.name,
+        state: e.state,
+        date: e.date,
+        endDate: e.endDate ?? null,
+        location: e.location,
+        trackName: e.trackName,
+        status: e.status,
+        clubName: e.clubName || "",
+      }))
+  );
 });
 
 router.get("/public/recent-results", async (req, res) => {
