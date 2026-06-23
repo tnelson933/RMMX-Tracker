@@ -130,8 +130,8 @@ export default function EventsList() {
 
   // Super-admin sees all events; club_organizer and staff see only their own club's events
   const eventsQuery = isSuperAdmin
-    ? useListEvents({})
-    : useListEvents({ clubId: sessionClubId ?? undefined }, { query: { enabled: !!sessionClubId } as any });
+    ? useListEvents({}, { query: { refetchInterval: 30_000 } as any })
+    : useListEvents({ clubId: sessionClubId ?? undefined }, { query: { enabled: !!sessionClubId, refetchInterval: 30_000 } as any });
   const { data: events, isLoading } = eventsQuery;
 
   // Clubs list for the super_admin club selector
@@ -398,6 +398,16 @@ export default function EventsList() {
   };
 
   const todayStr = format(new Date(), "yyyy-MM-dd");
+
+  // A race_day event whose effective end date has already passed is "past but
+  // unpublished" — the race happened but the organizer hasn't finalized it yet.
+  // We never change the DB status; this is a display-layer reclassification only.
+  const isPastRaceDay = (e: { status: string; date: string; endDate?: string | null }) => {
+    if (e.status !== "race_day") return false;
+    const endStr = e.endDate ? String(e.endDate).substring(0, 10) : e.date.substring(0, 10);
+    return endStr < todayStr;
+  };
+
   const filteredEvents = (() => {
     const q = isSuperAdmin ? searchQuery.trim().toLowerCase() : "";
     let all = (events ?? []).filter(e => {
@@ -411,7 +421,7 @@ export default function EventsList() {
     });
     if (filter === "upcoming") {
       return [...all]
-        .filter(e => e.status !== "completed")
+        .filter(e => e.status !== "completed" && !isPastRaceDay(e))
         .sort((a, b) => a.date.localeCompare(b.date))
         .slice(0, 10);
     }
@@ -419,8 +429,10 @@ export default function EventsList() {
       if (filter === "all") return true;
       if (filter === "draft") return e.status === "draft";
       if (filter === "registration_open") return e.status === "registration_open";
-      if (filter === "race_day") return e.status === "race_day" || e.date.substring(0, 10) === todayStr;
-      if (filter === "completed") return e.status === "completed";
+      // Race Day tab: only events actively happening today, not stale past events
+      if (filter === "race_day") return (e.status === "race_day" || e.date.substring(0, 10) === todayStr) && !isPastRaceDay(e);
+      // Completed tab: actual completed events + past race_day events (shown as Unpublished)
+      if (filter === "completed") return e.status === "completed" || isPastRaceDay(e);
       return true;
     });
   })();
@@ -1270,6 +1282,13 @@ export default function EventsList() {
                           </span>
                         )}
                         {(() => {
+                          if (isPastRaceDay(event)) {
+                            return (
+                              <span className="px-2 py-1 rounded text-xs font-bold uppercase tracking-wider bg-amber-500/15 text-amber-600 border border-amber-500/30">
+                                Unpublished
+                              </span>
+                            );
+                          }
                           const isToday = event.date.substring(0, 10) === todayStr;
                           const showRaceDay = isToday && event.status !== "completed" && event.status !== "draft";
                           return (
