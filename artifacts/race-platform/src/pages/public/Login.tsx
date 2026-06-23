@@ -100,8 +100,16 @@ export default function Login() {
           await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
         },
         onError: async (error: any) => {
+          // Extract the human-readable message from the API error response
+          const apiError: string =
+            error?.response?.data?.error ||
+            error?.response?.data?.message ||
+            error?.error ||
+            error?.message ||
+            "Invalid email or password. Please try again.";
+
           // Club suspended — show specific message regardless of platform
-          if (error?.error === "CLUB_INACTIVE" || error?.message?.includes("CLUB_INACTIVE") || error?.response?.data?.error === "CLUB_INACTIVE") {
+          if (apiError === "CLUB_INACTIVE" || apiError.includes("CLUB_INACTIVE")) {
             setAuthError("CLUB_INACTIVE");
             return;
           }
@@ -151,7 +159,7 @@ export default function Login() {
               setCloudSyncing(false);
             }
           } else {
-            setAuthError(error?.message || "Invalid email or password. Please try again.");
+            setAuthError(apiError);
           }
         },
       },
