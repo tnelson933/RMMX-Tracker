@@ -32,6 +32,7 @@ import anthropicRouter from "./anthropic/index";
 import configRouter from "./config";
 import notificationsRouter from "./notifications";
 import desktopSyncRouter from "./desktop-sync";
+import tracksRouter from "./tracks";
 
 const router: IRouter = Router();
 
@@ -68,5 +69,6 @@ router.use(anthropicRouter);
 router.use(notificationsRouter);
 router.use(desktopSyncRouter);
 router.use(configRouter);
+router.use(tracksRouter);
 
 export default router;
