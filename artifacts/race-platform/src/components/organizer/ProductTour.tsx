@@ -1,232 +1,363 @@
-import { useState } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCompleteTour, getGetMeQueryKey } from "@workspace/api-client-react";
-import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Flag,
-  Users,
-  Wifi,
-  BarChart3,
-  Globe,
-  Calendar,
-  PartyPopper,
-  ChevronRight,
-  ChevronLeft,
-  X,
-} from "lucide-react";
+import { X, ChevronRight, ChevronLeft, Flag } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface TourStep {
-  icon: React.ReactNode;
-  accent: string;
+  selector?: string;
   title: string;
   description: string;
-  detail: string;
+  side?: "right" | "left" | "bottom" | "top";
 }
 
-const STEPS: TourStep[] = [
+const ALL_STEPS: TourStep[] = [
   {
-    icon: <PartyPopper size={36} />,
-    accent: "from-red-600 to-red-700",
-    title: "Welcome to the Platform",
-    description: "Your club is all set up and ready to go.",
-    detail:
-      "This two-minute tour covers the five core areas of the platform. You can skip it now and replay it any time from the Help menu.",
+    title: "👋 Welcome to RM Tracker",
+    description:
+      "You're all set up. This quick tour highlights everything available in the sidebar — only takes a minute.",
   },
   {
-    icon: <Calendar size={36} />,
-    accent: "from-blue-600 to-blue-700",
+    selector: '[data-tour="nav-events"]',
+    side: "right",
     title: "Events",
-    description: "Create and run your race events end-to-end.",
-    detail:
-      "From the Events page you can create an event, open registration, manage rider check-ins on race day, enter moto results, and publish the final standings publicly — all from one place.",
+    description:
+      "Create events, open online registration, manage check-ins on race day, run motos, enter results, and publish standings — all in one place.",
   },
   {
-    icon: <Users size={36} />,
-    accent: "from-violet-600 to-violet-700",
+    selector: '[data-tour="nav-practice"]',
+    side: "right",
+    title: "Practice Mode",
+    description:
+      "Run standalone practice sessions with live lap timing. Riders get a real-time best-lap board without a full race event.",
+  },
+  {
+    selector: '[data-tour="nav-riders"]',
+    side: "right",
     title: "Riders",
-    description: "Your club's rider database lives here.",
-    detail:
-      "Add riders, track their history across events, and assign RFID transponder numbers so the timing system knows who's who on the track.",
+    description:
+      "Your club's rider database. Assign RFID or MyLaps transponder numbers here so the timing system knows who's who on the track.",
   },
   {
-    icon: <Wifi size={36} />,
-    accent: "from-amber-600 to-amber-700",
-    title: "RFID Timing",
-    description: "Plug-and-play live lap scoring.",
-    detail:
-      "Once your RFID readers are configured (see Reader Setup), the system automatically records every lap crossing and builds a live leaderboard in real time. No manual entry needed.",
-  },
-  {
-    icon: <BarChart3 size={36} />,
-    accent: "from-emerald-600 to-emerald-700",
+    selector: '[data-tour="nav-series"]',
+    side: "right",
     title: "Series & Points",
-    description: "Run a championship series across multiple events.",
-    detail:
-      "Define a points structure, link events to the series, and the platform calculates and displays a running championship leaderboard automatically after each event.",
+    description:
+      "Run a championship across multiple events. Link events to a series and the platform calculates running standings automatically after each round.",
   },
   {
-    icon: <Globe size={36} />,
-    accent: "from-cyan-600 to-cyan-700",
-    title: "Public Results",
-    description: "Fans and riders see results at your public URL.",
-    detail:
-      "Every published event appears on the public Results page — no login required. Share the link on social media so your community can follow along live or check final standings after the race.",
+    selector: '[data-tour="nav-payments"]',
+    side: "right",
+    title: "Payments",
+    description:
+      "Accept entry fees online via Stripe Connect. Payouts deposit directly into your club's bank account — no middleman, no delays.",
   },
   {
-    icon: <Flag size={36} />,
-    accent: "from-green-600 to-green-700",
-    title: "You're Ready to Race!",
-    description: "That's the full tour.",
-    detail:
-      "Start by creating your first event. If you need help at any point, the Reader Setup guide walks you through hardware configuration step by step. Good luck out there!",
+    selector: '[data-tour="nav-discount-codes"]',
+    side: "right",
+    title: "Discount Codes",
+    description:
+      "Create promo codes, comp entries, and category-based discounts. Supports fixed-dollar, percentage, and full-comp codes.",
+  },
+  {
+    selector: '[data-tour="nav-notifications"]',
+    side: "right",
+    title: "Notifications",
+    description:
+      "Riders automatically receive 'Next Up' and '3 Races Away' push alerts as motos complete. You can also send custom broadcasts to your entire club.",
+  },
+  {
+    selector: '[data-tour="nav-race-day-display"]',
+    side: "right",
+    title: "Race Day Display",
+    description:
+      "A TV-ready screen for announcers and pit boards showing live gate lists, race status, and countdowns — no login required.",
+  },
+  {
+    selector: '[data-tour="nav-rfid"]',
+    side: "right",
+    title: "Reader Setup",
+    description:
+      "Configure your RFID or MyLaps timing readers. The platform supports both transponder technologies — switch per-event as needed.",
+  },
+  {
+    selector: '[data-tour="nav-offline"]',
+    side: "right",
+    title: "Offline Mode",
+    description:
+      "Run events at remote tracks without internet. Sync everything back to the cloud once you're online — nothing is lost.",
+  },
+  {
+    selector: '[data-tour="ai-assistant"]',
+    side: "left",
+    title: "AI Assistant",
+    description:
+      "Your built-in AI knows your current event and can help with any task — creating events, setting up timing, or answering questions.",
+  },
+  {
+    title: "You're Ready to Race! 🏁",
+    description:
+      "That's the full tour. Start by creating your first event. You can replay this tour any time from Help in the sidebar.",
   },
 ];
+
+const PAD = 10;
+
+interface Rect { left: number; top: number; width: number; height: number; right: number; bottom: number; }
 
 interface ProductTourProps {
   onComplete: () => void;
 }
 
 export function ProductTour({ onComplete }: ProductTourProps) {
-  const [step, setStep] = useState(0);
-  const [dir, setDir] = useState(1);
-  const [dismissed, setDismissed] = useState(false);
   const queryClient = useQueryClient();
   const { mutate: completeTour } = useCompleteTour({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
-      },
-      onError: (err: any) => {
-        if (err?.status === 401) {
-          window.location.href = "/login";
-        }
-      },
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() }),
+      onError: (err: any) => { if (err?.status === 401) window.location.href = "/login"; },
     },
   });
 
-  const current = STEPS[step];
-  const isFirst = step === 0;
-  const isLast = step === STEPS.length - 1;
+  const [steps, setSteps] = useState<TourStep[]>([]);
+  const [step, setStep] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+  const [targetRect, setTargetRect] = useState<Rect | null>(null);
 
-  function go(next: number) {
-    setDir(next > step ? 1 : -1);
-    setStep(next);
-  }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const available = ALL_STEPS.filter(
+        s => !s.selector || document.querySelector(s.selector) !== null,
+      );
+      setSteps(available);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, []);
 
-  function finish() {
+  const current = steps[step];
+
+  useLayoutEffect(() => {
+    if (!current?.selector) { setTargetRect(null); return; }
+    const el = document.querySelector(current.selector);
+    if (el) setTargetRect(el.getBoundingClientRect() as Rect);
+    else setTargetRect(null);
+  }, [current]);
+
+  useEffect(() => {
+    const onResize = () => {
+      if (!current?.selector) return;
+      const el = document.querySelector(current.selector);
+      if (el) setTargetRect(el.getBoundingClientRect() as Rect);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [current]);
+
+  const finish = useCallback(() => {
     setDismissed(true);
     completeTour();
     onComplete();
+  }, [completeTour, onComplete]);
+
+  const isLast = step === steps.length - 1;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") finish();
+      if (e.key === "ArrowRight" && !isLast) setStep(s => s + 1);
+      if (e.key === "ArrowLeft" && step > 0) setStep(s => s - 1);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [finish, isLast, step]);
+
+  if (dismissed || steps.length === 0 || !current) return null;
+
+  const hasTarget = !!targetRect;
+
+  const hx = hasTarget ? targetRect!.left - PAD : 0;
+  const hy = hasTarget ? targetRect!.top - PAD : 0;
+  const hw = hasTarget ? targetRect!.width + PAD * 2 : 0;
+  const hh = hasTarget ? targetRect!.height + PAD * 2 : 0;
+
+  const popoverStyle: React.CSSProperties = { position: "fixed", width: 292 };
+
+  if (!hasTarget) {
+    popoverStyle.top = "50%";
+    popoverStyle.left = "50%";
+    popoverStyle.transform = "translate(-50%, -50%)";
+  } else {
+    const r = targetRect!;
+    const side = current.side ?? "right";
+    const vCenter = Math.max(12, Math.min(r.top + r.height / 2 - 90, window.innerHeight - 200));
+
+    if (side === "right") {
+      popoverStyle.top = vCenter;
+      popoverStyle.left = r.right + PAD + 16;
+    } else if (side === "left") {
+      popoverStyle.top = vCenter;
+      popoverStyle.left = Math.max(8, r.left - 292 - PAD - 16);
+    } else if (side === "bottom") {
+      popoverStyle.top = r.bottom + PAD + 12;
+      popoverStyle.left = Math.max(8, Math.min(r.left, window.innerWidth - 300));
+    } else {
+      popoverStyle.top = Math.max(8, r.top - PAD - 12 - 200);
+      popoverStyle.left = Math.max(8, Math.min(r.left, window.innerWidth - 300));
+    }
   }
 
-  if (dismissed) return null;
+  const arrowSide = current.side;
+  const arrowStyle: React.CSSProperties = { position: "absolute" };
+  if (hasTarget && arrowSide === "right") {
+    arrowStyle.left = -7;
+    arrowStyle.top = "50%";
+    arrowStyle.transform = "translateY(-50%)";
+  } else if (hasTarget && arrowSide === "left") {
+    arrowStyle.right = -7;
+    arrowStyle.top = "50%";
+    arrowStyle.transform = "translateY(-50%)";
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-lg">
+    <div className="fixed inset-0 z-[60]">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        className="pointer-events-none"
+        style={{ position: "fixed", inset: 0, width: "100%", height: "100%" }}
+      >
+        {hasTarget && (
+          <defs>
+            <mask id="tour-spotlight">
+              <rect width="100%" height="100%" fill="white" />
+              <rect x={hx} y={hy} width={hw} height={hh} rx="7" fill="black" />
+            </mask>
+          </defs>
+        )}
+        <rect
+          width="100%"
+          height="100%"
+          fill="rgba(0,0,0,0.72)"
+          mask={hasTarget ? "url(#tour-spotlight)" : undefined}
+        />
+      </svg>
 
-        {/* Skip button */}
-        <button
-          onClick={finish}
-          className="absolute -top-10 right-0 text-white/50 hover:text-white/90 flex items-center gap-1.5 text-sm transition-colors"
+      {hasTarget && (
+        <div
+          className="pointer-events-none"
+          style={{
+            position: "fixed",
+            left: hx - 2,
+            top: hy - 2,
+            width: hw + 4,
+            height: hh + 4,
+            borderRadius: 9,
+            boxShadow: "0 0 0 2px hsl(var(--primary)), 0 0 0 4px hsl(var(--primary) / 0.3)",
+            animation: "tour-pulse 1.8s ease-in-out infinite",
+          }}
+        />
+      )}
+
+      <div className="fixed inset-0 pointer-events-none" />
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={step}
+          initial={{ opacity: 0, scale: 0.94, y: 5 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.94, y: -5 }}
+          transition={{ duration: 0.16, ease: "easeOut" }}
+          style={popoverStyle}
+          className="z-[61] bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-border overflow-visible"
+          onClick={e => e.stopPropagation()}
         >
-          <X size={14} /> Skip tour
-        </button>
+          {hasTarget && arrowSide === "right" && (
+            <div
+              style={arrowStyle}
+              className="w-3.5 h-3.5 bg-white dark:bg-gray-900 border-l border-b border-border rotate-45"
+            />
+          )}
+          {hasTarget && arrowSide === "left" && (
+            <div
+              style={arrowStyle}
+              className="w-3.5 h-3.5 bg-white dark:bg-gray-900 border-r border-t border-border rotate-45"
+            />
+          )}
 
-        {/* Card */}
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
-
-          {/* Accent header */}
-          <div className={`bg-gradient-to-r ${current.accent} px-8 py-8 flex flex-col items-center text-white text-center`}>
-            <AnimatePresence mode="wait" custom={dir}>
-              <motion.div
-                key={step}
-                custom={dir}
-                initial={{ opacity: 0, x: dir * 40 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: dir * -40 }}
-                transition={{ duration: 0.22, ease: "easeInOut" }}
-                className="flex flex-col items-center gap-3"
-              >
-                <div className="bg-white/20 rounded-2xl p-4">
-                  {current.icon}
-                </div>
-                <div>
-                  <p className="text-white/70 text-xs font-heading uppercase tracking-widest mb-1">
-                    Step {step + 1} of {STEPS.length}
-                  </p>
-                  <h2 className="text-2xl font-heading font-bold">{current.title}</h2>
-                  <p className="text-white/85 mt-1 text-sm font-medium">{current.description}</p>
-                </div>
-              </motion.div>
-            </AnimatePresence>
+          <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border-b border-border rounded-t-xl">
+            <span className="text-[11px] font-heading font-bold uppercase tracking-widest text-muted-foreground">
+              {step + 1} / {steps.length}
+            </span>
+            <button
+              onClick={finish}
+              className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+            >
+              <X size={13} />
+            </button>
           </div>
 
-          {/* Body */}
-          <div className="px-8 py-6">
-            <AnimatePresence mode="wait" custom={dir}>
-              <motion.p
-                key={step}
-                custom={dir}
-                initial={{ opacity: 0, y: dir * 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: dir * -12 }}
-                transition={{ duration: 0.2, ease: "easeInOut" }}
-                className="text-muted-foreground text-sm leading-relaxed text-center"
-              >
-                {current.detail}
-              </motion.p>
-            </AnimatePresence>
+          <div className="px-4 pt-3.5 pb-3">
+            <h3 className="font-heading font-bold text-[15px] mb-1.5">{current.title}</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">{current.description}</p>
+          </div>
 
-            {/* Progress dots */}
-            <div className="flex justify-center gap-1.5 mt-6">
-              {STEPS.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => go(i)}
-                  className={`rounded-full transition-all duration-200 ${
-                    i === step
-                      ? "w-6 h-2 bg-primary"
-                      : "w-2 h-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300"
-                  }`}
-                />
-              ))}
-            </div>
+          <div className="flex justify-center gap-1 pb-1">
+            {steps.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setStep(i)}
+                className={`rounded-full transition-all duration-200 ${
+                  i === step
+                    ? "w-5 h-1.5 bg-primary"
+                    : "w-1.5 h-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300"
+                }`}
+              />
+            ))}
+          </div>
 
-            {/* Navigation */}
-            <div className="flex items-center justify-between mt-5 gap-3">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setStep(s => s - 1)}
+              disabled={step === 0}
+              className="gap-1 h-7 text-xs px-2"
+            >
+              <ChevronLeft size={13} /> Back
+            </Button>
+            {isLast ? (
               <Button
-                variant="ghost"
                 size="sm"
-                onClick={() => go(step - 1)}
-                disabled={isFirst}
-                className="gap-1.5"
+                onClick={finish}
+                className="gap-1 h-7 text-xs bg-green-600 hover:bg-green-700 text-white font-heading uppercase tracking-wider px-3"
               >
-                <ChevronLeft size={15} /> Back
+                Let's go! <Flag size={12} />
               </Button>
-
-              {isLast ? (
-                <Button
-                  size="sm"
-                  onClick={finish}
-                  className="gap-1.5 bg-green-600 hover:bg-green-700 text-white font-heading uppercase tracking-wider px-6"
-                >
-                  Let's go! <Flag size={14} />
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  onClick={() => go(step + 1)}
-                  className="gap-1.5 font-heading uppercase tracking-wider px-5"
-                >
-                  Next <ChevronRight size={15} />
-                </Button>
-              )}
-            </div>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => setStep(s => s + 1)}
+                className="gap-1 h-7 text-xs font-heading uppercase tracking-wider px-3"
+              >
+                Next <ChevronRight size={13} />
+              </Button>
+            )}
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </AnimatePresence>
+
+      <button
+        onClick={finish}
+        className="fixed top-4 right-4 z-[61] text-white/50 hover:text-white/90 text-xs flex items-center gap-1.5 transition-colors bg-transparent border-0"
+      >
+        <X size={12} /> Skip tour
+      </button>
+
+      <style>{`
+        @keyframes tour-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.6; }
+        }
+      `}</style>
     </div>
   );
 }
