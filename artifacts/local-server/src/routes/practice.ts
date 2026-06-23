@@ -288,7 +288,7 @@ router.post("/practice", (req, res) => {
   const db = getDb();
   const ins = db
     .prepare(
-      "INSERT INTO practice_sessions (club_id, name, debounce_ms) VALUES (?, ?, ?)",
+      "INSERT INTO practice_sessions (club_id, name, debounce_ms, status, started_at) VALUES (?, ?, ?, 'active', datetime('now'))",
     )
     .run(clubId, name, debounceMs ? Number(debounceMs) : 10000);
 
