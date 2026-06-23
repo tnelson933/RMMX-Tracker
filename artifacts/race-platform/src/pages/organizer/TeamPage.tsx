@@ -137,9 +137,10 @@ export default function TeamPage() {
   const [ackText, setAckText] = useState("");
   const [ackSaving, setAckSaving] = useState(false);
 
-  // Track Name state
-  const [trackNameText, setTrackNameText] = useState("");
-  const [trackNameSaving, setTrackNameSaving] = useState(false);
+  // Track Library state
+  const [tracks, setTracks] = useState<{ id: number; name: string; state: string | null }[]>([]);
+  const [newTrackName, setNewTrackName] = useState("");
+  const [addingTrack, setAddingTrack] = useState(false);
 
   // Default Classes state
   const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
@@ -157,9 +158,16 @@ export default function TeamPage() {
     if (settingsData) {
       setAckText(settingsData.riderAcknowledgement ?? "");
       setClasses((settingsData.defaultClasses as { id: string; name: string }[]) ?? []);
-      setTrackNameText((settingsData as any).trackName ?? "");
     }
   }, [settingsData]);
+
+  // Load track library
+  useEffect(() => {
+    fetch("/api/tracks", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then(setTracks)
+      .catch(() => {});
+  }, []);
 
   const copyGateLink = () => {
     if (!gateUrl) return;
@@ -169,22 +177,38 @@ export default function TeamPage() {
     });
   };
 
-  // Save track name
-  const saveTrackName = () => {
-    if (!clubId) return;
-    setTrackNameSaving(true);
-    putSettings.mutate(
-      { clubId, data: { trackName: trackNameText.trim() || null } as any },
-      {
-        onSuccess: () => {
-          toast({ title: "Saved", description: "Track name saved." });
-        },
-        onError: (err: any) => {
-          toast({ title: "Error", description: err?.data?.error ?? "Failed to save", variant: "destructive" });
-        },
-        onSettled: () => setTrackNameSaving(false),
-      }
-    );
+  // Track Library functions
+  const addTrack = async () => {
+    const trimmed = newTrackName.trim();
+    if (!trimmed || addingTrack) return;
+    setAddingTrack(true);
+    try {
+      const res = await fetch("/api/tracks", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (!res.ok) throw new Error();
+      const track = await res.json();
+      setTracks(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewTrackName("");
+      toast({ title: "Track added" });
+    } catch {
+      toast({ title: "Failed to add track", variant: "destructive" });
+    } finally {
+      setAddingTrack(false);
+    }
+  };
+
+  const deleteTrack = async (id: number) => {
+    try {
+      await fetch(`/api/tracks/${id}`, { method: "DELETE", credentials: "include" });
+      setTracks(prev => prev.filter(t => t.id !== id));
+      toast({ title: "Track removed" });
+    } catch {
+      toast({ title: "Failed to remove track", variant: "destructive" });
+    }
   };
 
   // Save rider acknowledgement
@@ -357,29 +381,56 @@ export default function TeamPage() {
         </div>
       </div>
 
-      {/* Track Name */}
+      {/* Track Library */}
       <div className="rounded-xl border bg-card p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
             <MapPin size={18} className="text-primary" />
           </div>
           <div>
-            <h2 className="font-heading font-semibold text-base uppercase tracking-wider">Track / Venue Name</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Auto-fills the Track Name field when creating new events and stamps practice sessions</p>
+            <h2 className="font-heading font-semibold text-base uppercase tracking-wider">Track Library</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Save your venues here — pick one when starting a practice session</p>
           </div>
         </div>
-        <Input
-          placeholder="e.g. Thunder Valley MX"
-          value={trackNameText}
-          onChange={(e) => setTrackNameText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && saveTrackName()}
-          className="mb-3"
-        />
-        <div className="flex justify-end">
-          <Button onClick={saveTrackName} disabled={trackNameSaving || putSettings.isPending}>
-            {trackNameSaving ? "Saving…" : "Save"}
+
+        {/* Existing tracks */}
+        {tracks.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {tracks.map(track => (
+              <div key={track.id} className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-2.5">
+                <MapPin size={13} className="text-muted-foreground shrink-0" />
+                <span className="flex-1 text-sm font-medium">{track.name}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => deleteTrack(track.id)}
+                  title="Remove track"
+                >
+                  <Trash2 size={13} />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add track form */}
+        <div className="flex gap-2">
+          <Input
+            placeholder="e.g. Thunder Valley MX"
+            value={newTrackName}
+            onChange={e => setNewTrackName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addTrack()}
+            className="flex-1"
+          />
+          <Button onClick={addTrack} disabled={addingTrack || !newTrackName.trim()}>
+            <Plus size={15} className="mr-1" />
+            Add
           </Button>
         </div>
+        {tracks.length === 0 && (
+          <p className="text-xs text-muted-foreground mt-2">No tracks yet — add your first venue above.</p>
+        )}
       </div>
 
       {/* Default Race Classes */}
