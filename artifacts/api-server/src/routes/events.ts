@@ -101,6 +101,7 @@ router.get("/events", async (req, res) => {
     timingTechnology: eventsTable.timingTechnology,
     transponderRentalEnabled: eventsTable.transponderRentalEnabled,
     transponderRentalFee: eventsTable.transponderRentalFee,
+    rfidStickerFee: eventsTable.rfidStickerFee,
     purchaseOptions: eventsTable.purchaseOptions,
     scoringTableId: eventsTable.scoringTableId,
     entryFeeCategoryId: eventsTable.entryFeeCategoryId,
@@ -127,12 +128,13 @@ router.get("/events", async (req, res) => {
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
     transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
+    rfidStickerFee: e.rfidStickerFee ? Number(e.rfidStickerFee) : null,
     createdAt: e.createdAt.toISOString(),
   })));
 });
 
 router.post("/events", async (req, res) => {
-  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, purchaseOptions, scoringTableId, endDate, requireWaiver } = req.body;
+  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver } = req.body;
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
@@ -173,6 +175,7 @@ router.post("/events", async (req, res) => {
     timingTechnology: timingTechnology || "rfid",
     transponderRentalEnabled: transponderRentalEnabled || false,
     transponderRentalFee: transponderRentalFee ? String(transponderRentalFee) : null,
+    rfidStickerFee: rfidStickerFee ? String(rfidStickerFee) : null,
     purchaseOptions: purchaseOptions || [],
     scoringTableId: scoringTableId ?? null,
     entryFeeCategoryId: entryFeeCat?.id ?? null,
@@ -184,6 +187,7 @@ router.post("/events", async (req, res) => {
     ...event,
     entryFee: event.entryFee ? Number(event.entryFee) : null,
     transponderRentalFee: event.transponderRentalFee ? Number(event.transponderRentalFee) : null,
+    rfidStickerFee: event.rfidStickerFee ? Number(event.rfidStickerFee) : null,
     createdAt: event.createdAt.toISOString(),
     clubName: null,
   });
@@ -216,6 +220,7 @@ router.get("/events/:eventId", async (req, res) => {
     timingTechnology: eventsTable.timingTechnology,
     transponderRentalEnabled: eventsTable.transponderRentalEnabled,
     transponderRentalFee: eventsTable.transponderRentalFee,
+    rfidStickerFee: eventsTable.rfidStickerFee,
     purchaseOptions: eventsTable.purchaseOptions,
     scoringTableId: eventsTable.scoringTableId,
     entryFeeCategoryId: eventsTable.entryFeeCategoryId,
@@ -237,6 +242,7 @@ router.get("/events/:eventId", async (req, res) => {
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
     transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
+    rfidStickerFee: e.rfidStickerFee ? Number(e.rfidStickerFee) : null,
     createdAt: e.createdAt.toISOString(),
   });
 });
@@ -268,6 +274,7 @@ router.patch("/events/:eventId", async (req, res) => {
   if (typeof updates.endDate === "string") updates.endDate = updates.endDate.substring(0, 10);
   if (req.body.entryFee !== undefined) updates.entryFee = req.body.entryFee ? String(req.body.entryFee) : null;
   if (req.body.transponderRentalFee !== undefined) updates.transponderRentalFee = req.body.transponderRentalFee ? String(req.body.transponderRentalFee) : null;
+  if (req.body.rfidStickerFee !== undefined) updates.rfidStickerFee = req.body.rfidStickerFee ? String(req.body.rfidStickerFee) : null;
 
   const [event] = await db.update(eventsTable).set(updates as any).where(eq(eventsTable.id, id)).returning();
   if (!event) return res.status(404).json({ error: "Not found" });
@@ -292,7 +299,7 @@ router.patch("/events/:eventId", async (req, res) => {
     );
   }
 
-  return res.json({ ...event, entryFee: event.entryFee ? Number(event.entryFee) : null, createdAt: event.createdAt.toISOString(), clubName: null });
+  return res.json({ ...event, entryFee: event.entryFee ? Number(event.entryFee) : null, rfidStickerFee: event.rfidStickerFee ? Number(event.rfidStickerFee) : null, createdAt: event.createdAt.toISOString(), clubName: null });
 });
 
 async function fireStatsEmails(eventId: number, eventName: string, eventDate: string): Promise<void> {
