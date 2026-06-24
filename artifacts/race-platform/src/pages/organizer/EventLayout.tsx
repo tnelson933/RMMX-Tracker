@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect, useRoute } from "wouter";
+import { Switch, Route, Redirect, useRoute, useLocation } from "wouter";
 import { Link } from "wouter";
 import { Component, type ReactNode } from "react";
 import { useGetEvent } from "@workspace/api-client-react";
@@ -114,15 +114,16 @@ export default function EventLayout() {
 }
 
 function NavLink({ href, children, icon, exact = false }: { href: string, children: React.ReactNode, icon: React.ReactNode, exact?: boolean }) {
-  const [match] = useRoute(exact ? href : `${href}/*`);
-  
+  const [location] = useLocation();
+  const active = exact ? location === href : (location === href || location.startsWith(href + "/"));
+
   return (
-    <Link 
-      href={href} 
-      className={`flex items-center gap-2 px-4 py-3 rounded-t-md font-heading uppercase text-sm font-bold tracking-wider transition-colors whitespace-nowrap ${
-        match 
-          ? "bg-background text-foreground" 
-          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-white"
+    <Link
+      href={href}
+      className={`flex items-center gap-2 px-4 py-2.5 rounded-t font-heading uppercase text-sm font-bold tracking-wider transition-colors whitespace-nowrap border-b-2 ${
+        active
+          ? "bg-background text-foreground border-primary"
+          : "text-sidebar-foreground/60 hover:text-white hover:bg-white/10 border-transparent"
       }`}
     >
       {icon} {children}
