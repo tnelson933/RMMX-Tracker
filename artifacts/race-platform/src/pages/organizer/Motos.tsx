@@ -1781,6 +1781,13 @@ export default function Motos() {
     }
   };
 
+  const handleConflictStartWave = () => {
+    const { pendingMotoId } = conflictDialog;
+    if (pendingMotoId === null) return;
+    setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null });
+    doStartMoto(pendingMotoId);
+  };
+
   const handleConflictConfirm = () => {
     const { existingMoto, pendingMotoId } = conflictDialog;
     if (!existingMoto || pendingMotoId === null) return;
@@ -3767,38 +3774,39 @@ export default function Motos() {
       <Dialog open={conflictDialog.open} onOpenChange={open => !open && setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null })}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-heading uppercase tracking-wider text-destructive">
+            <DialogTitle className="font-heading uppercase tracking-wider">
               {conflictDialog.existingMoto?.type === "practice" ? "Practice Session Running" : "Moto Already Running"}
             </DialogTitle>
             <DialogDescription className="pt-1">
-              You currently have{" "}
-              {conflictDialog.existingMoto?.type === "practice" ? "a practice session" : "a moto"}{" "}
-              <span className="font-semibold text-foreground">"{conflictDialog.existingMoto?.name}"</span> open.
-              {" "}Would you like to end it and start{" "}
+              <span className="font-semibold text-foreground">"{conflictDialog.existingMoto?.name}"</span> is currently in progress.
+              {" "}How would you like to start{" "}
               <span className="font-semibold text-foreground">
                 "{motos?.find(m => m.id === conflictDialog.pendingMotoId)?.name ?? "new moto"}"
               </span>?
             </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Only one session can be active at a time. Ending the current{" "}
-            {conflictDialog.existingMoto?.type === "practice" ? "practice session" : "moto"} will finalize its lap times and crossings.
-          </p>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null })}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={updateMutation.isPending}
-              onClick={handleConflictConfirm}
-              className="font-heading uppercase tracking-wider"
+          <div className="flex flex-col gap-3 py-1">
+            <button
+              onClick={handleConflictStartWave}
+              className="flex flex-col items-start gap-1 rounded-lg border border-primary/40 bg-primary/10 px-4 py-3 text-left hover:bg-primary/20 transition-colors"
             >
-              {updateMutation.isPending
-                ? "Switching..."
-                : conflictDialog.existingMoto?.type === "practice"
-                  ? "End Practice & Start Moto"
-                  : "End Moto & Start New Moto"}
+              <span className="font-heading uppercase tracking-wider text-sm text-primary">Start as New Wave</span>
+              <span className="text-xs text-muted-foreground">Both motos run simultaneously. Use this for desert races and wave starts.</span>
+            </button>
+            <button
+              onClick={handleConflictConfirm}
+              disabled={updateMutation.isPending}
+              className="flex flex-col items-start gap-1 rounded-lg border border-border px-4 py-3 text-left hover:bg-muted/50 transition-colors disabled:opacity-50"
+            >
+              <span className="font-heading uppercase tracking-wider text-sm">
+                {updateMutation.isPending ? "Switching..." : conflictDialog.existingMoto?.type === "practice" ? "End Practice & Start" : "End Current & Start"}
+              </span>
+              <span className="text-xs text-muted-foreground">Finishes the current {conflictDialog.existingMoto?.type === "practice" ? "practice session" : "moto"} and starts the new one.</span>
+            </button>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setConflictDialog({ open: false, existingMoto: null, pendingMotoId: null })}>
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>
