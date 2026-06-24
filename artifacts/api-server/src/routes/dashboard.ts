@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable } from "@workspace/db";
-import { eq, and, count, countDistinct, sql, inArray, desc } from "drizzle-orm";
+import { eq, and, ne, count, countDistinct, sql, inArray, desc } from "drizzle-orm";
 
 const router = Router();
 
@@ -142,10 +142,22 @@ router.get("/events/:eventId/raceday-summary", async (req, res) => {
   const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!events[0]) return res.status(404).json({ error: "Not found" });
 
-  const [regCount] = await db.select({ count: count() }).from(registrationsTable).where(eq(registrationsTable.eventId, eventId));
-  const [checkedInCount] = await db.select({ count: count() }).from(checkinsTable).where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.checkedIn, true)));
+  const [regCount] = await db.select({ count: count() }).from(registrationsTable).where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")));
+  // Count registrations (not checkin rows) whose rider is checked in — so multi-class
+  // riders (1 checkin row, N registration rows) are counted once per class entry.
+  const [checkedInCount] = await db.select({ count: count() })
+    .from(registrationsTable)
+    .innerJoin(checkinsTable, and(
+      eq(checkinsTable.riderId, registrationsTable.riderId),
+      eq(checkinsTable.eventId, registrationsTable.eventId),
+    ))
+    .where(and(
+      eq(registrationsTable.eventId, eventId),
+      ne(registrationsTable.status, "void"),
+      eq(checkinsTable.checkedIn, true),
+    ));
   const [rfidCount] = await db.select({ count: count() }).from(checkinsTable).where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.rfidLinked, true)));
-  const [uniqueRegCount] = await db.select({ count: countDistinct(registrationsTable.riderId) }).from(registrationsTable).where(eq(registrationsTable.eventId, eventId));
+  const [uniqueRegCount] = await db.select({ count: countDistinct(registrationsTable.riderId) }).from(registrationsTable).where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")));
   const [uniqueCheckinCount] = await db.select({ count: countDistinct(checkinsTable.riderId) }).from(checkinsTable).where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.checkedIn, true)));
   const [motosTotal] = await db.select({ count: count() }).from(motosTable).where(eq(motosTable.eventId, eventId));
   const [motosCompleted] = await db.select({ count: count() }).from(motosTable).where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed")));
@@ -161,8 +173,19 @@ router.get("/events/:eventId/raceday-summary", async (req, res) => {
     .groupBy(registrationsTable.raceClass);
 
   const classSummary = await Promise.all(classData.map(async (cls) => {
-    const [checkinCls] = await db.select({ count: count() }).from(checkinsTable)
-      .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.raceClass, cls.raceClass), eq(checkinsTable.checkedIn, true)));
+    // Join registrations → checkins so multi-class riders count once per class.
+    const [checkinCls] = await db.select({ count: count() })
+      .from(registrationsTable)
+      .innerJoin(checkinsTable, and(
+        eq(checkinsTable.riderId, registrationsTable.riderId),
+        eq(checkinsTable.eventId, registrationsTable.eventId),
+      ))
+      .where(and(
+        eq(registrationsTable.eventId, eventId),
+        eq(registrationsTable.raceClass, cls.raceClass),
+        ne(registrationsTable.status, "void"),
+        eq(checkinsTable.checkedIn, true),
+      ));
     return {
       className: cls.raceClass,
       registered: cls.total,
