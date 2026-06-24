@@ -103,6 +103,7 @@ const createEventSchema = z.object({
   entryFee: z.string().optional(),
   transponderRentalEnabled: z.boolean().default(false),
   transponderRentalFee: z.string().optional(),
+  rfidStickerFee: z.string().optional(),
   purchaseOptions: z.array(z.object({
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
@@ -249,6 +250,7 @@ export default function EventsList() {
       entryFee: "",
       transponderRentalEnabled: false,
       transponderRentalFee: "",
+      rfidStickerFee: "",
       purchaseOptions: [],
       amaEventId: "",
     }
@@ -300,6 +302,7 @@ export default function EventsList() {
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
           transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
           transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
+          rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
           purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
           amaEventId: data.amaEventId || undefined,
         },
@@ -773,6 +776,26 @@ export default function EventsList() {
                         </FormItem>
                       )}
                     />
+                  )}
+
+                  {/* RFID sticker fee (RFID + payment only) */}
+                  {stripeReady && watchPaymentEnabled && watchTimingTechnology === "rfid" && (
+                    <div className="space-y-2 pl-0.5">
+                      <FormField
+                        control={form.control}
+                        name="rfidStickerFee"
+                        render={({ field }) => (
+                          <FormItem className="ml-0">
+                            <FormLabel>RFID Sticker Fee ($) <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                            <FormControl>
+                              <Input type="number" min="0" step="0.01" placeholder="Leave blank if free" {...field} />
+                            </FormControl>
+                            <p className="text-xs text-muted-foreground">Charge riders for an RFID sticker at registration or at the gate.</p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                   )}
 
                   {/* Transponder rental (MyLaps + payment only) */}
