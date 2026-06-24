@@ -105,6 +105,7 @@ const updateEventSchema = z.object({
   registrationClose: z.string().optional(),
   transponderRentalEnabled: z.boolean().default(false),
   transponderRentalFee: z.string().optional(),
+  rfidStickerFee: z.string().optional(),
   noDuplicateBibs: z.boolean().default(false),
   requireClubId: z.boolean().default(false),
   requireWaiver: z.boolean().default(false),
@@ -129,7 +130,7 @@ export default function EventDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
-  const isAdmin = user?.role === "super_admin" || user?.role === "club_organizer";
+  const isAdmin = user?.role === "super_admin";
   const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
   const { data: event, isLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
@@ -336,6 +337,7 @@ export default function EventDetail() {
       registrationClose: "",
       transponderRentalEnabled: false,
       transponderRentalFee: "",
+      rfidStickerFee: "",
       noDuplicateBibs: false,
       requireClubId: false,
       requireWaiver: false,
@@ -390,6 +392,7 @@ export default function EventDetail() {
       registrationClose: evt.registrationClose ? toLocalDatetimeString(new Date(evt.registrationClose)) : "",
       transponderRentalEnabled: (evt as any).transponderRentalEnabled ?? false,
       transponderRentalFee: (evt as any).transponderRentalFee != null ? String((evt as any).transponderRentalFee) : "",
+      rfidStickerFee: (evt as any).rfidStickerFee != null ? String((evt as any).rfidStickerFee) : "",
       noDuplicateBibs: (evt as any).noDuplicateBibs ?? false,
       requireClubId: (evt as any).requireClubId ?? false,
       requireWaiver: (evt as any).requireWaiver ?? false,
@@ -449,6 +452,7 @@ export default function EventDetail() {
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
         transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
         transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
+        rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
         purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
         amaEventId: data.amaEventId || undefined,
       } as any
@@ -1112,6 +1116,26 @@ export default function EventDetail() {
                       />
                     </div>
 
+                    {/* RFID sticker fee — only shown for RFID events with payments */}
+                    {stripeReady && watchPaymentEnabled && watchTimingTechnology === "rfid" && (
+                      <div className="space-y-2 pl-0.5">
+                        <FormField
+                          control={form.control}
+                          name="rfidStickerFee"
+                          render={({ field }) => (
+                            <FormItem className="ml-0">
+                              <FormLabel>RFID Sticker Fee ($) <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                              <FormControl>
+                                <Input type="number" min="0" step="0.01" placeholder="Leave blank if free" {...field} />
+                              </FormControl>
+                              <p className="text-xs text-muted-foreground">Charge riders for an RFID sticker at registration or at the gate.</p>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+
                     {/* Transponder rental — only shown for MyLaps events with payments */}
                     {stripeReady && watchPaymentEnabled && watchTimingTechnology === "mylaps" && (
                       <div className="space-y-2 pl-0.5">
@@ -1340,6 +1364,16 @@ export default function EventDetail() {
                         <div className="font-heading font-bold text-xl flex items-center gap-1">
                           <span className="text-primary"><DollarSign size={18} className="inline -mt-0.5" /></span>
                           {(event as any).transponderRentalFee != null ? Number((event as any).transponderRentalFee).toFixed(2) : "—"}
+                          <span className="text-xs font-normal text-muted-foreground ml-1">/ rider</span>
+                        </div>
+                      </div>
+                    )}
+                    {(event as any).rfidStickerFee != null && (
+                      <div>
+                        <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">RFID Sticker Fee</div>
+                        <div className="font-heading font-bold text-xl flex items-center gap-1">
+                          <span className="text-primary"><DollarSign size={18} className="inline -mt-0.5" /></span>
+                          {Number((event as any).rfidStickerFee).toFixed(2)}
                           <span className="text-xs font-normal text-muted-foreground ml-1">/ rider</span>
                         </div>
                       </div>
