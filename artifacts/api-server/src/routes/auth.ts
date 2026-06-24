@@ -21,7 +21,8 @@ router.post("/auth/login", async (req, res) => {
     return res.status(400).json({ error: "Email and password required" });
   }
 
-  const users = await db.select().from(usersTable).where(eq(usersTable.email, email));
+  const normalizedEmail = String(email).toLowerCase().trim();
+  const users = await db.select().from(usersTable).where(eq(usersTable.email, normalizedEmail));
   const user = users[0];
 
   if (!user) {
