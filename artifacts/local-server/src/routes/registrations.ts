@@ -266,18 +266,23 @@ router.get("/public/riders/lookup", (req, res) => {
 });
 
 // ── Public: check if a bib number is already taken for an event ───────────────
+// Optional query param: excludeRiderId — rider to exclude (same rider, multiple classes)
 router.get("/public/events/:eventId/check-bib", (req, res) => {
   const eventId = Number(req.params.eventId);
   const bib = ((req.query.bib as string) || "").trim();
   if (!bib) return res.status(400).json({ error: "bib required" });
+  const excludeRiderId = req.query.excludeRiderId ? Number(req.query.excludeRiderId) : null;
 
   const db = getDb();
-  const existing = db
-    .prepare(
-      `SELECT id FROM registrations
-       WHERE event_id = ? AND bib_number = ? AND status != 'void' LIMIT 1`,
-    )
-    .get(eventId, bib);
+  const existing = excludeRiderId
+    ? db.prepare(
+        `SELECT id FROM registrations
+         WHERE event_id = ? AND bib_number = ? AND status != 'void' AND rider_id != ? LIMIT 1`,
+      ).get(eventId, bib, excludeRiderId)
+    : db.prepare(
+        `SELECT id FROM registrations
+         WHERE event_id = ? AND bib_number = ? AND status != 'void' LIMIT 1`,
+      ).get(eventId, bib);
 
   return res.json({ taken: !!existing });
 });
