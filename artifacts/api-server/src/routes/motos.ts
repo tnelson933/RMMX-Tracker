@@ -275,17 +275,6 @@ router.patch("/motos/:motoId", async (req, res) => {
   if (req.body.status !== undefined) {
     updates.status = req.body.status;
     if (req.body.status === "in_progress") {
-      // Guard: reject if another moto in the same event is already running
-      const [target] = await db.select({ eventId: motosTable.eventId }).from(motosTable).where(eq(motosTable.id, id));
-      if (target) {
-        const [conflict] = await db
-          .select({ id: motosTable.id, name: motosTable.name })
-          .from(motosTable)
-          .where(and(eq(motosTable.eventId, target.eventId), eq(motosTable.status, "in_progress"), ne(motosTable.id, id)));
-        if (conflict) {
-          return res.status(409).json({ error: "conflict", activeMoto: { id: conflict.id, name: conflict.name } });
-        }
-      }
       updates.startedAt = new Date();
     }
     if (req.body.status === "completed") updates.completedAt = new Date();
