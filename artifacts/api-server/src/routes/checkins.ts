@@ -30,6 +30,9 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     raceClass: registrationsTable.raceClass,
     bibNumber: registrationsTable.bibNumber,
     myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
+    transponderRental: registrationsTable.transponderRental,
+    rfidStickerPurchased: registrationsTable.rfidStickerPurchased,
+    paymentStatus: registrationsTable.paymentStatus,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
     email: ridersTable.email,
@@ -67,6 +70,9 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       email: r.email ?? null,
       phone: r.phone ?? null,
       myLapsTransponderNumber: r.myLapsTransponderNumber ?? null,
+      transponderRental: r.transponderRental ?? false,
+      rfidStickerPurchased: r.rfidStickerPurchased ?? false,
+      paymentStatus: r.paymentStatus ?? null,
       checkedIn: c?.checkedIn ?? false,
       checkedInAt: c?.checkedInAt?.toISOString() ?? null,
       rfidNumber: c?.rfidNumber ?? null,
@@ -152,6 +158,27 @@ router.post("/events/:eventId/checkins", async (req, res) => {
     rfidNumber: checkin.rfidNumber,
     rfidLinked: checkin.rfidLinked,
   });
+});
+
+// Delete all checkin records for an event (organizer/super_admin only).
+// Does NOT touch registrations — riders remain registered, just not checked in.
+router.delete("/events/:eventId/checkins", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const deleted = await db.delete(checkinsTable).where(eq(checkinsTable.eventId, eventId)).returning({ id: checkinsTable.id });
+  return res.json({ deleted: deleted.length });
+});
+
+// Delete a single checkin record by ID, un-checking that rider in.
+router.delete("/events/:eventId/checkins/:checkinId", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const checkinId = Number(req.params.checkinId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const [deleted] = await db.delete(checkinsTable)
+    .where(and(eq(checkinsTable.id, checkinId), eq(checkinsTable.eventId, eventId)))
+    .returning({ id: checkinsTable.id });
+  if (!deleted) return res.status(404).json({ error: "Checkin not found" });
+  return res.json({ deleted: 1 });
 });
 
 export default router;
