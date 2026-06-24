@@ -1,11 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams } from "wouter";
 import { useGetEvent, useListCheckins, useGetRaceDaySummary, useCheckinRider, useAssignRfid, useUpdateRegistration } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, CheckCircle, Tag, X, AlertCircle, Clock, RefreshCw } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Search, CheckCircle, Tag, X, AlertCircle, Clock, RefreshCw, CheckCircle2, Banknote, CreditCard, ExternalLink, Loader2 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { useOfflineAwareQuery } from "@/hooks/useOfflineAwareQuery";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
 import { useSyncQueue } from "@/hooks/useSyncQueue";
@@ -24,6 +26,59 @@ function isInvalidRfid(val: string | null | undefined): boolean {
 }
 import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrationsQueryKey, getListRidersQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+
+function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber }: { registrationId: number; eventId: number; onDone: () => void; currentNumber?: string }) {
+  const [value, setValue] = useState(currentNumber ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const submit = async () => {
+    const tag = value.trim();
+    if (!tag) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/${registrationId}/assign-rental-transponder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transponderNumber: tag }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to assign");
+      queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+      toast({ title: "Transponder assigned", description: `#${tag} — auto-removes 24 h after the event` });
+      onDone();
+    } catch (e: any) {
+      toast({ title: "Failed to assign transponder", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 flex items-center gap-2 border-t pt-3">
+      <Tag size={16} className="text-emerald-600 flex-shrink-0" />
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") onDone(); }}
+        placeholder="Enter transponder number…"
+        className="h-9 text-sm font-mono flex-1"
+        disabled={saving}
+      />
+      <Button size="sm" className="h-9 font-heading uppercase px-3 bg-emerald-600 hover:bg-emerald-700" onClick={submit} disabled={!value.trim() || saving}>
+        Assign
+      </Button>
+      <Button size="icon" variant="ghost" className="h-9 w-9 text-muted-foreground" onClick={onDone}>
+        <X size={16} />
+      </Button>
+    </div>
+  );
+}
 
 function RfidInput({ riderId, eventId, onDone, isMylaps, currentTag }: { riderId: number; eventId: number; onDone: () => void; isMylaps?: boolean; currentTag?: string }) {
   const [value, setValue] = useState(currentTag ?? "");
@@ -149,10 +204,33 @@ export default function Checkin() {
   const [bibEdits, setBibEdits] = useState<Map<number, string>>(new Map());
   const [syncingFromCloud, setSyncingFromCloud] = useState(false);
 
-  // Close any open RFID panel when the search changes so it can't steal focus
+  // Transponder rental modal state
+  type RentalStep = "method" | "card" | "done";
+  interface RentalTarget { registrationId: number; riderName: string; }
+  interface RentalCard { checkoutUrl: string; sessionId: string; regId: number; rentalFee: number; }
+  const [rentalTarget, setRentalTarget] = useState<RentalTarget | null>(null);
+  const [rentalStep, setRentalStep] = useState<RentalStep>("method");
+  const [rentalCard, setRentalCard] = useState<RentalCard | null>(null);
+  const [rentalSubmitting, setRentalSubmitting] = useState(false);
+  const [rentalError, setRentalError] = useState<string | null>(null);
+  const [rentalPolling, setRentalPolling] = useState(false);
+  const [rentalAssignInputId, setRentalAssignInputId] = useState<number | null>(null);
+
+  // RFID sticker modal state
+  type StickerStep = "method" | "card";
+  interface StickerTarget { registrationId: number; riderName: string; }
+  interface StickerCard { checkoutUrl: string; sessionId: string; regId: number; stickerFee: number; }
+  const [stickerTarget, setStickerTarget] = useState<StickerTarget | null>(null);
+  const [stickerStep, setStickerStep] = useState<StickerStep>("method");
+  const [stickerCard, setStickerCard] = useState<StickerCard | null>(null);
+  const [stickerSubmitting, setStickerSubmitting] = useState(false);
+  const [stickerError, setStickerError] = useState<string | null>(null);
+
+  // Close any open RFID/rental panels when the search changes
   const handleSearchChange = (value: string) => {
     setSearch(value);
     setRfidInputOpenId(null);
+    setRentalAssignInputId(null);
   };
 
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
@@ -165,6 +243,10 @@ export default function Checkin() {
   const { data: summary } = useGetRaceDaySummary(eventId, {
     query: { enabled: !!eventId, refetchInterval: 10000 } as any
   });
+
+  const transponderRentalEnabled = !!(event as any)?.transponderRentalEnabled;
+  const transponderRentalFee: number | null = (event as any)?.transponderRentalFee ?? null;
+  const rfidStickerFee: number | null = (event as any)?.rfidStickerFee ?? null;
 
   const { isOffline } = useOfflineStatus();
   const { pendingRiderIds, pendingCount, isSyncing, syncError, queueCheckin } = useSyncQueue(eventId);
@@ -222,6 +304,170 @@ export default function Checkin() {
       }
     });
   };
+
+  // RFID sticker modal close handler
+  const closeStickerModal = useCallback(() => {
+    setStickerTarget(null);
+    setStickerStep("method");
+    setStickerCard(null);
+    setStickerSubmitting(false);
+    setStickerError(null);
+  }, []);
+
+  // RFID sticker cash handler
+  const handleStickerCash = async () => {
+    if (!stickerTarget) return;
+    setStickerSubmitting(true);
+    setStickerError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/${stickerTarget.registrationId}/add-rfid-sticker`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentMethod: "cash" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to add sticker");
+      queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+      toast({ title: "RFID sticker added", description: `$${Number(json.stickerFee).toFixed(2)} collected` });
+      closeStickerModal();
+    } catch (e: any) {
+      setStickerError(e.message);
+    } finally {
+      setStickerSubmitting(false);
+    }
+  };
+
+  // RFID sticker card handler — create Stripe session
+  const handleStickerCard = async () => {
+    if (!stickerTarget) return;
+    setStickerSubmitting(true);
+    setStickerError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/${stickerTarget.registrationId}/add-rfid-sticker`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentMethod: "card" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to create payment");
+      setStickerCard({ checkoutUrl: json.checkoutUrl, sessionId: json.sessionId, regId: stickerTarget.registrationId, stickerFee: json.stickerFee });
+      setStickerStep("card");
+    } catch (e: any) {
+      setStickerError(e.message);
+    } finally {
+      setStickerSubmitting(false);
+    }
+  };
+
+  // Rental modal close handler
+  const closeRentalModal = useCallback(() => {
+    setRentalTarget(null);
+    setRentalStep("method");
+    setRentalCard(null);
+    setRentalSubmitting(false);
+    setRentalError(null);
+    setRentalPolling(false);
+  }, []);
+
+  // Cash rental handler
+  const handleRentalCash = async () => {
+    if (!rentalTarget) return;
+    setRentalSubmitting(true);
+    setRentalError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/${rentalTarget.registrationId}/add-transponder-rental`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentMethod: "cash" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to add rental");
+      queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+      toast({ title: "Transponder rental added", description: `$${Number(json.rentalFee).toFixed(2)} collected` });
+      closeRentalModal();
+    } catch (e: any) {
+      setRentalError(e.message);
+    } finally {
+      setRentalSubmitting(false);
+    }
+  };
+
+  // Card rental handler — create Stripe session
+  const handleRentalCard = async () => {
+    if (!rentalTarget) return;
+    setRentalSubmitting(true);
+    setRentalError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/${rentalTarget.registrationId}/add-transponder-rental`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentMethod: "card" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to create payment");
+      setRentalCard({ checkoutUrl: json.checkoutUrl, sessionId: json.sessionId, regId: rentalTarget.registrationId, rentalFee: json.rentalFee });
+      setRentalStep("card");
+    } catch (e: any) {
+      setRentalError(e.message);
+    } finally {
+      setRentalSubmitting(false);
+    }
+  };
+
+  // Poll Stripe session until paid (RFID sticker)
+  useEffect(() => {
+    if (stickerStep !== "card" || !stickerCard) return;
+    let stopped = false;
+    const poll = async () => {
+      while (!stopped) {
+        await new Promise(r => setTimeout(r, 3000));
+        if (stopped) break;
+        try {
+          const res = await fetch(`/api/public/registrations/${stickerCard.regId}/verify-rfid-sticker`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: stickerCard.sessionId }),
+          });
+          if (res.ok) {
+            stopped = true;
+            queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+            toast({ title: "RFID sticker paid", description: `$${Number(stickerCard.stickerFee).toFixed(2)} collected via card` });
+            closeStickerModal();
+          }
+        } catch { /* keep polling */ }
+      }
+    };
+    poll();
+    return () => { stopped = true; };
+  }, [stickerStep, stickerCard]);
+
+  // Poll Stripe session until paid
+  useEffect(() => {
+    if (rentalStep !== "card" || !rentalCard) return;
+    let stopped = false;
+    setRentalPolling(true);
+    const poll = async () => {
+      while (!stopped) {
+        await new Promise(r => setTimeout(r, 3000));
+        if (stopped) break;
+        try {
+          const res = await fetch(`/api/public/registrations/${rentalCard.regId}/verify-transponder-rental`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: rentalCard.sessionId }),
+          });
+          if (res.ok) {
+            stopped = true;
+            queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+            toast({ title: "Transponder rental paid", description: `$${Number(rentalCard.rentalFee).toFixed(2)} collected via card` });
+            closeRentalModal();
+          }
+        } catch { /* keep polling */ }
+      }
+    };
+    poll();
+    return () => { stopped = true; setRentalPolling(false); };
+  }, [rentalStep, rentalCard]);
 
   // Mirror the same suggestion logic as Registrations page
   const bibSuggestions = (() => {
@@ -311,6 +557,7 @@ export default function Checkin() {
   if (eventLoading || checkinsOfflineLoading) return <div className="p-8">Loading...</div>;
 
   return (
+    <>
     <div className="bg-gray-50 min-h-full">
       <div className="bg-sidebar text-sidebar-foreground px-4 py-4 md:p-6 flex flex-col gap-3">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
@@ -505,6 +752,40 @@ export default function Checkin() {
                       </div>
                       <div className="flex items-center gap-2 text-xs md:text-sm font-medium mb-3 flex-wrap">
                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{checkin.raceClass}</span>
+                        {/* Transponder rental status */}
+                        {transponderRentalEnabled && transponderRentalFee != null && (
+                          (checkin as any).transponderRental ? (
+                            <button
+                              onClick={() => setRentalAssignInputId(rentalAssignInputId === checkin.registrationId ? null : checkin.registrationId!)}
+                              className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold hover:bg-emerald-100 transition-colors"
+                              title="Click to assign transponder number"
+                            >
+                              <CheckCircle2 size={12} /> Transponder Rental
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setRentalTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName })}
+                              className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded hover:bg-red-100 transition-colors"
+                            >
+                              + Add Transponder Rental
+                            </button>
+                          )
+                        )}
+                        {/* RFID sticker status */}
+                        {!isMylaps && rfidStickerFee != null && (
+                          (checkin as any).rfidStickerPurchased ? (
+                            <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold">
+                              <CheckCircle2 size={12} /> RFID Tag Purchased
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setStickerTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName })}
+                              className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded hover:bg-red-100 transition-colors"
+                            >
+                              + Purchase RFID
+                            </button>
+                          )
+                        )}
                         {isTagInvalid ? (
                           <button
                             onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
@@ -543,6 +824,15 @@ export default function Checkin() {
                           onDone={() => setRfidInputOpenId(null)}
                           isMylaps={isMylaps}
                           currentTag={checkin.rfidNumber ?? undefined}
+                        />
+                      )}
+                      {/* Inline rental transponder assignment */}
+                      {rentalAssignInputId === checkin.registrationId && (
+                        <RentalTransponderInput
+                          registrationId={checkin.registrationId!}
+                          eventId={eventId}
+                          onDone={() => setRentalAssignInputId(null)}
+                          currentNumber={(checkin as any).myLapsTransponderNumber ?? undefined}
                         />
                       )}
                     </div>
@@ -593,5 +883,154 @@ export default function Checkin() {
           </div>
         </div>
     </div>
+
+    {/* ── RFID Sticker Payment Modal ── */}
+    <Dialog open={!!stickerTarget} onOpenChange={open => { if (!open) closeStickerModal(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-heading uppercase tracking-wide">RFID Sticker Purchase</DialogTitle>
+        </DialogHeader>
+
+        {stickerStep === "method" && (
+          <div className="flex flex-col gap-4">
+            <div className="text-center">
+              <p className="text-muted-foreground text-sm">{stickerTarget?.riderName}</p>
+              <p className="text-3xl font-heading font-bold mt-1">
+                ${Number(rfidStickerFee ?? 0).toFixed(2)}
+              </p>
+            </div>
+
+            {stickerError && (
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg p-3">
+                <AlertCircle size={16} className="flex-shrink-0" />
+                {stickerError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                className="h-16 flex flex-col gap-1"
+                onClick={handleStickerCash}
+                disabled={stickerSubmitting}
+              >
+                {stickerSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Banknote size={20} />}
+                <span className="text-xs font-heading uppercase tracking-wide">Collect Cash</span>
+              </Button>
+              <Button
+                className="h-16 flex flex-col gap-1"
+                onClick={handleStickerCard}
+                disabled={stickerSubmitting}
+              >
+                {stickerSubmitting ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}
+                <span className="text-xs font-heading uppercase tracking-wide">Pay with Card</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {stickerStep === "card" && stickerCard && (
+          <div className="flex flex-col items-center gap-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Scan the QR code or tap the link to complete payment of&nbsp;
+              <strong>${Number(stickerCard.stickerFee).toFixed(2)}</strong>.
+            </p>
+            <div className="p-3 bg-white rounded-xl border shadow-sm">
+              <QRCodeSVG value={stickerCard.checkoutUrl} size={180} />
+            </div>
+            <a
+              href={stickerCard.checkoutUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 text-sm text-primary underline underline-offset-2"
+            >
+              <ExternalLink size={14} /> Open Stripe Checkout
+            </a>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              Waiting for payment…
+            </div>
+            <Button variant="ghost" size="sm" onClick={closeStickerModal} className="text-xs">
+              Cancel
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+
+    {/* ── Transponder Rental Payment Modal ── */}
+    <Dialog open={!!rentalTarget} onOpenChange={open => { if (!open) closeRentalModal(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-heading uppercase tracking-wide">Transponder Rental</DialogTitle>
+        </DialogHeader>
+
+        {rentalStep === "method" && (
+          <div className="flex flex-col gap-4">
+            <div className="text-center">
+              <p className="text-muted-foreground text-sm">{rentalTarget?.riderName}</p>
+              <p className="text-3xl font-heading font-bold mt-1">
+                ${Number(transponderRentalFee ?? 0).toFixed(2)}
+              </p>
+            </div>
+
+            {rentalError && (
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg p-3">
+                <AlertCircle size={16} className="flex-shrink-0" />
+                {rentalError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                className="h-16 flex flex-col gap-1"
+                onClick={handleRentalCash}
+                disabled={rentalSubmitting}
+              >
+                {rentalSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Banknote size={20} />}
+                <span className="text-xs font-heading uppercase tracking-wide">Collect Cash</span>
+              </Button>
+              <Button
+                className="h-16 flex flex-col gap-1"
+                onClick={handleRentalCard}
+                disabled={rentalSubmitting}
+              >
+                {rentalSubmitting ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}
+                <span className="text-xs font-heading uppercase tracking-wide">Pay with Card</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {rentalStep === "card" && rentalCard && (
+          <div className="flex flex-col items-center gap-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Scan the QR code or tap the link to complete payment of&nbsp;
+              <strong>${Number(rentalCard.rentalFee).toFixed(2)}</strong>.
+            </p>
+            <div className="p-3 bg-white rounded-xl border shadow-sm">
+              <QRCodeSVG value={rentalCard.checkoutUrl} size={180} />
+            </div>
+            <a
+              href={rentalCard.checkoutUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 text-sm text-primary underline underline-offset-2"
+            >
+              <ExternalLink size={14} /> Open Stripe Checkout
+            </a>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              Waiting for payment…
+            </div>
+            <Button variant="ghost" size="sm" onClick={closeRentalModal} className="text-xs">
+              Cancel
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
