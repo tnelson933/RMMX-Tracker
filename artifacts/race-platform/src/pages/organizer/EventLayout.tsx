@@ -2,7 +2,7 @@ import { Switch, Route, Redirect, useRoute } from "wouter";
 import { Link } from "wouter";
 import { Component, type ReactNode } from "react";
 import { useGetEvent } from "@workspace/api-client-react";
-import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, CalendarDays, AlertTriangle } from "lucide-react";
+import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, CalendarDays, AlertTriangle, Radio } from "lucide-react";
 
 class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -46,6 +46,7 @@ import EventSchedule from "./EventSchedule";
 import Motos from "./Motos";
 import EnterResults from "./EnterResults";
 import Report from "./Report";
+import TransponderRentals from "./TransponderRentals";
 
 function PracticeRedirect() {
   const [, params] = useRoute("/events/:eventId/practice");
@@ -87,6 +88,9 @@ export default function EventLayout() {
           <NavLink href={`${basePath}/motos`} icon={<Flag size={16} />}>Race Day Management</NavLink>
           <NavLink href={`${basePath}/results`} icon={<Activity size={16} />}>Enter Results</NavLink>
           <NavLink href={`${basePath}/report`} icon={<FileText size={16} />}>Report</NavLink>
+          {(event as any).transponderRentalEnabled && (
+            <NavLink href={`${basePath}/transponder-rentals`} icon={<Radio size={16} />}>Transponder Rentals</NavLink>
+          )}
         </div>
       </div>
       
@@ -101,6 +105,7 @@ export default function EventLayout() {
             <Route path="/events/:eventId/motos" component={Motos} />
             <Route path="/events/:eventId/results" component={EnterResults} />
             <Route path="/events/:eventId/report" component={Report} />
+            <Route path="/events/:eventId/transponder-rentals" component={TransponderRentals} />
           </Switch>
         </PageErrorBoundary>
       </div>
