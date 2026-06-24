@@ -2,7 +2,7 @@ export default function RiderAppLanding() {
   const deployedHost =
     typeof window !== "undefined" ? window.location.host : "";
 
-  const expsUrl = `exps://${deployedHost}/rider-app/`;
+  const appUrl = `https://${deployedHost}/rider-app/`;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -19,57 +19,24 @@ export default function RiderAppLanding() {
           </div>
         </div>
 
-        <div className="grid gap-4">
-          <div className="border rounded-xl p-6 bg-card text-left space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm">1</div>
-              <h2 className="font-semibold text-lg">Download Expo Go</h2>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Expo Go is a free app that lets you preview mobile apps.
-            </p>
-            <div className="flex gap-3">
-              <a
-                href="https://apps.apple.com/app/id982107779"
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 text-center text-sm border rounded-lg py-2 px-3 hover:bg-muted transition-colors font-medium"
-              >
-                📱 App Store
-              </a>
-              <a
-                href="https://play.google.com/store/apps/details?id=host.exp.exponent"
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 text-center text-sm border rounded-lg py-2 px-3 hover:bg-muted transition-colors font-medium"
-              >
-                🤖 Google Play
-              </a>
-            </div>
-          </div>
-
-          <div className="border rounded-xl p-6 bg-card text-left space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm">2</div>
-              <h2 className="font-semibold text-lg">Open in Expo Go</h2>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Tap the button below on your phone to open the app directly in Expo Go.
-            </p>
-            <a
-              href={expsUrl}
-              className="block w-full text-center bg-primary text-primary-foreground rounded-lg py-3 font-semibold hover:bg-primary/90 transition-colors"
-            >
-              Open RM Tracker →
-            </a>
-          </div>
+        <div className="border rounded-xl p-6 bg-card text-left space-y-4">
+          <h2 className="font-semibold text-lg">Open on your phone</h2>
+          <p className="text-sm text-muted-foreground">
+            Open the link below in your phone's browser — no app download required.
+          </p>
+          <a
+            href={appUrl}
+            className="block w-full text-center bg-primary text-primary-foreground rounded-lg py-3 font-semibold hover:bg-primary/90 transition-colors"
+          >
+            Open RM Tracker →
+          </a>
+          <p className="text-xs text-muted-foreground text-center break-all">
+            {appUrl}
+          </p>
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Already have the app?{" "}
-          <a href={expsUrl} className="underline underline-offset-2 hover:text-foreground">
-            Tap here to open it
-          </a>
+          Works in Safari, Chrome, and other mobile browsers.
         </p>
       </div>
     </div>
