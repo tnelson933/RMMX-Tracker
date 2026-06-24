@@ -81,6 +81,7 @@ const onSiteRegSchema = z.object({
   clubIdNumber: z.string().optional(),
   bikeBrand: z.string().optional(),
   rentTransponder: z.boolean().default(false),
+  purchaseRfidSticker: z.boolean().default(false),
   myLapsTransponderNumber: z.string().optional(),
   selectedPurchaseOptions: z.array(z.string()).default([]),
   paymentMethod: z.enum(["cash", "waived", "other"]).default("cash"),
@@ -169,7 +170,7 @@ export default function Registrations() {
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
       streetAddress: "", city: "", homeState: "", zip: "",
       raceClass: "", bibNumber: "", clubIdNumber: "", bikeBrand: "",
-      rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
+      rentTransponder: false, purchaseRfidSticker: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
       paymentMethod: "cash" as const, amountPaid: "",
     },
   });
@@ -268,6 +269,7 @@ export default function Registrations() {
   const isMyLaps = (event as any)?.timingTechnology === "mylaps";
   const transponderRentalEnabled = !!(event as any)?.transponderRentalEnabled;
   const transponderRentalFee: number | null = (event as any)?.transponderRentalFee ?? null;
+  const rfidStickerFee: number | null = !isMyLaps ? ((event as any)?.rfidStickerFee ?? null) : null;
   const eventPurchaseOptions = ((event as any)?.purchaseOptions ?? []) as Array<{ id: string; name: string; amount: number }>;
 
   useEffect(() => {
@@ -392,11 +394,14 @@ export default function Registrations() {
 
   const suggestions = computeSuggestions(registrations);
 
-  const bibCount = new Map<string, number>();
+  // Track unique rider IDs per bib — only flag duplicate if 2+ DIFFERENT riders share a bib
+  const bibRiders = new Map<string, Set<number>>();
   for (const reg of registrations ?? []) {
     const bib = reg.bibNumber || suggestions.get(reg.id) || "";
     if (!bib) continue;
-    bibCount.set(bib, (bibCount.get(bib) ?? 0) + 1);
+    const riders = bibRiders.get(bib) ?? new Set<number>();
+    riders.add(reg.riderId);
+    bibRiders.set(bib, riders);
   }
 
   const voidedCount = (registrations ?? []).filter(r => r.status === 'void').length;
@@ -455,6 +460,7 @@ export default function Registrations() {
         clubIdNumber: data.clubIdNumber || undefined,
         bikeBrand: data.bikeBrand || undefined,
         rentTransponder: data.rentTransponder || undefined,
+        wantsRfidSticker: data.purchaseRfidSticker || undefined,
         myLapsTransponderNumber: data.myLapsTransponderNumber || undefined,
         selectedPurchaseOptions: eventPurchaseOptions.filter(o => data.selectedPurchaseOptions.includes(o.id)),
       };
@@ -487,10 +493,11 @@ export default function Registrations() {
       // Cloud: if event has an entry fee, prompt for payment; otherwise show basic success
       if (eventEntryFee && eventEntryFee > 0) {
         const rentalTotal = (data.rentTransponder && transponderRentalFee) ? transponderRentalFee : 0;
+        const stickerTotal = (data.purchaseRfidSticker && rfidStickerFee) ? rfidStickerFee : 0;
         const purchasesTotal = eventPurchaseOptions
           .filter(o => data.selectedPurchaseOptions.includes(o.id))
           .reduce((sum, o) => sum + Number(o.amount), 0);
-        setCashAmount((eventEntryFee + rentalTotal + purchasesTotal).toFixed(2));
+        setCashAmount((eventEntryFee + rentalTotal + stickerTotal + purchasesTotal).toFixed(2));
         setStep("pay-prompt");
       } else {
         setStep("reg-done");
@@ -745,6 +752,33 @@ export default function Registrations() {
                     )} />
                   </>
                 )}
+              </div>
+            )}
+
+            {/* ── RFID Sticker ── */}
+            {!isMyLaps && rfidStickerFee != null && (
+              <div className="space-y-2">
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">RFID Sticker</h3>
+                <FormField control={form.control} name="purchaseRfidSticker" render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                      <FormControl>
+                        <Checkbox
+                          id="purchase-rfid-sticker-onsite"
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          className="mt-0.5"
+                        />
+                      </FormControl>
+                      <div className="space-y-0.5 leading-none">
+                        <label htmlFor="purchase-rfid-sticker-onsite" className="text-sm font-semibold cursor-pointer">
+                          Purchase RFID sticker — <span className="text-primary">${Number(rfidStickerFee).toFixed(2)}</span>
+                        </label>
+                        <p className="text-xs text-muted-foreground">Required for RFID timing. Rider doesn't have one yet.</p>
+                      </div>
+                    </div>
+                  </FormItem>
+                )} />
               </div>
             )}
 
@@ -1574,7 +1608,7 @@ export default function Registrations() {
                 sortedRegs.map(reg => {
                   const suggested = suggestions.get(reg.id);
                   const effectiveBib = reg.bibNumber || suggested || "";
-                  const isDuplicate = effectiveBib ? (bibCount.get(effectiveBib) ?? 0) > 1 : false;
+                  const isDuplicate = effectiveBib ? (bibRiders.get(effectiveBib)?.size ?? 0) > 1 : false;
                   const isSuggested = !reg.bibNumber && !!suggested;
                   const isEditing = editingBibId === reg.id;
                   const transponderVal = (reg as any).myLapsTransponderNumber as string | null;
