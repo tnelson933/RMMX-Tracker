@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practiceCrossingsTable, lapCrossingsTable, raceResultsTable, motosTable } from "@workspace/db";
-import { eq, and, inArray, isNull, asc } from "drizzle-orm";
+import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practiceCrossingsTable, lapCrossingsTable, raceResultsTable, motosTable, registrationsTable } from "@workspace/db";
+import { eq, and, inArray, isNull, asc, or, gt, sql } from "drizzle-orm";
 import { formatLapTime } from "./timing";
 
 const router = Router();
@@ -23,47 +23,35 @@ router.get("/rfid", async (req, res) => {
     const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, numEventId));
     if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   }
+  // Filter: exclude assignments whose rental expiry has passed
+  const notExpired = or(isNull(rfidAssignmentsTable.expiresAt), gt(rfidAssignmentsTable.expiresAt, sql`NOW()`));
+  const selectFields = {
+    id: rfidAssignmentsTable.id,
+    riderId: rfidAssignmentsTable.riderId,
+    rfidNumber: rfidAssignmentsTable.rfidNumber,
+    eventId: rfidAssignmentsTable.eventId,
+    assignedAt: rfidAssignmentsTable.assignedAt,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+  };
   let assignments;
   if (numEventId) {
-    assignments = await db.select({
-      id: rfidAssignmentsTable.id,
-      riderId: rfidAssignmentsTable.riderId,
-      rfidNumber: rfidAssignmentsTable.rfidNumber,
-      eventId: rfidAssignmentsTable.eventId,
-      assignedAt: rfidAssignmentsTable.assignedAt,
-      firstName: ridersTable.firstName,
-      lastName: ridersTable.lastName,
-    }).from(rfidAssignmentsTable)
+    assignments = await db.select(selectFields).from(rfidAssignmentsTable)
       .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
-      .where(eq(rfidAssignmentsTable.eventId, numEventId));
+      .where(and(eq(rfidAssignmentsTable.eventId, numEventId), notExpired));
   } else if (staffCId !== null) {
     // Staff with no eventId filter — scope to their club's events only
     const clubEvents = await db.select({ id: eventsTable.id }).from(eventsTable).where(eq(eventsTable.clubId, staffCId));
     const clubEventIds = clubEvents.map(e => e.id);
     assignments = clubEventIds.length > 0
-      ? await db.select({
-          id: rfidAssignmentsTable.id,
-          riderId: rfidAssignmentsTable.riderId,
-          rfidNumber: rfidAssignmentsTable.rfidNumber,
-          eventId: rfidAssignmentsTable.eventId,
-          assignedAt: rfidAssignmentsTable.assignedAt,
-          firstName: ridersTable.firstName,
-          lastName: ridersTable.lastName,
-        }).from(rfidAssignmentsTable)
+      ? await db.select(selectFields).from(rfidAssignmentsTable)
           .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
-          .where(inArray(rfidAssignmentsTable.eventId, clubEventIds))
+          .where(and(inArray(rfidAssignmentsTable.eventId, clubEventIds), notExpired))
       : [];
   } else {
-    assignments = await db.select({
-      id: rfidAssignmentsTable.id,
-      riderId: rfidAssignmentsTable.riderId,
-      rfidNumber: rfidAssignmentsTable.rfidNumber,
-      eventId: rfidAssignmentsTable.eventId,
-      assignedAt: rfidAssignmentsTable.assignedAt,
-      firstName: ridersTable.firstName,
-      lastName: ridersTable.lastName,
-    }).from(rfidAssignmentsTable)
-      .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id));
+    assignments = await db.select(selectFields).from(rfidAssignmentsTable)
+      .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
+      .where(notExpired);
   }
 
   return res.json(assignments.map(a => ({
@@ -136,6 +124,15 @@ router.post("/rfid", async (req, res) => {
       .where(and(
         eq(checkinsTable.eventId, numEventId),
         eq(checkinsTable.riderId, numRiderId),
+      ));
+
+    // Sync transponder number to ALL of this rider's registration rows for the event
+    // so multi-class riders don't end up with stale/missing numbers on some classes.
+    await db.update(registrationsTable)
+      .set({ myLapsTransponderNumber: rfidNumber })
+      .where(and(
+        eq(registrationsTable.eventId, numEventId),
+        eq(registrationsTable.riderId, numRiderId),
       ));
   }
 
