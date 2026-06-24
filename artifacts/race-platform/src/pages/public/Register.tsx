@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck } from "lucide-react";
@@ -37,7 +36,7 @@ const registerSchema = z.object({
   city: z.string().optional(),
   homeState: z.string().optional(),
   zip: z.string().optional(),
-  raceClass: z.string().min(1, "Race class is required"),
+  selectedClasses: z.array(z.string()).min(1, "Select at least one class"),
   bibNumber: z.string().optional(),
   amaNumber: z.string().optional(),
   clubIdNumber: z.string().optional(),
@@ -47,6 +46,7 @@ const registerSchema = z.object({
   sponsors: z.string().optional(),
   statsEmailOptIn: z.boolean().default(false),
   rentTransponder: z.boolean().default(false),
+  purchaseRfidSticker: z.boolean().default(false),
   myLapsTransponderNumber: z.string().optional(),
   selectedPurchaseOptions: z.array(z.string()).default([]),
 });
@@ -76,6 +76,7 @@ interface EventInfo {
   timingTechnology: string;
   transponderRentalEnabled: boolean;
   transponderRentalFee: number | null;
+  rfidStickerFee: number | null;
   noDuplicateBibs: boolean;
   purchaseOptions?: Array<{ id: string; name: string; amount: number }>;
 }
@@ -83,7 +84,7 @@ interface EventInfo {
 interface SuccessData {
   registrationId: number;
   riderName: string;
-  raceClass: string;
+  raceClasses: string[];
   eventName: string;
   amountPaid?: number | null;
 }
@@ -93,7 +94,7 @@ interface PendingPayment {
   registrationId: number;
   sessionId: string | null;
   riderName: string;
-  raceClass: string;
+  raceClasses: string[];
   eventName: string;
   entryFee: number;
 }
@@ -206,7 +207,7 @@ export default function Register() {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
       streetAddress: "", city: "", homeState: "", zip: "",
-      raceClass: "", bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "", bikeModel: "", bikeYear: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
+      selectedClasses: [], bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "", bikeModel: "", bikeYear: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, purchaseRfidSticker: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
 
@@ -218,6 +219,7 @@ export default function Register() {
         ...json,
         entryFee: json.entryFee != null ? Number(json.entryFee) : null,
         transponderRentalFee: json.transponderRentalFee != null ? Number(json.transponderRentalFee) : null,
+        rfidStickerFee: json.rfidStickerFee != null ? Number(json.rfidStickerFee) : null,
         purchaseOptions: (json.purchaseOptions ?? []).map((o: any) => ({ ...o, amount: Number(o.amount) })),
       }))
       .catch(() => setNotFound(true))
@@ -227,19 +229,26 @@ export default function Register() {
   const watchedBib = form.watch("bibNumber");
   const watchedPurchaseOptions = form.watch("selectedPurchaseOptions");
   const watchedRentTransponder = form.watch("rentTransponder");
+  const watchedPurchaseRfidSticker = form.watch("purchaseRfidSticker");
+  const watchedSelectedClasses = form.watch("selectedClasses");
+  const numSelectedClasses = (watchedSelectedClasses ?? []).length;
   const selectedPurchasesTotal = (event?.purchaseOptions ?? [])
     .filter(o => (watchedPurchaseOptions ?? []).includes(o.id))
     .reduce((sum, o) => sum + Number(o.amount), 0);
   const rentalTotal = (watchedRentTransponder && event?.transponderRentalEnabled && event?.transponderRentalFee != null)
     ? Number(event.transponderRentalFee)
     : 0;
+  const rfidStickerTotal = (watchedPurchaseRfidSticker && event?.timingTechnology === "rfid" && event?.rfidStickerFee != null)
+    ? Number(event.rfidStickerFee)
+    : 0;
+  const totalEntryFees = (event?.entryFee ?? 0) * Math.max(1, numSelectedClasses);
   const compDiscountDollars = appliedComp && event?.entryFee
     ? (appliedComp.discountType === "percentage"
-      ? event.entryFee * appliedComp.amount / 100
+      ? totalEntryFees * appliedComp.amount / 100
       : appliedComp.amount)
     : 0;
   const totalDue = event?.paymentEnabled && event?.entryFee
-    ? Math.max(0, event.entryFee + selectedPurchasesTotal + rentalTotal - compDiscountDollars)
+    ? Math.max(0, (event.entryFee * Math.max(1, numSelectedClasses)) + selectedPurchasesTotal + rentalTotal + rfidStickerTotal - compDiscountDollars)
     : 0;
 
   useEffect(() => {
@@ -293,7 +302,7 @@ export default function Register() {
               registrationId: Number(regId),
               sessionId,
               riderName: "",
-              raceClass: "",
+              raceClasses: [],
               eventName: "",
               entryFee: 0,
             });
@@ -407,11 +416,13 @@ export default function Register() {
     setSubmitError(null);
     setPaymentCancelled(false);
     try {
+      const { selectedClasses, ...rest } = data;
       const res = await fetch(`/api/public/events/${eventId}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...data,
+          ...rest,
+          raceClasses: selectedClasses,
           selectedPurchaseOptions: (event?.purchaseOptions ?? []).filter(o => data.selectedPurchaseOptions.includes(o.id)),
           compCode: appliedComp?.code ?? null,
           waiverAcknowledgedAt: waiverAccepted ? waiverTimestamp : null,
@@ -427,7 +438,7 @@ export default function Register() {
           registrationId: json.registrationId,
           sessionId: json.sessionId ?? null,
           riderName: json.riderName,
-          raceClass: json.raceClass,
+          raceClasses: json.raceClasses ?? (json.raceClass ? [json.raceClass] : []),
           eventName: json.eventName,
           entryFee: Number(json.entryFee),
         });
@@ -484,8 +495,12 @@ export default function Register() {
                 <span className="font-heading font-bold">{success.riderName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Class</span>
-                <span className="font-heading font-bold text-primary">{success.raceClass}</span>
+                <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
+                  {(success.raceClasses?.length ?? 1) > 1 ? "Classes" : "Class"}
+                </span>
+                <span className="font-heading font-bold text-primary text-right">
+                  {(success.raceClasses ?? []).join(", ")}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Event</span>
@@ -532,10 +547,14 @@ export default function Register() {
                   <span className="font-heading font-bold">{pendingPayment.riderName}</span>
                 </div>
               )}
-              {pendingPayment.raceClass && (
+              {(pendingPayment.raceClasses?.length ?? 0) > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Class</span>
-                  <span className="font-heading font-bold text-primary">{pendingPayment.raceClass}</span>
+                  <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">
+                    {(pendingPayment.raceClasses?.length ?? 1) > 1 ? "Classes" : "Class"}
+                  </span>
+                  <span className="font-heading font-bold text-primary text-right">
+                    {(pendingPayment.raceClasses ?? []).join(", ")}
+                  </span>
                 </div>
               )}
               {pendingPayment.eventName && (
@@ -649,6 +668,9 @@ export default function Register() {
               <div className="bg-primary rounded-md px-5 py-3 text-center shrink-0">
                 <div className="text-white/70 text-xs font-bold uppercase tracking-widest">Entry Fee</div>
                 <div className="text-white text-3xl font-heading font-bold">${event.entryFee}</div>
+                {event.raceClasses.length > 1 && (
+                  <div className="text-white/60 text-xs mt-0.5">per class</div>
+                )}
               </div>
             )}
           </div>
@@ -753,22 +775,43 @@ export default function Register() {
                   <CardContent className="p-6">
                     <FormField
                       control={form.control}
-                      name="raceClass"
+                      name="selectedClasses"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Select Your Class <span className="text-destructive">*</span></FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Choose a race class" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {event.raceClasses.map(cls => (
-                                <SelectItem key={cls} value={cls}>{cls}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <FormLabel>
+                            {event.raceClasses.length > 1 ? "Select Your Class(es)" : "Select Your Class"}
+                            {" "}<span className="text-destructive">*</span>
+                          </FormLabel>
+                          {event.raceClasses.length > 1 && (
+                            <p className="text-xs text-muted-foreground mt-0.5 mb-2">You can enter multiple classes — each costs one entry fee.</p>
+                          )}
+                          <div className="space-y-2 mt-1">
+                            {event.raceClasses.map(cls => (
+                              <div key={cls} className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3.5">
+                                <FormControl>
+                                  <Checkbox
+                                    id={`class-${cls}`}
+                                    checked={(field.value ?? []).includes(cls)}
+                                    onCheckedChange={checked => {
+                                      const current = field.value ?? [];
+                                      if (checked) {
+                                        field.onChange([...current, cls]);
+                                      } else {
+                                        field.onChange(current.filter((c: string) => c !== cls));
+                                      }
+                                    }}
+                                    className="mt-0.5"
+                                  />
+                                </FormControl>
+                                <label htmlFor={`class-${cls}`} className="text-sm font-semibold cursor-pointer flex items-center justify-between flex-1">
+                                  <span>{cls}</span>
+                                  {event.paymentEnabled && event.entryFee && (
+                                    <span className="text-primary font-bold">${event.entryFee.toFixed(2)}</span>
+                                  )}
+                                </label>
+                              </div>
+                            ))}
+                          </div>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -848,6 +891,43 @@ export default function Register() {
                           />
                         </>
                       )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* RFID Sticker */}
+                {event.timingTechnology === "rfid" && event.rfidStickerFee != null && (
+                  <Card className="border-primary/30 bg-primary/[0.03]">
+                    <CardHeader className="pb-2 border-b">
+                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">RFID Sticker</h3>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <FormField
+                        control={form.control}
+                        name="purchaseRfidSticker"
+                        render={({ field }) => (
+                          <FormItem>
+                            <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                              <FormControl>
+                                <Checkbox
+                                  id="purchase-rfid-sticker"
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                  className="mt-0.5"
+                                />
+                              </FormControl>
+                              <div className="space-y-0.5 leading-none">
+                                <label htmlFor="purchase-rfid-sticker" className="text-sm font-semibold cursor-pointer">
+                                  I need an RFID sticker — <span className="text-primary">${Number(event.rfidStickerFee).toFixed(2)}</span>
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                  Required to be timed during the event. Add one if you don't already have an RFID sticker from this club.
+                                </p>
+                              </div>
+                            </div>
+                          </FormItem>
+                        )}
+                      />
                     </CardContent>
                   </Card>
                 )}
@@ -1182,10 +1262,15 @@ export default function Register() {
                       </div>
                     )}
                     {compError && <p className="text-xs text-red-500">{compError}</p>}
-                    {(selectedPurchasesTotal > 0 || rentalTotal > 0 || appliedComp) && event.entryFee && (
+                    {(selectedPurchasesTotal > 0 || rentalTotal > 0 || rfidStickerTotal > 0 || appliedComp || numSelectedClasses > 1) && event.entryFee && (
                       <div className="border-t pt-2 mt-1 space-y-1.5">
                         <div className="text-xs text-muted-foreground flex justify-between">
-                          <span>Entry fee</span><span>${event.entryFee.toFixed(2)}</span>
+                          <span>
+                            {numSelectedClasses > 1
+                              ? `Entry fee (${numSelectedClasses} classes × $${event.entryFee.toFixed(2)})`
+                              : "Entry fee"}
+                          </span>
+                          <span>${(event.entryFee * Math.max(1, numSelectedClasses)).toFixed(2)}</span>
                         </div>
                         {(event.purchaseOptions ?? []).filter(o => (watchedPurchaseOptions ?? []).includes(o.id)).map(o => (
                           <div key={o.id} className="text-xs text-muted-foreground flex justify-between">
@@ -1195,6 +1280,11 @@ export default function Register() {
                         {rentalTotal > 0 && (
                           <div className="text-xs text-muted-foreground flex justify-between">
                             <span>Transponder rental</span><span>${rentalTotal.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {rfidStickerTotal > 0 && (
+                          <div className="text-xs text-muted-foreground flex justify-between">
+                            <span>RFID sticker</span><span>${rfidStickerTotal.toFixed(2)}</span>
                           </div>
                         )}
                         {appliedComp && (
