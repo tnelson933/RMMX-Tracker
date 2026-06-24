@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import {
   useListStates,
@@ -13,14 +13,17 @@ import { Badge } from "@/components/ui/badge";
 import {
   Calendar, MapPin, Trophy, ChevronRight, Radio,
   Flag, Clock, Activity, AlertCircle, CheckCircle,
-  Download, Monitor, Apple, ChevronDown,
+  Download, Monitor, Apple, ChevronDown, Navigation, LocateFixed,
+  Search, X,
 } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
-import { UpcomingNearMe } from "@/components/UpcomingNearMe";
 import { formatEventDatesFull } from "@/lib/eventDates";
+import { useUserLocation } from "@/hooks/useUserLocation";
+import { haversineDistance } from "@/lib/haversine";
+import { STATE_CENTROIDS } from "@/lib/stateCentroids";
 
-const FALLBACK_TAG = "desktop-v1.0.83";
+const FALLBACK_TAG = "desktop-v1.0.84";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
@@ -147,16 +150,22 @@ function TodayCard({ event }: { event: UpcomingEventItem }) {
   );
 }
 
-function UpcomingCard({ event }: { event: UpcomingEventItem }) {
+function UpcomingCard({ event, distanceMi }: { event: UpcomingEventItem; distanceMi?: number | null }) {
   const { label, className } = registrationBadge(event.status);
   const regOpen = event.status === "registration_open";
   return (
     <Card className="hover-elevate hover:border-primary transition-all h-full overflow-hidden flex flex-col">
       <CardContent className="p-0 flex flex-col flex-1">
-        <div className="bg-sidebar px-4 py-2.5">
+        <div className="bg-sidebar px-4 py-2.5 flex items-center justify-between">
           <span className={`text-xs font-bold uppercase tracking-widest px-2 py-0.5 rounded ${className}`}>
             {label}
           </span>
+          {distanceMi != null && (
+            <span className="flex items-center gap-1 text-muted-foreground text-xs font-semibold">
+              <Navigation size={11} />
+              ~{Math.round(distanceMi).toLocaleString()} mi
+            </span>
+          )}
         </div>
         <div className="p-4 flex flex-col flex-1">
           <Link href={`/results/${event.eventId}`}>
@@ -265,6 +274,10 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("today");
   const [showDownloads, setShowDownloads] = useState(false);
   const [selectedState, setSelectedState] = useState("all");
+  const [nearMe, setNearMe] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [regFilter, setRegFilter] = useState<"all" | "registration_open" | "registration_closed">("all");
+  const userLocation = useUserLocation();
   const [downloads, setDownloads] = useState({
     macArm:  `${FALLBACK_BASE}/RM-Tracker-arm64.dmg`,
     macX64:  `${FALLBACK_BASE}/RM-Tracker-x64.dmg`,
@@ -313,14 +326,68 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [upcomingAll]);
 
-  // Reset state filter when switching tabs
+  // Reset filters when switching tabs (keep search query across tabs)
   const switchTab = (t: Tab) => {
     setActiveTab(t);
     setSelectedState("all");
+    setRegFilter("all");
+    setNearMe(false);
   };
 
-  const filteredToday = selectedState === "all" ? todayEvents : todayEvents.filter(e => e.state === selectedState);
-  const filteredFuture = selectedState === "all" ? futureEvents : futureEvents.filter(e => e.state === selectedState);
+  // Search helper — matches name, location, trackName, state, clubName
+  const matchesSearch = (fields: (string | null | undefined)[], q: string) => {
+    if (!q.trim()) return true;
+    const lower = q.toLowerCase();
+    return fields.some(f => f?.toLowerCase().includes(lower));
+  };
+
+  // Attach distances to future events using state centroids
+  const futureWithDistance = useMemo(() => {
+    return futureEvents.map(e => {
+      const centroid = STATE_CENTROIDS[e.state];
+      const distanceMi =
+        userLocation.status === "granted" && centroid
+          ? haversineDistance(
+              (userLocation as { lat: number; lng: number }).lat,
+              (userLocation as { lat: number; lng: number }).lng,
+              centroid.lat,
+              centroid.lng
+            )
+          : null;
+      return { ...e, distanceMi };
+    });
+  }, [futureEvents, userLocation]);
+
+  const filteredToday = useMemo(() => {
+    let result = selectedState === "all" ? todayEvents : todayEvents.filter(e => e.state === selectedState);
+    if (searchQuery.trim()) {
+      result = result.filter(e => matchesSearch([e.name, e.location, (e as any).trackName, e.state, e.clubName], searchQuery));
+    }
+    return result;
+  }, [todayEvents, selectedState, searchQuery]);
+
+  const filteredFuture = useMemo(() => {
+    let result = nearMe
+      ? futureWithDistance.filter(e => e.distanceMi !== null)
+      : futureWithDistance;
+    if (selectedState !== "all") result = result.filter(e => e.state === selectedState);
+    if (regFilter !== "all") result = result.filter(e => e.status === regFilter);
+    if (searchQuery.trim()) {
+      result = result.filter(e => matchesSearch([e.name, e.location, (e as any).trackName, e.state, e.clubName], searchQuery));
+    }
+    if (nearMe && userLocation.status === "granted") {
+      result = [...result].sort((a, b) => (a.distanceMi ?? Infinity) - (b.distanceMi ?? Infinity));
+    }
+    return result;
+  }, [futureWithDistance, nearMe, selectedState, regFilter, searchQuery, userLocation.status]);
+
+  const filteredPast = useMemo(() => {
+    if (!recentResults) return [];
+    if (!searchQuery.trim()) return recentResults;
+    return recentResults.filter(r =>
+      matchesSearch([r.eventName, r.location, r.trackName, r.state, r.clubName], searchQuery)
+    );
+  }, [recentResults, searchQuery]);
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: "today", label: "Today", count: todayEvents.length },
@@ -368,6 +435,26 @@ export default function Home() {
       {/* Events Section — tabbed */}
       <section className="container mx-auto px-4">
 
+        {/* Search bar */}
+        <div className="relative mb-5">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search by race name, track, city or state…"
+            className="w-full pl-9 pr-9 py-2.5 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+
         {/* Tab bar */}
         <div className="flex items-end gap-0 border-b mb-6 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
           {tabs.map(tab => (
@@ -400,12 +487,77 @@ export default function Home() {
           ))}
         </div>
 
-        {/* State chips */}
+        {/* State chips + Near Me button */}
         {activeTab === "today" && (
           <StateChips states={todayStates} selected={selectedState} onSelect={setSelectedState} />
         )}
         {activeTab === "upcoming" && (
-          <StateChips states={futureStates} selected={selectedState} onSelect={setSelectedState} />
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            {/* Near Me toggle */}
+            <button
+              onClick={() => {
+                if (!nearMe && userLocation.status === "denied") userLocation.retry();
+                setNearMe(v => !v);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+                nearMe
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+              }`}
+            >
+              <Navigation size={13} />
+              Near Me
+            </button>
+            {/* Divider */}
+            {futureStates.length > 0 && <span className="text-border hidden sm:block">|</span>}
+            {/* State chips inline */}
+            {futureStates.map(s => (
+              <button
+                key={s}
+                onClick={() => setSelectedState(sel => sel === s ? "all" : s)}
+                className={`px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+                  selectedState === s
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+            {selectedState !== "all" && (
+              <button
+                onClick={() => setSelectedState("all")}
+                className="px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+              >
+                All States
+              </button>
+            )}
+            {/* Divider */}
+            {<span className="text-border hidden sm:block">|</span>}
+            {/* Registration status filter */}
+            {(["all", "registration_open", "registration_closed"] as const).map(val => (
+              <button
+                key={val}
+                onClick={() => setRegFilter(val)}
+                className={`px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+                  regFilter === val
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+                }`}
+              >
+                {val === "all" ? "All" : val === "registration_open" ? "Reg. Open" : "Reg. Closed"}
+              </button>
+            ))}
+            {/* Location status hint */}
+            {nearMe && userLocation.status === "granted" && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1 ml-1">
+                <Navigation size={11} /> Sorted closest first
+              </span>
+            )}
+            {nearMe && (userLocation.status === "denied" || userLocation.status === "unavailable") && (
+              <span className="text-xs text-muted-foreground ml-1">Enable location for distance sorting</span>
+            )}
+          </div>
         )}
         {activeTab === "past" && (
           <StateChips states={pastStates} selected={selectedState} onSelect={setSelectedState} />
@@ -424,10 +576,15 @@ export default function Home() {
           ) : (
             <div className="py-16 text-center bg-muted/40 rounded-lg border border-dashed">
               <Radio className="mx-auto mb-3 text-muted-foreground opacity-30" size={44} />
-              <p className="font-heading font-bold uppercase text-muted-foreground">No events today</p>
+              <p className="font-heading font-bold uppercase text-muted-foreground">
+                {searchQuery.trim() ? `No events today matching "${searchQuery}"` : "No events today"}
+              </p>
               <p className="text-sm text-muted-foreground mt-1">
                 {selectedState !== "all" ? `No events in ${selectedState} today. ` : ""}Check the upcoming tab for what's next.
               </p>
+              {searchQuery.trim() && (
+                <Button variant="link" className="mt-1 text-primary" onClick={() => setSearchQuery("")}>Clear search</Button>
+              )}
             </div>
           )
         )}
@@ -440,16 +597,33 @@ export default function Home() {
             </div>
           ) : filteredFuture.length ? (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredFuture.map(e => <UpcomingCard key={e.eventId} event={e} />)}
+              {filteredFuture.map(e => (
+                <UpcomingCard
+                  key={e.eventId}
+                  event={e}
+                  distanceMi={nearMe && userLocation.status === "granted" ? (e as any).distanceMi : undefined}
+                />
+              ))}
             </div>
           ) : (
             <div className="py-16 text-center bg-muted/40 rounded-lg border border-dashed">
               <Clock className="mx-auto mb-3 text-muted-foreground opacity-30" size={44} />
-              <p className="font-heading font-bold uppercase text-muted-foreground">No upcoming events scheduled</p>
-              {selectedState !== "all" && (
-                <Button variant="link" className="mt-2 text-primary" onClick={() => setSelectedState("all")}>
-                  Clear state filter
-                </Button>
+              <p className="font-heading font-bold uppercase text-muted-foreground">
+                {nearMe ? "No upcoming events near you" : "No upcoming events scheduled"}
+              </p>
+              {(selectedState !== "all" || nearMe) && (
+                <div className="flex items-center justify-center gap-3 mt-2">
+                  {nearMe && (
+                    <Button variant="link" className="text-primary" onClick={() => setNearMe(false)}>
+                      Show all locations
+                    </Button>
+                  )}
+                  {selectedState !== "all" && (
+                    <Button variant="link" className="text-primary" onClick={() => setSelectedState("all")}>
+                      Clear state filter
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           )
@@ -461,10 +635,10 @@ export default function Home() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {[...Array(6)].map((_, i) => <div key={i} className="h-40 bg-muted rounded-md animate-pulse" />)}
             </div>
-          ) : recentResults?.length ? (
+          ) : filteredPast.length ? (
             <>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {recentResults.map((r, i) => <PastCard key={`${r.eventId}-${i}`} result={r} />)}
+                {filteredPast.map((r, i) => <PastCard key={`${r.eventId}-${i}`} result={r} />)}
               </div>
               <div className="text-center mt-6">
                 <Link href="/results">
@@ -478,20 +652,24 @@ export default function Home() {
             <div className="py-16 text-center bg-muted/40 rounded-lg border border-dashed">
               <Trophy className="mx-auto mb-3 text-muted-foreground opacity-30" size={44} />
               <p className="font-heading font-bold uppercase text-muted-foreground">
-                {selectedState !== "all" ? `No results found for ${selectedState}` : "No results yet"}
+                {searchQuery.trim() ? `No results matching "${searchQuery}"` : selectedState !== "all" ? `No results found for ${selectedState}` : "No results yet"}
               </p>
-              {selectedState !== "all" && (
-                <Button variant="link" className="mt-2 text-primary" onClick={() => setSelectedState("all")}>
-                  Clear state filter
-                </Button>
-              )}
+              <div className="flex items-center justify-center gap-3 mt-2 flex-wrap">
+                {searchQuery.trim() && (
+                  <Button variant="link" className="text-primary" onClick={() => setSearchQuery("")}>
+                    Clear search
+                  </Button>
+                )}
+                {selectedState !== "all" && (
+                  <Button variant="link" className="text-primary" onClick={() => setSelectedState("all")}>
+                    Clear state filter
+                  </Button>
+                )}
+              </div>
             </div>
           )
         )}
       </section>
-
-      {/* Upcoming Races Near Me */}
-      <UpcomingNearMe />
 
       {/* CTA */}
       <section className="container mx-auto px-4 mt-4">
