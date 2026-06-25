@@ -84,6 +84,7 @@ function DateTimePicker({ value, onChange }: { value: string; onChange: (v: stri
 }
 
 const updateEventSchema = z.object({
+  raceStyle: z.enum(["motocross", "enduro", "cross_country"]).default("motocross"),
   name: z.string().min(1, "Name is required"),
   date: z.string().min(1, "Date is required"),
   multiDay: z.boolean().default(false),
@@ -320,6 +321,7 @@ export default function EventDetail() {
   const form = useForm<FormValues>({
     resolver: zodResolver(updateEventSchema),
     defaultValues: {
+      raceStyle: "motocross" as const,
       name: "",
       date: "",
       multiDay: false,
@@ -371,6 +373,7 @@ export default function EventDetail() {
     const evtEndDate = (evt as any).endDate ?? null;
     const evtClassSeriesMap = ((evt as any).raceClassSeriesMap ?? {}) as Record<string, number[]>;
     form.reset({
+      raceStyle: ((evt as any).raceStyle ?? "motocross") as "motocross" | "enduro" | "cross_country",
       name: evt.name,
       date: evt.date.substring(0, 10),
       multiDay: !!evtEndDate,
@@ -430,6 +433,7 @@ export default function EventDetail() {
     updateMutation.mutate({
       eventId,
       data: {
+        raceStyle: data.raceStyle,
         name: data.name,
         date: data.date,
         endDate: data.multiDay && data.endDate ? data.endDate : null,
@@ -608,6 +612,28 @@ export default function EventDetail() {
               {isEditing ? (
                 <Form {...form}>
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="raceStyle"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Race Style</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select race style" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="motocross">Motocross / Supercross</SelectItem>
+                              <SelectItem value="enduro">Enduro</SelectItem>
+                              <SelectItem value="cross_country">Cross Country / Desert</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField
                       control={form.control}
                       name="name"
