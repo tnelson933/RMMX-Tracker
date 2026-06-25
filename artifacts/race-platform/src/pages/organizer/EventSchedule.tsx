@@ -4,7 +4,13 @@ import {
   useListMotos, useReorderMotos, useUpdateMoto, useCreateMoto, useDeleteMoto, useDeleteAllMotos,
   useListCheckins, useGenerateLineups, useGetEvent, useListPointsTables, useListSeries,
   useUpdateEvent, useAdvanceToMain, useLinkStagger, useUnlinkStagger,
-  getListMotosQueryKey, getListCheckinsQueryKey, type Moto,
+  useListEnduroTimeChecks, useSetEnduroTimeChecks, useGetEnduroPenaltySummary,
+  useListCheckpointArrivals, useRecordCheckpointArrival, useDeleteCheckpointArrival,
+  useListReaders, useListEventReaderAssignments, useSetEventReaderAssignments,
+  getListMotosQueryKey, getListCheckinsQueryKey, getListEnduroTimeChecksQueryKey,
+  getListReadersQueryKey, getListEventReaderAssignmentsQueryKey, getListCheckpointArrivalsQueryKey,
+  getGetEnduroPenaltySummaryQueryKey,
+  type Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
@@ -95,12 +101,13 @@ function statusBadgeVariant(status: string): string {
 
 function typeLabel(type: string): string {
   switch (type) {
-    case "practice": return "Practice";
-    case "heat":     return "Heat";
-    case "lcq":      return "LCQ";
-    case "main":     return "Main";
-    case "moto":     return "Moto";
-    default:         return type;
+    case "practice":    return "Practice";
+    case "heat":        return "Heat";
+    case "lcq":         return "LCQ";
+    case "main":        return "Main";
+    case "moto":        return "Moto";
+    case "enduro_test": return "Test";
+    default:            return type;
   }
 }
 
@@ -948,7 +955,60 @@ function StaticMotoCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 type ViewMode = "run-order" | "by-class";
-const MOTO_TYPES = ["practice", "heat", "lcq", "main", "moto"] as const;
+const MOTO_TYPES = ["practice", "heat", "lcq", "main", "moto", "enduro_test"] as const;
+
+// Time-check durations are entered as "h:mm" or plain minutes; stored as ms.
+function hmToMs(text: string): number | null {
+  const s = (text ?? "").trim();
+  if (!s) return null;
+  if (s.includes(":")) {
+    const [h, m] = s.split(":");
+    const hours = parseInt(h, 10);
+    const mins = parseInt(m, 10);
+    if (Number.isNaN(hours) || Number.isNaN(mins)) return null;
+    return (hours * 60 + mins) * 60_000;
+  }
+  const mins = parseInt(s, 10);
+  if (Number.isNaN(mins)) return null;
+  return mins * 60_000;
+}
+
+function msToHm(ms: number): string {
+  if (!ms || ms <= 0) return "";
+  const totalMin = Math.round(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}:${String(m).padStart(2, "0")}`;
+}
+
+// Parse "H:MM" or "HH:MM" (24-hr) start-of-day time → minutes since midnight, or null.
+function parseStartTime(text: string): number | null {
+  const s = (text ?? "").trim();
+  if (!s) return null;
+  const [h, m] = s.split(":");
+  const hours = parseInt(h, 10);
+  const mins = parseInt(m ?? "0", 10);
+  if (Number.isNaN(hours) || Number.isNaN(mins)) return null;
+  return hours * 60 + mins;
+}
+
+// Format minutes-since-midnight as "h:mm AM/PM".
+function formatClockTime(totalMins: number): string {
+  const h24 = Math.floor(totalMins / 60) % 24;
+  const m = totalMins % 60;
+  const ampm = h24 < 12 ? "AM" : "PM";
+  const h12 = h24 % 12 || 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+// Compute wall-clock arrival at a checkpoint given a class start time ("H:MM" 24-hr)
+// and a duration from start ("h:mm" or plain minutes). Returns null if either is empty.
+function computeArrival(startStr: string, durationStr: string): string | null {
+  const startMins = parseStartTime(startStr);
+  const durationMs = hmToMs(durationStr);
+  if (startMins == null || !durationMs) return null;
+  return formatClockTime(startMins + Math.round(durationMs / 60_000));
+}
 
 type LineupEntry = {
   position: number;
@@ -1089,6 +1149,11 @@ export default function EventSchedule() {
     pt => pt.id === (event as any)?.pointsTableId
   );
   const isSupercrossFormat = (eventScoringTable as any)?.mainEventOnly === true;
+  const raceStyle: "motocross" | "enduro" | "cross_country" = (event as any)?.raceStyle ?? "motocross";
+  const isEnduro = raceStyle === "enduro";
+  const isCrossCountry = raceStyle === "cross_country";
+  const isMylaps = ((event as any)?.timingTechnology ?? "rfid") === "mylaps";
+  const timingLabel = isMylaps ? "MyLaps" : "RFID";
 
   // ── Local state ──
   const [viewMode, setViewMode] = useState<ViewMode>("run-order");
@@ -1117,6 +1182,63 @@ export default function EventSchedule() {
   const [generateMinRacesBetween, setGenerateMinRacesBetween] = useState<number>(0);
   const [generateClass, setGenerateClass] = useState<string>("all");
 
+  // Enduro "Generate Tests" dialog
+  const [genTestCount, setGenTestCount] = useState("3");
+  const [genTestPrefix, setGenTestPrefix] = useState("Test");
+  const [genTestNames, setGenTestNames] = useState<string[]>(["", "", ""]);
+  const [genTestLaps, setGenTestLaps] = useState("1");
+  const [genTestRfidStart, setGenTestRfidStart] = useState(true);
+
+  // Enduro time checks: event-wide checkpoints, each with a per-class expected
+  // duration from race start (text "h:mm" or "mm", parsed to ms on save).
+  const [genTimeChecksEnabled, setGenTimeChecksEnabled] = useState(false);
+  const [genTimeCheckCount, setGenTimeCheckCount] = useState("1");
+  const [genTimeChecks, setGenTimeChecks] = useState<
+    Array<{ name: string; durations: Record<string, string> }>
+  >([{ name: "", durations: {} }]);
+  // Per-class start times ("H:MM" 24-hr) used to compute expected checkpoint arrival times.
+  const [classStartTimes, setClassStartTimes] = useState<Record<string, string>>({});
+  // IANA timezone used for arrival-time comparisons — defaults to this device's timezone.
+  const [classTimezone, setClassTimezone] = useState<string>(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone ?? "America/Denver",
+  );
+
+  // Penalty config state (for Generate Tests dialog)
+  const [penaltyEnabled, setPenaltyEnabled] = useState(false);
+  const [penaltyEarlySecPerMin, setPenaltyEarlySecPerMin] = useState("0");
+  const [penaltyLateSecPerMin, setPenaltyLateSecPerMin] = useState("0");
+  const [penaltyEarlyDqMin, setPenaltyEarlyDqMin] = useState("");
+  const [penaltyLateDqMin, setPenaltyLateDqMin] = useState("");
+
+  // Checkpoint arrivals management state
+  const [arrivalPanelCheckId, setArrivalPanelCheckId] = useState<number | null>(null);
+  const [arrivalRiderId, setArrivalRiderId] = useState("");
+  const [arrivalTime, setArrivalTime] = useState("");
+  const [arrivalSaving, setArrivalSaving] = useState(false);
+
+  // Keep the time-check list sized to the requested count, preserving entries.
+  function setGenTimeCheckCountAndResize(value: string) {
+    setGenTimeCheckCount(value);
+    const n = Math.max(0, Math.min(20, parseInt(value, 10) || 0));
+    setGenTimeChecks(prev => {
+      const next = prev.slice(0, n);
+      while (next.length < n) next.push({ name: "", durations: {} });
+      return next;
+    });
+  }
+
+  // Keep the per-test name list in sync with the requested count, preserving
+  // any names the organizer already typed.
+  function setGenTestCountAndResize(value: string) {
+    setGenTestCount(value);
+    const n = Math.max(0, Math.min(50, parseInt(value, 10) || 0));
+    setGenTestNames(prev => {
+      const next = prev.slice(0, n);
+      while (next.length < n) next.push("");
+      return next;
+    });
+  }
+
   // Add moto dialog
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -1124,6 +1246,7 @@ export default function EventSchedule() {
     raceClass: "",
     type: "heat" as typeof MOTO_TYPES[number],
     lapCount: "",
+    enduroHasRfidStart: false,
   });
   const [addSelectedRiders, setAddSelectedRiders] = useState<number[]>([]);
 
@@ -1175,6 +1298,159 @@ export default function EventSchedule() {
   const deleteAllMutation = useDeleteAllMotos();
   const linkStaggerMutation = useLinkStagger();
   const unlinkStaggerMutation = useUnlinkStagger();
+  const setTimeChecksMutation = useSetEnduroTimeChecks();
+
+  // Existing time checks (used to pre-fill the dialog when reopened)
+  const { data: existingTimeChecks } = useListEnduroTimeChecks(eventId, {
+    query: { enabled: !!eventId } as any,
+  });
+
+  // Penalty summary (enduro only — fetched when time checks exist)
+  const hasTimeChecks = ((existingTimeChecks as any[] | undefined) ?? []).length > 0;
+  const hasPenaltyConfig = !!(event as any)?.enduroPenaltyConfig;
+  const { data: penaltySummary = [] } = useGetEnduroPenaltySummary(eventId, {
+    query: { enabled: isEnduro && hasTimeChecks && hasPenaltyConfig } as any,
+  });
+
+  // Checkpoint arrivals (for the selected time check in the arrivals panel)
+  const { data: checkpointArrivals = [] } = useListCheckpointArrivals(
+    eventId,
+    arrivalPanelCheckId ?? 0,
+    { query: { enabled: isEnduro && !!arrivalPanelCheckId } as any },
+  );
+  const recordArrivalMutation = useRecordCheckpointArrival();
+  const deleteArrivalMutation = useDeleteCheckpointArrival();
+
+  async function handleRecordArrival() {
+    if (!arrivalPanelCheckId || !arrivalRiderId.trim() || !arrivalTime.trim()) return;
+    setArrivalSaving(true);
+    try {
+      // Build a full ISO timestamp: use today's date + the entered HH:MM time
+      const today = new Date().toISOString().slice(0, 10);
+      const iso = `${today}T${arrivalTime}:00`;
+      await recordArrivalMutation.mutateAsync({
+        eventId,
+        checkId: arrivalPanelCheckId,
+        data: { riderId: Number(arrivalRiderId), arrivalTime: iso } as any,
+      });
+      queryClient.invalidateQueries({ queryKey: getListCheckpointArrivalsQueryKey(eventId, arrivalPanelCheckId) });
+      queryClient.invalidateQueries({ queryKey: getGetEnduroPenaltySummaryQueryKey(eventId) });
+      setArrivalRiderId("");
+      setArrivalTime("");
+    } finally {
+      setArrivalSaving(false);
+    }
+  }
+
+  async function handleDeleteArrival(checkId: number, riderId: number) {
+    await deleteArrivalMutation.mutateAsync({ eventId, checkId, riderId });
+    queryClient.invalidateQueries({ queryKey: getListCheckpointArrivalsQueryKey(eventId, checkId) });
+    queryClient.invalidateQueries({ queryKey: getGetEnduroPenaltySummaryQueryKey(eventId) });
+  }
+
+  // Pre-fill the time-checks section from saved data when the dialog opens.
+  useEffect(() => {
+    if (!isGenerateOpen) return;
+    const checks = (existingTimeChecks as any[] | undefined) ?? [];
+    if (checks.length === 0) return;
+    setGenTimeChecksEnabled(true);
+    setGenTimeCheckCount(String(checks.length));
+    setGenTimeChecks(
+      checks.map((c: any) => {
+        const durations: Record<string, string> = {};
+        for (const t of (c.targets as any[] | undefined) ?? []) {
+          if (t?.raceClass) durations[t.raceClass] = msToHm(Number(t.durationMs) || 0);
+        }
+        return { name: typeof c.name === "string" ? c.name : "", durations };
+      }),
+    );
+    // Restore per-class start times from the first checkpoint's targets.
+    const firstTargets: any[] = (checks[0]?.targets as any[] | undefined) ?? [];
+    const starts: Record<string, string> = {};
+    for (const t of firstTargets) {
+      if (t?.raceClass && typeof t.startTimeOfDay === "string" && t.startTimeOfDay.trim()) {
+        starts[t.raceClass] = t.startTimeOfDay.trim();
+      }
+    }
+    if (Object.keys(starts).length > 0) setClassStartTimes(starts);
+    // Pre-fill penalty config from the saved event data
+    const penaltyCfg = (event as any)?.enduroPenaltyConfig;
+    if (penaltyCfg) {
+      setPenaltyEnabled(true);
+      setPenaltyEarlySecPerMin(String(penaltyCfg.earlySecPerMin ?? 0));
+      setPenaltyLateSecPerMin(String(penaltyCfg.lateSecPerMin ?? 0));
+      setPenaltyEarlyDqMin(penaltyCfg.earlyDqMinutes != null ? String(penaltyCfg.earlyDqMinutes) : "");
+      setPenaltyLateDqMin(penaltyCfg.lateDqMinutes != null ? String(penaltyCfg.lateDqMinutes) : "");
+      if (penaltyCfg.timezone) setClassTimezone(penaltyCfg.timezone);
+    }
+    // Only re-run when the dialog opens, not on every data refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGenerateOpen]);
+
+  // ── Checkpoint reader assignments (enduro only) ──
+  // Local state: motoId → { startReaderId, startAntennaId, finishReaderId, finishAntennaId }
+  //              timeCheckId → { readerId, antennaId }
+  const [motoRdrs, setMotoRdrs] = useState<Record<number, { startReaderId: string; startAntennaId: string; finishReaderId: string; finishAntennaId: string }>>({});
+  const [tcRdrs, setTcRdrs] = useState<Record<number, { readerId: string; antennaId: string }>>({});
+  // Per-moto: true when the test starts and finishes at the same location (single reader for both roles)
+  const [motoSameReader, setMotoSameReader] = useState<Record<number, boolean>>({});
+
+  const { data: clubReaders = [] } = useListReaders({ query: { enabled: isEnduro } as any });
+  const { data: existingAssignments = [] } = useListEventReaderAssignments(eventId, {
+    query: { enabled: isEnduro && !!eventId } as any,
+  });
+  const setAssignmentsMutation = useSetEventReaderAssignments();
+
+  // Sync saved assignments → local state whenever they load
+  useEffect(() => {
+    const assignments = (existingAssignments as any[]);
+    if (!assignments?.length) return;
+    const newMoto: typeof motoRdrs = {};
+    const newTc: typeof tcRdrs = {};
+    for (const a of assignments) {
+      if (a.role === "start" && a.motoId) {
+        newMoto[a.motoId] = { ...newMoto[a.motoId], startReaderId: String(a.readerId), startAntennaId: a.antennaId != null ? String(a.antennaId) : "", finishReaderId: newMoto[a.motoId]?.finishReaderId ?? "", finishAntennaId: newMoto[a.motoId]?.finishAntennaId ?? "" };
+      } else if (a.role === "finish" && a.motoId) {
+        newMoto[a.motoId] = { ...newMoto[a.motoId], finishReaderId: String(a.readerId), finishAntennaId: a.antennaId != null ? String(a.antennaId) : "", startReaderId: newMoto[a.motoId]?.startReaderId ?? "", startAntennaId: newMoto[a.motoId]?.startAntennaId ?? "" };
+      } else if (a.role === "time_check" && a.timeCheckId) {
+        newTc[a.timeCheckId] = { readerId: String(a.readerId), antennaId: a.antennaId != null ? String(a.antennaId) : "" };
+      }
+    }
+    // Auto-detect same-gate: if start and finish readerId match for a moto, check the box
+    const newSameReader: Record<number, boolean> = {};
+    for (const [motoIdStr, cfg] of Object.entries(newMoto)) {
+      if (cfg.startReaderId && cfg.startReaderId === cfg.finishReaderId) {
+        newSameReader[Number(motoIdStr)] = true;
+      }
+    }
+    setMotoRdrs(newMoto);
+    setTcRdrs(newTc);
+    setMotoSameReader(newSameReader);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingAssignments]);
+
+  async function saveReaderAssignments() {
+    const assignments: Array<{ readerId: number; antennaId: number | null; role: string; motoId: number | null; timeCheckId: number | null }> = [];
+    for (const [motoIdStr, cfg] of Object.entries(motoRdrs)) {
+      const motoId = Number(motoIdStr);
+      const sameGate = motoSameReader[motoId] ?? false;
+      // When same-gate is on, use startReaderId for both roles so the backend detects the pair
+      const effectiveFinishReaderId = sameGate ? cfg.startReaderId : cfg.finishReaderId;
+      const effectiveFinishAntennaId = sameGate ? cfg.startAntennaId : cfg.finishAntennaId;
+      if (cfg.startReaderId) assignments.push({ readerId: Number(cfg.startReaderId), antennaId: cfg.startAntennaId ? Number(cfg.startAntennaId) : null, role: "start", motoId, timeCheckId: null });
+      if (effectiveFinishReaderId) assignments.push({ readerId: Number(effectiveFinishReaderId), antennaId: effectiveFinishAntennaId ? Number(effectiveFinishAntennaId) : null, role: "finish", motoId, timeCheckId: null });
+    }
+    for (const [tcIdStr, cfg] of Object.entries(tcRdrs)) {
+      if (cfg.readerId) assignments.push({ readerId: Number(cfg.readerId), antennaId: cfg.antennaId ? Number(cfg.antennaId) : null, role: "time_check", motoId: null, timeCheckId: Number(tcIdStr) });
+    }
+    try {
+      await setAssignmentsMutation.mutateAsync({ eventId, data: { assignments } as any });
+      queryClient.invalidateQueries({ queryKey: getListEventReaderAssignmentsQueryKey(eventId) });
+      toast({ title: "Reader assignments saved" });
+    } catch {
+      toast({ title: "Failed to save reader assignments", variant: "destructive" });
+    }
+  }
 
   // ── defaultTopPerHeat (Advance to Main) ──
   const defaultTopPerHeat = useMemo(() => {
@@ -1744,6 +2020,94 @@ export default function EventSchedule() {
     );
   }
 
+  // ── Generate enduro tests ──
+  async function handleGenerateTests() {
+    const count = Math.max(1, Math.min(50, parseInt(genTestCount, 10) || 1));
+    const prefix = genTestPrefix.trim() || "Test";
+    const laps = genTestLaps.trim() ? parseInt(genTestLaps, 10) : undefined;
+    const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+
+    // Enduro sends every checked-in rider through each test (one at a time, not in waves).
+    const lineup = (checkins as any[])
+      .filter((c: any) => c.checkedIn)
+      .map((c: any, i: number) => ({
+        position: i + 1,
+        riderId: c.riderId,
+        riderName: c.riderName ?? "",
+        bibNumber: c.bibNumber ?? null,
+        rfidNumber: c.rfidNumber ?? null,
+      }));
+
+    if (lineup.length === 0) {
+      toast({ title: "No checked-in riders", description: "Check in riders before generating tests.", variant: "destructive" });
+      return;
+    }
+
+    const existingTests = rawMotos.filter(m => m.type === "enduro_test").length;
+    const baseNumber = rawMotos.length > 0 ? Math.max(...rawMotos.map(m => m.motoNumber ?? 0)) : 0;
+
+    // Create sequentially so moto numbering stays ordered and a mid-batch
+    // failure reports how many tests were actually created.
+    let created = 0;
+    try {
+      for (let idx = 0; idx < count; idx++) {
+        const testNo = existingTests + idx + 1;
+        const customName = (genTestNames[idx] ?? "").trim();
+        await createMutation.mutateAsync({
+          eventId,
+          data: {
+            name: customName || `${prefix} ${testNo}`,
+            type: "enduro_test" as typeof MOTO_TYPES[number],
+            raceClass: "All Classes",
+            raceClasses: allClasses.length > 0 ? allClasses : undefined,
+            motoNumber: baseNumber + idx + 1,
+            lapCount: laps,
+            lineup: lineup as any,
+            enduroHasRfidStart: genTestRfidStart,
+          } as any,
+        });
+        created++;
+      }
+      // Persist event-wide time checks (replace-all) when enabled.
+      if (genTimeChecksEnabled) {
+        const timeChecks = genTimeChecks.map((tc, i) => ({
+          checkNumber: i + 1,
+          name: tc.name.trim() || `Time Check ${i + 1}`,
+          targets: allClasses
+            .map(rc => ({
+              raceClass: rc,
+              durationMs: hmToMs(tc.durations[rc] ?? ""),
+              startTimeOfDay: classStartTimes[rc]?.trim() || null,
+            }))
+            .filter((t): t is { raceClass: string; durationMs: number; startTimeOfDay: string | null } => t.durationMs !== null && t.durationMs > 0),
+        }));
+        const penaltyConfig = penaltyEnabled ? {
+          earlySecPerMin: Number(penaltyEarlySecPerMin) || 0,
+          lateSecPerMin: Number(penaltyLateSecPerMin) || 0,
+          earlyDqMinutes: penaltyEarlyDqMin.trim() ? Number(penaltyEarlyDqMin) : null,
+          lateDqMinutes: penaltyLateDqMin.trim() ? Number(penaltyLateDqMin) : null,
+          timezone: classTimezone || null,
+        } : null;
+        await setTimeChecksMutation.mutateAsync({ eventId, data: { timeChecks, penaltyConfig } as any });
+        queryClient.invalidateQueries({ queryKey: getListEnduroTimeChecksQueryKey(eventId) });
+      } else if ((existingTimeChecks as any[] | undefined)?.length) {
+        // Organizer turned time checks off — clear any previously saved ones.
+        await setTimeChecksMutation.mutateAsync({ eventId, data: { timeChecks: [], penaltyConfig: null } as any });
+        queryClient.invalidateQueries({ queryKey: getListEnduroTimeChecksQueryKey(eventId) });
+      }
+      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      setIsGenerateOpen(false);
+      toast({ title: `${count} test${count > 1 ? "s" : ""} created` });
+    } catch (err) {
+      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      toast({
+        title: created > 0 ? `Created ${created} of ${count} tests` : "Failed to generate tests",
+        description: (err as Error).message,
+        variant: "destructive",
+      });
+    }
+  }
+
   // ── Add moto ──
   function handleAddMoto() {
     const motoNumber = (rawMotos.length > 0
@@ -1759,28 +2123,30 @@ export default function EventSchedule() {
       rfidNumber: c.rfidNumber ?? null,
     }));
 
+    const effectiveType = isEnduro ? "enduro_test" : addForm.type;
     createMutation.mutate(
       {
         eventId,
         data: {
-          name: addForm.name || `${addForm.raceClass} ${typeLabel(addForm.type)}`,
-          type: addForm.type,
+          name: addForm.name || `${addForm.raceClass} ${typeLabel(effectiveType)}`,
+          type: effectiveType as typeof MOTO_TYPES[number],
           raceClass: addForm.raceClass,
           motoNumber,
           lapCount: addForm.lapCount ? parseInt(addForm.lapCount) : undefined,
           lineup: lineup.length > 0 ? (lineup as any) : undefined,
+          enduroHasRfidStart: isEnduro ? addForm.enduroHasRfidStart : undefined,
         },
       },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           setShowAddDialog(false);
-          setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "" });
+          setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "", enduroHasRfidStart: false });
           setAddSelectedRiders([]);
-          toast({ title: "Moto added" });
+          toast({ title: isEnduro ? "Test added" : "Moto added" });
         },
         onError: () => {
-          toast({ title: "Failed to add moto", variant: "destructive" });
+          toast({ title: isEnduro ? "Failed to add test" : "Failed to add moto", variant: "destructive" });
         },
       }
     );
@@ -1935,12 +2301,14 @@ export default function EventSchedule() {
             {/* ── Header toolbar ── */}
             <div className="flex flex-wrap items-end gap-3">
               <div>
-                <h2 className="text-xl font-heading font-bold uppercase tracking-tight">Event Schedule</h2>
+                <h2 className="text-xl font-heading font-bold uppercase tracking-tight">
+                  {isEnduro ? "Enduro Tests" : isCrossCountry ? "Cross Country Schedule" : "Event Schedule"}
+                </h2>
                 <p className="text-sm text-muted-foreground mt-0.5">
                   {roundFilter === "all"
                     ? (
                       <>
-                        {sortedMotos.length} sessions in run order
+                        {sortedMotos.length} {isEnduro ? "tests" : "sessions"} in run order
                         {eventStartDisplay && (
                           <span className="ml-2 text-muted-foreground/60">· {eventStartDisplay}</span>
                         )}
@@ -1966,13 +2334,13 @@ export default function EventSchedule() {
                 </Button>
               )}
 
-              {/* Generate Lineups */}
+              {/* Generate Lineups (motocross) / Generate Tests (enduro) */}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setIsGenerateOpen(true)}
               >
-                <Settings size={14} className="mr-1.5" /> Generate Lineups
+                <Settings size={14} className="mr-1.5" /> {isEnduro ? "Generate Tests" : "Generate Lineups"}
               </Button>
 
               {/* View toggle */}
@@ -1999,22 +2367,47 @@ export default function EventSchedule() {
                 </button>
               </div>
 
-              {/* Add practice */}
-              <Button size="sm" variant="outline" onClick={openPracticeDialog}>
-                <Plus size={15} className="mr-1" /> Add Practice
-              </Button>
+              {/* Add practice (not applicable to enduro) */}
+              {!isEnduro && (
+                <Button size="sm" variant="outline" onClick={openPracticeDialog}>
+                  <Plus size={15} className="mr-1" /> Add Practice
+                </Button>
+              )}
 
-              {/* Add moto */}
-              <Button size="sm" onClick={() => setShowAddDialog(true)}>
-                <Plus size={15} className="mr-1" /> Add Moto
+              {/* Add moto / Add Test */}
+              <Button size="sm" onClick={() => {
+                if (isEnduro) {
+                  setAddForm(f => ({ ...f, type: "enduro_test" as typeof MOTO_TYPES[number] }));
+                }
+                setShowAddDialog(true);
+              }}>
+                <Plus size={15} className="mr-1" /> {isEnduro ? "Add Test" : "Add Moto"}
               </Button>
             </div>
 
-            {/* ── Stagger tip ── */}
-            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border border-border rounded-md px-3 py-2">
-              <Link2 size={12} className="shrink-0 text-primary/70" />
-              <span>Drag motos into each other to create a staggered start moto.</span>
-            </div>
+            {/* ── Stagger tip (motocross/supercross only) ── */}
+            {!isEnduro && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border border-border rounded-md px-3 py-2">
+                <Link2 size={12} className="shrink-0 text-primary/70" />
+                <span>Drag motos into each other to create a staggered start moto.</span>
+              </div>
+            )}
+
+            {/* ── Cross Country info banner ── */}
+            {isCrossCountry && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-blue-500/10 border border-blue-500/30 rounded-md px-3 py-2">
+                <Clock size={12} className="shrink-0 text-blue-400" />
+                <span>Cross Country / Desert — riders are ranked by <strong>total elapsed time</strong> from session start. Lap count is not used for scoring.</span>
+              </div>
+            )}
+
+            {/* ── Enduro info banner ── */}
+            {isEnduro && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-green-500/10 border border-green-500/30 rounded-md px-3 py-2">
+                <Clock size={12} className="shrink-0 text-green-400" />
+                <span>Enduro — each test is timed individually. Riders are ranked by total accumulated test time across all tests.</span>
+              </div>
+            )}
 
             {/* ── Round filter pills ── */}
             {(maxRounds > 1 || hasPracticeMotos) && (
@@ -2059,7 +2452,8 @@ export default function EventSchedule() {
             {/* ── Event Rules cards ── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
 
-              {/* Minimum Lap Time */}
+              {/* Minimum Lap Time — not applicable to enduro (riders run individually against the clock) */}
+              {!isEnduro && (
               <div className="border rounded-lg bg-card overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
                   <Timer size={13} className="text-muted-foreground shrink-0" />
@@ -2109,6 +2503,7 @@ export default function EventSchedule() {
                   </p>
                 </div>
               </div>
+              )}
 
               {/* Advance to Main — Supercross only */}
               {isSupercrossFormat && rawMotos.some(m => m.type === "main") ? (
@@ -2309,9 +2704,247 @@ export default function EventSchedule() {
               </div>
             )}
 
+            {/* ── Penalty summary (enduro only, when config + time checks exist) ── */}
+            {isEnduro && hasTimeChecks && hasPenaltyConfig && (penaltySummary as any[]).length > 0 && (
+              <div className="mt-2 rounded-lg border bg-card">
+                <div className="flex items-center justify-between px-4 py-3 border-b">
+                  <div>
+                    <p className="font-semibold text-sm">Checkpoint Penalty Summary</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Per-rider penalty totals based on checkpoint arrival times.</p>
+                  </div>
+                </div>
+                <div className="p-3 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-muted-foreground uppercase tracking-wide">
+                        <th className="text-left py-1 pr-3">Rider</th>
+                        <th className="text-left py-1 pr-3">Class</th>
+                        <th className="text-right py-1 pr-3">Penalty</th>
+                        <th className="text-center py-1">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(penaltySummary as any[]).map((entry: any) => (
+                        <tr key={entry.riderId} className="border-t border-border/50">
+                          <td className="py-1.5 pr-3 font-medium">{entry.riderName}</td>
+                          <td className="py-1.5 pr-3 text-muted-foreground">{entry.raceClass ?? "—"}</td>
+                          <td className="py-1.5 pr-3 text-right font-mono">
+                            {entry.disqualified ? "—" : entry.totalPenaltySeconds > 0 ? `+${entry.totalPenaltySeconds}s` : "0s"}
+                          </td>
+                          <td className="py-1.5 text-center">
+                            {entry.disqualified ? (
+                              <span className="inline-block rounded px-1.5 py-0.5 bg-destructive/10 text-destructive font-semibold">DQ</span>
+                            ) : entry.totalPenaltySeconds > 0 ? (
+                              <span className="inline-block rounded px-1.5 py-0.5 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Penalty</span>
+                            ) : (
+                              <span className="inline-block rounded px-1.5 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Clean</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── Checkpoint arrivals management (enduro + time checks only) ── */}
+            {isEnduro && hasTimeChecks && (
+              <div className="mt-2 rounded-lg border bg-card">
+                <div className="px-4 py-3 border-b">
+                  <p className="font-semibold text-sm">Checkpoint Arrivals</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">View and manually record or correct rider arrival times at each time check.</p>
+                </div>
+                <div className="p-3 space-y-2">
+                  {((existingTimeChecks as any[] | undefined) ?? []).map((tc: any) => {
+                    const isOpen = arrivalPanelCheckId === tc.id;
+                    return (
+                      <div key={tc.id} className="rounded-md border">
+                        <button
+                          type="button"
+                          className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted/40 transition-colors"
+                          onClick={() => setArrivalPanelCheckId(isOpen ? null : tc.id)}
+                        >
+                          <span className="text-sm font-medium">{tc.name || `TC ${tc.checkNumber}`}</span>
+                          <ChevronDown size={14} className={`text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                        </button>
+                        {isOpen && (
+                          <div className="border-t p-3 space-y-3">
+                            {/* Existing arrivals */}
+                            {(checkpointArrivals as any[]).length > 0 ? (
+                              <div className="space-y-1">
+                                {(checkpointArrivals as any[]).map((a: any) => (
+                                  <div key={a.id ?? a.riderId} className="flex items-center gap-2 text-xs">
+                                    <span className="flex-1 font-medium truncate">{a.riderName || `Rider #${a.riderId}`}</span>
+                                    <span className="font-mono text-muted-foreground">
+                                      {a.arrivalTime ? new Date(a.arrivalTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground/60 uppercase">{a.recordedBy}</span>
+                                    <button
+                                      type="button"
+                                      className="ml-1 p-0.5 text-destructive/60 hover:text-destructive rounded"
+                                      onClick={() => handleDeleteArrival(tc.id, a.riderId)}
+                                      title="Delete arrival"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground italic">No arrivals recorded yet.</p>
+                            )}
+                            {/* Record arrival form */}
+                            <div className="space-y-2 pt-1 border-t">
+                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Record arrival</p>
+                              <div className="flex gap-2 flex-wrap">
+                                <Select
+                                  value={arrivalRiderId || "none"}
+                                  onValueChange={v => setArrivalRiderId(v === "none" ? "" : v)}
+                                >
+                                  <SelectTrigger className="h-7 text-xs flex-1 min-w-36">
+                                    <SelectValue placeholder="Select rider…" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">— Select rider —</SelectItem>
+                                    {(checkins as any[]).filter((c: any) => c.checkedIn).map((c: any) => (
+                                      <SelectItem key={c.riderId} value={String(c.riderId)}>
+                                        {c.riderName ?? `Rider #${c.riderId}`}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Input
+                                  type="time"
+                                  value={arrivalTime}
+                                  onChange={e => setArrivalTime(e.target.value)}
+                                  className="h-7 text-xs w-28"
+                                />
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  disabled={!arrivalRiderId || !arrivalTime || arrivalSaving}
+                                  onClick={handleRecordArrival}
+                                >
+                                  {arrivalSaving ? "Saving…" : "Record"}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Checkpoint reader assignments (enduro only) ── */}
+            {isEnduro && (() => {
+              const testMotos = sortedMotos.filter(m => m.type === "enduro_test");
+              const timeChecks = (existingTimeChecks as any[] | undefined) ?? [];
+              const readers = (clubReaders as any[]);
+              if (testMotos.length === 0 && timeChecks.length === 0) return null;
+              return (
+                <div className="mt-2 rounded-lg border bg-card">
+                  <div className="flex items-center justify-between px-4 py-3 border-b">
+                    <div>
+                      <p className="font-semibold text-sm">Checkpoint Readers</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Assign a registered reader to each start gate, finish line, and time check.</p>
+                    </div>
+                    <Button size="sm" onClick={saveReaderAssignments} disabled={setAssignmentsMutation.isPending}>
+                      {setAssignmentsMutation.isPending ? "Saving…" : "Save"}
+                    </Button>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {readers.length === 0 && (
+                      <p className="text-xs text-muted-foreground italic">No readers registered for this club yet. Go to <strong>RFID Setup → Registered Readers</strong> to add one.</p>
+                    )}
+                    {testMotos.length > 0 && (
+                      <div className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Test Motos — Gates</p>
+                        {testMotos.map(moto => {
+                          const cfg = motoRdrs[moto.id] ?? { startReaderId: "", startAntennaId: "", finishReaderId: "", finishAntennaId: "" };
+                          const sameGate = motoSameReader[moto.id] ?? false;
+                          const readerSelect = (value: string, onChange: (v: string) => void) => (
+                            <Select value={value || "none"} onValueChange={v => onChange(v === "none" ? "" : v)}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="None" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                {readers.map((r: any) => (
+                                  <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          );
+                          return (
+                            <div key={moto.id} className="rounded-md border p-3 space-y-2">
+                              <p className="text-sm font-medium">{moto.name ?? `Test ${moto.id}`}</p>
+                              <div className={`grid gap-3 ${sameGate ? "grid-cols-1" : "grid-cols-2"}`}>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">
+                                    {sameGate ? "Start / Finish Reader" : "Start Reader"}
+                                  </Label>
+                                  {readerSelect(cfg.startReaderId, v => setMotoRdrs(prev => ({ ...prev, [moto.id]: { ...cfg, startReaderId: v } })))}
+                                </div>
+                                {!sameGate && (
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">Finish Reader</Label>
+                                    {readerSelect(cfg.finishReaderId, v => setMotoRdrs(prev => ({ ...prev, [moto.id]: { ...cfg, finishReaderId: v } })))}
+                                  </div>
+                                )}
+                              </div>
+                              <label className="flex items-center gap-2 cursor-pointer select-none mt-1">
+                                <input
+                                  type="checkbox"
+                                  checked={sameGate}
+                                  onChange={e => setMotoSameReader(prev => ({ ...prev, [moto.id]: e.target.checked }))}
+                                  className="rounded border-border accent-primary"
+                                />
+                                <span className="text-xs text-muted-foreground">Start and finish are at the same location (one reader for both)</span>
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {timeChecks.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Time Checks</p>
+                        {timeChecks.map((tc: any) => {
+                          const cfg = tcRdrs[tc.id] ?? { readerId: "", antennaId: "" };
+                          return (
+                            <div key={tc.id} className="flex items-center gap-3">
+                              <span className="text-sm flex-1 truncate">{tc.name || `TC ${tc.checkNumber}`}</span>
+                              <Select
+                                value={cfg.readerId || "none"}
+                                onValueChange={v => setTcRdrs(prev => ({ ...prev, [tc.id]: { ...cfg, readerId: v === "none" ? "" : v } }))}
+                              >
+                                <SelectTrigger className="h-8 text-xs w-44">
+                                  <SelectValue placeholder="None" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">None</SelectItem>
+                                  {readers.map((r: any) => (
+                                    <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
           </div>
-          {/* ── Multi-class conflict panel (sticky top-right) ── */}
-          {scheduleConflicts.length > 0 && (
+          {/* ── Multi-class conflict panel (sticky top-right) — not applicable to enduro ── */}
+          {!isEnduro && scheduleConflicts.length > 0 && (
             <div className="w-72 shrink-0 sticky top-6 self-start">
               <ScheduleConflictPanel conflicts={scheduleConflicts} />
             </div>
@@ -2548,12 +3181,361 @@ export default function EventSchedule() {
       <Dialog open={isGenerateOpen} onOpenChange={open => { setIsGenerateOpen(open); if (open) { setGenerateClass("all"); setGenerateSelectedRounds([]); } }}>
         <DialogContent className="sm:max-w-md flex flex-col max-h-[90vh]">
           <DialogHeader className="shrink-0">
-            <DialogTitle className="font-heading uppercase text-xl">Generate Lineups</DialogTitle>
+            <DialogTitle className="font-heading uppercase text-xl">{isEnduro ? "Generate Tests" : "Generate Lineups"}</DialogTitle>
             <DialogDescription>
-              Auto-create motos from checked-in riders for all race classes.
+              {isEnduro
+                ? "Create timed enduro tests. Every checked-in rider runs each test one at a time."
+                : "Auto-create motos from checked-in riders for all race classes."}
             </DialogDescription>
           </DialogHeader>
 
+          {isEnduro ? (
+            <div className="space-y-5 py-2 overflow-y-auto flex-1 min-h-0 pr-1">
+              {/* Number of tests */}
+              <div className="space-y-2">
+                <Label>Number of Tests</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={genTestCount}
+                  onChange={e => setGenTestCountAndResize(e.target.value)}
+                  placeholder="e.g. 3"
+                  className="h-9"
+                />
+                <p className="text-xs text-muted-foreground">
+                  How many timed test sections to create. Name each one individually below.
+                </p>
+              </div>
+
+              {/* Default name prefix */}
+              <div className="space-y-2">
+                <Label>Default Name Prefix</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={genTestPrefix}
+                    onChange={e => setGenTestPrefix(e.target.value)}
+                    placeholder="Test"
+                    className="h-9"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 shrink-0"
+                    onClick={() => {
+                      const p = genTestPrefix.trim() || "Test";
+                      setGenTestNames(prev => prev.map((_, i) => `${p} ${i + 1}`));
+                    }}
+                  >
+                    Apply to all
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Used as the placeholder for each test. Click <strong>Apply to all</strong> to fill every name as <strong>{(genTestPrefix.trim() || "Test")} 1</strong>, <strong>{(genTestPrefix.trim() || "Test")} 2</strong>…
+                </p>
+              </div>
+
+              {/* Per-test names */}
+              {genTestNames.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Test Names</Label>
+                  <div className="space-y-2 rounded-lg border p-3 max-h-56 overflow-y-auto">
+                    {genTestNames.map((name, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground w-6 shrink-0 text-right">{i + 1}.</span>
+                        <Input
+                          value={name}
+                          onChange={e => {
+                            const v = e.target.value;
+                            setGenTestNames(prev => prev.map((n, idx) => idx === i ? v : n));
+                          }}
+                          placeholder={`${genTestPrefix.trim() || "Test"} ${i + 1}`}
+                          className="h-9"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Give each test its own name. Leave a field blank to use the default (<strong>{genTestPrefix.trim() || "Test"} #</strong>).
+                  </p>
+                </div>
+              )}
+
+              {/* Laps per test */}
+              <div className="space-y-2">
+                <Label>Laps per Test</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={genTestLaps}
+                  onChange={e => setGenTestLaps(e.target.value)}
+                  placeholder="1"
+                  className="h-9"
+                />
+                <p className="text-xs text-muted-foreground">
+                  How many laps of each test a rider completes. Most enduros use 1; some allow multiple.
+                </p>
+              </div>
+
+              {/* RFID start mode */}
+              <div className="space-y-2">
+                <Label>Timing Mode</Label>
+                <div className="rounded-lg border divide-y overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setGenTestRfidStart(true)}
+                    className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors ${genTestRfidStart ? "bg-primary/5" : "hover:bg-muted/40"}`}
+                  >
+                    <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 ${genTestRfidStart ? "border-primary" : "border-muted-foreground/40"}`}>
+                      {genTestRfidStart && <div className="h-2 w-2 rounded-full bg-primary" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{timingLabel} at start &amp; finish</p>
+                      <p className="text-xs text-muted-foreground">Rider's transponder starts the clock at the test entrance and stops it at the finish — fully automatic.</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGenTestRfidStart(false)}
+                    className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors ${!genTestRfidStart ? "bg-primary/5" : "hover:bg-muted/40"}`}
+                  >
+                    <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 ${!genTestRfidStart ? "border-primary" : "border-muted-foreground/40"}`}>
+                      {!genTestRfidStart && <div className="h-2 w-2 rounded-full bg-primary" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">Manual start, {timingLabel} finish</p>
+                      <p className="text-xs text-muted-foreground">Enter the rider's number at the start to kick off their time; the finish transponder stops it automatically.</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Time checks */}
+              {(() => {
+                const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+                return (
+                  <div className="space-y-3 rounded-lg border p-3">
+                    <button
+                      type="button"
+                      onClick={() => setGenTimeChecksEnabled(v => !v)}
+                      className="w-full flex items-start gap-3 text-left"
+                    >
+                      <div className={`mt-0.5 h-4 w-4 rounded border flex items-center justify-center shrink-0 ${genTimeChecksEnabled ? "bg-primary border-primary" : "border-muted-foreground/40"}`}>
+                        {genTimeChecksEnabled && <Check size={12} className="text-primary-foreground" />}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">Add time checks</p>
+                        <p className="text-xs text-muted-foreground">
+                          Checkpoints where each class must arrive by a set time from their start.
+                        </p>
+                      </div>
+                    </button>
+
+                    {genTimeChecksEnabled && (
+                      <div className="space-y-4 pt-1">
+                        <p className="text-xs text-muted-foreground rounded-md bg-muted/50 px-3 py-2">
+                          All checkpoint times are measured <strong>from the start of the race</strong> for each class — not from the previous checkpoint. If the 250 class starts at 9:00 AM and Time Check 1 is at 1:30, riders should arrive by <strong>10:30 AM</strong>. If Time Check 2 is at 2:45, they should arrive by <strong>11:45 AM</strong>.
+                        </p>
+
+                        {allClasses.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            Add race classes to this event to set per-class start times and durations.
+                          </p>
+                        ) : (
+                          <>
+                            {/* Per-class start times */}
+                            <div className="space-y-2 rounded-md border p-3">
+                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Class start times</p>
+                              <p className="text-xs text-muted-foreground">Enter when each class departs the start line (24-hr or plain, e.g. <strong>9:00</strong>). Used to compute expected checkpoint arrival times.</p>
+
+                              {/* Timezone selector */}
+                              <div className="flex items-center gap-2 pt-0.5">
+                                <span className="text-xs text-muted-foreground shrink-0">Times are in</span>
+                                <select
+                                  value={classTimezone}
+                                  onChange={e => setClassTimezone(e.target.value)}
+                                  className="h-7 flex-1 min-w-0 rounded-md border border-input bg-background px-2 text-xs ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                >
+                                  <option value="America/New_York">Eastern (ET)</option>
+                                  <option value="America/Chicago">Central (CT)</option>
+                                  <option value="America/Denver">Mountain (MT)</option>
+                                  <option value="America/Phoenix">Arizona (no DST)</option>
+                                  <option value="America/Los_Angeles">Pacific (PT)</option>
+                                  <option value="America/Anchorage">Alaska (AKT)</option>
+                                  <option value="America/Honolulu">Hawaii (HT)</option>
+                                </select>
+                              </div>
+
+                              <div className="space-y-1.5 pt-1">
+                                {allClasses.map(cls => (
+                                  <div key={cls} className="flex items-center gap-2">
+                                    <span className="text-xs flex-1 truncate">{cls}</span>
+                                    <Input
+                                      value={classStartTimes[cls] ?? ""}
+                                      onChange={e => {
+                                        const v = e.target.value;
+                                        setClassStartTimes(prev => ({ ...prev, [cls]: v }));
+                                      }}
+                                      placeholder="H:MM"
+                                      className="h-8 w-24"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Number of checkpoints */}
+                            <div className="space-y-2">
+                              <Label>How many time checks?</Label>
+                              <Input
+                                type="number"
+                                min={1}
+                                max={20}
+                                value={genTimeCheckCount}
+                                onChange={e => setGenTimeCheckCountAndResize(e.target.value)}
+                                className="h-9"
+                              />
+                            </div>
+
+                            {/* Per-checkpoint config */}
+                            {genTimeChecks.map((tc, ci) => (
+                              <div key={ci} className="space-y-2 rounded-md border p-3">
+                                <Input
+                                  value={tc.name}
+                                  onChange={e => {
+                                    const v = e.target.value;
+                                    setGenTimeChecks(prev => prev.map((c, idx) => idx === ci ? { ...c, name: v } : c));
+                                  }}
+                                  placeholder={`Time Check ${ci + 1}`}
+                                  className="h-8 font-semibold"
+                                />
+                                <div className="space-y-1.5">
+                                  {allClasses.map(cls => {
+                                    const arrival = computeArrival(classStartTimes[cls] ?? "", tc.durations[cls] ?? "");
+                                    return (
+                                      <div key={cls} className="flex items-center gap-2">
+                                        <span className="text-xs flex-1 truncate">{cls}</span>
+                                        <Input
+                                          value={tc.durations[cls] ?? ""}
+                                          onChange={e => {
+                                            const v = e.target.value;
+                                            setGenTimeChecks(prev => prev.map((c, idx) =>
+                                              idx === ci ? { ...c, durations: { ...c.durations, [cls]: v } } : c));
+                                          }}
+                                          placeholder="h:mm from start"
+                                          className="h-8 w-32"
+                                        />
+                                        {arrival && (
+                                          <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">→ {arrival}</span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          Enter each class's expected time from the race start as <strong>h:mm</strong> (e.g. <strong>1:30</strong>) or plain minutes. Leave blank to skip a class.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Penalty config — only shown when time checks are enabled */}
+              {genTimeChecksEnabled && (
+                <div className="space-y-3 rounded-lg border p-3">
+                  <button
+                    type="button"
+                    onClick={() => setPenaltyEnabled(v => !v)}
+                    className="w-full flex items-start gap-3 text-left"
+                  >
+                    <div className={`mt-0.5 h-4 w-4 rounded border flex items-center justify-center shrink-0 ${penaltyEnabled ? "bg-primary border-primary" : "border-muted-foreground/40"}`}>
+                      {penaltyEnabled && <Check size={12} className="text-primary-foreground" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">Time-check penalties</p>
+                      <p className="text-xs text-muted-foreground">
+                        Add time to a rider's overall score when they arrive early or late.
+                      </p>
+                    </div>
+                  </button>
+
+                  {penaltyEnabled && (
+                    <div className="space-y-3 pt-1">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Sec per min early</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={penaltyEarlySecPerMin}
+                            onChange={e => setPenaltyEarlySecPerMin(e.target.value)}
+                            className="h-8"
+                            placeholder="0"
+                          />
+                          <p className="text-xs text-muted-foreground">0 = no early penalty</p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Sec per min late</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={penaltyLateSecPerMin}
+                            onChange={e => setPenaltyLateSecPerMin(e.target.value)}
+                            className="h-8"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">DQ if early &gt; (min)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={penaltyEarlyDqMin}
+                            onChange={e => setPenaltyEarlyDqMin(e.target.value)}
+                            className="h-8"
+                            placeholder="Disabled"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">DQ if late &gt; (min)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={penaltyLateDqMin}
+                            onChange={e => setPenaltyLateDqMin(e.target.value)}
+                            className="h-8"
+                            placeholder="Disabled"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Penalties are whole-minute based — a rider 1:59 late is charged for 1 minute. Leave DQ blank to disable disqualification.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <Button
+                onClick={handleGenerateTests}
+                disabled={createMutation.isPending || setTimeChecksMutation.isPending}
+                className="w-full font-heading uppercase"
+              >
+                {createMutation.isPending || setTimeChecksMutation.isPending ? "Generating…" : "Generate Tests"}
+              </Button>
+            </div>
+          ) : (
           <div className="space-y-5 py-2 overflow-y-auto flex-1 min-h-0 pr-1">
             {/* Class selector */}
             {(() => {
@@ -2853,6 +3835,7 @@ export default function EventSchedule() {
               {generateMutation.isPending ? "Generating…" : "Generate Lineups"}
             </Button>
           </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -3035,12 +4018,16 @@ export default function EventSchedule() {
       {/* ── Add Moto dialog ── */}
       <Dialog open={showAddDialog} onOpenChange={open => {
         setShowAddDialog(open);
-        if (!open) { setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "" }); setAddSelectedRiders([]); }
+        if (!open) { setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "", enduroHasRfidStart: false }); setAddSelectedRiders([]); }
       }}>
         <DialogContent className="sm:max-w-lg flex flex-col max-h-[90vh]">
           <DialogHeader className="shrink-0">
-            <DialogTitle>Add Moto</DialogTitle>
-            <DialogDescription>Create a new moto and append it to the end of the run order.</DialogDescription>
+            <DialogTitle>{isEnduro ? "Add Enduro Test" : "Add Moto"}</DialogTitle>
+            <DialogDescription>
+              {isEnduro
+                ? "Create a new timed test and append it to the run order."
+                : "Create a new moto and append it to the end of the run order."}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1">
@@ -3081,22 +4068,24 @@ export default function EventSchedule() {
                 })()}
               </div>
 
-              <div className="space-y-1.5">
-                <Label>Type</Label>
-                <Select
-                  value={addForm.type}
-                  onValueChange={v => setAddForm(f => ({ ...f, type: v as typeof MOTO_TYPES[number] }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MOTO_TYPES.map(t => (
-                      <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {!isEnduro && (
+                <div className="space-y-1.5">
+                  <Label>Type</Label>
+                  <Select
+                    value={addForm.type}
+                    onValueChange={v => setAddForm(f => ({ ...f, type: v as typeof MOTO_TYPES[number] }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MOTO_TYPES.filter(t => t !== "enduro_test").map(t => (
+                        <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -3119,6 +4108,27 @@ export default function EventSchedule() {
                 />
               </div>
             </div>
+
+            {/* ── Enduro start mode ── */}
+            {isEnduro && (
+              <div className="flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  id="enduroRfidStart"
+                  checked={addForm.enduroHasRfidStart}
+                  onChange={e => setAddForm(f => ({ ...f, enduroHasRfidStart: e.target.checked }))}
+                  className="h-4 w-4 rounded border-border accent-primary"
+                />
+                <div>
+                  <label htmlFor="enduroRfidStart" className="text-sm font-medium cursor-pointer">
+                    {timingLabel} start gate
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    When checked, the start transponder crossing triggers the timer. Otherwise riders are started manually by bib number.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* ── Rider picker ── */}
             {addForm.raceClass && (() => {
