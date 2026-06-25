@@ -157,6 +157,11 @@ export async function processPracticeCrossing(
     }
   }
 
+  // Drop unrecognized tags — don't record ambient/unknown RFID reads
+  if (!riderId) {
+    return { skipped: true, reason: "unknown_tag" as const };
+  }
+
   const lapNumber = (lastCrossing?.lapNumber ?? 0) + 1;
   const lapTimeMs = lastCrossing
     ? crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime()
@@ -206,12 +211,13 @@ router.post("/practice/active/crossing", async (req, res) => {
     return res.status(400).json({ error: "Invalid crossingTime — must be ISO 8601" });
   }
 
-  // Find the active session for this club
+  // Find the active session for this club (most recently started)
   const [session] = await db.select().from(practiceSessionsTable)
     .where(and(
       eq(practiceSessionsTable.clubId, clubId),
       eq(practiceSessionsTable.status, "active"),
     ))
+    .orderBy(desc(practiceSessionsTable.id))
     .limit(1);
 
   if (!session) {
@@ -274,6 +280,11 @@ router.post("/practice", async (req, res) => {
       .where(eq(clubSettingsTable.clubId, clubId));
     venueName = settings?.trackName ?? null;
   }
+
+  // Auto-end any previously active sessions for this club before starting a new one
+  await db.update(practiceSessionsTable)
+    .set({ status: "ended", endedAt: new Date() })
+    .where(and(eq(practiceSessionsTable.clubId, clubId), eq(practiceSessionsTable.status, "active")));
 
   const [session] = await db.insert(practiceSessionsTable).values({
     clubId,
