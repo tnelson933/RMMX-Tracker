@@ -1568,7 +1568,7 @@ export default function Motos() {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           setIsGenerateOpen(false);
           if (gatePickMethod === "prior_round_finish") {
-            toast({ title: "Lineups generated", description: "Gate picks seeded from prior round finish order." });
+            toast({ title: "Lineups generated", description: "Gate picks seeded from prior moto finish order." });
           } else if (lockedClasses.length > 0) {
             toast({
               title: "Lineups generated",
@@ -2226,7 +2226,7 @@ export default function Motos() {
                     );
                     return (
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Generate Round(s)</label>
+                        <label className="text-sm font-medium">Generate Moto(s)</label>
                         <div className="flex gap-2 flex-wrap">
                           {Array.from({ length: divCount }, (_, i) => i + 1).map(r => {
                             const done = isRoundDone(r);
@@ -2253,7 +2253,7 @@ export default function Motos() {
                             );
                           })}
                         </div>
-                        <p className="text-xs text-muted-foreground">Select which round(s) to generate. Uncheck to leave existing motos for that round untouched.</p>
+                        <p className="text-xs text-muted-foreground">Select which moto(s) to generate. Uncheck to leave existing motos for that moto untouched.</p>
                       </div>
                     );
                   })()}
@@ -2316,10 +2316,10 @@ export default function Motos() {
                   },
                   {
                     value: "prior_round_finish",
-                    label: "Prior Round Finish",
-                    description: "Riders are seeded by their finish position in the most recently completed round. Ties broken by fastest lap.",
+                    label: "Prior Moto Finish",
+                    description: "Riders are seeded by their finish position in the most recently completed moto. Ties broken by fastest lap.",
                     disabled: !hasCompletedRaceMotos,
-                    disabledReason: "No completed race motos yet — run Round 1 first.",
+                    disabledReason: "No completed race motos yet — run Moto 1 first.",
                   },
                 ];
                 return (
@@ -2427,10 +2427,10 @@ export default function Motos() {
                 },
                 {
                   value: "prior_round_finish",
-                  label: "Prior Round Finish",
-                  description: "Riders are seeded by their finish position in the most recently completed round.",
+                  label: "Prior Moto Finish",
+                  description: "Riders are seeded by their finish position in the most recently completed moto.",
                   disabled: !hasCompletedRaceMotos,
-                  disabledReason: "No completed race motos yet — run Round 1 first.",
+                  disabledReason: "No completed race motos yet — run Moto 1 first.",
                 },
               ];
               return (
