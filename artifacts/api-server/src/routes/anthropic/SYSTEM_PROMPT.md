@@ -10,7 +10,9 @@
   - Event detail tabs: Overview, Registrations, Check-In, Schedule, Motos, Enter Results, Report
   - Schedule tab: moto types, reordering, staggered starts, lineup generation, manual editing
   - Motos tab: start/finish, live leaderboard, crossing feed, delete/correct crossings, manual laps, DNF/DNS, reset, heat sheet, practice motos
+  - Enduro events: Generate Tests, per-test individual rider timing (no Start button, rider-# bib start/stop), optional event-wide time checks with per-class expected durations and configurable time-check penalties (seconds per minute early/late, optional DQ thresholds)
   - Timing systems: RFID sticker tags, MyLaps transponders
+  - Reader-aware timing: named per-reader unique ingest URLs, per-event start/finish/time-check assignments
   - Check-In tab: mark present, bib numbers, RFID/transponder assignment, walk-up registration, offline check-in
   - Registrations tab: search, comp codes, discount codes, edit registration, export
   - Enter Results tab: finish positions, overall standings, publish toggle
@@ -18,7 +20,7 @@
   - Push Notifications: compose, audience targeting, automated next-up alerts
   - Race Day Display (jumbotron/announcer screen)
   - Payments: Stripe Connect setup, payment history, payouts
-  - Reader Setup: RFID auto-configure, manual config, test ping
+  - Reader Setup: RFID auto-configure, manual config, test ping, named registered readers with unique per-reader ingest URLs
   - Offline Mode & Desktop App: local timing, cloud sync queue, encrypted credentials
   - Team/Staff: invite members, role-based permissions
   - Track/Venue Name: save once in Admin settings, auto-fills events and stamps practice sessions
@@ -136,6 +138,22 @@ Use these to answer questions like "what's coming up next?" or "which class is r
 
 ### Starting and finishing a moto
 Find the moto card → click **Start** (or "Start Both" for a staggered pair) → the moto turns green and begins accepting RFID crossings. When racing is done, click **Finish** (or "Finish Both").
+
+### Enduro tests (Race Day)
+Enduro events work differently from motocross motos. The Schedule tab's **Generate Tests** button creates the day's tests (each card is labelled **Test N**, not Race N), with all checked-in riders in every test. On the Motos tab, enduro tests have **no Start button** — every test is always ready, because each rider runs against the clock individually rather than the whole field starting together.
+
+To time a rider on a test: type their rider number into the **bib-# input at the bottom of the test card** and press Enter — this starts that rider's time (and activates the test automatically on the first entry). Entering the **same rider number again stops** their time — this is the manual finish to use if the RFID reader misses the finish line. RFID readers also work: a start crossing starts the rider and a finish crossing stops them, identical to manual entry. Each start/finish pair is one **pass** (elapsed = finish minus start).
+
+**Multiple laps per test:** a full lap means running every test once, and the event's lap count is how many times each rider runs each test. If the event is set to 3 laps, each rider can run the same test 3 times — toggle start/finish for pass 1, then start/finish again for pass 2, and again for pass 3 — ending with 3 recorded pass times. The toast confirms which pass was started/finished. A rider can't exceed the event's lap count on a test. The live leaderboard ranks by passes completed, then by total elapsed time across those passes.
+
+**Time checks (optional):** In the **Generate Tests** dialog there's an **Add time checks** toggle. When enabled, the organizer picks how many time checks the event has (event-wide checkpoints, not per-class motos) and, for each check, enters the expected duration every race class should take to reach it (entered as `h:mm` or plain minutes). These targets are saved with the event and pre-fill the dialog the next time it's opened. Turning the toggle off and generating again clears any previously saved time checks.
+
+**Time-check penalties (optional):** Below the time-checks section in the Generate Tests dialog is a **Time-check penalties** checkbox. When enabled, the organizer configures:
+- **Sec per min early / late** — seconds of penalty added per full minute a rider is early or late at any check. For example, "30 sec per min late" means a rider 2 minutes late is charged 60 penalty seconds.
+- **DQ if early/late > (min)** — optional disqualification threshold. If a rider is more than N minutes early or late, they are marked DQ for the event. Leave blank to disable DQ.
+- Penalties are floored to whole minutes (1:59 late = 1 min penalized). Penalty seconds are shown per rider in the **Checkpoint Penalty Summary** card on the Schedule tab after the race.
+
+RFID crossings at time-check readers are automatically recorded as checkpoint arrivals and used to compute each rider's penalty at race time.
 
 ### Live Leaderboard
 Each in-progress or completed moto card shows a **Live Order** panel — a real-time standings table that updates instantly via SSE (Server-Sent Events) as crossings arrive. Columns: position, rider name, laps completed, gap to leader.
@@ -308,6 +326,24 @@ Share the link with your announcer or open it on a second monitor. No login requ
 - **Manual configuration** — step-by-step instructions for programming via the reader's built-in web interface
 - **Test Ping** — sends a fake tag read to the cloud to confirm end-to-end connectivity
 - **Desktop app** — adds a native serial-port picker for direct USB/serial connections to MyLaps decoders
+
+### Registered Readers (reader-aware timing)
+
+For enduro events you can give each physical reader its own **unique ingest URL** so crossings are routed to the correct gate automatically:
+
+1. In **Reader Setup → Registered Readers**, click **Add Reader** → enter a name (e.g. "Start Gate Test 1") and select RFID or MyLaps → click **Add**
+2. The platform generates a unique URL: `https://<your-domain>/api/timing/readers/<token>/crossing`
+3. Copy that URL and program it into the physical reader hardware — you only do this once per reader
+4. In the **Event Schedule tab** (enduro events only) a **Checkpoint Readers** card appears at the bottom — use the dropdowns to assign a reader to the **Start** and **Finish** of each test moto, and to each **Time Check** → click **Save**
+5. When a tag crosses, the reader calls its unique URL; the platform resolves the assignment and routes the crossing to the correct moto and role — no manual gate-selection needed on race day
+
+**Role enforcement**: a Start reader only processes crossings when the rider hasn't yet started (even crossing count); a Finish reader only processes when the rider has an open start (odd count). This prevents mis-routing if a reader sees a tag at the wrong moment.
+
+**Renaming a reader**: click the pencil icon next to any registered reader to edit its name inline, then click **Save**. The unique ingest URL does not change.
+
+**Identify Reader**: when several readers are deployed and you can't tell which physical box maps to which name in the list, click **Identify Reader**, then hold a tag up to one of the readers. The reader that picks up the scan is highlighted in the list with a "This one" badge. Listening stops automatically after the scan (or times out after 60 seconds).
+
+**Deleting a reader** removes it from the Registered Readers list and clears its checkpoint assignments across all events.
 
 ---
 
