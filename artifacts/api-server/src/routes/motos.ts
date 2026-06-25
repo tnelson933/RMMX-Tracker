@@ -240,7 +240,7 @@ router.post("/events/:eventId/motos", async (req, res) => {
     if (evClubId !== staffCIdPost) return res.status(403).json({ error: "Forbidden" });
   }
 
-  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, practiceMode, countdownSeconds } = req.body;
+  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, practiceMode, countdownSeconds, enduroHasRfidStart } = req.body;
 
   // raceClasses (multi-class practice): raceClass can be derived from first entry
   const resolvedRaceClass = raceClass || (Array.isArray(raceClasses) && raceClasses.length > 0 ? raceClasses[0] : null);
@@ -255,6 +255,7 @@ router.post("/events/:eventId/motos", async (req, res) => {
     timeLimitMs: timeLimitMs ? Number(timeLimitMs) : null,
     practiceMode: practiceMode ?? "lap_count",
     countdownSeconds: countdownSeconds ? Number(countdownSeconds) : null,
+    enduroHasRfidStart: enduroHasRfidStart === true,
   }).returning();
 
   return res.status(201).json({ ...moto, lineup: Array.isArray(moto.lineup) ? moto.lineup : [], createdAt: moto.createdAt.toISOString() });
@@ -275,7 +276,14 @@ router.patch("/motos/:motoId", async (req, res) => {
   if (req.body.status !== undefined) {
     updates.status = req.body.status;
     if (req.body.status === "in_progress") {
-      updates.startedAt = new Date();
+      // Idempotent start: only anchor startedAt the first time a moto goes live.
+      // Re-issuing in_progress (e.g. enduro tests auto-starting from rider entries)
+      // must never reset the timing anchor mid-test. Use /restart to reset.
+      const [existing] = await db
+        .select({ startedAt: motosTable.startedAt })
+        .from(motosTable)
+        .where(eq(motosTable.id, id));
+      if (!existing?.startedAt) updates.startedAt = new Date();
     }
     if (req.body.status === "completed") updates.completedAt = new Date();
   }
