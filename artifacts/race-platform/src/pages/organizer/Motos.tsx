@@ -4,7 +4,7 @@ import { getPublicOrigin } from "@/lib/publicOrigin";
 import {
   useListMotos, useGenerateLineups, useGenerateMotoLineup, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables,
-  useUpdateResultLaps, useListResults, useGeneratePracticeSessions,
+  useUpdateResultLaps, useListResults, useGeneratePracticeSessions, useGetEnduroPenaltySummary,
   getListMotosQueryKey, getListCheckinsQueryKey, Moto, updateMoto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -47,6 +47,8 @@ type LeaderboardEntry = {
   riderName: string;
   bibNumber: string | null;
   laps: number;
+  lapTimes?: string[];
+  bestLap?: string | null;
   lastLap: string | null;
   totalTime: string | null;
   gap: string;
@@ -117,7 +119,7 @@ async function playRfidPing(count: number) {
   // Context stays open and warm for the next crossing.
 }
 
-function LiveLeaderboard({ motoId }: { motoId: number }) {
+function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penaltyMap }: { motoId: number; isElapsedTimeSport?: boolean; isEnduro?: boolean; lapCount?: number | null; penaltyMap?: Record<number, { totalPenaltySeconds: number; disqualified: boolean }> }) {
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -200,38 +202,102 @@ function LiveLeaderboard({ motoId }: { motoId: number }) {
               <TableRow>
                 <TableHead className="text-xs py-1.5 w-8 text-center px-2">P</TableHead>
                 <TableHead className="text-xs py-1.5">Rider</TableHead>
-                <TableHead className="text-xs py-1.5 text-center w-10">Lps</TableHead>
-                <TableHead className="text-xs py-1.5 text-right pr-3 w-20">Gap</TableHead>
+                {isEnduro ? (
+                  <>
+                    <TableHead className="text-xs py-1.5 text-right pr-2 w-20">Best</TableHead>
+                    <TableHead className="text-xs py-1.5 text-right pr-3 w-20">Total</TableHead>
+                    {penaltyMap && <TableHead className="text-xs py-1.5 text-right pr-2 w-16">Pen.</TableHead>}
+                  </>
+                ) : isElapsedTimeSport ? (
+                  <TableHead className="text-xs py-1.5 text-right pr-3 w-24">Elapsed</TableHead>
+                ) : (
+                  <>
+                    <TableHead className="text-xs py-1.5 text-center w-10">Lps</TableHead>
+                    <TableHead className="text-xs py-1.5 text-right pr-3 w-20">Gap</TableHead>
+                  </>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
               {snapshot.leaderboard.map((entry) => (
                 <TableRow
                   key={entry.riderId ?? entry.riderName}
-                  className={`h-7 ${entry.position === 1 ? "bg-secondary/10" : ""}`}
+                  className={`${isEnduro ? "" : "h-7"} ${entry.position === 1 ? "bg-secondary/10" : ""}`}
                 >
-                  <TableCell className="py-1 px-2 text-center">
+                  <TableCell className="py-1 px-2 text-center align-top">
                     <span className={`font-heading font-bold text-xs ${entry.position === 1 ? "text-secondary" : "text-muted-foreground"}`}>
                       {entry.position}
                     </span>
                   </TableCell>
-                  <TableCell className="py-1 text-xs font-medium leading-tight">
-                    <span className={entry.dnf || entry.dns ? "line-through text-muted-foreground" : ""}>
-                      {entry.riderName}
-                    </span>
-                    {entry.dnf && <span className="ml-1 text-[10px] text-destructive font-bold">DNF</span>}
-                    {entry.dns && <span className="ml-1 text-[10px] text-muted-foreground font-bold">DNS</span>}
-                  </TableCell>
-                  <TableCell className="py-1 text-center text-xs font-mono font-bold tabular-nums">
-                    {entry.laps}
-                  </TableCell>
-                  <TableCell className="py-1 pr-3 text-right text-xs tabular-nums text-muted-foreground">
-                    {entry.gap === "Leader" ? (
-                      <span className="text-secondary font-bold">Ldr</span>
-                    ) : (
-                      entry.gap
+                  <TableCell className="py-1 text-xs font-medium leading-tight align-top">
+                    {(() => {
+                      const incomplete = isEnduro && lapCount != null && entry.laps < lapCount && !entry.dnf && !entry.dns;
+                      return (
+                        <>
+                          <span className={entry.dnf || entry.dns ? "line-through text-muted-foreground" : incomplete ? "text-red-400" : ""}>
+                            {entry.riderName}
+                          </span>
+                          {entry.dnf && <span className="ml-1 text-[10px] text-destructive font-bold">DNF</span>}
+                          {entry.dns && <span className="ml-1 text-[10px] text-muted-foreground font-bold">DNS</span>}
+                          {incomplete && (
+                            <span className="ml-1 text-[10px] text-red-400 font-bold">{entry.laps}/{lapCount}P</span>
+                          )}
+                        </>
+                      );
+                    })()}
+                    {isEnduro && entry.lapTimes && entry.lapTimes.length > 0 && (
+                      <div className="flex flex-wrap gap-x-2 mt-0.5">
+                        {entry.lapTimes.map((t, i) => (
+                          <span key={i} className="text-[10px] font-mono tabular-nums text-muted-foreground/70">
+                            P{i + 1}:{t}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </TableCell>
+                  {isEnduro ? (
+                    <>
+                      <TableCell className="py-1 pr-2 text-right align-top">
+                        <span className={`text-xs font-mono font-bold tabular-nums ${entry.position === 1 ? "text-secondary" : ""}`}>
+                          {entry.bestLap ?? "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="py-1 pr-3 text-right text-xs font-mono tabular-nums text-muted-foreground align-top">
+                        {entry.totalTime ?? "—"}
+                      </TableCell>
+                      {penaltyMap && (() => {
+                        const pen = entry.riderId != null ? penaltyMap[entry.riderId] : undefined;
+                        return (
+                          <TableCell className="py-1 pr-2 text-right align-top">
+                            {pen?.disqualified ? (
+                              <span className="text-[10px] font-bold text-destructive">DQ</span>
+                            ) : pen && pen.totalPenaltySeconds > 0 ? (
+                              <span className="text-[10px] font-mono text-amber-500">+{pen.totalPenaltySeconds}s</span>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground/40">—</span>
+                            )}
+                          </TableCell>
+                        );
+                      })()}
+                    </>
+                  ) : isElapsedTimeSport ? (
+                    <TableCell className="py-1 pr-3 text-right text-xs font-mono tabular-nums text-muted-foreground">
+                      {entry.totalTime ?? "—"}
+                    </TableCell>
+                  ) : (
+                    <>
+                      <TableCell className="py-1 text-center text-xs font-mono font-bold tabular-nums">
+                        {entry.laps}
+                      </TableCell>
+                      <TableCell className="py-1 pr-3 text-right text-xs tabular-nums text-muted-foreground">
+                        {entry.gap === "Leader" ? (
+                          <span className="text-secondary font-bold">Ldr</span>
+                        ) : (
+                          entry.gap
+                        )}
+                      </TableCell>
+                    </>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -242,7 +308,7 @@ function LiveLeaderboard({ motoId }: { motoId: number }) {
   );
 }
 
-function LiveCrossingsFeed({ motoId, minLapTimeMs }: { motoId: number; minLapTimeMs?: number | null }) {
+function LiveCrossingsFeed({ motoId, minLapTimeMs, isEnduro }: { motoId: number; minLapTimeMs?: number | null; isEnduro?: boolean }) {
   const [crossings, setCrossings] = useState<RawCrossing[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -345,8 +411,8 @@ function LiveCrossingsFeed({ motoId, minLapTimeMs }: { motoId: number; minLapTim
             <TableHeader className="bg-muted/40 sticky top-0">
               <TableRow>
                 <TableHead className="text-xs py-1.5 px-3">Rider</TableHead>
-                <TableHead className="text-xs py-1.5 text-center w-14">Lap</TableHead>
-                <TableHead className="text-xs py-1.5 text-center w-20">Lap Time</TableHead>
+                <TableHead className="text-xs py-1.5 text-center w-14">{isEnduro ? "Pass" : "Lap"}</TableHead>
+                <TableHead className="text-xs py-1.5 text-center w-20">{isEnduro ? "Pass Time" : "Lap Time"}</TableHead>
                 <TableHead className="text-xs py-1.5 text-right pr-3 w-20">Time</TableHead>
                 <TableHead className="w-8" />
               </TableRow>
@@ -1078,7 +1144,7 @@ export default function Motos() {
 
   // Manual create moto state
   const [newMotoName, setNewMotoName] = useState("");
-  const [newMotoType, setNewMotoType] = useState<"heat" | "lcq" | "main" | "practice">("heat");
+  const [newMotoType, setNewMotoType] = useState<"heat" | "lcq" | "main" | "practice" | "enduro_test">("heat");
   const [newMotoClass, setNewMotoClass] = useState("");
   const [newMotoLapCount, setNewMotoLapCount] = useState("");
   const [newMotoScheduledTime, setNewMotoScheduledTime] = useState("");
@@ -1132,6 +1198,21 @@ export default function Motos() {
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const eventScoringTable = (pointsTables ?? []).find(t => t.id === (event as any)?.scoringTableId);
   const isSupercrossFormat = eventScoringTable?.mainEventOnly === true;
+  const raceStyle: "motocross" | "enduro" | "cross_country" = (event as any)?.raceStyle ?? "motocross";
+  const isElapsedTimeSport = raceStyle === "cross_country" || raceStyle === "enduro";
+  const isEnduro = raceStyle === "enduro";
+
+  // Penalty map for enduro events (riderId → { totalPenaltySeconds, disqualified })
+  const hasPenaltyConfig = !!(event as any)?.enduroPenaltyConfig;
+  const { data: penaltySummaryRaw } = useGetEnduroPenaltySummary(eventId, {
+    query: { enabled: isEnduro && hasPenaltyConfig, refetchInterval: isEnduro && hasPenaltyConfig ? 30_000 : false } as any,
+  });
+  const penaltyMap = (penaltySummaryRaw as any[] | undefined)?.reduce<
+    Record<number, { totalPenaltySeconds: number; disqualified: boolean }>
+  >((acc, entry: any) => {
+    acc[entry.riderId] = { totalPenaltySeconds: entry.totalPenaltySeconds, disqualified: entry.disqualified };
+    return acc;
+  }, {});
 
   // Build a set of "motoId-riderId" keys for riders who have at least one lap under
   // the minimum lap time for their class — used to highlight names red in the lineup.
@@ -1148,7 +1229,7 @@ export default function Motos() {
   }, [results, minLapMs]);
 
   // Checked-in riders for the currently selected class in the create dialog
-  const classCheckins = (checkins ?? []).filter(c => c.checkedIn && c.raceClass === newMotoClass);
+  const classCheckins = (checkins ?? []).filter(c => c.checkedIn && (isEnduro || c.raceClass === newMotoClass));
   const allSelected = classCheckins.length > 0 && classCheckins.every(c => selectedRiderIds.has(c.riderId));
 
   const toggleRider = (riderId: number) => {
@@ -1493,7 +1574,7 @@ export default function Motos() {
   };
 
   const handleCreateMoto = () => {
-    if (!newMotoName.trim() || (newMotoType !== "practice" && !newMotoClass)) return;
+    if (!newMotoName.trim() || (!isEnduro && newMotoType !== "practice" && !newMotoClass)) return;
     const nextMotoNumber = motos?.length ? Math.max(...motos.map(m => m.motoNumber ?? 0)) + 1 : 1;
     const lapCountNum = newMotoLapCount.trim() ? parseInt(newMotoLapCount.trim(), 10) : undefined;
     const timeLimitMs = newMotoTimeLimitMinutes.trim() && parseFloat(newMotoTimeLimitMinutes) > 0
@@ -1530,14 +1611,38 @@ export default function Motos() {
         rfidNumber: c.rfidNumber || null,
       }));
 
+    const allClasses: string[] = ((event as any)?.raceClasses as string[] | undefined) ?? [];
+    const existingTest = (motos as any[] | undefined)?.find(m => m.type === "enduro_test");
+    const motoData: any = isEnduro
+      ? {
+          name: newMotoName.trim(),
+          type: "enduro_test",
+          raceClass: "All Classes",
+          raceClasses: allClasses.length > 0 ? allClasses : undefined,
+          motoNumber: nextMotoNumber,
+          lineup: lineup as any,
+          lapCount: lapCountNum,
+          enduroHasRfidStart: existingTest ? Boolean(existingTest.enduroHasRfidStart) : false,
+          ...(newMotoScheduledTime.trim() ? { scheduledTime: newMotoScheduledTime.trim() } : {}),
+        }
+      : {
+          name: newMotoName.trim(),
+          type: newMotoType,
+          raceClass: (newMotoClass || undefined) as string,
+          motoNumber: nextMotoNumber,
+          lineup: lineup as any,
+          lapCount: lapCountNum,
+          ...(timeLimitMs ? { timeLimitMs } : {}),
+          ...(newMotoScheduledTime.trim() ? { scheduledTime: newMotoScheduledTime.trim() } : {}),
+        };
     createMotoMutation.mutate(
-      { eventId, data: { name: newMotoName.trim(), type: newMotoType, raceClass: (newMotoClass || undefined) as string, motoNumber: nextMotoNumber, lineup: lineup as any, lapCount: lapCountNum, ...(timeLimitMs ? { timeLimitMs } : {}), ...(newMotoScheduledTime.trim() ? { scheduledTime: newMotoScheduledTime.trim() } : {}) } },
+      { eventId, data: motoData },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           setIsCreateOpen(false);
           resetCreateDialog();
-          toast({ title: "Moto created" });
+          toast({ title: isEnduro ? "Test created" : "Moto created" });
         },
         onError: (err) => {
           toast({ title: "Failed to create moto", description: err.message, variant: "destructive" });
@@ -1831,6 +1936,10 @@ export default function Motos() {
       const data = await res.json();
       if (!res.ok) {
         toast({ title: "Failed to record lap", description: data.error ?? "Unknown error", variant: "destructive" });
+      } else if (data.enduroAction === "started") {
+        toast({ title: `🟢 Pass ${data.lapNumber} started`, description: "Clock running — enter the same # again to finish." });
+      } else if (data.enduroAction === "finished") {
+        toast({ title: `🏁 Pass ${data.lapNumber} finished`, description: data.elapsed ? `Elapsed: ${data.elapsed}` : "Finish recorded" });
       } else {
         toast({
           title: `⏱ Lap ${data.lapNumber} recorded`,
@@ -1851,7 +1960,7 @@ export default function Motos() {
     }
   };
 
-  const handleBibEntry = (motoId: number, lineup: LineupEntry[]) => {
+  const handleBibEntry = async (motoId: number, lineup: LineupEntry[]) => {
     const raw = (bibInputs[motoId] ?? "").trim().replace(/^#/, "");
     if (!raw) return;
     const entry = lineup.find(e => e.bibNumber && e.bibNumber.replace(/^#/, "") === raw);
@@ -1860,19 +1969,29 @@ export default function Motos() {
       return;
     }
     setBibInputs(prev => ({ ...prev, [motoId]: "" }));
+    // Enduro tests have no Start button — riders start individually. Activate the
+    // test on the first rider entry so the crossing engine accepts the time.
+    const motoObj = (motos ?? []).find(m => m.id === motoId);
+    if (motoObj && motoObj.type === "enduro_test" && motoObj.status !== "in_progress") {
+      try {
+        await updateMoto(motoId, { status: "in_progress" } as any);
+        await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      } catch {
+        toast({ title: "Failed to start test", variant: "destructive" });
+        return;
+      }
+    }
     handleManualLap(entry.riderId, motoId);
   };
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-heading font-bold uppercase tracking-tight">Moto Management</h2>
-          <p className="text-muted-foreground">Manage heats, mains, and {(event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID"} timing.</p>
-        </div>
+        <div />
 
         <div className="flex items-center gap-2">
-          {/* Auto Start Next Moto toggle */}
+          {/* Auto Start Next Moto toggle — not applicable to enduro (riders start individually) */}
+          {!isEnduro && (
           <button
             onClick={() => setAutoStartEnabled(v => !v)}
             className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-heading font-bold uppercase tracking-wider transition-all select-none ${
@@ -1888,6 +2007,7 @@ export default function Motos() {
             </span>
             Auto Start Next
           </button>
+          )}
 
           <Button
             variant={showBroadcast ? "default" : "outline"}
@@ -1901,18 +2021,18 @@ export default function Motos() {
           <Dialog open={isCreateOpen} onOpenChange={open => { setIsCreateOpen(open); if (!open) resetCreateDialog(); }}>
             <DialogTrigger asChild>
               <Button variant="outline" className="font-heading uppercase tracking-wider">
-                <PlusCircle size={16} className="mr-2" /> Create Moto
+                <PlusCircle size={16} className="mr-2" /> {isEnduro ? "Add Test" : "Create Moto"}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle className="font-heading uppercase text-xl">Create Moto Manually</DialogTitle>
+                <DialogTitle className="font-heading uppercase text-xl">{isEnduro ? "Add Test" : "Create Moto Manually"}</DialogTitle>
               </DialogHeader>
               <div className="space-y-5 py-2">
 
                 {/* Name */}
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Moto Name</label>
+                  <label className="text-sm font-medium">{isEnduro ? "Test Name" : "Moto Name"}</label>
                   <Input
                     value={newMotoName}
                     onChange={e => setNewMotoName(e.target.value)}
@@ -1921,7 +2041,8 @@ export default function Motos() {
                   />
                 </div>
 
-                {/* Type + Class row */}
+                {/* Type + Class row — hidden for enduro (tests are event-wide, all classes) */}
+                {!isEnduro && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Type</label>
@@ -1956,6 +2077,7 @@ export default function Motos() {
                     </Select>
                   </div>
                 </div>
+                )}
 
                 {/* Practice-specific settings */}
                 {newMotoType === "practice" ? (
@@ -2059,7 +2181,7 @@ export default function Motos() {
                         <Badge variant="secondary" className="ml-1 font-mono">{selectedRiderIds.size} selected</Badge>
                       )}
                     </label>
-                    {newMotoClass && classCheckins.length > 0 && (
+                    {(isEnduro || newMotoClass) && classCheckins.length > 0 && (
                       <div className="flex gap-2">
                         <button
                           className="text-xs text-primary hover:underline font-medium"
@@ -2078,13 +2200,13 @@ export default function Motos() {
                     )}
                   </div>
 
-                  {!newMotoClass ? (
+                  {(!isEnduro && !newMotoClass) ? (
                     <div className="border rounded-md bg-muted/30 py-8 text-center text-sm text-muted-foreground">
                       Select a race class to see riders
                     </div>
                   ) : classCheckins.length === 0 ? (
                     <div className="border rounded-md bg-muted/30 py-8 text-center text-sm text-muted-foreground">
-                      No checked-in riders for {newMotoClass}
+                      {isEnduro ? "No checked-in riders" : `No checked-in riders for ${newMotoClass}`}
                     </div>
                   ) : (
                     <ScrollArea className="border rounded-md h-52">
@@ -2128,10 +2250,10 @@ export default function Motos() {
                 </Button>
                 <Button
                   onClick={handleCreateMoto}
-                  disabled={createMotoMutation.isPending || !newMotoName.trim() || (newMotoType !== "practice" && !newMotoClass)}
+                  disabled={createMotoMutation.isPending || !newMotoName.trim() || (!isEnduro && newMotoType !== "practice" && !newMotoClass)}
                   className="font-heading uppercase tracking-wider"
                 >
-                  {createMotoMutation.isPending ? "Creating..." : "Create Moto"}
+                  {createMotoMutation.isPending ? "Creating..." : isEnduro ? "Add Test" : "Create Moto"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -2500,34 +2622,6 @@ export default function Motos() {
         </div>
       )}
 
-      {/* Timing info banner — content varies by technology */}
-      {(event as any)?.timingTechnology === "mylaps" ? (
-        <div className="bg-blue-500/5 border border-blue-500/20 rounded-md px-4 py-3 flex items-start gap-3">
-          <Zap size={18} className="text-blue-500 mt-0.5 shrink-0" />
-          <div className="text-sm">
-            <span className="font-bold text-blue-600">MyLaps Timing:</span>{" "}
-            <span className="text-muted-foreground">
-              Start a moto to begin receiving transponder data. MyLaps sends lap crossings to{" "}
-              <code className="bg-muted px-1 rounded text-xs font-mono">POST /api/timing/crossing</code> with{" "}
-              <code className="bg-muted px-1 rounded text-xs font-mono">{`{ rfidNumber, motoId }`}</code>.
-              The leaderboard updates in real time via SSE.
-            </span>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-primary/5 border border-primary/20 rounded-md px-4 py-3 flex items-start gap-3">
-          <Radio size={18} className="text-primary mt-0.5 shrink-0" />
-          <div className="text-sm">
-            <span className="font-bold text-primary">RFID Timing:</span>{" "}
-            <span className="text-muted-foreground">
-              Start a moto to activate live timing. Readers send tag crossings to{" "}
-              <code className="bg-muted px-1 rounded text-xs font-mono">POST /api/timing/crossing</code> with{" "}
-              <code className="bg-muted px-1 rounded text-xs font-mono">{`{ rfidNumber, motoId }`}</code>.
-              The leaderboard updates in real time via SSE.
-            </span>
-          </div>
-        </div>
-      )}
 
       <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleRiderDragStart} onDragEnd={handleRiderDragEnd}>
       <div className="flex gap-5 items-start">
@@ -2809,7 +2903,7 @@ export default function Motos() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-sm truncate">{moto.name}</span>
-                            {moto.status === "in_progress" && (
+                            {moto.status === "in_progress" && moto.type !== "enduro_test" && (
                               <span className="relative flex h-2 w-2 shrink-0">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
                                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
@@ -2847,12 +2941,12 @@ export default function Motos() {
                             <LayoutGrid size={13} className="text-muted-foreground/0 group-hover:text-muted-foreground/50 transition-colors shrink-0" aria-label="Open in grid" />
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
                               moto.status === "in_progress"
-                                ? "bg-primary/15 text-primary border-primary/30 animate-pulse"
+                                ? `bg-primary/15 text-primary border-primary/30 ${moto.type !== "enduro_test" ? "animate-pulse" : ""}`
                                 : moto.status === "completed"
                                 ? "bg-secondary/15 text-secondary border-secondary/30"
                                 : "bg-muted text-muted-foreground border-transparent"
                             }`}>
-                              {moto.status === "in_progress" && (
+                              {moto.status === "in_progress" && moto.type !== "enduro_test" && (
                                 <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-ping shrink-0" />
                               )}
                               {moto.status.replace("_", " ")}
@@ -2897,7 +2991,7 @@ export default function Motos() {
               <CardHeader className="bg-sidebar text-sidebar-foreground py-3 border-b flex flex-row items-center gap-3 px-4">
                 {/* Race number corner block */}
                 <div className="shrink-0 self-stretch -my-3 -ml-4 mr-0 flex flex-col items-center justify-center bg-primary border-r border-primary/70 w-14">
-                  <span className="text-[8px] font-bold uppercase tracking-widest text-white leading-none mb-0.5">RACE</span>
+                  <span className="text-[8px] font-bold uppercase tracking-widest text-white leading-none mb-0.5">{moto.type === "enduro_test" ? "TEST" : "RACE"}</span>
                   <span className="font-heading font-bold text-2xl leading-none tabular-nums text-white">{moto.motoNumber}</span>
                 </div>
 
@@ -2927,11 +3021,11 @@ export default function Motos() {
                     </span>
                     {/* Status badge */}
                     <span className={`text-xs px-2 py-0.5 rounded border flex items-center gap-1 ${
-                      moto.status === "in_progress" ? "bg-green-500/20 text-green-300 border-green-500/30 animate-pulse" :
+                      moto.status === "in_progress" ? `bg-green-500/20 text-green-300 border-green-500/30 ${moto.type !== "enduro_test" ? "animate-pulse" : ""}` :
                       moto.status === "completed"   ? "bg-white/10 text-white/60 border-white/15" :
                                                       "bg-white/10 text-white/75 border-white/20"
                     }`}>
-                      {moto.status === "in_progress" && (
+                      {moto.status === "in_progress" && moto.type !== "enduro_test" && (
                         <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full animate-ping shrink-0" />
                       )}
                       {moto.status === "in_progress" ? "In Progress" : moto.status === "completed" ? "Completed" : "Scheduled"}
@@ -2952,7 +3046,7 @@ export default function Motos() {
                 {/* Actions: primary status action + icon buttons */}
                 <div className="flex items-center gap-1 shrink-0">
                   {/* Start/Finish/Restart — compact pill in header */}
-                  {moto.status === "scheduled" && (
+                  {moto.status === "scheduled" && moto.type !== "enduro_test" && (
                     <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs h-7 px-2.5 gap-1">
                       <Play size={12} /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId ? "Start Group" : "Start"}
                     </Button>
@@ -3137,8 +3231,8 @@ export default function Motos() {
                     />
                   </div>
                 )}
-                {/* First place finish countdown — hidden when expanded dialog is open, not shown for practice */}
-                {moto.type !== "practice" && moto.status === "in_progress" && expandedMotoId !== moto.id && (
+                {/* First place finish countdown — hidden when expanded dialog is open, not shown for practice or enduro */}
+                {moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" && expandedMotoId !== moto.id && (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
                 )}
 
@@ -3160,8 +3254,8 @@ export default function Motos() {
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
                           <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={moto.id} />
-                            <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} />
+                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                            <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
                           </div>
                         </div>
                       )}
@@ -3169,8 +3263,8 @@ export default function Motos() {
                         <div key={partner.id} className="border-t">
                           <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{partner.name}</div>
                           <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={partner.id} />
-                            <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} />
+                            <LiveLeaderboard motoId={partner.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={partner.type === "enduro_test"} lapCount={(partner as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                            <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} isEnduro={partner.type === "enduro_test"} />
                           </div>
                         </div>
                       ))}
@@ -3186,7 +3280,7 @@ export default function Motos() {
                     </Button>
                   )}
 
-                  {moto.status === "in_progress" && (
+                  {(moto.status === "in_progress" || (moto.type === "enduro_test" && moto.status !== "completed")) && (
                     <form
                       className="flex items-center gap-1"
                       onSubmit={e => { e.preventDefault(); handleBibEntry(moto.id, getLineup(moto)); }}
@@ -3196,10 +3290,13 @@ export default function Motos() {
                         <input
                           type="text"
                           inputMode="numeric"
-                          placeholder="#"
+                          placeholder={moto.type === "enduro_test" ? "Start / stop #" : "#"}
+                          title={moto.type === "enduro_test"
+                            ? "Enter rider # to start their test time; enter the same # again (or the finish reader) to stop it"
+                            : "Enter rider # to record a lap"}
                           value={bibInputs[moto.id] ?? ""}
                           onChange={e => setBibInputs(prev => ({ ...prev, [moto.id]: e.target.value }))}
-                          className="h-7 w-20 pl-6 pr-2 rounded border border-border bg-background text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/60"
+                          className="h-7 w-28 pl-6 pr-2 rounded border border-border bg-background text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/60"
                         />
                       </div>
                     </form>
@@ -3211,7 +3308,7 @@ export default function Motos() {
                       timeLimitMs={(moto as any).timeLimitMs ?? null}
                       onExpire={() => handleStatusUpdate(moto.id, "completed")}
                     />
-                  ) : moto.type !== "practice" && moto.status === "in_progress" ? (
+                  ) : moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" ? (
                     <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />
                   ) : null}
 
@@ -3251,15 +3348,15 @@ export default function Motos() {
             <span className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-current transition-all duration-150 group-hover:bg-green-500 group-hover:border-green-500 group-hover:text-white">
               <Plus size={28} strokeWidth={2.5} />
             </span>
-            <span className="text-sm font-bold uppercase tracking-widest">Add New Race</span>
+            <span className="text-sm font-bold uppercase tracking-widest">{isEnduro ? "Add Test" : "Add New Race"}</span>
           </button>
         </div>
         ) : viewMode === "grid" ? (
           <Card>
             <CardContent className="p-16 text-center">
               <Flag className="mx-auto text-muted-foreground opacity-20 mb-4" size={48} />
-              <h3 className="text-xl font-heading font-bold mb-2">No Motos Generated</h3>
-              <p className="text-muted-foreground mb-6">Use the Schedule tab to generate lineups for this event.</p>
+              <h3 className="text-xl font-heading font-bold mb-2">{isEnduro ? "No Tests Generated" : "No Motos Generated"}</h3>
+              <p className="text-muted-foreground mb-6">{isEnduro ? "Use the Schedule tab to generate tests for this event." : "Use the Schedule tab to generate lineups for this event."}</p>
             </CardContent>
           </Card>
         ) : null}
@@ -3313,11 +3410,11 @@ export default function Motos() {
                   </div>
                 </div>
                 <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider border ${
-                  moto.status === "in_progress" ? "bg-primary/20 text-primary border-primary/30 animate-pulse" :
+                  moto.status === "in_progress" ? `bg-primary/20 text-primary border-primary/30 ${moto.type !== "enduro_test" ? "animate-pulse" : ""}` :
                   moto.status === "completed" ? "bg-secondary/20 text-secondary border-secondary/30" :
                   "bg-sidebar-accent text-sidebar-foreground/80 border-transparent"
                 }`}>
-                  {moto.status === "in_progress" && (
+                  {moto.status === "in_progress" && moto.type !== "enduro_test" && (
                     <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full mr-1 animate-ping" />
                   )}
                   {moto.status.replace("_", " ")}
@@ -3517,8 +3614,8 @@ export default function Motos() {
                   );
                 })()}
 
-                {/* First place finish countdown — not shown for practice motos */}
-                {moto.type !== "practice" && moto.status === "in_progress" && (
+                {/* First place finish countdown — not shown for practice or enduro motos */}
+                {moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" && (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
                 )}
 
@@ -3555,8 +3652,8 @@ export default function Motos() {
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
                           <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={moto.id} />
-                            <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} />
+                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                            <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
                           </div>
                         </div>
                       )}
@@ -3564,8 +3661,8 @@ export default function Motos() {
                         <div key={partner.id} className="border-t">
                           <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{partner.name}</div>
                           <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={partner.id} />
-                            <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} />
+                            <LiveLeaderboard motoId={partner.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={partner.type === "enduro_test"} lapCount={(partner as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                            <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} isEnduro={partner.type === "enduro_test"} />
                           </div>
                         </div>
                       ))}
@@ -3576,7 +3673,7 @@ export default function Motos() {
 
               {/* Action bar */}
               <div className="p-3 bg-muted/30 border-t flex gap-2 items-center flex-wrap shrink-0">
-                {moto.status === "scheduled" && (
+                {moto.status === "scheduled" && moto.type !== "enduro_test" && (
                   <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs">
                     <Play size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId ? "Start Group" : moto.type === "practice" ? "Start Practice" : "Start Moto"}
                   </Button>
@@ -3592,7 +3689,7 @@ export default function Motos() {
                   </Button>
                 )}
 
-                {moto.status === "in_progress" && (
+                {(moto.status === "in_progress" || (moto.type === "enduro_test" && moto.status !== "completed")) && (
                   <form
                     className="flex items-center gap-1.5"
                     onSubmit={e => { e.preventDefault(); handleBibEntry(moto.id, getLineup(moto)); }}
@@ -3602,16 +3699,19 @@ export default function Motos() {
                       <input
                         type="text"
                         inputMode="numeric"
-                        placeholder="# + Enter"
+                        placeholder={moto.type === "enduro_test" ? "Start / stop rider # + Enter" : "# + Enter"}
+                        title={moto.type === "enduro_test"
+                          ? "Enter rider # to start their test time; enter the same # again (or the finish reader) to stop it"
+                          : "Enter rider # to record a lap"}
                         value={bibInputs[moto.id] ?? ""}
                         onChange={e => setBibInputs(prev => ({ ...prev, [moto.id]: e.target.value }))}
-                        className="h-8 w-36 pl-7 pr-2 rounded border border-border bg-background text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50"
+                        className="h-8 w-44 pl-7 pr-2 rounded border border-border bg-background text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary placeholder:text-muted-foreground/50"
                       />
                     </div>
                   </form>
                 )}
 
-                {moto.type !== "practice" && moto.status === "in_progress" && (
+                {moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" && (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />
                 )}
                 {moto.type === "practice" && moto.status === "in_progress" && (moto as any).timeLimitMs && (
