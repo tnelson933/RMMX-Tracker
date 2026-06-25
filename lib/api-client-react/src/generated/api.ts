@@ -45,6 +45,7 @@ import type {
   CreatePracticeSessionInput,
   CreateTeamMemberInput,
   CreateUserInput,
+  DeleteCheckpointArrival200,
   DeleteDiscountCategory200,
   DeleteDiscountCode200,
   DeleteRiderDiscountCode200,
@@ -56,9 +57,13 @@ import type {
   DiscountCodeInput,
   DiscountCodeUpdate,
   DiscountCodeUsageEntry,
+  EnduroCheckpointArrival,
+  EnduroPenaltySummaryEntry,
+  EnduroTimeCheck,
   ErrorEnvelope,
   Event,
   EventInput,
+  EventReaderAssignment,
   EventReport,
   EventUpdate,
   GenerateMotoLineupInput,
@@ -91,7 +96,13 @@ import type {
   PublishInput,
   RaceDaySummary,
   RaceResult,
+  Reader,
+  ReaderCrossing200,
+  ReaderCrossingInput,
+  ReaderInput,
+  ReaderUpdateInput,
   RecentResultItem,
+  RecordArrivalInput,
   Registration,
   RegistrationInput,
   RegistrationUpdate,
@@ -112,6 +123,8 @@ import type {
   SeriesInput,
   SeriesStanding,
   SeriesUpdateInput,
+  SetEnduroTimeChecksInput,
+  SetEventReaderAssignmentsInput,
   SetupRequest,
   StaggerLinkInput,
   StateInfo,
@@ -2338,6 +2351,296 @@ export const useDeleteEvent = <TError = ErrorType<unknown>,
       return useMutation(getDeleteEventMutationOptions(options));
     }
 
+export const getListReadersUrl = () => {
+
+
+
+
+  return `/api/readers`
+}
+
+/**
+ * @summary List all readers registered to the caller's club
+ */
+export const listReaders = async ( options?: RequestInit): Promise<Reader[]> => {
+
+  return customFetch<Reader[]>(getListReadersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListReadersQueryKey = () => {
+    return [
+    `/api/readers`
+    ] as const;
+    }
+
+
+export const getListReadersQueryOptions = <TData = Awaited<ReturnType<typeof listReaders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReaders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListReadersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listReaders>>> = ({ signal }) => listReaders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listReaders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListReadersQueryResult = NonNullable<Awaited<ReturnType<typeof listReaders>>>
+export type ListReadersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all readers registered to the caller's club
+ */
+
+export function useListReaders<TData = Awaited<ReturnType<typeof listReaders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReaders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListReadersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateReaderUrl = () => {
+
+
+
+
+  return `/api/readers`
+}
+
+/**
+ * @summary Register a new reader for the club
+ */
+export const createReader = async (readerInput: ReaderInput, options?: RequestInit): Promise<Reader> => {
+
+  return customFetch<Reader>(getCreateReaderUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      readerInput,)
+  }
+);}
+
+
+
+
+export const getCreateReaderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createReader>>, TError,{data: BodyType<ReaderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createReader>>, TError,{data: BodyType<ReaderInput>}, TContext> => {
+
+const mutationKey = ['createReader'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createReader>>, {data: BodyType<ReaderInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createReader(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateReaderMutationResult = NonNullable<Awaited<ReturnType<typeof createReader>>>
+    export type CreateReaderMutationBody = BodyType<ReaderInput>
+    export type CreateReaderMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Register a new reader for the club
+ */
+export const useCreateReader = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createReader>>, TError,{data: BodyType<ReaderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createReader>>,
+        TError,
+        {data: BodyType<ReaderInput>},
+        TContext
+      > => {
+      return useMutation(getCreateReaderMutationOptions(options));
+    }
+
+export const getUpdateReaderUrl = (readerId: number,) => {
+
+
+
+
+  return `/api/readers/${readerId}`
+}
+
+/**
+ * @summary Rename a registered reader
+ */
+export const updateReader = async (readerId: number,
+    readerUpdateInput: ReaderUpdateInput, options?: RequestInit): Promise<Reader> => {
+
+  return customFetch<Reader>(getUpdateReaderUrl(readerId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      readerUpdateInput,)
+  }
+);}
+
+
+
+
+export const getUpdateReaderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateReader>>, TError,{readerId: number;data: BodyType<ReaderUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateReader>>, TError,{readerId: number;data: BodyType<ReaderUpdateInput>}, TContext> => {
+
+const mutationKey = ['updateReader'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateReader>>, {readerId: number;data: BodyType<ReaderUpdateInput>}> = (props) => {
+          const {readerId,data} = props ?? {};
+
+          return  updateReader(readerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateReaderMutationResult = NonNullable<Awaited<ReturnType<typeof updateReader>>>
+    export type UpdateReaderMutationBody = BodyType<ReaderUpdateInput>
+    export type UpdateReaderMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Rename a registered reader
+ */
+export const useUpdateReader = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateReader>>, TError,{readerId: number;data: BodyType<ReaderUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateReader>>,
+        TError,
+        {readerId: number;data: BodyType<ReaderUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateReaderMutationOptions(options));
+    }
+
+export const getDeleteReaderUrl = (readerId: number,) => {
+
+
+
+
+  return `/api/readers/${readerId}`
+}
+
+/**
+ * @summary Remove a registered reader
+ */
+export const deleteReader = async (readerId: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteReaderUrl(readerId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteReaderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteReader>>, TError,{readerId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteReader>>, TError,{readerId: number}, TContext> => {
+
+const mutationKey = ['deleteReader'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteReader>>, {readerId: number}> = (props) => {
+          const {readerId} = props ?? {};
+
+          return  deleteReader(readerId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteReaderMutationResult = NonNullable<Awaited<ReturnType<typeof deleteReader>>>
+
+    export type DeleteReaderMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove a registered reader
+ */
+export const useDeleteReader = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteReader>>, TError,{readerId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteReader>>,
+        TError,
+        {readerId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteReaderMutationOptions(options));
+    }
+
 export const getListRidersUrl = (params?: ListRidersParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -3612,6 +3915,611 @@ export const useDeleteAllMotos = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteAllMotosMutationOptions(options));
+    }
+
+export const getListEnduroTimeChecksUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/time-checks`
+}
+
+/**
+ * @summary List enduro time checks for an event
+ */
+export const listEnduroTimeChecks = async (eventId: number, options?: RequestInit): Promise<EnduroTimeCheck[]> => {
+
+  return customFetch<EnduroTimeCheck[]>(getListEnduroTimeChecksUrl(eventId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEnduroTimeChecksQueryKey = (eventId: number,) => {
+    return [
+    `/api/events/${eventId}/time-checks`
+    ] as const;
+    }
+
+
+export const getListEnduroTimeChecksQueryOptions = <TData = Awaited<ReturnType<typeof listEnduroTimeChecks>>, TError = ErrorType<unknown>>(eventId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEnduroTimeChecks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEnduroTimeChecksQueryKey(eventId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEnduroTimeChecks>>> = ({ signal }) => listEnduroTimeChecks(eventId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(eventId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEnduroTimeChecks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEnduroTimeChecksQueryResult = NonNullable<Awaited<ReturnType<typeof listEnduroTimeChecks>>>
+export type ListEnduroTimeChecksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List enduro time checks for an event
+ */
+
+export function useListEnduroTimeChecks<TData = Awaited<ReturnType<typeof listEnduroTimeChecks>>, TError = ErrorType<unknown>>(
+ eventId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEnduroTimeChecks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEnduroTimeChecksQueryOptions(eventId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetEnduroTimeChecksUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/time-checks`
+}
+
+/**
+ * @summary Replace all enduro time checks for an event
+ */
+export const setEnduroTimeChecks = async (eventId: number,
+    setEnduroTimeChecksInput: SetEnduroTimeChecksInput, options?: RequestInit): Promise<EnduroTimeCheck[]> => {
+
+  return customFetch<EnduroTimeCheck[]>(getSetEnduroTimeChecksUrl(eventId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setEnduroTimeChecksInput,)
+  }
+);}
+
+
+
+
+export const getSetEnduroTimeChecksMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setEnduroTimeChecks>>, TError,{eventId: number;data: BodyType<SetEnduroTimeChecksInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setEnduroTimeChecks>>, TError,{eventId: number;data: BodyType<SetEnduroTimeChecksInput>}, TContext> => {
+
+const mutationKey = ['setEnduroTimeChecks'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setEnduroTimeChecks>>, {eventId: number;data: BodyType<SetEnduroTimeChecksInput>}> = (props) => {
+          const {eventId,data} = props ?? {};
+
+          return  setEnduroTimeChecks(eventId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetEnduroTimeChecksMutationResult = NonNullable<Awaited<ReturnType<typeof setEnduroTimeChecks>>>
+    export type SetEnduroTimeChecksMutationBody = BodyType<SetEnduroTimeChecksInput>
+    export type SetEnduroTimeChecksMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Replace all enduro time checks for an event
+ */
+export const useSetEnduroTimeChecks = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setEnduroTimeChecks>>, TError,{eventId: number;data: BodyType<SetEnduroTimeChecksInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setEnduroTimeChecks>>,
+        TError,
+        {eventId: number;data: BodyType<SetEnduroTimeChecksInput>},
+        TContext
+      > => {
+      return useMutation(getSetEnduroTimeChecksMutationOptions(options));
+    }
+
+export const getListCheckpointArrivalsUrl = (eventId: number,
+    checkId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/time-checks/${checkId}/arrivals`
+}
+
+/**
+ * @summary List recorded checkpoint arrivals for a specific time check
+ */
+export const listCheckpointArrivals = async (eventId: number,
+    checkId: number, options?: RequestInit): Promise<EnduroCheckpointArrival[]> => {
+
+  return customFetch<EnduroCheckpointArrival[]>(getListCheckpointArrivalsUrl(eventId,checkId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCheckpointArrivalsQueryKey = (eventId: number,
+    checkId: number,) => {
+    return [
+    `/api/events/${eventId}/time-checks/${checkId}/arrivals`
+    ] as const;
+    }
+
+
+export const getListCheckpointArrivalsQueryOptions = <TData = Awaited<ReturnType<typeof listCheckpointArrivals>>, TError = ErrorType<void>>(eventId: number,
+    checkId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCheckpointArrivals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCheckpointArrivalsQueryKey(eventId,checkId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCheckpointArrivals>>> = ({ signal }) => listCheckpointArrivals(eventId,checkId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(eventId && checkId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCheckpointArrivals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCheckpointArrivalsQueryResult = NonNullable<Awaited<ReturnType<typeof listCheckpointArrivals>>>
+export type ListCheckpointArrivalsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List recorded checkpoint arrivals for a specific time check
+ */
+
+export function useListCheckpointArrivals<TData = Awaited<ReturnType<typeof listCheckpointArrivals>>, TError = ErrorType<void>>(
+ eventId: number,
+    checkId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCheckpointArrivals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCheckpointArrivalsQueryOptions(eventId,checkId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getRecordCheckpointArrivalUrl = (eventId: number,
+    checkId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/time-checks/${checkId}/arrivals`
+}
+
+/**
+ * @summary Record or overwrite a rider's manual arrival at a checkpoint
+ */
+export const recordCheckpointArrival = async (eventId: number,
+    checkId: number,
+    recordArrivalInput: RecordArrivalInput, options?: RequestInit): Promise<EnduroCheckpointArrival> => {
+
+  return customFetch<EnduroCheckpointArrival>(getRecordCheckpointArrivalUrl(eventId,checkId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      recordArrivalInput,)
+  }
+);}
+
+
+
+
+export const getRecordCheckpointArrivalMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordCheckpointArrival>>, TError,{eventId: number;checkId: number;data: BodyType<RecordArrivalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordCheckpointArrival>>, TError,{eventId: number;checkId: number;data: BodyType<RecordArrivalInput>}, TContext> => {
+
+const mutationKey = ['recordCheckpointArrival'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordCheckpointArrival>>, {eventId: number;checkId: number;data: BodyType<RecordArrivalInput>}> = (props) => {
+          const {eventId,checkId,data} = props ?? {};
+
+          return  recordCheckpointArrival(eventId,checkId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordCheckpointArrivalMutationResult = NonNullable<Awaited<ReturnType<typeof recordCheckpointArrival>>>
+    export type RecordCheckpointArrivalMutationBody = BodyType<RecordArrivalInput>
+    export type RecordCheckpointArrivalMutationError = ErrorType<void>
+
+    /**
+ * @summary Record or overwrite a rider's manual arrival at a checkpoint
+ */
+export const useRecordCheckpointArrival = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordCheckpointArrival>>, TError,{eventId: number;checkId: number;data: BodyType<RecordArrivalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recordCheckpointArrival>>,
+        TError,
+        {eventId: number;checkId: number;data: BodyType<RecordArrivalInput>},
+        TContext
+      > => {
+      return useMutation(getRecordCheckpointArrivalMutationOptions(options));
+    }
+
+export const getDeleteCheckpointArrivalUrl = (eventId: number,
+    checkId: number,
+    riderId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/time-checks/${checkId}/arrivals/${riderId}`
+}
+
+/**
+ * @summary Remove a rider's recorded arrival at a checkpoint
+ */
+export const deleteCheckpointArrival = async (eventId: number,
+    checkId: number,
+    riderId: number, options?: RequestInit): Promise<DeleteCheckpointArrival200> => {
+
+  return customFetch<DeleteCheckpointArrival200>(getDeleteCheckpointArrivalUrl(eventId,checkId,riderId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteCheckpointArrivalMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCheckpointArrival>>, TError,{eventId: number;checkId: number;riderId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCheckpointArrival>>, TError,{eventId: number;checkId: number;riderId: number}, TContext> => {
+
+const mutationKey = ['deleteCheckpointArrival'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCheckpointArrival>>, {eventId: number;checkId: number;riderId: number}> = (props) => {
+          const {eventId,checkId,riderId} = props ?? {};
+
+          return  deleteCheckpointArrival(eventId,checkId,riderId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCheckpointArrivalMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCheckpointArrival>>>
+
+    export type DeleteCheckpointArrivalMutationError = ErrorType<void>
+
+    /**
+ * @summary Remove a rider's recorded arrival at a checkpoint
+ */
+export const useDeleteCheckpointArrival = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCheckpointArrival>>, TError,{eventId: number;checkId: number;riderId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCheckpointArrival>>,
+        TError,
+        {eventId: number;checkId: number;riderId: number},
+        TContext
+      > => {
+      return useMutation(getDeleteCheckpointArrivalMutationOptions(options));
+    }
+
+export const getGetEnduroPenaltySummaryUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/penalty-summary`
+}
+
+/**
+ * @summary Compute per-rider penalty totals and DQ flags for an enduro event
+ */
+export const getEnduroPenaltySummary = async (eventId: number, options?: RequestInit): Promise<EnduroPenaltySummaryEntry[]> => {
+
+  return customFetch<EnduroPenaltySummaryEntry[]>(getGetEnduroPenaltySummaryUrl(eventId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEnduroPenaltySummaryQueryKey = (eventId: number,) => {
+    return [
+    `/api/events/${eventId}/penalty-summary`
+    ] as const;
+    }
+
+
+export const getGetEnduroPenaltySummaryQueryOptions = <TData = Awaited<ReturnType<typeof getEnduroPenaltySummary>>, TError = ErrorType<void>>(eventId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEnduroPenaltySummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEnduroPenaltySummaryQueryKey(eventId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEnduroPenaltySummary>>> = ({ signal }) => getEnduroPenaltySummary(eventId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(eventId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEnduroPenaltySummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEnduroPenaltySummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getEnduroPenaltySummary>>>
+export type GetEnduroPenaltySummaryQueryError = ErrorType<void>
+
+
+/**
+ * @summary Compute per-rider penalty totals and DQ flags for an enduro event
+ */
+
+export function useGetEnduroPenaltySummary<TData = Awaited<ReturnType<typeof getEnduroPenaltySummary>>, TError = ErrorType<void>>(
+ eventId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEnduroPenaltySummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEnduroPenaltySummaryQueryOptions(eventId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getListEventReaderAssignmentsUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/reader-assignments`
+}
+
+/**
+ * @summary List reader-to-checkpoint assignments for an event
+ */
+export const listEventReaderAssignments = async (eventId: number, options?: RequestInit): Promise<EventReaderAssignment[]> => {
+
+  return customFetch<EventReaderAssignment[]>(getListEventReaderAssignmentsUrl(eventId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEventReaderAssignmentsQueryKey = (eventId: number,) => {
+    return [
+    `/api/events/${eventId}/reader-assignments`
+    ] as const;
+    }
+
+
+export const getListEventReaderAssignmentsQueryOptions = <TData = Awaited<ReturnType<typeof listEventReaderAssignments>>, TError = ErrorType<unknown>>(eventId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEventReaderAssignments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEventReaderAssignmentsQueryKey(eventId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEventReaderAssignments>>> = ({ signal }) => listEventReaderAssignments(eventId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(eventId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEventReaderAssignments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEventReaderAssignmentsQueryResult = NonNullable<Awaited<ReturnType<typeof listEventReaderAssignments>>>
+export type ListEventReaderAssignmentsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List reader-to-checkpoint assignments for an event
+ */
+
+export function useListEventReaderAssignments<TData = Awaited<ReturnType<typeof listEventReaderAssignments>>, TError = ErrorType<unknown>>(
+ eventId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEventReaderAssignments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEventReaderAssignmentsQueryOptions(eventId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetEventReaderAssignmentsUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/reader-assignments`
+}
+
+/**
+ * @summary Replace all reader assignments for an event
+ */
+export const setEventReaderAssignments = async (eventId: number,
+    setEventReaderAssignmentsInput: SetEventReaderAssignmentsInput, options?: RequestInit): Promise<EventReaderAssignment[]> => {
+
+  return customFetch<EventReaderAssignment[]>(getSetEventReaderAssignmentsUrl(eventId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setEventReaderAssignmentsInput,)
+  }
+);}
+
+
+
+
+export const getSetEventReaderAssignmentsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setEventReaderAssignments>>, TError,{eventId: number;data: BodyType<SetEventReaderAssignmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setEventReaderAssignments>>, TError,{eventId: number;data: BodyType<SetEventReaderAssignmentsInput>}, TContext> => {
+
+const mutationKey = ['setEventReaderAssignments'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setEventReaderAssignments>>, {eventId: number;data: BodyType<SetEventReaderAssignmentsInput>}> = (props) => {
+          const {eventId,data} = props ?? {};
+
+          return  setEventReaderAssignments(eventId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetEventReaderAssignmentsMutationResult = NonNullable<Awaited<ReturnType<typeof setEventReaderAssignments>>>
+    export type SetEventReaderAssignmentsMutationBody = BodyType<SetEventReaderAssignmentsInput>
+    export type SetEventReaderAssignmentsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Replace all reader assignments for an event
+ */
+export const useSetEventReaderAssignments = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setEventReaderAssignments>>, TError,{eventId: number;data: BodyType<SetEventReaderAssignmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setEventReaderAssignments>>,
+        TError,
+        {eventId: number;data: BodyType<SetEventReaderAssignmentsInput>},
+        TContext
+      > => {
+      return useMutation(getSetEventReaderAssignmentsMutationOptions(options));
     }
 
 export const getLinkStaggerUrl = (eventId: number,) => {
@@ -8512,4 +9420,76 @@ export function useGetNotificationHistory<TData = Awaited<ReturnType<typeof getN
 
 
 
+
+export const getReaderCrossingUrl = (token: string,) => {
+
+
+
+
+  return `/api/timing/readers/${token}/crossing`
+}
+
+/**
+ * @summary Ingest a crossing from a named reader (identified by its unique token)
+ */
+export const readerCrossing = async (token: string,
+    readerCrossingInput: ReaderCrossingInput, options?: RequestInit): Promise<ReaderCrossing200> => {
+
+  return customFetch<ReaderCrossing200>(getReaderCrossingUrl(token),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      readerCrossingInput,)
+  }
+);}
+
+
+
+
+export const getReaderCrossingMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof readerCrossing>>, TError,{token: string;data: BodyType<ReaderCrossingInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof readerCrossing>>, TError,{token: string;data: BodyType<ReaderCrossingInput>}, TContext> => {
+
+const mutationKey = ['readerCrossing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof readerCrossing>>, {token: string;data: BodyType<ReaderCrossingInput>}> = (props) => {
+          const {token,data} = props ?? {};
+
+          return  readerCrossing(token,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReaderCrossingMutationResult = NonNullable<Awaited<ReturnType<typeof readerCrossing>>>
+    export type ReaderCrossingMutationBody = BodyType<ReaderCrossingInput>
+    export type ReaderCrossingMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Ingest a crossing from a named reader (identified by its unique token)
+ */
+export const useReaderCrossing = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof readerCrossing>>, TError,{token: string;data: BodyType<ReaderCrossingInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof readerCrossing>>,
+        TError,
+        {token: string;data: BodyType<ReaderCrossingInput>},
+        TContext
+      > => {
+      return useMutation(getReaderCrossingMutationOptions(options));
+    }
 
