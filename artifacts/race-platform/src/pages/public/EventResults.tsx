@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import {
-  useGetEvent, useListResults, useListMotos, RaceResult, Moto,
+  useGetEvent, useListResults, useListMotos, useGetEnduroPenaltySummary, RaceResult, Moto,
 } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -113,11 +113,14 @@ function LapTimesModal({
 function ResultTable({
   results,
   onRiderClick,
+  penaltyMap,
 }: {
   results: RaceResult[];
   onRiderClick?: (result: RaceResult) => void;
+  penaltyMap?: Record<number, { totalPenaltySeconds: number; disqualified: boolean }>;
 }) {
   const clickable = !!onRiderClick;
+  const hasPenalties = !!penaltyMap && Object.keys(penaltyMap).length > 0;
   return (
     <div className="border rounded-md overflow-hidden bg-card">
       <Table>
@@ -129,46 +132,67 @@ function ResultTable({
             <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
               <span className="flex items-center justify-end gap-1"><Clock size={14} /> Time</span>
             </TableHead>
+            {hasPenalties && (
+              <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
+                Penalty
+              </TableHead>
+            )}
             <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
               <span className="flex items-center justify-end gap-1"><Award size={14} /> Pts</span>
             </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {results.map(result => (
-            <TableRow
-              key={result.id}
-              className={`transition-colors ${clickable ? "cursor-pointer hover:bg-primary/5" : "hover:bg-muted/50"}`}
-              onClick={() => onRiderClick?.(result)}
-            >
-              <TableCell className="text-center font-heading font-bold text-xl">
-                {result.dnf ? (
-                  <span className="text-destructive text-sm uppercase">DNF</span>
-                ) : result.dns ? (
-                  <span className="text-muted-foreground text-sm uppercase">DNS</span>
-                ) : (
-                  <span className={result.position === 1 ? "text-primary" : ""}>{result.position}</span>
-                )}
-              </TableCell>
-              <TableCell className="text-center">
-                <span className="inline-block bg-muted px-2 py-1 rounded font-mono font-bold text-sm border">
-                  {result.bibNumber || "-"}
-                </span>
-              </TableCell>
-              <TableCell className="font-bold text-lg">
-                <span className="flex items-center gap-2">
-                  {result.riderName}
-                  {clickable && (
-                    <Timer size={13} className="text-muted-foreground/50 shrink-0" />
+          {results.map(result => {
+            const pen = penaltyMap?.[result.riderId];
+            return (
+              <TableRow
+                key={result.id}
+                className={`transition-colors ${clickable ? "cursor-pointer hover:bg-primary/5" : "hover:bg-muted/50"}`}
+                onClick={() => onRiderClick?.(result)}
+              >
+                <TableCell className="text-center font-heading font-bold text-xl">
+                  {pen?.disqualified ? (
+                    <span className="text-destructive text-sm uppercase">DQ</span>
+                  ) : result.dnf ? (
+                    <span className="text-destructive text-sm uppercase">DNF</span>
+                  ) : result.dns ? (
+                    <span className="text-muted-foreground text-sm uppercase">DNS</span>
+                  ) : (
+                    <span className={result.position === 1 ? "text-primary" : ""}>{result.position}</span>
                   )}
-                </span>
-              </TableCell>
-              <TableCell className="text-right font-mono font-medium text-muted-foreground">{result.totalTime || "-"}</TableCell>
-              <TableCell className="text-right font-heading font-bold text-xl text-primary">
-                {result.points !== null && result.points !== undefined ? result.points : "-"}
-              </TableCell>
-            </TableRow>
-          ))}
+                </TableCell>
+                <TableCell className="text-center">
+                  <span className="inline-block bg-muted px-2 py-1 rounded font-mono font-bold text-sm border">
+                    {result.bibNumber || "-"}
+                  </span>
+                </TableCell>
+                <TableCell className="font-bold text-lg">
+                  <span className="flex items-center gap-2">
+                    {result.riderName}
+                    {clickable && (
+                      <Timer size={13} className="text-muted-foreground/50 shrink-0" />
+                    )}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right font-mono font-medium text-muted-foreground">{result.totalTime || "-"}</TableCell>
+                {hasPenalties && (
+                  <TableCell className="text-right font-mono text-sm">
+                    {pen?.disqualified ? (
+                      <span className="text-destructive font-semibold">DQ</span>
+                    ) : pen && pen.totalPenaltySeconds > 0 ? (
+                      <span className="text-amber-600 dark:text-amber-400 font-semibold">+{pen.totalPenaltySeconds}s</span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                )}
+                <TableCell className="text-right font-heading font-bold text-xl text-primary">
+                  {result.points !== null && result.points !== undefined ? result.points : "-"}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -346,6 +370,7 @@ export default function EventResults() {
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
 
   const liveMode = !!(event && isLiveDay(event.date, event.status));
+  const isEnduroEvent = (event as any)?.raceStyle === "enduro";
 
   const { data: results, isLoading: resultsLoading } = useListResults(eventId, {
     query: {
@@ -360,6 +385,22 @@ export default function EventResults() {
       refetchInterval: liveMode ? 15_000 : false,
     } as any,
   });
+
+  const { data: penaltySummaryRaw } = useGetEnduroPenaltySummary(eventId, {
+    query: { enabled: isEnduroEvent && !!eventId } as any,
+  });
+  // Build riderId → { totalPenaltySeconds, disqualified } map for fast lookup
+  const penaltyMap = (penaltySummaryRaw as any[] | undefined)?.reduce<
+    Record<number, { totalPenaltySeconds: number; disqualified: boolean }>
+  >((acc, entry: any) => {
+    if (entry.totalPenaltySeconds > 0 || entry.disqualified) {
+      acc[entry.riderId] = {
+        totalPenaltySeconds: entry.totalPenaltySeconds,
+        disqualified: entry.disqualified,
+      };
+    }
+    return acc;
+  }, {});
 
   const [activeClass, setActiveClass] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -617,12 +658,13 @@ export default function EventResults() {
                                 <ResultTable
                                   results={motoResults}
                                   onRiderClick={isComplete ? setSelectedResult : undefined}
+                                  penaltyMap={penaltyMap}
                                 />
                               </div>
                             );
                           })
                         ) : (
-                          <ResultTable results={classResults.sort((a, b) => a.position - b.position)} onRiderClick={setSelectedResult} />
+                          <ResultTable results={classResults.sort((a, b) => a.position - b.position)} onRiderClick={setSelectedResult} penaltyMap={penaltyMap} />
                         )}
                       </div>
                     )}
@@ -732,12 +774,12 @@ export default function EventResults() {
                               return (
                                 <div key={motoName} className="space-y-4">
                                   <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
-                                  <ResultTable results={motoResults} onRiderClick={setSelectedResult} />
+                                  <ResultTable results={motoResults} onRiderClick={setSelectedResult} penaltyMap={penaltyMap} />
                                 </div>
                               );
                             })
                           ) : (
-                            <ResultTable results={clsResults.sort((a, b) => a.position - b.position)} onRiderClick={setSelectedResult} />
+                            <ResultTable results={clsResults.sort((a, b) => a.position - b.position)} onRiderClick={setSelectedResult} penaltyMap={penaltyMap} />
                           )}
                         </div>
                       )}
