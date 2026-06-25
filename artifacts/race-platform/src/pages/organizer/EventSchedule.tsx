@@ -1727,7 +1727,7 @@ export default function EventSchedule() {
           queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) as any });
           setIsGenerateOpen(false);
           if (generateGateMethod === "prior_round_finish") {
-            toast({ title: "Lineups generated", description: "Gate picks seeded from prior round finish order." });
+            toast({ title: "Lineups generated", description: "Gate picks seeded from prior moto finish order." });
           } else if (lockedClasses.length > 0) {
             toast({
               title: "Lineups generated",
@@ -1947,7 +1947,7 @@ export default function EventSchedule() {
                       </>
                     ) : roundFilter === "practice"
                       ? `${filteredMotos.length} practice session${filteredMotos.length !== 1 ? "s" : ""}`
-                      : `${sortedMotos.length} sessions · Round ${roundFilter} (${filteredMotos.length} sessions)`
+                      : `${sortedMotos.length} sessions · Moto ${roundFilter} (${filteredMotos.length} sessions)`
                     }
                 </p>
               </div>
@@ -2051,7 +2051,7 @@ export default function EventSchedule() {
                         : "bg-transparent text-muted-foreground border-border hover:text-foreground hover:border-foreground/40"
                     }`}
                   >
-                    Round {round}
+                    Moto {round}
                   </button>
                 ))}
               </div>
@@ -2646,7 +2646,7 @@ export default function EventSchedule() {
                   );
                   return (
                     <div className="space-y-2">
-                      <Label>Generate Round(s)</Label>
+                      <Label>Generate Moto(s)</Label>
                       <div className="flex gap-2 flex-wrap">
                         {Array.from({ length: divCount }, (_, i) => i + 1).map(r => {
                           const done = isRoundDone(r);
@@ -2673,13 +2673,13 @@ export default function EventSchedule() {
                               }`}>
                                 {checked && <Check size={10} className="text-white" />}
                               </div>
-                              Round {r}
+                              Moto {r}
                               {done && <span className="text-[10px] font-normal text-muted-foreground ml-1">done</span>}
                             </button>
                           );
                         })}
                       </div>
-                      <p className="text-xs text-muted-foreground">Uncheck a round to leave its existing motos untouched.</p>
+                      <p className="text-xs text-muted-foreground">Uncheck a moto to leave its existing sessions untouched.</p>
                     </div>
                   );
                 })()}
@@ -2775,10 +2775,10 @@ export default function EventSchedule() {
                 },
                 {
                   value: "prior_round_finish",
-                  label: "Prior Round Finish",
-                  description: "Riders are seeded by their finish position in the most recently completed round.",
+                  label: "Prior Moto Finish",
+                  description: "Riders are seeded by their finish position in the most recently completed moto.",
                   disabled: !hasCompletedRaceMotos,
-                  disabledReason: "No completed race motos yet — run Round 1 first.",
+                  disabledReason: "No completed race motos yet — run Moto 1 first.",
                 },
                 {
                   value: "series_points",
