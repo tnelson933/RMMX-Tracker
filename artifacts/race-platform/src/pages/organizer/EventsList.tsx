@@ -78,6 +78,7 @@ function DateTimePicker({ value, onChange }: { value: string; onChange: (v: stri
 }
 
 const createEventSchema = z.object({
+  raceStyle: z.enum(["motocross", "enduro", "cross_country"]).default("motocross"),
   name: z.string().min(1, "Name is required"),
   date: z.string().min(1, "Date is required"),
   multiDay: z.boolean().default(false),
@@ -229,6 +230,7 @@ export default function EventsList() {
   const form = useForm<z.infer<typeof createEventSchema>>({
     resolver: zodResolver(createEventSchema),
     defaultValues: {
+      raceStyle: "motocross" as const,
       name: "",
       date: format(new Date(), "yyyy-MM-dd"),
       multiDay: false,
@@ -281,6 +283,7 @@ export default function EventsList() {
           state: data.state,
           location: data.location,
           trackName: data.trackName,
+          raceStyle: data.raceStyle,
           timingTechnology: data.timingTechnology,
           raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
           raceClassSeriesMap: Object.fromEntries(
@@ -476,6 +479,29 @@ export default function EventsList() {
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+
+                <FormField
+                  control={form.control}
+                  name="raceStyle"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Race Style</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select race style" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="motocross">Motocross / Supercross</SelectItem>
+                          <SelectItem value="enduro">Enduro</SelectItem>
+                          <SelectItem value="cross_country">Cross Country / Desert</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 {isSuperAdmin && (
                   <FormField
