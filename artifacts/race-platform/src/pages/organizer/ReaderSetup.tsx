@@ -2,12 +2,18 @@ import { useState, useEffect } from "react";
 import {
   Wifi, Timer, Copy, Check, Send, RefreshCw,
   CheckCircle2, XCircle, Download, Circle, ExternalLink,
-  Usb,
+  Usb, Trash2, Plus, Radio, Pencil, X, ScanLine, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListReaders, useCreateReader, useDeleteReader, useUpdateReader, getListReadersQueryKey,
+} from "@workspace/api-client-react";
 
 const BASE_URL = window.location.origin;
 const FACILITY_ENDPOINT_BASE = `${BASE_URL}/api/timing/active/crossing`;
@@ -31,6 +37,22 @@ const StepBadge = ({ n }: { n: number }) => (
   </div>
 );
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <button onClick={copy} className="shrink-0 flex items-center gap-1 rounded border bg-background px-2 py-1.5 text-xs font-medium hover:bg-muted transition-colors">
+      {copied ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 const MiniStep = ({ n }: { n: number }) => (
   <div className="w-5 h-5 shrink-0 rounded-full bg-muted border text-xs font-bold flex items-center justify-center mt-0.5">
     {n}
@@ -53,6 +75,122 @@ export default function ReaderSetup() {
   const pingEndpoint = user?.clubId
     ? `${PING_ENDPOINT_BASE}?clubId=${user.clubId}`
     : null;
+
+  const queryClient = useQueryClient();
+
+  // ── Registered readers ──
+  // ── Identify mode: poll the readers list so lastSeenAt refreshes ──
+  const [identifying, setIdentifying] = useState(false);
+  const { data: readers = [] } = useListReaders({
+    query: { refetchInterval: identifying ? 1500 : false } as any,
+  });
+  const createReaderMutation = useCreateReader();
+  const deleteReaderMutation = useDeleteReader();
+  const updateReaderMutation = useUpdateReader();
+  const [newReaderName, setNewReaderName] = useState("");
+  const [newReaderType, setNewReaderType] = useState<"rfid" | "mylaps">("rfid");
+  const [showAddReader, setShowAddReader] = useState(false);
+
+  // Inline rename
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+
+  // Identify reader — snapshot each reader's lastSeenAt when we start, then
+  // detect which reader's value *changes* (avoids any client/server clock comparison).
+  const [identifyBaseline, setIdentifyBaseline] = useState<Record<number, string | null>>({});
+  const [identifiedId, setIdentifiedId] = useState<number | null>(null);
+
+  function startIdentify() {
+    setIdentifiedId(null);
+    const baseline: Record<number, string | null> = {};
+    for (const r of readers as any[]) baseline[r.id] = r.lastSeenAt ?? null;
+    setIdentifyBaseline(baseline);
+    setIdentifying(true);
+    // Refetch immediately so the interval isn't the only trigger.
+    queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
+  }
+  function stopIdentify() {
+    setIdentifying(false);
+  }
+
+  // While identifying, watch for any reader whose lastSeenAt differs from its
+  // baseline. If several changed, pick the one with the most recent timestamp.
+  useEffect(() => {
+    if (!identifying) return;
+    const changed = (readers as any[]).filter(
+      r => r.lastSeenAt && r.lastSeenAt !== (identifyBaseline[r.id] ?? null),
+    );
+    if (changed.length === 0) return;
+    const hit = changed.reduce((latest, r) =>
+      new Date(r.lastSeenAt).getTime() > new Date(latest.lastSeenAt).getTime() ? r : latest,
+    );
+    setIdentifiedId(hit.id);
+    setIdentifying(false);
+    toast({ title: "Reader identified", description: `That scan came from “${hit.name}”.` });
+  }, [readers, identifying, identifyBaseline, toast]);
+
+  // Safety timeout — stop listening after 60s with no scan.
+  useEffect(() => {
+    if (!identifying) return;
+    const id = setTimeout(() => {
+      setIdentifying(false);
+      toast({ title: "No scan detected", description: "Identify timed out — try again.", variant: "destructive" });
+    }, 60_000);
+    return () => clearTimeout(id);
+  }, [identifying, toast]);
+
+  function beginEdit(reader: any) {
+    setEditingId(reader.id);
+    setEditName(reader.name);
+  }
+
+  async function handleSaveName(readerId: number) {
+    const name = editName.trim();
+    if (!name) return;
+    try {
+      await updateReaderMutation.mutateAsync({ readerId, data: { name } });
+      queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
+      setEditingId(null);
+      toast({ title: "Reader renamed" });
+    } catch {
+      toast({ title: "Failed to rename reader", variant: "destructive" });
+    }
+  }
+
+  async function handleAddReader() {
+    const name = newReaderName.trim();
+    if (!name) return;
+    try {
+      await createReaderMutation.mutateAsync({ data: { name, type: newReaderType } });
+      queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
+      setNewReaderName("");
+      setShowAddReader(false);
+      toast({ title: "Reader registered" });
+    } catch {
+      toast({ title: "Failed to register reader", variant: "destructive" });
+    }
+  }
+
+  async function handleDeleteReader(readerId: number) {
+    try {
+      await deleteReaderMutation.mutateAsync({ readerId });
+      queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
+    } catch {
+      toast({ title: "Failed to remove reader", variant: "destructive" });
+    }
+  }
+
+  function readerIngestUrl(token: string) {
+    return `${BASE_URL}/api/timing/readers/${token}/crossing`;
+  }
+
+  function lastSeenLabel(lastSeenAt: string | null | undefined): { text: string; live: boolean } {
+    if (!lastSeenAt) return { text: "Never seen", live: false };
+    const diffMs = Date.now() - new Date(lastSeenAt).getTime();
+    if (diffMs < 60_000) return { text: `${Math.round(diffMs / 1000)}s ago`, live: true };
+    if (diffMs < 3_600_000) return { text: `${Math.round(diffMs / 60_000)}m ago`, live: diffMs < 300_000 };
+    return { text: new Date(lastSeenAt).toLocaleTimeString(), live: false };
+  }
 
   const [tech,       setTech]       = useState<"rfid" | "mylaps">("rfid");
   const [readerType, setReaderType] = useState<ReaderType>("impinj-r700");
@@ -334,6 +472,162 @@ export default function ReaderSetup() {
           </div>
         </div>
       )}
+
+      {/* ── Registered Readers ── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-heading font-bold uppercase tracking-tight text-lg">Registered Readers</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Name each physical reader — the system gives it a unique URL you paste into the hardware.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {(readers as any[]).length > 0 && (
+              identifying ? (
+                <Button size="sm" variant="secondary" onClick={stopIdentify} className="gap-1.5">
+                  <Loader2 size={13} className="animate-spin" /> Listening… Cancel
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={startIdentify} className="gap-1.5">
+                  <ScanLine size={13} /> Identify Reader
+                </Button>
+              )
+            )}
+            <Button size="sm" variant="outline" onClick={() => setShowAddReader(v => !v)} className="gap-1.5">
+              <Plus size={13} /> Add Reader
+            </Button>
+          </div>
+        </div>
+
+        {identifying && (
+          <div className="rounded-lg border-2 border-primary/50 bg-primary/5 p-4 flex items-center gap-3">
+            <ScanLine size={18} className="text-primary shrink-0 animate-pulse" />
+            <p className="text-sm">
+              <strong>Listening for a scan…</strong> Hold a tag up to one of your readers. The reader that picks it up will be highlighted below.
+            </p>
+          </div>
+        )}
+
+        {showAddReader && (
+          <div className="rounded-lg border p-4 space-y-3 bg-muted/20">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">New Reader</p>
+            <div className="flex gap-2">
+              <Input
+                value={newReaderName}
+                onChange={e => setNewReaderName(e.target.value)}
+                placeholder='e.g. "Start Gate Test 1"'
+                className="h-9 flex-1"
+                onKeyDown={e => e.key === "Enter" && handleAddReader()}
+              />
+              <Select value={newReaderType} onValueChange={(v: "rfid" | "mylaps") => setNewReaderType(v)}>
+                <SelectTrigger className="h-9 w-28">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rfid">RFID</SelectItem>
+                  <SelectItem value="mylaps">MyLaps</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" onClick={handleAddReader} disabled={createReaderMutation.isPending || !newReaderName.trim()}>
+                {createReaderMutation.isPending ? "Adding…" : "Add"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowAddReader(false)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {(readers as any[]).length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No readers registered yet — add one above to get its unique timing URL.
+          </div>
+        ) : (
+          <div className="rounded-xl border overflow-hidden divide-y">
+            {(readers as any[]).map((reader: any) => {
+              const { text: lsText, live } = lastSeenLabel(reader.lastSeenAt);
+              const url = readerIngestUrl(reader.token);
+              const isEditing = editingId === reader.id;
+              const isIdentified = identifiedId === reader.id;
+              return (
+                <div
+                  key={reader.id}
+                  className={`p-4 space-y-3 transition-colors ${isIdentified ? "bg-primary/10 ring-2 ring-inset ring-primary" : ""}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Radio size={14} className={`shrink-0 mt-0.5 ${isIdentified ? "text-primary" : "text-muted-foreground"}`} />
+                      <div className="min-w-0 flex-1">
+                        {isEditing ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              value={editName}
+                              onChange={e => setEditName(e.target.value)}
+                              className="h-8 flex-1"
+                              autoFocus
+                              onKeyDown={e => {
+                                if (e.key === "Enter") handleSaveName(reader.id);
+                                if (e.key === "Escape") setEditingId(null);
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              className="h-8"
+                              onClick={() => handleSaveName(reader.id)}
+                              disabled={updateReaderMutation.isPending || !editName.trim()}
+                            >
+                              {updateReaderMutation.isPending ? "Saving…" : "Save"}
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditingId(null)} title="Cancel">
+                              <X size={14} />
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-sm truncate">{reader.name}</p>
+                              {isIdentified && (
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/15 rounded px-1.5 py-0.5 shrink-0">
+                                  This one
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-xs text-muted-foreground uppercase">{reader.type === "mylaps" ? "MyLaps / AMB" : "RFID"}</span>
+                              <span className={`text-xs font-medium ${live ? "text-green-500" : "text-muted-foreground"}`}>
+                                {live ? "● " : "○ "}{lsText}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {!isEditing && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => beginEdit(reader)}
+                          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+                          title="Rename reader"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteReader(reader.id)}
+                          className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded"
+                          title="Remove reader"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2">
+                    <code className="flex-1 font-mono text-xs truncate text-primary">{url}</code>
+                    <CopyButton text={url} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Hardware toggle */}
       <div className="space-y-3">
