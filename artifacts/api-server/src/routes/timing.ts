@@ -581,6 +581,48 @@ router.post("/timing/active/crossing", async (req, res) => {
     return res.json({ ok: true, processed: tagEvents.length, motoId: moto.id, results });
   }
 
+  // ── Impinj R700 firmware 10.x IoT Device Interface format ───────────────────
+  // Body is a top-level array: [{ timestamp, eventType: "tagInventory", tagInventoryEvent: { epc: "<base64url>", antennaPort } }]
+  if (Array.isArray(body)) {
+    const fw10Events = (body as any[]).filter(
+      (e: any) => e?.eventType === "tagInventory" && e?.tagInventoryEvent?.epc,
+    );
+    // Empty poll (no tags in range) — return 200 instead of falling through
+    if (fw10Events.length === 0) {
+      return res.json({ ok: true, processed: 0, note: "No tags in range" });
+    }
+    const tagEvents = fw10Events.map((e: any) => ({
+      epcHex: Buffer.from(e.tagInventoryEvent.epc.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("hex").toUpperCase(),
+      antennaPort: e.tagInventoryEvent.antennaPort as number | undefined,
+      timestamp: e.timestamp as string | undefined,
+    }));
+    const moto = await getActiveMotoForClub(clubId);
+    if (!moto) {
+      const session = await getActivePracticeSessionForClub(clubId);
+      if (!session) {
+        return res.status(409).json({ error: "No moto in progress for this club", hint: "Start a moto from the Race Day tab first." });
+      }
+      const results: unknown[] = [];
+      for (const tag of tagEvents) {
+        const crossingTime = tag.timestamp ? new Date(tag.timestamp) : new Date();
+        try {
+          const r = await processPracticeCrossing(session, tag.epcHex, crossingTime);
+          results.push("skipped" in r ? { rfidNumber: tag.epcHex, skipped: true } : { rfidNumber: tag.epcHex, crossingId: r.crossing?.id });
+        } catch (err: any) { results.push({ rfidNumber: tag.epcHex, error: err.message }); }
+      }
+      return res.json({ ok: true, processed: tagEvents.length, practiceSessionId: session.id, results });
+    }
+    const results: unknown[] = [];
+    for (const tag of tagEvents) {
+      const crossingTime = tag.timestamp ? new Date(tag.timestamp) : new Date();
+      try {
+        const r = await processCrossing({ rfidNumber: tag.epcHex, motoId: moto.id, crossingTime, readerId: "impinj-r700-fw10", antennaId: tag.antennaPort });
+        results.push(r.debounced ? { rfidNumber: tag.epcHex, debounced: true } : { rfidNumber: tag.epcHex, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
+      } catch (err: any) { results.push({ rfidNumber: tag.epcHex, error: err.message }); }
+    }
+    return res.json({ ok: true, processed: tagEvents.length, motoId: moto.id, results });
+  }
+
   // ── Zebra FX7500 format ─────────────────────────────────────────────────────
   const zebraTags: any[] = Array.isArray(body?.data?.tags) ? body.data.tags
     : Array.isArray(body?.tags) ? body.tags : [];
@@ -673,7 +715,17 @@ router.post("/timing/ping", async (req, res) => {
 
   const body = req.body as any;
 
-  // Impinj R700 native format
+  // Impinj R700 firmware 10.x — top-level array with base64url epc
+  if (Array.isArray(body)) {
+    const fw10 = (body as any[]).find((e: any) => e?.eventType === "tagInventory" && e?.tagInventoryEvent?.epc);
+    if (fw10) {
+      const epcHex = Buffer.from(fw10.tagInventoryEvent.epc.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("hex").toUpperCase();
+      return res.json({ ok: true, received: epcHex, clubId });
+    }
+    return res.json({ ok: true, received: "(fw10 array — no tagInventory events)", clubId });
+  }
+
+  // Impinj R700 IoT Connector format (older firmware)
   if (Array.isArray(body?.events)) {
     const tag = (body.events as any[]).find(
       (e: any) => e?.type === "tagInventoryEvent" && e?.tagInventoryEvent?.epcHex,
