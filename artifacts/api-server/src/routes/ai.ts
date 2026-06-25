@@ -28,6 +28,7 @@ Rules:
 - mainEventOnly = false means all motos/divisions count toward the championship total (AMA/Olympic multi-moto style).
 - If user says "like AMA" or "standard MX" → highest_points, mainEventOnly false, scale like 25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
 - If user says "like Supercross" or "main event only" → highest_points, mainEventOnly true, same scale
+- If user says "enduro", "special test", "sprint enduro", or "cross country" → highest_points, mainEventOnly false, scale like 25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 (race-day winner is decided by total accumulated time; championship points are awarded by finishing position on this scale and every result counts)
 - If user says "Olympic" or "lowest position" or "fewest points" → lowest_positions, mainEventOnly false, scale 1-20
 - If user says "per rider", "1 point per rider", "dynamic", or "field size" → per_rider, pointsScale [], scoringFormula null
 - If user describes custom math (e.g. "double points for top 3", "square root", "bonus points") → formula, provide the expression
