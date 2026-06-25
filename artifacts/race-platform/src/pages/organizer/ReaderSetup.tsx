@@ -65,8 +65,10 @@ export default function ReaderSetup() {
   const [setupMethod, setSetupMethod] = useState<SetupMethod>("auto");
 
   // ── Shared reader fields ──────────────────────────────────────────────────
-  const [readerType, setReaderType] = useState<ReaderType>("impinj-r700");
-  const [readerIp,   setReaderIp]   = useState("");
+  const [readerType,     setReaderType]     = useState<ReaderType>("impinj-r700");
+  const [readerIp,       setReaderIp]       = useState("");
+  const [readerUsername, setReaderUsername] = useState("");
+  const [readerPassword, setReaderPassword] = useState("");
 
   // ── Copy states ──────────────────────────────────────────────────────────
   const [copiedUrl,       setCopiedUrl]       = useState(false);
@@ -105,7 +107,7 @@ export default function ReaderSetup() {
       const res = await fetch(`${BRIDGE_URL}/configure-reader`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ readerType, readerIp, targetUrl: facilityEndpoint }),
+        body: JSON.stringify({ readerType, readerIp, targetUrl: facilityEndpoint, readerUsername: readerUsername || undefined, readerPassword: readerPassword || undefined }),
       });
       const data = await res.json();
       const msg = data.ok ? data.message : (data.error ?? "Something went wrong.");
@@ -206,18 +208,25 @@ export default function ReaderSetup() {
     const cmd3 = cmd.replace(/^python /, "python3 ");
     let content: string;
     let filename: string;
+    const keepOpenMsg = mode === "mylaps"
+      ? "Keep this window open while racing."
+      : "Configure your reader in the browser, then close this window. No need to keep it open on race day.";
+    const bridgeUrl = `${BASE_URL}/rfid_bridge.py`;
     if (platform === "windows") {
       content = [
         "@echo off",
-        "title RM Tracker Timing Bridge",
+        "title RM Tracker Setup Tool",
         "echo ================================================",
-        "echo   RM Tracker Timing Bridge",
+        "echo   RM Tracker Setup Tool",
         "echo ================================================",
         "echo.",
-        "echo Starting... Keep this window open while racing.",
+        `echo ${keepOpenMsg}`,
         "echo.",
         "set SCRIPT_DIR=%~dp0",
         'cd /d "%SCRIPT_DIR%"',
+        "echo Checking for updates...",
+        `curl -s -L -o rfid_bridge_update.py "${bridgeUrl}" && move /y rfid_bridge_update.py rfid_bridge.py`,
+        "echo.",
         cmd,
         "echo.",
         "echo Bridge stopped. Press any key to close.",
@@ -229,10 +238,13 @@ export default function ReaderSetup() {
         "#!/bin/bash",
         'cd "$(dirname "$0")"',
         "echo '================================================'",
-        "echo '  RM Tracker Timing Bridge'",
+        "echo '  RM Tracker Setup Tool'",
         "echo '================================================'",
         "echo ''",
-        "echo 'Starting... Keep this window open while racing.'",
+        `echo '${keepOpenMsg}'`,
+        "echo ''",
+        "echo 'Checking for updates...'",
+        `curl -s -L -o rfid_bridge_update.py "${bridgeUrl}" && mv rfid_bridge_update.py rfid_bridge.py`,
         "echo ''",
         cmd3,
         "echo ''",
@@ -284,14 +296,16 @@ export default function ReaderSetup() {
       { step: 1, label: "Open the reader's web interface",
         content: <a href={manualReaderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-mono text-xs text-primary underline underline-offset-2 break-all">{manualReaderUrl} <ExternalLink size={11} /></a> },
       { step: 2, label: "Log in",
-        content: <span className="text-xs text-muted-foreground">Username <strong className="text-foreground font-mono">admin</strong> · Password <strong className="text-foreground font-mono">change#me</strong> (Impinj factory default — update if you changed it)</span> },
-      { step: 3, label: "Navigate to Profiles",
-        content: <span className="text-xs text-muted-foreground">In the left sidebar choose <strong className="text-foreground">Profiles</strong>, then click <strong className="text-foreground">New Profile</strong>.</span> },
-      { step: 4, label: "Set the HTTP destination",
+        content: <span className="text-xs text-muted-foreground">Default credentials: username <strong className="text-foreground font-mono">root</strong> · password <strong className="text-foreground font-mono">impinj</strong>. Update if you've changed them.</span> },
+      { step: 3, label: "Enable IoT Connector",
+        content: <span className="text-xs text-muted-foreground">In the left sidebar click <strong className="text-foreground">IoT Connector</strong>. If it shows a toggle or <strong className="text-foreground">Enable</strong> button, turn it on and save. This unlocks the Profiles API used by auto-configure — skip this and auto-configure returns a 404.</span> },
+      { step: 4, label: "Navigate to Profiles",
+        content: <span className="text-xs text-muted-foreground">Under IoT Connector choose <strong className="text-foreground">Profiles</strong>, then click <strong className="text-foreground">New Profile</strong>.</span> },
+      { step: 5, label: "Set the HTTP destination",
         content: <div className="space-y-1.5"><p className="text-xs text-muted-foreground">Under <strong className="text-foreground">Event Handlers → Tag Inventory Event → Actions</strong>, choose <strong className="text-foreground">HTTP</strong> and paste:</p>{urlField}</div> },
-      { step: 5, label: "Set method and header",
+      { step: 6, label: "Set method and header",
         content: <span className="text-xs text-muted-foreground">Method: <strong className="text-foreground">POST</strong> · Add header <strong className="text-foreground font-mono">Content-Type: application/json</strong></span> },
-      { step: 6, label: "Save and activate",
+      { step: 7, label: "Save and activate",
         content: <span className="text-xs text-muted-foreground">Click <strong className="text-foreground">Save</strong>, then set this profile as <strong className="text-foreground">Active</strong>. The reader starts sending laps immediately.</span> },
     ] : readerType === "zebra-fx7500" ? [
       { step: 1, label: "Open the reader's web interface",
@@ -435,7 +449,7 @@ export default function ReaderSetup() {
                     className={`flex flex-col gap-1 rounded-lg border-2 px-4 py-3 text-left transition-all ${setupMethod === "auto" ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}
                   >
                     <span className="text-sm font-semibold">Auto-configure</span>
-                    <span className="text-xs text-muted-foreground">Reader plugged into this laptop — bridge programs it for you</span>
+                    <span className="text-xs text-muted-foreground">Reader on your network — enter its IP and the bridge programs it for you</span>
                   </button>
                   <button
                     onClick={() => { setSetupMethod("manual"); setBridgeStatus("checking"); }}
@@ -455,17 +469,6 @@ export default function ReaderSetup() {
                             <div className="flex gap-3 px-3 py-2.5">
                               <MiniStep n={1} />
                               <div className="space-y-1.5 min-w-0">
-                                <p className="text-xs font-medium">Download the one-time setup tool</p>
-                                <a href="/rfid_bridge.py" download="rfid_bridge.py"
-                                  className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                  <Download size={12} /> Download rfid_bridge.py
-                                </a>
-                                <p className="text-xs text-muted-foreground">Your browser saves it to your <strong>Downloads</strong> folder — leave it there.</p>
-                              </div>
-                            </div>
-                            <div className="flex gap-3 px-3 py-2.5">
-                              <MiniStep n={2} />
-                              <div className="space-y-1.5 min-w-0">
                                 <p className="text-xs font-medium">Install Python — one time only</p>
                                 <a href={os === "windows" ? "https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe" : "https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"}
                                   className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
@@ -477,15 +480,15 @@ export default function ReaderSetup() {
                               </div>
                             </div>
                             <div className="flex gap-3 px-3 py-2.5">
-                              <MiniStep n={3} />
+                              <MiniStep n={2} />
                               <div className="space-y-2 min-w-0 w-full">
-                                <p className="text-xs font-medium">Run the setup tool — just this once</p>
+                                <p className="text-xs font-medium">Download and run the setup tool</p>
                                 <button onClick={() => downloadLauncher(os, "rfid")}
                                   className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
                                   <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
                                 </button>
-                                <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal opens and the tool starts. Once your reader is configured below, you can close it. The reader will send laps directly to the platform from then on — no tool needed on race day.</p>
-                                {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
+                                <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder, then double-click it. It downloads the latest bridge code automatically, so you always have the newest version. Once your reader is configured below, close the terminal — the reader sends laps directly to the platform on race day with no tool running.</p>
+                                {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click → Open the first time to allow it past Gatekeeper.</p>}
                               </div>
                             </div>
                           </div>
@@ -518,20 +521,42 @@ export default function ReaderSetup() {
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs text-muted-foreground">
-                          Reader's IP address <span className="text-muted-foreground/60">(check your network settings after plugging it in)</span>
+                          Reader's IP address <span className="text-muted-foreground/60">(shown on the reader's screen, or check your router's connected-devices list)</span>
+                        </label>
+                        <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
+                          placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-sm"
+                          onKeyDown={e => { if (e.key === "Enter") configureReader(); }} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-muted-foreground">
+                          Reader credentials <span className="text-muted-foreground/60">(same login you use to access the reader's web page)</span>
                         </label>
                         <div className="flex gap-2 max-w-sm">
-                          <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
-                            placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm"
-                            onKeyDown={e => { if (e.key === "Enter") configureReader(); }} />
-                          <Button onClick={configureReader}
-                            disabled={configuring || !readerIp.trim() || bridgeStatus !== "running"}
-                            className="font-heading uppercase tracking-wider h-9 px-4 gap-1.5 shrink-0 text-xs">
-                            {configuring ? <RefreshCw size={13} className="animate-spin" /> : null}
-                            {configuring ? "Configuring…" : "Configure"}
-                          </Button>
+                          <Input value={readerUsername} onChange={e => setReaderUsername(e.target.value)}
+                            placeholder="Username (default: root)" className="h-9 text-sm" />
+                          <Input value={readerPassword} onChange={e => setReaderPassword(e.target.value)}
+                            placeholder="Password" type="password" className="h-9 text-sm" />
                         </div>
                       </div>
+                      {readerType === "impinj-r700" && (
+                        <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 px-3 py-2.5">
+                          <span className="text-amber-500 shrink-0 mt-0.5">⚠</span>
+                          <p className="text-xs text-amber-700 dark:text-amber-300">
+                            <strong>Enable IoT Connector first.</strong> Open{" "}
+                            {readerIp.trim()
+                              ? <a href={`https://${readerIp.trim()}`} target="_blank" rel="noreferrer" className="underline underline-offset-2 font-mono">https://{readerIp.trim()}</a>
+                              : <span className="font-mono">https://&lt;reader IP&gt;</span>
+                            }{" "}
+                            in your browser → log in → click <strong>IoT Connector</strong> in the sidebar → turn it on and save. If you skip this, Configure will return a 404 error.
+                          </p>
+                        </div>
+                      )}
+                      <Button onClick={configureReader}
+                        disabled={configuring || !readerIp.trim() || bridgeStatus !== "running"}
+                        className="font-heading uppercase tracking-wider h-9 px-4 gap-1.5 text-xs">
+                        {configuring ? <RefreshCw size={13} className="animate-spin" /> : null}
+                        {configuring ? "Configuring…" : "Configure Reader"}
+                      </Button>
                       {configResult && (
                         <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${configResult.ok ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
                           {configResult.ok
@@ -570,7 +595,7 @@ export default function ReaderSetup() {
                     {readerType !== "generic" && (
                       <div className="space-y-1.5">
                         <label className="text-xs text-muted-foreground">
-                          Reader's IP address <span className="text-muted-foreground/60">(check your router or the reader's display)</span>
+                          Reader's IP address <span className="text-muted-foreground/60">(shown on the reader's screen, or check your router's connected-devices list)</span>
                         </label>
                         <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
                           placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-xs" />
@@ -699,17 +724,6 @@ export default function ReaderSetup() {
                           <div className="flex gap-3 px-3 py-2.5">
                             <MiniStep n={1} />
                             <div className="space-y-1.5 min-w-0">
-                              <p className="text-xs font-medium">Download the bridge script</p>
-                              <a href="/rfid_bridge.py" download="rfid_bridge.py"
-                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                <Download size={12} /> Download rfid_bridge.py
-                              </a>
-                              <p className="text-xs text-muted-foreground">Your browser saves it to your <strong>Downloads</strong> folder — leave it there.</p>
-                            </div>
-                          </div>
-                          <div className="flex gap-3 px-3 py-2.5">
-                            <MiniStep n={2} />
-                            <div className="space-y-1.5 min-w-0">
                               <p className="text-xs font-medium">Install Python — one time only</p>
                               <a href={os === "windows" ? "https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe" : "https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"}
                                 className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
@@ -721,7 +735,7 @@ export default function ReaderSetup() {
                             </div>
                           </div>
                           <div className="flex gap-3 px-3 py-2.5">
-                            <MiniStep n={3} />
+                            <MiniStep n={2} />
                             <div className="space-y-2 min-w-0 w-full">
                               <p className="text-xs font-medium">Enter your decoder IP, then download the launcher</p>
                               <div className="space-y-1">
@@ -739,8 +753,8 @@ export default function ReaderSetup() {
                               {!readerIp.trim() && (
                                 <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable the download.</p>
                               )}
-                              <p className="text-xs text-muted-foreground">Save it to your <strong>Downloads</strong> folder alongside rfid_bridge.py — both files must be in the same folder. Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal window opens and the bridge starts with your decoder IP already configured.</p>
-                              {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
+                              <p className="text-xs text-muted-foreground">Save it anywhere and double-click it — it downloads the latest bridge code automatically each time it runs. A terminal opens and the bridge starts with your decoder IP already set.</p>
+                              {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click → Open the first time to allow it past Gatekeeper.</p>}
                             </div>
                           </div>
                         </div>
