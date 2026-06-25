@@ -48,6 +48,7 @@ const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
 const SUPERCROSS_SCALE = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 const OLYMPIC_SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+const ENDURO_SCALE = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
 function scaleToText(scale: number[]): string {
   return scale.join(", ");
@@ -848,6 +849,15 @@ function TableFormDialog({
                       onClick={() => setForm((f) => ({ ...f, scoringMethod: "highest_points", scaleText: scaleToText(SUPERCROSS_SCALE) }))}
                     >
                       AMA
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => setForm((f) => ({ ...f, scoringMethod: "highest_points", mainEventOnly: false, scaleText: scaleToText(ENDURO_SCALE) }))}
+                    >
+                      Enduro
                     </Button>
                     <Button
                       type="button"
