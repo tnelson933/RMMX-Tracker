@@ -212,6 +212,40 @@ export const EventTimingTechnology = {
  */
 export type EventRaceClassSeriesMap = {[key: string]: number[]};
 
+/**
+ * Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)
+ */
+export type EventRaceStyle = typeof EventRaceStyle[keyof typeof EventRaceStyle];
+
+
+export const EventRaceStyle = {
+  motocross: 'motocross',
+  enduro: 'enduro',
+  cross_country: 'cross_country',
+} as const;
+
+export interface EnduroPenaltyConfig {
+  /** Seconds added to overall time per whole minute a rider arrives early */
+  earlySecPerMin: number;
+  /** Seconds added to overall time per whole minute a rider arrives late */
+  lateSecPerMin: number;
+  /**
+     * Disqualify rider if more than this many minutes early (null = disabled)
+     * @nullable
+     */
+  earlyDqMinutes?: number | null;
+  /**
+     * Disqualify rider if more than this many minutes late (null = disabled)
+     * @nullable
+     */
+  lateDqMinutes?: number | null;
+  /**
+     * IANA timezone identifier used when comparing RFID arrival times against expected times (e.g. "America/Denver"). Defaults to server local time if omitted.
+     * @nullable
+     */
+  timezone?: string | null;
+}
+
 export interface Event {
   id: number;
   clubId: number;
@@ -274,6 +308,9 @@ export interface Event {
   endDate?: string | null;
   /** Maps each race class name to an array of series IDs that should award points for that class. */
   raceClassSeriesMap?: EventRaceClassSeriesMap;
+  /** Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time) */
+  raceStyle?: EventRaceStyle;
+  enduroPenaltyConfig?: EnduroPenaltyConfig | null;
   createdAt?: string;
 }
 
@@ -291,6 +328,18 @@ export const EventInputTimingTechnology = {
  * Maps each race class name to an array of series IDs that should award points for that class.
  */
 export type EventInputRaceClassSeriesMap = {[key: string]: number[]};
+
+/**
+ * Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)
+ */
+export type EventInputRaceStyle = typeof EventInputRaceStyle[keyof typeof EventInputRaceStyle];
+
+
+export const EventInputRaceStyle = {
+  motocross: 'motocross',
+  enduro: 'enduro',
+  cross_country: 'cross_country',
+} as const;
 
 export interface EventInput {
   clubId: number;
@@ -337,6 +386,8 @@ export interface EventInput {
   endDate?: string | null;
   /** Maps each race class name to an array of series IDs that should award points for that class. */
   raceClassSeriesMap?: EventInputRaceClassSeriesMap;
+  /** Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time) */
+  raceStyle?: EventInputRaceStyle;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -353,6 +404,18 @@ export const EventUpdateTimingTechnology = {
  * Maps each race class name to an array of series IDs that should award points for that class.
  */
 export type EventUpdateRaceClassSeriesMap = {[key: string]: number[]};
+
+/**
+ * Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)
+ */
+export type EventUpdateRaceStyle = typeof EventUpdateRaceStyle[keyof typeof EventUpdateRaceStyle];
+
+
+export const EventUpdateRaceStyle = {
+  motocross: 'motocross',
+  enduro: 'enduro',
+  cross_country: 'cross_country',
+} as const;
 
 export interface EventUpdate {
   name?: string;
@@ -402,6 +465,9 @@ export interface EventUpdate {
   endDate?: string | null;
   /** Maps each race class name to an array of series IDs that should award points for that class. */
   raceClassSeriesMap?: EventUpdateRaceClassSeriesMap;
+  /** Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time) */
+  raceStyle?: EventUpdateRaceStyle;
+  enduroPenaltyConfig?: EnduroPenaltyConfig | null;
 }
 
 export interface Rider {
@@ -678,6 +744,7 @@ export const MotoType = {
   main: 'main',
   practice: 'practice',
   moto: 'moto',
+  enduro_test: 'enduro_test',
 } as const;
 
 export type MotoStatus = typeof MotoStatus[keyof typeof MotoStatus];
@@ -761,6 +828,8 @@ export interface Moto {
   staggeredGroupId?: number | null;
   /** Ordered list of moto IDs in the staggered group (sorted by staggeredOrder) */
   staggeredGroupMembers?: number[] | null;
+  /** Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock */
+  enduroHasRfidStart?: boolean;
 }
 
 export type MotoInputType = typeof MotoInputType[keyof typeof MotoInputType];
@@ -772,6 +841,7 @@ export const MotoInputType = {
   main: 'main',
   practice: 'practice',
   moto: 'moto',
+  enduro_test: 'enduro_test',
 } as const;
 
 /**
@@ -802,6 +872,8 @@ export interface MotoInput {
   countdownSeconds?: number;
   scheduledTime?: string;
   lineup?: number[];
+  /** Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock */
+  enduroHasRfidStart?: boolean;
 }
 
 /**
@@ -829,6 +901,8 @@ export interface MotoUpdate {
   countdownSeconds?: number | null;
   motoNumber?: number;
   name?: string;
+  /** Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock */
+  enduroHasRfidStart?: boolean;
 }
 
 export interface StaggerLinkInput {
@@ -1541,6 +1615,183 @@ export interface NotificationLogEntry {
   sentAt: string;
 }
 
+export interface EnduroTimeCheckTarget {
+  raceClass: string;
+  /** Expected duration (ms from the rider's start) for this class to reach the check */
+  durationMs: number;
+}
+
+export interface EnduroTimeCheck {
+  id: number;
+  eventId: number;
+  /** 1-based order through the day */
+  checkNumber: number;
+  name: string;
+  targets: EnduroTimeCheckTarget[];
+  /** @nullable */
+  createdAt?: string | null;
+}
+
+export interface EnduroTimeCheckInput {
+  checkNumber: number;
+  name: string;
+  targets: EnduroTimeCheckTarget[];
+}
+
+export interface SetEnduroTimeChecksInput {
+  timeChecks: EnduroTimeCheckInput[];
+  penaltyConfig?: EnduroPenaltyConfig | null;
+}
+
+export interface RecordArrivalInput {
+  riderId: number;
+  arrivalTime: string;
+}
+
+export type EnduroCheckpointArrivalRecordedBy = typeof EnduroCheckpointArrivalRecordedBy[keyof typeof EnduroCheckpointArrivalRecordedBy];
+
+
+export const EnduroCheckpointArrivalRecordedBy = {
+  rfid: 'rfid',
+  manual: 'manual',
+} as const;
+
+export interface EnduroCheckpointArrival {
+  id: number;
+  eventId: number;
+  timeCheckId: number;
+  riderId: number;
+  /** @nullable */
+  riderName?: string | null;
+  arrivalTime: string;
+  recordedBy: EnduroCheckpointArrivalRecordedBy;
+  /** @nullable */
+  createdAt?: string | null;
+}
+
+export type EnduroPenaltySummaryEntryCheckDetailsItem = {
+  checkId: number;
+  checkName: string;
+  /** Positive = late, negative = early */
+  diffMinutes: number;
+  penaltySeconds: number;
+  disqualified: boolean;
+  hasArrival?: boolean;
+};
+
+export interface EnduroPenaltySummaryEntry {
+  riderId: number;
+  riderName: string;
+  /** @nullable */
+  raceClass: string | null;
+  /** Total extra seconds added to this rider's time across all checkpoints */
+  totalPenaltySeconds: number;
+  /** True if the rider exceeded any DQ threshold at any checkpoint */
+  disqualified: boolean;
+  checkDetails?: EnduroPenaltySummaryEntryCheckDetailsItem[];
+}
+
+export type ReaderType = typeof ReaderType[keyof typeof ReaderType];
+
+
+export const ReaderType = {
+  rfid: 'rfid',
+  mylaps: 'mylaps',
+} as const;
+
+export interface Reader {
+  id: number;
+  clubId: number;
+  name: string;
+  type: ReaderType;
+  /** UUID used as the URL key for this reader's ingest endpoint */
+  token: string;
+  /** @nullable */
+  lastSeenAt?: string | null;
+  createdAt: string;
+}
+
+export type ReaderInputType = typeof ReaderInputType[keyof typeof ReaderInputType];
+
+
+export const ReaderInputType = {
+  rfid: 'rfid',
+  mylaps: 'mylaps',
+} as const;
+
+export interface ReaderInput {
+  name: string;
+  type: ReaderInputType;
+}
+
+export interface ReaderUpdateInput {
+  name: string;
+}
+
+export type EventReaderAssignmentRole = typeof EventReaderAssignmentRole[keyof typeof EventReaderAssignmentRole];
+
+
+export const EventReaderAssignmentRole = {
+  start: 'start',
+  finish: 'finish',
+  time_check: 'time_check',
+} as const;
+
+export interface EventReaderAssignment {
+  id: number;
+  eventId: number;
+  readerId: number;
+  /**
+     * Specific antenna port (1-4), or null for any antenna on this reader
+     * @nullable
+     */
+  antennaId?: number | null;
+  role: EventReaderAssignmentRole;
+  /**
+     * For start/finish roles — the specific test moto this reader covers
+     * @nullable
+     */
+  motoId?: number | null;
+  /**
+     * For time_check role — the enduro_time_check this reader is positioned at
+     * @nullable
+     */
+  timeCheckId?: number | null;
+  createdAt?: string;
+}
+
+export type EventReaderAssignmentInputRole = typeof EventReaderAssignmentInputRole[keyof typeof EventReaderAssignmentInputRole];
+
+
+export const EventReaderAssignmentInputRole = {
+  start: 'start',
+  finish: 'finish',
+  time_check: 'time_check',
+} as const;
+
+export interface EventReaderAssignmentInput {
+  readerId: number;
+  antennaId?: number | null;
+  role: EventReaderAssignmentInputRole;
+  motoId?: number | null;
+  timeCheckId?: number | null;
+}
+
+export interface SetEventReaderAssignmentsInput {
+  assignments: EventReaderAssignmentInput[];
+}
+
+export interface ReaderCrossingInput {
+  /** RFID tag EPC or MyLaps transponder number */
+  rfidNumber?: string;
+  /** ISO timestamp of the crossing; defaults to server time if omitted */
+  crossingTime?: string;
+  /** Antenna port number (used to disambiguate multi-antenna readers) */
+  antennaId?: number;
+  /** Optional — if omitted the server resolves the active race_day event for this reader's club */
+  eventId?: number;
+}
+
 export type RequestAccountSetup200 = {
   ok?: boolean;
 };
@@ -1574,6 +1825,10 @@ export type DeleteRiderDiscountCode200 = {
 
 export type ListRfidTagsParams = {
 eventId?: number;
+};
+
+export type DeleteCheckpointArrival200 = {
+  ok?: boolean;
 };
 
 export type UpdateResultLaps200 = {
@@ -1627,4 +1882,9 @@ export const GetNotificationAudienceCountAudience = {
   all: 'all',
   event: 'event',
 } as const;
+
+export type ReaderCrossing200 = {
+  ok: boolean;
+  message?: string;
+};
 
