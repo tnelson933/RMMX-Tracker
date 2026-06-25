@@ -33,6 +33,10 @@ import configRouter from "./config";
 import notificationsRouter from "./notifications";
 import desktopSyncRouter from "./desktop-sync";
 import tracksRouter from "./tracks";
+import enduroTimeChecksRouter from "./enduro-time-checks";
+import readersRouter from "./readers";
+import eventReaderAssignmentsRouter from "./event-reader-assignments";
+import readerIngestRouter from "./reader-ingest";
 
 const router: IRouter = Router();
 
@@ -70,5 +74,9 @@ router.use(notificationsRouter);
 router.use(desktopSyncRouter);
 router.use(configRouter);
 router.use(tracksRouter);
+router.use(enduroTimeChecksRouter);
+router.use(readersRouter);
+router.use(eventReaderAssignmentsRouter);
+router.use(readerIngestRouter);
 
 export default router;
