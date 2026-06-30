@@ -37,7 +37,6 @@ import enduroTimeChecksRouter from "./enduro-time-checks";
 import readersRouter from "./readers";
 import eventReaderAssignmentsRouter from "./event-reader-assignments";
 import readerIngestRouter from "./reader-ingest";
-import adminSeedRouter from "./admin-seed";
 
 const router: IRouter = Router();
 
@@ -79,6 +78,5 @@ router.use(enduroTimeChecksRouter);
 router.use(readersRouter);
 router.use(eventReaderAssignmentsRouter);
 router.use(readerIngestRouter);
-router.use(adminSeedRouter);
 
 export default router;
