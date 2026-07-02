@@ -554,13 +554,14 @@ interface MotoCardProps {
   isMotoCardDragging?: boolean;
   staggerGroup?: Moto[];
   onUnstaggerMoto?: (motoId: number) => void;
+  onEditStagger?: (orderedMotoIds: number[]) => void;
 }
 
 function SortableMotoCard({
   moto, index, eventId, isPoolDropTarget,
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
   isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire, onDelete,
-  isMotoCardDragging, staggerGroup, onUnstaggerMoto,
+  isMotoCardDragging, staggerGroup, onUnstaggerMoto, onEditStagger,
 }: MotoCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: moto.id });
 
@@ -612,6 +613,14 @@ function SortableMotoCard({
             </span>
             <span className="text-[10px] text-muted-foreground">starts {staggerOrder === 1 ? "1st" : `${staggerOrder}${staggerOrder === 2 ? "nd" : staggerOrder === 3 ? "rd" : "th"}`}</span>
             <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={() => onEditStagger?.(groupMembers.map(m => m.id))}
+                className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-border hover:border-primary/60 hover:text-primary text-muted-foreground transition-colors"
+                title="Edit staggered start order"
+              >
+                <Pencil size={9} />
+                Edit order
+              </button>
               {groupMembers.map(gm => (
                 <button
                   key={gm.id}
@@ -2657,6 +2666,9 @@ export default function EventSchedule() {
                                   { motoId },
                                   { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any }) }
                                 );
+                              } : undefined}
+                              onEditStagger={staggerGroup.length > 0 ? (ids: number[]) => {
+                                setStaggerPendingGroup({ orderedMotoIds: ids });
                               } : undefined}
                             />
                           </div>
