@@ -253,7 +253,7 @@ function _computeAutoStatus(event: { id: number; date: string; status: string; r
     if (registrationClose && now >= new Date(registrationClose)) return "registration_closed";
   }
   if (status === "registration_closed") {
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
     if (eventDateStr && eventDateStr <= todayStr) return "race_day";
   }
