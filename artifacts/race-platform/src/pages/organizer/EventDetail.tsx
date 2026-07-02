@@ -439,7 +439,7 @@ export default function EventDetail() {
         endDate: data.multiDay && data.endDate ? data.endDate : null,
         state: data.state,
         location: data.location,
-        trackName: data.trackName,
+        trackName: data.trackName || null,
         status: data.status,
         timingTechnology: data.timingTechnology,
         raceClasses: classNames,
@@ -639,7 +639,7 @@ export default function EventDetail() {
                       name="name"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Event Name</FormLabel>
+                          <FormLabel>Event Name <span className="text-destructive">*</span></FormLabel>
                           <FormControl><Input {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
@@ -651,7 +651,7 @@ export default function EventDetail() {
                         name="date"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Start Date</FormLabel>
+                            <FormLabel>Start Date <span className="text-destructive">*</span></FormLabel>
                             <FormControl><Input type="date" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
@@ -713,7 +713,7 @@ export default function EventDetail() {
                         name="state"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>State</FormLabel>
+                            <FormLabel>State <span className="text-destructive">*</span></FormLabel>
                             <FormControl><Input {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
@@ -736,7 +736,7 @@ export default function EventDetail() {
                       name="trackName"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Track Name</FormLabel>
+                          <FormLabel>Track Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
                           <FormControl><Input {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
