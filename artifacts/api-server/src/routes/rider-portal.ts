@@ -25,6 +25,7 @@ import {
   riderMaintenanceHistoryTable,
   riderNotificationPrefsTable,
   clubsTable,
+  enduroTimeChecksTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql, ilike } from "drizzle-orm";
 
@@ -843,6 +844,23 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 
   if (events.length === 0) return res.json({ familyRiderIds, events: [] });
 
+  // For enduro events, fetch per-class start times from time check targets
+  const enduroEventIds = events.filter(e => e.raceStyle === "enduro").map(e => e.id);
+  const enduroTimeChecks = enduroEventIds.length > 0
+    ? await db
+      .select({ eventId: enduroTimeChecksTable.eventId, targets: enduroTimeChecksTable.targets })
+      .from(enduroTimeChecksTable)
+      .where(inArray(enduroTimeChecksTable.eventId, enduroEventIds))
+    : [];
+  const classStartTimesByEvent = new Map<number, Record<string, string | null>>();
+  for (const tc of enduroTimeChecks) {
+    if (!classStartTimesByEvent.has(tc.eventId)) classStartTimesByEvent.set(tc.eventId, {});
+    const map = classStartTimesByEvent.get(tc.eventId)!;
+    for (const target of (tc.targets ?? [])) {
+      if (target.startTimeOfDay != null) map[target.raceClass] = target.startTimeOfDay;
+    }
+  }
+
   // Fetch all race motos (non-practice) for these events
   const motos = await db
     .select()
@@ -1025,6 +1043,8 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       eventState: event.state ?? null,
       eventLocation: event.location ?? null,
       status: event.status,
+      raceStyle: event.raceStyle ?? "motocross",
+      classStartTimes: classStartTimesByEvent.get(event.id) ?? {},
       registrations,
       motos: allMotos,
     };
