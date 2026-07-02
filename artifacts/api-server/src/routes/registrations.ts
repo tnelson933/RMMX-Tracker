@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
-import { eq, and, sql, desc, ne, isNull, inArray } from "drizzle-orm";
+import { eq, and, sql, desc, asc, ne, isNull, inArray } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
 
@@ -58,13 +58,14 @@ router.get("/public/riders/lookup", async (req, res) => {
 
   const riders = await db.select().from(ridersTable)
     .where(sql`lower(${ridersTable.email}) = ${email}`)
-    .limit(1);
+    .orderBy(asc(ridersTable.id));
 
   if (!riders.length) return res.json({ found: false });
 
-  const rider = riders[0];
+  const riderIds = riders.map(r => r.id);
 
-  const lastRegs = await db.select({
+  const allLastRegs = await db.select({
+    riderId: registrationsTable.riderId,
     amaNumber: registrationsTable.amaNumber,
     clubIdNumber: registrationsTable.clubIdNumber,
     bikeBrand: registrationsTable.bikeBrand,
@@ -72,33 +73,43 @@ router.get("/public/riders/lookup", async (req, res) => {
     bikeYear: registrationsTable.bikeYear,
     bibNumber: registrationsTable.bibNumber,
     sponsors: registrationsTable.sponsors,
+    createdAt: registrationsTable.createdAt,
   }).from(registrationsTable)
-    .where(eq(registrationsTable.riderId, rider.id))
-    .orderBy(desc(registrationsTable.createdAt))
-    .limit(1);
+    .where(inArray(registrationsTable.riderId, riderIds))
+    .orderBy(desc(registrationsTable.createdAt));
 
-  const lastReg = lastRegs[0] ?? null;
+  const lastRegByRider = new Map<number, typeof allLastRegs[0]>();
+  for (const reg of allLastRegs) {
+    if (reg.riderId != null && !lastRegByRider.has(reg.riderId)) {
+      lastRegByRider.set(reg.riderId, reg);
+    }
+  }
 
-  return res.json({
-    found: true,
-    firstName: rider.firstName ?? "",
-    lastName: rider.lastName ?? "",
-    phone: rider.phone ?? "",
-    dateOfBirth: rider.dateOfBirth ?? "",
-    emergencyContact: rider.emergencyContact ?? "",
-    emergencyPhone: rider.emergencyPhone ?? "",
-    streetAddress: rider.streetAddress ?? "",
-    city: rider.city ?? "",
-    homeState: rider.homeState ?? "",
-    zip: rider.zip ?? "",
-    amaNumber: lastReg?.amaNumber ?? "",
-    clubIdNumber: lastReg?.clubIdNumber ?? "",
-    bikeBrand: lastReg?.bikeBrand ?? "",
-    bikeModel: lastReg?.bikeModel ?? "",
-    bikeYear: lastReg?.bikeYear ?? "",
-    bibNumber: lastReg?.bibNumber?.toString() ?? "",
-    sponsors: lastReg?.sponsors ?? "",
+  const result = riders.map(rider => {
+    const lastReg = lastRegByRider.get(rider.id) ?? null;
+    return {
+      id: rider.id,
+      firstName: rider.firstName ?? "",
+      lastName: rider.lastName ?? "",
+      phone: rider.phone ?? "",
+      dateOfBirth: rider.dateOfBirth ?? "",
+      emergencyContact: rider.emergencyContact ?? "",
+      emergencyPhone: rider.emergencyPhone ?? "",
+      streetAddress: rider.streetAddress ?? "",
+      city: rider.city ?? "",
+      homeState: rider.homeState ?? "",
+      zip: rider.zip ?? "",
+      amaNumber: lastReg?.amaNumber ?? "",
+      clubIdNumber: lastReg?.clubIdNumber ?? "",
+      bikeBrand: lastReg?.bikeBrand ?? "",
+      bikeModel: lastReg?.bikeModel ?? "",
+      bikeYear: lastReg?.bikeYear ?? "",
+      bibNumber: lastReg?.bibNumber?.toString() ?? "",
+      sponsors: lastReg?.sponsors ?? "",
+    };
   });
+
+  return res.json({ found: true, count: result.length, riders: result });
 });
 
 function getAppUrl(): string {
@@ -935,14 +946,30 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     validatedCompCode = codeRow.code;
   }
 
-  // Find or create rider by email
+  // Find or create rider by email + full name.
+  // Matching on name+email (not email alone) ensures that when multiple riders share
+  // the same email address (e.g. a parent registering two kids), the correct rider
+  // record is linked to the registration rather than whichever row happens to come
+  // back first from a plain email query.
   let rider;
-  const existing = await db.select().from(ridersTable).where(eq(ridersTable.email, email));
+  const normFirst = firstName.trim().toLowerCase();
+  const normLast  = lastName.trim().toLowerCase();
+  const normEmail = email.trim().toLowerCase();
+  const existing = await db.select().from(ridersTable).where(
+    and(
+      sql`lower(${ridersTable.email}) = ${normEmail}`,
+      sql`lower(${ridersTable.firstName}) = ${normFirst}`,
+      sql`lower(${ridersTable.lastName}) = ${normLast}`,
+    )
+  );
   if (existing[0]) {
     rider = existing[0];
   } else {
     const [created] = await db.insert(ridersTable).values({
-      firstName, lastName, email, phone: phone || null,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim(),
+      phone: phone || null,
       dateOfBirth: dateOfBirth || null,
       emergencyContact: emergencyContact || null,
       emergencyPhone: emergencyPhone || null,
