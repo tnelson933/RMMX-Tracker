@@ -1663,6 +1663,17 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
   );
 }
 
+/** Format a "HH:MM" 24-hr time string (from enduro startTimeOfDay) as "9:00 AM" */
+function fmtStartTime(t: string | null | undefined): string {
+  if (!t) return "TBD";
+  const [hStr, mStr] = t.split(":");
+  const h = parseInt(hStr ?? "0", 10);
+  const m = parseInt(mStr ?? "0", 10);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${displayH}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
 const STATUS_DISPLAY_ORDER: Record<string, number> = { in_progress: 0, scheduled: 1, completed: 2, cancelled: 3 };
 
 function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
@@ -1707,6 +1718,17 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
     ? event.motos.filter(m => m.status === "scheduled" && (m.motoNumber ?? 0) < nowUpMotoNum).length
     : null;
   const racesUntilTurn = scheduledBefore;
+
+  const isEnduro = event.raceStyle === "enduro";
+  const enduroStartTimes = isEnduro
+    ? event.registrations
+        .filter(r => r.raceClass && (event.classStartTimes[r.raceClass] ?? null))
+        .map(r => ({
+          riderName: r.riderName,
+          raceClass: r.raceClass!,
+          startTime: event.classStartTimes[r.raceClass!]!,
+        }))
+    : [];
 
   const upcoming = sortedMotos.filter(m => m.status !== "completed" && m.status !== "cancelled");
   const finished = sortedMotos.filter(m => m.status === "completed" || m.status === "cancelled");
@@ -1767,7 +1789,30 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
 
         <div className="flex items-center gap-3 shrink-0">
           <div className="text-right">
-            {racesUntilTurn !== null ? (
+            {isEnduro ? (
+              /* Enduro: show per-class test start times instead of gate/races-away counter */
+              enduroStartTimes.length > 0 ? (
+                enduroStartTimes.length === 1 ? (
+                  <>
+                    <div className={`text-xs ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>Test Start</div>
+                    <div className={`font-heading font-black text-xl leading-none ${isRaceDay ? "text-white" : "text-primary"}`}>
+                      {fmtStartTime(enduroStartTimes[0].startTime)}
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-1">
+                    {enduroStartTimes.map(cs => (
+                      <div key={cs.raceClass} className="text-right">
+                        <div className={`text-[10px] ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>{cs.riderName.split(" ")[0]}</div>
+                        <div className={`font-heading font-black text-lg leading-none ${isRaceDay ? "text-white" : "text-primary"}`}>
+                          {fmtStartTime(cs.startTime)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : null
+            ) : racesUntilTurn !== null ? (
               <>
                 {racesUntilTurn === 0 ? (
                   <div className="text-right">
