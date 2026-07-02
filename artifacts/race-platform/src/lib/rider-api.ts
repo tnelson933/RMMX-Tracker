@@ -238,6 +238,8 @@ export interface ScheduleEvent {
   eventState: string | null;
   eventLocation: string | null;
   status: string;
+  raceStyle: string;
+  classStartTimes: Record<string, string | null>;
   registrations: ScheduleRegistration[];
   motos: ScheduleMoto[];
 }
