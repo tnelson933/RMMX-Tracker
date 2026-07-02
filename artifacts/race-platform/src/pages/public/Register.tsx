@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck } from "lucide-react";
+import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck, Users } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 
@@ -99,6 +99,27 @@ interface PendingPayment {
   entryFee: number;
 }
 
+interface RiderOption {
+  id: number;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  dateOfBirth: string;
+  emergencyContact: string;
+  emergencyPhone: string;
+  streetAddress: string;
+  city: string;
+  homeState: string;
+  zip: string;
+  amaNumber: string;
+  clubIdNumber: string;
+  bikeBrand: string;
+  bikeModel: string;
+  bikeYear: string;
+  bibNumber: string;
+  sponsors: string;
+}
+
 const DESKTOP_CLOUD_URL = import.meta.env.VITE_CLOUD_URL as string | undefined;
 
 export default function Register() {
@@ -129,8 +150,9 @@ export default function Register() {
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [paymentCancelled, setPaymentCancelled] = useState(false);
-  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found">("idle");
+  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found" | "pick">("idle");
   const [lookedUpName, setLookedUpName] = useState<string>("");
+  const [riderOptions, setRiderOptions] = useState<RiderOption[] | null>(null);
 
   const [compCodeInput, setCompCodeInput] = useState("");
   const [appliedComp, setAppliedComp] = useState<{ code: string; amount: number; discountType: "fixed" | "percentage" } | null>(null);
@@ -350,37 +372,48 @@ export default function Register() {
     return () => clearInterval(id);
   }, [pendingPayment?.sessionId, pendingPayment?.registrationId, !!success]);
 
+  const populateFromRider = (rider: RiderOption) => {
+    form.setValue("firstName", rider.firstName, { shouldDirty: false });
+    form.setValue("lastName", rider.lastName, { shouldDirty: false });
+    form.setValue("phone", rider.phone, { shouldDirty: false });
+    form.setValue("dateOfBirth", rider.dateOfBirth, { shouldDirty: false });
+    form.setValue("emergencyContact", rider.emergencyContact, { shouldDirty: false });
+    form.setValue("emergencyPhone", rider.emergencyPhone, { shouldDirty: false });
+    if (rider.streetAddress) form.setValue("streetAddress", rider.streetAddress, { shouldDirty: false });
+    if (rider.city) form.setValue("city", rider.city, { shouldDirty: false });
+    if (rider.homeState) form.setValue("homeState", rider.homeState, { shouldDirty: false });
+    if (rider.zip) form.setValue("zip", rider.zip, { shouldDirty: false });
+    if (rider.amaNumber) form.setValue("amaNumber", rider.amaNumber, { shouldDirty: false });
+    if (rider.clubIdNumber) form.setValue("clubIdNumber", rider.clubIdNumber, { shouldDirty: false });
+    if (rider.bikeBrand) form.setValue("bikeBrand", rider.bikeBrand, { shouldDirty: false });
+    if (rider.bikeModel) form.setValue("bikeModel", rider.bikeModel, { shouldDirty: false });
+    if (rider.bikeYear) form.setValue("bikeYear", rider.bikeYear, { shouldDirty: false });
+    if (rider.bibNumber) form.setValue("bibNumber", rider.bibNumber, { shouldDirty: false });
+    if (rider.sponsors) form.setValue("sponsors", rider.sponsors, { shouldDirty: false });
+    setLookedUpName(`${rider.firstName} ${rider.lastName}`);
+    setLookupState("found");
+    setRiderOptions(null);
+  };
+
   const lookupByEmail = async (email: string) => {
     const trimmed = email.trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmed)) return;
     setLookupState("loading");
     setLookedUpName("");
+    setRiderOptions(null);
     try {
       const res = await fetch(`/api/public/riders/lookup?email=${encodeURIComponent(trimmed)}`);
       const data = await res.json();
-      if (data.found) {
-        form.setValue("firstName", data.firstName, { shouldDirty: false });
-        form.setValue("lastName", data.lastName, { shouldDirty: false });
-        form.setValue("phone", data.phone, { shouldDirty: false });
-        form.setValue("dateOfBirth", data.dateOfBirth, { shouldDirty: false });
-        form.setValue("emergencyContact", data.emergencyContact, { shouldDirty: false });
-        form.setValue("emergencyPhone", data.emergencyPhone, { shouldDirty: false });
-        if (data.streetAddress) form.setValue("streetAddress", data.streetAddress, { shouldDirty: false });
-        if (data.city) form.setValue("city", data.city, { shouldDirty: false });
-        if (data.homeState) form.setValue("homeState", data.homeState, { shouldDirty: false });
-        if (data.zip) form.setValue("zip", data.zip, { shouldDirty: false });
-        if (data.amaNumber) form.setValue("amaNumber", data.amaNumber, { shouldDirty: false });
-        if (data.clubIdNumber) form.setValue("clubIdNumber", data.clubIdNumber, { shouldDirty: false });
-        if (data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
-        if (data.bikeModel) form.setValue("bikeModel", data.bikeModel, { shouldDirty: false });
-        if (data.bikeYear) form.setValue("bikeYear", data.bikeYear, { shouldDirty: false });
-        if (data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
-        if (data.sponsors) form.setValue("sponsors", data.sponsors, { shouldDirty: false });
-        setLookedUpName(`${data.firstName} ${data.lastName}`);
-        setLookupState("found");
-      } else {
+      if (!data.found) {
         setLookupState("not_found");
+        return;
+      }
+      if (data.count === 1) {
+        populateFromRider(data.riders[0]);
+      } else {
+        setRiderOptions(data.riders);
+        setLookupState("pick");
       }
     } catch {
       setLookupState("not_found");
@@ -762,8 +795,143 @@ export default function Register() {
                         <span>Welcome back, <strong>{lookedUpName}</strong>! Your info has been pre-filled — review and update anything that's changed.</span>
                       </div>
                     )}
+                    {lookupState === "pick" && riderOptions && (
+                      <div className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                          <Users size={15} className="text-primary shrink-0" />
+                          Multiple rider profiles found — select yours:
+                        </div>
+                        <div className="space-y-2">
+                          {riderOptions.map(rider => (
+                            <button
+                              key={rider.id}
+                              type="button"
+                              onClick={() => populateFromRider(rider)}
+                              className="w-full text-left rounded-lg border border-border bg-background px-4 py-3 hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+                            >
+                              <div className="font-semibold text-sm">{rider.firstName} {rider.lastName}</div>
+                              {(rider.city || rider.homeState) && (
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  {[rider.city, rider.homeState].filter(Boolean).join(", ")}
+                                  {rider.bibNumber ? ` · #${rider.bibNumber}` : ""}
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {lookupState === "not_found" && (
                       <p className="text-xs text-muted-foreground">No existing profile found — fill in your details below and we'll create one for you.</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2 border-b">
+                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Rider Info</h3>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField control={form.control} name="firstName" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input placeholder="Jake" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="lastName" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input placeholder="Morrison" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField control={form.control} name="phone" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl><Input placeholder="602-555-0100" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Date of Birth</FormLabel>
+                          <FormControl><Input type="date" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                    <FormField control={form.control} name="streetAddress" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Street Address</FormLabel>
+                        <FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField control={form.control} name="city" render={({ field }) => (
+                        <FormItem className="col-span-1">
+                          <FormLabel>City</FormLabel>
+                          <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="homeState" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>State</FormLabel>
+                          <FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="zip" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ZIP</FormLabel>
+                          <FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                    <FormField control={form.control} name="bibNumber" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Preferred #
+                          {event?.noDuplicateBibs && <span className="text-destructive ml-1">*</span>}
+                        </FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input placeholder="101" {...field} className={bibCheckState === "taken" ? "border-destructive pr-8" : bibCheckState === "available" ? "border-green-500 pr-8" : ""} />
+                            {bibCheckState === "checking" && <Loader2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />}
+                            {bibCheckState === "taken" && <AlertCircle size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-destructive" />}
+                            {bibCheckState === "available" && <CheckCircle2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500" />}
+                          </div>
+                        </FormControl>
+                        {bibCheckState === "taken" && <p className="text-xs text-destructive">#{field.value} is already taken for this event</p>}
+                        {bibCheckState === "available" && <p className="text-xs text-green-600">#{field.value} is available</p>}
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    {event.requireAma && (
+                      <FormField control={form.control} name="amaNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>AMA # <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input placeholder="123456" {...field} /></FormControl>
+                          <p className="text-xs text-muted-foreground">Your AMA membership number is required for this event.</p>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    )}
+                    {event.requireClubId && (
+                      <FormField control={form.control} name="clubIdNumber" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Club ID # <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input placeholder="Club membership number" {...field} /></FormControl>
+                          <p className="text-xs text-muted-foreground">Your club membership ID is required for this event.</p>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
                     )}
                   </CardContent>
                 </Card>
@@ -1033,115 +1201,6 @@ export default function Register() {
                         </FormItem>
                       )} />
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2 border-b">
-                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Rider Info</h3>
-                  </CardHeader>
-                  <CardContent className="p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField control={form.control} name="firstName" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="Jake" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="lastName" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="Morrison" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField control={form.control} name="phone" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Phone</FormLabel>
-                          <FormControl><Input placeholder="602-555-0100" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Date of Birth</FormLabel>
-                          <FormControl><Input type="date" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    </div>
-                    <FormField control={form.control} name="streetAddress" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Street Address</FormLabel>
-                        <FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <div className="grid grid-cols-3 gap-4">
-                      <FormField control={form.control} name="city" render={({ field }) => (
-                        <FormItem className="col-span-1">
-                          <FormLabel>City</FormLabel>
-                          <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="homeState" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>State</FormLabel>
-                          <FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="zip" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>ZIP</FormLabel>
-                          <FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    </div>
-                    <FormField control={form.control} name="bibNumber" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          Preferred #
-                          {event?.noDuplicateBibs && <span className="text-destructive ml-1">*</span>}
-                        </FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input placeholder="101" {...field} className={bibCheckState === "taken" ? "border-destructive pr-8" : bibCheckState === "available" ? "border-green-500 pr-8" : ""} />
-                            {bibCheckState === "checking" && <Loader2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />}
-                            {bibCheckState === "taken" && <AlertCircle size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-destructive" />}
-                            {bibCheckState === "available" && <CheckCircle2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500" />}
-                          </div>
-                        </FormControl>
-                        {bibCheckState === "taken" && <p className="text-xs text-destructive">#{field.value} is already taken for this event</p>}
-                        {bibCheckState === "available" && <p className="text-xs text-green-600">#{field.value} is available</p>}
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    {event.requireAma && (
-                      <FormField control={form.control} name="amaNumber" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>AMA # <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="123456" {...field} /></FormControl>
-                          <p className="text-xs text-muted-foreground">Your AMA membership number is required for this event.</p>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    )}
-                    {event.requireClubId && (
-                      <FormField control={form.control} name="clubIdNumber" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Club ID # <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="Club membership number" {...field} /></FormControl>
-                          <p className="text-xs text-muted-foreground">Your club membership ID is required for this event.</p>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    )}
                   </CardContent>
                 </Card>
 
