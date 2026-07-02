@@ -8,10 +8,11 @@ import {
   enduroCheckpointArrivalsTable,
   registrationsTable,
   eventPublicationTable,
+  eventReaderAssignmentsTable,
   type TimeCheckTarget,
   type EnduroPenaltyConfig,
 } from "@workspace/db/schema";
-import { eq, asc, and } from "drizzle-orm";
+import { eq, asc, and, inArray } from "drizzle-orm";
 import { computeEnduroPenalty, recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 
 const router = Router();
@@ -111,6 +112,21 @@ router.put("/events/:eventId/time-checks", async (req, res) => {
 
   // Full replace: wipe existing then re-insert so removed checks are dropped.
   const saved = await db.transaction(async (tx) => {
+    // Fetch existing time check IDs so we can clear any FK references before
+    // deleting — event_reader_assignments.time_check_id has a FK to this table.
+    const existing = await tx
+      .select({ id: enduroTimeChecksTable.id })
+      .from(enduroTimeChecksTable)
+      .where(eq(enduroTimeChecksTable.eventId, eventId));
+    if (existing.length > 0) {
+      const ids = existing.map((r) => r.id);
+      // Null out the time_check_id on any reader assignments referencing these
+      // rows so the subsequent DELETE doesn't hit a FK constraint violation.
+      await tx
+        .update(eventReaderAssignmentsTable)
+        .set({ timeCheckId: null })
+        .where(inArray(eventReaderAssignmentsTable.timeCheckId, ids));
+    }
     await tx.delete(enduroTimeChecksTable).where(eq(enduroTimeChecksTable.eventId, eventId));
     if (incoming.length > 0) {
       await tx.insert(enduroTimeChecksTable).values(incoming);
