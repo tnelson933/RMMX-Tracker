@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable } from "@workspace/db";
+import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable, enduroTimeChecksTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { sendStatsEmail } from "../lib/email";
 
@@ -242,8 +242,26 @@ router.get("/events/:eventId", async (req, res) => {
   if (staffCId !== null && events[0].clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   const advanced = await advanceStatuses(events);
   const e = events[0];
+
+  // For enduro events, expose per-class start times from time-check targets (public info).
+  let classStartTimes: Record<string, string | null> = {};
+  if (e.raceStyle === "enduro") {
+    const timeChecks = await db
+      .select({ targets: enduroTimeChecksTable.targets })
+      .from(enduroTimeChecksTable)
+      .where(eq(enduroTimeChecksTable.eventId, id));
+    for (const tc of timeChecks) {
+      for (const target of (tc.targets ?? [])) {
+        if (target.startTimeOfDay != null) {
+          classStartTimes[target.raceClass] = target.startTimeOfDay;
+        }
+      }
+    }
+  }
+
   return res.json({
     ...e,
+    classStartTimes,
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
     transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
