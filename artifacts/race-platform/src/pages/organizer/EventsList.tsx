@@ -282,7 +282,7 @@ export default function EventsList() {
           endDate: data.multiDay && data.endDate ? data.endDate : null,
           state: data.state,
           location: data.location,
-          trackName: data.trackName,
+          trackName: data.trackName || null,
           raceStyle: data.raceStyle,
           timingTechnology: data.timingTechnology,
           raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
@@ -509,7 +509,7 @@ export default function EventsList() {
                     name="clubId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Club</FormLabel>
+                        <FormLabel>Club <span className="text-destructive">*</span></FormLabel>
                         <Select
                           onValueChange={(v) => field.onChange(Number(v))}
                           value={field.value ? String(field.value) : ""}
@@ -536,7 +536,7 @@ export default function EventsList() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Event Name</FormLabel>
+                      <FormLabel>Event Name <span className="text-destructive">*</span></FormLabel>
                       <FormControl><Input placeholder="Spring Classic" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
@@ -548,7 +548,7 @@ export default function EventsList() {
                   name="date"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Race Date</FormLabel>
+                      <FormLabel>Race Date <span className="text-destructive">*</span></FormLabel>
                       <FormControl><Input type="date" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
@@ -952,7 +952,7 @@ export default function EventsList() {
                     name="state"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>State</FormLabel>
+                        <FormLabel>State <span className="text-destructive">*</span></FormLabel>
                         <FormControl><Input placeholder="CO" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
@@ -976,7 +976,7 @@ export default function EventsList() {
                   name="trackName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Track Name</FormLabel>
+                      <FormLabel>Track Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
                       <FormControl><Input placeholder="Thunder Valley MX" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
