@@ -5,7 +5,7 @@ import {
   useListMotos, useGenerateLineups, useGenerateMotoLineup, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables,
   useUpdateResultLaps, useListResults, useGeneratePracticeSessions, useGetEnduroPenaltySummary,
-  getListMotosQueryKey, getListCheckinsQueryKey, Moto, updateMoto,
+  getListMotosQueryKey, getListCheckinsQueryKey, Moto, updateMoto, useLinkStagger,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2 } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2, Pencil, X } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -1095,6 +1095,8 @@ export default function Motos() {
   const [perMotoGateMethod, setPerMotoGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [editStaggerMotoId, setEditStaggerMotoId] = useState<number | null>(null);
+  const [editStaggerOrder, setEditStaggerOrder] = useState<number[]>([]);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
   const [lapEditTarget, setLapEditTarget] = useState<LapEditTarget | null>(null);
   const [poolSearch, setPoolSearch] = useState("");
@@ -1163,6 +1165,7 @@ export default function Motos() {
   const generatePracticeSessionsMutation = useGeneratePracticeSessions();
   const updateMutation = useUpdateMoto();
   const deleteMutation = useDeleteMoto();
+  const linkStaggerMutation = useLinkStagger();
 
   // When the generate dialog opens (or format changes), pre-select the lowest non-done round(s).
   useEffect(() => {
@@ -3323,6 +3326,21 @@ export default function Motos() {
                     <Button size="sm" variant="ghost" className="text-muted-foreground px-2" onClick={() => copyLiveLink(moto.id)}>
                       {copiedId === moto.id ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
                     </Button>
+                    {(moto as any).staggeredGroupId && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-primary hover:bg-primary/10 px-2"
+                        onClick={() => {
+                          const members: number[] = (moto as any).staggeredGroupMembers ?? [];
+                          setEditStaggerOrder(members.length > 0 ? members : [(moto as any).staggeredGroupId]);
+                          setEditStaggerMotoId(moto.id);
+                        }}
+                        title="Edit staggered start order"
+                      >
+                        <Pencil size={13} />
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -3933,6 +3951,92 @@ export default function Motos() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Edit Staggered Start Order dialog ── */}
+      {editStaggerMotoId !== null && (() => {
+        const ordSuffix = (n: number) => n === 1 ? "1st" : n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`;
+        const orderedMotos = editStaggerOrder
+          .map(id => (motos ?? []).find(m => m.id === id))
+          .filter((m): m is Moto => !!m);
+        const moveMoto = (fromIdx: number, toIdx: number) => {
+          setEditStaggerOrder(prev => {
+            const ids = [...prev];
+            [ids[fromIdx], ids[toIdx]] = [ids[toIdx], ids[fromIdx]];
+            return ids;
+          });
+        };
+        const handleSave = () => {
+          linkStaggerMutation.mutate(
+            { eventId, data: { orderedMotoIds: editStaggerOrder } },
+            {
+              onSuccess: () => {
+                queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+                setEditStaggerMotoId(null);
+                toast({ title: "Stagger order updated" });
+              },
+              onError: (err: any) => {
+                toast({ title: "Failed to update order", description: err.message, variant: "destructive" });
+              },
+            }
+          );
+        };
+        return (
+          <Dialog open onOpenChange={open => { if (!open) setEditStaggerMotoId(null); }}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 font-heading uppercase tracking-wider">
+                  <Link2 size={16} className="text-primary" />
+                  Edit Staggered Start Order
+                </DialogTitle>
+                <DialogDescription>
+                  Use the arrows to change which class starts first, second, etc.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1.5 py-1">
+                {orderedMotos.map((m, idx) => (
+                  <div key={m.id} className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-border bg-card">
+                    <span className="w-7 text-center text-xs font-bold text-primary font-mono shrink-0">
+                      {ordSuffix(idx + 1)}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate">{m.name}</div>
+                      <div className="text-xs text-muted-foreground">{m.raceClass}</div>
+                    </div>
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <button
+                        disabled={idx === 0}
+                        onClick={() => moveMoto(idx, idx - 1)}
+                        className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        title="Move up (starts earlier)"
+                      >
+                        <ChevronLeft size={13} className="rotate-90" />
+                      </button>
+                      <button
+                        disabled={idx === orderedMotos.length - 1}
+                        onClick={() => moveMoto(idx, idx + 1)}
+                        className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        title="Move down (starts later)"
+                      >
+                        <ChevronRight size={13} className="rotate-90" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setEditStaggerMotoId(null)}>Cancel</Button>
+                <Button
+                  disabled={linkStaggerMutation.isPending}
+                  onClick={handleSave}
+                  className="font-heading uppercase tracking-wider"
+                >
+                  {linkStaggerMutation.isPending ? "Saving..." : "Save Order"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }
