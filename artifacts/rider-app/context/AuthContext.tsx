@@ -81,6 +81,8 @@ async function tryRegisterPushToken(mobileToken: string): Promise<void> {
     const Device = await import("expo-device");
     if (!Device.default.isDevice) return;
 
+    // Always request permission first — independent of whether we have a projectId.
+    // This ensures the OS prompt appears even in local dev builds.
     const { status: existing } = await Notifications.getPermissionsAsync();
     let finalStatus = existing;
     if (existing !== "granted") {
@@ -100,14 +102,17 @@ async function tryRegisterPushToken(mobileToken: string): Promise<void> {
       return;
     }
 
-    // Expo SDK 49+ requires a projectId — without it getExpoPushTokenAsync
-    // throws a silent error and the token is never registered.
+    // EAS builds automatically inject Constants.easConfig.projectId.
+    // Fall back to the app.json extra value for local/dev builds.
     const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
+      (Constants.easConfig?.projectId as string | undefined) ??
+      (Constants.expoConfig?.extra?.eas?.projectId as string | undefined);
+
     if (!projectId || projectId === "YOUR_EAS_PROJECT_ID") {
       console.warn(
-        "[PushToken] expo.extra.eas.projectId is not set in app.json — " +
-          "push token registration skipped. Set the EAS project ID to enable notifications.",
+        "[PushToken] No EAS projectId found — token registration skipped. " +
+          "EAS/TestFlight builds set this automatically via Constants.easConfig.projectId. " +
+          "For local dev, set expo.extra.eas.projectId in app.json.",
       );
       return;
     }
@@ -209,6 +214,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (acc) {
           setAccount(acc);
           await loadProfiles(token);
+          // Re-register push token on every startup so:
+          // (a) users who never got the prompt now see it,
+          // (b) tokens deleted from the DB are re-registered automatically.
+          void tryRegisterPushToken(token);
         } else {
           await AsyncStorage.removeItem(TOKEN_KEY);
         }
