@@ -299,48 +299,6 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
           {field("AMA Number", "amaNumber", "AMA membership #")}
           {field("MyLaps Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
           <div className="col-span-2 space-y-1.5">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bike Brand</Label>
-            {editing ? (
-              <>
-                <div className="grid grid-cols-4 gap-2 mt-1">
-                  {BIKE_BRANDS.map(brand => {
-                    const selected = form.bikeManufacturer === brand.name;
-                    return (
-                      <button
-                        key={brand.name}
-                        type="button"
-                        onClick={() => set("bikeManufacturer", selected ? "" : brand.name)}
-                        className="rounded-md px-2 py-3 text-sm font-bold font-heading uppercase tracking-wide transition-all border-2"
-                        style={selected
-                          ? { backgroundColor: brand.color, color: brand.text, borderColor: brand.color }
-                          : { backgroundColor: "transparent", color: "inherit", borderColor: brand.color + "60" }
-                        }
-                      >
-                        {brand.name}
-                      </button>
-                    );
-                  })}
-                </div>
-                <input
-                  type="text"
-                  placeholder="Other brand (e.g. Sherco, TM, Rieju…)"
-                  value={BIKE_BRANDS.some(b => b.name === form.bikeManufacturer) ? "" : (form.bikeManufacturer ?? "")}
-                  onChange={e => set("bikeManufacturer", e.target.value)}
-                  className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </>
-            ) : (
-              <p className="text-sm py-1.5 min-h-[2rem]">
-                {(() => {
-                  const b = BIKE_BRANDS.find(b => b.name === rider.bikeManufacturer);
-                  return b
-                    ? <span className="inline-block rounded px-2 py-0.5 text-xs font-bold font-heading uppercase tracking-wide" style={{ backgroundColor: b.color, color: b.text }}>{b.name}</span>
-                    : rider.bikeManufacturer || <span className="text-muted-foreground italic">Not set</span>;
-                })()}
-              </p>
-            )}
-          </div>
-          <div className="col-span-2 space-y-1.5">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sponsors</Label>
             {editing ? (
               <Textarea
@@ -376,6 +334,173 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
         Email address cannot be changed here — it's your account login and links your race history.
         To update email, contact the race organizer.
       </p>
+    </div>
+  );
+}
+
+// ─── Garage card ────────────────────────────────────────────────────────────
+
+function GarageCard({ riderId }: { riderId: number }) {
+  const queryClient = useQueryClient();
+  const { data: bikes = [], isLoading } = useQuery({
+    queryKey: ["rider-bikes", riderId],
+    queryFn: () => riderApi.getBikes(riderId),
+  } as any);
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState({ manufacturer: "", model: "", year: "" });
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  async function handleAdd() {
+    setAddSaving(true);
+    setAddError(null);
+    try {
+      await riderApi.addBike(riderId, {
+        bikeManufacturer: addForm.manufacturer.trim() || null,
+        bikeModel: addForm.model.trim() || null,
+        bikeYear: addForm.year.trim() || null,
+      });
+      queryClient.invalidateQueries({ queryKey: ["rider-bikes", riderId] });
+      queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
+      setShowAdd(false);
+      setAddForm({ manufacturer: "", model: "", year: "" });
+    } catch {
+      setAddError("Failed to add bike. Please try again.");
+    } finally {
+      setAddSaving(false);
+    }
+  }
+
+  async function handleDelete(bikeId: number) {
+    await riderApi.deleteBike(riderId, bikeId);
+    queryClient.invalidateQueries({ queryKey: ["rider-bikes", riderId] });
+    queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
+  }
+
+  async function handleSetDefault(bikeId: number) {
+    await riderApi.setDefaultBike(riderId, bikeId);
+    queryClient.invalidateQueries({ queryKey: ["rider-bikes", riderId] });
+    queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
+  }
+
+  return (
+    <div className="space-y-4 mt-6">
+      <div className="flex items-center justify-between">
+        <h2 className="font-heading font-bold text-lg uppercase tracking-wide flex items-center gap-2">
+          <Bike size={18} /> My Garage
+        </h2>
+        {!showAdd && (
+          <Button size="sm" variant="outline" onClick={() => { setShowAdd(true); setAddError(null); }}>
+            + Add Bike
+          </Button>
+        )}
+      </div>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Loading bikes…</p>}
+
+      {!isLoading && (bikes as any[]).length === 0 && !showAdd && (
+        <p className="text-sm text-muted-foreground italic">No bikes in your garage yet. Add one above.</p>
+      )}
+
+      <div className="space-y-2">
+        {(bikes as any[]).map((bike: any) => {
+          const label = [bike.bikeYear, bike.bikeManufacturer, bike.bikeModel].filter(Boolean).join(" ") || "Unnamed bike";
+          const brand = BIKE_BRANDS.find(b => b.name === bike.bikeManufacturer);
+          return (
+            <div key={bike.id} className={`flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${bike.isDefault ? "border-primary/50 bg-primary/5" : "border-border bg-card"}`}>
+              <button
+                type="button"
+                title={bike.isDefault ? "Default bike" : "Set as default"}
+                onClick={() => !bike.isDefault && handleSetDefault(bike.id)}
+                className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${bike.isDefault ? "border-primary bg-primary" : "border-muted-foreground/40 hover:border-primary"}`}
+              >
+                {bike.isDefault && <Check size={11} strokeWidth={3} className="text-white" />}
+              </button>
+              {brand ? (
+                <span className="inline-block rounded px-2 py-0.5 text-xs font-bold font-heading uppercase tracking-wide flex-shrink-0" style={{ backgroundColor: brand.color, color: brand.text }}>{brand.name}</span>
+              ) : null}
+              <span className="flex-1 text-sm font-medium">{bike.bikeModel ? `${bike.bikeYear ?? ""} ${bike.bikeModel}`.trim() : label}</span>
+              {bike.isDefault && (
+                <Badge variant="outline" className="text-xs text-primary border-primary/40">Default</Badge>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => handleDelete(bike.id)}
+              >
+                <X size={13} />
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+
+      {showAdd && (
+        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+          <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Add a bike</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Year</Label>
+              <Input
+                value={addForm.year}
+                onChange={e => setAddForm(f => ({ ...f, year: e.target.value }))}
+                placeholder="2024"
+                className="h-9 text-sm"
+                maxLength={4}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Make</Label>
+              <Input
+                value={addForm.manufacturer}
+                onChange={e => setAddForm(f => ({ ...f, manufacturer: e.target.value }))}
+                placeholder="KTM"
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Model</Label>
+              <Input
+                value={addForm.model}
+                onChange={e => setAddForm(f => ({ ...f, model: e.target.value }))}
+                placeholder="450 SX-F"
+                className="h-9 text-sm"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {BIKE_BRANDS.map(brand => {
+              const selected = addForm.manufacturer === brand.name;
+              return (
+                <button
+                  key={brand.name}
+                  type="button"
+                  onClick={() => setAddForm(f => ({ ...f, manufacturer: selected ? "" : brand.name }))}
+                  className="rounded-md px-2 py-2 text-xs font-bold font-heading uppercase tracking-wide transition-all border-2"
+                  style={selected
+                    ? { backgroundColor: brand.color, color: brand.text, borderColor: brand.color }
+                    : { backgroundColor: "transparent", color: "inherit", borderColor: brand.color + "60" }
+                  }
+                >
+                  {brand.name}
+                </button>
+              );
+            })}
+          </div>
+          {addError && <p className="text-xs text-destructive">{addError}</p>}
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setShowAdd(false); setAddForm({ manufacturer: "", model: "", year: "" }); setAddError(null); }}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleAdd} disabled={addSaving}>
+              {addSaving ? <Loader2 size={13} className="animate-spin mr-1.5" /> : null}
+              Add Bike
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1068,7 +1193,7 @@ function statusLabel(s: string, date?: string | null) {
   return { label: s.replace(/_/g, " "), cls: "bg-muted text-muted-foreground border-border" };
 }
 
-function NearbyEventCard({ event }: { event: UpcomingEvent }) {
+function NearbyEventCard({ event, riderEmail }: { event: UpcomingEvent; riderEmail?: string | null }) {
   const [, navigate] = useLocation();
   const { label, cls } = statusLabel(event.status, event.date);
   const canRegister = event.status === "registration_open";
@@ -1116,7 +1241,7 @@ function NearbyEventCard({ event }: { event: UpcomingEvent }) {
         {canRegister && (
           <Button
             className="w-full mt-3 font-heading uppercase tracking-wider gap-2"
-            onClick={() => navigate(`/register/${event.eventId}`)}
+            onClick={() => navigate(`/register/${event.eventId}${riderEmail ? `?email=${encodeURIComponent(riderEmail)}` : ""}`)}
           >
             <ExternalLink size={14} />
             Register Now
@@ -1127,7 +1252,7 @@ function NearbyEventCard({ event }: { event: UpcomingEvent }) {
   );
 }
 
-function NearMeTab() {
+function NearMeTab({ riderEmail }: { riderEmail?: string | null }) {
   const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "granted" | "denied">("idle");
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -1211,7 +1336,7 @@ function NearMeTab() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {events.map(e => <NearbyEventCard key={e.eventId} event={e} />)}
+          {events.map(e => <NearbyEventCard key={e.eventId} event={e} riderEmail={riderEmail} />)}
         </div>
       )}
     </div>
@@ -2331,7 +2456,7 @@ export default function RiderHistory() {
           </div>
 
           {/* Near Me tab */}
-          {activeTab === "nearby" && <NearMeTab />}
+          {activeTab === "nearby" && <NearMeTab riderEmail={rider?.email} />}
 
           {/* Today tab — race_day events only */}
           {activeTab === "today" && (
@@ -2634,7 +2759,10 @@ export default function RiderHistory() {
           )}
           {/* Profile tab */}
           {activeTab === "profile" && (
-            <ProfileEditor rider={rider} />
+            <>
+              <ProfileEditor rider={rider} />
+              <GarageCard riderId={rider.id} />
+            </>
           )}
         </div>
       ) : null}
