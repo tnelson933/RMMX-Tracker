@@ -13,12 +13,16 @@ function NativeTabLayout() {
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "flag.checkered", selected: "flag.checkered" }} />
-        <Label>Events</Label>
+        <Icon sf={{ default: "house", selected: "house.fill" }} />
+        <Label>Home</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="my-races">
         <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
         <Label>My Races</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="train">
+        <Icon sf={{ default: "figure.run", selected: "figure.run" }} />
+        <Label>Train</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person.circle", selected: "person.circle.fill" }} />
@@ -66,12 +70,12 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Events",
+          title: "Home",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="flag.checkered" tintColor={color} size={22} />
+              <SymbolView name="house" tintColor={color} size={22} />
             ) : (
-              <Feather name="flag" size={22} color={color} />
+              <Feather name="home" size={22} color={color} />
             ),
         }}
       />
@@ -84,6 +88,18 @@ function ClassicTabLayout() {
               <SymbolView name="trophy" tintColor={color} size={22} />
             ) : (
               <Feather name="award" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="train"
+        options={{
+          title: "Train",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="figure.run" tintColor={color} size={22} />
+            ) : (
+              <Feather name="activity" size={22} color={color} />
             ),
         }}
       />
