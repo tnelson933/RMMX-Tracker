@@ -424,9 +424,21 @@ router.post("/events/:eventId/stagger", async (req, res) => {
   // Use min ID as stable group identifier
   const groupId = Math.min(...ids);
 
+  // Fetch current moto_numbers for all group members so we can redistribute them
+  // in staggeredOrder — ensuring run-order matches stagger-start-order.
+  const groupMotos = await db
+    .select({ id: motosTable.id, motoNumber: motosTable.motoNumber })
+    .from(motosTable)
+    .where(inArray(motosTable.id, ids));
+
+  // Sort the existing moto_numbers so the primary slot gets the lowest value.
+  const sortedNums = groupMotos
+    .map(m => m.motoNumber ?? 0)
+    .sort((a, b) => a - b);
+
   for (let i = 0; i < ids.length; i++) {
     await db.update(motosTable)
-      .set({ staggeredGroupId: groupId, staggeredOrder: i + 1 })
+      .set({ staggeredGroupId: groupId, staggeredOrder: i + 1, motoNumber: sortedNums[i] })
       .where(eq(motosTable.id, ids[i]));
   }
   return res.json({ ok: true });
@@ -500,6 +512,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     rounds: roundsFilter,  // new: number[] — if provided, only generate these round numbers
     lapCount,              // optional: target laps for laps-based races
     minRacesBetween,       // optional: minimum motos between a rider's consecutive races
+    useRegistrations,      // boolean: when true, slot all registered riders (not just checked-in)
   } = req.body;
   const minGap: number = minRacesBetween && Number(minRacesBetween) >= 1 ? Math.min(3, Number(minRacesBetween)) : 0;
   const motoLapCount: number | null = lapCount != null && Number(lapCount) > 0 ? Number(lapCount) : null;
@@ -754,16 +767,74 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   // Effective max per heat: explicit input OR unlimited
   const effectiveMax: number = ridersPerHeat && ridersPerHeat > 0 ? ridersPerHeat : Infinity;
 
-  const checkins = await db.select({
-    riderId: checkinsTable.riderId,
-    raceClass: checkinsTable.raceClass,
-    bibNumber: checkinsTable.bibNumber,
-    rfidNumber: checkinsTable.rfidNumber,
-    firstName: ridersTable.firstName,
-    lastName: ridersTable.lastName,
-  }).from(checkinsTable)
-    .leftJoin(ridersTable, eq(checkinsTable.riderId, ridersTable.id))
-    .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.checkedIn, true)));
+  // Explicit row type shared by both fetch paths so helpers below are typed correctly.
+  type CheckinRow = {
+    riderId: number | null;
+    raceClass: string | null;
+    bibNumber: string | null;
+    rfidNumber: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    checkedIn: boolean;
+  };
+
+  let checkins: CheckinRow[];
+
+  if (useRegistrations) {
+    // Pre-generate from registrations: slot all registered riders regardless of check-in
+    // status. Each entry carries a checkedIn flag so the UI can show pending riders.
+    const regs = await db.select({
+      riderId: registrationsTable.riderId,
+      raceClass: registrationsTable.raceClass,
+      bibNumber: registrationsTable.bibNumber,
+      firstName: ridersTable.firstName,
+      lastName: ridersTable.lastName,
+    }).from(registrationsTable)
+      .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+      .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")));
+
+    // Load existing checkin rows to know who's already checked in and get their bib/rfid.
+    const checkinData = await db.select({
+      riderId: checkinsTable.riderId,
+      bibNumber: checkinsTable.bibNumber,
+      rfidNumber: checkinsTable.rfidNumber,
+      checkedIn: checkinsTable.checkedIn,
+    }).from(checkinsTable).where(eq(checkinsTable.eventId, eventId));
+
+    const checkinMap = new Map<number, { bibNumber: string | null; rfidNumber: string | null; checkedIn: boolean }>();
+    for (const c of checkinData) {
+      if (c.riderId != null) {
+        checkinMap.set(c.riderId, { bibNumber: c.bibNumber, rfidNumber: c.rfidNumber, checkedIn: c.checkedIn ?? false });
+      }
+    }
+
+    checkins = regs.map(r => {
+      const ci = r.riderId != null ? checkinMap.get(r.riderId) : undefined;
+      return {
+        riderId: r.riderId,
+        raceClass: r.raceClass,
+        bibNumber: ci?.bibNumber ?? r.bibNumber ?? null,
+        rfidNumber: ci?.rfidNumber ?? null,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        checkedIn: ci?.checkedIn ?? false,
+      };
+    });
+  } else {
+    // Default: only riders who have physically checked in
+    const rows = await db.select({
+      riderId: checkinsTable.riderId,
+      raceClass: checkinsTable.raceClass,
+      bibNumber: checkinsTable.bibNumber,
+      rfidNumber: checkinsTable.rfidNumber,
+      firstName: ridersTable.firstName,
+      lastName: ridersTable.lastName,
+    }).from(checkinsTable)
+      .leftJoin(ridersTable, eq(checkinsTable.riderId, ridersTable.id))
+      .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.checkedIn, true)));
+
+    checkins = rows.map(r => ({ ...r, checkedIn: true }));
+  }
 
   const motos: typeof motosTable.$inferSelect[] = [];
   // Start numbering after the highest surviving moto number (excluding deleted ones).
@@ -774,8 +845,6 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     .reduce((max, m) => Math.max(max, m.motoNumber ?? 0), 0);
   let motoNumber = maxExistingMotoNumber + 1;
 
-  type CheckinRow = typeof checkins[0];
-
   // Helper: assign gate positions to a pre-ordered group of riders
   function buildLineup(groupRiders: CheckinRow[], seedingOrder: number[]): Array<Record<string, unknown>> {
     if (seedingOrder.length === 0) {
@@ -785,6 +854,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
         bibNumber: r.bibNumber,
         rfidNumber: r.rfidNumber,
+        checkedIn: r.checkedIn,
       }));
     }
     return groupRiders.map((r, i) => ({
@@ -794,6 +864,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
       bibNumber: r.bibNumber,
       rfidNumber: r.rfidNumber,
+      checkedIn: r.checkedIn,
     }));
   }
 
@@ -1142,7 +1213,29 @@ router.post("/events/:eventId/motos/reorder", async (req, res) => {
     return res.status(400).json({ error: `Moto IDs not found in event: ${invalid.join(", ")}` });
   }
 
-  // Atomically update all motoNumber values in a transaction
+  // Fetch current stagger group membership so we can keep staggered_order in sync
+  const allEventMotos = await db
+    .select({ id: motosTable.id, staggeredGroupId: motosTable.staggeredGroupId })
+    .from(motosTable)
+    .where(eq(motosTable.eventId, eventId));
+
+  const idToGroupId = new Map(
+    allEventMotos
+      .filter(m => m.staggeredGroupId != null)
+      .map(m => [m.id, m.staggeredGroupId!])
+  );
+
+  // Determine new within-group order from the incoming motoIds sequence
+  const groupNewOrder = new Map<number, number[]>(); // groupId → motoIds in new order
+  for (const id of motoIds) {
+    const gid = idToGroupId.get(id);
+    if (gid != null) {
+      if (!groupNewOrder.has(gid)) groupNewOrder.set(gid, []);
+      groupNewOrder.get(gid)!.push(id);
+    }
+  }
+
+  // Atomically update motoNumber and re-sync staggeredOrder for affected groups
   await db.transaction(async (tx) => {
     await Promise.all(
       motoIds.map((id, index) =>
@@ -1151,6 +1244,17 @@ router.post("/events/:eventId/motos/reorder", async (req, res) => {
           .where(and(eq(motosTable.id, id), eq(motosTable.eventId, eventId)))
       )
     );
+
+    // Re-normalise staggeredOrder so it always matches the motoNumber sequence
+    for (const [, members] of groupNewOrder.entries()) {
+      await Promise.all(
+        members.map((id, i) =>
+          tx.update(motosTable)
+            .set({ staggeredOrder: i + 1 })
+            .where(eq(motosTable.id, id))
+        )
+      );
+    }
   });
 
   const motos = await db.select().from(motosTable)
