@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
 import { usePublicOrigin } from "@/lib/publicOrigin";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
@@ -110,6 +110,7 @@ const updateEventSchema = z.object({
   noDuplicateBibs: z.boolean().default(false),
   requireClubId: z.boolean().default(false),
   requireWaiver: z.boolean().default(false),
+  requireTransponder: z.boolean().default(false),
   scoringTableId: z.number().optional(),
   purchaseOptions: z.array(z.object({
     name: z.string().min(1, "Name required"),
@@ -188,6 +189,15 @@ export default function EventDetail() {
   const [compCount, setCompCount] = useState("1");
   const [compDiscountType, setCompDiscountType] = useState<"fixed" | "percentage">("fixed");
   const [compUsageType, setCompUsageType] = useState<"one_time" | "limited" | "unlimited">("one_time");
+
+  // Scroll helper — keeps the class list from jumping the full page when a row is appended
+  const classesScrollRef = useRef<HTMLDivElement>(null);
+  const scrollClassesToBottom = () => {
+    requestAnimationFrame(() => {
+      const el = classesScrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  };
   const [compLimitedCount, setCompLimitedCount] = useState("10");
   const [compHasExpiry, setCompHasExpiry] = useState(false);
   const [compExpiresAt, setCompExpiresAt] = useState("");
@@ -214,18 +224,35 @@ export default function EventDetail() {
     }
     setImgUploadState("uploading");
     try {
-      const uploadRes = await fetch("/api/storage/uploads/file", {
-        method: "POST",
-        headers: {
-          "Content-Type": "image/png",
-          "x-file-name": `event-${eventId}-image.png`,
-          "x-content-type": "image/png",
-        },
-        credentials: "include",
-        body: blob,
-      });
-      if (!uploadRes.ok) throw new Error("Upload failed");
-      const { objectPath } = await uploadRes.json() as { objectPath: string };
+      let objectPath: string;
+      if (isDesktop) {
+        // Desktop: direct binary upload — local server saves to .uploads/ and syncs to cloud
+        const uploadRes = await fetch("/api/storage/uploads/file", {
+          method: "POST",
+          headers: {
+            "Content-Type": "image/png",
+            "x-file-name": `event-${eventId}-image.png`,
+            "x-content-type": "image/png",
+          },
+          credentials: "include",
+          body: blob,
+        });
+        if (!uploadRes.ok) throw new Error("Upload failed");
+        ({ objectPath } = await uploadRes.json() as { objectPath: string });
+      } else {
+        // Cloud: presigned URL — uploads directly to object storage, never touches ephemeral disk
+        const urlRes = await fetch("/api/storage/uploads/request-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ name: `event-${eventId}-image.png`, size: blob.size, contentType: "image/png" }),
+        });
+        if (!urlRes.ok) throw new Error("Failed to get upload URL");
+        const { uploadURL, objectPath: op } = await urlRes.json() as { uploadURL: string; objectPath: string };
+        const putRes = await fetch(uploadURL, { method: "PUT", body: blob, headers: { "Content-Type": "image/png" } });
+        if (!putRes.ok) throw new Error("Upload to storage failed");
+        objectPath = op;
+      }
       await fetch(`/api/events/${eventId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -343,6 +370,7 @@ export default function EventDetail() {
       noDuplicateBibs: false,
       requireClubId: false,
       requireWaiver: false,
+      requireTransponder: false,
       scoringTableId: undefined,
       purchaseOptions: [],
       amaEventId: "",
@@ -354,6 +382,7 @@ export default function EventDetail() {
   const watchPaymentEnabled = form.watch("paymentEnabled");
   const watchTimingTechnology = form.watch("timingTechnology");
   const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
+  const watchRequireTransponder = form.watch("requireTransponder");
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -399,6 +428,7 @@ export default function EventDetail() {
       noDuplicateBibs: (evt as any).noDuplicateBibs ?? false,
       requireClubId: (evt as any).requireClubId ?? false,
       requireWaiver: (evt as any).requireWaiver ?? false,
+      requireTransponder: (evt as any).requireTransponder ?? false,
       scoringTableId: (evt as any).scoringTableId ?? undefined,
       purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number; categoryId?: number | null }) => ({ name: o.name, amount: String(o.amount), categoryId: o.categoryId ?? null })),
       amaEventId: (evt as any).amaEventId ?? "",
@@ -450,6 +480,7 @@ export default function EventDetail() {
         noDuplicateBibs: data.noDuplicateBibs,
         requireClubId: data.requireClubId,
         requireWaiver: data.requireWaiver,
+        requireTransponder: data.timingTechnology === "mylaps" ? data.requireTransponder : false,
         scoringTableId: data.scoringTableId ?? null,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
@@ -777,6 +808,47 @@ export default function EventDetail() {
                       )}
                     />
 
+                    {/* Require transponder — MyLaps without Stripe */}
+                    {watchTimingTechnology === "mylaps" && !watchPaymentEnabled && (
+                      <FormField
+                        control={form.control}
+                        name="requireTransponder"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Require transponder number?</FormLabel>
+                            <p className="text-xs text-muted-foreground -mt-1 mb-2">
+                              Must riders provide their MyLaps transponder number to register?
+                            </p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { value: true, label: "Yes – Required" },
+                                { value: false, label: "No – Optional" },
+                              ].map(opt => (
+                                <button
+                                  key={String(opt.value)}
+                                  type="button"
+                                  onClick={() => field.onChange(opt.value)}
+                                  className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
+                                    field.value === opt.value
+                                      ? "border-primary bg-primary/5 text-foreground"
+                                      : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
+                                  }`}
+                                >
+                                  <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                            {field.value && (
+                              <p className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
+                                Riders cannot register for event without transponder number.
+                              </p>
+                            )}
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
                     {/* Race Classes */}
                     <div className="border-t pt-4">
                       <div className="flex items-center justify-between mb-3">
@@ -787,7 +859,22 @@ export default function EventDetail() {
                       <div className="space-y-2">
                         {defaultClasses.length > 0 && (
                           <div className="mb-3">
-                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Club Classes</p>
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Club Classes</p>
+                              {defaultClasses.some(cls => !fields.some(f => f.name === cls.name)) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const unselected = defaultClasses.filter(cls => !fields.some(f => f.name === cls.name));
+                                    unselected.forEach(cls => append({ name: cls.name, maxRiders: "", seriesIds: [] }));
+                                    if (unselected.length > 0) scrollClassesToBottom();
+                                  }}
+                                  className="text-xs text-primary hover:text-primary/80 font-semibold transition-colors"
+                                >
+                                  Select All
+                                </button>
+                              )}
+                            </div>
                             <div className="flex flex-wrap gap-1.5">
                               {defaultClasses.map(cls => {
                                 const isActive = fields.some(f => f.name === cls.name);
@@ -801,6 +888,7 @@ export default function EventDetail() {
                                         if (idx !== -1) remove(idx);
                                       } else {
                                         append({ name: cls.name, maxRiders: "", seriesIds: [] });
+                                        scrollClassesToBottom();
                                       }
                                     }}
                                     className={
@@ -824,6 +912,7 @@ export default function EventDetail() {
                             <span />
                           </div>
                         )}
+                        <div ref={classesScrollRef} className="max-h-[280px] overflow-y-auto space-y-2 pr-0.5">
                         {fields.map((field, index) => (
                           <div key={field.id} className="grid grid-cols-[1fr_1fr_140px_32px] gap-2 items-start">
                             <FormField
@@ -925,12 +1014,13 @@ export default function EventDetail() {
                             </Button>
                           </div>
                         ))}
+                        </div>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           className="w-full gap-2 border-dashed font-heading uppercase tracking-wider text-muted-foreground hover:text-foreground mt-1"
-                          onClick={() => append({ name: "", maxRiders: "", seriesIds: [] })}
+                          onClick={() => { append({ name: "", maxRiders: "", seriesIds: [] }); scrollClassesToBottom(); }}
                         >
                           <Plus size={14} /> Add Class
                         </Button>
