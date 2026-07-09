@@ -100,19 +100,32 @@ export default function Login() {
           await queryClient.refetchQueries({ queryKey: getGetMeQueryKey() });
         },
         onError: async (error: any) => {
-          // Extract the human-readable message from the API error response
-          const apiError: string =
-            error?.response?.data?.error ||
-            error?.response?.data?.message ||
-            error?.error ||
-            error?.message ||
-            "Invalid email or password. Please try again.";
+          // error.data is the parsed JSON response body (ApiError from custom-fetch)
+          // error.response is the raw fetch Response object — it has no .data property
+          const status = error?.status as number | undefined;
+          const serverMsg: string | undefined =
+            error?.data?.error || error?.data?.message;
 
           // Club suspended — show specific message regardless of platform
-          if (apiError === "CLUB_INACTIVE" || apiError.includes("CLUB_INACTIVE")) {
+          if (
+            serverMsg === "CLUB_INACTIVE" ||
+            String(serverMsg ?? "").includes("CLUB_INACTIVE") ||
+            String(error?.message ?? "").includes("CLUB_INACTIVE")
+          ) {
             setAuthError("CLUB_INACTIVE");
             return;
           }
+
+          // Build a human-readable error string
+          let apiError: string;
+          if (status !== undefined && status >= 500) {
+            apiError = "The server is temporarily unavailable. Please try again in a moment.";
+          } else if (serverMsg) {
+            apiError = serverMsg;
+          } else {
+            apiError = error?.message || "Incorrect email or password. Please try again.";
+          }
+
           // On desktop: if the local user doesn't exist yet (first install) or has
           // no password hash (account not activated locally), automatically try to
           // log in to the cloud and pull all data down, then retry locally.
