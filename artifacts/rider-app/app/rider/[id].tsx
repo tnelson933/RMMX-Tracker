@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -58,6 +58,142 @@ const BIKE_BRANDS = [
   { name: "Suzuki",    color: "#FFDE00", text: "#000000" },
   { name: "Beta",      color: "#E8220D", text: "#ffffff" },
 ] as const;
+
+// ─── Shared style/color prop types ───────────────────────────────────────────
+
+type ColorsType = ReturnType<typeof useColors>;
+type StylesType = { [key: string]: any };
+
+// ─── Module-level field components (stable references across renders) ─────────
+
+function SimpleField({
+  label,
+  value,
+  keyboardType = "default",
+  placeholder,
+  onChangeText,
+  isEdit,
+  editValue,
+  s,
+  colors,
+}: {
+  label: string;
+  value: string | null | undefined;
+  keyboardType?: "default" | "phone-pad" | "numeric";
+  placeholder?: string;
+  onChangeText?: (v: string) => void;
+  isEdit: boolean;
+  editValue?: string;
+  s: StylesType;
+  colors: ColorsType;
+}) {
+  return (
+    <>
+      <Text style={s.fieldLabel}>{label}</Text>
+      {isEdit ? (
+        <TextInput
+          style={s.fieldInput}
+          value={editValue ?? ""}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.mutedForeground}
+          keyboardType={keyboardType}
+          autoCorrect={false}
+          autoCapitalize={keyboardType === "default" ? "words" : "none"}
+        />
+      ) : value ? (
+        <Text style={s.fieldValue}>{value}</Text>
+      ) : (
+        <Text style={s.fieldEmpty}>Not set</Text>
+      )}
+    </>
+  );
+}
+
+function Field({
+  label,
+  valueKey,
+  riderKey,
+  placeholder,
+  keyboardType = "default",
+  isLast = false,
+  multiline = false,
+  s,
+  colors,
+  editing,
+  form,
+  rider,
+  setField,
+}: {
+  label: string;
+  valueKey: keyof EditForm;
+  riderKey: keyof RiderFull;
+  placeholder?: string;
+  keyboardType?: "default" | "phone-pad" | "numeric";
+  isLast?: boolean;
+  multiline?: boolean;
+  s: StylesType;
+  colors: ColorsType;
+  editing: boolean;
+  form: EditForm | null;
+  rider: RiderFull | null;
+  setField: (key: keyof EditForm, value: string) => void;
+}) {
+  const displayValue = rider?.[riderKey];
+  return (
+    <View style={isLast ? s.fieldRowLast : s.fieldRow}>
+      <Text style={s.fieldLabel}>{label}</Text>
+      {editing && form ? (
+        multiline ? (
+          <TextInput
+            style={s.fieldInputMulti}
+            value={String(form[valueKey] ?? "")}
+            onChangeText={(v) => setField(valueKey, v)}
+            placeholder={placeholder}
+            placeholderTextColor={colors.mutedForeground}
+            multiline
+            numberOfLines={3}
+          />
+        ) : (
+          <TextInput
+            style={s.fieldInput}
+            value={String(form[valueKey] ?? "")}
+            onChangeText={(v) => setField(valueKey, v)}
+            placeholder={placeholder}
+            placeholderTextColor={colors.mutedForeground}
+            keyboardType={keyboardType}
+            autoCorrect={false}
+            autoCapitalize={keyboardType === "default" ? "words" : "none"}
+          />
+        )
+      ) : displayValue ? (
+        <Text style={s.fieldValue}>{String(displayValue)}</Text>
+      ) : (
+        <Text style={s.fieldEmpty}>Not set</Text>
+      )}
+    </View>
+  );
+}
+
+function TwoColFields({
+  left,
+  right,
+  isLast = false,
+  s,
+}: {
+  left: React.ReactNode;
+  right: React.ReactNode;
+  isLast?: boolean;
+  s: StylesType;
+}) {
+  return (
+    <View style={[s.twoColRow, isLast ? s.fieldRowLast : s.fieldRow, { paddingHorizontal: 0, paddingVertical: 0 }]}>
+      <View style={[s.twoColField, { paddingHorizontal: 16, paddingVertical: 13 }]}>{left}</View>
+      <View style={s.twoColDivider} />
+      <View style={[s.twoColField, { paddingHorizontal: 16, paddingVertical: 13 }]}>{right}</View>
+    </View>
+  );
+}
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -140,9 +276,9 @@ export default function RiderDetailScreen() {
     setSaveError(null);
   }
 
-  function setField(key: keyof EditForm, value: string) {
+  const setField = useCallback((key: keyof EditForm, value: string) => {
     setForm((f) => f ? { ...f, [key]: value } : f);
-  }
+  }, []);
 
   async function saveProfile() {
     if (!form || !rider) return;
@@ -553,119 +689,6 @@ export default function RiderDetailScreen() {
     },
   });
 
-  // ─── Field helper ─────────────────────────────────────────────────────────
-
-  function Field({
-    label,
-    valueKey,
-    riderKey,
-    placeholder,
-    keyboardType = "default",
-    isLast = false,
-    multiline = false,
-  }: {
-    label: string;
-    valueKey: keyof EditForm;
-    riderKey: keyof RiderFull;
-    placeholder?: string;
-    keyboardType?: "default" | "phone-pad" | "numeric";
-    isLast?: boolean;
-    multiline?: boolean;
-  }) {
-    const displayValue = rider?.[riderKey];
-    return (
-      <View style={isLast ? s.fieldRowLast : s.fieldRow}>
-        <Text style={s.fieldLabel}>{label}</Text>
-        {editing && form ? (
-          multiline ? (
-            <TextInput
-              style={s.fieldInputMulti}
-              value={String(form[valueKey] ?? "")}
-              onChangeText={(v) => setField(valueKey, v)}
-              placeholder={placeholder}
-              placeholderTextColor={colors.mutedForeground}
-              multiline
-              numberOfLines={3}
-            />
-          ) : (
-            <TextInput
-              style={s.fieldInput}
-              value={String(form[valueKey] ?? "")}
-              onChangeText={(v) => setField(valueKey, v)}
-              placeholder={placeholder}
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType={keyboardType}
-              autoCorrect={false}
-              autoCapitalize={keyboardType === "default" ? "words" : "none"}
-            />
-          )
-        ) : displayValue ? (
-          <Text style={s.fieldValue}>{String(displayValue)}</Text>
-        ) : (
-          <Text style={s.fieldEmpty}>Not set</Text>
-        )}
-      </View>
-    );
-  }
-
-  function TwoColFields({
-    left,
-    right,
-    isLast = false,
-  }: {
-    left: React.ReactNode;
-    right: React.ReactNode;
-    isLast?: boolean;
-  }) {
-    return (
-      <View style={[s.twoColRow, isLast ? s.fieldRowLast : s.fieldRow, { paddingHorizontal: 0, paddingVertical: 0 }]}>
-        <View style={[s.twoColField, { paddingHorizontal: 16, paddingVertical: 13 }]}>{left}</View>
-        <View style={s.twoColDivider} />
-        <View style={[s.twoColField, { paddingHorizontal: 16, paddingVertical: 13 }]}>{right}</View>
-      </View>
-    );
-  }
-
-  function SimpleField({
-    label,
-    value,
-    keyboardType = "default",
-    placeholder,
-    onChangeText,
-    isEdit,
-    editValue,
-  }: {
-    label: string;
-    value: string | null | undefined;
-    keyboardType?: "default" | "phone-pad" | "numeric";
-    placeholder?: string;
-    onChangeText?: (v: string) => void;
-    isEdit: boolean;
-    editValue?: string;
-  }) {
-    return (
-      <>
-        <Text style={s.fieldLabel}>{label}</Text>
-        {isEdit ? (
-          <TextInput
-            style={s.fieldInput}
-            value={editValue ?? ""}
-            onChangeText={onChangeText}
-            placeholder={placeholder}
-            placeholderTextColor={colors.mutedForeground}
-            keyboardType={keyboardType}
-            autoCorrect={false}
-            autoCapitalize={keyboardType === "default" ? "words" : "none"}
-          />
-        ) : value ? (
-          <Text style={s.fieldValue}>{value}</Text>
-        ) : (
-          <Text style={s.fieldEmpty}>Not set</Text>
-        )}
-      </>
-    );
-  }
-
   // ─── Loading / error states ───────────────────────────────────────────────
 
   if (loading) {
@@ -792,8 +815,11 @@ export default function RiderDetailScreen() {
             </View>
 
             <TwoColFields
+              s={s}
               left={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="First Name"
                   value={rider.firstName}
                   isEdit={editing}
@@ -804,6 +830,8 @@ export default function RiderDetailScreen() {
               }
               right={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="Last Name"
                   value={rider.lastName}
                   isEdit={editing}
@@ -815,8 +843,11 @@ export default function RiderDetailScreen() {
             />
 
             <TwoColFields
+              s={s}
               left={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="Phone"
                   value={rider.phone}
                   isEdit={editing}
@@ -828,6 +859,8 @@ export default function RiderDetailScreen() {
               }
               right={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="Date of Birth"
                   value={rider.dateOfBirth}
                   isEdit={editing}
@@ -857,8 +890,11 @@ export default function RiderDetailScreen() {
             </View>
 
             <TwoColFields
+              s={s}
               left={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="City"
                   value={rider.city}
                   isEdit={editing}
@@ -869,6 +905,8 @@ export default function RiderDetailScreen() {
               }
               right={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="State"
                   value={rider.homeState}
                   isEdit={editing}
@@ -880,9 +918,12 @@ export default function RiderDetailScreen() {
             />
 
             <TwoColFields
+              s={s}
               isLast
               left={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="Zip Code"
                   value={rider.zip}
                   isEdit={editing}
@@ -904,8 +945,11 @@ export default function RiderDetailScreen() {
             </View>
 
             <TwoColFields
+              s={s}
               left={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="Bib / Plate #"
                   value={rider.bibNumber}
                   isEdit={editing}
@@ -917,6 +961,8 @@ export default function RiderDetailScreen() {
               }
               right={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="AMA Number"
                   value={rider.amaNumber}
                   isEdit={editing}
@@ -990,8 +1036,11 @@ export default function RiderDetailScreen() {
             )}
 
             <TwoColFields
+              s={s}
               left={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="Bike Model"
                   value={rider.bikeModel}
                   isEdit={editing}
@@ -1002,6 +1051,8 @@ export default function RiderDetailScreen() {
               }
               right={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="Bike Year"
                   value={rider.bikeYear}
                   isEdit={editing}
@@ -1114,9 +1165,12 @@ export default function RiderDetailScreen() {
             </View>
 
             <TwoColFields
+              s={s}
               isLast
               left={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="Contact Name"
                   value={rider.emergencyContact}
                   isEdit={editing}
@@ -1127,6 +1181,8 @@ export default function RiderDetailScreen() {
               }
               right={
                 <SimpleField
+                  s={s}
+                  colors={colors}
                   label="Contact Phone"
                   value={rider.emergencyPhone}
                   isEdit={editing}
