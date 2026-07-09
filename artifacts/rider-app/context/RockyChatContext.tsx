@@ -86,13 +86,10 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
   const { activeProfiles, bikeInfoMap, riderFetch } = useRiderAuth();
   const primaryProfile = activeProfiles[0] ?? null;
 
-  const bikeStr = [
-    primaryProfile?.bikeYear,
-    primaryProfile?.bikeManufacturer,
-    primaryProfile?.bikeModel,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const _defaultBike = primaryProfile?.bikes?.find(b => b.isDefault) ?? primaryProfile?.bikes?.[0];
+  const bikeStr = _defaultBike
+    ? [_defaultBike.bikeYear, _defaultBike.bikeManufacturer, _defaultBike.bikeModel].filter(Boolean).join(" ")
+    : "";
   const storedInfo = primaryProfile ? (bikeInfoMap[primaryProfile.id] ?? {}) : {};
 
   const greetingText = primaryProfile
@@ -120,13 +117,14 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
     ? {
         riderId: primaryProfile.id,
         name: `${primaryProfile.firstName} ${primaryProfile.lastName}`,
-        bikeMake: primaryProfile.bikeManufacturer ?? "",
-        bikeModel: primaryProfile.bikeModel ?? "",
-        bikeYear: primaryProfile.bikeYear ?? "",
+        bikeMake: (primaryProfile.bikes?.find(b => b.isDefault) ?? primaryProfile.bikes?.[0])?.bikeManufacturer ?? "",
+        bikeModel: (primaryProfile.bikes?.find(b => b.isDefault) ?? primaryProfile.bikes?.[0])?.bikeModel ?? "",
+        bikeYear: (primaryProfile.bikes?.find(b => b.isDefault) ?? primaryProfile.bikes?.[0])?.bikeYear ?? "",
         rideExperience: storedInfo.rideExperience ?? "not specified",
         eventsRaced: primaryProfile.eventsRaced,
         bestPosition: primaryProfile.bestPosition,
         recentClass: null,
+        raceTypes: primaryProfile.raceTypes ?? [],
       }
     : null;
 
