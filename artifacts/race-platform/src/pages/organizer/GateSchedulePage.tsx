@@ -275,20 +275,34 @@ export default function GateSchedulePage() {
     [rawMotos]
   );
 
+  // Sequential run-order number map — matches the Schedule page's globalMotoIndexMap logic
+  const runOrderMap = useMemo(() => {
+    const visible = motos.filter(m => !((m as any).staggeredGroupId && (m as any).staggeredOrder > 1));
+    return new Map(visible.map((m, i) => [m.id, i + 1]));
+  }, [motos]);
+
   const results = rawResults as RaceResult[];
 
-  // Pick the "featured" moto: first in_progress, then first upcoming, then last completed
+  // Pick the "featured" moto: first in_progress, then first upcoming primary (skip stagger secondaries),
+  // then last completed. Secondary stagger motos (staggeredOrder > 1) are shown inside the primary's card.
   const featuredMoto = useMemo(() => {
     const inProg = motos.find((m) => m.status === "in_progress");
     if (inProg) return inProg;
-    const upcoming = motos.find((m) => m.status === "scheduled");
+    const upcoming = motos.find(
+      (m) => m.status === "scheduled" && !((m as any).staggeredGroupId && (m as any).staggeredOrder > 1)
+    );
     if (upcoming) return upcoming;
+    const anyUpcoming = motos.find((m) => m.status === "scheduled");
+    if (anyUpcoming) return anyUpcoming;
     const lastCompleted = [...motos].filter((m) => m.status === "completed").pop();
     return lastCompleted ?? null;
   }, [motos]);
 
   const upcomingQueue = useMemo(
-    () => motos.filter((m) => m.id !== featuredMoto?.id && m.status === "scheduled"),
+    () => motos.filter(
+      (m) => m.id !== featuredMoto?.id && m.status === "scheduled" &&
+        !((m as any).staggeredGroupId && (m as any).staggeredOrder > 1)
+    ),
     [motos, featuredMoto]
   );
 
@@ -396,7 +410,7 @@ export default function GateSchedulePage() {
           <div className="px-8 py-5 bg-white/[0.03] border-b border-white/[0.06] flex items-center gap-4 flex-wrap">
             <div className="flex-1 min-w-0">
               <div className="text-white/40 text-sm font-black uppercase tracking-[0.2em] mb-1">
-                Moto {featuredMoto.motoNumber}
+                Moto {runOrderMap.get(featuredMoto.id) ?? featuredMoto.motoNumber}
                 {featuredMoto.type && featuredMoto.type !== "main" && (
                   <span className="ml-2 text-white/30">· {featuredMoto.type.toUpperCase()}</span>
                 )}
@@ -472,7 +486,7 @@ export default function GateSchedulePage() {
               {upcomingQueue.map((m, i) => (
                 <div key={m.id} className="flex items-center gap-3 shrink-0">
                   {i > 0 && <span className="text-white/10">·</span>}
-                  <span className="text-white/25 text-xs font-bold uppercase tracking-wider">Moto {m.motoNumber}</span>
+                  <span className="text-white/25 text-xs font-bold uppercase tracking-wider">Moto {runOrderMap.get(m.id) ?? m.motoNumber}</span>
                   <span className="text-white/50 text-sm font-heading font-black uppercase tracking-wide">{m.name}</span>
                   {(m.raceClasses?.length || m.raceClass) && (
                     <span className="text-white/25 text-xs font-semibold uppercase">
