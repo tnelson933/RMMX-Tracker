@@ -83,7 +83,7 @@ function ResultRow({ pos, riderName, bibNumber, dnf, dns }: {
 
 // ─── Featured moto card ──────────────────────────────────────────────────────
 
-function FeaturedMotoCard({ moto, results }: { moto: Moto; results: RaceResult[] }) {
+function FeaturedMotoCard({ moto, results, runOrderNum }: { moto: Moto; results: RaceResult[]; runOrderNum: number }) {
   const isLive = moto.status === "in_progress";
   const motoResults = results.filter((r) => r.motoId === moto.id);
   const hasResults = isLive && motoResults.length > 0;
@@ -122,7 +122,7 @@ function FeaturedMotoCard({ moto, results }: { moto: Moto; results: RaceResult[]
             ) : (
               <span className="text-xs font-black uppercase tracking-widest text-blue-600">Up Next</span>
             )}
-            <span className="text-xs text-muted-foreground font-semibold">Moto {moto.motoNumber}</span>
+            <span className="text-xs text-muted-foreground font-semibold">Moto {runOrderNum}</span>
           </div>
           <h2 className="font-heading font-black text-lg text-foreground leading-tight truncate">{moto.name}</h2>
           {className && (
@@ -162,7 +162,7 @@ function FeaturedMotoCard({ moto, results }: { moto: Moto; results: RaceResult[]
 
 // ─── Upcoming moto card ──────────────────────────────────────────────────────
 
-function UpcomingMotoCard({ moto }: { moto: Moto }) {
+function UpcomingMotoCard({ moto, runOrderNum }: { moto: Moto; runOrderNum: number }) {
   const [expanded, setExpanded] = useState(true);
 
   const lineup = useMemo<LineupEntry[]>(() => {
@@ -183,7 +183,7 @@ function UpcomingMotoCard({ moto }: { moto: Moto }) {
       >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Moto {moto.motoNumber}</span>
+            <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Moto {runOrderNum}</span>
           </div>
           <p className="font-heading font-black text-base text-foreground leading-tight truncate">{moto.name}</p>
           {className && (
@@ -251,17 +251,30 @@ export default function MobileGateSchedulePage() {
     [rawMotos]
   );
 
+  // Sequential run-order number map — matches the Schedule page's globalMotoIndexMap logic
+  const runOrderMap = useMemo(() => {
+    const visible = motos.filter(m => !((m as any).staggeredGroupId && (m as any).staggeredOrder > 1));
+    return new Map(visible.map((m, i) => [m.id, i + 1]));
+  }, [motos]);
+
   const results = rawResults as RaceResult[];
 
-  // Split into featured (in_progress first, else first scheduled) and upcoming queue
+  // Split into featured (in_progress first, else first scheduled primary) and upcoming queue.
+  // Skip secondary stagger motos (staggeredOrder > 1) for featured — they appear inside the primary's card.
   const featuredMoto = useMemo(() => {
     const live = motos.find((m) => m.status === "in_progress");
     if (live) return live;
-    return motos.find((m) => m.status === "scheduled") ?? null;
+    const primary = motos.find(
+      (m) => m.status === "scheduled" && !((m as any).staggeredGroupId && (m as any).staggeredOrder > 1)
+    );
+    return primary ?? motos.find((m) => m.status === "scheduled") ?? null;
   }, [motos]);
 
   const upcomingQueue = useMemo(
-    () => motos.filter((m) => m.status === "scheduled" && m.id !== featuredMoto?.id),
+    () => motos.filter(
+      (m) => m.status === "scheduled" && m.id !== featuredMoto?.id &&
+        !((m as any).staggeredGroupId && (m as any).staggeredOrder > 1)
+    ),
     [motos, featuredMoto]
   );
 
@@ -326,7 +339,7 @@ export default function MobileGateSchedulePage() {
                 <p className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 px-1">
                   {featuredMoto.status === "in_progress" ? "Now Racing" : "On Deck"}
                 </p>
-                <FeaturedMotoCard moto={featuredMoto} results={results} />
+                <FeaturedMotoCard moto={featuredMoto} results={results} runOrderNum={runOrderMap.get(featuredMoto.id) ?? featuredMoto.motoNumber ?? 1} />
               </div>
             )}
 
@@ -336,7 +349,7 @@ export default function MobileGateSchedulePage() {
                 <p className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 px-1">Coming Up</p>
                 <div className="space-y-3">
                   {upcomingQueue.map((m) => (
-                    <UpcomingMotoCard key={m.id} moto={m} />
+                    <UpcomingMotoCard key={m.id} moto={m} runOrderNum={runOrderMap.get(m.id) ?? m.motoNumber ?? 1} />
                   ))}
                 </div>
               </div>
