@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -23,6 +24,42 @@ import { resolveFollowUpChips } from "@/utils/rockyFollowUps";
 const CONFIRM_CLEAR_LABEL = "Clear chat";
 
 const ACCENT = "#cf152d";
+
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+
+// ─── Linked text — renders URLs as tappable links ─────────────────────────────
+
+function LinkedText({
+  text,
+  textStyle,
+  linkColor,
+}: {
+  text: string;
+  textStyle: object;
+  linkColor: string;
+}) {
+  const parts = text.split(URL_REGEX);
+  return (
+    <Text style={textStyle}>
+      {parts.map((part, i) => {
+        if (URL_REGEX.test(part)) {
+          URL_REGEX.lastIndex = 0;
+          return (
+            <Text
+              key={i}
+              style={{ color: linkColor, textDecorationLine: "underline" }}
+              onPress={() => Linking.openURL(part).catch(() => {})}
+              accessibilityRole="link"
+            >
+              {part}
+            </Text>
+          );
+        }
+        return <React.Fragment key={i}>{part}</React.Fragment>;
+      })}
+    </Text>
+  );
+}
 
 // ─── Message bubble ───────────────────────────────────────────────────────────
 
@@ -44,12 +81,14 @@ function MessageBubble({ msg, colors }: { msg: ChatMessage; colors: ReturnType<t
           ? { backgroundColor: ACCENT, maxWidth: "78%" }
           : { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, maxWidth: "82%" },
       ]}>
-        <Text style={[
-          styles.bubbleText,
-          { color: isUser ? "#fff" : colors.foreground, fontFamily: "Inter_400Regular" },
-        ]}>
-          {msg.content}
-        </Text>
+        <LinkedText
+          text={msg.content}
+          textStyle={[
+            styles.bubbleText,
+            { color: isUser ? "#fff" : colors.foreground, fontFamily: "Inter_400Regular" },
+          ]}
+          linkColor={isUser ? "#ffd0d6" : ACCENT}
+        />
       </View>
     </View>
   );
@@ -301,7 +340,7 @@ export default function MechanicScreen() {
       {/* Disclaimer */}
       <View style={{ paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.background }}>
         <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 14 }}>
-          Rocky's advice is for informational purposes only. Always consult a qualified mechanic for safety-critical repairs and a certified riding coach before making technique changes.
+          Rocky's advice is for informational purposes only. Always consult your owner's manual, a qualified mechanic for safety-critical repairs, and a certified riding coach before making technique changes.
         </Text>
       </View>
 
