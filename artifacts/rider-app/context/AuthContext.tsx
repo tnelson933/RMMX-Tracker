@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Platform } from "react-native";
+import { Alert, Linking, Platform } from "react-native";
 
 const TOKEN_KEY = "rider_mobile_token";
 const SELECTED_IDS_KEY = "rider_selected_profile_ids";
@@ -24,7 +25,9 @@ export interface RiderProfile {
   bikeManufacturer: string | null;
   bikeModel: string | null;
   bikeYear: string | null;
+  bikes: Array<{ id: number; bikeManufacturer: string | null; bikeModel: string | null; bikeYear: string | null; isDefault: boolean; createdAt: string }>;
   skillLevel: string | null;
+  raceTypes: string[];
   eventsRaced: number;
   totalPoints: number;
   bestPosition: number | null;
@@ -84,9 +87,32 @@ async function tryRegisterPushToken(mobileToken: string): Promise<void> {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    if (finalStatus !== "granted") return;
 
-    const tokenData = await Notifications.getExpoPushTokenAsync();
+    if (finalStatus !== "granted") {
+      Alert.alert(
+        "Notifications are off",
+        "Enable notifications to receive race-day updates, gate schedules, and results.",
+        [
+          { text: "Not now", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+
+    // Expo SDK 49+ requires a projectId — without it getExpoPushTokenAsync
+    // throws a silent error and the token is never registered.
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
+    if (!projectId || projectId === "YOUR_EAS_PROJECT_ID") {
+      console.warn(
+        "[PushToken] expo.extra.eas.projectId is not set in app.json — " +
+          "push token registration skipped. Set the EAS project ID to enable notifications.",
+      );
+      return;
+    }
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
     await fetch(`${BASE_URL}/api/rider/push-token`, {
       method: "POST",
       headers: {
