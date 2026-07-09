@@ -1,15 +1,20 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -93,6 +98,11 @@ export default function MaintenanceScreen() {
   const [generating, setGenerating] = useState(false);
   const [loggingKey, setLoggingKey] = useState<string | null>(null);
 
+  // Log service bottom sheet state
+  const [logSheetItem, setLogSheetItem] = useState<MaintenanceItem | null>(null);
+  const [logSheetNotes, setLogSheetNotes] = useState("");
+  const [logSheetSaving, setLogSheetSaving] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const res = await riderFetch(`/api/rider/maintenance/${riderId}`);
@@ -134,29 +144,45 @@ export default function MaintenanceScreen() {
     }
   }
 
-  async function handleLogService(item: MaintenanceItem) {
-    setLoggingKey(item.itemKey);
+  function openLogSheet(item: MaintenanceItem) {
+    setLogSheetNotes("");
+    setLogSheetItem(item);
+  }
+
+  async function handleSaveLog() {
+    if (!logSheetItem) return;
+    setLogSheetSaving(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const today = new Date().toISOString().slice(0, 10);
+    // serviceNotes = what the user typed for this specific log entry (null if blank)
+    // notes = the item's standing notes; only updated if user typed something
+    const serviceNotes = logSheetNotes.trim() || null;
     try {
-      const res = await riderFetch(`/api/rider/maintenance/${riderId}/${item.itemKey}`, {
+      const res = await riderFetch(`/api/rider/maintenance/${riderId}/${logSheetItem.itemKey}`, {
         method: "PUT",
         body: JSON.stringify({
-          itemName: item.itemName,
-          intervalDesc: item.intervalDesc,
-          intervalDays: item.intervalDays,
+          itemName: logSheetItem.itemName,
+          intervalDesc: logSheetItem.intervalDesc,
+          intervalDays: logSheetItem.intervalDays,
           lastServicedAt: today,
-          notes: item.notes,
-          sortOrder: item.sortOrder,
+          notes: serviceNotes !== null ? serviceNotes : logSheetItem.notes,
+          serviceNotes,
+          sortOrder: logSheetItem.sortOrder,
         }),
       });
       if (res.ok) {
         const updated: MaintenanceItem = await res.json();
-        setItems(prev => prev.map(i => i.itemKey === item.itemKey ? updated : i));
+        setItems(prev => prev.map(i => i.itemKey === logSheetItem.itemKey ? updated : i));
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setLogSheetItem(null);
       }
     } catch { /* ignore */ }
-    setLoggingKey(null);
+    setLogSheetSaving(false);
+  }
+
+  function handleShop(item: MaintenanceItem) {
+    const url = `https://www.rockymountainatvmc.com/search#q=${encodeURIComponent(item.itemName)}`;
+    Linking.openURL(url);
   }
 
   async function handleDelete(item: MaintenanceItem) {
@@ -193,6 +219,11 @@ export default function MaintenanceScreen() {
     headerCenter: { flex: 1 },
     headerTitle: { fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
     headerSub: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 },
+    headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+    historyBtn: {
+      width: 36, height: 36, borderRadius: 18, backgroundColor: colors.muted,
+      alignItems: "center", justifyContent: "center",
+    },
     genBtn: {
       flexDirection: "row", alignItems: "center", gap: 6,
       paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
@@ -201,13 +232,8 @@ export default function MaintenanceScreen() {
     genBtnText: { fontSize: 12, color: "#fff", fontFamily: "Inter_700Bold" },
     scroll: { flex: 1 },
     content: { padding: 16, gap: 12, paddingBottom: insets.bottom + 32 },
-    summaryRow: {
-      flexDirection: "row", gap: 10,
-    },
-    summaryBox: {
-      flex: 1, borderRadius: 12, padding: 14, alignItems: "center", gap: 4,
-      borderWidth: 1,
-    },
+    summaryRow: { flexDirection: "row", gap: 10 },
+    summaryBox: { flex: 1, borderRadius: 12, padding: 14, alignItems: "center", gap: 4, borderWidth: 1 },
     summaryNum: { fontSize: 24, fontWeight: "800", fontFamily: "Inter_700Bold" },
     summaryLabel: { fontSize: 10, fontWeight: "700", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6 },
     emptyBox: {
@@ -225,14 +251,52 @@ export default function MaintenanceScreen() {
     itemName: { fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", flex: 1 },
     itemInterval: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
     itemNotes: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontStyle: "italic" },
-    itemActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+    itemActions: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
     logBtn: {
-      flexDirection: "row", alignItems: "center", gap: 6,
+      flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
       paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
       backgroundColor: colors.primary,
     },
     logBtnText: { fontSize: 12, color: "#fff", fontFamily: "Inter_600SemiBold" },
+    shopBtn: {
+      flexDirection: "row", alignItems: "center", gap: 5,
+      paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8,
+      backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
+    },
+    shopBtnText: { fontSize: 12, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
     deleteBtn: { padding: 8, borderRadius: 8, backgroundColor: colors.muted },
+    // Log sheet modal
+    modalOverlay: {
+      flex: 1, justifyContent: "flex-end",
+      backgroundColor: "rgba(0,0,0,0.45)",
+    },
+    sheet: {
+      backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+      padding: 20, paddingBottom: insets.bottom + 20, gap: 16,
+    },
+    sheetHandle: {
+      width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border,
+      alignSelf: "center", marginBottom: 4,
+    },
+    sheetTitle: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
+    sheetItemName: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+    notesLabel: { fontSize: 12, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    notesInput: {
+      backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
+      borderRadius: 10, padding: 12, fontSize: 13, color: colors.foreground,
+      fontFamily: "Inter_400Regular", minHeight: 80, textAlignVertical: "top",
+    },
+    sheetBtns: { flexDirection: "row", gap: 10 },
+    sheetCancel: {
+      flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
+      backgroundColor: colors.muted,
+    },
+    sheetCancelText: { fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    sheetSave: {
+      flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
+      backgroundColor: colors.primary,
+    },
+    sheetSaveText: { fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" },
   });
 
   return (
@@ -249,20 +313,28 @@ export default function MaintenanceScreen() {
             <Text style={s.headerSub}>{profile?.firstName} {profile?.lastName}</Text>
           )}
         </View>
-        <Pressable
-          style={[s.genBtn, generating && { opacity: 0.6 }]}
-          onPress={handleGenerate}
-          disabled={generating || !bikeStr}
-        >
-          {generating ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <>
-              <Feather name="zap" size={13} color="#fff" />
-              <Text style={s.genBtnText}>{items.length > 0 ? "Refresh" : "AI Generate"}</Text>
-            </>
-          )}
-        </Pressable>
+        <View style={s.headerActions}>
+          <Pressable
+            style={s.historyBtn}
+            onPress={() => router.push(`/maintenance/history/${riderId}` as any)}
+          >
+            <Feather name="clock" size={18} color={colors.foreground} />
+          </Pressable>
+          <Pressable
+            style={[s.genBtn, generating && { opacity: 0.6 }]}
+            onPress={handleGenerate}
+            disabled={generating || !bikeStr}
+          >
+            {generating ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Feather name="zap" size={13} color="#fff" />
+                <Text style={s.genBtnText}>{items.length > 0 ? "Refresh" : "AI Generate"}</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
       </View>
 
       {loading ? (
@@ -353,17 +425,19 @@ export default function MaintenanceScreen() {
                   <View style={s.itemActions}>
                     <Pressable
                       style={[s.logBtn, loggingKey === item.itemKey && { opacity: 0.6 }]}
-                      onPress={() => handleLogService(item)}
+                      onPress={() => openLogSheet(item)}
                       disabled={loggingKey !== null}
                     >
-                      {loggingKey === item.itemKey ? (
-                        <ActivityIndicator color="#fff" size="small" style={{ width: 90 }} />
-                      ) : (
-                        <>
-                          <Feather name="check" size={13} color="#fff" />
-                          <Text style={s.logBtnText}>Log Service Today</Text>
-                        </>
-                      )}
+                      <Feather name="check" size={13} color="#fff" />
+                      <Text style={s.logBtnText}>Log Service Today</Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={s.shopBtn}
+                      onPress={() => handleShop(item)}
+                    >
+                      <Feather name="shopping-bag" size={13} color={colors.foreground} />
+                      <Text style={s.shopBtnText}>Shop</Text>
                     </Pressable>
 
                     <Pressable
@@ -385,6 +459,59 @@ export default function MaintenanceScreen() {
           )}
         </ScrollView>
       )}
+
+      {/* Log Service bottom sheet */}
+      <Modal
+        visible={logSheetItem !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setLogSheetItem(null)}
+      >
+        <KeyboardAvoidingView
+          style={s.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <Pressable style={{ flex: 1 }} onPress={() => setLogSheetItem(null)} />
+          <View style={s.sheet}>
+            <View style={s.sheetHandle} />
+            <View style={{ gap: 4 }}>
+              <Text style={s.sheetTitle}>Log Service Today</Text>
+              {logSheetItem && (
+                <Text style={s.sheetItemName}>{logSheetItem.itemName}</Text>
+              )}
+            </View>
+            <View style={{ gap: 6 }}>
+              <Text style={s.notesLabel}>Notes (optional)</Text>
+              <TextInput
+                style={s.notesInput}
+                placeholder="Oil type, brand, observations…"
+                placeholderTextColor={colors.mutedForeground}
+                value={logSheetNotes}
+                onChangeText={setLogSheetNotes}
+                multiline
+                numberOfLines={3}
+                autoFocus
+              />
+            </View>
+            <View style={s.sheetBtns}>
+              <Pressable style={s.sheetCancel} onPress={() => setLogSheetItem(null)}>
+                <Text style={s.sheetCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[s.sheetSave, logSheetSaving && { opacity: 0.6 }]}
+                onPress={handleSaveLog}
+                disabled={logSheetSaving}
+              >
+                {logSheetSaving ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={s.sheetSaveText}>Save</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
