@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
+import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable, raceResultsTable } from "@workspace/db";
 import { eq, and, sql, desc, asc, ne, isNull, inArray } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
@@ -326,10 +326,11 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   if (displayLastName !== undefined) updates.displayLastName = displayLastName;
   if (newRiderId !== undefined) updates.riderId = newRiderId;
 
-  // Snapshot the current riderId BEFORE updating so we can re-point the checkin row
-  const [before] = await db.select({ riderId: registrationsTable.riderId, eventId: registrationsTable.eventId })
+  // Snapshot the current riderId and raceClass BEFORE updating so we can cascade
+  const [before] = await db.select({ riderId: registrationsTable.riderId, eventId: registrationsTable.eventId, raceClass: registrationsTable.raceClass })
     .from(registrationsTable).where(eq(registrationsTable.id, id));
   const oldRiderId = before?.riderId;
+  const oldRaceClass = before?.raceClass;
 
   if (before) {
     if (!await checkEventOwnership(before.eventId, getStaffClubId(res), res)) return;
@@ -351,6 +352,27 @@ router.patch("/registrations/:registrationId", async (req, res) => {
         .set({ riderId: newRiderId })
         .where(eq(checkinsTable.id, checkinToMove.id));
     }
+  }
+
+  // If raceClass changed, cascade to checkins and race_results for this rider+event
+  if (raceClass !== undefined && oldRaceClass && raceClass !== oldRaceClass) {
+    const cascadeRiderId = reg.riderId;
+    // Update the rider's check-in record so they appear in the correct class at gate
+    await db.update(checkinsTable)
+      .set({ raceClass })
+      .where(and(
+        eq(checkinsTable.eventId, reg.eventId),
+        eq(checkinsTable.riderId, cascadeRiderId),
+        eq(checkinsTable.raceClass, oldRaceClass),
+      ));
+    // Update any race result rows so scoring/standings reflect the new class
+    await db.update(raceResultsTable)
+      .set({ raceClass })
+      .where(and(
+        eq(raceResultsTable.eventId, reg.eventId),
+        eq(raceResultsTable.riderId, cascadeRiderId),
+        eq(raceResultsTable.raceClass, oldRaceClass),
+      ));
   }
 
   // Create check-in record if payment just confirmed the registration
@@ -721,6 +743,23 @@ router.get("/public/events/:eventId/check-bib", async (req, res) => {
   return res.json({ taken: existing.length > 0 });
 });
 
+// ── Public: classes a rider is already registered for at an event ─────────────
+router.get("/public/events/:eventId/rider-classes", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const riderId = Number(req.query.riderId);
+  if (!riderId || isNaN(riderId)) return res.json({ registeredClasses: [] });
+
+  const rows = await db.select({ raceClass: registrationsTable.raceClass })
+    .from(registrationsTable)
+    .where(and(
+      eq(registrationsTable.eventId, eventId),
+      eq(registrationsTable.riderId, riderId),
+      ne(registrationsTable.status, "void"),
+    ));
+
+  return res.json({ registeredClasses: rows.map(r => r.raceClass) });
+});
+
 // ── Public: event info for the registration form ─────────────────────────────
 router.get("/public/events/:eventId/register-info", async (req, res) => {
   const eventId = Number(req.params.eventId);
@@ -750,6 +789,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     noDuplicateBibs: eventsTable.noDuplicateBibs,
     requireClubId: eventsTable.requireClubId,
     requireWaiver: eventsTable.requireWaiver,
+    requireTransponder: eventsTable.requireTransponder,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));
