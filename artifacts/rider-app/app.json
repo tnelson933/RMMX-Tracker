@@ -21,8 +21,7 @@
       }
     },
     "android": {
-      "package": "com.rockymountain.riderapp",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.rockymountain.riderapp"
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -44,9 +43,15 @@
         }
       ]
     ],
+    "extra": {
+      "eas": {
+        "projectId": "YOUR_EAS_PROJECT_ID"
+      }
+    },
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": true,
+      "baseUrl": "/rider-app"
     }
   }
 }
