@@ -37,12 +37,25 @@ function fmtLap(ms: number | null | undefined): string {
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const normalized = iso.includes("T") ? iso : iso + "T12:00:00";
+  return new Date(normalized).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function lapDelta(ms: number, bestMs: number): string {
   if (ms <= bestMs) return "";
   return `+${((ms - bestMs) / 1000).toFixed(3)}s`;
+}
+
+function dateKey(iso: string | null | undefined): string {
+  if (!iso) return "unknown";
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dateLabel(iso: string | null | undefined): string {
+  if (!iso) return "Unknown Date";
+  const normalized = iso.includes("T") ? iso : iso + "T12:00:00";
+  return new Date(normalized).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function equipmentIcon(equipment: string): keyof typeof Feather.glyphMap {
@@ -63,8 +76,9 @@ function equipmentIcon(equipment: string): keyof typeof Feather.glyphMap {
 
 interface LapEntry     { lapNumber: number; lapTimeMs: number | null; crossingTime: string }
 interface LeaderboardEntry { rank: number; riderId: number | null; riderName: string; bibNumber: string | null; bestLapMs: number | null; lapCount: number; isMe: boolean }
-interface SessionItem  { key: string; label: string; status: string; myLaps: LapEntry[]; bestLapMs: number | null; leaderboard?: LeaderboardEntry[] }
-interface TrackItem    { key: string; label: string; sublabel: string | null; sessions: SessionItem[] }
+interface SessionItem  { key: string; label: string; status: string; myLaps: LapEntry[]; bestLapMs: number | null; leaderboard?: LeaderboardEntry[]; startedAt?: string | null }
+interface DateGroup    { key: string; label: string; sessions: SessionItem[] }
+interface TrackItem    { key: string; label: string; sublabel: string | null; sessions: SessionItem[]; dates: DateGroup[] }
 
 interface WorkoutExercise {
   name: string;
@@ -808,7 +822,16 @@ export default function TrainScreen() {
   const [refreshing, setRefreshing]     = useState(false);
   const [trackError, setTrackError]     = useState<string | null>(null);
   const [selectedTrack, setSelectedTrack]     = useState<string | null>(null);
+  const [selectedDate, setSelectedDate]       = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
+
+  // ── Live PB flash (open-practice sessions only) ───────────────────────────
+  const [liveLaps, setLiveLaps]         = useState<LapEntry[] | null>(null);
+  const [pbFlash, setPbFlash]           = useState(false);
+  const prevBestMsRef  = useRef<number | null>(null);
+  const isFirstPollRef = useRef(true);
+  const pbTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pbAnim         = useRef(new Animated.Value(0)).current;
 
   // ── Coach data ───────────────────────────────────────────────────────────────
   const [coachState, setCoachState]     = useState<CoachState>("input");
@@ -888,29 +911,68 @@ export default function TrainScreen() {
             myLaps: (s.myLaps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
             bestLapMs: s.myLaps?.length ? (() => { const v = (s.myLaps as LapEntry[]).filter(l => (l.lapTimeMs ?? 0) > 0); return v.length ? Math.min(...v.map(l => l.lapTimeMs!)) : null; })() : null,
             leaderboard: s.leaderboard ?? [],
+            startedAt: ev.eventDate ?? null,
           }));
           if (sessions.length === 0) continue;
-          built.push({ key: `event-${ev.eventId}`, label: ev.eventName, sublabel: [fmtDate(ev.eventDate), ev.eventState].filter(Boolean).join(" · "), sessions });
+          // Events: single date group keyed by event date
+          const evDateKey = ev.eventDate ? dateKey(ev.eventDate) : "event";
+          const evDateLabel = ev.eventDate ? dateLabel(ev.eventDate) : "Event Date";
+          built.push({
+            key: `event-${ev.eventId}`,
+            label: ev.eventName,
+            sublabel: [fmtDate(ev.eventDate), ev.eventState].filter(Boolean).join(" · "),
+            sessions,
+            dates: [{ key: evDateKey, label: evDateLabel, sessions }],
+          });
         }
       }
       if (practiceRes.ok) {
         const { sessions: standaloneSessions } = await practiceRes.json();
         if ((standaloneSessions ?? []).length > 0) {
-          built.push({
-            key: "standalone", label: "Standalone Sessions",
-            sublabel: `${standaloneSessions.length} session${standaloneSessions.length !== 1 ? "s" : ""}`,
-            sessions: (standaloneSessions as any[]).map(s => ({
+          // Group standalone sessions by venue name so each track gets its own chip
+          const venueMap = new Map<string, any[]>();
+          for (const s of standaloneSessions as any[]) {
+            const venue: string = s.venueName?.trim() || "Open Practice";
+            if (!venueMap.has(venue)) venueMap.set(venue, []);
+            venueMap.get(venue)!.push(s);
+          }
+          for (const [venue, venueSessions] of venueMap) {
+            const allSessions: SessionItem[] = venueSessions.map((s: any) => ({
               key: `practice-${s.sessionId}`, label: s.sessionName, status: s.endedAt ? "completed" : "in_progress",
               myLaps: (s.laps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
               bestLapMs: s.bestLapMs ?? null, leaderboard: undefined,
-            })),
-          });
+              startedAt: s.startedAt ?? null,
+            }));
+            // Group by date (descending — newest date first)
+            const dateMap = new Map<string, SessionItem[]>();
+            for (const s of allSessions) {
+              const dk = dateKey(s.startedAt);
+              if (!dateMap.has(dk)) dateMap.set(dk, []);
+              dateMap.get(dk)!.push(s);
+            }
+            const dates: DateGroup[] = Array.from(dateMap.entries())
+              .sort(([a], [b]) => b.localeCompare(a)) // newest date first
+              .map(([dk, dateSessions]) => ({
+                key: dk,
+                label: dateLabel(dateSessions[0].startedAt),
+                sessions: dateSessions,
+              }));
+            built.push({
+              key: `venue-${venue}`,
+              label: venue,
+              sublabel: `${venueSessions.length} session${venueSessions.length !== 1 ? "s" : ""}`,
+              sessions: allSessions,
+              dates,
+            });
+          }
         }
       }
       setTracks(built);
       if (built.length > 0) {
         setSelectedTrack(prev => prev ?? built[0].key);
-        if (built[0].sessions.length > 0) setSelectedSession(prev => prev ?? built[0].sessions[0].key);
+        const firstDate = built[0].dates[0] ?? null;
+        setSelectedDate(prev => prev ?? firstDate?.key ?? null);
+        if (firstDate?.sessions.length) setSelectedSession(prev => prev ?? firstDate.sessions[0].key);
       }
     } catch {
       setTrackError("Couldn't load practice data. Pull to refresh.");
@@ -967,19 +1029,106 @@ export default function TrainScreen() {
 
   // ── Derived track data ────────────────────────────────────────────────────────
   const currentTrack   = useMemo(() => tracks.find(t => t.key === selectedTrack) ?? null, [tracks, selectedTrack]);
-  const currentSession = useMemo(() => currentTrack?.sessions.find(s => s.key === selectedSession) ?? null, [currentTrack, selectedSession]);
+  const currentDate    = useMemo(() => currentTrack?.dates.find(d => d.key === selectedDate) ?? currentTrack?.dates[0] ?? null, [currentTrack, selectedDate]);
+  const currentSession = useMemo(() => currentDate?.sessions.find(s => s.key === selectedSession) ?? null, [currentDate, selectedSession]);
 
   const handleTrackSelect = useCallback((key: string) => {
     setSelectedTrack(key);
     const track = tracks.find(t => t.key === key);
-    if (track?.sessions.length) setSelectedSession(track.sessions[0].key);
+    const firstDate = track?.dates[0] ?? null;
+    setSelectedDate(firstDate?.key ?? null);
+    if (firstDate?.sessions.length) setSelectedSession(firstDate.sessions[0].key);
     else setSelectedSession(null);
   }, [tracks]);
 
-  const allSessions = tracks.flatMap(t => t.sessions);
-  const totalLaps   = allSessions.reduce((n, s) => n + s.myLaps.filter(l => (l.lapTimeMs ?? 0) > 0).length, 0);
-  const allBests    = allSessions.map(s => s.bestLapMs).filter((ms): ms is number => ms != null && ms > 0);
-  const overallBest = allBests.length ? Math.min(...allBests) : null;
+  const handleDateSelect = useCallback((key: string) => {
+    setSelectedDate(key);
+    const date = currentTrack?.dates.find(d => d.key === key);
+    if (date?.sessions.length) setSelectedSession(date.sessions[0].key);
+  }, [currentTrack]);
+
+  // ── Poll for live lap updates when an open-practice session is in progress ──
+  useEffect(() => {
+    setLiveLaps(null);
+    setPbFlash(false);
+    pbAnim.setValue(0);
+    if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
+
+    const isLive    = currentSession?.status === "in_progress";
+    const isPractice = currentSession?.key.startsWith("practice-");
+    if (!isLive || !isPractice || !primaryProfile) return;
+
+    const sessionId = currentSession.key.replace("practice-", "");
+
+    // Baseline: best lap across all other sessions on the same track
+    const otherSessions = (currentTrack?.sessions ?? []).filter(s => s.key !== currentSession.key);
+    const otherBests    = otherSessions
+      .map(s => s.bestLapMs)
+      .filter((ms): ms is number => ms != null && ms > 0);
+    prevBestMsRef.current  = otherBests.length ? Math.min(...otherBests) : null;
+    isFirstPollRef.current = true;
+
+    async function poll() {
+      if (!primaryProfile) return;
+      try {
+        const res = await riderFetch(`/api/rider/profiles/${primaryProfile.id}/practice`);
+        if (!res.ok) return;
+        const { sessions } = await res.json() as { sessions: any[] };
+        const found = sessions.find((s: any) => String(s.sessionId) === sessionId);
+        if (!found) return;
+
+        const laps: LapEntry[] = ((found.laps ?? []) as LapEntry[])
+          .filter(l => (l.lapTimeMs ?? 0) > 0)
+          .sort((a, b) => a.lapNumber - b.lapNumber);
+        setLiveLaps(laps);
+
+        const newBest = laps.length ? Math.min(...laps.map(l => l.lapTimeMs!)) : null;
+
+        if (isFirstPollRef.current) {
+          isFirstPollRef.current = false;
+          if (newBest != null) {
+            prevBestMsRef.current = prevBestMsRef.current == null
+              ? newBest
+              : Math.min(prevBestMsRef.current, newBest);
+          }
+          return;
+        }
+
+        if (newBest != null) {
+          const baseline = prevBestMsRef.current;
+          if (baseline == null || newBest < baseline) {
+            prevBestMsRef.current = newBest;
+            if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
+            setPbFlash(true);
+            Animated.sequence([
+              Animated.timing(pbAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
+              Animated.timing(pbAnim, { toValue: 0.6, duration: 120, useNativeDriver: true }),
+              Animated.timing(pbAnim, { toValue: 1, duration: 120, useNativeDriver: true }),
+            ]).start();
+            pbTimerRef.current = setTimeout(() => {
+              setPbFlash(false);
+              pbAnim.setValue(0);
+            }, 3500);
+          }
+        }
+      } catch { /* ignore network errors */ }
+    }
+
+    void poll();
+    const interval = setInterval(() => void poll(), 3000);
+    return () => {
+      clearInterval(interval);
+      if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSession?.key, currentSession?.status, primaryProfile?.id]);
+
+  const allSessions     = tracks.flatMap(t => t.sessions);
+  // Stats always span the whole track (all dates) so "Best Ever" is truly all-time at that track
+  const displaySessions = currentTrack?.sessions ?? allSessions;
+  const totalLaps       = displaySessions.reduce((n, s) => n + s.myLaps.filter(l => (l.lapTimeMs ?? 0) > 0).length, 0);
+  const allBests        = displaySessions.map(s => s.bestLapMs).filter((ms): ms is number => ms != null && ms > 0);
+  const overallBest     = allBests.length ? Math.min(...allBests) : null;
 
   const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
@@ -1050,7 +1199,7 @@ export default function TrainScreen() {
         {tabMode === "track" && (
           <View style={styles.statsRow}>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{allSessions.length}</Text>
+              <Text style={styles.statValue}>{displaySessions.length}</Text>
               <Text style={styles.statLabel}>Sessions</Text>
             </View>
             <View style={styles.statBox}>
@@ -1074,10 +1223,16 @@ export default function TrainScreen() {
               <ChipBar items={tracks.map(t => ({ key: t.key, label: t.label, sub: t.sublabel }))} selected={selectedTrack} onSelect={handleTrackSelect} colors={colors} />
             </View>
           )}
-          {currentTrack && currentTrack.sessions.length > 1 && (
+          {currentTrack && currentTrack.dates.length > 1 && (
+            <View style={styles.pickerRow}>
+              <Text style={styles.pickerLabel}>Date</Text>
+              <ChipBar items={currentTrack.dates.map(d => ({ key: d.key, label: d.label }))} selected={selectedDate} onSelect={handleDateSelect} colors={colors} />
+            </View>
+          )}
+          {currentDate && currentDate.sessions.length > 1 && (
             <View style={[styles.pickerRow, { borderBottomWidth: StyleSheet.hairlineWidth }]}>
               <Text style={styles.pickerLabel}>Session</Text>
-              <ChipBar items={currentTrack.sessions.map(s => ({ key: s.key, label: s.label }))} selected={selectedSession} onSelect={setSelectedSession} colors={colors} />
+              <ChipBar items={currentDate.sessions.map(s => ({ key: s.key, label: s.label }))} selected={selectedSession} onSelect={setSelectedSession} colors={colors} />
             </View>
           )}
           <ScrollView
@@ -1103,31 +1258,62 @@ export default function TrainScreen() {
               </View>
             ) : (
               <>
-                {/* Session summary */}
-                <View style={{ borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: ACCENT + "44", backgroundColor: colors.card, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 16, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{currentSession.label}</Text>
-                    {currentTrack && (
-                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-                        {currentTrack.label}{currentTrack.sublabel ? `  ·  ${currentTrack.sublabel}` : ""}
-                      </Text>
-                    )}
-                    {currentSession.status === "in_progress" && (
-                      <View style={{ alignSelf: "flex-start", marginTop: 6, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#ef444420" }}>
-                        <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#ef4444" }} />
-                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold" }}>LIVE</Text>
+                {/* Session summary — use live laps when polling is active */}
+                {(() => {
+                  const displayLaps = liveLaps ?? currentSession.myLaps.filter(l => (l.lapTimeMs ?? 0) > 0);
+                  const displayBest = displayLaps.length ? Math.min(...displayLaps.map(l => l.lapTimeMs!)) : currentSession.bestLapMs;
+                  const lapCount    = displayLaps.length;
+                  return (
+                    <Animated.View style={{
+                      borderRadius: 12,
+                      borderWidth: pbFlash ? 2 : StyleSheet.hairlineWidth,
+                      borderColor: pbFlash ? "#eab308" : ACCENT + "44",
+                      backgroundColor: colors.card,
+                      padding: 16,
+                      opacity: pbFlash
+                        ? pbAnim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [1, 0.85, 1] })
+                        : 1,
+                    }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{currentSession.label}</Text>
+                          {currentTrack && (
+                            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+                              {currentTrack.label}{currentDate && currentTrack.dates.length > 1 ? `  ·  ${currentDate.label}` : currentTrack.sublabel ? `  ·  ${currentTrack.sublabel}` : ""}
+                            </Text>
+                          )}
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                            {currentSession.status === "in_progress" && (
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#ef444420" }}>
+                                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#ef4444" }} />
+                                <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold" }}>LIVE</Text>
+                              </View>
+                            )}
+                            {pbFlash && (
+                              <Animated.View style={{
+                                flexDirection: "row", alignItems: "center", gap: 4,
+                                paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+                                backgroundColor: "#eab308",
+                                transform: [{ scale: pbAnim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [1, 1.08, 1] }) }],
+                              }}>
+                                <Feather name="zap" size={11} color="#713f12" />
+                                <Text style={{ fontSize: 11, fontWeight: "800", color: "#713f12", fontFamily: "Inter_700Bold" }}>Personal Best!</Text>
+                              </Animated.View>
+                            )}
+                          </View>
+                        </View>
+                        <View style={{ alignItems: "flex-end", gap: 2 }}>
+                          <Text style={{ fontSize: 24, fontWeight: "800", color: pbFlash ? "#ca8a04" : ACCENT, fontFamily: "Inter_700Bold" }}>{fmtLap(displayBest)}</Text>
+                          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>Best Lap</Text>
+                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{lapCount} laps</Text>
+                        </View>
                       </View>
-                    )}
-                  </View>
-                  <View style={{ alignItems: "flex-end", gap: 2 }}>
-                    <Text style={{ fontSize: 24, fontWeight: "800", color: ACCENT, fontFamily: "Inter_700Bold" }}>{fmtLap(currentSession.bestLapMs)}</Text>
-                    <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>Best Lap</Text>
-                    <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{currentSession.myLaps.filter(l => (l.lapTimeMs ?? 0) > 0).length} laps</Text>
-                  </View>
-                </View>
+                    </Animated.View>
+                  );
+                })()}
                 <View>
                   <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Lap Times</Text>
-                  <LapTable laps={currentSession.myLaps} colors={colors} />
+                  <LapTable laps={liveLaps ?? currentSession.myLaps} colors={colors} />
                 </View>
                 {currentSession.leaderboard && currentSession.leaderboard.length > 0 && (
                   <View>
