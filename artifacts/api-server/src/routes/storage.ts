@@ -40,28 +40,43 @@ router.post(
     }
 
     try {
-      let objectPath: string;
-      try {
-        objectPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext);
-        req.log.info({ size: req.body.length, contentType, objectPath }, "File uploaded to object storage");
-      } catch (storageErr) {
-        req.log.warn({ err: storageErr }, "Object storage unavailable — falling back to local disk");
-        await fs.writeFile(filepath, req.body);
-        objectPath = `/uploads/${filename}`;
-        req.log.info({ filename, size: req.body.length }, "File saved to local disk (fallback)");
-      }
+      // Upload to cloud storage (persistent across redeployments)
+      const cloudPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext);
+      req.log.info({ size: req.body.length, contentType, cloudPath }, "File uploaded to object storage");
+
+      // Also write to local disk using the same filename so /storage/uploads/:filename
+      // can serve it directly without hitting cloud storage on every request.
+      const cloudFilename = path.basename(cloudPath);
+      fs.writeFile(path.join(UPLOADS_DIR, cloudFilename), req.body).catch((err) => {
+        req.log.warn({ err }, "Could not write upload to local disk cache");
+      });
+
+      // Return the /uploads/ path — consistent with existing DB records and served
+      // by GET /storage/uploads/:filename (disk-first with cloud fallback).
+      const objectPath = `/uploads/${cloudFilename}`;
       res.json({ objectPath });
     } catch (error) {
-      req.log.error({ err: error }, "Error saving uploaded file");
-      res.status(500).json({ error: "Failed to save file" });
+      req.log.error({ err: error }, "Error uploading file to object storage");
+      res.status(503).json({ error: "Storage unavailable — please try again" });
     }
   }
 );
 
+const UPLOAD_CONTENT_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+};
+
 /**
  * GET /storage/uploads/:filename
  *
- * Serve locally-uploaded files (logos, event images, etc.) from disk.
+ * Serve uploaded files (logos, event images, etc.).
+ * Tries local disk first (fast path), then falls back to Replit cloud object
+ * storage so files survive production redeployments.
  */
 router.get("/storage/uploads/:filename", async (req: Request, res: Response) => {
   const filename = Array.isArray(req.params.filename) ? req.params.filename[0] : req.params.filename;
@@ -69,23 +84,42 @@ router.get("/storage/uploads/:filename", async (req: Request, res: Response) => 
     res.status(400).json({ error: "Invalid filename" });
     return;
   }
-  const filepath = path.join(UPLOADS_DIR, filename);
+
+  const ext = path.extname(filename).toLowerCase();
+  const contentType = UPLOAD_CONTENT_TYPES[ext] ?? "application/octet-stream";
+
+  // 1. Try local disk (fast, works in development and for cached production files)
   try {
-    const data = await fs.readFile(filepath);
-    const ext = path.extname(filename).toLowerCase();
-    const contentTypeMap: Record<string, string> = {
-      ".png": "image/png",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".gif": "image/gif",
-      ".webp": "image/webp",
-      ".svg": "image/svg+xml",
-    };
-    res.setHeader("Content-Type", contentTypeMap[ext] ?? "application/octet-stream");
+    const data = await fs.readFile(path.join(UPLOADS_DIR, filename));
+    res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     res.send(data);
+    return;
   } catch {
-    res.status(404).json({ error: "File not found" });
+    // Not on disk — fall through to cloud storage
+  }
+
+  // 2. Fall back to Replit cloud object storage (survives redeployments)
+  try {
+    const objectFile = await objectStorageService.getObjectEntityFile(`/objects/uploads/${filename}`);
+    const cloudResponse = await objectStorageService.downloadObject(objectFile, 31536000);
+
+    res.status(cloudResponse.status);
+    cloudResponse.headers.forEach((value, key) => res.setHeader(key, value));
+
+    if (cloudResponse.body) {
+      const nodeStream = Readable.fromWeb(cloudResponse.body as ReadableStream<Uint8Array>);
+      nodeStream.pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (error) {
+    if (error instanceof ObjectNotFoundError) {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+    req.log.error({ err: error }, "Error serving upload from cloud storage");
+    res.status(500).json({ error: "Failed to serve file" });
   }
 });
 
