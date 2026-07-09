@@ -7,10 +7,23 @@ async function apiFetch(path: string, options?: RequestInit) {
     ...options,
   });
   if (!res.ok) {
+    if (res.status >= 500) {
+      throw new Error("The server is temporarily unavailable. Please try again in a moment.");
+    }
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Request failed (${res.status})`);
+    throw new Error(data.error || "Something went wrong. Please try again.");
   }
   return res.json();
+}
+
+export interface RiderBike {
+  id: number;
+  riderId: number;
+  bikeManufacturer: string | null;
+  bikeModel: string | null;
+  bikeYear: string | null;
+  isDefault: boolean;
+  createdAt: string;
 }
 
 export interface RiderAccount {
@@ -31,6 +44,7 @@ export interface RiderProfile {
   totalPoints: number;
   bestPosition: number | null;
   lastRaced: string | null;
+  bikes: RiderBike[];
 }
 
 export interface MotoResult {
@@ -294,4 +308,25 @@ export const riderApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  getBikes: (riderId: number): Promise<RiderBike[]> =>
+    apiFetch(`/rider/profiles/${riderId}/bikes`),
+
+  addBike: (riderId: number, payload: { bikeManufacturer?: string | null; bikeModel?: string | null; bikeYear?: string | null }): Promise<RiderBike> =>
+    apiFetch(`/rider/profiles/${riderId}/bikes`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateBike: (riderId: number, bikeId: number, payload: { bikeManufacturer?: string | null; bikeModel?: string | null; bikeYear?: string | null }): Promise<RiderBike> =>
+    apiFetch(`/rider/profiles/${riderId}/bikes/${bikeId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteBike: (riderId: number, bikeId: number): Promise<{ ok: boolean }> =>
+    apiFetch(`/rider/profiles/${riderId}/bikes/${bikeId}`, { method: "DELETE" }),
+
+  setDefaultBike: (riderId: number, bikeId: number): Promise<RiderBike> =>
+    apiFetch(`/rider/profiles/${riderId}/bikes/${bikeId}/set-default`, { method: "POST" }),
 };
