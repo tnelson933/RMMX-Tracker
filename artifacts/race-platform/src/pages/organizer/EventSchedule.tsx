@@ -346,7 +346,7 @@ function InlineName({ motoId, name, isEditing, editValue, onEditStart, onChange,
             if (e.key === "Enter") { e.preventDefault(); onSave(); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
           }}
-          className="h-6 text-sm font-medium py-0 px-1 w-48 bg-background border-primary"
+          className="h-6 text-sm font-medium py-0 px-1 w-48 bg-background border-primary text-foreground"
         />
         <button onClick={onSave} className="text-green-400 hover:text-green-300 shrink-0">
           <Check size={14} />
@@ -440,7 +440,7 @@ function PracticeCountdownTimer({ motoId, startedAt, countdownSeconds, onExpire 
 
 // LineupEntry is forward-referenced from below — TS hoists type aliases
 interface LineupRowProps {
-  entry: { position: number; riderId: number; riderName: string; bibNumber: string | null };
+  entry: { position: number; riderId: number; riderName: string; bibNumber: string | null; checkedIn?: boolean };
   motoId: number;
   isCompleted: boolean;
   onRemove: () => void;
@@ -496,7 +496,12 @@ function SortableLineupRow({ entry, motoId, isCompleted, onRemove, allIds }: Lin
         {entry.bibNumber && (
           <span className="font-mono text-[11px] text-muted-foreground w-9 shrink-0">#{entry.bibNumber}</span>
         )}
-        <span className="text-xs flex-1 truncate font-medium">{entry.riderName}</span>
+        <span className={`text-xs flex-1 truncate font-medium ${entry.checkedIn === false ? "text-muted-foreground/60" : ""}`}>{entry.riderName}</span>
+        {entry.checkedIn === false && (
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400 shrink-0 bg-amber-500/10 border border-amber-500/30 rounded px-1 py-0.5">
+            Pending
+          </span>
+        )}
         {!isCompleted && (
           <button
             onClick={onRemove}
@@ -555,6 +560,9 @@ interface MotoCardProps {
   staggerGroup?: Moto[];
   onUnstaggerMoto?: (motoId: number) => void;
   onEditStagger?: (orderedMotoIds: number[]) => void;
+  isStaggerSelectMode?: boolean;
+  isStaggerSelected?: boolean;
+  onStaggerToggle?: () => void;
 }
 
 function SortableMotoCard({
@@ -562,6 +570,7 @@ function SortableMotoCard({
   isEditing, editValue, onEditStart, onEditChange, onEditSave, onEditCancel,
   isExpanded, onToggleExpand, onRemoveRider, onCountdownExpire, onDelete,
   isMotoCardDragging, staggerGroup, onUnstaggerMoto, onEditStagger,
+  isStaggerSelectMode, isStaggerSelected, onStaggerToggle,
 }: MotoCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: moto.id });
 
@@ -598,8 +607,8 @@ function SortableMotoCard({
           : "border-sidebar-border hover:border-primary/40"
       }`}
     >
-      {/* ── Stagger drop zone (shown when another moto card is being dragged) ── */}
-      {isMotoCardDragging && !isDragging && !isAlreadyStaggered && (
+      {/* ── Stagger drop zone (shown when another moto card is being dragged, only outside select mode) ── */}
+      {!isStaggerSelectMode && isMotoCardDragging && !isDragging && !isAlreadyStaggered && (
         <StaggerDropZone motoId={moto.id} />
       )}
 
@@ -647,9 +656,24 @@ function SortableMotoCard({
 
       {/* ── Header row ── */}
       <div className="flex items-center gap-3 px-4 py-3 bg-sidebar text-sidebar-foreground border-b">
-        <span className="text-xs text-sidebar-foreground/50 w-6 shrink-0 text-center font-mono">
-          {index + 1}
-        </span>
+        {isStaggerSelectMode ? (
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onStaggerToggle?.(); }}
+            className={`shrink-0 h-4 w-4 rounded border-2 flex items-center justify-center transition-colors ${
+              isStaggerSelected
+                ? "bg-primary border-primary text-primary-foreground"
+                : "border-sidebar-foreground/40 hover:border-primary"
+            }`}
+            aria-label="Select for stagger group"
+          >
+            {isStaggerSelected && <Check size={10} />}
+          </button>
+        ) : (
+          <span className="text-xs text-sidebar-foreground/50 w-6 shrink-0 text-center font-mono">
+            {index + 1}
+          </span>
+        )}
 
         <button
           className="touch-none cursor-grab active:cursor-grabbing text-sidebar-foreground/40 hover:text-sidebar-foreground shrink-0"
@@ -1025,6 +1049,7 @@ type LineupEntry = {
   riderName: string;
   bibNumber: string | null;
   rfidNumber: string | null;
+  checkedIn?: boolean;
 };
 
 function getLineup(moto: Moto): LineupEntry[] {
@@ -1190,6 +1215,7 @@ export default function EventSchedule() {
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [generateMinRacesBetween, setGenerateMinRacesBetween] = useState<number>(0);
   const [generateClass, setGenerateClass] = useState<string>("all");
+  const [generateUseRegistrations, setGenerateUseRegistrations] = useState(false);
 
   // Enduro "Generate Tests" dialog
   const [genTestCount, setGenTestCount] = useState("3");
@@ -1295,6 +1321,8 @@ export default function EventSchedule() {
   const [deleteConfirmMotoId, setDeleteConfirmMotoId] = useState<number | null>(null);
   const [deleteAllConfirmOpen, setDeleteAllConfirmOpen] = useState(false);
   const [staggerPendingGroup, setStaggerPendingGroup] = useState<{ orderedMotoIds: number[] } | null>(null);
+  const [staggerSelectMode, setStaggerSelectMode] = useState(false);
+  const [staggerSelected, setStaggerSelected] = useState<number[]>([]);
 
   // ── Mutations ──
   const reorderMutation = useReorderMotos();
@@ -1622,7 +1650,27 @@ export default function EventSchedule() {
 
   // ── Derived sorted list ──
   const sortedMotos: Moto[] = (() => {
-    const motos = [...rawMotos].sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+    const motos = [...rawMotos];
+    if (isCrossCountry) {
+      // For cross-country / hare-and-hound: sort by (group primary's moto_number, staggered_order)
+      // so the entire A-wave sorts before B-wave even when individual moto_numbers are out of order.
+      const groupPrimaryNum = new Map<number, number>();
+      for (const m of motos) {
+        if ((m as any).staggeredGroupId && (m as any).staggeredOrder === 1) {
+          groupPrimaryNum.set((m as any).staggeredGroupId, m.motoNumber ?? 0);
+        }
+      }
+      motos.sort((a, b) => {
+        const aGid = (a as any).staggeredGroupId as number | null;
+        const bGid = (b as any).staggeredGroupId as number | null;
+        const aKey = aGid ? (groupPrimaryNum.get(aGid) ?? a.motoNumber ?? 0) : (a.motoNumber ?? 0);
+        const bKey = bGid ? (groupPrimaryNum.get(bGid) ?? b.motoNumber ?? 0) : (b.motoNumber ?? 0);
+        if (aKey !== bKey) return aKey - bKey;
+        return ((a as any).staggeredOrder ?? 0) - ((b as any).staggeredOrder ?? 0);
+      });
+    } else {
+      motos.sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+    }
     if (!localOrder) return motos;
     const map = new Map(motos.map(m => [m.id, m]));
     return localOrder.map(id => map.get(id)).filter(Boolean) as Moto[];
@@ -1658,13 +1706,16 @@ export default function EventSchedule() {
   // Compute each moto's position in the full day's run order (excluding stagger-2 motos),
   // so the number shown on each card never changes when a filter pill is active.
   const globalMotoIndexMap = useMemo(() => {
-    const allVisible = sortedMotos.filter(m => {
-      const gid = (m as any).staggeredGroupId;
-      const ord = (m as any).staggeredOrder;
-      return !(gid && ord > 1);
-    });
+    // Cross-country: all motos are individually listed in run order (no stagger collapsing)
+    const allVisible = isCrossCountry
+      ? sortedMotos
+      : sortedMotos.filter(m => {
+          const gid = (m as any).staggeredGroupId;
+          const ord = (m as any).staggeredOrder;
+          return !(gid && ord > 1);
+        });
     return new Map(allVisible.map((m, i) => [m.id, i]));
-  }, [sortedMotos]);
+  }, [sortedMotos, isCrossCountry]);
 
   // ── DnD sensors ──
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -2004,6 +2055,7 @@ export default function EventSchedule() {
           gatePickMethod: generateGateMethod,
           rounds: roundsToSend,
           ...(generateMinRacesBetween > 0 ? { minRacesBetween: generateMinRacesBetween } : {}),
+          ...(generateUseRegistrations ? { useRegistrations: true } : {}),
         } as any,
       },
       {
@@ -2331,6 +2383,18 @@ export default function EventSchedule() {
 
               <div className="flex-1" />
 
+              {/* Stagger motos toggle (run-order only, non-enduro) */}
+              {viewMode === "run-order" && !isEnduro && (
+                <Button
+                  variant={staggerSelectMode ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => { setStaggerSelectMode(v => !v); setStaggerSelected([]); }}
+                >
+                  <Link2 size={14} className="mr-1.5" />
+                  {staggerSelectMode ? "Cancel" : "Stagger Motos"}
+                </Button>
+              )}
+
               {/* Delete All (run-order only, only when there are non-completed motos) */}
               {viewMode === "run-order" && sortedMotos.some(m => m.status !== "completed") && (
                 <Button
@@ -2394,11 +2458,32 @@ export default function EventSchedule() {
               </Button>
             </div>
 
-            {/* ── Stagger tip (motocross/supercross only) ── */}
-            {!isEnduro && (
+            {/* ── Stagger tip / action bar (motocross/supercross only) ── */}
+            {!isEnduro && staggerSelectMode && staggerSelected.length >= 2 && (
+              <div className="flex items-center gap-3 rounded-lg bg-primary/10 border border-primary/30 px-4 py-2.5">
+                <Link2 size={15} className="text-primary shrink-0" />
+                <span className="text-sm font-medium">{staggerSelected.length} motos selected</span>
+                <div className="ml-auto">
+                  <Button size="sm" onClick={() => {
+                    setStaggerPendingGroup({ orderedMotoIds: staggerSelected });
+                    setStaggerSelectMode(false);
+                    setStaggerSelected([]);
+                  }}>
+                    Create Stagger Group
+                  </Button>
+                </div>
+              </div>
+            )}
+            {!isEnduro && !staggerSelectMode && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border border-border rounded-md px-3 py-2">
                 <Link2 size={12} className="shrink-0 text-primary/70" />
-                <span>Drag motos into each other to create a staggered start moto.</span>
+                <span>Click <strong>Stagger Motos</strong> to select and link motos for a staggered start.</span>
+              </div>
+            )}
+            {!isEnduro && staggerSelectMode && staggerSelected.length < 2 && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded-md px-3 py-2">
+                <Link2 size={12} className="shrink-0 text-primary/70" />
+                <span>Select 2 or more motos below, then click <strong>Create Stagger Group</strong>.</span>
               </div>
             )}
 
@@ -2613,12 +2698,15 @@ export default function EventSchedule() {
 
             {/* ── Run-order view ── */}
             {viewMode === "run-order" && filteredMotos.length > 0 && (() => {
-              // Stagger order>1 motos are rendered inside the order=1 card; exclude them
-              const visibleMotos = filteredMotos.filter(m => {
-                const gid = (m as any).staggeredGroupId;
-                const ord = (m as any).staggeredOrder;
-                return !(gid && ord > 1);
-              });
+              // For motocross: stagger order>1 motos are rendered inside the order=1 card; exclude them.
+              // For cross-country: all motos are individual start waves — show each one as its own card.
+              const visibleMotos = isCrossCountry
+                ? filteredMotos
+                : filteredMotos.filter(m => {
+                    const gid = (m as any).staggeredGroupId;
+                    const ord = (m as any).staggeredOrder;
+                    return !(gid && ord > 1);
+                  });
               const isMotoBeingDragged = activeDrag?.source === "moto";
               return (
                 <SortableContext items={visibleMotos.map(m => m.id)} strategy={verticalListSortingStrategy}>
@@ -2629,9 +2717,12 @@ export default function EventSchedule() {
                         const showSection = moto.type !== lastType;
                         lastType = moto.type;
                         const groupMemberIds: number[] = (moto as any).staggeredGroupMembers ?? [];
-                        const staggerGroup: Moto[] = groupMemberIds
-                          .map(id => rawMotos.find(m => m.id === id))
-                          .filter((m): m is Moto => !!m);
+                        // Cross-country: each moto is its own card — don't nest stagger members inside
+                        const staggerGroup: Moto[] = isCrossCountry
+                          ? []
+                          : groupMemberIds
+                              .map(id => rawMotos.find(m => m.id === id))
+                              .filter((m): m is Moto => !!m);
                         const globalIndex = globalMotoIndexMap.get(moto.id) ?? index;
                         return (
                           <div key={moto.id}>
@@ -2670,6 +2761,11 @@ export default function EventSchedule() {
                               onEditStagger={staggerGroup.length > 0 ? (ids: number[]) => {
                                 setStaggerPendingGroup({ orderedMotoIds: ids });
                               } : undefined}
+                              isStaggerSelectMode={staggerSelectMode}
+                              isStaggerSelected={staggerSelected.includes(moto.id)}
+                              onStaggerToggle={() => setStaggerSelected(prev =>
+                                prev.includes(moto.id) ? prev.filter(id => id !== moto.id) : [...prev, moto.id]
+                              )}
                             />
                           </div>
                         );
@@ -3190,7 +3286,7 @@ export default function EventSchedule() {
       </AlertDialog>
 
       {/* ── Generate Lineups dialog ── */}
-      <Dialog open={isGenerateOpen} onOpenChange={open => { setIsGenerateOpen(open); if (open) { setGenerateClass("all"); setGenerateSelectedRounds([]); } }}>
+      <Dialog open={isGenerateOpen} onOpenChange={open => { setIsGenerateOpen(open); if (open) { setGenerateClass("all"); setGenerateSelectedRounds([]); setGenerateUseRegistrations(false); } }}>
         <DialogContent className="sm:max-w-md flex flex-col max-h-[90vh]">
           <DialogHeader className="shrink-0">
             <DialogTitle className="font-heading uppercase text-xl">{isEnduro ? "Generate Tests" : "Generate Lineups"}</DialogTitle>
@@ -3829,6 +3925,24 @@ export default function EventSchedule() {
                 </div>
               );
             })()}
+
+            {/* Pre-generate from registrations toggle */}
+            <div
+              className="flex items-start gap-3 p-3 rounded-lg border border-border bg-muted/20 cursor-pointer select-none"
+              onClick={() => setGenerateUseRegistrations(v => !v)}
+            >
+              <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                generateUseRegistrations ? "border-primary bg-primary" : "border-muted-foreground/40"
+              }`}>
+                {generateUseRegistrations && <Check size={10} className="text-white" />}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium leading-tight">Pre-generate from registrations</span>
+                <span className="text-xs text-muted-foreground leading-snug">
+                  Slot all registered riders now, even before they check in. Riders who haven't checked in yet appear as <strong>Pending</strong> and are automatically confirmed when they check in.
+                </span>
+              </div>
+            </div>
 
             <Button
               onClick={handleGenerate}
