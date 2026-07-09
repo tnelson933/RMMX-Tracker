@@ -16,47 +16,34 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { BrandBar } from "@/components/BrandBar";
+import {
+  EventDetailScreen,
+  EventHistory,
+  EventsListScreen,
+  fmtDateShared as fmtDate,
+  fmtLap,
+  PointsScreen,
+  SeriesStandingsScreen,
+  ViewState,
+} from "@/components/RaceSubScreens";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function fmtLap(ms: number | null | undefined): string {
-  if (ms == null || ms <= 0) return "—";
-  const totalSec = ms / 1000;
-  const mins = Math.floor(totalSec / 60);
-  const secs = totalSec % 60;
-  return mins > 0
-    ? `${mins}:${secs.toFixed(3).padStart(6, "0")}`
-    : `${secs.toFixed(3)}s`;
-}
-
-function parseLapMs(s: string): number {
-  if (!s) return Infinity;
-  const c = s.indexOf(":");
-  if (c >= 0) {
-    const mins = parseInt(s.slice(0, c), 10);
-    const secs = parseFloat(s.slice(c + 1).replace("s", ""));
-    return (mins * 60 + secs) * 1000;
-  }
-  return parseFloat(s.replace("s", "")) * 1000;
-}
-
-function lapDeltaStr(ms: number, bestMs: number): string {
-  if (ms <= bestMs) return "";
-  const diff = (ms - bestMs) / 1000;
-  return `+${diff.toFixed(3)}s`;
-}
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
-  });
-}
 
 function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function fmtStartTime(t: string | null | undefined): string {
+  if (!t) return "";
+  const [hStr, mStr] = t.split(":");
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr ?? "0", 10);
+  if (isNaN(h)) return t;
+  const ampm = h < 12 ? "AM" : "PM";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -91,38 +78,25 @@ interface ScheduleEvent {
   eventState: string | null;
   eventLocation: string | null;
   status: string;
+  raceStyle: string;
+  classStartTimes: Record<string, string | null>;
   registrations: { riderId: number; riderName: string; raceClass: string | null }[];
   motos: ScheduleMoto[];
 }
 
-interface MotoResult {
-  motoId: number;
-  motoName: string;
-  motoNumber: number;
-  motoType: string;
-  position: number | null;
-  points: number | null;
-  dnf: boolean;
-  dns: boolean;
-  totalTime: string | null;
-  lapTimes: string[];
-  bibNumber: string | null;
-}
-
-interface EventHistory {
-  eventId: number;
-  eventName: string;
-  eventDate: string;
-  eventState: string;
-  eventLocation: string | null;
-  raceClass: string;
-  motos: MotoResult[];
-  bestPosition: number | null;
-  totalPoints: number;
-  riderName?: string; // set in multi-profile mode
-}
-
 type FilterTab = "today" | "upcoming" | "near_me" | "history";
+
+interface PublicEvent {
+  eventId: number;
+  name: string;
+  state: string;
+  date: string;
+  endDate: string | null;
+  location: string | null;
+  trackName: string | null;
+  status: string;
+  clubName: string;
+}
 
 const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
   { key: "today",    label: "Today",    icon: "zap"      },
@@ -130,477 +104,6 @@ const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
   { key: "near_me",  label: "Near Me",  icon: "map-pin"  },
   { key: "history",  label: "History",  icon: "award"    },
 ];
-
-// ─── View stack ───────────────────────────────────────────────────────────────
-
-type ViewState =
-  | { type: "events" }
-  | { type: "event_detail"; event: EventHistory }
-  | { type: "points" };
-
-// ─── Sub-screen: Sub-header ───────────────────────────────────────────────────
-
-function SubHeader({
-  title,
-  subtitle,
-  onBack,
-  colors,
-  insets,
-  rightEl,
-}: {
-  title: string;
-  subtitle?: string;
-  onBack: () => void;
-  colors: ReturnType<typeof useColors>;
-  insets: ReturnType<typeof useSafeAreaInsets>;
-  rightEl?: React.ReactNode;
-}) {
-  return (
-    <View style={{
-      paddingTop: insets.top + 4,
-      paddingHorizontal: 16, paddingBottom: 12,
-      backgroundColor: colors.background,
-      borderBottomWidth: 1, borderBottomColor: colors.border,
-    }}>
-      <BrandBar />
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 }}>
-        <Pressable
-          onPress={onBack}
-          hitSlop={12}
-          style={({ pressed }) => ({
-            width: 36, height: 36, borderRadius: 18,
-            backgroundColor: colors.muted,
-            alignItems: "center", justifyContent: "center",
-            opacity: pressed ? 0.6 : 1,
-          })}
-        >
-          <Feather name="arrow-left" size={18} color={colors.foreground} />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 20, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.3 }}>
-            {title}
-          </Text>
-          {subtitle ? (
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>{subtitle}</Text>
-          ) : null}
-        </View>
-        {rightEl}
-      </View>
-    </View>
-  );
-}
-
-// ─── Sub-screen: Event Detail ─────────────────────────────────────────────────
-
-function EventDetailScreen({
-  event,
-  onBack,
-  colors,
-  insets,
-}: {
-  event: EventHistory;
-  onBack: () => void;
-  colors: ReturnType<typeof useColors>;
-  insets: ReturnType<typeof useSafeAreaInsets>;
-}) {
-  const primary = colors.primary;
-
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <SubHeader
-        title={event.eventName}
-        subtitle={[fmtDate(event.eventDate), event.eventLocation ?? event.eventState].filter(Boolean).join("  ·  ")}
-        onBack={onBack}
-        colors={colors}
-        insets={insets}
-        rightEl={
-          event.bestPosition != null ? (
-            <View style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: primary }}>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>
-                P{event.bestPosition}
-              </Text>
-            </View>
-          ) : undefined
-        }
-      />
-
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 32 }}>
-        {/* Class + points summary */}
-        <View style={{
-          borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-          backgroundColor: colors.card, padding: 14,
-          flexDirection: "row", alignItems: "center", gap: 12,
-        }}>
-          <View style={{
-            width: 48, height: 48, borderRadius: 24,
-            backgroundColor: primary + "18", alignItems: "center", justifyContent: "center",
-          }}>
-            <Feather name="flag" size={22} color={primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-              {event.raceClass}
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-              {event.motos.length} moto{event.motos.length !== 1 ? "s" : ""}
-              {event.totalPoints > 0 ? `  ·  ${event.totalPoints} pts earned` : ""}
-            </Text>
-          </View>
-          {event.bestPosition != null && (
-            <View style={{ alignItems: "center" }}>
-              <Text style={{ fontSize: 28, fontWeight: "800", color: primary, fontFamily: "Inter_700Bold" }}>
-                P{event.bestPosition}
-              </Text>
-              <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>
-                Best
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Motos */}
-        {event.motos.map(moto => {
-          const hasTimes = moto.lapTimes.length > 0;
-          const lapMsArr = hasTimes ? moto.lapTimes.map(parseLapMs) : [];
-          const bestMs   = hasTimes ? Math.min(...lapMsArr) : Infinity;
-          const fastestIdx = hasTimes ? lapMsArr.indexOf(bestMs) : -1;
-
-          return (
-            <View key={moto.motoId} style={{
-              borderRadius: 12,
-              borderWidth: 1, borderColor: colors.border,
-              backgroundColor: colors.card, overflow: "hidden",
-            }}>
-              {/* Moto header */}
-              <View style={{
-                flexDirection: "row", alignItems: "center", gap: 10,
-                padding: 12,
-                borderBottomWidth: 1, borderBottomColor: colors.border,
-                backgroundColor: colors.muted + "50",
-              }}>
-                <View style={{
-                  width: 44, height: 44, borderRadius: 10,
-                  backgroundColor: primary + "18",
-                  alignItems: "center", justifyContent: "center",
-                }}>
-                  <Text style={{ fontSize: 8, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.3 }}>
-                    {moto.motoType === "practice" ? "PRAC" : "RACE"}
-                  </Text>
-                  <Text style={{ fontSize: 15, fontWeight: "800", color: primary, fontFamily: "Inter_700Bold", lineHeight: 17 }}>
-                    #{moto.motoNumber}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-                    {moto.motoName}
-                  </Text>
-                  <View style={{ flexDirection: "row", gap: 10, marginTop: 2 }}>
-                    {moto.totalTime ? (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                        {moto.totalTime}
-                      </Text>
-                    ) : null}
-                    {moto.points != null && moto.points > 0 ? (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>
-                        {moto.points} pts
-                      </Text>
-                    ) : null}
-                  </View>
-                </View>
-                {moto.dnf || moto.dns ? (
-                  <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.muted }}>
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
-                      {moto.dnf ? "DNF" : "DNS"}
-                    </Text>
-                  </View>
-                ) : moto.position != null ? (
-                  <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: primary }}>
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>
-                      P{moto.position}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-
-              {/* Lap table */}
-              {hasTimes ? (
-                <View>
-                  {/* Column headers */}
-                  <View style={{ flexDirection: "row", paddingHorizontal: 14, paddingVertical: 7, backgroundColor: colors.muted + "40", borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                    <Text style={{ width: 36, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
-                    <Text style={{ flex: 1, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
-                    <Text style={{ width: 68, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap</Text>
-                  </View>
-                  {moto.lapTimes.map((t, i) => {
-                    const isFastest = i === fastestIdx;
-                    const delta = isFastest ? "" : lapDeltaStr(lapMsArr[i], bestMs);
-                    return (
-                      <View
-                        key={i}
-                        style={{
-                          flexDirection: "row", alignItems: "center",
-                          paddingHorizontal: 14, paddingVertical: 10,
-                          borderBottomWidth: i < moto.lapTimes.length - 1 ? 1 : 0,
-                          borderBottomColor: colors.border,
-                          backgroundColor: isFastest ? primary + "0e" : "transparent",
-                        }}
-                      >
-                        <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>
-                          {i + 1}
-                        </Text>
-                        <Text style={{ flex: 1, fontSize: 15, fontWeight: isFastest ? "800" : "400", color: isFastest ? primary : colors.foreground, fontFamily: isFastest ? "Inter_700Bold" : "Inter_400Regular" }}>
-                          {t}
-                        </Text>
-                        <View style={{ width: 68, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 3 }}>
-                          {isFastest ? (
-                            <>
-                              <Feather name="zap" size={11} color={primary} />
-                              <Text style={{ fontSize: 10, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>BEST</Text>
-                            </>
-                          ) : delta ? (
-                            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{delta}</Text>
-                          ) : null}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : (
-                <View style={{ padding: 14 }}>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontStyle: "italic" }}>
-                    No lap times recorded
-                  </Text>
-                </View>
-              )}
-            </View>
-          );
-        })}
-      </ScrollView>
-    </View>
-  );
-}
-
-// ─── Sub-screen: Events List ──────────────────────────────────────────────────
-
-function EventsListScreen({
-  events,
-  onSelectEvent,
-  onBack,
-  colors,
-  insets,
-}: {
-  events: EventHistory[];
-  onSelectEvent: (e: EventHistory) => void;
-  onBack: () => void;
-  colors: ReturnType<typeof useColors>;
-  insets: ReturnType<typeof useSafeAreaInsets>;
-}) {
-  const primary = colors.primary;
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <SubHeader
-        title="Events"
-        subtitle={`${events.length} event${events.length !== 1 ? "s" : ""} raced`}
-        onBack={onBack}
-        colors={colors}
-        insets={insets}
-      />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: insets.bottom + 32 }}>
-        {events.length === 0 ? (
-          <View style={{ paddingTop: 48, alignItems: "center", gap: 10 }}>
-            <Feather name="award" size={40} color={colors.mutedForeground + "60"} />
-            <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>
-              No race history yet
-            </Text>
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>
-              Your past race results will appear here once events are completed.
-            </Text>
-          </View>
-        ) : (
-          events.map(ev => (
-            <Pressable
-              key={`${ev.eventId}-${ev.raceClass}`}
-              onPress={() => onSelectEvent(ev)}
-              style={({ pressed }) => ({
-                borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-                backgroundColor: colors.card, overflow: "hidden",
-                opacity: pressed ? 0.75 : 1,
-              })}
-            >
-              {/* Header row */}
-              <View style={{ padding: 14, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-                    {ev.eventName}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                    {[fmtDate(ev.eventDate), ev.eventLocation ?? ev.eventState].filter(Boolean).join("  ·  ")}
-                  </Text>
-                  <View style={{ alignSelf: "flex-start", marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: primary + "18" }}>
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>{ev.raceClass}</Text>
-                  </View>
-                </View>
-                <View style={{ alignItems: "flex-end", gap: 4 }}>
-                  {ev.bestPosition != null && (
-                    <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: primary }}>
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>P{ev.bestPosition}</Text>
-                    </View>
-                  )}
-                  {ev.totalPoints > 0 && (
-                    <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{ev.totalPoints} pts</Text>
-                  )}
-                </View>
-              </View>
-              {/* Moto summary rows */}
-              {ev.motos.map(m => (
-                <View key={m.motoId} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center", marginRight: 10 }}>
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>#{m.motoNumber}</Text>
-                  </View>
-                  <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{m.motoName}</Text>
-                  {m.totalTime ? (
-                    <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{m.totalTime}</Text>
-                  ) : null}
-                  {m.dnf || m.dns ? (
-                    <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20, backgroundColor: colors.muted }}>
-                      <Text style={{ fontSize: 10, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>{m.dnf ? "DNF" : "DNS"}</Text>
-                    </View>
-                  ) : m.position != null ? (
-                    <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, backgroundColor: primary }}>
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>P{m.position}</Text>
-                    </View>
-                  ) : null}
-                </View>
-              ))}
-              {/* Tap hint */}
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted + "30" }}>
-                <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Tap for lap times</Text>
-                <Feather name="chevron-right" size={11} color={colors.mutedForeground} />
-              </View>
-            </Pressable>
-          ))
-        )}
-      </ScrollView>
-    </View>
-  );
-}
-
-// ─── Sub-screen: Points ───────────────────────────────────────────────────────
-
-function PointsScreen({
-  events,
-  totalPoints,
-  onBack,
-  colors,
-  insets,
-}: {
-  events: EventHistory[];
-  totalPoints: number;
-  onBack: () => void;
-  colors: ReturnType<typeof useColors>;
-  insets: ReturnType<typeof useSafeAreaInsets>;
-}) {
-  const primary = colors.primary;
-  const eventsWithPoints = events.filter(e => e.totalPoints > 0 || e.motos.some(m => (m.points ?? 0) > 0));
-
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <SubHeader
-        title="Points"
-        subtitle="Career points breakdown"
-        onBack={onBack}
-        colors={colors}
-        insets={insets}
-      />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: insets.bottom + 32 }}>
-        {/* Career total card */}
-        <View style={{
-          borderRadius: 14, borderWidth: 1.5, borderColor: primary + "44",
-          backgroundColor: colors.card, padding: 20,
-          flexDirection: "row", alignItems: "center", gap: 16,
-        }}>
-          <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center" }}>
-            <Feather name="star" size={24} color={primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Career Total
-            </Text>
-            <Text style={{ fontSize: 40, fontWeight: "800", color: primary, fontFamily: "Inter_700Bold", letterSpacing: -1, lineHeight: 46 }}>
-              {totalPoints}
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-              pts across {events.length} event{events.length !== 1 ? "s" : ""}
-            </Text>
-          </View>
-        </View>
-
-        {eventsWithPoints.length === 0 ? (
-          <View style={{ paddingTop: 24, alignItems: "center", gap: 8 }}>
-            <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
-              No points recorded yet.
-            </Text>
-          </View>
-        ) : (
-          eventsWithPoints.map(ev => (
-            <View key={`${ev.eventId}-${ev.raceClass}`} style={{
-              borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-              backgroundColor: colors.card, overflow: "hidden",
-            }}>
-              {/* Event header */}
-              <View style={{
-                flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-                padding: 12,
-                borderBottomWidth: 1, borderBottomColor: colors.border,
-                backgroundColor: colors.muted + "50",
-              }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-                    {ev.eventName}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-                    {[fmtDate(ev.eventDate), ev.raceClass].filter(Boolean).join("  ·  ")}
-                  </Text>
-                </View>
-                <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: primary + "18" }}>
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>
-                    {ev.totalPoints} pts
-                  </Text>
-                </View>
-              </View>
-
-              {/* Per-moto points */}
-              {ev.motos
-                .filter(m => (m.points ?? 0) > 0)
-                .map((m, i, arr) => (
-                  <View key={m.motoId} style={{
-                    flexDirection: "row", alignItems: "center",
-                    paddingHorizontal: 14, paddingVertical: 10,
-                    borderBottomWidth: i < arr.length - 1 ? 1 : 0,
-                    borderBottomColor: colors.border,
-                  }}>
-                    <View style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center", marginRight: 10 }}>
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>#{m.motoNumber}</Text>
-                    </View>
-                    <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{m.motoName}</Text>
-                    {m.position != null && (
-                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 10 }}>
-                        P{m.position}
-                      </Text>
-                    )}
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>
-                      +{m.points} pts
-                    </Text>
-                  </View>
-                ))
-              }
-            </View>
-          ))
-        )}
-      </ScrollView>
-    </View>
-  );
-}
 
 // ─── Shared chip helpers ──────────────────────────────────────────────────────
 
@@ -615,7 +118,7 @@ function chipFor(status: string): { label: string; color: string } {
 
 // ─── Schedule moto card ───────────────────────────────────────────────────────
 
-function ScheduleMotoCard({ moto, colors }: { moto: ScheduleMoto; colors: ReturnType<typeof useColors> }) {
+function ScheduleMotoCard({ moto, colors, isEnduro }: { moto: ScheduleMoto; colors: ReturnType<typeof useColors>; isEnduro?: boolean }) {
   const mine   = moto.isAnyFamilyMemberInMoto;
   const live   = moto.status === "in_progress";
   const isPrac = moto.type === "practice";
@@ -640,7 +143,7 @@ function ScheduleMotoCard({ moto, colors }: { moto: ScheduleMoto; colors: Return
     }}>
       <View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: badgeBg, alignItems: "center", justifyContent: "center" }}>
         <Text style={{ fontSize: 9, fontWeight: "700", color: badgeFg, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.3 }}>
-          {isPrac ? "PRAC" : "RACE"}
+          {isPrac ? "PRAC" : isEnduro ? "TEST" : "RACE"}
         </Text>
         <Text style={{ fontSize: 16, fontWeight: "800", color: badgeFg, fontFamily: "Inter_700Bold", lineHeight: 18 }}>
           #{moto.motoNumber}
@@ -651,7 +154,7 @@ function ScheduleMotoCard({ moto, colors }: { moto: ScheduleMoto; colors: Return
         {moto.raceClass && (
           <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>{moto.raceClass}</Text>
         )}
-        {!isPrac && moto.familyGates.length > 0 && (
+        {!isPrac && !isEnduro && moto.familyGates.length > 0 && (
           <View style={{ marginTop: 3, gap: 1 }}>
             {moto.familyGates.map(g => (
               <Text key={g.gate} style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: live ? "#ef4444" : colors.primary }}>
@@ -660,8 +163,13 @@ function ScheduleMotoCard({ moto, colors }: { moto: ScheduleMoto; colors: Return
             ))}
           </View>
         )}
-        {!isPrac && mine && moto.familyGates.length === 0 && moto.status === "scheduled" && (
+        {!isPrac && !isEnduro && mine && moto.familyGates.length === 0 && moto.status === "scheduled" && (
           <Text style={{ fontSize: 12, color: colors.primary, fontFamily: "Inter_500Medium", marginTop: 2 }}>Gate draw pending</Text>
+        )}
+        {mine && isEnduro && (
+          <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: live ? "#ef4444" : colors.primary, marginTop: 2 }}>
+            ★ Your test
+          </Text>
         )}
         {isPrac && mine && (myBestLap != null || myRank != null) && (
           <View style={{ flexDirection: "row", gap: 10, marginTop: 3 }}>
@@ -693,6 +201,7 @@ function ScheduleMotoCard({ moto, colors }: { moto: ScheduleMoto; colors: Return
 // ─── Race day section ─────────────────────────────────────────────────────────
 
 function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: ReturnType<typeof useColors> }) {
+  const isEnduro   = event.raceStyle === "enduro";
   const myClasses  = [...new Set(event.registrations.map(r => r.raceClass).filter(Boolean))];
   const myRiders   = [...new Set(event.registrations.map(r => r.riderName))];
   const raceMotos  = event.motos.filter(m => m.type !== "practice");
@@ -700,6 +209,13 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
   const nextMyMoto = scheduled.find(m => m.isAnyFamilyMemberInMoto) ?? null;
   const racesAway  = nextMyMoto ? scheduled.findIndex(m => m.motoId === nextMyMoto.motoId) : -1;
   const inProgress = raceMotos.find(m => m.status === "in_progress") ?? null;
+
+  // Enduro: per-class start times for registered classes that have a configured time
+  const enduroStartTimes = isEnduro
+    ? event.registrations
+        .filter(r => r.raceClass && (event.classStartTimes[r.raceClass] ?? null))
+        .map(r => ({ riderName: r.riderName, raceClass: r.raceClass!, startTime: event.classStartTimes[r.raceClass!]! }))
+    : [];
 
   return (
     <>
@@ -738,7 +254,7 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
             </Text>
           </View>
         )}
-        {nextMyMoto && (
+        {!isEnduro && nextMyMoto && (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: "#cf152d14", borderTopWidth: 1, borderTopColor: "#cf152d33" }}>
             <Feather name="alert-circle" size={13} color="#cf152d" />
             <View style={{ flex: 1 }}>
@@ -752,6 +268,22 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
                 </Text>
               )}
             </View>
+          </View>
+        )}
+        {isEnduro && enduroStartTimes.length > 0 && (
+          <View style={{ paddingHorizontal: 14, paddingVertical: 10, backgroundColor: "#cf152d14", borderTopWidth: 1, borderTopColor: "#cf152d33" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <Feather name="clock" size={13} color="#cf152d" />
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#cf152d", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Test Class Schedule
+              </Text>
+            </View>
+            {enduroStartTimes.map(cs => (
+              <View key={cs.raceClass} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2 }}>
+                <Text style={{ fontSize: 12, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{cs.raceClass}</Text>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: "#cf152d", fontFamily: "Inter_700Bold" }}>{fmtStartTime(cs.startTime)}</Text>
+              </View>
+            ))}
           </View>
         )}
       </View>
@@ -772,7 +304,7 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
           </Text>
         </View>
       ) : (
-        event.motos.map(moto => <ScheduleMotoCard key={moto.motoId} moto={moto} colors={colors} />)
+        event.motos.map(moto => <ScheduleMotoCard key={moto.motoId} moto={moto} colors={colors} isEnduro={isEnduro} />)
       )}
     </>
   );
@@ -780,31 +312,32 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
 
 // ─── Upcoming card ────────────────────────────────────────────────────────────
 
-function UpcomingCard({ event, colors }: { event: ScheduleEvent; colors: ReturnType<typeof useColors> }) {
-  const myClasses = [...new Set(event.registrations.map(r => r.raceClass).filter(Boolean))];
+function UpcomingCard({ event, colors, isRegistered }: { event: PublicEvent; colors: ReturnType<typeof useColors>; isRegistered?: boolean }) {
   const router = useRouter();
   return (
     <Pressable
       onPress={() => router.push(`/event/${event.eventId}` as any)}
       style={({ pressed }) => ({
         marginHorizontal: 16, marginBottom: 10, borderRadius: 12,
-        borderWidth: 1, borderColor: colors.border,
+        borderWidth: isRegistered ? 1.5 : 1,
+        borderColor: isRegistered ? colors.primary : colors.border,
         backgroundColor: colors.card, padding: 14, opacity: pressed ? 0.78 : 1,
       })}
     >
-      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{event.eventName}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }} numberOfLines={1}>{event.name}</Text>
+        {isRegistered && (
+          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary + "20" }}>
+            <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", letterSpacing: 0.3 }}>REGISTERED</Text>
+          </View>
+        )}
+      </View>
       <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-        {fmtDate(event.eventDate)} · {[event.eventLocation, event.eventState].filter(Boolean).join(", ")}
+        {fmtDate(event.date)} · {[event.location, event.state].filter(Boolean).join(", ")}
       </Text>
-      {myClasses.length > 0 && (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-          {myClasses.map(cls => (
-            <View key={cls} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.primary + "18" }}>
-              <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>{cls}</Text>
-            </View>
-          ))}
-        </View>
-      )}
+      {event.clubName ? (
+        <Text style={{ fontSize: 12, color: colors.mutedForeground + "99", fontFamily: "Inter_400Regular", marginTop: 1 }}>{event.clubName}</Text>
+      ) : null}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 }}>
         <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#22c55e" }} />
         <Text style={{ fontSize: 12, color: "#22c55e", fontFamily: "Inter_600SemiBold" }}>Registration Open</Text>
@@ -894,6 +427,7 @@ export default function MyRacesScreen() {
 
   const [activeFilter, setActiveFilter]     = useState<FilterTab>("today");
   const [schedule, setSchedule]             = useState<{ familyRiderIds: number[]; events: ScheduleEvent[] } | null>(null);
+  const [publicEvents, setPublicEvents]     = useState<PublicEvent[]>([]);
   const [history, setHistory]               = useState<EventHistory[]>([]);
   const [loading, setLoading]               = useState(false);
   const [refreshing, setRefreshing]         = useState(false);
@@ -941,11 +475,13 @@ export default function MyRacesScreen() {
       // History fetched per active profile so multi-rider results are shown separately
       const requests: Promise<Response>[] = [
         riderFetch(`/api/rider/profiles/${primaryProfile.id}/schedule`),
+        riderFetch(`/api/public/upcoming`),
         ...activeProfiles.map(p => riderFetch(`/api/rider/profiles/${p.id}/history`)),
       ];
-      const [schedRes, ...histResponses] = await Promise.all(requests);
+      const [schedRes, pubRes, ...histResponses] = await Promise.all(requests);
 
       if (schedRes.ok) setSchedule(await schedRes.json());
+      if (pubRes.ok) setPublicEvents(await pubRes.json());
 
       const allHistory: EventHistory[] = [];
       for (let i = 0; i < histResponses.length; i++) {
@@ -1001,8 +537,10 @@ export default function MyRacesScreen() {
   }, [loadAll]);
 
   const raceDay  = schedule?.events.filter(e => e.status === "race_day") ?? [];
-  const upcoming = schedule?.events.filter(e => e.status === "registration_open") ?? [];
-  const nearMeEvents = nearMeState ? upcoming.filter(e => e.eventState === nearMeState) : upcoming;
+  const registeredEventIds = new Set(schedule?.events.map(e => e.eventId) ?? []);
+  const allOpenEvents = publicEvents.filter(e => e.status === "registration_open");
+  const upcoming = allOpenEvents.filter(e => registeredEventIds.has(e.eventId));
+  const nearMeEvents = nearMeState ? allOpenEvents.filter(e => e.state === nearMeState) : allOpenEvents;
 
   const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
@@ -1107,8 +645,30 @@ export default function MyRacesScreen() {
             events={history}
             totalPoints={combinedTotalPoints}
             onBack={popView}
+            pushView={pushView}
+            riderFetch={riderFetch}
+            riderIds={activeProfiles.map(p => p.id)}
             colors={colors}
             insets={insets}
+          />
+        </View>
+      );
+    }
+
+    if (currentView.type === "series_standings") {
+      return (
+        <View style={styles.container}>
+          <SeriesStandingsScreen
+            seriesId={currentView.seriesId}
+            seriesName={currentView.seriesName}
+            riderClass={currentView.riderClass}
+            riderPosition={currentView.riderPosition}
+            riderPoints={currentView.riderPoints}
+            riderIds={currentView.riderIds}
+            onBack={popView}
+            colors={colors}
+            insets={insets}
+            riderFetch={riderFetch}
           />
         </View>
       );
@@ -1139,10 +699,10 @@ export default function MyRacesScreen() {
               <Feather name="calendar" size={13} color={colors.primary} />
               <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Upcoming Events</Text>
             </View>
-            {upcoming.map(e => <UpcomingCard key={e.eventId} event={e} colors={colors} />)}
+            {upcoming.map(e => <UpcomingCard key={e.eventId} event={e} colors={colors} isRegistered={registeredEventIds.has(e.eventId)} />)}
           </>
         ) : (
-          <EmptyState icon="calendar" title="Nothing upcoming" text="You're not registered for any upcoming events yet." colors={colors} />
+          <EmptyState icon="calendar" title="Nothing upcoming" text="You're not registered for any upcoming events. Check Near Me to find races to enter." colors={colors} />
         );
 
       case "near_me":
@@ -1160,7 +720,7 @@ export default function MyRacesScreen() {
                 {nearMeState ? `Open in ${nearMeState}` : "Open Near You"}
               </Text>
             </View>
-            {nearMeEvents.map(e => <UpcomingCard key={e.eventId} event={e} colors={colors} />)}
+            {nearMeEvents.map(e => <UpcomingCard key={e.eventId} event={e} colors={colors} isRegistered={registeredEventIds.has(e.eventId)} />)}
           </>
         ) : (
           <EmptyState
@@ -1180,7 +740,7 @@ export default function MyRacesScreen() {
             </View>
             {history.map(e => (
               <HistoryCard
-                key={e.eventId}
+                key={`${e.eventId}-${e.raceClass}`}
                 event={e}
                 colors={colors}
                 onPress={() => pushView({ type: "event_detail", event: e })}
