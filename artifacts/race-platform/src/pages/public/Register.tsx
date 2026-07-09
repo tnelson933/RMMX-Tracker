@@ -68,6 +68,7 @@ interface EventInfo {
   requireAma: boolean;
   requireClubId: boolean;
   requireWaiver: boolean;
+  requireTransponder: boolean;
   waiverText: string | null;
   clubName: string | null;
   clubLogoUrl: string | null;
@@ -153,6 +154,8 @@ export default function Register() {
   const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found" | "pick">("idle");
   const [lookedUpName, setLookedUpName] = useState<string>("");
   const [riderOptions, setRiderOptions] = useState<RiderOption[] | null>(null);
+  const autoLookupFiredRef = useRef(false);
+  const [alreadyRegisteredClasses, setAlreadyRegisteredClasses] = useState<Set<string>>(new Set());
 
   const [compCodeInput, setCompCodeInput] = useState("");
   const [appliedComp, setAppliedComp] = useState<{ code: string; amount: number; discountType: "fixed" | "percentage" } | null>(null);
@@ -232,6 +235,18 @@ export default function Register() {
       selectedClasses: [], bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "", bikeModel: "", bikeYear: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, purchaseRfidSticker: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
+
+  // Auto-populate form when arriving from the rider app or web portal with ?email=
+  useEffect(() => {
+    if (autoLookupFiredRef.current || loading || !event) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const prefillEmail = urlParams.get("email");
+    if (!prefillEmail) return;
+    autoLookupFiredRef.current = true;
+    form.setValue("email", prefillEmail);
+    void lookupByEmail(prefillEmail);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, event]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -393,6 +408,17 @@ export default function Register() {
     setLookedUpName(`${rider.firstName} ${rider.lastName}`);
     setLookupState("found");
     setRiderOptions(null);
+    // Fetch which classes this rider is already registered for at this event
+    if (eventId && rider.id) {
+      fetch(`/api/public/events/${eventId}/rider-classes?riderId=${rider.id}`)
+        .then(r => r.json())
+        .then((d: { registeredClasses?: string[] }) => {
+          if (d.registeredClasses?.length) {
+            setAlreadyRegisteredClasses(new Set(d.registeredClasses));
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   const lookupByEmail = async (email: string) => {
@@ -434,8 +460,8 @@ export default function Register() {
       setSubmitError("You must read and accept the club waiver before registering.");
       return;
     }
-    // MyLaps events require either a transponder number or a rental
-    if (event?.timingTechnology === "mylaps") {
+    // MyLaps events: require transponder number or rental only when requireTransponder is true
+    if (event?.timingTechnology === "mylaps" && event.requireTransponder) {
       const hasNumber = !!data.myLapsTransponderNumber?.trim();
       const hasRental = !!data.rentTransponder;
       if (!hasNumber && !hasRental) {
@@ -859,7 +885,7 @@ export default function Register() {
                       <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
                         <FormItem>
                           <FormLabel>Date of Birth</FormLabel>
-                          <FormControl><Input type="date" {...field} /></FormControl>
+                          <FormControl><Input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
@@ -954,13 +980,17 @@ export default function Register() {
                             <p className="text-xs text-muted-foreground mt-0.5 mb-2">You can enter multiple classes — each costs one entry fee.</p>
                           )}
                           <div className="space-y-2 mt-1">
-                            {event.raceClasses.map(cls => (
-                              <div key={cls} className="flex items-center gap-3 rounded-lg border bg-background px-4 py-3.5">
+                            {event.raceClasses.map(cls => {
+                              const alreadyIn = alreadyRegisteredClasses.has(cls);
+                              return (
+                              <div key={cls} className={`flex items-center gap-3 rounded-lg border px-4 py-3.5 ${alreadyIn ? "bg-muted/60 opacity-60 cursor-not-allowed" : "bg-background"}`}>
                                 <FormControl>
                                   <Checkbox
                                     id={`class-${cls}`}
-                                    checked={(field.value ?? []).includes(cls)}
+                                    checked={alreadyIn || (field.value ?? []).includes(cls)}
+                                    disabled={alreadyIn}
                                     onCheckedChange={checked => {
+                                      if (alreadyIn) return;
                                       const current = field.value ?? [];
                                       if (checked) {
                                         field.onChange([...current, cls]);
@@ -971,14 +1001,17 @@ export default function Register() {
                                     className="mt-0.5"
                                   />
                                 </FormControl>
-                                <label htmlFor={`class-${cls}`} className="text-sm font-semibold cursor-pointer flex items-center justify-between flex-1">
+                                <label htmlFor={`class-${cls}`} className={`text-sm font-semibold flex items-center justify-between flex-1 ${alreadyIn ? "cursor-not-allowed" : "cursor-pointer"}`}>
                                   <span>{cls}</span>
-                                  {event.paymentEnabled && event.entryFee && (
+                                  {alreadyIn ? (
+                                    <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Already registered</span>
+                                  ) : event.paymentEnabled && event.entryFee ? (
                                     <span className="text-primary font-bold">${event.entryFee.toFixed(2)}</span>
-                                  )}
+                                  ) : null}
                                 </label>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                           <FormMessage />
                         </FormItem>
