@@ -979,6 +979,9 @@ export interface LineupGenerateInput {
      * @maximum 3
      */
   minRacesBetween?: number;
+  /** When true, generate lineup slots for all registered riders (not only those who have checked in). Riders who have not yet checked in appear in the lineup with checkedIn: false. When a rider later checks in, their slot is automatically updated to checkedIn: true.
+   */
+  useRegistrations?: boolean;
 }
 
 /**
