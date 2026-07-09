@@ -87,6 +87,7 @@ const createEventSchema = z.object({
   location: z.string().optional(),
   trackName: z.string().optional(),
   timingTechnology: z.enum(["rfid", "mylaps"]).default("rfid"),
+  requireTransponder: z.boolean().default(false),
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
@@ -266,6 +267,7 @@ export default function EventsList() {
   const watchPaymentEnabled = form.watch("paymentEnabled");
   const watchTimingTechnology = form.watch("timingTechnology");
   const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
+  const watchRequireTransponder = form.watch("requireTransponder");
   const watchScoringTableId = form.watch("scoringTableId");
   const filteredSeriesList = clubSeriesList.filter(s =>
     !s.scoringTableId || !watchScoringTableId || s.scoringTableId === watchScoringTableId
@@ -301,6 +303,7 @@ export default function EventsList() {
           requireClubId: data.requireClubId,
           noDuplicateBibs: data.noDuplicateBibs,
           requireWaiver: data.requireWaiver,
+          requireTransponder: data.timingTechnology === "mylaps" ? data.requireTransponder : false,
           scoringTableId: data.scoringTableId ?? null,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
           transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
@@ -1016,6 +1019,47 @@ export default function EventsList() {
                     </FormItem>
                   )}
                 />
+
+                {/* Require transponder — MyLaps without Stripe */}
+                {watchTimingTechnology === "mylaps" && !watchPaymentEnabled && (
+                  <FormField
+                    control={form.control}
+                    name="requireTransponder"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Require transponder number?</FormLabel>
+                        <p className="text-xs text-muted-foreground -mt-1 mb-2">
+                          Must riders provide their MyLaps transponder number to register?
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { value: true, label: "Yes – Required" },
+                            { value: false, label: "No – Optional" },
+                          ].map(opt => (
+                            <button
+                              key={String(opt.value)}
+                              type="button"
+                              onClick={() => field.onChange(opt.value)}
+                              className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
+                                field.value === opt.value
+                                  ? "border-primary bg-primary/5 text-foreground"
+                                  : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
+                              }`}
+                            >
+                              <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                        {field.value && (
+                          <p className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
+                            Riders cannot register for event without transponder number.
+                          </p>
+                        )}
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 {/* Race Classes */}
                 <div className="border-t pt-4">
