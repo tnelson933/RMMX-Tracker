@@ -26,7 +26,7 @@ router.post("/auth/login", async (req, res) => {
   const user = users[0];
 
   if (!user) {
-    return res.status(401).json({ error: "Invalid credentials" });
+    return res.status(401).json({ error: "Incorrect email or password. Please try again." });
   }
 
   if (!user.passwordHash) {
@@ -37,7 +37,7 @@ router.post("/auth/login", async (req, res) => {
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
-    return res.status(401).json({ error: "Invalid credentials" });
+    return res.status(401).json({ error: "Incorrect email or password. Please try again." });
   }
 
   // Check if the club is active (non-super_admin users with a club)
