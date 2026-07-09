@@ -95,6 +95,7 @@ router.get("/events", async (req, res) => {
     noDuplicateBibs: eventsTable.noDuplicateBibs,
     requireClubId: eventsTable.requireClubId,
     requireWaiver: eventsTable.requireWaiver,
+    requireTransponder: eventsTable.requireTransponder,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
     imageUrl: eventsTable.imageUrl,
@@ -136,7 +137,7 @@ router.get("/events", async (req, res) => {
 });
 
 router.post("/events", async (req, res) => {
-  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, raceStyle } = req.body;
+  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireTransponder, raceStyle } = req.body;
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
@@ -172,6 +173,7 @@ router.post("/events", async (req, res) => {
     paymentEnabled: paymentEnabled || false,
     requireAma: requireAma || false,
     requireWaiver: requireWaiver || false,
+    requireTransponder: requireTransponder || false,
     entryFee: entryFee ? String(entryFee) : null,
     maxRiders,
     timingTechnology: timingTechnology || "rfid",
@@ -217,6 +219,7 @@ router.get("/events/:eventId", async (req, res) => {
     noDuplicateBibs: eventsTable.noDuplicateBibs,
     requireClubId: eventsTable.requireClubId,
     requireWaiver: eventsTable.requireWaiver,
+    requireTransponder: eventsTable.requireTransponder,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
     imageUrl: eventsTable.imageUrl,
@@ -287,7 +290,7 @@ router.patch("/events/:eventId", async (req, res) => {
   }
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireTransponder", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
