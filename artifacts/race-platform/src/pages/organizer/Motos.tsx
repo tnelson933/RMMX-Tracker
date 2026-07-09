@@ -1738,6 +1738,15 @@ export default function Motos() {
     return { roundMap: map, maxRounds: max };
   }, [motos]);
 
+  // Run-order number map — mirrors Schedule page's globalMotoIndexMap.
+  // Sort all motos by motoNumber, exclude hidden stagger-order>1 motos, then
+  // assign 1-based sequential positions so both pages always show the same number.
+  const runOrderMap = useMemo(() => {
+    const sorted = [...(motos ?? [])].sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
+    const visible = sorted.filter(m => !((m as any).staggeredGroupId && (m as any).staggeredOrder > 1));
+    return new Map(visible.map((m, i) => [m.id, i + 1]));
+  }, [motos]);
+
   const doStartMoto = async (motoId: number, _motoName?: string) => {
     const motoObj = (motos ?? []).find(m => m.id === motoId);
     const groupMembers: number[] = (motoObj as any)?.staggeredGroupMembers ?? [];
@@ -2782,11 +2791,13 @@ export default function Motos() {
         })()}
 
         {viewMode === "run-order" && !isLoading && (() => {
-          const runOrderMotos = [...(motos ?? [])].sort((a, b) =>
-            localOrderIds
-              ? localOrderIds.indexOf(a.id) - localOrderIds.indexOf(b.id)
-              : (a.motoNumber ?? 0) - (b.motoNumber ?? 0)
-          );
+          const runOrderMotos = [...(motos ?? [])].sort((a, b) => {
+            if (localOrderIds) return localOrderIds.indexOf(a.id) - localOrderIds.indexOf(b.id);
+            const rank = (s: string) => s === "in_progress" ? 0 : s === "scheduled" ? 1 : s === "completed" ? 2 : 3;
+            const rd = rank(a.status) - rank(b.status);
+            if (rd !== 0) return rd;
+            return (a.motoNumber ?? 0) - (b.motoNumber ?? 0);
+          });
           if (!runOrderMotos.length) return null;
           const typeLabel = (type: string) =>
             type === "main" ? "Main Event" : type === "lcq" ? "LCQ" : type === "practice" ? "Practice" : isSupercrossFormat ? "Heat" : "Moto";
@@ -2811,7 +2822,7 @@ export default function Motos() {
                   return (
                     <div key={moto.id} className="heat-sheet-moto">
                       <div className="heat-sheet-moto-header">
-                        <span className="heat-sheet-moto-num">#{moto.motoNumber}</span>
+                        <span className="heat-sheet-moto-num">#{runOrderMap.get(moto.id) ?? moto.motoNumber}</span>
                         <span className="heat-sheet-moto-name">{moto.name}</span>
                         <span className="heat-sheet-moto-class">{moto.raceClass}</span>
                         <span className="heat-sheet-moto-type">{typeLabel(moto.type ?? "heat")}</span>
@@ -2900,7 +2911,7 @@ export default function Motos() {
                               ? "bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30"
                               : "bg-muted/60 text-muted-foreground"
                           }`}>
-                            {moto.motoNumber}
+                            {runOrderMap.get(moto.id) ?? moto.motoNumber}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -2995,7 +3006,7 @@ export default function Motos() {
                 {/* Race number corner block */}
                 <div className="shrink-0 self-stretch -my-3 -ml-4 mr-0 flex flex-col items-center justify-center bg-primary border-r border-primary/70 w-14">
                   <span className="text-[8px] font-bold uppercase tracking-widest text-white leading-none mb-0.5">{moto.type === "enduro_test" ? "TEST" : "RACE"}</span>
-                  <span className="font-heading font-bold text-2xl leading-none tabular-nums text-white">{moto.motoNumber}</span>
+                  <span className="font-heading font-bold text-2xl leading-none tabular-nums text-white">{runOrderMap.get(moto.id) ?? moto.motoNumber}</span>
                 </div>
 
                 <DraggableMotoGrip motoId={moto.id} disabled={classFilter !== "schedule" || moto.status === "in_progress" || moto.status === "completed"} />
@@ -3409,7 +3420,7 @@ export default function Motos() {
               <div className="bg-sidebar text-sidebar-foreground px-5 py-4 border-b flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="bg-sidebar-accent text-white w-10 h-10 rounded-full flex items-center justify-center font-heading font-bold text-xl">
-                    {moto.motoNumber}
+                    {runOrderMap.get(moto.id) ?? moto.motoNumber}
                   </div>
                   <div>
                     <div className="font-heading uppercase text-xl font-bold text-white leading-tight">{moto.name}</div>
