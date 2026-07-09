@@ -26,6 +26,7 @@ import {
   riderNotificationPrefsTable,
   clubsTable,
   enduroTimeChecksTable,
+  riderBikesTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql, ilike } from "drizzle-orm";
 
@@ -96,12 +97,12 @@ router.post("/rider/auth/login", async (req, res) => {
   const normalized = String(email).toLowerCase().trim();
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.email, normalized));
   if (!account) {
-    return res.status(401).json({ error: "Invalid email or password" });
+    return res.status(401).json({ error: "Incorrect email or password. Please try again." });
   }
 
   const valid = await bcrypt.compare(String(password), account.passwordHash);
   if (!valid) {
-    return res.status(401).json({ error: "Invalid email or password" });
+    return res.status(401).json({ error: "Incorrect email or password. Please try again." });
   }
 
   (req.session as any).riderAccountId = account.id;
@@ -183,6 +184,121 @@ router.get("/rider/my-event-ids", requireRiderAuth, async (req, res) => {
   return res.json({ eventIds: regs.map(r => r.eventId) });
 });
 
+// GET /rider/events/:eventId/my-registrations — classes this account's riders are registered for
+router.get("/rider/events/:eventId/my-registrations", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const eventId = parseInt(req.params.eventId ?? "", 10);
+  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const familyRiders = await db
+    .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName })
+    .from(ridersTable)
+    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+
+  if (familyRiders.length === 0) return res.json({ registeredClasses: [], registrations: [] });
+
+  const familyRiderIds = familyRiders.map(r => r.id);
+  const riderNameMap = new Map(familyRiders.map(r => [r.id, `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()]));
+
+  const regs = await db
+    .select({
+      id: registrationsTable.id,
+      raceClass: registrationsTable.raceClass,
+      riderId: registrationsTable.riderId,
+      status: registrationsTable.status,
+    })
+    .from(registrationsTable)
+    .where(and(
+      eq(registrationsTable.eventId, eventId),
+      inArray(registrationsTable.riderId, familyRiderIds),
+      ne(registrationsTable.status, "void"),
+    ));
+
+  return res.json({
+    registeredClasses: regs.map(r => r.raceClass).filter(Boolean),
+    registrations: regs.map(r => ({
+      id: r.id,
+      raceClass: r.raceClass,
+      riderId: r.riderId,
+      riderName: r.riderId != null ? (riderNameMap.get(r.riderId) ?? "") : "",
+      status: r.status,
+    })),
+  });
+});
+
+// PATCH /rider/events/:eventId/my-registrations/:regId — rider changes their own registered class
+router.patch("/rider/events/:eventId/my-registrations/:regId", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const eventId = parseInt(req.params.eventId ?? "", 10);
+  const regId = parseInt(req.params.regId ?? "", 10);
+  if (isNaN(eventId) || isNaN(regId)) return res.status(400).json({ error: "Invalid ID" });
+
+  const { raceClass } = req.body;
+  if (!raceClass || typeof raceClass !== "string") return res.status(400).json({ error: "raceClass required" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const familyRiders = await db
+    .select({ id: ridersTable.id })
+    .from(ridersTable)
+    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+  const familyRiderIds = familyRiders.map(r => r.id);
+
+  const [reg] = await db.select().from(registrationsTable)
+    .where(and(eq(registrationsTable.id, regId), eq(registrationsTable.eventId, eventId)));
+
+  if (!reg) return res.status(404).json({ error: "Registration not found" });
+  if (reg.riderId == null || !familyRiderIds.includes(reg.riderId)) {
+    return res.status(403).json({ error: "Not your registration" });
+  }
+  if (reg.status === "void") return res.status(400).json({ error: "Registration is void" });
+
+  const [event] = await db.select({ status: eventsTable.status, raceClasses: eventsTable.raceClasses })
+    .from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (event.status !== "registration_open") {
+    return res.status(409).json({ error: "Class changes are only allowed while registration is open" });
+  }
+
+  const availableClasses = (event.raceClasses as string[] | null) ?? [];
+  if (availableClasses.length > 0 && !availableClasses.includes(raceClass)) {
+    return res.status(400).json({ error: `${raceClass} is not available at this event` });
+  }
+
+  const oldRaceClass = reg.raceClass;
+  if (oldRaceClass === raceClass) {
+    return res.json({ id: reg.id, raceClass });
+  }
+
+  const [updated] = await db.update(registrationsTable)
+    .set({ raceClass })
+    .where(eq(registrationsTable.id, regId))
+    .returning();
+
+  if (oldRaceClass && updated && reg.riderId != null) {
+    await db.update(checkinsTable)
+      .set({ raceClass })
+      .where(and(
+        eq(checkinsTable.eventId, eventId),
+        eq(checkinsTable.riderId, reg.riderId),
+        eq(checkinsTable.raceClass, oldRaceClass),
+      ));
+    await db.update(raceResultsTable)
+      .set({ raceClass })
+      .where(and(
+        eq(raceResultsTable.eventId, eventId),
+        eq(raceResultsTable.riderId, reg.riderId),
+        eq(raceResultsTable.raceClass, oldRaceClass),
+      ));
+  }
+
+  return res.json({ id: updated.id, raceClass: updated.raceClass });
+});
+
 // GET /rider/profiles — all rider profiles linked to this account's email
 router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
@@ -236,7 +352,18 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
     })
   );
 
-  return res.json(profilesWithStats);
+  // Attach bikes for each rider
+  const riderIds = profilesWithStats.map(p => p.id);
+  const allBikes = riderIds.length > 0
+    ? await db.select().from(riderBikesTable).where(inArray(riderBikesTable.riderId, riderIds)).orderBy(asc(riderBikesTable.createdAt))
+    : [];
+  const bikesMap = new Map<number, typeof allBikes>();
+  for (const bike of allBikes) {
+    const arr = bikesMap.get(bike.riderId) ?? [];
+    arr.push(bike);
+    bikesMap.set(bike.riderId, arr);
+  }
+  return res.json(profilesWithStats.map(p => ({ ...p, bikes: bikesMap.get(p.id) ?? [] })));
 });
 
 // GET /rider/profiles/:riderId/history
@@ -498,6 +625,108 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     myLapsTransponderNumber: updated.mylapsTransponderId ?? null,
     raceTypes: (updated.raceTypes as string[] | null) ?? [],
   });
+});
+
+// ── Bike garage CRUD ───────────────────────────────────────────────────────
+
+async function verifyRiderOwnership(riderAccountId: number, riderId: number): Promise<{ account: any; rider: any } | null> {
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return null;
+  const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
+  if (!rider) return null;
+  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) return null;
+  return { account, rider };
+}
+
+// GET /rider/profiles/:riderId/bikes
+router.get("/rider/profiles/:riderId/bikes", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  const ownership = await verifyRiderOwnership(riderAccountId, riderId);
+  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  const bikes = await db.select().from(riderBikesTable)
+    .where(eq(riderBikesTable.riderId, riderId))
+    .orderBy(asc(riderBikesTable.createdAt));
+  return res.json(bikes);
+});
+
+// POST /rider/profiles/:riderId/bikes
+router.post("/rider/profiles/:riderId/bikes", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  const ownership = await verifyRiderOwnership(riderAccountId, riderId);
+  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  const { bikeManufacturer, bikeModel, bikeYear } = req.body;
+  const existing = await db.select({ id: riderBikesTable.id }).from(riderBikesTable).where(eq(riderBikesTable.riderId, riderId));
+  const isFirst = existing.length === 0;
+  const [newBike] = await db.insert(riderBikesTable).values({
+    riderId,
+    bikeManufacturer: typeof bikeManufacturer === "string" ? bikeManufacturer.trim() || null : null,
+    bikeModel: typeof bikeModel === "string" ? bikeModel.trim() || null : null,
+    bikeYear: typeof bikeYear === "string" ? bikeYear.trim() || null : null,
+    isDefault: isFirst,
+  }).returning();
+  return res.status(201).json(newBike);
+});
+
+// PATCH /rider/profiles/:riderId/bikes/:bikeId
+router.patch("/rider/profiles/:riderId/bikes/:bikeId", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  const bikeId = parseInt(req.params.bikeId, 10);
+  if (isNaN(riderId) || isNaN(bikeId)) return res.status(400).json({ error: "Invalid ID" });
+  const ownership = await verifyRiderOwnership(riderAccountId, riderId);
+  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  const patch: Record<string, string | null> = {};
+  if ("bikeManufacturer" in req.body) patch.bikeManufacturer = typeof req.body.bikeManufacturer === "string" ? req.body.bikeManufacturer.trim() || null : null;
+  if ("bikeModel" in req.body) patch.bikeModel = typeof req.body.bikeModel === "string" ? req.body.bikeModel.trim() || null : null;
+  if ("bikeYear" in req.body) patch.bikeYear = typeof req.body.bikeYear === "string" ? req.body.bikeYear.trim() || null : null;
+  if (Object.keys(patch).length === 0) return res.status(400).json({ error: "No fields to update" });
+  const [updated] = await db.update(riderBikesTable).set(patch)
+    .where(and(eq(riderBikesTable.id, bikeId), eq(riderBikesTable.riderId, riderId)))
+    .returning();
+  if (!updated) return res.status(404).json({ error: "Bike not found" });
+  return res.json(updated);
+});
+
+// DELETE /rider/profiles/:riderId/bikes/:bikeId
+router.delete("/rider/profiles/:riderId/bikes/:bikeId", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  const bikeId = parseInt(req.params.bikeId, 10);
+  if (isNaN(riderId) || isNaN(bikeId)) return res.status(400).json({ error: "Invalid ID" });
+  const ownership = await verifyRiderOwnership(riderAccountId, riderId);
+  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  const [deleted] = await db.delete(riderBikesTable)
+    .where(and(eq(riderBikesTable.id, bikeId), eq(riderBikesTable.riderId, riderId)))
+    .returning();
+  if (!deleted) return res.status(404).json({ error: "Bike not found" });
+  if (deleted.isDefault) {
+    const [next] = await db.select().from(riderBikesTable)
+      .where(eq(riderBikesTable.riderId, riderId))
+      .orderBy(desc(riderBikesTable.createdAt))
+      .limit(1);
+    if (next) await db.update(riderBikesTable).set({ isDefault: true }).where(eq(riderBikesTable.id, next.id));
+  }
+  return res.json({ ok: true });
+});
+
+// POST /rider/profiles/:riderId/bikes/:bikeId/set-default
+router.post("/rider/profiles/:riderId/bikes/:bikeId/set-default", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  const bikeId = parseInt(req.params.bikeId, 10);
+  if (isNaN(riderId) || isNaN(bikeId)) return res.status(400).json({ error: "Invalid ID" });
+  const ownership = await verifyRiderOwnership(riderAccountId, riderId);
+  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  await db.update(riderBikesTable).set({ isDefault: false }).where(eq(riderBikesTable.riderId, riderId));
+  const [updated] = await db.update(riderBikesTable).set({ isDefault: true })
+    .where(and(eq(riderBikesTable.id, bikeId), eq(riderBikesTable.riderId, riderId)))
+    .returning();
+  if (!updated) return res.status(404).json({ error: "Bike not found" });
+  return res.json(updated);
 });
 
 // POST /rider/profiles — create a new rider profile linked to this account's email
@@ -1410,7 +1639,14 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
 
     if (raw) {
       try {
-        const stripped = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+        // Extract JSON from a code fence block anywhere in the response, or use the full string
+        const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        let stripped = fenceMatch ? fenceMatch[1].trim() : raw.trim();
+        // Fallback: if stripped doesn't start with '{', try to slice from the first '{'
+        if (!stripped.startsWith("{")) {
+          const jsonStart = stripped.indexOf("{");
+          if (jsonStart !== -1) stripped = stripped.slice(jsonStart);
+        }
         const parsed = JSON.parse(stripped);
         if (parsed && typeof parsed.reply === "string") {
           reply = parsed.reply;
