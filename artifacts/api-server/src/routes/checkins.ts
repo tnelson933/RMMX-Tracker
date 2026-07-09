@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable } from "@workspace/db";
+import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable, motosTable } from "@workspace/db";
 import { eq, and, ne, asc } from "drizzle-orm";
 
 const router = Router();
@@ -129,6 +129,30 @@ router.post("/events/:eventId/checkins", async (req, res) => {
 
   if (rfidNumber) {
     await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, checkin.riderId));
+  }
+
+  // Auto-slot rider into pre-generated lineup slots (created via useRegistrations).
+  // If any scheduled moto for this event+class has a lineup entry with checkedIn: false
+  // for this rider, flip it to true and fill in the latest bib/rfid.
+  {
+    const eventMotos = await db
+      .select({ id: motosTable.id, lineup: motosTable.lineup, status: motosTable.status })
+      .from(motosTable)
+      .where(and(eq(motosTable.eventId, eventId), eq(motosTable.raceClass, raceClass)));
+
+    for (const moto of eventMotos) {
+      if (moto.status === "completed") continue;
+      const lineup = Array.isArray(moto.lineup) ? (moto.lineup as Array<Record<string, unknown>>) : [];
+      const idx = lineup.findIndex(entry => entry.riderId === checkin.riderId);
+      if (idx < 0) continue;
+      if (lineup[idx].checkedIn === true) continue; // already marked
+      const updatedLineup = lineup.map((entry, i) =>
+        i === idx
+          ? { ...entry, checkedIn: true, bibNumber: checkin.bibNumber ?? entry.bibNumber, rfidNumber: checkin.rfidNumber ?? entry.rfidNumber }
+          : entry
+      );
+      await db.update(motosTable).set({ lineup: updatedLineup }).where(eq(motosTable.id, moto.id));
+    }
   }
 
   // Sync the confirmed bib from the saved checkin row back to the registration.
