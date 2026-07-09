@@ -141,13 +141,18 @@ function ProfileList() {
   const {
     account, profiles, activeProfiles, selectedProfileIds,
     setSelectedProfileIds, logout, refreshProfiles,
-    bikeInfoMap, setBikeInfo,
+    bikeInfoMap, setBikeInfo, riderFetch,
   } = useRiderAuth();
   const [loggingOut, setLoggingOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedGarageId, setExpandedGarageId] = useState<number | null>(null);
-  const [garageEdit, setGarageEdit] = useState<{ rideExperience: string; bikeHours: string }>({ rideExperience: "", bikeHours: "" });
+  const [garageEdit, setGarageEdit] = useState<{ rideExperience: string; bikeHours: string; raceTypes: string[] }>({ rideExperience: "", bikeHours: "", raceTypes: [] });
   const [garageSaving, setGarageSaving] = useState(false);
+  const [showAddBike, setShowAddBike] = useState<number | null>(null);
+  const [addBikeForm, setAddBikeForm] = useState({ manufacturer: "", model: "", year: "" });
+  const [addBikeSaving, setAddBikeSaving] = useState(false);
+
+  const RACE_TYPES = ["Motocross", "Supercross", "Desert", "Cross Country", "Flat / Dirt Track", "Supermoto"] as const;
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -156,6 +161,12 @@ function ProfileList() {
   }
 
   function handleSignOut() {
+    if (Platform.OS === "web") {
+      if (!(globalThis as Record<string, any>)["confirm"]?.("Sign out of your rider account?")) return;
+      setLoggingOut(true);
+      void logout().finally(() => setLoggingOut(false));
+      return;
+    }
     Alert.alert("Sign Out", "Sign out of your rider account?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -203,7 +214,7 @@ function ProfileList() {
 
   const s = StyleSheet.create({
     scroll: { flex: 1 },
-    container: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: (tabBarHeight || insets.bottom) + 16, gap: 14 },
+    container: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: (tabBarHeight > 0 ? tabBarHeight : 49 + insets.bottom) + 16, gap: 14 },
     pageTitle: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
     pageSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
     accountCard: {
@@ -415,7 +426,7 @@ function ProfileList() {
                 {profile.lastRaced && (
                   <Text style={s.lastRaced}>
                     Last raced:{" "}
-                    {new Date(profile.lastRaced).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    {new Date(profile.lastRaced.includes("T") ? profile.lastRaced : profile.lastRaced + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                   </Text>
                 )}
 
@@ -453,6 +464,37 @@ function ProfileList() {
         })
       )}
 
+      {/* ─── My Race Organizations ───────────────────── */}
+      {profiles.length > 0 && (
+        <Pressable
+          onPress={() => router.push("/organizations" as any)}
+          style={({ pressed }) => ({
+            backgroundColor: colors.card,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: colors.border,
+            flexDirection: "row",
+            alignItems: "center",
+            padding: 16,
+            gap: 12,
+            opacity: pressed ? 0.75 : 1,
+          })}
+        >
+          <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: ACCENT + "15", alignItems: "center", justifyContent: "center" }}>
+            <Feather name="flag" size={18} color={ACCENT} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+              My Race Organizations
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+              Clubs you've raced with &amp; notification settings
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+        </Pressable>
+      )}
+
       {/* ─── My Garage ───────────────────────────────── */}
       {profiles.length > 0 && (
         <>
@@ -464,8 +506,10 @@ function ProfileList() {
           {profiles.map(profile => {
             const info = bikeInfoMap[profile.id] ?? {};
             // Bike make/model/year come from the server-stored rider profile
-            const bikeStr = [profile.bikeYear, profile.bikeManufacturer, profile.bikeModel]
-              .filter(Boolean).join(" ");
+            const defaultBike = profile.bikes?.find(b => b.isDefault) ?? profile.bikes?.[0];
+            const bikeStr = defaultBike
+              ? [defaultBike.bikeYear, defaultBike.bikeManufacturer, defaultBike.bikeModel].filter(Boolean).join(" ")
+              : "";
             const isExpanded = expandedGarageId === profile.id;
             const LEVELS = ["Beginner", "Intermediate", "Advanced", "Expert"];
 
@@ -481,7 +525,7 @@ function ProfileList() {
                       setExpandedGarageId(null);
                     } else {
                       setExpandedGarageId(profile.id);
-                      setGarageEdit({ rideExperience: info.rideExperience ?? "", bikeHours: info.bikeHours ?? "" });
+                      setGarageEdit({ rideExperience: info.rideExperience ?? "", bikeHours: info.bikeHours ?? "", raceTypes: profile.raceTypes ?? [] });
                     }
                   }}
                   style={({ pressed }) => ({
@@ -500,7 +544,7 @@ function ProfileList() {
                       <Text style={{ fontSize: 12, color: ACCENT, fontFamily: "Inter_500Medium", marginTop: 1 }}>{bikeStr}</Text>
                     ) : (
                       <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-                        No bike on file — tap Edit Profile to add
+                        No bikes yet — expand to add one
                       </Text>
                     )}
                     {info.rideExperience && (
@@ -520,21 +564,114 @@ function ProfileList() {
                   <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
                     <View style={{ height: 6 }} />
 
-                    {/* Bike info summary (read-only, edit via full profile) */}
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.muted, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: colors.border }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Bike</Text>
-                        <Text style={{ fontSize: 13, color: bikeStr ? colors.foreground : colors.mutedForeground, fontFamily: bikeStr ? "Inter_600SemiBold" : "Inter_400Regular", fontStyle: bikeStr ? "normal" : "italic" }}>
-                          {bikeStr || "Not set"}
-                        </Text>
-                      </View>
-                      <Pressable
-                        onPress={() => { setExpandedGarageId(null); router.push(`/rider/${profile.id}` as any); }}
-                        style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 4, opacity: pressed ? 0.6 : 1 })}
-                      >
-                        <Text style={{ fontSize: 12, color: colors.primary, fontFamily: "Inter_600SemiBold" }}>Edit</Text>
-                        <Feather name="edit-2" size={11} color={colors.primary} />
-                      </Pressable>
+                    {/* Bike garage list */}
+                    <View>
+                      <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>My Bikes</Text>
+                      {(!profile.bikes || profile.bikes.length === 0) && showAddBike !== profile.id && (
+                        <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontStyle: "italic", marginBottom: 8 }}>No bikes yet</Text>
+                      )}
+                      {(profile.bikes ?? []).map(bike => {
+                        const bs = [bike.bikeYear, bike.bikeManufacturer, bike.bikeModel].filter(Boolean).join(" ") || "Unnamed bike";
+                        return (
+                          <Pressable
+                            key={bike.id}
+                            onPress={async () => {
+                              if (!bike.isDefault) {
+                                await riderFetch(`/api/rider/profiles/${profile.id}/bikes/${bike.id}/set-default`, { method: "POST" });
+                                await refreshProfiles();
+                                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                              }
+                            }}
+                            style={({ pressed }) => ({
+                              flexDirection: "row", alignItems: "center", gap: 10,
+                              paddingHorizontal: 12, paddingVertical: 10,
+                              borderRadius: 10, borderWidth: 1.5,
+                              borderColor: bike.isDefault ? ACCENT : colors.border,
+                              backgroundColor: bike.isDefault ? ACCENT + "10" : colors.background,
+                              marginBottom: 6, opacity: pressed ? 0.75 : 1,
+                            })}
+                          >
+                            <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: bike.isDefault ? ACCENT : colors.border, backgroundColor: bike.isDefault ? ACCENT : "transparent", alignItems: "center", justifyContent: "center" }}>
+                              {bike.isDefault && <Feather name="check" size={11} color="#fff" />}
+                            </View>
+                            <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>{bs}</Text>
+                            <Pressable
+                              onPress={async () => {
+                                await riderFetch(`/api/rider/profiles/${profile.id}/bikes/${bike.id}`, { method: "DELETE" });
+                                await refreshProfiles();
+                                await Haptics.selectionAsync();
+                              }}
+                              style={({ pressed }) => ({ padding: 4, opacity: pressed ? 0.6 : 1 })}
+                              hitSlop={8}
+                            >
+                              <Feather name="trash-2" size={14} color="#DC2626" />
+                            </Pressable>
+                          </Pressable>
+                        );
+                      })}
+                      {showAddBike === profile.id ? (
+                        <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, gap: 8, backgroundColor: colors.background }}>
+                          <TextInput
+                            placeholder="Year (e.g. 2024)"
+                            placeholderTextColor={colors.mutedForeground}
+                            value={addBikeForm.year}
+                            onChangeText={v => setAddBikeForm(f => ({ ...f, year: v }))}
+                            keyboardType="numeric"
+                            style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular", backgroundColor: colors.card }}
+                          />
+                          <TextInput
+                            placeholder="Make (e.g. KTM)"
+                            placeholderTextColor={colors.mutedForeground}
+                            value={addBikeForm.manufacturer}
+                            onChangeText={v => setAddBikeForm(f => ({ ...f, manufacturer: v }))}
+                            style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular", backgroundColor: colors.card }}
+                          />
+                          <TextInput
+                            placeholder="Model (e.g. 450 SX-F)"
+                            placeholderTextColor={colors.mutedForeground}
+                            value={addBikeForm.model}
+                            onChangeText={v => setAddBikeForm(f => ({ ...f, model: v }))}
+                            style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular", backgroundColor: colors.card }}
+                          />
+                          <View style={{ flexDirection: "row", gap: 8 }}>
+                            <Pressable
+                              onPress={() => { setShowAddBike(null); setAddBikeForm({ manufacturer: "", model: "", year: "" }); }}
+                              style={({ pressed }) => ({ flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 8, backgroundColor: colors.muted, opacity: pressed ? 0.7 : 1 })}
+                            >
+                              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>Cancel</Text>
+                            </Pressable>
+                            <Pressable
+                              disabled={addBikeSaving}
+                              onPress={async () => {
+                                setAddBikeSaving(true);
+                                try {
+                                  await riderFetch(`/api/rider/profiles/${profile.id}/bikes`, {
+                                    method: "POST",
+                                    body: JSON.stringify({ bikeManufacturer: addBikeForm.manufacturer || null, bikeModel: addBikeForm.model || null, bikeYear: addBikeForm.year || null }),
+                                  });
+                                  await refreshProfiles();
+                                  setShowAddBike(null);
+                                  setAddBikeForm({ manufacturer: "", model: "", year: "" });
+                                  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                                } finally {
+                                  setAddBikeSaving(false);
+                                }
+                              }}
+                              style={({ pressed }) => ({ flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 8, backgroundColor: ACCENT, opacity: pressed || addBikeSaving ? 0.75 : 1 })}
+                            >
+                              {addBikeSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontSize: 13, color: "#fff", fontFamily: "Inter_700Bold" }}>Add Bike</Text>}
+                            </Pressable>
+                          </View>
+                        </View>
+                      ) : (
+                        <Pressable
+                          onPress={() => { setShowAddBike(profile.id); setAddBikeForm({ manufacturer: "", model: "", year: "" }); }}
+                          style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, borderStyle: "dashed", opacity: pressed ? 0.7 : 1, backgroundColor: colors.background })}
+                        >
+                          <Feather name="plus" size={14} color={colors.mutedForeground} />
+                          <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>Add bike</Text>
+                        </Pressable>
+                      )}
                     </View>
 
                     {/* Engine Hours */}
@@ -584,14 +721,68 @@ function ProfileList() {
                       </View>
                     </View>
 
+                    {/* Race Types */}
+                    <View>
+                      <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+                        Race Types — used by Rocky AI
+                      </Text>
+                      <View style={{ gap: 6 }}>
+                        {RACE_TYPES.map(discipline => {
+                          const isChecked = garageEdit.raceTypes.includes(discipline);
+                          return (
+                            <Pressable
+                              key={discipline}
+                              onPress={() => {
+                                const next = isChecked
+                                  ? garageEdit.raceTypes.filter(t => t !== discipline)
+                                  : [...garageEdit.raceTypes, discipline];
+                                setGarageEdit(prev => ({ ...prev, raceTypes: next }));
+                                void Haptics.selectionAsync();
+                              }}
+                              style={({ pressed }) => ({
+                                flexDirection: "row", alignItems: "center", gap: 10,
+                                paddingHorizontal: 12, paddingVertical: 10,
+                                borderRadius: 10, borderWidth: 1.5,
+                                borderColor: isChecked ? ACCENT : colors.border,
+                                backgroundColor: isChecked ? ACCENT + "12" : colors.background,
+                                opacity: pressed ? 0.75 : 1,
+                              })}
+                            >
+                              <View style={{
+                                width: 20, height: 20, borderRadius: 4,
+                                borderWidth: 2, borderColor: isChecked ? ACCENT : colors.border + "aa",
+                                backgroundColor: isChecked ? ACCENT : "transparent",
+                                alignItems: "center", justifyContent: "center",
+                              }}>
+                                {isChecked && <Feather name="check" size={12} color="#fff" />}
+                              </View>
+                              <Text style={{ fontSize: 14, fontWeight: "600", color: isChecked ? ACCENT : colors.foreground, fontFamily: "Inter_600SemiBold" }}>
+                                {discipline}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+
                     {/* Save experience */}
                     <Pressable
                       onPress={async () => {
                         setGarageSaving(true);
-                        await setBikeInfo(profile.id, { rideExperience: garageEdit.rideExperience, bikeHours: garageEdit.bikeHours });
-                        setGarageSaving(false);
-                        setExpandedGarageId(null);
-                        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        try {
+                          await Promise.all([
+                            setBikeInfo(profile.id, { rideExperience: garageEdit.rideExperience, bikeHours: garageEdit.bikeHours }),
+                            riderFetch(`/api/rider/profiles/${profile.id}`, {
+                              method: "PATCH",
+                              body: JSON.stringify({ raceTypes: garageEdit.raceTypes }),
+                            }),
+                          ]);
+                          await refreshProfiles();
+                          setExpandedGarageId(null);
+                          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        } finally {
+                          setGarageSaving(false);
+                        }
                       }}
                       disabled={garageSaving}
                       style={({ pressed }) => ({
