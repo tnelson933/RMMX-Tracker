@@ -139,6 +139,11 @@ export default function Registrations() {
   const [editBibValue, setEditBibValue] = useState("");
   const bibInputRef = useRef<HTMLInputElement>(null);
 
+  // Inline class editing
+  const [editingClassId, setEditingClassId] = useState<number | null>(null);
+  const [editClassValue, setEditClassValue] = useState("");
+  const [classSaving, setClassSaving] = useState(false);
+
   // ── Dialog state ─────────────────────────────────────────────────────────────
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [step, setStep] = useState<Step>("form");
@@ -614,6 +619,26 @@ export default function Registrations() {
         toast({ title: "Failed to save bib", description: err.message, variant: "destructive" });
       }
     });
+  };
+
+  const handleSaveClass = async (regId: number) => {
+    if (!editClassValue || classSaving) return;
+    setClassSaving(true);
+    try {
+      const res = await fetch(`/api/registrations/${regId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raceClass: editClassValue }),
+      });
+      if (!res.ok) { const j = await res.json(); throw new Error(j.error || "Failed to update class"); }
+      await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
+      setEditingClassId(null);
+      toast({ title: "Class updated", description: "Check-in and results updated automatically." });
+    } catch (e: any) {
+      toast({ title: "Failed to update class", description: e.message, variant: "destructive" });
+    } finally {
+      setClassSaving(false);
+    }
   };
 
   const handleExport = () => {
@@ -1642,9 +1667,54 @@ export default function Registrations() {
                         </button>
                       </TableCell>
                       <TableCell>
-                        <span className="bg-secondary/10 text-secondary px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                          {reg.raceClass}
-                        </span>
+                        {editingClassId === reg.id ? (
+                          <div className="flex items-center gap-1">
+                            <Select
+                              value={editClassValue}
+                              onValueChange={setEditClassValue}
+                            >
+                              <SelectTrigger className="h-7 text-xs w-36">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(event?.raceClasses ?? []).map(c => (
+                                  <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-secondary hover:text-secondary"
+                              onClick={() => handleSaveClass(reg.id)}
+                              disabled={classSaving || editClassValue === reg.raceClass}
+                              title="Save class change"
+                            >
+                              {classSaving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground"
+                              onClick={() => setEditingClassId(null)}
+                              title="Cancel"
+                            >
+                              <X size={13} />
+                            </Button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingClassId(reg.id);
+                              setEditClassValue(reg.raceClass);
+                            }}
+                            className="group flex items-center gap-1.5 bg-secondary/10 text-secondary px-2 py-1 rounded text-xs font-bold uppercase tracking-wider hover:bg-secondary/20 border border-transparent hover:border-secondary/30 transition-colors"
+                            title="Click to change class"
+                          >
+                            {reg.raceClass}
+                            <Pencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
+                          </button>
+                        )}
                       </TableCell>
                       <TableCell>
                         {isEditing ? (
