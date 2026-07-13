@@ -57,6 +57,7 @@ import EventWidget from "@/pages/public/EventWidget";
 import SeriesWidget from "@/pages/public/SeriesWidget";
 import PrivacyPolicy from "@/pages/public/PrivacyPolicy";
 import DeleteAccount from "@/pages/public/DeleteAccount";
+import ResetRiderPassword from "@/pages/rider/ResetRiderPassword";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -170,6 +171,9 @@ function Router() {
       </Route>
       <Route path="/delete-account">
         <DeleteAccount />
+      </Route>
+      <Route path="/rider/reset-password">
+        <ResetRiderPassword />
       </Route>
       <Route path="/rider-app">
         <RiderAppLanding />
