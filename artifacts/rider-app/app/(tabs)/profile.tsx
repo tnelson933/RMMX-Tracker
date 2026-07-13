@@ -142,6 +142,7 @@ function ProfileList() {
     account, profiles, activeProfiles, selectedProfileIds,
     setSelectedProfileIds, logout, refreshProfiles,
     bikeInfoMap, setBikeInfo, riderFetch,
+    changePassword, enableBiometric, disableBiometric, biometricEnabled,
   } = useRiderAuth();
   const [loggingOut, setLoggingOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -151,6 +152,65 @@ function ProfileList() {
   const [showAddBike, setShowAddBike] = useState<number | null>(null);
   const [addBikeForm, setAddBikeForm] = useState({ manufacturer: "", model: "", year: "" });
   const [addBikeSaving, setAddBikeSaving] = useState(false);
+
+  // Security / Change password state
+  const [showSecurity, setShowSecurity] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const [biometricHardware, setBiometricHardware] = useState(false);
+  const [biometricType, setBiometricType] = useState<"face" | "fingerprint">("face");
+
+  React.useEffect(() => {
+    if (Platform.OS === "web") return;
+    async function checkBio() {
+      try {
+        const LocalAuth = await import("expo-local-authentication");
+        const hasHw = await LocalAuth.hasHardwareAsync();
+        const enrolled = await LocalAuth.isEnrolledAsync();
+        if (hasHw && enrolled) {
+          setBiometricHardware(true);
+          const types = await LocalAuth.supportedAuthenticationTypesAsync();
+          const hasFace = types.includes(LocalAuth.AuthenticationType.FACIAL_RECOGNITION);
+          setBiometricType(hasFace ? "face" : "fingerprint");
+        }
+      } catch { /* ignore */ }
+    }
+    void checkBio();
+  }, []);
+
+  async function handleChangePassword() {
+    if (!pwCurrent || !pwNew || !pwConfirm) { setPwError("All fields are required"); return; }
+    if (pwNew !== pwConfirm) { setPwError("New passwords don't match"); return; }
+    if (pwNew.length < 8) { setPwError("New password must be at least 8 characters"); return; }
+    setPwSaving(true);
+    setPwError(null);
+    try {
+      await changePassword(pwCurrent, pwNew);
+      setPwSuccess(true);
+      setPwCurrent(""); setPwNew(""); setPwConfirm("");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => { setPwSuccess(false); setShowSecurity(false); }, 2000);
+    } catch (e: any) {
+      setPwError(e.message ?? "Failed to update password");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setPwSaving(false);
+    }
+  }
+
+  async function handleToggleBiometric() {
+    if (biometricEnabled) {
+      await disableBiometric();
+      await Haptics.selectionAsync();
+    } else {
+      await enableBiometric();
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }
 
   const RACE_TYPES = ["Motocross", "Supercross", "Desert", "Cross Country", "Flat / Dirt Track", "Supermoto"] as const;
 
@@ -882,6 +942,139 @@ function ProfileList() {
             );
           })}
         </View>
+      </View>
+
+      {/* ─── Security ─────────────────────────────────── */}
+      <View>
+        <Pressable
+          onPress={() => { setShowSecurity(v => !v); setPwError(null); setPwSuccess(false); }}
+          style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
+        >
+          <Text style={[s.sectionLabel, { flex: 1 }]}>Security</Text>
+          <Feather name={showSecurity ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
+        </Pressable>
+
+        {showSecurity && (
+          <View style={{
+            backgroundColor: colors.card, borderRadius: 14,
+            borderWidth: 1, borderColor: colors.border, padding: 16, gap: 12,
+          }}>
+            {/* Biometric toggle */}
+            {biometricHardware && (
+              <Pressable
+                onPress={handleToggleBiometric}
+                style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
+              >
+                <Feather
+                  name={biometricType === "face" ? "aperture" : "check-circle"}
+                  size={18}
+                  color={biometricEnabled ? ACCENT : colors.mutedForeground}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>
+                    {biometricType === "face" ? "Face ID" : "Fingerprint"} sign-in
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+                    {biometricEnabled ? "Enabled — tap to disable" : "Tap to enable quick biometric sign-in"}
+                  </Text>
+                </View>
+                <View style={{
+                  width: 44, height: 26, borderRadius: 13,
+                  backgroundColor: biometricEnabled ? ACCENT : colors.muted,
+                  justifyContent: "center",
+                  paddingHorizontal: 3,
+                }}>
+                  <View style={{
+                    width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff",
+                    alignSelf: biometricEnabled ? "flex-end" : "flex-start",
+                  }} />
+                </View>
+              </Pressable>
+            )}
+
+            {biometricHardware && (
+              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+            )}
+
+            {/* Change password */}
+            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Change Password
+            </Text>
+
+            {pwSuccess ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#D1FAE5", borderRadius: 8, padding: 10 }}>
+                <Feather name="check-circle" size={14} color="#065F46" />
+                <Text style={{ fontSize: 13, color: "#065F46", fontFamily: "Inter_400Regular" }}>Password updated successfully</Text>
+              </View>
+            ) : (
+              <>
+                {pwError && (
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#FEE2E2", borderRadius: 8, padding: 10 }}>
+                    <Feather name="alert-circle" size={14} color="#DC2626" style={{ marginTop: 1 }} />
+                    <Text style={{ flex: 1, fontSize: 13, color: "#DC2626", fontFamily: "Inter_400Regular" }}>{pwError}</Text>
+                  </View>
+                )}
+                <View style={{
+                  borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+                  borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
+                }}>
+                  <TextInput
+                    style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                    placeholder="Current password"
+                    placeholderTextColor={colors.mutedForeground}
+                    secureTextEntry
+                    value={pwCurrent}
+                    onChangeText={setPwCurrent}
+                    autoCapitalize="none"
+                  />
+                </View>
+                <View style={{
+                  borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+                  borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
+                }}>
+                  <TextInput
+                    style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                    placeholder="New password (min 8 characters)"
+                    placeholderTextColor={colors.mutedForeground}
+                    secureTextEntry
+                    value={pwNew}
+                    onChangeText={setPwNew}
+                    autoCapitalize="none"
+                  />
+                </View>
+                <View style={{
+                  borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+                  borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
+                }}>
+                  <TextInput
+                    style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                    placeholder="Confirm new password"
+                    placeholderTextColor={colors.mutedForeground}
+                    secureTextEntry
+                    value={pwConfirm}
+                    onChangeText={setPwConfirm}
+                    autoCapitalize="none"
+                    returnKeyType="done"
+                    onSubmitEditing={handleChangePassword}
+                  />
+                </View>
+                <Pressable
+                  onPress={handleChangePassword}
+                  disabled={pwSaving}
+                  style={({ pressed }) => ({
+                    backgroundColor: ACCENT, borderRadius: 10, paddingVertical: 13,
+                    alignItems: "center", opacity: pressed || pwSaving ? 0.75 : 1,
+                  })}
+                >
+                  {pwSaving
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Update Password</Text>
+                  }
+                </Pressable>
+              </>
+            )}
+          </View>
+        )}
       </View>
 
       {/* Sign out */}
