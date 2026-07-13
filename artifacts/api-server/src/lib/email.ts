@@ -80,6 +80,28 @@ export async function sendSetupEmail(opts: {
   return { ...result, setupUrl: result.ok ? undefined : url };
 }
 
+export async function sendDeletionRequestEmail(opts: {
+  userEmail: string;
+  reason?: string;
+}): Promise<{ ok: boolean; reason?: string }> {
+  const { userEmail, reason } = opts;
+  const subject = `Account Deletion Request — ${userEmail}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:40px 24px;background:#f9f9f9">
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:40px">
+        <h1 style="margin:0 0 16px;font-size:20px;font-weight:800;color:#111">Account Deletion Request</h1>
+        <p style="margin:0 0 8px;font-size:15px;color:#555"><strong>Email:</strong> ${userEmail}</p>
+        <p style="margin:0 0 8px;font-size:15px;color:#555"><strong>Reason:</strong> ${reason ?? "Not provided"}</p>
+        <p style="margin:24px 0 0;font-size:13px;color:#999">
+          Process this request within 30 days. Delete the account and all associated data from the database,
+          then send a confirmation email to ${userEmail}.
+        </p>
+      </div>
+    </div>
+  `;
+  return sendEmail("support@rockymountainatv.com", subject, html);
+}
+
 export interface MotoResult {
   motoName: string;
   raceClass: string;
