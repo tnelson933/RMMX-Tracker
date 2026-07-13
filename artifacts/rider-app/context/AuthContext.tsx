@@ -6,6 +6,10 @@ import { Alert, Linking, Platform } from "react-native";
 const TOKEN_KEY = "rider_mobile_token";
 const SELECTED_IDS_KEY = "rider_selected_profile_ids";
 const BIKE_INFO_KEY = "rider_bike_info";
+const BIOMETRIC_ENABLED_KEY = "rider_biometric_enabled";
+const BIOMETRIC_EMAIL_SKEY = "rider_bio_email";
+const BIOMETRIC_PASS_SKEY = "rider_bio_pass";
+
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 
 export interface RiderAccount {
@@ -38,8 +42,33 @@ export interface BikeInfo {
   bikeMake: string;
   bikeModel: string;
   bikeYear: string;
-  rideExperience: string; // "beginner" | "intermediate" | "advanced" | "expert"
-  bikeHours: string; // current engine hours on the bike
+  rideExperience: string;
+  bikeHours: string;
+}
+
+// ── SecureStore helpers (no-op on web) ───────────────────────────────────────
+async function secureGet(key: string): Promise<string | null> {
+  if (Platform.OS === "web") return null;
+  try {
+    const SecureStore = await import("expo-secure-store");
+    return await SecureStore.getItemAsync(key);
+  } catch { return null; }
+}
+
+async function secureSet(key: string, value: string): Promise<void> {
+  if (Platform.OS === "web") return;
+  try {
+    const SecureStore = await import("expo-secure-store");
+    await SecureStore.setItemAsync(key, value);
+  } catch { /* ignore */ }
+}
+
+async function secureDelete(key: string): Promise<void> {
+  if (Platform.OS === "web") return;
+  try {
+    const SecureStore = await import("expo-secure-store");
+    await SecureStore.deleteItemAsync(key);
+  } catch { /* ignore */ }
 }
 
 interface AuthContextType {
@@ -52,11 +81,16 @@ interface AuthContextType {
   setBikeInfo: (profileId: number, info: Partial<BikeInfo>) => Promise<void>;
   isAuthenticated: boolean;
   isLoading: boolean;
+  biometricEnabled: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithBiometric: () => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfiles: () => Promise<void>;
   riderFetch: (path: string, options?: RequestInit) => Promise<Response>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  enableBiometric: () => Promise<void>;
+  disableBiometric: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -81,8 +115,6 @@ async function tryRegisterPushToken(mobileToken: string): Promise<void> {
     const Device = await import("expo-device");
     if (!Device.default.isDevice) return;
 
-    // Always request permission first — independent of whether we have a projectId.
-    // This ensures the OS prompt appears even in local dev builds.
     const { status: existing } = await Notifications.getPermissionsAsync();
     let finalStatus = existing;
     if (existing !== "granted") {
@@ -102,20 +134,11 @@ async function tryRegisterPushToken(mobileToken: string): Promise<void> {
       return;
     }
 
-    // EAS builds automatically inject Constants.easConfig.projectId.
-    // Fall back to the app.json extra value for local/dev builds.
     const projectId =
       (Constants.easConfig?.projectId as string | undefined) ??
       (Constants.expoConfig?.extra?.eas?.projectId as string | undefined);
 
-    if (!projectId || projectId === "YOUR_EAS_PROJECT_ID") {
-      console.warn(
-        "[PushToken] No EAS projectId found — token registration skipped. " +
-          "EAS/TestFlight builds set this automatically via Constants.easConfig.projectId. " +
-          "For local dev, set expo.extra.eas.projectId in app.json.",
-      );
-      return;
-    }
+    if (!projectId || projectId === "YOUR_EAS_PROJECT_ID") return;
 
     const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
     await fetch(`${BASE_URL}/api/rider/push-token`, {
@@ -137,6 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [selectedProfileIds, setSelectedProfileIdsState] = useState<number[]>([]);
   const [bikeInfoMap, setBikeInfoMapState] = useState<Record<number, Partial<BikeInfo>>>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [biometricEnabled, setBiometricEnabledState] = useState(false);
 
   const riderFetch = useCallback(
     (path: string, options: RequestInit = {}): Promise<Response> => {
@@ -159,7 +183,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const loaded: RiderProfile[] = await res.json();
       setProfiles(loaded);
 
-      // Seed bikeInfoMap.rideExperience from server skillLevel (server is source of truth)
       setBikeInfoMapState(prev => {
         const merged = { ...prev };
         for (const profile of loaded) {
@@ -202,21 +225,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function init() {
-      const [token, bikeRaw] = await Promise.all([
+      const [token, bikeRaw, bioFlag] = await Promise.all([
         AsyncStorage.getItem(TOKEN_KEY),
         AsyncStorage.getItem(BIKE_INFO_KEY),
+        AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY),
       ]);
       if (bikeRaw) {
         try { setBikeInfoMapState(JSON.parse(bikeRaw)); } catch { /* ignore */ }
       }
+      if (bioFlag === "true") setBiometricEnabledState(true);
       if (token) {
         const acc = await validateAndLoad(token);
         if (acc) {
           setAccount(acc);
           await loadProfiles(token);
-          // Re-register push token on every startup so:
-          // (a) users who never got the prompt now see it,
-          // (b) tokens deleted from the DB are re-registered automatically.
           void tryRegisterPushToken(token);
         } else {
           await AsyncStorage.removeItem(TOKEN_KEY);
@@ -238,8 +260,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
     setAccount(acc);
+    // Always persist latest credentials so biometric stays fresh
+    await secureSet(BIOMETRIC_EMAIL_SKEY, email.trim().toLowerCase());
+    await secureSet(BIOMETRIC_PASS_SKEY, password);
     void loadProfiles(data.mobileToken);
     void tryRegisterPushToken(data.mobileToken);
+  }
+
+  async function loginWithBiometric(): Promise<void> {
+    if (Platform.OS === "web") throw new Error("Biometric login is not supported on web");
+    const LocalAuth = await import("expo-local-authentication");
+    const hasHardware = await LocalAuth.hasHardwareAsync();
+    const isEnrolled = await LocalAuth.isEnrolledAsync();
+    if (!hasHardware || !isEnrolled) throw new Error("Biometric authentication is not available on this device");
+
+    const result = await LocalAuth.authenticateAsync({
+      promptMessage: "Sign in to RM Tracker",
+      fallbackLabel: "Use password",
+      cancelLabel: "Cancel",
+    });
+    if (!result.success) throw new Error("Biometric authentication was cancelled or failed");
+
+    const email = await secureGet(BIOMETRIC_EMAIL_SKEY);
+    const pass = await secureGet(BIOMETRIC_PASS_SKEY);
+    if (!email || !pass) throw new Error("No saved credentials — please sign in with your password first");
+
+    await login(email, pass);
   }
 
   async function register(email: string, password: string): Promise<void> {
@@ -253,6 +299,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
     setAccount(acc);
+    await secureSet(BIOMETRIC_EMAIL_SKEY, email.trim().toLowerCase());
+    await secureSet(BIOMETRIC_PASS_SKEY, password);
     void loadProfiles(data.mobileToken);
     void tryRegisterPushToken(data.mobileToken);
   }
@@ -261,10 +309,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const keysToRemove: string[] = [TOKEN_KEY, SELECTED_IDS_KEY];
     if (account) keysToRemove.push(`workout_plan_${account.id}`);
     await AsyncStorage.multiRemove(keysToRemove);
+    // Clear biometric only if it was enabled; don't clear the stored creds so
+    // they stay ready if user re-enables after signing back in.
     setAccount(null);
     setProfiles([]);
     setSelectedProfileIdsState([]);
-    // Keep bikeInfoMap — it's stored per profile and is user-entered data
   }
 
   async function refreshProfiles(): Promise<void> {
@@ -286,7 +335,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setBikeInfoMapState(updated);
     await AsyncStorage.setItem(BIKE_INFO_KEY, JSON.stringify(updated));
 
-    // Persist rideExperience to the server so it survives reinstalls and device changes
     if (info.rideExperience !== undefined && account?.mobileToken) {
       authedFetch(`/api/rider/profiles/${profileId}`, account.mobileToken, {
         method: "PATCH",
@@ -294,6 +342,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }).catch(() => { /* best-effort */ });
     }
   }, [bikeInfoMap, account?.mobileToken]);
+
+  async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    const res = await riderFetch("/api/rider/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? "Failed to change password");
+    // Keep stored credential fresh so biometric login keeps working
+    await secureSet(BIOMETRIC_PASS_SKEY, newPassword);
+  }
+
+  async function enableBiometric(): Promise<void> {
+    await AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, "true");
+    setBiometricEnabledState(true);
+  }
+
+  async function disableBiometric(): Promise<void> {
+    await AsyncStorage.removeItem(BIOMETRIC_ENABLED_KEY);
+    await secureDelete(BIOMETRIC_EMAIL_SKEY);
+    await secureDelete(BIOMETRIC_PASS_SKEY);
+    setBiometricEnabledState(false);
+  }
 
   return (
     <AuthContext.Provider
@@ -307,11 +378,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setBikeInfo,
         isAuthenticated: !!account,
         isLoading,
+        biometricEnabled,
         login,
+        loginWithBiometric,
         register,
         logout,
         refreshProfiles,
         riderFetch,
+        changePassword,
+        enableBiometric,
+        disableBiometric,
       }}
     >
       {children}
