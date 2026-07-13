@@ -2,7 +2,7 @@
   "expo": {
     "name": "RM Tracker",
     "slug": "rider-app",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rider-app",
@@ -17,7 +17,12 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.rockymountain.riderapp",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification",
+          "remote-notification"
+        ],
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSFaceIDUsageDescription": "Use Face ID to sign in to RM Tracker quickly and securely."
       }
     },
     "android": {
@@ -35,6 +40,8 @@
       ],
       "expo-font",
       "expo-web-browser",
+      "expo-local-authentication",
+      "expo-secure-store",
       [
         "expo-notifications",
         {
