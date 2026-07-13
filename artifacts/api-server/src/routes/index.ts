@@ -38,7 +38,7 @@ import readersRouter from "./readers";
 import eventReaderAssignmentsRouter from "./event-reader-assignments";
 import readerIngestRouter from "./reader-ingest";
 import adminSeedThanksgivingRouter from "./admin-seed-thanksgiving";
-
+import accountDeletionRouter from "./account-deletion";
 
 const router: IRouter = Router();
 
@@ -81,5 +81,6 @@ router.use(readersRouter);
 router.use(eventReaderAssignmentsRouter);
 router.use(readerIngestRouter);
 router.use(adminSeedThanksgivingRouter);
+router.use(accountDeletionRouter);
 
 export default router;
