@@ -55,6 +55,7 @@ import RmCash from "@/pages/rider/RmCash";
 import WatchLive from "@/pages/public/WatchLive";
 import EventWidget from "@/pages/public/EventWidget";
 import SeriesWidget from "@/pages/public/SeriesWidget";
+import PrivacyPolicy from "@/pages/public/PrivacyPolicy";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -162,6 +163,9 @@ function Router() {
       {/* ── Public routes ── */}
       <Route path="/">
         <PublicLayout><Home /></PublicLayout>
+      </Route>
+      <Route path="/privacy">
+        <PrivacyPolicy />
       </Route>
       <Route path="/rider-app">
         <RiderAppLanding />
