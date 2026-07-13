@@ -26,7 +26,8 @@
       }
     },
     "android": {
-      "package": "com.rockymountain.riderapp"
+      "package": "com.rockymountain.riderapp",
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/images/icon.png"
