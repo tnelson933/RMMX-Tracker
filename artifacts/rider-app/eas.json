@@ -6,6 +6,9 @@
   "build": {
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "rmmx-tracker.replit.app"
+      },
       "android": {
         "buildType": "apk",
         "credentialsSource": "remote"
@@ -16,6 +19,9 @@
       }
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "rmmx-tracker.replit.app"
+      },
       "android": {
         "buildType": "app-bundle",
         "credentialsSource": "remote"
