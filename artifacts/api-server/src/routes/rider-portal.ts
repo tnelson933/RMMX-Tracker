@@ -114,6 +114,97 @@ router.post("/rider/auth/login", async (req, res) => {
   return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), mobileToken });
 });
 
+// In-memory store for rider password reset tokens (expires in 1 hour)
+const riderResetTokens = new Map<string, { riderAccountId: number; expiresAt: Date }>();
+
+function getRiderAppUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL;
+  const domains = process.env.REPLIT_DOMAINS;
+  if (domains) return `https://${domains.split(",")[0]}`;
+  return "http://localhost:80";
+}
+
+// POST /rider/auth/forgot-password
+router.post("/rider/auth/forgot-password", async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email required" });
+  const normalized = String(email).toLowerCase().trim();
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.email, normalized));
+
+  if (account) {
+    const token = randomBytes(32).toString("hex");
+    riderResetTokens.set(token, { riderAccountId: account.id, expiresAt: new Date(Date.now() + 60 * 60 * 1000) });
+
+    const resetUrl = `${getRiderAppUrl()}/rider/reset-password?token=${token}`;
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:40px 24px;background:#f9f9f9">
+        <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:40px">
+          <h1 style="margin:0 0 8px;font-size:22px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#111">Reset Your Password</h1>
+          <p style="margin:0 0 24px;font-size:15px;color:#555;line-height:1.6">
+            We received a request to reset your RM Tracker password. Click the button below to choose a new one.
+          </p>
+          <a href="${resetUrl}" style="display:inline-block;padding:14px 28px;background:#dc2626;color:#fff;text-decoration:none;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:1px;border-radius:4px">
+            Reset Password
+          </a>
+          <p style="margin:28px 0 0;font-size:12px;color:#999;line-height:1.5">
+            This link expires in 1 hour. If you didn't request this, you can safely ignore this email.
+          </p>
+        </div>
+      </div>`;
+
+    const apiKey = process.env.RESEND_API_KEY;
+    if (apiKey) {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: process.env.EMAIL_FROM || "RMMT Ops <onboarding@resend.dev>", to: normalized, subject: "Reset your RM Tracker password", html }),
+      });
+    }
+  }
+
+  // Always return success to prevent email enumeration
+  return res.json({ ok: true });
+});
+
+// POST /rider/auth/reset-password
+router.post("/rider/auth/reset-password", async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: "Token and password are required" });
+  if (String(password).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+
+  const record = riderResetTokens.get(String(token));
+  if (!record || record.expiresAt < new Date()) {
+    riderResetTokens.delete(String(token));
+    return res.status(400).json({ error: "This link has expired or is invalid. Please request a new one." });
+  }
+
+  const hash = await bcrypt.hash(String(password), 12);
+  await db.update(riderAccountsTable).set({ passwordHash: hash }).where(eq(riderAccountsTable.id, record.riderAccountId));
+  riderResetTokens.delete(String(token));
+
+  return res.json({ ok: true });
+});
+
+// POST /rider/auth/change-password
+router.post("/rider/auth/change-password", requireRiderAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: "Current and new password required" });
+  if (String(newPassword).length < 8) return res.status(400).json({ error: "New password must be at least 8 characters" });
+
+  const riderAccountId = (req.session as any).riderAccountId;
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const valid = await bcrypt.compare(String(currentPassword), account.passwordHash);
+  if (!valid) return res.status(401).json({ error: "Current password is incorrect" });
+
+  const hash = await bcrypt.hash(String(newPassword), 12);
+  await db.update(riderAccountsTable).set({ passwordHash: hash }).where(eq(riderAccountsTable.id, riderAccountId));
+
+  return res.json({ ok: true });
+});
+
 // POST /rider/auth/logout
 router.post("/rider/auth/logout", (req, res) => {
   delete (req.session as any).riderAccountId;
