@@ -9,7 +9,7 @@
   - Sidebar navigation (all pages)
   - Event detail tabs: Overview, Registrations, Check-In, Schedule, Motos, Enter Results, Report
   - Schedule tab: moto types, reordering, staggered starts, lineup generation, manual editing
-  - Motos tab: start/finish, live leaderboard, crossing feed, delete/correct crossings, manual laps, DNF/DNS, reset, heat sheet, practice motos
+  - Motos tab: start/finish, live leaderboard, crossing feed, delete/correct crossings, manual laps, DNF/DNS, reset, heat sheet, practice motos, time+laps race format
   - Enduro events: Generate Tests, per-test individual rider timing (no Start button, rider-# bib start/stop), optional event-wide time checks with per-class expected durations and configurable time-check penalties (seconds per minute early/late, optional DQ thresholds)
   - Timing systems: RFID sticker tags, MyLaps transponders
   - Reader-aware timing: named per-reader unique ingest URLs, per-event start/finish/time-check assignments
@@ -24,6 +24,7 @@
   - Offline Mode & Desktop App: local timing, cloud sync queue, encrypted credentials
   - Team/Staff: invite members, role-based permissions
   - Track/Venue Name: save once in Admin settings, auto-fills events and stamps practice sessions
+  - Brand Contingencies: define a library of contingency brands in Admin settings; when creating an event, check "Brand Contingencies" to select which brands have contingencies at that event
   - Embeddable Widgets: series leaderboard iframe embed
 
   MAINTENANCE RULE: When you ship a new organizer-facing feature, add it to the list
@@ -93,6 +94,22 @@ Moto types:
 
 ### Reordering
 Drag the grip handle (⠿) on any moto card up or down to change its position in the run order.
+
+### Time + Laps race format ("Time + 1 Lap")
+Standard MX/SX events run for a set time then give the leader one (or more) extra laps after the clock expires rather than stopping at the buzzer. The platform supports this natively.
+
+**How to set it up in Generate Lineups:**
+1. Schedule tab → **Generate Lineups** dialog.
+2. Enter a **Race Duration** (minutes). This sets the countdown timer for every generated race moto.
+3. Once a Race Duration is entered, a **Plus Laps** field appears. Enter the number of extra laps after the flag (typically `1` for standard MX). Leave blank for a plain timed race that ends at the buzzer.
+
+**What happens on race day (Motos tab):**
+- While the race is in progress, the moto card shows a countdown timer labelled **"Race Timer +N Lap(s)"**.
+- When the countdown hits zero the platform automatically PATCHes `timeExpiredAt` on the moto. The timer banner is replaced with an orange **"Time Expired — +N Lap(s) After the Flag"** banner (pulsing orange, Flag icon).
+- Every RFID crossing after `timeExpiredAt` is set is tracked. As soon as the **leader** completes their N extra lap(s) the server automatically sets the moto `status = "completed"` and broadcasts the update over SSE — the moto card flips to the finished state without any manual action from the organizer.
+- The action bar also shows an orange "+N Lap(s) to Go" pill while waiting for the leader to finish.
+
+**Manual control:** If the organizer clicks **Finish** before the leader's extra laps are counted (e.g. red flag), the moto completes immediately as normal regardless of plus-laps configuration.
 
 ### Staggered starts
 A staggered start links two motos so they run on track simultaneously but score separately — useful when two small classes share a gate.
@@ -236,6 +253,17 @@ Hover any row → click the pencil icon → change name, email, phone, race clas
 
 ### Export the registration list
 Registrations tab → **Export** button (top right) → downloads an Excel (.xlsx) file with all registration data.
+
+### Rider-initiated cancellations & refund tracking
+
+Riders can cancel their own class registrations from the Rider App (event detail page → **Cancel Registration** button). They select which classes to cancel and confirm; the registration is voided immediately.
+
+Organizers track these on the **Cancellations tab** of any event. The tab shows:
+- Rider name, class, bib number, amount paid, payment method, and when the cancellation occurred
+- A **Pending / Refunded** badge per row
+- A red count badge on the tab itself when there are unverified (pending) refunds
+
+To mark a refund as processed, click **Mark Refunded** next to the relevant row. This records the timestamp but does not automatically issue a refund — refunds must be processed outside the platform (cash, manual Stripe refund in the Stripe dashboard, etc.).
 
 ---
 
