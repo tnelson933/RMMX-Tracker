@@ -26,7 +26,7 @@ const objectStorageService = new ObjectStorageService();
  */
 router.post(
   "/storage/uploads/file",
-  express.raw({ type: ["image/*", "application/octet-stream"], limit: "10mb" }),
+  express.raw({ type: ["image/*", "application/pdf", "application/octet-stream"], limit: "20mb" }),
   async (req: Request, res: Response) => {
     const originalName = (req.headers["x-file-name"] as string) || "upload.png";
     const contentType = (req.headers["x-content-type"] as string) || "image/png";
@@ -40,23 +40,25 @@ router.post(
     }
 
     try {
-      // Upload to cloud storage (persistent across redeployments)
-      const cloudPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext);
-      req.log.info({ size: req.body.length, contentType, cloudPath }, "File uploaded to object storage");
+      // Always write to local disk first so the file is immediately serveable.
+      await fs.writeFile(filepath, req.body);
+      req.log.info({ size: req.body.length, contentType, filename }, "File written to local disk");
 
-      // Also write to local disk using the same filename so /storage/uploads/:filename
-      // can serve it directly without hitting cloud storage on every request.
-      const cloudFilename = path.basename(cloudPath);
-      fs.writeFile(path.join(UPLOADS_DIR, cloudFilename), req.body).catch((err) => {
-        req.log.warn({ err }, "Could not write upload to local disk cache");
-      });
+      // Best-effort cloud upload for persistence across redeployments.
+      // If object storage is not provisioned, log a warning and continue —
+      // the disk copy is sufficient for development and single-server deploys.
+      try {
+        const cloudPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext);
+        req.log.info({ cloudPath }, "File also uploaded to object storage");
+      } catch (cloudErr) {
+        req.log.warn({ err: cloudErr }, "Object storage unavailable — file saved to disk only");
+      }
 
-      // Return the /uploads/ path — consistent with existing DB records and served
-      // by GET /storage/uploads/:filename (disk-first with cloud fallback).
-      const objectPath = `/uploads/${cloudFilename}`;
+      // Return the /uploads/ path served by GET /storage/uploads/:filename.
+      const objectPath = `/uploads/${filename}`;
       res.json({ objectPath });
     } catch (error) {
-      req.log.error({ err: error }, "Error uploading file to object storage");
+      req.log.error({ err: error }, "Error saving uploaded file");
       res.status(503).json({ error: "Storage unavailable — please try again" });
     }
   }
@@ -69,6 +71,7 @@ const UPLOAD_CONTENT_TYPES: Record<string, string> = {
   ".gif": "image/gif",
   ".webp": "image/webp",
   ".svg": "image/svg+xml",
+  ".pdf": "application/pdf",
 };
 
 /**
