@@ -31,6 +31,9 @@ import type {
   AnthropicMessage,
   AnthropicMessageInput,
   AuthResponse,
+  CancelMyRegistrations200,
+  CancelRegistrationsInput,
+  Cancellation,
   Checkin,
   CheckinInput,
   Club,
@@ -73,6 +76,7 @@ import type {
   HealthStatus,
   LineupGenerateInput,
   ListDiscountCodesParams,
+  ListEventCancellations200,
   ListEventsParams,
   ListPublicSeriesParams,
   ListRecentResultsParams,
@@ -3322,6 +3326,227 @@ export const useCreateRegistration = <TError = ErrorType<unknown>,
       return useMutation(getCreateRegistrationMutationOptions(options));
     }
 
+export const getCancelMyRegistrationsUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/rider/events/${eventId}/registrations/cancel`
+}
+
+/**
+ * @summary Cancel one or more of the authenticated rider's registrations for an event
+ */
+export const cancelMyRegistrations = async (eventId: number,
+    cancelRegistrationsInput: CancelRegistrationsInput, options?: RequestInit): Promise<CancelMyRegistrations200> => {
+
+  return customFetch<CancelMyRegistrations200>(getCancelMyRegistrationsUrl(eventId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      cancelRegistrationsInput,)
+  }
+);}
+
+
+
+
+export const getCancelMyRegistrationsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelMyRegistrations>>, TError,{eventId: number;data: BodyType<CancelRegistrationsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelMyRegistrations>>, TError,{eventId: number;data: BodyType<CancelRegistrationsInput>}, TContext> => {
+
+const mutationKey = ['cancelMyRegistrations'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelMyRegistrations>>, {eventId: number;data: BodyType<CancelRegistrationsInput>}> = (props) => {
+          const {eventId,data} = props ?? {};
+
+          return  cancelMyRegistrations(eventId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelMyRegistrationsMutationResult = NonNullable<Awaited<ReturnType<typeof cancelMyRegistrations>>>
+    export type CancelMyRegistrationsMutationBody = BodyType<CancelRegistrationsInput>
+    export type CancelMyRegistrationsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Cancel one or more of the authenticated rider's registrations for an event
+ */
+export const useCancelMyRegistrations = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelMyRegistrations>>, TError,{eventId: number;data: BodyType<CancelRegistrationsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelMyRegistrations>>,
+        TError,
+        {eventId: number;data: BodyType<CancelRegistrationsInput>},
+        TContext
+      > => {
+      return useMutation(getCancelMyRegistrationsMutationOptions(options));
+    }
+
+export const getListEventCancellationsUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/cancellations`
+}
+
+/**
+ * @summary List rider-initiated cancellations for an event (organizer)
+ */
+export const listEventCancellations = async (eventId: number, options?: RequestInit): Promise<ListEventCancellations200> => {
+
+  return customFetch<ListEventCancellations200>(getListEventCancellationsUrl(eventId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEventCancellationsQueryKey = (eventId: number,) => {
+    return [
+    `/api/events/${eventId}/cancellations`
+    ] as const;
+    }
+
+
+export const getListEventCancellationsQueryOptions = <TData = Awaited<ReturnType<typeof listEventCancellations>>, TError = ErrorType<unknown>>(eventId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEventCancellations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEventCancellationsQueryKey(eventId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEventCancellations>>> = ({ signal }) => listEventCancellations(eventId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(eventId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEventCancellations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEventCancellationsQueryResult = NonNullable<Awaited<ReturnType<typeof listEventCancellations>>>
+export type ListEventCancellationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List rider-initiated cancellations for an event (organizer)
+ */
+
+export function useListEventCancellations<TData = Awaited<ReturnType<typeof listEventCancellations>>, TError = ErrorType<unknown>>(
+ eventId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEventCancellations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEventCancellationsQueryOptions(eventId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getVerifyCancellationRefundUrl = (eventId: number,
+    registrationId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/cancellations/${registrationId}/verify`
+}
+
+/**
+ * @summary Mark a cancellation refund as verified (organizer)
+ */
+export const verifyCancellationRefund = async (eventId: number,
+    registrationId: number, options?: RequestInit): Promise<Cancellation> => {
+
+  return customFetch<Cancellation>(getVerifyCancellationRefundUrl(eventId,registrationId),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+);}
+
+
+
+
+export const getVerifyCancellationRefundMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyCancellationRefund>>, TError,{eventId: number;registrationId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof verifyCancellationRefund>>, TError,{eventId: number;registrationId: number}, TContext> => {
+
+const mutationKey = ['verifyCancellationRefund'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof verifyCancellationRefund>>, {eventId: number;registrationId: number}> = (props) => {
+          const {eventId,registrationId} = props ?? {};
+
+          return  verifyCancellationRefund(eventId,registrationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type VerifyCancellationRefundMutationResult = NonNullable<Awaited<ReturnType<typeof verifyCancellationRefund>>>
+
+    export type VerifyCancellationRefundMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark a cancellation refund as verified (organizer)
+ */
+export const useVerifyCancellationRefund = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyCancellationRefund>>, TError,{eventId: number;registrationId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof verifyCancellationRefund>>,
+        TError,
+        {eventId: number;registrationId: number},
+        TContext
+      > => {
+      return useMutation(getVerifyCancellationRefundMutationOptions(options));
+    }
+
 export const getUpdateRegistrationUrl = (registrationId: number,) => {
 
 
@@ -4592,6 +4817,146 @@ export const useLinkStagger = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getLinkStaggerMutationOptions(options));
+    }
+
+export const getPauseMotoUrl = (motoId: number,) => {
+
+
+
+
+  return `/api/motos/${motoId}/pause`
+}
+
+/**
+ * @summary Pause an in-progress moto (freeze the clock without ending it)
+ */
+export const pauseMoto = async (motoId: number, options?: RequestInit): Promise<Moto> => {
+
+  return customFetch<Moto>(getPauseMotoUrl(motoId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getPauseMotoMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseMoto>>, TError,{motoId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pauseMoto>>, TError,{motoId: number}, TContext> => {
+
+const mutationKey = ['pauseMoto'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pauseMoto>>, {motoId: number}> = (props) => {
+          const {motoId} = props ?? {};
+
+          return  pauseMoto(motoId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PauseMotoMutationResult = NonNullable<Awaited<ReturnType<typeof pauseMoto>>>
+
+    export type PauseMotoMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Pause an in-progress moto (freeze the clock without ending it)
+ */
+export const usePauseMoto = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseMoto>>, TError,{motoId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pauseMoto>>,
+        TError,
+        {motoId: number},
+        TContext
+      > => {
+      return useMutation(getPauseMotoMutationOptions(options));
+    }
+
+export const getResumeMotoUrl = (motoId: number,) => {
+
+
+
+
+  return `/api/motos/${motoId}/resume`
+}
+
+/**
+ * @summary Resume a paused moto (restart the clock from where it stopped)
+ */
+export const resumeMoto = async (motoId: number, options?: RequestInit): Promise<Moto> => {
+
+  return customFetch<Moto>(getResumeMotoUrl(motoId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getResumeMotoMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeMoto>>, TError,{motoId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resumeMoto>>, TError,{motoId: number}, TContext> => {
+
+const mutationKey = ['resumeMoto'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeMoto>>, {motoId: number}> = (props) => {
+          const {motoId} = props ?? {};
+
+          return  resumeMoto(motoId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResumeMotoMutationResult = NonNullable<Awaited<ReturnType<typeof resumeMoto>>>
+
+    export type ResumeMotoMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Resume a paused moto (restart the clock from where it stopped)
+ */
+export const useResumeMoto = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeMoto>>, TError,{motoId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resumeMoto>>,
+        TError,
+        {motoId: number},
+        TContext
+      > => {
+      return useMutation(getResumeMotoMutationOptions(options));
     }
 
 export const getUnlinkStaggerUrl = (motoId: number,) => {
