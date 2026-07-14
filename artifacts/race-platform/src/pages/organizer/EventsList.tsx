@@ -128,6 +128,9 @@ export default function EventsList() {
   const [filter, setFilter] = useState("upcoming");
   const [createSeriesIds, setCreateSeriesIds] = useState<number[]>([]);
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [imgValidationError, setImgValidationError] = useState<string | null>(null);
+  const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const [createImgState, setCreateImgState] = useState<"idle" | "processing" | "uploading" | "done">("idle");
   const [removeBgOnCreate, setRemoveBgOnCreate] = useState(false);
 
@@ -1278,9 +1281,23 @@ export default function EventsList() {
                   <input
                     id="create-event-img"
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
                     className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; setPendingImageFile(f); } }}
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      e.target.value = "";
+                      if (!ALLOWED_IMAGE_TYPES.includes(f.type)) {
+                        setImgValidationError("Unsupported file type. Please upload a JPEG, PNG, GIF, or WebP image.");
+                        return;
+                      }
+                      if (f.size > MAX_IMAGE_BYTES) {
+                        setImgValidationError("Image is too large. Maximum size is 10 MB — try compressing it first.");
+                        return;
+                      }
+                      setImgValidationError(null);
+                      setPendingImageFile(f);
+                    }}
                   />
                   {pendingImageFile ? (
                     <div className="flex flex-wrap items-center gap-3 p-3 rounded-md border bg-muted/40">
@@ -1290,7 +1307,7 @@ export default function EventsList() {
                         <Checkbox checked={removeBgOnCreate} onCheckedChange={v => setRemoveBgOnCreate(!!v)} />
                         Remove background
                       </label>
-                      <button type="button" onClick={() => setPendingImageFile(null)} className="text-muted-foreground hover:text-destructive shrink-0">
+                      <button type="button" onClick={() => { setPendingImageFile(null); setImgValidationError(null); }} className="text-muted-foreground hover:text-destructive shrink-0">
                         <X size={14} />
                       </button>
                     </div>
@@ -1298,6 +1315,14 @@ export default function EventsList() {
                     <label htmlFor="create-event-img" className="flex items-center justify-center gap-2 p-3 rounded-md border border-dashed text-sm text-muted-foreground hover:text-foreground hover:border-primary cursor-pointer transition-colors">
                       <Upload size={14} /> Choose image
                     </label>
+                  )}
+                  {imgValidationError && (
+                    <p className="text-sm text-destructive font-medium flex items-center gap-1.5 mt-1">
+                      {imgValidationError}
+                    </p>
+                  )}
+                  {!imgValidationError && (
+                    <p className="text-xs text-muted-foreground mt-1">JPEG, PNG, GIF, or WebP · Max 10 MB</p>
                   )}
                 </div>
 
