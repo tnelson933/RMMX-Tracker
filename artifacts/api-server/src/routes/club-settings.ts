@@ -33,7 +33,9 @@ router.get("/clubs/:clubId/settings", async (req, res) => {
   return res.json({
     clubId,
     riderAcknowledgement: row?.riderAcknowledgement ?? null,
+    waiverPdfUrl: row?.waiverPdfUrl ?? null,
     defaultClasses: row?.defaultClasses ?? [],
+    brandContingencies: row?.brandContingencies ?? [],
     trackName: row?.trackName ?? null,
   });
 });
@@ -44,11 +46,13 @@ router.put("/clubs/:clubId/settings", async (req, res) => {
   const ok = await requireOrganizerForClub(req, res, clubId);
   if (!ok) return;
 
-  const { riderAcknowledgement, defaultClasses, trackName } = req.body;
+  const { riderAcknowledgement, waiverPdfUrl, defaultClasses, brandContingencies, trackName } = req.body;
 
-  const values: { clubId: number; riderAcknowledgement?: string | null; defaultClasses?: { id: string; name: string }[]; trackName?: string | null } = { clubId };
+  const values: { clubId: number; riderAcknowledgement?: string | null; waiverPdfUrl?: string | null; defaultClasses?: { id: string; name: string }[]; brandContingencies?: string[]; trackName?: string | null } = { clubId };
   if (riderAcknowledgement !== undefined) values.riderAcknowledgement = riderAcknowledgement ?? null;
+  if (waiverPdfUrl !== undefined) values.waiverPdfUrl = waiverPdfUrl ?? null;
   if (defaultClasses !== undefined) values.defaultClasses = Array.isArray(defaultClasses) ? defaultClasses : [];
+  if (brandContingencies !== undefined) values.brandContingencies = Array.isArray(brandContingencies) ? brandContingencies : [];
   if (trackName !== undefined) values.trackName = trackName ?? null;
 
   const [row] = await db
@@ -58,7 +62,9 @@ router.put("/clubs/:clubId/settings", async (req, res) => {
       target: clubSettingsTable.clubId,
       set: {
         ...(riderAcknowledgement !== undefined ? { riderAcknowledgement: values.riderAcknowledgement } : {}),
+        ...(waiverPdfUrl !== undefined ? { waiverPdfUrl: values.waiverPdfUrl } : {}),
         ...(defaultClasses !== undefined ? { defaultClasses: values.defaultClasses } : {}),
+        ...(brandContingencies !== undefined ? { brandContingencies: values.brandContingencies } : {}),
         ...(trackName !== undefined ? { trackName: values.trackName } : {}),
       },
     })
@@ -67,7 +73,9 @@ router.put("/clubs/:clubId/settings", async (req, res) => {
   return res.json({
     clubId: row.clubId,
     riderAcknowledgement: row.riderAcknowledgement ?? null,
+    waiverPdfUrl: row.waiverPdfUrl ?? null,
     defaultClasses: row.defaultClasses ?? [],
+    brandContingencies: row.brandContingencies ?? [],
     trackName: row.trackName ?? null,
   });
 });
