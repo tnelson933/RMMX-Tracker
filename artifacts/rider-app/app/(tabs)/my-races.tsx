@@ -536,7 +536,13 @@ export default function MyRacesScreen() {
     setRefreshing(false);
   }, [loadAll]);
 
-  const raceDay  = schedule?.events.filter(e => e.status === "race_day") ?? [];
+  const todayStr = new Date().toISOString().substring(0, 10);
+  const raceDay  = schedule?.events.filter(e => {
+    if (e.status !== "race_day") return false;
+    const dateStr = e.eventDate ? String(e.eventDate).substring(0, 10) : "";
+    const endStr  = e.eventEndDate ? String(e.eventEndDate).substring(0, 10) : dateStr;
+    return endStr >= todayStr;
+  }) ?? [];
   const registeredEventIds = new Set(schedule?.events.map(e => e.eventId) ?? []);
   const allOpenEvents = publicEvents.filter(e => e.status === "registration_open");
   const upcoming = allOpenEvents.filter(e => registeredEventIds.has(e.eventId));
