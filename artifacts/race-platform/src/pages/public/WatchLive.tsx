@@ -9,6 +9,29 @@ import { getPublicOrigin } from "@/lib/publicOrigin";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
+function WatchLiveCountdown({ startedAt, timeLimitMs, plusLaps }: { startedAt: string; timeLimitMs: number; plusLaps: number | null }) {
+  const [remaining, setRemaining] = useState(0);
+  useEffect(() => {
+    const start = new Date(startedAt).getTime();
+    const tick = () => setRemaining(Math.max(0, timeLimitMs - (Date.now() - start)));
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [startedAt, timeLimitMs]);
+
+  const totalSeconds = Math.floor(remaining / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const color = remaining < 60_000 ? "text-red-400" : remaining < 120_000 ? "text-orange-400" : "text-white/70";
+  return (
+    <span className={`flex items-center gap-1 text-[10px] font-bold uppercase ${color}`}>
+      <Flag size={9} />
+      {minutes}:{String(seconds).padStart(2, "0")}
+      {plusLaps != null && plusLaps > 0 && <span className="text-white/40 font-normal">+{plusLaps}L</span>}
+    </span>
+  );
+}
+
 function getWsUrl(eventId: number): string {
   const origin = getPublicOrigin();
   const proto = origin.startsWith("https:") ? "wss:" : "ws:";
@@ -777,7 +800,7 @@ export default function WatchLive() {
                   )}
                 </div>
                 <div className="text-white text-sm font-heading uppercase tracking-wide leading-tight">{activeMoto.name}</div>
-                <div className="mt-1.5">
+                <div className="mt-1.5 space-y-1">
                   {activeMoto.status === "in_progress" && (
                     <span className="flex items-center gap-1 text-red-400 text-[10px] font-bold uppercase">
                       <span className="relative flex h-1.5 w-1.5">
@@ -785,6 +808,19 @@ export default function WatchLive() {
                         <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-400" />
                       </span>
                       In Progress · Lineup
+                    </span>
+                  )}
+                  {activeMoto.status === "in_progress" && (activeMoto as any).timeLimitMs && !(activeMoto as any).timeExpiredAt && (activeMoto as any).startedAt && (
+                    <WatchLiveCountdown
+                      startedAt={(activeMoto as any).startedAt}
+                      timeLimitMs={(activeMoto as any).timeLimitMs}
+                      plusLaps={(activeMoto as any).plusLaps ?? null}
+                    />
+                  )}
+                  {activeMoto.status === "in_progress" && (activeMoto as any).timeExpiredAt && (activeMoto as any).plusLaps > 0 && (
+                    <span className="flex items-center gap-1 text-orange-400 text-[10px] font-bold uppercase animate-pulse">
+                      <Flag size={9} />
+                      +{(activeMoto as any).plusLaps} Lap{(activeMoto as any).plusLaps > 1 ? "s" : ""} to Go
                     </span>
                   )}
                   {activeMoto.status === "completed" && (
