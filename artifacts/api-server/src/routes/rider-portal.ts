@@ -1153,13 +1153,18 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 
   const eventIds = [...new Set(regs.map(r => r.eventId))];
 
-  // Fetch events (exclude drafts)
+  // Fetch events — exclude drafts and events whose race day has fully passed
+  // (completed events are kept so registeredEventIds stays correct for history display)
   const events = await db
     .select()
     .from(eventsTable)
     .where(and(
       inArray(eventsTable.id, eventIds),
       ne(eventsTable.status, "draft"),
+      sql`(
+        ${eventsTable.status} = 'completed'
+        OR SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')
+      )`,
     ));
 
   if (events.length === 0) return res.json({ familyRiderIds, events: [] });
