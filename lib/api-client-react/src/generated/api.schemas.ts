@@ -63,13 +63,17 @@ export interface DefaultRaceClass {
 export interface ClubSettings {
   clubId: number;
   riderAcknowledgement: string | null;
+  waiverPdfUrl?: string | null;
   defaultClasses: DefaultRaceClass[];
+  brandContingencies?: string[] | null;
   trackName?: string | null;
 }
 
 export interface ClubSettingsInput {
   riderAcknowledgement?: string | null;
+  waiverPdfUrl?: string | null;
   defaultClasses?: DefaultRaceClass[];
+  brandContingencies?: string[] | null;
   trackName?: string | null;
 }
 
@@ -213,6 +217,11 @@ export const EventTimingTechnology = {
 export type EventRaceClassSeriesMap = {[key: string]: number[]};
 
 /**
+ * Maps each race class name to a rules/details paragraph shown to riders.
+ */
+export type EventRaceClassDetails = {[key: string]: string};
+
+/**
  * Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)
  */
 export type EventRaceStyle = typeof EventRaceStyle[keyof typeof EventRaceStyle];
@@ -267,6 +276,16 @@ export interface Event {
   requireAma?: boolean;
   /** @nullable */
   entryFee?: number | null;
+  /**
+     * Discounted entry fee during the early sign-up incentive period (before earlyBirdEndsAt)
+     * @nullable
+     */
+  earlyBirdFee?: number | null;
+  /**
+     * Last day (YYYY-MM-DD inclusive) of the early-bird pricing period; fee reverts to entryFee the following day
+     * @nullable
+     */
+  earlyBirdEndsAt?: string | null;
   /** @nullable */
   maxRiders?: number | null;
   /** @nullable */
@@ -308,9 +327,15 @@ export interface Event {
   endDate?: string | null;
   /** Maps each race class name to an array of series IDs that should award points for that class. */
   raceClassSeriesMap?: EventRaceClassSeriesMap;
+  /** Maps each race class name to a rules/details paragraph shown to riders. */
+  raceClassDetails?: EventRaceClassDetails;
   /** Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time) */
   raceStyle?: EventRaceStyle;
   enduroPenaltyConfig?: EnduroPenaltyConfig | null;
+  /** Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first. */
+  classOrder?: string[] | null;
+  /** Brands selected for contingency sponsorships at this event. */
+  contingencyBrands?: string[] | null;
   createdAt?: string;
 }
 
@@ -355,6 +380,8 @@ export interface EventInput {
   paymentEnabled?: boolean;
   requireAma?: boolean;
   entryFee?: number;
+  earlyBirdFee?: number;
+  earlyBirdEndsAt?: string;
   maxRiders?: number;
   imageUrl?: string;
   timingTechnology?: EventInputTimingTechnology;
@@ -406,6 +433,11 @@ export const EventUpdateTimingTechnology = {
 export type EventUpdateRaceClassSeriesMap = {[key: string]: number[]};
 
 /**
+ * Maps each race class name to a rules/details paragraph shown to riders.
+ */
+export type EventUpdateRaceClassDetails = {[key: string]: string};
+
+/**
  * Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)
  */
 export type EventUpdateRaceStyle = typeof EventUpdateRaceStyle[keyof typeof EventUpdateRaceStyle];
@@ -431,6 +463,8 @@ export interface EventUpdate {
   paymentEnabled?: boolean;
   requireAma?: boolean;
   entryFee?: number;
+  earlyBirdFee?: number;
+  earlyBirdEndsAt?: string;
   maxRiders?: number;
   imageUrl?: string;
   timingTechnology?: EventUpdateTimingTechnology;
@@ -465,9 +499,15 @@ export interface EventUpdate {
   endDate?: string | null;
   /** Maps each race class name to an array of series IDs that should award points for that class. */
   raceClassSeriesMap?: EventUpdateRaceClassSeriesMap;
+  /** Maps each race class name to a rules/details paragraph shown to riders. */
+  raceClassDetails?: EventUpdateRaceClassDetails;
   /** Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time) */
   raceStyle?: EventUpdateRaceStyle;
   enduroPenaltyConfig?: EnduroPenaltyConfig | null;
+  /** Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first. */
+  classOrder?: string[] | null;
+  /** Brands selected for contingency sponsorships at this event. */
+  contingencyBrands?: string[] | null;
 }
 
 export interface Rider {
@@ -669,7 +709,36 @@ export interface Registration {
      * @nullable
      */
   waiverSnapshot?: string | null;
+  /** @nullable */
+  cancelledAt?: string | null;
+  /** @nullable */
+  cancellationSource?: string | null;
+  /** @nullable */
+  refundVerifiedAt?: string | null;
   createdAt?: string;
+}
+
+export interface CancelRegistrationsInput {
+  registrationIds: number[];
+}
+
+export interface Cancellation {
+  id: number;
+  eventId: number;
+  riderId: number;
+  riderName: string;
+  raceClass: string;
+  /** @nullable */
+  bibNumber?: string | null;
+  /** @nullable */
+  amountPaid?: number | null;
+  /** @nullable */
+  paymentMethod?: string | null;
+  /** @nullable */
+  paymentStatus?: string | null;
+  cancelledAt: string;
+  /** @nullable */
+  refundVerifiedAt?: string | null;
 }
 
 export interface RegistrationInput {
@@ -800,6 +869,16 @@ export interface Moto {
      */
   timeLimitMs?: number | null;
   /**
+     * Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag
+     * @nullable
+     */
+  plusLaps?: number | null;
+  /**
+     * Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps
+     * @nullable
+     */
+  timeExpiredAt?: string | null;
+  /**
      * Timer mode for practice motos — lap_count (default) or countdown
      * @nullable
      */
@@ -816,6 +895,13 @@ export interface Moto {
   startedAt?: string | null;
   /** @nullable */
   completedAt?: string | null;
+  /**
+     * Set when the moto is paused; null when running or completed
+     * @nullable
+     */
+  pausedAt?: string | null;
+  /** Total accumulated paused duration in milliseconds across all pause/resume cycles */
+  totalPausedMs?: number;
   /**
      * 1 = starts first, 2+ = subsequent start positions in a staggered group
      * @nullable
@@ -866,6 +952,8 @@ export interface MotoInput {
   lapCount?: number;
   /** Time limit in milliseconds (practice sessions only, optional) */
   timeLimitMs?: number;
+  /** Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format) */
+  plusLaps?: number;
   /** Timer mode for practice motos — lap_count (default) or countdown */
   practiceMode?: MotoInputPracticeMode;
   /** Duration in seconds for countdown mode (practice motos only) */
@@ -895,6 +983,16 @@ export interface MotoUpdate {
   lapCount?: number | null;
   /** @nullable */
   timeLimitMs?: number | null;
+  /**
+     * Extra laps after the time limit expires; null to clear
+     * @nullable
+     */
+  plusLaps?: number | null;
+  /**
+     * ISO timestamp; set when the race timer expires; pass null to clear
+     * @nullable
+     */
+  timeExpiredAt?: string | null;
   /** @nullable */
   practiceMode?: MotoUpdatePracticeMode;
   /** @nullable */
@@ -969,6 +1067,12 @@ export interface LineupGenerateInput {
   /** Controls gate number assignment. random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first; first_registered = sort by registration timestamp, earliest registered gets first gate pick. Supersedes gateSeedingMethod when both are present.
    */
   gatePickMethod?: LineupGenerateInputGatePickMethod;
+  /** Race time limit in milliseconds. When set, the race runs until this duration expires, then plusLaps additional laps are counted before the moto ends. Mutually exclusive with lapCount (time-based vs laps-based).
+   */
+  timeLimitMs?: number;
+  /** Number of additional laps riders complete after the time limit expires. Defaults to 1 (classic "time + 1 lap" motocross format). Only meaningful when timeLimitMs is also set.
+   */
+  plusLaps?: number;
   /** Number of laps for each generated moto. When set, indicates this is a laps-based race (first to reach this many laps wins) and the value is stored on every created moto for display and timing purposes.
    */
   lapCount?: number;
@@ -1824,6 +1928,15 @@ search?: string;
 
 export type DeleteRiderDiscountCode200 = {
   ok?: boolean;
+};
+
+export type CancelMyRegistrations200 = {
+  cancelled?: number;
+};
+
+export type ListEventCancellations200 = {
+  unverifiedCount: number;
+  cancellations: Cancellation[];
 };
 
 export type ListRfidTagsParams = {
