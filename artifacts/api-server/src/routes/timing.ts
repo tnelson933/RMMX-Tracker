@@ -12,7 +12,7 @@ import {
   practiceSessionsTable,
 } from "@workspace/db";
 import { fetchEnduoPenaltyMap } from "./enduro-scoring";
-import { eq, and, asc, desc, isNotNull, or } from "drizzle-orm";
+import { eq, and, asc, desc, isNotNull, or, gt, sql } from "drizzle-orm";
 import type { Response } from "express";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
@@ -241,6 +241,9 @@ export async function buildLeaderboard(motoId: number) {
     status: moto.status,
     startedAt: moto.startedAt?.toISOString() ?? null,
     completedAt: moto.completedAt?.toISOString() ?? null,
+    timeLimitMs: moto.timeLimitMs ?? null,
+    plusLaps: moto.plusLaps ?? null,
+    timeExpiredAt: moto.timeExpiredAt?.toISOString() ?? null,
     leaderboard: withGaps,
     updatedAt: new Date().toISOString(),
   };
@@ -593,6 +596,29 @@ async function _processCrossing(opts: {
       lapNumber,
     });
     rmonitorBroadcast(moto.eventId, rmonLines);
+  }
+
+  // 8. Time+Laps auto-complete: when timeExpiredAt is set and the leader has finished their plus-laps
+  if (moto.timeExpiredAt && moto.plusLaps != null && moto.plusLaps > 0 && snapshot) {
+    const leader = snapshot.leaderboard[0];
+    if (leader?.riderId != null && !leader.dnf && !leader.dns) {
+      const flagTime = new Date(moto.timeExpiredAt);
+      const [{ lapsAfterFlag }] = await db
+        .select({ lapsAfterFlag: sql<number>`cast(count(*) as int)` })
+        .from(lapCrossingsTable)
+        .where(and(
+          eq(lapCrossingsTable.motoId, motoId),
+          eq(lapCrossingsTable.riderId, leader.riderId),
+          gt(lapCrossingsTable.crossingTime, flagTime),
+        ));
+      if ((lapsAfterFlag ?? 0) >= moto.plusLaps) {
+        await db.update(motosTable)
+          .set({ status: "completed", completedAt: new Date() })
+          .where(eq(motosTable.id, motoId));
+        const completedSnapshot = await buildLeaderboard(motoId);
+        if (completedSnapshot) sseBroadcast(motoId, completedSnapshot);
+      }
+    }
   }
 
   return { crossing, lapNumber, lapTimeMs };
