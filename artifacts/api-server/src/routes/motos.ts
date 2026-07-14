@@ -224,6 +224,8 @@ router.get("/events/:eventId/motos", async (req, res) => {
     createdAt: m.createdAt.toISOString(),
     startedAt: m.startedAt?.toISOString() ?? null,
     completedAt: m.completedAt?.toISOString() ?? null,
+    pausedAt: m.pausedAt?.toISOString() ?? null,
+    totalPausedMs: m.totalPausedMs ?? 0,
     staggeredGroupId: m.staggeredGroupId,
     staggeredOrder: m.staggeredOrder,
     staggeredGroupMembers: m.staggeredGroupId != null ? (groupIdToMembers.get(m.staggeredGroupId) ?? null) : null,
@@ -240,7 +242,7 @@ router.post("/events/:eventId/motos", async (req, res) => {
     if (evClubId !== staffCIdPost) return res.status(403).json({ error: "Forbidden" });
   }
 
-  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, practiceMode, countdownSeconds, enduroHasRfidStart } = req.body;
+  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, plusLaps, practiceMode, countdownSeconds, enduroHasRfidStart } = req.body;
 
   // raceClasses (multi-class practice): raceClass can be derived from first entry
   const resolvedRaceClass = raceClass || (Array.isArray(raceClasses) && raceClasses.length > 0 ? raceClasses[0] : null);
@@ -253,6 +255,7 @@ router.post("/events/:eventId/motos", async (req, res) => {
     motoNumber, scheduledTime, lineup: lineup || [], status: "scheduled",
     lapCount: lapCount ? Number(lapCount) : null,
     timeLimitMs: timeLimitMs ? Number(timeLimitMs) : null,
+    plusLaps: plusLaps != null ? Number(plusLaps) : null,
     practiceMode: practiceMode ?? "lap_count",
     countdownSeconds: countdownSeconds ? Number(countdownSeconds) : null,
     enduroHasRfidStart: enduroHasRfidStart === true,
@@ -291,6 +294,8 @@ router.patch("/motos/:motoId", async (req, res) => {
   if (req.body.scheduledTime !== undefined) updates.scheduledTime = req.body.scheduledTime;
   if (req.body.lapCount !== undefined) updates.lapCount = req.body.lapCount !== null ? Number(req.body.lapCount) : null;
   if (req.body.timeLimitMs !== undefined) updates.timeLimitMs = req.body.timeLimitMs !== null ? Number(req.body.timeLimitMs) : null;
+  if (req.body.plusLaps !== undefined) updates.plusLaps = req.body.plusLaps !== null ? Number(req.body.plusLaps) : null;
+  if (req.body.timeExpiredAt !== undefined) updates.timeExpiredAt = req.body.timeExpiredAt !== null ? new Date(req.body.timeExpiredAt) : null;
   if (req.body.practiceMode !== undefined) updates.practiceMode = req.body.practiceMode !== null ? String(req.body.practiceMode) : null;
   if (req.body.countdownSeconds !== undefined) updates.countdownSeconds = req.body.countdownSeconds !== null ? Number(req.body.countdownSeconds) : null;
   if (req.body.motoNumber !== undefined) updates.motoNumber = Number(req.body.motoNumber);
@@ -334,6 +339,8 @@ router.patch("/motos/:motoId", async (req, res) => {
     createdAt: moto.createdAt.toISOString(),
     startedAt: moto.startedAt?.toISOString() ?? null,
     completedAt: moto.completedAt?.toISOString() ?? null,
+    pausedAt: moto.pausedAt?.toISOString() ?? null,
+    totalPausedMs: moto.totalPausedMs ?? 0,
   });
 });
 
@@ -357,11 +364,68 @@ router.post("/motos/:motoId/restart", async (req, res) => {
     .where(eq(raceResultsTable.motoId, id));
   const [updated] = await db
     .update(motosTable)
-    .set({ status: "scheduled", startedAt: null })
+    .set({ status: "scheduled", startedAt: null, pausedAt: null, totalPausedMs: 0 })
     .where(eq(motosTable.id, id))
     .returning();
   buildLeaderboard(id).then(snap => { if (snap) sseBroadcast(id, snap); }).catch(() => {});
   return res.json({ ok: true, moto: updated });
+});
+
+// POST /motos/:motoId/pause — freeze the clock without ending the moto
+router.post("/motos/:motoId/pause", async (req, res) => {
+  const id = Number(req.params.motoId);
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
+  if (!moto) return res.status(404).json({ error: "Not found" });
+  const staffCIdPause = getStaffClubId(res);
+  if (staffCIdPause !== null) {
+    const evClubId = await getEventClubId(moto.eventId);
+    if (evClubId !== staffCIdPause) return res.status(403).json({ error: "Forbidden" });
+  }
+  if (moto.status !== "in_progress") return res.status(400).json({ error: "Moto is not in progress" });
+  if (moto.pausedAt) return res.status(400).json({ error: "Moto is already paused" });
+  const [updated] = await db
+    .update(motosTable)
+    .set({ pausedAt: new Date() })
+    .where(eq(motosTable.id, id))
+    .returning();
+  return res.json({
+    ...updated,
+    lineup: Array.isArray(updated.lineup) ? updated.lineup : [],
+    createdAt: updated.createdAt.toISOString(),
+    startedAt: updated.startedAt?.toISOString() ?? null,
+    completedAt: updated.completedAt?.toISOString() ?? null,
+    pausedAt: updated.pausedAt?.toISOString() ?? null,
+    totalPausedMs: updated.totalPausedMs ?? 0,
+  });
+});
+
+// POST /motos/:motoId/resume — unfreeze the clock from where it was paused
+router.post("/motos/:motoId/resume", async (req, res) => {
+  const id = Number(req.params.motoId);
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
+  if (!moto) return res.status(404).json({ error: "Not found" });
+  const staffCIdResume = getStaffClubId(res);
+  if (staffCIdResume !== null) {
+    const evClubId = await getEventClubId(moto.eventId);
+    if (evClubId !== staffCIdResume) return res.status(403).json({ error: "Forbidden" });
+  }
+  if (moto.status !== "in_progress") return res.status(400).json({ error: "Moto is not in progress" });
+  if (!moto.pausedAt) return res.status(400).json({ error: "Moto is not paused" });
+  const additionalMs = Date.now() - moto.pausedAt.getTime();
+  const [updated] = await db
+    .update(motosTable)
+    .set({ pausedAt: null, totalPausedMs: (moto.totalPausedMs ?? 0) + additionalMs })
+    .where(eq(motosTable.id, id))
+    .returning();
+  return res.json({
+    ...updated,
+    lineup: Array.isArray(updated.lineup) ? updated.lineup : [],
+    createdAt: updated.createdAt.toISOString(),
+    startedAt: updated.startedAt?.toISOString() ?? null,
+    completedAt: updated.completedAt?.toISOString() ?? null,
+    pausedAt: updated.pausedAt?.toISOString() ?? null,
+    totalPausedMs: updated.totalPausedMs ?? 0,
+  });
 });
 
 router.delete("/motos/:motoId", async (req, res) => {
@@ -506,16 +570,36 @@ router.delete("/events/:eventId/motos", async (req, res) => {
 
 router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
+
+  // Guard: do not allow generating motos after the race date has passed.
+  const [eventDateRow] = await db
+    .select({ date: eventsTable.date, endDate: eventsTable.endDate })
+    .from(eventsTable)
+    .where(eq(eventsTable.id, eventId));
+  if (eventDateRow) {
+    const effectiveDate = (eventDateRow.endDate ?? eventDateRow.date).substring(0, 10);
+    const todayStr = new Date().toISOString().substring(0, 10);
+    if (effectiveDate < todayStr) {
+      return res.status(422).json({
+        error: "The race date has already passed. Update the event's race date to a future date before generating motos.",
+      });
+    }
+  }
+
   const {
     raceFormat, classes, ridersPerHeat, usePracticeSeeding, gateSeedingMethod: rawMethod,
     gatePickMethod,        // "random" | "practice" | "prior_round_finish" | "first_registered"
     rounds: roundsFilter,  // new: number[] — if provided, only generate these round numbers
     lapCount,              // optional: target laps for laps-based races
+    timeLimitMs,           // optional: countdown timer duration in ms for each moto
+    plusLaps,              // optional: extra laps after the time limit expires
     minRacesBetween,       // optional: minimum motos between a rider's consecutive races
     useRegistrations,      // boolean: when true, slot all registered riders (not just checked-in)
   } = req.body;
   const minGap: number = minRacesBetween && Number(minRacesBetween) >= 1 ? Math.min(3, Number(minRacesBetween)) : 0;
   const motoLapCount: number | null = lapCount != null && Number(lapCount) > 0 ? Number(lapCount) : null;
+  const motoTimeLimitMs: number | null = timeLimitMs != null && Number(timeLimitMs) > 0 ? Number(timeLimitMs) : null;
+  const motoPlusLaps: number | null = plusLaps != null && Number(plusLaps) >= 0 ? Number(plusLaps) : null;
 
   // Map gatePickMethod to internal seeding method + gate assignment flag.
   // gatePickMethod supersedes gateSeedingMethod when both are present.
@@ -975,7 +1059,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         const [moto] = await db.insert(motosTable).values({
           eventId, name: heatName, type: "heat", raceClass: cls,
           motoNumber: motoNumber++, status: "scheduled", lineup,
-          lapCount: motoLapCount,
+          lapCount: motoLapCount, timeLimitMs: motoTimeLimitMs, plusLaps: motoPlusLaps,
         }).returning();
         motos.push(moto);
       }
@@ -984,7 +1068,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       const [mainMoto] = await db.insert(motosTable).values({
         eventId, name: `${cls} Main Event`, type: "main", raceClass: cls,
         motoNumber: motoNumber++, status: "scheduled", lineup: [],
-        lapCount: motoLapCount,
+        lapCount: motoLapCount, timeLimitMs: motoTimeLimitMs, plusLaps: motoPlusLaps,
       }).returning();
       motos.push(mainMoto);
     }
@@ -1076,7 +1160,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       const [moto] = await db.insert(motosTable).values({
         eventId, name: task.name, type: "heat", raceClass: task.cls,
         motoNumber: motoNumber++, status: "scheduled", lineup,
-        lapCount: motoLapCount,
+        lapCount: motoLapCount, timeLimitMs: motoTimeLimitMs, plusLaps: motoPlusLaps,
       }).returning();
       motos.push(moto);
     }
@@ -1267,6 +1351,8 @@ router.post("/events/:eventId/motos/reorder", async (req, res) => {
     createdAt: m.createdAt.toISOString(),
     startedAt: m.startedAt?.toISOString() ?? null,
     completedAt: m.completedAt?.toISOString() ?? null,
+    pausedAt: m.pausedAt?.toISOString() ?? null,
+    totalPausedMs: m.totalPausedMs ?? 0,
   })));
 });
 
@@ -1447,6 +1533,8 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
     createdAt: updated.createdAt.toISOString(),
     startedAt: updated.startedAt?.toISOString() ?? null,
     completedAt: updated.completedAt?.toISOString() ?? null,
+    pausedAt: updated.pausedAt?.toISOString() ?? null,
+    totalPausedMs: updated.totalPausedMs ?? 0,
   });
 });
 
@@ -1538,6 +1626,8 @@ router.post("/events/:eventId/advance-to-main", async (req, res) => {
     createdAt: updated.createdAt.toISOString(),
     startedAt: updated.startedAt?.toISOString() ?? null,
     completedAt: updated.completedAt?.toISOString() ?? null,
+    pausedAt: updated.pausedAt?.toISOString() ?? null,
+    totalPausedMs: updated.totalPausedMs ?? 0,
   });
 });
 
