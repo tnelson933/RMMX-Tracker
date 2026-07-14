@@ -141,14 +141,21 @@ router.post("/events", async (req, res) => {
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
-  if (!clubId || !name || !date || !state) return res.status(400).json({ error: "clubId, name, date, state required" });
+  const isDraftCreate = req.body.draft === true;
+  if (!clubId || !name) return res.status(400).json({ error: "clubId and name are required" });
+  if (!isDraftCreate && (!date || !state)) return res.status(400).json({ error: "date and state are required for a full save" });
+
+  // For draft saves, default date to today and state to "TBD"
+  const now0 = new Date();
+  const todayFallback = `${now0.getFullYear()}-${String(now0.getMonth() + 1).padStart(2, "0")}-${String(now0.getDate()).padStart(2, "0")}`;
   // Strip any time component — always store as plain YYYY-MM-DD
-  const cleanDate = String(date).substring(0, 10);
+  const cleanDate = isDraftCreate ? (date ? String(date).substring(0, 10) : todayFallback) : String(date).substring(0, 10);
+  const cleanState = isDraftCreate ? (state || "TBD") : state;
   const cleanEndDate = endDate ? String(endDate).substring(0, 10) : undefined;
   if (cleanEndDate && cleanEndDate < cleanDate) return res.status(400).json({ error: "endDate must be on or after date" });
 
   // Determine the correct initial status based on the registration window
-  const initialStatus = (() => {
+  const initialStatus = isDraftCreate ? "draft" : (() => {
     const now = new Date();
     if (registrationOpen && now >= new Date(registrationOpen)) {
       if (!registrationClose || now < new Date(registrationClose)) return "registration_open";
@@ -164,7 +171,7 @@ router.post("/events", async (req, res) => {
 
   const { amaEventId } = req.body;
   const [event] = await db.insert(eventsTable).values({
-    clubId, name, date: cleanDate, state, location, trackName,
+    clubId, name, date: cleanDate, state: cleanState, location, trackName,
     raceClasses: raceClasses || [],
     raceClassLimits: raceClassLimits || {},
     raceClassSeriesMap: raceClassSeriesMap || {},
