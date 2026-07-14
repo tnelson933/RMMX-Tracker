@@ -183,7 +183,11 @@ export default function EventDetail() {
   const [isEditing, setIsEditing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [imgUploadState, setImgUploadState] = useState<"idle" | "processing" | "uploading" | "done" | "error">("idle");
+  const [imgValidationError, setImgValidationError] = useState<string | null>(null);
   const [removeBg, setRemoveBg] = useState(false);
+
+  const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
   const [compAmount, setCompAmount] = useState("");
   const [compCount, setCompCount] = useState("1");
@@ -212,6 +216,15 @@ export default function EventDetail() {
 
   const handleImageUpload = async (file: File) => {
     if (!file || !eventId) return;
+    setImgValidationError(null);
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setImgValidationError("Unsupported file type. Please upload a JPEG, PNG, GIF, or WebP image.");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImgValidationError("Image is too large. Maximum size is 10 MB — try compressing it first.");
+      return;
+    }
     setImgUploadState("processing");
     let blob: Blob = file;
     if (removeBg) {
@@ -566,7 +579,7 @@ export default function EventDetail() {
                   <input
                     id="event-img-upload"
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
                     className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; handleImageUpload(f); } }}
                   />
@@ -588,6 +601,7 @@ export default function EventDetail() {
                   </Button>
                   {imgUploadState === "done" && <span className="text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle size={14} /> Saved</span>}
                   {imgUploadState === "error" && <span className="text-sm text-destructive font-medium">Upload failed — try again</span>}
+                  {imgValidationError && <span className="text-sm text-destructive font-medium w-full">{imgValidationError}</span>}
                 </CardContent>
               </>
             ) : (
@@ -601,13 +615,13 @@ export default function EventDetail() {
                     <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
                       Upload a race-specific flyer or photo. It will appear alongside the club logo on the public registration and race info/live standings pages.
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG or WebP</p>
+                    <p className="text-xs text-muted-foreground mt-1">JPEG, PNG, GIF, or WebP · Max 10 MB</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 justify-center sm:justify-start">
                     <input
                       id="event-img-upload"
                       type="file"
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
                       className="hidden"
                       onChange={e => { const f = e.target.files?.[0]; if (f) { e.target.value = ""; handleImageUpload(f); } }}
                     />
@@ -627,6 +641,7 @@ export default function EventDetail() {
                   </div>
                   {imgUploadState === "done" && <p className="text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle size={14} /> Saved</p>}
                   {imgUploadState === "error" && <p className="text-sm text-destructive font-medium">Upload failed — try again</p>}
+                  {imgValidationError && <p className="text-sm text-destructive font-medium">{imgValidationError}</p>}
                 </div>
               </CardContent>
             )}
