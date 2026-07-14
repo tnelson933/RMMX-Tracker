@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck, Users } from "lucide-react";
+import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck, Users, ZoomIn } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 
@@ -147,6 +147,7 @@ export default function Register() {
   const [notFound, setNotFound] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<SuccessData | null>(null);
+  const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [verifying, setVerifying] = useState(false);
@@ -704,11 +705,23 @@ export default function Register() {
                 />
               )}
               {(event as any).imageUrl && (
-                <img
-                  src={(event as any).imageUrl}
-                  alt={event.name}
-                  className="h-56 w-auto max-w-sm object-contain drop-shadow-lg rounded"
-                />
+                <button
+                  type="button"
+                  onClick={() => setImageLightboxOpen(true)}
+                  className="relative group cursor-zoom-in focus:outline-none"
+                  aria-label="Enlarge event image"
+                >
+                  <img
+                    src={(event as any).imageUrl}
+                    alt={event.name}
+                    className="h-56 w-auto max-w-sm object-contain drop-shadow-lg rounded transition-opacity group-hover:opacity-80"
+                  />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="bg-black/70 text-white text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
+                      <ZoomIn size={13} /> Click to enlarge
+                    </div>
+                  </div>
+                </button>
               )}
             </div>
           )}
@@ -1508,6 +1521,30 @@ export default function Register() {
           </div>
         )}
       </div>
+
+      {/* Image lightbox */}
+      {imageLightboxOpen && (event as any).imageUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setImageLightboxOpen(false)}
+        >
+          <button
+            type="button"
+            className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors bg-black/40 rounded-full p-2"
+            onClick={() => setImageLightboxOpen(false)}
+            aria-label="Close"
+          >
+            <XIcon size={22} />
+          </button>
+          <img
+            src={(event as any).imageUrl}
+            alt={event.name}
+            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+          <p className="mt-4 text-white/40 text-sm select-none">Click anywhere to close</p>
+        </div>
+      )}
     </div>
   );
 }
