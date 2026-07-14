@@ -20,6 +20,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info, Upload, ImageIcon, X, Loader2, Sparkles, Ticket, ChevronsUpDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, parseISO } from "date-fns";
+import { formatEventDatesFull } from "@/lib/eventDates";
 
 const TIME_OPTIONS: string[] = [];
 for (let h = 0; h < 24; h++) {
@@ -98,10 +99,14 @@ const updateEventSchema = z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
     seriesIds: z.array(z.number()).default([]),
+    details: z.string().default(""),
   })),
   paymentEnabled: z.boolean().default(false),
   requireAma: z.boolean().default(false),
   entryFee: z.string().optional(),
+  earlyBirdEnabled: z.boolean().default(false),
+  earlyBirdFee: z.string().optional(),
+  earlyBirdEndsAt: z.string().optional(),
   registrationOpen: z.string().optional(),
   registrationClose: z.string().optional(),
   transponderRentalEnabled: z.boolean().default(false),
@@ -152,6 +157,13 @@ export default function EventDetail() {
     () => (clubSettingsData?.defaultClasses as { id: string; name: string }[] | undefined) ?? [],
     [clubSettingsData]
   );
+  const libraryContingencies = useMemo<string[]>(
+    () => ((clubSettingsData as any)?.brandContingencies as string[] | undefined) ?? [],
+    [clubSettingsData]
+  );
+
+  const [editContingencyBrands, setEditContingencyBrands] = useState<string[]>([]);
+  const [editNewBrandInput, setEditNewBrandInput] = useState("");
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
@@ -184,6 +196,7 @@ export default function EventDetail() {
   const [copied, setCopied] = useState(false);
   const [imgUploadState, setImgUploadState] = useState<"idle" | "processing" | "uploading" | "done" | "error">("idle");
   const [imgValidationError, setImgValidationError] = useState<string | null>(null);
+  const [imgUploadError, setImgUploadError] = useState<string | null>(null);
   const [removeBg, setRemoveBg] = useState(false);
 
   const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -193,6 +206,8 @@ export default function EventDetail() {
   const [compCount, setCompCount] = useState("1");
   const [compDiscountType, setCompDiscountType] = useState<"fixed" | "percentage">("fixed");
   const [compUsageType, setCompUsageType] = useState<"one_time" | "limited" | "unlimited">("one_time");
+
+  const [expandedDetailRows, setExpandedDetailRows] = useState<Set<number>>(new Set());
 
   // Scroll helper — keeps the class list from jumping the full page when a row is appended
   const classesScrollRef = useRef<HTMLDivElement>(null);
@@ -217,12 +232,14 @@ export default function EventDetail() {
   const handleImageUpload = async (file: File) => {
     if (!file || !eventId) return;
     setImgValidationError(null);
+    setImgUploadError(null);
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setImgValidationError("Unsupported file type. Please upload a JPEG, PNG, GIF, or WebP image.");
+      setImgValidationError(`"${file.type || file.name.split(".").pop()}" is not supported — please use a JPEG, PNG, GIF, or WebP file.`);
       return;
     }
+    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
     if (file.size > MAX_IMAGE_BYTES) {
-      setImgValidationError("Image is too large. Maximum size is 10 MB — try compressing it first.");
+      setImgValidationError(`File is ${fileSizeMB} MB — max is 10 MB. Try compressing it at tinypng.com or squoosh.app first.`);
       return;
     }
     setImgUploadState("processing");
@@ -237,35 +254,22 @@ export default function EventDetail() {
     }
     setImgUploadState("uploading");
     try {
-      let objectPath: string;
-      if (isDesktop) {
-        // Desktop: direct binary upload — local server saves to .uploads/ and syncs to cloud
-        const uploadRes = await fetch("/api/storage/uploads/file", {
-          method: "POST",
-          headers: {
-            "Content-Type": "image/png",
-            "x-file-name": `event-${eventId}-image.png`,
-            "x-content-type": "image/png",
-          },
-          credentials: "include",
-          body: blob,
-        });
-        if (!uploadRes.ok) throw new Error("Upload failed");
-        ({ objectPath } = await uploadRes.json() as { objectPath: string });
-      } else {
-        // Cloud: presigned URL — uploads directly to object storage, never touches ephemeral disk
-        const urlRes = await fetch("/api/storage/uploads/request-url", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ name: `event-${eventId}-image.png`, size: blob.size, contentType: "image/png" }),
-        });
-        if (!urlRes.ok) throw new Error("Failed to get upload URL");
-        const { uploadURL, objectPath: op } = await urlRes.json() as { uploadURL: string; objectPath: string };
-        const putRes = await fetch(uploadURL, { method: "PUT", body: blob, headers: { "Content-Type": "image/png" } });
-        if (!putRes.ok) throw new Error("Upload to storage failed");
-        objectPath = op;
+      // Direct binary upload — server saves to local disk and syncs to cloud storage
+      const uploadRes = await fetch("/api/storage/uploads/file", {
+        method: "POST",
+        headers: {
+          "Content-Type": "image/png",
+          "x-file-name": `event-${eventId}-image.png`,
+          "x-content-type": "image/png",
+        },
+        credentials: "include",
+        body: blob,
+      });
+      if (!uploadRes.ok) {
+        const body = await uploadRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || `Server error ${uploadRes.status} — please try again`);
       }
+      const { objectPath } = await uploadRes.json() as { objectPath: string };
       await fetch(`/api/events/${eventId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -275,9 +279,9 @@ export default function EventDetail() {
       queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
       setImgUploadState("done");
       setTimeout(() => setImgUploadState("idle"), 2500);
-    } catch {
+    } catch (err) {
+      setImgUploadError(err instanceof Error ? err.message : "Upload failed — please try again");
       setImgUploadState("error");
-      setTimeout(() => setImgUploadState("idle"), 3000);
     }
   };
 
@@ -375,6 +379,9 @@ export default function EventDetail() {
       paymentEnabled: false,
       requireAma: false,
       entryFee: "",
+      earlyBirdEnabled: false,
+      earlyBirdFee: "",
+      earlyBirdEndsAt: "",
       registrationOpen: "",
       registrationClose: "",
       transponderRentalEnabled: false,
@@ -393,6 +400,7 @@ export default function EventDetail() {
   const watchMultiDay = form.watch("multiDay");
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
+  const watchEarlyBirdEnabled = form.watch("earlyBirdEnabled");
   const watchTimingTechnology = form.watch("timingTechnology");
   const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
   const watchRequireTransponder = form.watch("requireTransponder");
@@ -429,10 +437,14 @@ export default function EventDetail() {
         name: cls,
         maxRiders: limits[cls] ?? "",
         seriesIds: evtClassSeriesMap[cls] ?? [],
+        details: ((evt as any).raceClassDetails ?? {})[cls] ?? "",
       })),
       paymentEnabled: evt.entryFee != null,
       requireAma: evt.requireAma ?? false,
       entryFee: evt.entryFee != null ? String(evt.entryFee) : "",
+      earlyBirdEnabled: !!(evt as any).earlyBirdFee && !!(evt as any).earlyBirdEndsAt,
+      earlyBirdFee: (evt as any).earlyBirdFee != null ? String((evt as any).earlyBirdFee) : "",
+      earlyBirdEndsAt: (evt as any).earlyBirdEndsAt ?? "",
       registrationOpen: evt.registrationOpen ? toLocalDatetimeString(new Date(evt.registrationOpen)) : "",
       registrationClose: evt.registrationClose ? toLocalDatetimeString(new Date(evt.registrationClose)) : "",
       transponderRentalEnabled: (evt as any).transponderRentalEnabled ?? false,
@@ -448,18 +460,23 @@ export default function EventDetail() {
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
     setEditSeriesId(currentSeries ? String(currentSeries.id) : "none");
+    setEditContingencyBrands(((evt as any)?.contingencyBrands as string[] | null) ?? []);
   };
 
   const onSubmit = (data: FormValues) => {
     const classNames = data.raceClasses.map((r) => r.name.trim()).filter(Boolean);
     const classLimits: Record<string, number | null> = {};
     const classSeriesMap: Record<string, number[]> = {};
+    const classDetails: Record<string, string> = {};
     data.raceClasses.forEach((r) => {
       const key = r.name.trim();
       if (!key) return;
       classLimits[key] = r.maxRiders !== "" && r.maxRiders != null ? Number(r.maxRiders) : null;
       if (r.seriesIds && r.seriesIds.length > 0) {
         classSeriesMap[key] = r.seriesIds;
+      }
+      if (r.details && r.details.trim()) {
+        classDetails[key] = r.details.trim();
       }
     });
 
@@ -488,6 +505,7 @@ export default function EventDetail() {
         raceClasses: classNames,
         raceClassLimits: classLimits,
         raceClassSeriesMap: classSeriesMap,
+        raceClassDetails: classDetails,
         paymentEnabled: data.paymentEnabled,
         requireAma: data.requireAma,
         noDuplicateBibs: data.noDuplicateBibs,
@@ -496,6 +514,8 @@ export default function EventDetail() {
         requireTransponder: data.timingTechnology === "mylaps" ? data.requireTransponder : false,
         scoringTableId: data.scoringTableId ?? null,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
+        earlyBirdFee: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdFee ? Number(data.earlyBirdFee) : null,
+        earlyBirdEndsAt: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdEndsAt ? data.earlyBirdEndsAt : null,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
         transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
@@ -503,6 +523,7 @@ export default function EventDetail() {
         rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
         purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
         amaEventId: data.amaEventId || undefined,
+        contingencyBrands: editContingencyBrands.length > 0 ? editContingencyBrands : null,
       } as any
     }, {
       onSuccess: () => {
@@ -600,8 +621,11 @@ export default function EventDetail() {
                     <X size={14} className="mr-1.5" /> Remove
                   </Button>
                   {imgUploadState === "done" && <span className="text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle size={14} /> Saved</span>}
-                  {imgUploadState === "error" && <span className="text-sm text-destructive font-medium">Upload failed — try again</span>}
-                  {imgValidationError && <span className="text-sm text-destructive font-medium w-full">{imgValidationError}</span>}
+                  {(imgUploadState === "error" || imgUploadError || imgValidationError) && (
+                    <span className="text-sm text-destructive font-medium w-full">
+                      {imgValidationError || imgUploadError || "Upload failed — please try again"}
+                    </span>
+                  )}
                 </CardContent>
               </>
             ) : (
@@ -640,8 +664,11 @@ export default function EventDetail() {
                     </label>
                   </div>
                   {imgUploadState === "done" && <p className="text-sm text-green-600 font-medium flex items-center gap-1.5"><CheckCircle size={14} /> Saved</p>}
-                  {imgUploadState === "error" && <p className="text-sm text-destructive font-medium">Upload failed — try again</p>}
-                  {imgValidationError && <p className="text-sm text-destructive font-medium">{imgValidationError}</p>}
+                  {(imgUploadState === "error" || imgUploadError || imgValidationError) && (
+                    <p className="text-sm text-destructive font-medium">
+                      {imgValidationError || imgUploadError || "Upload failed — please try again"}
+                    </p>
+                  )}
                 </div>
               </CardContent>
             )}
@@ -920,16 +947,18 @@ export default function EventDetail() {
                           </div>
                         )}
                         {fields.length > 0 && (
-                          <div className="grid grid-cols-[1fr_1fr_140px_32px] gap-2 mb-1">
+                          <div className="grid grid-cols-[1fr_1fr_140px_32px_32px] gap-2 mb-1">
                             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Class Name</span>
                             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Series</span>
                             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Max Riders</span>
                             <span />
+                            <span />
                           </div>
                         )}
-                        <div ref={classesScrollRef} className="max-h-[280px] overflow-y-auto space-y-2 pr-0.5">
+                        <div ref={classesScrollRef} className="max-h-[320px] overflow-y-auto space-y-1 pr-0.5">
                         {fields.map((field, index) => (
-                          <div key={field.id} className="grid grid-cols-[1fr_1fr_140px_32px] gap-2 items-start">
+                          <div key={field.id} className="space-y-1">
+                            <div className="grid grid-cols-[1fr_1fr_140px_32px_32px] gap-2 items-start">
                             <FormField
                               control={form.control}
                               name={`raceClasses.${index}.name`}
@@ -1022,11 +1051,52 @@ export default function EventDetail() {
                               type="button"
                               variant="ghost"
                               size="icon"
+                              title={expandedDetailRows.has(index) ? "Hide details" : "Add class rules / details"}
+                              className={`h-9 w-8 mt-0 ${expandedDetailRows.has(index) ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`}
+                              onClick={() => setExpandedDetailRows(prev => {
+                                const next = new Set(prev);
+                                if (next.has(index)) next.delete(index); else next.add(index);
+                                return next;
+                              })}
+                            >
+                              <Info size={14} />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
                               className="h-9 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-0"
-                              onClick={() => remove(index)}
+                              onClick={() => {
+                                remove(index);
+                                setExpandedDetailRows(prev => {
+                                  const next = new Set<number>();
+                                  prev.forEach(i => { if (i < index) next.add(i); else if (i > index) next.add(i - 1); });
+                                  return next;
+                                });
+                              }}
                             >
                               <Trash2 size={14} />
                             </Button>
+                            </div>
+                            {expandedDetailRows.has(index) && (
+                              <FormField
+                                control={form.control}
+                                name={`raceClasses.${index}.details`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormControl>
+                                      <textarea
+                                        {...field}
+                                        rows={3}
+                                        placeholder="Class rules, eligibility requirements, bike specs, or any other details riders should know…"
+                                        className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            )}
                           </div>
                         ))}
                         </div>
@@ -1035,7 +1105,7 @@ export default function EventDetail() {
                           variant="outline"
                           size="sm"
                           className="w-full gap-2 border-dashed font-heading uppercase tracking-wider text-muted-foreground hover:text-foreground mt-1"
-                          onClick={() => { append({ name: "", maxRiders: "", seriesIds: [] }); scrollClassesToBottom(); }}
+                          onClick={() => { append({ name: "", maxRiders: "", seriesIds: [], details: "" }); scrollClassesToBottom(); }}
                         >
                           <Plus size={14} /> Add Class
                         </Button>
@@ -1247,6 +1317,58 @@ export default function EventDetail() {
                       />
                     </div>
 
+                    {/* Early sign-up incentive period */}
+                    {stripeReady && watchPaymentEnabled && (
+                      <div className="space-y-3 pl-0.5">
+                        <FormField
+                          control={form.control}
+                          name="earlyBirdEnabled"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Add early sign-up incentive period</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                        {watchEarlyBirdEnabled && (
+                          <div className="ml-6 grid grid-cols-2 gap-4">
+                            <FormField
+                              control={form.control}
+                              name="earlyBirdFee"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Early Bird Fee ($)</FormLabel>
+                                  <FormControl>
+                                    <div className="relative">
+                                      <DollarSign size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                                      <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-8" {...field} />
+                                    </div>
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name="earlyBirdEndsAt"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Incentive Period Ends</FormLabel>
+                                  <FormControl>
+                                    <Input type="date" {...field} />
+                                  </FormControl>
+                                  <p className="text-xs text-muted-foreground">Last day early fee applies (inclusive).</p>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* RFID sticker fee — only shown for RFID events with payments */}
                     {stripeReady && watchPaymentEnabled && watchTimingTechnology === "rfid" && (
                       <div className="space-y-2 pl-0.5">
@@ -1420,6 +1542,71 @@ export default function EventDetail() {
                       </div>
                     </div>
 
+                    {/* Brand Contingencies */}
+                    {!isAdmin && (() => {
+                      const allKnown = [...new Set([...libraryContingencies, ...editContingencyBrands])];
+                      const handleAddBrand = () => {
+                        const trimmed = editNewBrandInput.trim();
+                        if (!trimmed || allKnown.includes(trimmed)) { setEditNewBrandInput(""); return; }
+                        const updatedLibrary = [...libraryContingencies, trimmed];
+                        setEditContingencyBrands(prev => [...prev, trimmed]);
+                        setEditNewBrandInput("");
+                        if (clubId) {
+                          putClubSettings.mutate({ clubId, data: { brandContingencies: updatedLibrary } as any });
+                        }
+                      };
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1.5">
+                            <Flag size={13} className="text-muted-foreground" />
+                            <label className="text-sm font-medium">Brand Contingencies</label>
+                          </div>
+                          <div className="border rounded-lg p-3 space-y-2.5 bg-muted/20">
+                            {allKnown.length === 0 && (
+                              <p className="text-xs text-muted-foreground">No contingency brands yet — add one below.</p>
+                            )}
+                            {allKnown.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {allKnown.map(brand => {
+                                  const selected = editContingencyBrands.includes(brand);
+                                  return (
+                                    <button
+                                      key={brand}
+                                      type="button"
+                                      onClick={() => setEditContingencyBrands(selected
+                                        ? editContingencyBrands.filter(b => b !== brand)
+                                        : [...editContingencyBrands, brand]
+                                      )}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                        selected
+                                          ? "bg-primary text-primary-foreground border-primary"
+                                          : "bg-background text-foreground border-input hover:bg-muted"
+                                      }`}
+                                    >
+                                      {selected && <Check size={9} />}
+                                      {brand}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="Add new brand…"
+                                value={editNewBrandInput}
+                                onChange={e => setEditNewBrandInput(e.target.value)}
+                                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddBrand(); } }}
+                                className="h-8 text-sm"
+                              />
+                              <Button type="button" variant="outline" size="sm" className="h-8 px-3 shrink-0" onClick={handleAddBrand}>
+                                <Plus size={14} />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {filteredSeriesList.length > 0 && (
                       <div className="border-t pt-4 space-y-1.5">
                         <label className="text-sm font-medium">Series</label>
@@ -1453,7 +1640,7 @@ export default function EventDetail() {
                   <div className="grid grid-cols-2 gap-y-6">
                     <div>
                       <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Date</div>
-                      <div className="font-medium flex items-center gap-2"><Calendar size={16} className="text-primary"/> {format(parseISO(event.date.substring(0, 10)), 'MMMM d, yyyy')}</div>
+                      <div className="font-medium flex items-center gap-2"><Calendar size={16} className="text-primary"/> {formatEventDatesFull(event.date, (event as any).endDate)}</div>
                     </div>
                     <div>
                       <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Status</div>
