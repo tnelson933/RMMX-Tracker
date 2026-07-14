@@ -2,7 +2,7 @@ import { Switch, Route, Redirect, useRoute, useLocation } from "wouter";
 import { Link } from "wouter";
 import { Component, type ReactNode } from "react";
 import { useGetEvent } from "@workspace/api-client-react";
-import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, CalendarDays, AlertTriangle, Radio } from "lucide-react";
+import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, CalendarDays, AlertTriangle, Radio, XCircle } from "lucide-react";
 
 class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -47,6 +47,8 @@ import Motos from "./Motos";
 import EnterResults from "./EnterResults";
 import Report from "./Report";
 import TransponderRentals from "./TransponderRentals";
+import Cancellations from "./Cancellations";
+import { useListEventCancellations } from "@workspace/api-client-react";
 
 function PracticeRedirect() {
   const [, params] = useRoute("/events/:eventId/practice");
@@ -58,6 +60,8 @@ export default function EventLayout() {
   const eventId = parseInt(params?.eventId || "0");
   
   const { data: event, isLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
+  const { data: cancellationsData } = useListEventCancellations(eventId, { query: { enabled: !!eventId } as any });
+  const unverifiedCount = cancellationsData?.unverifiedCount ?? 0;
 
   if (isLoading) return <div className="p-8">Loading event...</div>;
   if (!event) return <div className="p-8">Event not found</div>;
@@ -88,6 +92,7 @@ export default function EventLayout() {
           <NavLink href={`${basePath}/motos`} icon={<Flag size={16} />}>Race Day Management</NavLink>
           <NavLink href={`${basePath}/results`} icon={<Activity size={16} />}>Enter Results</NavLink>
           <NavLink href={`${basePath}/report`} icon={<FileText size={16} />}>Report</NavLink>
+          <NavLink href={`${basePath}/cancellations`} icon={<XCircle size={16} />} badge={unverifiedCount > 0 ? unverifiedCount : undefined}>Cancellations</NavLink>
           {(event as any).transponderRentalEnabled && (
             <NavLink href={`${basePath}/transponder-rentals`} icon={<Radio size={16} />}>Transponder Rentals</NavLink>
           )}
@@ -105,6 +110,7 @@ export default function EventLayout() {
             <Route path="/events/:eventId/motos" component={Motos} />
             <Route path="/events/:eventId/results" component={EnterResults} />
             <Route path="/events/:eventId/report" component={Report} />
+            <Route path="/events/:eventId/cancellations" component={Cancellations} />
             <Route path="/events/:eventId/transponder-rentals" component={TransponderRentals} />
           </Switch>
         </PageErrorBoundary>
@@ -113,20 +119,25 @@ export default function EventLayout() {
   );
 }
 
-function NavLink({ href, children, icon, exact = false }: { href: string, children: React.ReactNode, icon: React.ReactNode, exact?: boolean }) {
+function NavLink({ href, children, icon, exact = false, badge }: { href: string, children: React.ReactNode, icon: React.ReactNode, exact?: boolean, badge?: number }) {
   const [location] = useLocation();
   const active = exact ? location === href : (location === href || location.startsWith(href + "/"));
 
   return (
     <Link
       href={href}
-      className={`flex items-center gap-2 px-4 py-2.5 rounded-t font-heading uppercase text-sm font-bold tracking-wider transition-colors whitespace-nowrap border-b-2 ${
+      className={`relative flex items-center gap-2 px-4 py-2.5 rounded-t font-heading uppercase text-sm font-bold tracking-wider transition-colors whitespace-nowrap border-b-2 ${
         active
           ? "bg-background text-foreground border-primary"
           : "text-sidebar-foreground/60 hover:text-white hover:bg-white/10 border-transparent"
       }`}
     >
       {icon} {children}
+      {badge != null && badge > 0 && (
+        <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }
