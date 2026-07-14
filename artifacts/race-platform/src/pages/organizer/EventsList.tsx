@@ -103,6 +103,9 @@ const createEventSchema = z.object({
   requireWaiver: z.boolean().default(false),
   scoringTableId: z.number().optional(),
   entryFee: z.string().optional(),
+  earlyBirdEnabled: z.boolean().default(false),
+  earlyBirdFee: z.string().optional(),
+  earlyBirdEndsAt: z.string().optional(),
   transponderRentalEnabled: z.boolean().default(false),
   transponderRentalFee: z.string().optional(),
   rfidStickerFee: z.string().optional(),
@@ -127,6 +130,8 @@ export default function EventsList() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState("upcoming");
   const [createSeriesIds, setCreateSeriesIds] = useState<number[]>([]);
+  const [createContingencyBrands, setCreateContingencyBrands] = useState<string[]>([]);
+  const [createNewBrandInput, setCreateNewBrandInput] = useState("");
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [imgValidationError, setImgValidationError] = useState<string | null>(null);
   const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -222,6 +227,10 @@ export default function EventsList() {
     () => (clubSettingsData?.defaultClasses as { id: string; name: string }[] | undefined) ?? [],
     [clubSettingsData]
   );
+  const libraryContingencies = useMemo<string[]>(
+    () => ((clubSettingsData as any)?.brandContingencies as string[] | undefined) ?? [],
+    [clubSettingsData]
+  );
 
   // Pre-fill trackName from club settings when dialog opens and settings load
   useEffect(() => {
@@ -255,6 +264,9 @@ export default function EventsList() {
       requireWaiver: false,
       scoringTableId: undefined,
       entryFee: "",
+      earlyBirdEnabled: false,
+      earlyBirdFee: "",
+      earlyBirdEndsAt: "",
       transponderRentalEnabled: false,
       transponderRentalFee: "",
       rfidStickerFee: "",
@@ -269,6 +281,7 @@ export default function EventsList() {
   const { fields: purchaseOptionFields, append: appendPurchaseOption, remove: removePurchaseOption } = useFieldArray({ control: form.control, name: "purchaseOptions" });
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
+  const watchEarlyBirdEnabled = form.watch("earlyBirdEnabled");
   const watchTimingTechnology = form.watch("timingTechnology");
   const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
   const watchRequireTransponder = form.watch("requireTransponder");
@@ -310,11 +323,14 @@ export default function EventsList() {
           requireTransponder: data.timingTechnology === "mylaps" ? data.requireTransponder : false,
           scoringTableId: data.scoringTableId ?? null,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
+          earlyBirdFee: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdFee ? Number(data.earlyBirdFee) : undefined,
+          earlyBirdEndsAt: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdEndsAt ? data.earlyBirdEndsAt : undefined,
           transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
           transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
           rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
           purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
           amaEventId: data.amaEventId || undefined,
+          contingencyBrands: createContingencyBrands.length > 0 ? createContingencyBrands : undefined,
         },
       } as any);
     } catch (err: any) {
@@ -354,45 +370,28 @@ export default function EventsList() {
           cleanBlob = await removeBackground(pendingImageFile);
         }
         setCreateImgState("uploading");
-        if (isDesktop) {
-          // Desktop: direct binary upload (local server saves to .uploads/, syncs to cloud on next cycle)
-          const uploadRes = await fetch("/api/storage/uploads/file", {
-            method: "POST",
-            headers: {
-              "Content-Type": "image/png",
-              "x-file-name": `event-${newEvent.id}-image.png`,
-              "x-content-type": "image/png",
-            },
-            credentials: "include",
-            body: cleanBlob,
-          });
-          if (!uploadRes.ok) throw new Error("Upload failed");
-          const { objectPath } = await uploadRes.json() as { objectPath: string };
-          await fetch(`/api/events/${newEvent.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ imageUrl: `/api/storage${objectPath}` }),
-          });
-        } else {
-          // Cloud: presigned URL flow via object storage
-          const ext = "png";
-          const uploadRes = await fetch("/api/storage/uploads/request-url", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: `event-${newEvent.id}-image.${ext}`, size: cleanBlob.size, contentType: "image/png" }),
-          });
-          if (!uploadRes.ok) throw new Error("Failed to get upload URL");
-          const { uploadURL, objectPath } = await uploadRes.json() as { uploadURL: string; objectPath: string };
-          await fetch(uploadURL, { method: "PUT", body: cleanBlob, headers: { "Content-Type": "image/png" } });
-          const imageUrl = `/api/storage${objectPath}`;
-          await fetch(`/api/events/${newEvent.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ imageUrl }),
-          });
+        // Direct binary upload — server saves to local disk and syncs to cloud storage
+        const uploadRes = await fetch("/api/storage/uploads/file", {
+          method: "POST",
+          headers: {
+            "Content-Type": "image/png",
+            "x-file-name": `event-${newEvent.id}-image.png`,
+            "x-content-type": "image/png",
+          },
+          credentials: "include",
+          body: cleanBlob,
+        });
+        if (!uploadRes.ok) {
+          const body = await uploadRes.json().catch(() => ({})) as { error?: string };
+          throw new Error(body.error || "Upload failed");
         }
+        const { objectPath } = await uploadRes.json() as { objectPath: string };
+        await fetch(`/api/events/${newEvent.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ imageUrl: `/api/storage${objectPath}` }),
+        });
         setCreateImgState("done");
       } catch {
         toast({ title: "Event created, but image upload failed", variant: "destructive" });
@@ -402,6 +401,8 @@ export default function EventsList() {
     queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
     setIsCreateOpen(false);
     setCreateSeriesIds([]);
+    setCreateContingencyBrands([]);
+    setCreateNewBrandInput("");
     setPendingImageFile(null);
     setCreateImgState("idle");
     setRemoveBgOnCreate(false);
@@ -432,6 +433,8 @@ export default function EventsList() {
       queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
       setIsCreateOpen(false);
       setCreateSeriesIds([]);
+      setCreateContingencyBrands([]);
+      setCreateNewBrandInput("");
       setPendingImageFile(null);
       setCreateImgState("idle");
       setRemoveBgOnCreate(false);
@@ -511,7 +514,7 @@ export default function EventsList() {
               )}
             </Button>
           )}
-        <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) setCreateSeriesIds([]); }}>
+        <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) { setCreateSeriesIds([]); setCreateContingencyBrands([]); } }}>
           <DialogTrigger asChild>
             <Button className="font-heading uppercase tracking-wider">
               <Plus size={16} className="mr-2" /> Create Event
@@ -846,6 +849,55 @@ export default function EventsList() {
                         </FormItem>
                       )}
                     />
+                  )}
+
+                  {/* Early sign-up incentive period */}
+                  {stripeReady && watchPaymentEnabled && (
+                    <div className="space-y-3 pl-0.5">
+                      <FormField
+                        control={form.control}
+                        name="earlyBirdEnabled"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-2 space-y-0">
+                            <FormControl>
+                              <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                            <FormLabel className="cursor-pointer font-normal">Add early sign-up incentive period</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                      {watchEarlyBirdEnabled && (
+                        <div className="ml-6 grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="earlyBirdFee"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Early Bird Fee ($)</FormLabel>
+                                <FormControl>
+                                  <Input type="number" min="0" step="0.01" placeholder="0.00" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="earlyBirdEndsAt"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Incentive Period Ends</FormLabel>
+                                <FormControl>
+                                  <Input type="date" {...field} />
+                                </FormControl>
+                                <p className="text-xs text-muted-foreground">Last day early fee applies (inclusive).</p>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* RFID sticker fee (RFID + payment only) */}
@@ -1262,6 +1314,71 @@ export default function EventsList() {
                   </div>
                 </div>
 
+                {/* Brand Contingencies */}
+                {!isSuperAdmin && (() => {
+                  const allKnown = [...new Set([...libraryContingencies, ...createContingencyBrands])];
+                  const handleAddBrand = () => {
+                    const trimmed = createNewBrandInput.trim();
+                    if (!trimmed || allKnown.includes(trimmed)) { setCreateNewBrandInput(""); return; }
+                    const updatedLibrary = [...libraryContingencies, trimmed];
+                    setCreateContingencyBrands(prev => [...prev, trimmed]);
+                    setCreateNewBrandInput("");
+                    if (sessionClubId) {
+                      putClubSettings.mutate({ clubId: sessionClubId, data: { brandContingencies: updatedLibrary } as any });
+                    }
+                  };
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <Flag size={13} className="text-muted-foreground" />
+                        <label className="text-sm font-medium">Brand Contingencies</label>
+                      </div>
+                      <div className="border rounded-lg p-3 space-y-2.5 bg-muted/20">
+                        {allKnown.length === 0 && (
+                          <p className="text-xs text-muted-foreground">No contingency brands yet — add one below.</p>
+                        )}
+                        {allKnown.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {allKnown.map(brand => {
+                              const selected = createContingencyBrands.includes(brand);
+                              return (
+                                <button
+                                  key={brand}
+                                  type="button"
+                                  onClick={() => setCreateContingencyBrands(selected
+                                    ? createContingencyBrands.filter(b => b !== brand)
+                                    : [...createContingencyBrands, brand]
+                                  )}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                    selected
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : "bg-background text-foreground border-input hover:bg-muted"
+                                  }`}
+                                >
+                                  {selected && <Check size={9} />}
+                                  {brand}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Add new brand…"
+                            value={createNewBrandInput}
+                            onChange={e => setCreateNewBrandInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddBrand(); } }}
+                            className="h-8 text-sm"
+                          />
+                          <Button type="button" variant="outline" size="sm" className="h-8 px-3 shrink-0" onClick={handleAddBrand}>
+                            <Plus size={14} />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {filteredSeriesList.length > 0 && (
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Apply Series to All Classes</label>
@@ -1364,7 +1481,7 @@ export default function EventsList() {
                   )}
                 </div>
 
-                <div className="pt-4 flex justify-between items-center">
+                <div className="sticky bottom-0 bg-background border-t pt-4 pb-1 -mx-6 px-6 mt-2 flex justify-between items-center">
                   <Button
                     type="button"
                     variant="outline"
@@ -1430,7 +1547,13 @@ export default function EventsList() {
                   <CardContent className="p-0 flex items-center">
                     <div className="bg-sidebar p-4 flex flex-col justify-center items-center text-sidebar-foreground w-24 shrink-0 rounded-l-md border-r">
                       <span className="text-xs font-bold uppercase tracking-widest mb-1">{format(parseISO(event.date.substring(0, 10)), 'MMM')}</span>
-                      <span className="text-3xl font-heading font-bold leading-none">{format(parseISO(event.date.substring(0, 10)), 'dd')}</span>
+                      {(event as any).endDate && String((event as any).endDate).substring(0, 10) !== event.date.substring(0, 10) ? (
+                        <span className="text-2xl font-heading font-bold leading-none">
+                          {format(parseISO(event.date.substring(0, 10)), 'd')}–{format(parseISO(String((event as any).endDate).substring(0, 10)), 'd')}
+                        </span>
+                      ) : (
+                        <span className="text-3xl font-heading font-bold leading-none">{format(parseISO(event.date.substring(0, 10)), 'dd')}</span>
+                      )}
                     </div>
                     <div className="p-4 flex-1 flex items-center justify-between">
                       <div>
