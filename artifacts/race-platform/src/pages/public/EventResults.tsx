@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Calendar, MapPin, Trophy, Flag, ChevronLeft, ChevronRight,
   Clock, Award, Radio, CheckCircle, AlertCircle, Activity,
-  ChevronDown, ChevronUp, Users, Timer, Zap,
+  ChevronDown, ChevronUp, Users, Timer, Zap, ZoomIn, X as XIcon,
 } from "lucide-react";
 import { format, parseISO, isToday } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
@@ -405,6 +405,7 @@ export default function EventResults() {
   const [activeClass, setActiveClass] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [selectedResult, setSelectedResult] = useState<RaceResult | null>(null);
+  const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
 
   useEffect(() => {
     if (!eventId) return;
@@ -540,11 +541,23 @@ export default function EventResults() {
                     />
                   )}
                   {(event as any).imageUrl && (
-                    <img
-                      src={(event as any).imageUrl}
-                      alt={event.name}
-                      className="h-16 w-auto max-w-[180px] object-contain opacity-95 rounded"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setImageLightboxOpen(true)}
+                      className="relative group cursor-zoom-in focus:outline-none"
+                      aria-label="Enlarge event image"
+                    >
+                      <img
+                        src={(event as any).imageUrl}
+                        alt={event.name}
+                        className="h-16 w-auto max-w-[180px] object-contain opacity-95 rounded transition-opacity group-hover:opacity-70"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="bg-black/70 text-white text-[10px] font-medium px-2 py-1 rounded-full flex items-center gap-1 shadow">
+                          <ZoomIn size={11} /> Enlarge
+                        </div>
+                      </div>
+                    </button>
                   )}
                 </div>
               )}
@@ -844,6 +857,30 @@ export default function EventResults() {
 
       {/* Shared lap times modal — driven by selectedResult across both tabs */}
       <LapTimesModal result={selectedResult} onClose={() => setSelectedResult(null)} />
+
+      {/* Image lightbox */}
+      {imageLightboxOpen && (event as any).imageUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setImageLightboxOpen(false)}
+        >
+          <button
+            type="button"
+            className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors bg-black/40 rounded-full p-2"
+            onClick={() => setImageLightboxOpen(false)}
+            aria-label="Close"
+          >
+            <XIcon size={22} />
+          </button>
+          <img
+            src={(event as any).imageUrl}
+            alt={event.name}
+            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+          <p className="mt-4 text-white/40 text-sm select-none">Click anywhere to close</p>
+        </div>
+      )}
     </div>
   );
 }
