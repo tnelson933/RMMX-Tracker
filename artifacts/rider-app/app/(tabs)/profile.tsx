@@ -600,8 +600,10 @@ function ProfileList() {
                     <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
                       {profile.firstName} {profile.lastName}
                     </Text>
-                    {bikeStr ? (
-                      <Text style={{ fontSize: 12, color: ACCENT, fontFamily: "Inter_500Medium", marginTop: 1 }}>{bikeStr}</Text>
+                    {(profile.bikes && profile.bikes.length > 0) ? (
+                      <Text style={{ fontSize: 12, color: ACCENT, fontFamily: "Inter_500Medium", marginTop: 1 }}>
+                        {bikeStr || `${profile.bikes.length} bike${profile.bikes.length === 1 ? "" : "s"}`}
+                      </Text>
                     ) : (
                       <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
                         No bikes yet — expand to add one
