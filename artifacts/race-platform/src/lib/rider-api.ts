@@ -240,6 +240,7 @@ export interface ScheduleMoto {
 }
 
 export interface ScheduleRegistration {
+  id: number;
   riderId: number;
   riderName: string;
   raceClass: string | null;
@@ -329,4 +330,10 @@ export const riderApi = {
 
   setDefaultBike: (riderId: number, bikeId: number): Promise<RiderBike> =>
     apiFetch(`/rider/profiles/${riderId}/bikes/${bikeId}/set-default`, { method: "POST" }),
+
+  cancelRegistrations: (eventId: number, registrationIds: number[]): Promise<{ cancelled: number }> =>
+    apiFetch(`/rider/events/${eventId}/registrations/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ registrationIds }),
+    }),
 };
