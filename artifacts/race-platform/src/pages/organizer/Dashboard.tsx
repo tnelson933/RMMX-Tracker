@@ -41,7 +41,10 @@ export default function Dashboard() {
   const { mutateAsync: updateMe } = useUpdateMe();
 
   // ── Logo upload ──────────────────────────────────────────────────────────
+  const LOGO_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"];
+  const LOGO_MAX_BYTES = 10 * 1024 * 1024;
   const [uploadState, setUploadState] = useState<"idle" | "processing" | "uploading" | "done" | "error">("idle");
+  const [uploadErrorMsg, setUploadErrorMsg] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [removeBg, setRemoveBg] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +52,20 @@ export default function Dashboard() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !clubId) return;
+    setUploadErrorMsg(null);
+    if (!LOGO_ALLOWED_TYPES.includes(file.type)) {
+      setUploadErrorMsg(`"${file.type || file.name.split(".").pop()}" is not supported — please use a JPEG, PNG, GIF, WebP, or SVG file.`);
+      setUploadState("error");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    if (file.size > LOGO_MAX_BYTES) {
+      setUploadErrorMsg(`File is ${fileSizeMB} MB — max is 10 MB. Try compressing it at tinypng.com or squoosh.app first.`);
+      setUploadState("error");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     setUploadState("processing");
     let processedBlob: Blob = file;
     let processedName = file.name.replace(/\.[^.]+$/, ".png");
@@ -76,12 +93,16 @@ export default function Dashboard() {
         credentials: "include",
         body: processedBlob,
       });
-      if (!uploadRes.ok) throw new Error("Failed to upload");
+      if (!uploadRes.ok) {
+        const body = await uploadRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || `Server error ${uploadRes.status} — please try again`);
+      }
       const { objectPath } = await uploadRes.json() as { objectPath: string };
       await updateClub({ clubId, data: { logoUrl: `/api/storage${objectPath}` } });
       await refetchClub();
       setUploadState("done");
-    } catch {
+    } catch (err) {
+      setUploadErrorMsg(err instanceof Error ? err.message : "Upload failed — please try again");
       setUploadState("error");
       setPreviewUrl(null);
     } finally {
@@ -268,7 +289,11 @@ export default function Dashboard() {
                           <div className="flex items-center gap-4">
                             <div className="bg-muted px-4 py-2 rounded text-center min-w-16">
                               <div className="text-xs font-bold text-muted-foreground uppercase">{format(parseISO(event.date.substring(0, 10)), 'MMM')}</div>
-                              <div className="text-xl font-heading font-bold">{format(parseISO(event.date.substring(0, 10)), 'dd')}</div>
+                              <div className="text-xl font-heading font-bold">
+                                {(event as any).endDate && String((event as any).endDate).substring(0, 10) !== event.date.substring(0, 10)
+                                  ? `${format(parseISO(event.date.substring(0, 10)), 'd')}–${format(parseISO(String((event as any).endDate).substring(0, 10)), 'd')}`
+                                  : format(parseISO(event.date.substring(0, 10)), 'dd')}
+                              </div>
                             </div>
                             <div>
                               <h3 className="font-heading font-bold text-xl uppercase">{event.name}</h3>
@@ -362,7 +387,7 @@ export default function Dashboard() {
                     <X size={15} className="mr-1.5" /> Remove
                   </Button>
                   {uploadState === "done" && <span className="text-sm text-green-600 font-medium flex items-center gap-1.5 ml-1"><CheckCircle size={14} /> Saved</span>}
-                  {uploadState === "error" && <span className="text-sm text-destructive font-medium ml-1">Upload failed — try again</span>}
+                  {uploadState === "error" && <span className="text-sm text-destructive font-medium ml-1 w-full">{uploadErrorMsg || "Upload failed — please try again"}</span>}
                 </CardContent>
               </>
             ) : (
@@ -387,7 +412,7 @@ export default function Dashboard() {
                       <Checkbox checked={removeBg} onCheckedChange={v => setRemoveBg(!!v)} disabled={uploadState === "processing" || uploadState === "uploading"} />
                       Remove background
                     </label>
-                    {uploadState === "error" && <span className="text-sm text-destructive font-medium">Upload failed — try again</span>}
+                    {uploadState === "error" && <span className="text-sm text-destructive font-medium w-full">{uploadErrorMsg || "Upload failed — please try again"}</span>}
                   </div>
                 </div>
               </CardContent>
