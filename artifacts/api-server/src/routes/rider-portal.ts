@@ -390,6 +390,77 @@ router.patch("/rider/events/:eventId/my-registrations/:regId", requireRiderAuth,
   return res.json({ id: updated.id, raceClass: updated.raceClass });
 });
 
+// POST /rider/events/:eventId/registrations/cancel — rider cancels their own registration(s)
+router.post("/rider/events/:eventId/registrations/cancel", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const eventId = parseInt(req.params.eventId ?? "", 10);
+  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+
+  const { registrationIds } = req.body as { registrationIds?: unknown };
+  if (!Array.isArray(registrationIds) || registrationIds.length === 0) {
+    return res.status(400).json({ error: "registrationIds (non-empty array) is required" });
+  }
+  const ids = (registrationIds as unknown[]).map(Number).filter(n => !isNaN(n));
+  if (ids.length === 0) return res.status(400).json({ error: "registrationIds must be integers" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const familyRiders = await db
+    .select({ id: ridersTable.id })
+    .from(ridersTable)
+    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+  const familyRiderIds = familyRiders.map(r => r.id);
+
+  // Verify ownership — all IDs must belong to a family rider for this event
+  const regs = await db
+    .select({ id: registrationsTable.id, riderId: registrationsTable.riderId, status: registrationsTable.status })
+    .from(registrationsTable)
+    .where(and(
+      inArray(registrationsTable.id, ids),
+      eq(registrationsTable.eventId, eventId),
+    ));
+
+  for (const reg of regs) {
+    if (reg.riderId == null || !familyRiderIds.includes(reg.riderId)) {
+      return res.status(403).json({ error: "Not your registration" });
+    }
+    if (reg.status === "void") {
+      return res.status(400).json({ error: "Registration is already cancelled" });
+    }
+  }
+  if (regs.length !== ids.length) {
+    return res.status(404).json({ error: "One or more registrations not found" });
+  }
+
+  const now = new Date();
+
+  await db.update(registrationsTable)
+    .set({ status: "void", cancelledAt: now, cancellationSource: "rider" })
+    .where(inArray(registrationsTable.id, ids));
+
+  // Remove check-in records for these registrations so riders don't appear on race-day lists
+  const cancelledRiderIds = [...new Set(regs.map(r => r.riderId!))];
+  for (const riderId of cancelledRiderIds) {
+    const remaining = await db
+      .select({ id: registrationsTable.id })
+      .from(registrationsTable)
+      .where(and(
+        eq(registrationsTable.eventId, eventId),
+        eq(registrationsTable.riderId, riderId),
+        ne(registrationsTable.status, "void"),
+      ));
+    if (remaining.length === 0) {
+      await db.delete(checkinsTable).where(and(
+        eq(checkinsTable.eventId, eventId),
+        eq(checkinsTable.riderId, riderId),
+      ));
+    }
+  }
+
+  return res.json({ cancelled: regs.length });
+});
+
 // GET /rider/profiles — all rider profiles linked to this account's email
 router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
@@ -1138,6 +1209,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
   // Only confirmed registrations for ALL family riders
   const regs = await db
     .select({
+      id: registrationsTable.id,
       riderId: registrationsTable.riderId,
       eventId: registrationsTable.eventId,
       raceClass: registrationsTable.raceClass,
@@ -1165,7 +1237,8 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
         ${eventsTable.status} = 'completed'
         OR SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')
       )`,
-    ));
+    ))
+    .orderBy(asc(eventsTable.date));
 
   if (events.length === 0) return res.json({ familyRiderIds, events: [] });
 
@@ -1245,6 +1318,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
   const results = events.map(event => {
     const eventRegs = regs.filter(r => r.eventId === event.id);
     const registrations = eventRegs.map(r => ({
+      id: r.id,
       riderId: r.riderId,
       riderName: familyRiderMap.get(r.riderId) ?? "Unknown",
       raceClass: r.raceClass ?? null,
