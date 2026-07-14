@@ -1670,7 +1670,7 @@ export default function Motos() {
       ? selectedRounds
       : undefined;
     generateMutation.mutate(
-      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, lapCount: lapCountVal, gatePickMethod, rounds: roundsToSend } as any },
+      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, lapCount: lapCountVal, gatePickMethod, rounds: roundsToSend, useRegistrations: true } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
@@ -2334,7 +2334,7 @@ export default function Motos() {
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Generates motos based on checked-in riders for all classes.
+                    Generates motos from registered riders. Riders are marked pending until they check in — check-in automatically places them into their assigned moto.
                   </p>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Motos per Class</label>
