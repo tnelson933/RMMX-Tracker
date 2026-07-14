@@ -99,13 +99,13 @@ router.get("/public/riders/lookup", async (req, res) => {
       city: rider.city ?? "",
       homeState: rider.homeState ?? "",
       zip: rider.zip ?? "",
-      amaNumber: lastReg?.amaNumber ?? "",
+      amaNumber: lastReg?.amaNumber ?? rider.amaNumber ?? "",
       clubIdNumber: lastReg?.clubIdNumber ?? "",
-      bikeBrand: lastReg?.bikeBrand ?? "",
-      bikeModel: lastReg?.bikeModel ?? "",
-      bikeYear: lastReg?.bikeYear ?? "",
-      bibNumber: lastReg?.bibNumber?.toString() ?? "",
-      sponsors: lastReg?.sponsors ?? "",
+      bikeBrand: lastReg?.bikeBrand ?? rider.bikeManufacturer ?? "",
+      bikeModel: lastReg?.bikeModel ?? rider.bikeModel ?? "",
+      bikeYear: lastReg?.bikeYear ?? rider.bikeYear ?? "",
+      bibNumber: lastReg?.bibNumber?.toString() ?? rider.bibNumber ?? "",
+      sponsors: lastReg?.sponsors ?? rider.sponsors ?? "",
     };
   });
 
@@ -416,7 +416,9 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
 
     const stripe = await getUncachableStripeClient();
     const appUrl = getAppUrl();
-    const entryFee = Number(event.entryFee);
+    const todayStr = new Date().toISOString().substring(0, 10);
+    const earlyBirdActive = !!(event.earlyBirdEndsAt && todayStr <= event.earlyBirdEndsAt && event.earlyBirdFee);
+    const entryFee = earlyBirdActive ? Number(event.earlyBirdFee) : Number(event.entryFee);
     const rentalFee = (reg.transponderRental && event.transponderRentalEnabled && event.transponderRentalFee)
       ? Number(event.transponderRentalFee)
       : 0;
@@ -772,6 +774,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     location: eventsTable.location,
     trackName: eventsTable.trackName,
     raceClasses: eventsTable.raceClasses,
+    raceClassDetails: eventsTable.raceClassDetails,
     status: eventsTable.status,
     entryFee: eventsTable.entryFee,
     paymentEnabled: eventsTable.paymentEnabled,
@@ -790,6 +793,8 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     requireClubId: eventsTable.requireClubId,
     requireWaiver: eventsTable.requireWaiver,
     requireTransponder: eventsTable.requireTransponder,
+    earlyBirdFee: eventsTable.earlyBirdFee,
+    earlyBirdEndsAt: eventsTable.earlyBirdEndsAt,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));
@@ -797,27 +802,43 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: "Event not found" });
   const e = rows[0];
 
-  // If waiver is required, fetch the club's waiver text
-  let waiverText: string | null = null;
-  if (e.requireWaiver) {
-    const [settings] = await db.select({ riderAcknowledgement: clubSettingsTable.riderAcknowledgement })
-      .from(clubSettingsTable)
-      .where(eq(clubSettingsTable.clubId, e.clubId));
-    waiverText = settings?.riderAcknowledgement ?? null;
+  // Fetch club settings: waiver text + pdf + default class details
+  const [settings] = await db.select({
+    riderAcknowledgement: clubSettingsTable.riderAcknowledgement,
+    waiverPdfUrl: clubSettingsTable.waiverPdfUrl,
+    defaultClasses: clubSettingsTable.defaultClasses,
+  }).from(clubSettingsTable).where(eq(clubSettingsTable.clubId, e.clubId));
+
+  const waiverText: string | null = e.requireWaiver ? (settings?.riderAcknowledgement ?? null) : null;
+  const waiverPdfUrl: string | null = e.requireWaiver ? (settings?.waiverPdfUrl ?? null) : null;
+
+  // Build classDetails: start from club-level defaults, then overlay per-event overrides
+  const classDetails: Record<string, string> = {};
+  const defaultClasses = (settings?.defaultClasses ?? []) as { id: string; name: string; details?: string }[];
+  for (const dc of defaultClasses) {
+    if (dc.details && dc.details.trim()) classDetails[dc.name] = dc.details.trim();
+  }
+  const eventLevelDetails = (e.raceClassDetails ?? {}) as Record<string, string>;
+  for (const [cls, detail] of Object.entries(eventLevelDetails)) {
+    if (detail && detail.trim()) classDetails[cls] = detail.trim();
   }
 
   return res.json({
     ...e,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
+    earlyBirdFee: e.earlyBirdFee ? Number(e.earlyBirdFee) : null,
+    earlyBirdEndsAt: e.earlyBirdEndsAt ?? null,
     transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
+    classDetails,
     waiverText,
+    waiverPdfUrl,
   });
 });
 
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, hometown, homeState, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode, categoryId, waiverAcknowledgedAt, purchaseRfidSticker } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, hometown, homeState, streetAddress, city, zip, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode, categoryId, waiverAcknowledgedAt, purchaseRfidSticker, riderId: hintedRiderId } = req.body;
 
   // Accept raceClasses[] (new multi-class) or raceClass string (backward compat)
   const rawClasses = Array.isArray(req.body.raceClasses) ? (req.body.raceClasses as string[]) : null;
@@ -846,12 +867,12 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // Fetch waiver text server-side so the snapshot can't be spoofed by the client
   let serverWaiverSnapshot: string | null = null;
   if (events[0].requireWaiver && waiverAcknowledgedAt) {
-    const [settings] = await db.select({ riderAcknowledgement: clubSettingsTable.riderAcknowledgement })
+    const [settings] = await db.select({ riderAcknowledgement: clubSettingsTable.riderAcknowledgement, waiverPdfUrl: clubSettingsTable.waiverPdfUrl })
       .from(clubSettingsTable)
       .where(eq(clubSettingsTable.clubId, events[0].clubId));
-    serverWaiverSnapshot = settings?.riderAcknowledgement ?? null;
+    serverWaiverSnapshot = settings?.riderAcknowledgement ?? (settings?.waiverPdfUrl ? `[PDF waiver] ${settings.waiverPdfUrl}` : null);
     if (!serverWaiverSnapshot) {
-      return res.status(400).json({ error: "No waiver text configured for this event's club" });
+      return res.status(400).json({ error: "No waiver configured for this event's club" });
     }
   }
   if (events[0].status !== "registration_open") {
@@ -986,24 +1007,62 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     validatedCompCode = codeRow.code;
   }
 
-  // Find or create rider by email + full name.
-  // Matching on name+email (not email alone) ensures that when multiple riders share
-  // the same email address (e.g. a parent registering two kids), the correct rider
-  // record is linked to the registration rather than whichever row happens to come
-  // back first from a plain email query.
+  // Find or create rider.
+  // Priority: if the frontend passed back the riderId it picked from the email-lookup
+  // picker, use that directly — it's always more accurate than name+email matching
+  // (avoids creating duplicates when the user's stored name differs slightly from what
+  // they type, and ensures address/contact fields are always updated on the right record).
+  // Fallback: match by email + full name as before.
   let rider;
   const normFirst = firstName.trim().toLowerCase();
   const normLast  = lastName.trim().toLowerCase();
   const normEmail = email.trim().toLowerCase();
-  const existing = await db.select().from(ridersTable).where(
-    and(
-      sql`lower(${ridersTable.email}) = ${normEmail}`,
-      sql`lower(${ridersTable.firstName}) = ${normFirst}`,
-      sql`lower(${ridersTable.lastName}) = ${normLast}`,
-    )
-  );
+
+  let existingById: typeof ridersTable.$inferSelect | undefined;
+  if (hintedRiderId) {
+    const parsed = Number(hintedRiderId);
+    if (!isNaN(parsed)) {
+      const rows = await db.select().from(ridersTable).where(
+        and(
+          eq(ridersTable.id, parsed),
+          sql`lower(${ridersTable.email}) = ${normEmail}`,
+        )
+      );
+      existingById = rows[0];
+    }
+  }
+
+  const existing = existingById
+    ? [existingById]
+    : await db.select().from(ridersTable).where(
+        and(
+          sql`lower(${ridersTable.email}) = ${normEmail}`,
+          sql`lower(${ridersTable.firstName}) = ${normFirst}`,
+          sql`lower(${ridersTable.lastName}) = ${normLast}`,
+        )
+      );
+
   if (existing[0]) {
-    rider = existing[0];
+    // Update contact/address fields from the latest registration submission so
+    // that profile edits made via the rider app or a re-registration are reflected
+    // in the organizer portal immediately.
+    const updateFields: Record<string, string | null> = {};
+    if (phone) updateFields.phone = phone.trim();
+    if (dateOfBirth) updateFields.dateOfBirth = dateOfBirth.trim();
+    if (emergencyContact) updateFields.emergencyContact = emergencyContact.trim();
+    if (emergencyPhone) updateFields.emergencyPhone = emergencyPhone.trim();
+    if (streetAddress) updateFields.streetAddress = streetAddress.trim();
+    if (city) updateFields.city = city.trim();
+    if (homeState) updateFields.homeState = homeState.trim();
+    if (zip) updateFields.zip = zip.trim();
+    if (hometown) updateFields.hometown = hometown.trim();
+    if (amaNumber) updateFields.amaNumber = amaNumber.trim();
+    if (Object.keys(updateFields).length > 0) {
+      const [updated] = await db.update(ridersTable).set(updateFields).where(eq(ridersTable.id, existing[0].id)).returning();
+      rider = updated;
+    } else {
+      rider = existing[0];
+    }
   } else {
     const [created] = await db.insert(ridersTable).values({
       firstName: firstName.trim(),
@@ -1016,6 +1075,10 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       bibNumber: bibNumber || null,
       hometown: hometown || null,
       homeState: homeState || null,
+      streetAddress: streetAddress || null,
+      city: city || null,
+      zip: zip || null,
+      amaNumber: amaNumber || null,
     } as any).returning();
     rider = created;
   }
@@ -1023,7 +1086,11 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // Determine if payment is required (accounting for comp discount and purchase options)
   const wantsRental = !!(rentTransponder && events[0].transponderRentalEnabled && events[0].transponderRentalFee);
   const wantsRfidSticker = !!(purchaseRfidSticker && events[0].timingTechnology === "rfid" && events[0].rfidStickerFee);
-  const entryFeeNum = events[0].entryFee ? Number(events[0].entryFee) : 0;
+  const todayStrReg = new Date().toISOString().substring(0, 10);
+  const earlyBirdActiveReg = !!(events[0].earlyBirdEndsAt && todayStrReg <= events[0].earlyBirdEndsAt && events[0].earlyBirdFee);
+  const entryFeeNum = earlyBirdActiveReg
+    ? Number(events[0].earlyBirdFee)
+    : (events[0].entryFee ? Number(events[0].entryFee) : 0);
   const numClasses = raceClassList.length;
   const totalEntryFees = entryFeeNum * numClasses;
   const rentalFeeNum = wantsRental && events[0].transponderRentalFee ? Number(events[0].transponderRentalFee) : 0;
@@ -1447,6 +1514,103 @@ router.patch("/events/:eventId/registrations/:regId/transponder-returned", async
 
   if (!reg) return res.status(404).json({ error: "Registration not found" });
   return res.json({ registrationId: reg.id, transponderReturned: reg.transponderReturned });
+});
+
+// ── Organizer: list rider-initiated cancellations for an event ────────────────
+router.get("/events/:eventId/cancellations", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const staffCId = getStaffClubId(res);
+  const eventId = Number(req.params.eventId);
+  if (!eventId || !(await checkEventOwnership(eventId, staffCId, res))) return;
+
+  const rows = await db
+    .select({
+      id: registrationsTable.id,
+      eventId: registrationsTable.eventId,
+      riderId: registrationsTable.riderId,
+      raceClass: registrationsTable.raceClass,
+      bibNumber: registrationsTable.bibNumber,
+      amountPaid: registrationsTable.amountPaid,
+      paymentMethod: registrationsTable.paymentMethod,
+      paymentStatus: registrationsTable.paymentStatus,
+      cancelledAt: registrationsTable.cancelledAt,
+      refundVerifiedAt: registrationsTable.refundVerifiedAt,
+      riderFirstName: ridersTable.firstName,
+      riderLastName: ridersTable.lastName,
+    })
+    .from(registrationsTable)
+    .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+    .where(and(
+      eq(registrationsTable.eventId, eventId),
+      eq(registrationsTable.cancellationSource, "rider"),
+    ))
+    .orderBy(desc(registrationsTable.cancelledAt));
+
+  const cancellations = rows.map(r => ({
+    id: r.id,
+    eventId: r.eventId,
+    riderId: r.riderId,
+    riderName: `${r.riderFirstName ?? ""} ${r.riderLastName ?? ""}`.trim(),
+    raceClass: r.raceClass,
+    bibNumber: r.bibNumber ?? null,
+    amountPaid: r.amountPaid != null ? Number(r.amountPaid) : null,
+    paymentMethod: r.paymentMethod ?? null,
+    paymentStatus: r.paymentStatus ?? null,
+    cancelledAt: r.cancelledAt?.toISOString() ?? "",
+    refundVerifiedAt: r.refundVerifiedAt?.toISOString() ?? null,
+  }));
+
+  const unverifiedCount = cancellations.filter(c => c.refundVerifiedAt == null).length;
+
+  return res.json({ cancellations, unverifiedCount });
+});
+
+// ── Organizer: mark refund as verified ────────────────────────────────────────
+router.patch("/events/:eventId/cancellations/:registrationId/verify", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const staffCId = getStaffClubId(res);
+  const eventId = Number(req.params.eventId);
+  const registrationId = Number(req.params.registrationId);
+  if (!eventId || !(await checkEventOwnership(eventId, staffCId, res))) return;
+
+  const [reg] = await db
+    .select({ id: registrationsTable.id, cancellationSource: registrationsTable.cancellationSource })
+    .from(registrationsTable)
+    .where(and(
+      eq(registrationsTable.id, registrationId),
+      eq(registrationsTable.eventId, eventId),
+    ));
+
+  if (!reg) return res.status(404).json({ error: "Registration not found" });
+  if (reg.cancellationSource !== "rider") return res.status(400).json({ error: "Not a rider-initiated cancellation" });
+
+  const now = new Date();
+  const [updated] = await db
+    .update(registrationsTable)
+    .set({ refundVerifiedAt: now })
+    .where(eq(registrationsTable.id, registrationId))
+    .returning();
+
+  const [rider] = await db
+    .select({ firstName: ridersTable.firstName, lastName: ridersTable.lastName })
+    .from(ridersTable)
+    .where(eq(ridersTable.id, updated.riderId));
+
+  return res.json({
+    id: updated.id,
+    eventId: updated.eventId,
+    riderId: updated.riderId,
+    riderName: `${rider?.firstName ?? ""} ${rider?.lastName ?? ""}`.trim(),
+    raceClass: updated.raceClass,
+    bibNumber: updated.bibNumber ?? null,
+    amountPaid: updated.amountPaid != null ? Number(updated.amountPaid) : null,
+    paymentMethod: updated.paymentMethod ?? null,
+    paymentStatus: updated.paymentStatus ?? null,
+    cancelledAt: updated.cancelledAt?.toISOString() ?? "",
+    refundVerifiedAt: updated.refundVerifiedAt?.toISOString() ?? null,
+  });
 });
 
 // ── Public: verify Stripe payment and confirm registration(s) ─────────────────
