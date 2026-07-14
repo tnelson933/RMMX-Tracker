@@ -11,7 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw, Check, ChevronsUpDown, Search } from "lucide-react";
+import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw, Check, ChevronsUpDown, Search, Pencil } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, parseISO } from "date-fns";
 import { Link, useLocation, useSearch } from "wouter";
@@ -133,6 +133,7 @@ export default function EventsList() {
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   const [createImgState, setCreateImgState] = useState<"idle" | "processing" | "uploading" | "done">("idle");
   const [removeBgOnCreate, setRemoveBgOnCreate] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
 
   // Super-admin sees all events; club_organizer and staff see only their own club's events
   const eventsQuery = isSuperAdmin
@@ -409,6 +410,41 @@ export default function EventsList() {
     setLocation(`/events/${newEvent.id}`);
   };
 
+  const onSaveAsDraft = async () => {
+    const nameValid = await form.trigger("name");
+    if (!nameValid) return;
+    const { name: draftName, clubId: formClubId } = form.getValues();
+    const effectiveClubId = isSuperAdmin ? formClubId : (sessionClubId ?? 0);
+    if (!effectiveClubId) {
+      toast({ title: "No club selected", variant: "destructive" });
+      return;
+    }
+    setIsSavingDraft(true);
+    try {
+      const res = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: draftName, clubId: effectiveClubId, draft: true }),
+      });
+      if (!res.ok) throw new Error(((await res.json()) as any).error ?? "Failed to save draft");
+      const newEvent = await res.json() as { id: number };
+      queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
+      setIsCreateOpen(false);
+      setCreateSeriesIds([]);
+      setPendingImageFile(null);
+      setCreateImgState("idle");
+      setRemoveBgOnCreate(false);
+      form.reset();
+      toast({ title: "Draft saved", description: `"${draftName}" saved as a draft. Finish it anytime.` });
+      setLocation(`/events/${newEvent.id}`);
+    } catch (err: any) {
+      toast({ title: "Failed to save draft", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
   const todayStr = format(new Date(), "yyyy-MM-dd");
 
   // A race_day event whose effective end date has already passed is "past but
@@ -419,6 +455,8 @@ export default function EventsList() {
     const endStr = e.endDate ? String(e.endDate).substring(0, 10) : e.date.substring(0, 10);
     return endStr < todayStr;
   };
+
+  const draftCount = (events ?? []).filter(e => e.status === "draft").length;
 
   const filteredEvents = (() => {
     const q = isSuperAdmin ? searchQuery.trim().toLowerCase() : "";
@@ -1326,7 +1364,16 @@ export default function EventsList() {
                   )}
                 </div>
 
-                <div className="pt-4 flex justify-end">
+                <div className="pt-4 flex justify-between items-center">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isSavingDraft}
+                    onClick={onSaveAsDraft}
+                    className="font-heading uppercase tracking-wider text-muted-foreground"
+                  >
+                    {isSavingDraft ? <><Loader2 size={14} className="mr-2 animate-spin" /> Saving…</> : <><Pencil size={14} className="mr-2" /> Save as Draft</>}
+                  </Button>
                   <Button type="submit" disabled={createMutation.isPending || createImgState === "processing" || createImgState === "uploading"} className="font-heading uppercase tracking-wider">
                     {createMutation.isPending ? "Creating..." : createImgState === "processing" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Removing background…</> : createImgState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading image…</> : "Create Event"}
                   </Button>
@@ -1342,7 +1389,9 @@ export default function EventsList() {
         <TabsList className="bg-muted">
           <TabsTrigger value="upcoming" className="font-heading uppercase">Upcoming</TabsTrigger>
           <TabsTrigger value="all" className="font-heading uppercase">All</TabsTrigger>
-          <TabsTrigger value="draft" className="font-heading uppercase">Draft</TabsTrigger>
+          <TabsTrigger value="draft" className="font-heading uppercase">
+            Draft{draftCount > 0 && <span className="ml-1.5 inline-flex items-center justify-center bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{draftCount}</span>}
+          </TabsTrigger>
           <TabsTrigger value="registration_open" className="font-heading uppercase">Reg Open</TabsTrigger>
           <TabsTrigger value="race_day" className="font-heading uppercase">Race Day</TabsTrigger>
           <TabsTrigger value="completed" className="font-heading uppercase">Completed</TabsTrigger>
@@ -1409,6 +1458,13 @@ export default function EventsList() {
                           }
                           const isToday = event.date.substring(0, 10) === todayStr;
                           const showRaceDay = isToday && event.status !== "completed" && event.status !== "draft";
+                          if (event.status === "draft") {
+                            return (
+                              <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                                <Pencil size={11} /> Draft
+                              </span>
+                            );
+                          }
                           return (
                             <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider ${
                               showRaceDay
