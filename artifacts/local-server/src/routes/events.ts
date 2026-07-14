@@ -39,6 +39,8 @@ function serializeEvent(e: any) {
     paymentEnabled: e.payment_enabled === 1,
     requireAma: e.require_ama === 1,
     entryFee: e.entry_fee != null ? Number(e.entry_fee) : null,
+    earlyBirdFee: e.early_bird_fee != null ? Number(e.early_bird_fee) : null,
+    earlyBirdEndsAt: e.early_bird_ends_at ?? null,
     maxRiders: e.max_riders ?? null,
     raceClassLimits: (() => { try { return JSON.parse(e.race_class_limits || "{}"); } catch { return {}; } })(),
     purchaseOptions: (() => { try { return JSON.parse(e.purchase_options || "[]"); } catch { return []; } })(),
@@ -110,7 +112,7 @@ router.post("/events", (req, res) => {
   const {
     name, date, location, state, trackName, raceClasses,
     registrationOpen, registrationClose, paymentEnabled,
-    requireAma, entryFee, maxRiders, raceClassLimits, purchaseOptions,
+    requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, raceClassLimits, purchaseOptions,
     timingTechnology, transponderRentalEnabled, transponderRentalFee,
     noDuplicateBibs, requireClubId, scoringTableId, minLapMs, amaEventId, endDate,
   } = req.body;
@@ -129,11 +131,12 @@ router.post("/events", (req, res) => {
       `INSERT INTO events
          (club_id, name, date, location, state, track_name, race_classes,
           registration_open, registration_close, payment_enabled, require_ama,
-          entry_fee, max_riders, race_class_limits, purchase_options,
+          entry_fee, early_bird_fee, early_bird_ends_at, max_riders,
+          race_class_limits, purchase_options,
           timing_technology, transponder_rental_enabled, transponder_rental_fee,
           no_duplicate_bibs, require_club_id, scoring_table_id, min_lap_ms,
           ama_event_id, end_date, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
     )
     .run(
       user.club_id, String(name), cleanDate,
@@ -141,7 +144,10 @@ router.post("/events", (req, res) => {
       JSON.stringify(raceClasses ?? []),
       registrationOpen ?? null, registrationClose ?? null,
       paymentEnabled ? 1 : 0, requireAma ? 1 : 0,
-      entryFee ?? null, maxRiders ?? null,
+      entryFee ?? null,
+      earlyBirdFee ?? null,
+      earlyBirdEndsAt ? String(earlyBirdEndsAt).substring(0, 10) : null,
+      maxRiders ?? null,
       JSON.stringify(raceClassLimits ?? {}),
       JSON.stringify(purchaseOptions ?? []),
       timingTechnology ?? "rfid",
