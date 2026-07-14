@@ -62,6 +62,7 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     paymentEnabled: eventsTable.paymentEnabled,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
+    endDate: eventsTable.endDate,
     createdAt: eventsTable.createdAt,
   }).from(eventsTable)
     .where(and(eq(eventsTable.clubId, clubId), sql`${eventsTable.status} != 'completed'`))
@@ -317,7 +318,7 @@ router.get("/public/upcoming", async (req, res) => {
       .map(e => ({
         eventId: e.id,
         name: e.name,
-        state: e.state,
+        state: (e.state ?? "").trim(),
         date: e.date,
         endDate: e.endDate ?? null,
         location: e.location,
