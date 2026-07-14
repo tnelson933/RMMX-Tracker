@@ -9,9 +9,110 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck, Users, ZoomIn } from "lucide-react";
+import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck, Users, ZoomIn, HelpCircle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
+
+// ─── PDF Scroll Viewer ───────────────────────────────────────────────────────
+// Renders each PDF page as a canvas inside a scrollable div so scroll-to-bottom
+// tracking works the same way as the plain-text waiver modal.
+
+function PdfScrollViewer({ url, onScrolledToBottom }: { url: string; onScrolledToBottom: () => void }) {
+  const [numPages, setNumPages] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const pdfDocRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+
+  // Phase 1 — load the PDF document and get page count
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setNumPages(0);
+    pdfDocRef.current = null;
+    canvasRefs.current = [];
+    (async () => {
+      try {
+        const pdfjsLib: any = await import("pdfjs-dist");
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          // Use a CDN-hosted worker that is guaranteed to be loadable as a
+          // standalone module worker regardless of Vite bundling config.
+          pdfjsLib.GlobalWorkerOptions.workerSrc =
+            `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+        }
+        // Pre-fetch as ArrayBuffer so pdfjs never has to issue its own XHR
+        // (avoids range-request issues behind the Replit proxy).
+        const resp = await fetch(url, { credentials: "include" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.arrayBuffer();
+        if (cancelled) return;
+        const doc = await pdfjsLib.getDocument({ data }).promise;
+        if (cancelled) return;
+        pdfDocRef.current = doc;
+        setNumPages(doc.numPages);
+        setLoading(false);
+      } catch (err) {
+        console.error("[PdfScrollViewer] load error:", err);
+        if (!cancelled) { setError("Could not load the PDF. Please try again."); setLoading(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  // Phase 2 — render each page onto its canvas once they are mounted
+  useEffect(() => {
+    if (!pdfDocRef.current || numPages === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < numPages; i++) {
+        if (cancelled) break;
+        const canvas = canvasRefs.current[i];
+        if (!canvas) continue;
+        try {
+          const page = await pdfDocRef.current.getPage(i + 1);
+          const vp = page.getViewport({ scale: 1.5 });
+          canvas.width = vp.width;
+          canvas.height = vp.height;
+          await page.render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
+        } catch { /* skip broken page */ }
+      }
+      // check if all pages fit without scrolling
+      if (!cancelled) {
+        const el = containerRef.current;
+        if (el && el.scrollHeight <= el.clientHeight + 40) onScrolledToBottom();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [numPages, onScrolledToBottom]);
+
+  const handleScroll = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (el.scrollHeight - el.scrollTop <= el.clientHeight + 40) onScrolledToBottom();
+  };
+
+  return (
+    <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-6 py-4 space-y-3" style={{ minHeight: 0 }}>
+      {loading && (
+        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+          <Loader2 size={18} className="animate-spin mr-2" /> Loading document…
+        </div>
+      )}
+      {error && <div className="py-8 text-center text-sm text-destructive">{error}</div>}
+      {!loading && !error && Array.from({ length: numPages }, (_, i) => (
+        <canvas
+          key={i}
+          ref={el => { canvasRefs.current[i] = el; }}
+          className="w-full block rounded border border-border shadow-sm"
+        />
+      ))}
+    </div>
+  );
+}
+
 
 const BIKE_BRANDS = [
   { name: "KTM",       color: "#FF6600", text: "#ffffff" },
@@ -62,14 +163,18 @@ interface EventInfo {
   location: string | null;
   trackName: string | null;
   raceClasses: string[];
+  classDetails?: Record<string, string>;
   status: string;
   entryFee: number | null;
+  earlyBirdFee?: number | null;
+  earlyBirdEndsAt?: string | null;
   paymentEnabled: boolean;
   requireAma: boolean;
   requireClubId: boolean;
   requireWaiver: boolean;
   requireTransponder: boolean;
   waiverText: string | null;
+  waiverPdfUrl?: string | null;
   clubName: string | null;
   clubLogoUrl: string | null;
   registrationOpen: string | null;
@@ -164,9 +269,13 @@ export default function Register() {
   const [compError, setCompError] = useState<string | null>(null);
 
   const [bibCheckState, setBibCheckState] = useState<"idle" | "checking" | "taken" | "available">("idle");
+  const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
 
   // Waiver state
   const [waiverModalOpen, setWaiverModalOpen] = useState(false);
+  const [pdfWaiverModalOpen, setPdfWaiverModalOpen] = useState(false);
+  const [pdfWaiverChecked, setPdfWaiverChecked] = useState(false);
+  const [pdfScrolledToBottom, setPdfScrolledToBottom] = useState(false);
   const [waiverAccepted, setWaiverAccepted] = useState(false);
   const [waiverScrolledToBottom, setWaiverScrolledToBottom] = useState(false);
   const [waiverTimestamp, setWaiverTimestamp] = useState<string | null>(null);
@@ -199,6 +308,9 @@ export default function Register() {
     setWaiverTimestamp(ts);
     setWaiverAccepted(true);
     setWaiverModalOpen(false);
+    setPdfWaiverModalOpen(false);
+    setPdfWaiverChecked(false);
+    setPdfScrolledToBottom(false);
   };
 
   const handleApplyComp = async () => {
@@ -256,6 +368,9 @@ export default function Register() {
       .then((json: any) => setEvent({
         ...json,
         entryFee: json.entryFee != null ? Number(json.entryFee) : null,
+        earlyBirdFee: json.earlyBirdFee != null ? Number(json.earlyBirdFee) : null,
+        earlyBirdEndsAt: json.earlyBirdEndsAt ?? null,
+        waiverPdfUrl: json.waiverPdfUrl ?? null,
         transponderRentalFee: json.transponderRentalFee != null ? Number(json.transponderRentalFee) : null,
         rfidStickerFee: json.rfidStickerFee != null ? Number(json.rfidStickerFee) : null,
         purchaseOptions: (json.purchaseOptions ?? []).map((o: any) => ({ ...o, amount: Number(o.amount) })),
@@ -279,14 +394,17 @@ export default function Register() {
   const rfidStickerTotal = (watchedPurchaseRfidSticker && event?.timingTechnology === "rfid" && event?.rfidStickerFee != null)
     ? Number(event.rfidStickerFee)
     : 0;
-  const totalEntryFees = (event?.entryFee ?? 0) * Math.max(1, numSelectedClasses);
-  const compDiscountDollars = appliedComp && event?.entryFee
+  const today = new Date().toISOString().substring(0, 10);
+  const earlyBirdActive = !!(event?.earlyBirdEndsAt && today <= event.earlyBirdEndsAt && event?.earlyBirdFee != null);
+  const effectiveEntryFee = earlyBirdActive ? (event?.earlyBirdFee ?? null) : (event?.entryFee ?? null);
+  const totalEntryFees = (effectiveEntryFee ?? 0) * Math.max(1, numSelectedClasses);
+  const compDiscountDollars = appliedComp && effectiveEntryFee
     ? (appliedComp.discountType === "percentage"
       ? totalEntryFees * appliedComp.amount / 100
       : appliedComp.amount)
     : 0;
-  const totalDue = event?.paymentEnabled && event?.entryFee
-    ? Math.max(0, (event.entryFee * Math.max(1, numSelectedClasses)) + selectedPurchasesTotal + rentalTotal + rfidStickerTotal - compDiscountDollars)
+  const totalDue = event?.paymentEnabled && effectiveEntryFee
+    ? Math.max(0, (effectiveEntryFee * Math.max(1, numSelectedClasses)) + selectedPurchasesTotal + rentalTotal + rfidStickerTotal - compDiscountDollars)
     : 0;
 
   useEffect(() => {
@@ -389,6 +507,7 @@ export default function Register() {
   }, [pendingPayment?.sessionId, pendingPayment?.registrationId, !!success]);
 
   const populateFromRider = (rider: RiderOption) => {
+    setSelectedRiderId(rider.id ?? null);
     form.setValue("firstName", rider.firstName, { shouldDirty: false });
     form.setValue("lastName", rider.lastName, { shouldDirty: false });
     form.setValue("phone", rider.phone, { shouldDirty: false });
@@ -487,6 +606,7 @@ export default function Register() {
           compCode: appliedComp?.code ?? null,
           waiverAcknowledgedAt: waiverAccepted ? waiverTimestamp : null,
           waiverSnapshot: waiverAccepted ? (event?.waiverText ?? null) : null,
+          ...(selectedRiderId ? { riderId: selectedRiderId } : {}),
         }),
       });
       const json = await res.json();
@@ -736,10 +856,16 @@ export default function Register() {
                 {event.trackName && <span className="flex items-center gap-1.5"><Flag size={14} /> {event.trackName}</span>}
               </div>
             </div>
-            {event.entryFee && (
+            {effectiveEntryFee != null && (
               <div className="bg-primary rounded-md px-5 py-3 text-center shrink-0">
+                {earlyBirdActive && (
+                  <div className="text-yellow-300 text-[10px] font-bold uppercase tracking-widest mb-0.5">🐦 Early Bird</div>
+                )}
                 <div className="text-white/70 text-xs font-bold uppercase tracking-widest">Entry Fee</div>
-                <div className="text-white text-3xl font-heading font-bold">${event.entryFee}</div>
+                <div className="text-white text-3xl font-heading font-bold">${effectiveEntryFee}</div>
+                {earlyBirdActive && event?.entryFee && (
+                  <div className="text-white/60 text-[10px] mt-0.5 line-through">${event.entryFee} after {event.earlyBirdEndsAt}</div>
+                )}
                 {event.raceClasses.length > 1 && (
                   <div className="text-white/60 text-xs mt-0.5">per class</div>
                 )}
@@ -780,8 +906,8 @@ export default function Register() {
               <h2 className="text-2xl font-heading font-bold uppercase">Rider Registration</h2>
               <p className="text-muted-foreground mt-1">
                 Fill out the form below to secure your spot.
-                {event.paymentEnabled && event.entryFee && (
-                  <> You'll be redirected to Stripe to pay the <strong>${event.entryFee} entry fee</strong> after submitting.</>
+                {event.paymentEnabled && effectiveEntryFee && (
+                  <> You'll be redirected to Stripe to pay the <strong>${effectiveEntryFee} entry fee</strong> after submitting.</>
                 )}
               </p>
             </div>
@@ -905,7 +1031,10 @@ export default function Register() {
                     </div>
                     <FormField control={form.control} name="streetAddress" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Street Address</FormLabel>
+                        <div className="flex items-center justify-between">
+                          <FormLabel>Street Address</FormLabel>
+                          <span className="text-[10px] text-muted-foreground">Saved to your profile for next time</span>
+                        </div>
                         <FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1015,11 +1144,32 @@ export default function Register() {
                                   />
                                 </FormControl>
                                 <label htmlFor={`class-${cls}`} className={`text-sm font-semibold flex items-center justify-between flex-1 ${alreadyIn ? "cursor-not-allowed" : "cursor-pointer"}`}>
-                                  <span>{cls}</span>
+                                  <span className="flex items-center gap-1.5">
+                                    {cls}
+                                    {event.classDetails?.[cls] && (
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <span onClick={e => e.preventDefault()} className="cursor-help">
+                                              <HelpCircle className="h-3.5 w-3.5 text-muted-foreground hover:text-primary transition-colors" />
+                                            </span>
+                                          </TooltipTrigger>
+                                          <TooltipContent className="max-w-xs text-sm whitespace-pre-wrap" side="right">
+                                            {event.classDetails[cls]}
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    )}
+                                  </span>
                                   {alreadyIn ? (
                                     <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Already registered</span>
-                                  ) : event.paymentEnabled && event.entryFee ? (
-                                    <span className="text-primary font-bold">${event.entryFee.toFixed(2)}</span>
+                                  ) : event.paymentEnabled && effectiveEntryFee ? (
+                                    <span className="flex items-center gap-1.5">
+                                      {earlyBirdActive && event.entryFee && (
+                                        <span className="text-muted-foreground line-through text-sm">${event.entryFee.toFixed(2)}</span>
+                                      )}
+                                      <span className="text-primary font-bold">${effectiveEntryFee.toFixed(2)}</span>
+                                    </span>
                                   ) : null}
                                 </label>
                               </div>
@@ -1367,15 +1517,15 @@ export default function Register() {
                       </div>
                     )}
                     {compError && <p className="text-xs text-red-500">{compError}</p>}
-                    {(selectedPurchasesTotal > 0 || rentalTotal > 0 || rfidStickerTotal > 0 || appliedComp || numSelectedClasses > 1) && event.entryFee && (
+                    {(selectedPurchasesTotal > 0 || rentalTotal > 0 || rfidStickerTotal > 0 || appliedComp || numSelectedClasses > 1) && effectiveEntryFee && (
                       <div className="border-t pt-2 mt-1 space-y-1.5">
                         <div className="text-xs text-muted-foreground flex justify-between">
                           <span>
                             {numSelectedClasses > 1
-                              ? `Entry fee (${numSelectedClasses} classes × $${event.entryFee.toFixed(2)})`
-                              : "Entry fee"}
+                              ? `Entry fee (${numSelectedClasses} classes × $${effectiveEntryFee.toFixed(2)})${earlyBirdActive ? " 🐦" : ""}`
+                              : earlyBirdActive ? "Entry fee (early bird)" : "Entry fee"}
                           </span>
-                          <span>${(event.entryFee * Math.max(1, numSelectedClasses)).toFixed(2)}</span>
+                          <span>${(effectiveEntryFee * Math.max(1, numSelectedClasses)).toFixed(2)}</span>
                         </div>
                         {(event.purchaseOptions ?? []).filter(o => (watchedPurchaseOptions ?? []).includes(o.id)).map(o => (
                           <div key={o.id} className="text-xs text-muted-foreground flex justify-between">
@@ -1411,8 +1561,8 @@ export default function Register() {
                 )}
 
                 {/* Waiver acknowledgment */}
-                {event.requireWaiver && event.waiverText && (
-                  <div className={`rounded-lg border px-4 py-4 space-y-3 transition-colors ${waiverAccepted ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
+                {event.requireWaiver && (event.waiverText || event.waiverPdfUrl) && (
+                  <div className={`rounded-lg border px-4 py-4 space-y-3 transition-colors ${waiverAccepted ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800" : "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-700"}`}>
                     <div className="flex items-start gap-3">
                       <FileText size={18} className={`mt-0.5 shrink-0 ${waiverAccepted ? "text-green-600" : "text-amber-600"}`} />
                       <div className="flex-1 space-y-1">
@@ -1425,11 +1575,25 @@ export default function Register() {
                             : "You must read and acknowledge the club waiver before registering."}
                         </p>
                       </div>
-                      {waiverAccepted ? (
-                        <ShieldCheck size={18} className="text-green-600 shrink-0 mt-0.5" />
-                      ) : null}
+                      {waiverAccepted && <ShieldCheck size={18} className="text-green-600 shrink-0 mt-0.5" />}
                     </div>
-                    {!waiverAccepted && (
+
+                    {/* PDF waiver path */}
+                    {event.waiverPdfUrl && !waiverAccepted && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full font-heading uppercase tracking-wider border-amber-400 text-amber-700 hover:bg-amber-100"
+                        onClick={() => { setPdfWaiverChecked(false); setPdfWaiverModalOpen(true); }}
+                      >
+                        <FileText size={14} className="mr-2" />
+                        Read &amp; Acknowledge Waiver PDF
+                      </Button>
+                    )}
+
+                    {/* Text waiver path (no PDF) */}
+                    {!event.waiverPdfUrl && !waiverAccepted && (
                       <Button
                         type="button"
                         variant="outline"
@@ -1441,7 +1605,18 @@ export default function Register() {
                         Read &amp; Acknowledge Waiver
                       </Button>
                     )}
-                    {waiverAccepted && (
+
+                    {/* View links after accepted */}
+                    {waiverAccepted && event.waiverPdfUrl && (
+                      <button
+                        type="button"
+                        onClick={() => { setPdfWaiverChecked(false); setPdfWaiverModalOpen(true); }}
+                        className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary w-full"
+                      >
+                        <FileText size={12} /> View PDF
+                      </button>
+                    )}
+                    {waiverAccepted && !event.waiverPdfUrl && event.waiverText && (
                       <Button
                         type="button"
                         variant="ghost"
@@ -1471,6 +1646,68 @@ export default function Register() {
                 <p className="text-center text-xs text-muted-foreground">By registering you agree to the event's waiver and rules.</p>
               </form>
             </Form>
+
+            {/* PDF Waiver modal */}
+            <Dialog open={pdfWaiverModalOpen} onOpenChange={(open) => {
+              setPdfWaiverModalOpen(open);
+              if (!open) { setPdfWaiverChecked(false); setPdfScrolledToBottom(false); }
+            }}>
+              <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
+                <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+                  <DialogTitle className="font-heading uppercase tracking-wide text-base flex items-center gap-2">
+                    <FileText size={18} className="text-primary" />
+                    Club Waiver &amp; Release
+                  </DialogTitle>
+                  {!pdfScrolledToBottom && (
+                    <p className="text-xs text-muted-foreground mt-1">Scroll to the bottom to accept the waiver.</p>
+                  )}
+                </DialogHeader>
+
+                {event.waiverPdfUrl && (
+                  <PdfScrollViewer
+                    url={event.waiverPdfUrl}
+                    onScrolledToBottom={() => setPdfScrolledToBottom(true)}
+                  />
+                )}
+
+                <div className="px-6 py-4 border-t shrink-0 space-y-3">
+                  {!pdfScrolledToBottom && (
+                    <p className="text-xs text-amber-600 text-center">↓ Scroll to the bottom to enable the Accept button</p>
+                  )}
+                  {pdfScrolledToBottom && (
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                      <Checkbox
+                        className="mt-0.5 shrink-0"
+                        checked={pdfWaiverChecked}
+                        onCheckedChange={(v) => setPdfWaiverChecked(!!v)}
+                      />
+                      <span className="text-sm text-foreground leading-snug">
+                        I have read the club waiver and agree to its terms
+                      </span>
+                    </label>
+                  )}
+                  <div className="flex gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => { setPdfWaiverModalOpen(false); setPdfWaiverChecked(false); setPdfScrolledToBottom(false); }}
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      type="button"
+                      className="flex-1 font-heading uppercase tracking-wider"
+                      disabled={!pdfScrolledToBottom || !pdfWaiverChecked}
+                      onClick={handleAcceptWaiver}
+                    >
+                      <ShieldCheck size={16} className="mr-2" />
+                      I Accept
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* Waiver modal */}
             <Dialog open={waiverModalOpen} onOpenChange={setWaiverModalOpen}>
