@@ -210,6 +210,34 @@ function ResultRow({
   );
 }
 
+// ─── Countdown timer ─────────────────────────────────────────────────────────
+
+function GateCountdownTimer({ startedAt, timeLimitMs, plusLaps }: { startedAt: string; timeLimitMs: number; plusLaps: number | null }) {
+  const [remaining, setRemaining] = useState(0);
+  useEffect(() => {
+    const start = new Date(startedAt).getTime();
+    const tick = () => setRemaining(Math.max(0, timeLimitMs - (Date.now() - start)));
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [startedAt, timeLimitMs]);
+
+  const totalSeconds = Math.floor(remaining / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const color = remaining < 60_000 ? "text-red-400 border-red-500/40 bg-red-500/10" : remaining < 120_000 ? "text-orange-400 border-orange-500/40 bg-orange-500/10" : "text-white/70 border-white/20 bg-white/5";
+  return (
+    <div className={`flex items-center gap-2.5 border rounded-full px-4 py-1.5 ${color}`}>
+      <span className="font-mono font-black text-2xl tabular-nums leading-none">
+        {minutes}:{String(seconds).padStart(2, "0")}
+      </span>
+      {plusLaps != null && plusLaps > 0 && (
+        <span className="text-[11px] font-bold uppercase tracking-wider opacity-60">+{plusLaps} Lap{plusLaps > 1 ? "s" : ""}</span>
+      )}
+    </div>
+  );
+}
+
 // ─── Status badge ────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
@@ -424,7 +452,23 @@ export default function GateSchedulePage() {
                 </p>
               )}
             </div>
-            <StatusBadge status={featuredMoto.status} />
+            <div className="flex items-center gap-3 flex-wrap">
+              <StatusBadge status={featuredMoto.status} />
+              {featuredMoto.status === "in_progress" && (featuredMoto as any).timeLimitMs && !(featuredMoto as any).timeExpiredAt && (featuredMoto as any).startedAt && (
+                <GateCountdownTimer
+                  startedAt={(featuredMoto as any).startedAt}
+                  timeLimitMs={(featuredMoto as any).timeLimitMs}
+                  plusLaps={(featuredMoto as any).plusLaps ?? null}
+                />
+              )}
+              {featuredMoto.status === "in_progress" && (featuredMoto as any).timeExpiredAt && (featuredMoto as any).plusLaps > 0 && (
+                <div className="flex items-center gap-2 bg-orange-500/20 border border-orange-500/40 rounded-full px-4 py-1.5 animate-pulse">
+                  <span className="text-orange-400 font-black text-sm uppercase tracking-widest">
+                    Time Expired — +{(featuredMoto as any).plusLaps} Lap{(featuredMoto as any).plusLaps > 1 ? "s" : ""}
+                  </span>
+                </div>
+              )}
+            </div>
 
             {/* Column headers */}
             <div className="w-full flex items-center gap-4 px-0 pt-3 border-t border-white/[0.06] mt-2">
