@@ -42,6 +42,7 @@ import StripeConnect from "@/pages/organizer/StripeConnect";
 import StandalonePractice from "@/pages/organizer/StandalonePractice";
 import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
 import TeamPage from "@/pages/organizer/TeamPage";
+import StaffPage from "@/pages/organizer/StaffPage";
 import { Notifications } from "@/pages/organizer/Notifications";
 import GateSchedulePage from "@/pages/organizer/GateSchedulePage";
 import MobileGateSchedulePage from "@/pages/organizer/MobileGateSchedulePage";
@@ -298,6 +299,9 @@ function Router() {
       {/* ── Organizer / admin only ── */}
       <Route path="/team">
         <OrganizerOnlyRoute><TeamPage /></OrganizerOnlyRoute>
+      </Route>
+      <Route path="/staff">
+        <OrganizerOnlyRoute><StaffPage /></OrganizerOnlyRoute>
       </Route>
       <Route path="/admin/clubs">
         <OrganizerOnlyRoute><ClubsAdmin /></OrganizerOnlyRoute>
