@@ -1158,6 +1158,29 @@ function ScheduleConflictPanel({ conflicts }: { conflicts: ConflictEntry[] }) {
   );
 }
 
+// ── Sortable row for class run order panel ────────────────────────────────────
+function SortableClassRow({ id, index }: { id: string; index: number }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : 1 }}
+      className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-border bg-background select-none touch-none"
+    >
+      <button
+        className="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground shrink-0 touch-none"
+        {...attributes}
+        {...listeners}
+        aria-label="Drag to reorder class"
+      >
+        <GripVertical size={13} />
+      </button>
+      <span className="text-[10px] font-mono text-muted-foreground/60 w-4 shrink-0 text-right">{index + 1}</span>
+      <span className="text-xs font-medium truncate flex-1">{id}</span>
+    </div>
+  );
+}
+
 export default function EventSchedule() {
   const params = useParams();
   const eventId = parseInt(params.eventId || "0");
@@ -1211,6 +1234,8 @@ export default function EventSchedule() {
   const [generateFormat, setGenerateFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState("");
   const [generateLapCount, setGenerateLapCount] = useState("");
+  const [generateTimeLimitMins, setGenerateTimeLimitMins] = useState("");
+  const [generatePlusLaps, setGeneratePlusLaps] = useState("1");
   const [generateGateMethod, setGenerateGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered" | "series_points">("random");
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [generateMinRacesBetween, setGenerateMinRacesBetween] = useState<number>(0);
@@ -1298,6 +1323,12 @@ export default function EventSchedule() {
 
   // ── Event rules data ──
   // Already computed above as isSupercrossFormat
+
+  // ── Class run order state ──
+  const [classOrderState, setClassOrderState] = useState<string[]>([]);
+  const [classOrderSaveStatus, setClassOrderSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const classOrderSeededRef = useRef<number | null>(null);
+  const classOrderSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Minimum lap time state ──
   const [minLapInput, setMinLapInput] = useState("");
@@ -1512,13 +1543,15 @@ export default function EventSchedule() {
     });
   }, [defaultTopPerHeat]);
 
-  // ── Reset min-lap state when navigating between events ──
+  // ── Reset min-lap + class-order state when navigating between events ──
   useEffect(() => {
     setMinLapInput("");
     seededForEventIdRef.current = null;
     lastCommittedRef.current = null;
     pendingSaveRef.current = null;
     isSavingRef.current = false;
+    setClassOrderState([]);
+    classOrderSeededRef.current = null;
   }, [eventId]);
 
   // ── Seed min-lap input from saved event data exactly once per eventId ──
@@ -1531,6 +1564,42 @@ export default function EventSchedule() {
     lastCommittedRef.current = saved ?? null;
     setMinLapInput(saved != null ? formatMinLapTime(saved) : "");
   }, [event]);
+
+  // ── Seed classOrder from event data exactly once per eventId ──
+  useEffect(() => {
+    if (!event) return;
+    const currentEventId = (event as any).id as number;
+    if (classOrderSeededRef.current === currentEventId) return;
+    classOrderSeededRef.current = currentEventId;
+    const savedOrder: string[] | null | undefined = (event as any)?.classOrder;
+    const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
+    if (savedOrder && savedOrder.length > 0) {
+      const ordered = savedOrder.filter((c: string) => allClasses.includes(c));
+      const remaining = allClasses.filter(c => !ordered.includes(c));
+      setClassOrderState([...ordered, ...remaining]);
+    } else {
+      setClassOrderState([...allClasses]);
+    }
+  }, [event]);
+
+  function saveClassOrder(order: string[]) {
+    if (classOrderSavedTimerRef.current) clearTimeout(classOrderSavedTimerRef.current);
+    setClassOrderSaveStatus('saving');
+    updateEventMutation.mutate(
+      { eventId, data: { classOrder: order } as any },
+      {
+        onSuccess: () => {
+          setClassOrderSaveStatus('saved');
+          classOrderSavedTimerRef.current = setTimeout(() => setClassOrderSaveStatus('idle'), 2000);
+        },
+        onError: () => {
+          setClassOrderSaveStatus('error');
+          // Auto-clear after 8 s so the badge doesn't stick around permanently
+          classOrderSavedTimerRef.current = setTimeout(() => setClassOrderSaveStatus('idle'), 8000);
+        },
+      },
+    );
+  }
 
   // ── Always-current save function stored in a ref ──
   const saveMinLapRef = useRef<(input: string) => void>(() => {});
@@ -2032,13 +2101,34 @@ export default function EventSchedule() {
 
   // ── Generate lineups ──
   function handleGenerate() {
+    // Guard: block generation after the race date has passed.
+    const eventRaceDate = ((event as any)?.endDate ?? (event as any)?.date) as string | undefined;
+    if (eventRaceDate) {
+      const effectiveDate = eventRaceDate.substring(0, 10);
+      const todayStr = new Date().toISOString().substring(0, 10);
+      if (effectiveDate < todayStr) {
+        toast({
+          title: "Race date has passed",
+          description: "Change the event's race date to a future date before generating motos.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
-    const classesToUse = generateClass === "all" ? allClasses : [generateClass];
+    // Apply saved class run order when generating all classes
+    const orderedAllClasses = classOrderState.length > 0
+      ? [...classOrderState.filter(c => allClasses.includes(c)), ...allClasses.filter(c => !classOrderState.includes(c))]
+      : allClasses;
+    const classesToUse = generateClass === "all" ? orderedAllClasses : [generateClass];
     const lockedClasses = generateGateMethod === "prior_round_finish"
       ? []
       : classesToUse.filter(cls => rawMotos.some(m => m.raceClass === cls && m.status === "completed"));
     const ridersPerHeatVal = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
     const lapCountVal = generateLapCount.trim() ? parseInt(generateLapCount, 10) : undefined;
+    const timeLimitMsVal = generateTimeLimitMins.trim() ? Math.round(parseFloat(generateTimeLimitMins) * 60 * 1000) : undefined;
+    const plusLapsVal = timeLimitMsVal != null ? (generatePlusLaps.trim() ? parseInt(generatePlusLaps, 10) : 1) : undefined;
     const divCount = generateFormat === "three_moto" ? 3 : generateFormat === "two_moto" ? 2 : 1;
     const roundsToSend = generateSelectedRounds.length > 0 && generateSelectedRounds.length < divCount
       ? generateSelectedRounds
@@ -2052,6 +2142,7 @@ export default function EventSchedule() {
           classes: classesToUse,
           ridersPerHeat: ridersPerHeatVal,
           lapCount: lapCountVal,
+          ...(timeLimitMsVal != null ? { timeLimitMs: timeLimitMsVal, plusLaps: plusLapsVal } : {}),
           gatePickMethod: generateGateMethod,
           rounds: roundsToSend,
           ...(generateMinRacesBetween > 0 ? { minRacesBetween: generateMinRacesBetween } : {}),
@@ -2474,12 +2565,6 @@ export default function EventSchedule() {
                 </div>
               </div>
             )}
-            {!isEnduro && !staggerSelectMode && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 border border-border rounded-md px-3 py-2">
-                <Link2 size={12} className="shrink-0 text-primary/70" />
-                <span>Click <strong>Stagger Motos</strong> to select and link motos for a staggered start.</span>
-              </div>
-            )}
             {!isEnduro && staggerSelectMode && staggerSelected.length < 2 && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded-md px-3 py-2">
                 <Link2 size={12} className="shrink-0 text-primary/70" />
@@ -2597,6 +2682,66 @@ export default function EventSchedule() {
                   </p>
                 </div>
               </div>
+              )}
+
+              {/* Class Run Order — drag to set the schedule order for moto generation */}
+              {!isEnduro && classOrderState.length > 0 && (
+                <div className="border rounded-lg bg-card overflow-hidden sm:col-span-1">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
+                    <LayoutList size={13} className="text-muted-foreground shrink-0" />
+                    <h3 className="font-heading font-bold uppercase tracking-wider text-xs">Class Run Order</h3>
+                    <div className="ml-auto shrink-0">
+                      {classOrderSaveStatus === 'saving' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground animate-pulse">
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 inline-block" />
+                          Saving…
+                        </span>
+                      )}
+                      {classOrderSaveStatus === 'saved' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
+                          <Check size={10} />
+                          Saved
+                        </span>
+                      )}
+                      {classOrderSaveStatus === 'error' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-destructive">
+                          <span>!</span> Error —{" "}
+                          <button
+                            type="button"
+                            className="underline underline-offset-2 hover:opacity-70"
+                            onClick={() => saveClassOrder(classOrderState)}
+                          >
+                            retry
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-2.5 py-2.5 space-y-1.5">
+                    <DndContext
+                      sensors={sensors}
+                      onDragEnd={(e: DragEndEvent) => {
+                        const { active, over } = e;
+                        if (!over || active.id === over.id) return;
+                        const oldIdx = classOrderState.indexOf(String(active.id));
+                        const newIdx = classOrderState.indexOf(String(over.id));
+                        if (oldIdx < 0 || newIdx < 0) return;
+                        const next = arrayMove(classOrderState, oldIdx, newIdx);
+                        setClassOrderState(next);
+                        saveClassOrder(next);
+                      }}
+                    >
+                      <SortableContext items={classOrderState} strategy={verticalListSortingStrategy}>
+                        {classOrderState.map((cls, i) => (
+                          <SortableClassRow key={cls} id={cls} index={i} />
+                        ))}
+                      </SortableContext>
+                    </DndContext>
+                    <p className="text-[10px] text-muted-foreground pt-1 leading-snug">
+                      Drag to set the run order. Generate Lineups will create motos in this order.
+                    </p>
+                  </div>
+                </div>
               )}
 
               {/* Advance to Main — Supercross only */}
@@ -3792,6 +3937,37 @@ export default function EventSchedule() {
               />
               <p className="text-xs text-muted-foreground">
                 If a class exceeds this number, riders are split into separate motos. Leave blank for no limit.
+              </p>
+            </div>
+
+            {/* Time + Laps */}
+            <div className="space-y-2">
+              <Label>
+                Time + Laps{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  value={generateTimeLimitMins}
+                  onChange={e => setGenerateTimeLimitMins(e.target.value)}
+                  placeholder="Minutes"
+                  className="h-9 flex-1"
+                />
+                <span className="text-sm text-muted-foreground shrink-0">min +</span>
+                <Input
+                  type="number"
+                  min={0}
+                  value={generatePlusLaps}
+                  onChange={e => setGeneratePlusLaps(e.target.value)}
+                  placeholder="1"
+                  className="h-9 w-20 shrink-0"
+                />
+                <span className="text-sm text-muted-foreground shrink-0">lap(s)</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Classic timed format — race runs for the set minutes, then riders complete the remaining lap(s). Leave minutes blank to skip.
               </p>
             </div>
 
