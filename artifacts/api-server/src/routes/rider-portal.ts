@@ -1360,6 +1360,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       eventId: event.id,
       eventName: event.name,
       eventDate: event.date ?? null,
+      eventEndDate: event.endDate ?? null,
       eventState: event.state ?? null,
       eventLocation: event.location ?? null,
       status: event.status,
