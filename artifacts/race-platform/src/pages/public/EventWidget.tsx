@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { useGetEvent, useListResults, useListMotos, RaceResult } from "@workspace/api-client-react";
+import { formatEventDates } from "@/lib/eventDates";
 import rmLogo from "@assets/rm-logo.png";
 
 const BRAND_COLORS: Record<string, { bg: string; text: string }> = {
@@ -210,7 +211,7 @@ export default function EventWidget() {
             </div>
             <div style={{ fontSize: 12, color: "#64748b", display: "flex", gap: 12, flexWrap: "wrap" }}>
               {event.date && (
-                <span>📅 {new Date(event.date.substring(0, 10) + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                <span>📅 {formatEventDates(event.date, (event as any).endDate)}</span>
               )}
               {event.location && <span>📍 {event.location}{event.state ? `, ${event.state}` : ""}</span>}
               {event.clubName && <span>🏆 {event.clubName}</span>}
