@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { formatEventDatesFull } from "@/lib/eventDates";
 import { useRoute, Link } from "wouter";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import {
@@ -18,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2, Pencil, X } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2, Pencil, X, Pause } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -119,7 +120,7 @@ async function playRfidPing(count: number) {
   // Context stays open and warm for the next crossing.
 }
 
-function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penaltyMap }: { motoId: number; isElapsedTimeSport?: boolean; isEnduro?: boolean; lapCount?: number | null; penaltyMap?: Record<number, { totalPenaltySeconds: number; disqualified: boolean }> }) {
+function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penaltyMap, onMotoCompleted }: { motoId: number; isElapsedTimeSport?: boolean; isEnduro?: boolean; lapCount?: number | null; penaltyMap?: Record<number, { totalPenaltySeconds: number; disqualified: boolean }>; onMotoCompleted?: () => void }) {
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -127,11 +128,14 @@ function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penal
   // Track total laps across all riders so we know when a new crossing arrives.
   // -1 on first load so we skip playing a sound for the initial snapshot.
   const prevLapTotalRef = useRef<number>(-1);
+  // Fire onMotoCompleted exactly once when the SSE snapshot status becomes "completed".
+  const completedFiredRef = useRef<boolean>(false);
 
   useEffect(() => {
     setLoading(true);
     setSnapshot(null);
     prevLapTotalRef.current = -1;
+    completedFiredRef.current = false;
 
     const es = new EventSource(`/api/timing/live/${motoId}`);
     esRef.current = es;
@@ -155,6 +159,12 @@ function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penal
           setSnapshot(data);
           setLastUpdated(new Date());
           setLoading(false);
+          // Time+Laps auto-complete: server broadcasts status="completed" when
+          // the leader finishes their plus-laps — notify parent to refresh the moto list.
+          if (data.status === "completed" && !completedFiredRef.current) {
+            completedFiredRef.current = true;
+            onMotoCompleted?.();
+          }
         }
       } catch {
         // ignore parse errors
@@ -616,19 +626,24 @@ function FirstPlaceCountdown({ motoId, lapCount, variant = "banner" }: { motoId:
 function PracticeTimeLimitCountdown({
   startedAt,
   timeLimitMs,
+  pausedAt,
+  totalPausedMs = 0,
   onExpire,
 }: {
   startedAt: string | null;
   timeLimitMs: number | null;
+  pausedAt?: string | null;
+  totalPausedMs?: number;
   onExpire?: () => void;
 }) {
   const [now, setNow] = useState(Date.now());
   const expiredRef = useRef(false);
 
   useEffect(() => {
+    if (pausedAt) return; // freeze tick when paused
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [pausedAt]);
 
   useEffect(() => {
     expiredRef.current = false;
@@ -636,11 +651,13 @@ function PracticeTimeLimitCountdown({
 
   if (!startedAt || !timeLimitMs) return null;
 
-  const endMs = new Date(startedAt).getTime() + timeLimitMs;
-  const remaining = endMs - now;
+  // Effective "now" is frozen at the pause moment so the display doesn't advance
+  const effectiveNow = pausedAt ? new Date(pausedAt).getTime() : now;
+  const elapsed = effectiveNow - new Date(startedAt).getTime() - (totalPausedMs ?? 0);
+  const remaining = timeLimitMs - elapsed;
   const isExpired = remaining <= 0;
 
-  if (isExpired && !expiredRef.current) {
+  if (isExpired && !expiredRef.current && !pausedAt) {
     expiredRef.current = true;
     onExpire?.();
   }
@@ -1089,12 +1106,16 @@ export default function Motos() {
   const [format, setFormat] = useState<"one_moto" | "two_moto" | "three_moto">("two_moto");
   const [ridersPerHeat, setRidersPerHeat] = useState<string>("");
   const [generateLapCount, setGenerateLapCount] = useState<string>("");
+  const [generateTimeLimitMinutes, setGenerateTimeLimitMinutes] = useState<string>("");
+  const [generatePlusLaps, setGeneratePlusLaps] = useState<string>("");
   const [gatePickMethod, setGatePickMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [selectedRounds, setSelectedRounds] = useState<number[]>([]);
   const [perMotoDialog, setPerMotoDialog] = useState<{ open: boolean; motoId: number | null; motoName: string; motoClass: string }>({ open: false, motoId: null, motoName: "", motoClass: "" });
   const [perMotoGateMethod, setPerMotoGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered">("random");
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [finishConfirmMotoId, setFinishConfirmMotoId] = useState<number | null>(null);
+  const [finishDontAskAgain, setFinishDontAskAgain] = useState(() => localStorage.getItem("moto-finish-no-confirm") === "1");
   const [editStaggerMotoId, setEditStaggerMotoId] = useState<number | null>(null);
   const [editStaggerOrder, setEditStaggerOrder] = useState<number[]>([]);
   const [expandedMotoId, setExpandedMotoId] = useState<number | null>(null);
@@ -1664,16 +1685,23 @@ export default function Motos() {
         );
     const perHeat = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
     const lapCountVal = generateLapCount.trim() ? parseInt(generateLapCount, 10) : undefined;
+    const timeLimitMsVal = generateTimeLimitMinutes.trim() && parseFloat(generateTimeLimitMinutes) > 0
+      ? Math.round(parseFloat(generateTimeLimitMinutes) * 60000)
+      : undefined;
     const divCount = format === "three_moto" ? 3 : format === "two_moto" ? 2 : 1;
     const allRoundsSet = new Set(Array.from({ length: divCount }, (_, i) => i + 1));
     const roundsToSend = selectedRounds.length > 0 && !selectedRounds.every(r => allRoundsSet.has(r) && selectedRounds.length === divCount)
       ? selectedRounds
       : undefined;
+    const plusLapsVal = generatePlusLaps.trim() && parseInt(generatePlusLaps, 10) >= 0
+      ? parseInt(generatePlusLaps, 10)
+      : undefined;
     generateMutation.mutate(
-      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, lapCount: lapCountVal, gatePickMethod, rounds: roundsToSend, useRegistrations: true } as any },
+      { eventId, data: { raceFormat: format, classes: allClasses, ridersPerHeat: perHeat, lapCount: lapCountVal, timeLimitMs: timeLimitMsVal, plusLaps: plusLapsVal, gatePickMethod, rounds: roundsToSend, useRegistrations: true } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+          queryClient.refetchQueries({ queryKey: getListMotosQueryKey(eventId), type: "all" });
           setIsGenerateOpen(false);
           if (gatePickMethod === "prior_round_finish") {
             toast({ title: "Lineups generated", description: "Gate picks seeded from prior moto finish order." });
@@ -1834,6 +1862,14 @@ export default function Motos() {
     }
   };
 
+  const handleFinishClick = (motoId: number) => {
+    if (finishDontAskAgain) {
+      doFinishMoto(motoId);
+    } else {
+      setFinishConfirmMotoId(motoId);
+    }
+  };
+
   const handleStartMoto = (moto: Moto) => {
     const groupMembers: number[] = (moto as any)?.staggeredGroupMembers ?? [];
     const existing = motos?.find(m => m.status === "in_progress" && !groupMembers.includes(m.id) && m.id !== moto.id);
@@ -1895,6 +1931,30 @@ export default function Motos() {
       toast({ title: partnerIds.length > 0 ? `🔄 Group restarted — ${groupMembers.length} motos` : `🔄 Moto restarted: ${motoName}` });
     } catch {
       toast({ title: "Failed to restart moto", variant: "destructive" });
+    }
+  };
+
+  const doPauseMoto = async (motoId: number) => {
+    try {
+      const r = await fetch(`/api/motos/${motoId}/pause`, { method: "POST" });
+      if (!r.ok) throw new Error("Failed");
+      await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      await queryClient.refetchQueries({ queryKey: getListMotosQueryKey(eventId) });
+      toast({ title: "⏸ Moto paused" });
+    } catch {
+      toast({ title: "Failed to pause moto", variant: "destructive" });
+    }
+  };
+
+  const doResumeMoto = async (motoId: number) => {
+    try {
+      const r = await fetch(`/api/motos/${motoId}/resume`, { method: "POST" });
+      if (!r.ok) throw new Error("Failed");
+      await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      await queryClient.refetchQueries({ queryKey: getListMotosQueryKey(eventId) });
+      toast({ title: "▶ Moto resumed" });
+    } catch {
+      toast({ title: "Failed to resume moto", variant: "destructive" });
     }
   };
 
@@ -2277,13 +2337,14 @@ export default function Motos() {
             if (!open) {
               setGatePickMethod("random");
               setSelectedRounds([]);
+              setGenerateTimeLimitMinutes("");
             }
           }}>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle className="font-heading uppercase text-xl">Generate Lineups</DialogTitle>
             </DialogHeader>
-            <div className="space-y-6 py-4">
+            <div className="space-y-6 py-4 overflow-y-auto pr-1">
               {(() => {
                 const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
                 const lockedClasses = allClasses.filter(cls =>
@@ -2410,6 +2471,48 @@ export default function Motos() {
                   If a class exceeds this number, riders are split into separate motos. Leave blank for no limit.
                 </p>
               </div>
+
+              {/* Race Duration */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Race Duration <span className="text-muted-foreground font-normal">(optional)</span>
+                </label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={generateTimeLimitMinutes}
+                    onChange={e => setGenerateTimeLimitMinutes(e.target.value)}
+                    placeholder="e.g. 15"
+                    className="h-9 pr-14"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">min</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Countdown timer per moto. Starts when the moto is started — counts down live on the race card.
+                </p>
+              </div>
+
+              {/* Plus Laps — only shown when a Race Duration is set */}
+              {generateTimeLimitMinutes.trim() && parseFloat(generateTimeLimitMinutes) > 0 && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Plus Laps <span className="text-muted-foreground font-normal">(optional)</span>
+                  </label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={5}
+                    value={generatePlusLaps}
+                    onChange={e => setGeneratePlusLaps(e.target.value)}
+                    placeholder="e.g. 1"
+                    className="h-9"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Extra laps after the time expires. Set to <strong>1</strong> for standard MX format (one more lap after the flag). Leave blank to end immediately at the buzzer.
+                  </p>
+                </div>
+              )}
 
               {/* Lap count */}
               <div className="space-y-2">
@@ -2807,7 +2910,7 @@ export default function Motos() {
               <div className="heat-sheet-header">
                 <div className="heat-sheet-event-name">{(event as any)?.name ?? "Event"}</div>
                 <div className="heat-sheet-meta">
-                  {(event as any)?.date ? new Date((event as any).date).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }) : ""}
+                  {(event as any)?.date ? formatEventDatesFull((event as any).date, (event as any)?.endDate) : ""}
                   {(event as any)?.location ? ` · ${(event as any).location}` : ""}
                   {(event as any)?.state ? `, ${(event as any).state}` : ""}
                 </div>
@@ -3035,14 +3138,25 @@ export default function Motos() {
                     </span>
                     {/* Status badge */}
                     <span className={`text-xs px-2 py-0.5 rounded border flex items-center gap-1 ${
-                      moto.status === "in_progress" ? `bg-green-500/20 text-green-300 border-green-500/30 ${moto.type !== "enduro_test" ? "animate-pulse" : ""}` :
-                      moto.status === "completed"   ? "bg-white/10 text-white/60 border-white/15" :
-                                                      "bg-white/10 text-white/75 border-white/20"
+                      moto.status === "in_progress" && (moto as any).pausedAt
+                        ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                      : moto.status === "in_progress"
+                        ? `bg-green-500/20 text-green-300 border-green-500/30 ${moto.type !== "enduro_test" ? "animate-pulse" : ""}`
+                      : moto.status === "completed"
+                        ? "bg-white/10 text-white/60 border-white/15"
+                        : "bg-white/10 text-white/75 border-white/20"
                     }`}>
-                      {moto.status === "in_progress" && moto.type !== "enduro_test" && (
+                      {moto.status === "in_progress" && !(moto as any).pausedAt && moto.type !== "enduro_test" && (
                         <span className="inline-block w-1.5 h-1.5 bg-green-400 rounded-full animate-ping shrink-0" />
                       )}
-                      {moto.status === "in_progress" ? "In Progress" : moto.status === "completed" ? "Completed" : "Scheduled"}
+                      {moto.status === "in_progress" && (moto as any).pausedAt && (
+                        <Pause size={9} className="shrink-0" />
+                      )}
+                      {moto.status === "in_progress" && (moto as any).pausedAt
+                        ? "Paused"
+                        : moto.status === "in_progress" ? "In Progress"
+                        : moto.status === "completed" ? "Completed"
+                        : "Scheduled"}
                     </span>
                     {/* Rider count */}
                     <span className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
@@ -3066,8 +3180,23 @@ export default function Motos() {
                     </Button>
                   )}
                   {moto.status === "in_progress" && (
-                    <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs h-7 px-2.5 gap-1" onClick={() => doFinishMoto(moto.id)}>
+                    <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white font-heading uppercase text-xs h-7 px-2.5 gap-1 shadow-sm" onClick={() => handleFinishClick(moto.id)}>
                       <CheckCircle size={12} /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId ? "Finish Group" : "Finish"}
+                    </Button>
+                  )}
+                  {moto.status === "in_progress" && !(moto as any).pausedAt && (
+                    <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white font-heading uppercase text-xs h-7 px-2 gap-1 shadow-sm" onClick={() => doPauseMoto(moto.id)}>
+                      <Pause size={12} /> Pause
+                    </Button>
+                  )}
+                  {moto.status === "in_progress" && (moto as any).pausedAt && (
+                    <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white font-heading uppercase text-xs h-7 px-2 gap-1 shadow-sm" onClick={() => doResumeMoto(moto.id)}>
+                      <Play size={12} /> Continue
+                    </Button>
+                  )}
+                  {moto.status === "in_progress" && (
+                    <Button size="sm" variant="outline" className="font-heading uppercase text-xs h-7 px-2 gap-1" onClick={() => setRestartDialog({ open: true, motoId: moto.id, motoName: moto.name })}>
+                      <RefreshCw size={12} /> Restart
                     </Button>
                   )}
                   {/* Icon buttons */}
@@ -3226,8 +3355,8 @@ export default function Motos() {
                   );
                 })()}
 
-                {/* Practice time limit countdown — banner (shown only for practice motos) */}
-                {moto.type === "practice" && moto.status === "in_progress" && expandedMotoId !== moto.id && (moto as any).timeLimitMs && (
+                {/* Time limit countdown — banner (shown for any moto type with timeLimitMs) */}
+                {moto.status === "in_progress" && expandedMotoId !== moto.id && (moto as any).timeLimitMs && !(moto as any).timeExpiredAt && (
                   <div className={`border-t flex items-center gap-3 px-4 py-2.5 transition-all ${
                     (() => {
                       const r = new Date((moto as any).startedAt ?? Date.now()).getTime() + (moto as any).timeLimitMs - Date.now();
@@ -3236,17 +3365,40 @@ export default function Motos() {
                   }`}>
                     <Timer size={15} className="shrink-0 text-sky-500" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-none mb-0.5">Practice Time Limit</div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-none mb-0.5">
+                        {moto.type === "practice" ? "Practice Time Limit" : (moto as any).plusLaps > 0 ? `Race Timer  +${(moto as any).plusLaps} Lap${(moto as any).plusLaps > 1 ? "s" : ""}` : "Race Timer"}
+                      </div>
                     </div>
                     <PracticeTimeLimitCountdown
                       startedAt={(moto as any).startedAt ?? null}
                       timeLimitMs={(moto as any).timeLimitMs ?? null}
-                      onExpire={() => handleStatusUpdate(moto.id, "completed")}
+                      pausedAt={(moto as any).pausedAt ?? null}
+                      totalPausedMs={(moto as any).totalPausedMs ?? 0}
+                      onExpire={() => {
+                        const mPlusLaps = (moto as any).plusLaps;
+                        if (moto.type !== "practice" && mPlusLaps != null && mPlusLaps > 0) {
+                          updateMutation.mutate({ motoId: moto.id, data: { timeExpiredAt: new Date().toISOString() } as any });
+                        } else {
+                          handleStatusUpdate(moto.id, "completed");
+                        }
+                      }}
                     />
                   </div>
                 )}
-                {/* First place finish countdown — hidden when expanded dialog is open, not shown for practice or enduro */}
-                {moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" && expandedMotoId !== moto.id && (
+                {/* Time Expired / Plus Laps banner — shown when timer fired and riders are completing their extra laps */}
+                {moto.status === "in_progress" && expandedMotoId !== moto.id && (moto as any).timeExpiredAt && (moto as any).plusLaps > 0 && (
+                  <div className="border-t flex items-center gap-3 px-4 py-2.5 bg-orange-500/10 border-orange-500/30 animate-pulse">
+                    <Flag size={15} className="shrink-0 text-orange-500" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-orange-500 leading-none mb-0.5">
+                        Time Expired — +{(moto as any).plusLaps} Lap{(moto as any).plusLaps > 1 ? "s" : ""} After the Flag
+                      </div>
+                      <div className="text-xs text-muted-foreground">Checkered drops when the leader finishes</div>
+                    </div>
+                  </div>
+                )}
+                {/* First place finish countdown — hidden when expanded, not shown for practice/enduro/timed motos */}
+                {moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" && expandedMotoId !== moto.id && !(moto as any).timeLimitMs && (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
                 )}
 
@@ -3268,7 +3420,7 @@ export default function Motos() {
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
                           <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
                             <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
                           </div>
                         </div>
@@ -3277,7 +3429,7 @@ export default function Motos() {
                         <div key={partner.id} className="border-t">
                           <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{partner.name}</div>
                           <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={partner.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={partner.type === "enduro_test"} lapCount={(partner as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                            <LiveLeaderboard motoId={partner.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={partner.type === "enduro_test"} lapCount={(partner as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
                             <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} isEnduro={partner.type === "enduro_test"} />
                           </div>
                         </div>
@@ -3288,6 +3440,16 @@ export default function Motos() {
 
                 {/* Action bar */}
                 <div className="p-3 bg-muted/30 flex gap-2 items-center flex-wrap">
+                  {moto.status === "in_progress" && !(moto as any).pausedAt && (
+                    <Button size="sm" variant="ghost" className="text-amber-500 font-heading uppercase text-xs" onClick={() => doPauseMoto(moto.id)}>
+                      <Pause size={14} className="mr-1" /> Pause Moto
+                    </Button>
+                  )}
+                  {moto.status === "in_progress" && (moto as any).pausedAt && (
+                    <Button size="sm" variant="ghost" className="text-green-500 font-heading uppercase text-xs" onClick={() => doResumeMoto(moto.id)}>
+                      <Play size={14} className="mr-1" /> Continue Moto
+                    </Button>
+                  )}
                   {moto.status === "in_progress" && (
                     <Button size="sm" variant="ghost" className="text-muted-foreground font-heading uppercase text-xs" onClick={() => setRestartDialog({ open: true, motoId: moto.id, motoName: moto.name })}>
                       <RefreshCw size={14} className="mr-1" /> Restart Moto
@@ -3316,12 +3478,25 @@ export default function Motos() {
                     </form>
                   )}
 
-                  {moto.type === "practice" && moto.status === "in_progress" && (moto as any).timeLimitMs ? (
+                  {moto.status === "in_progress" && (moto as any).timeLimitMs && !(moto as any).timeExpiredAt ? (
                     <PracticeTimeLimitCountdown
                       startedAt={(moto as any).startedAt ?? null}
                       timeLimitMs={(moto as any).timeLimitMs ?? null}
-                      onExpire={() => handleStatusUpdate(moto.id, "completed")}
+                      pausedAt={(moto as any).pausedAt ?? null}
+                      totalPausedMs={(moto as any).totalPausedMs ?? 0}
+                      onExpire={() => {
+                        const mPlusLaps = (moto as any).plusLaps;
+                        if (moto.type !== "practice" && mPlusLaps != null && mPlusLaps > 0) {
+                          updateMutation.mutate({ motoId: moto.id, data: { timeExpiredAt: new Date().toISOString() } as any });
+                        } else {
+                          handleStatusUpdate(moto.id, "completed");
+                        }
+                      }}
                     />
+                  ) : moto.status === "in_progress" && (moto as any).timeExpiredAt && (moto as any).plusLaps > 0 ? (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-bold bg-orange-500/10 border-orange-500/30 text-orange-500 shrink-0">
+                      <Flag size={11} />+{(moto as any).plusLaps} Lap{(moto as any).plusLaps > 1 ? "s" : ""} to Go
+                    </div>
                   ) : moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" ? (
                     <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />
                   ) : null}
@@ -3648,16 +3823,20 @@ export default function Motos() {
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} />
                 )}
 
-                {/* Practice time limit countdown — shown in expanded dialog when in progress */}
-                {moto.type === "practice" && moto.status === "in_progress" && (moto as any).timeLimitMs && (
+                {/* Time limit countdown — shown in expanded dialog when in progress */}
+                {moto.status === "in_progress" && (moto as any).timeLimitMs && (
                   <div className="border-t flex items-center gap-3 px-4 py-2.5 bg-sky-500/5">
                     <Timer size={15} className="shrink-0 text-sky-500" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-none mb-0.5">Practice Time Limit</div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-none mb-0.5">
+                        {moto.type === "practice" ? "Practice Time Limit" : "Race Timer"}
+                      </div>
                     </div>
                     <PracticeTimeLimitCountdown
                       startedAt={(moto as any).startedAt ?? null}
                       timeLimitMs={(moto as any).timeLimitMs ?? null}
+                      pausedAt={(moto as any).pausedAt ?? null}
+                      totalPausedMs={(moto as any).totalPausedMs ?? 0}
                       onExpire={() => { handleStatusUpdate(moto.id, "completed"); setExpandedMotoId(null); }}
                     />
                   </div>
@@ -3681,7 +3860,7 @@ export default function Motos() {
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
                           <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
                             <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
                           </div>
                         </div>
@@ -3690,7 +3869,7 @@ export default function Motos() {
                         <div key={partner.id} className="border-t">
                           <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{partner.name}</div>
                           <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={partner.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={partner.type === "enduro_test"} lapCount={(partner as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                            <LiveLeaderboard motoId={partner.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={partner.type === "enduro_test"} lapCount={(partner as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
                             <LiveCrossingsFeed motoId={partner.id} minLapTimeMs={minLapMs ?? null} isEnduro={partner.type === "enduro_test"} />
                           </div>
                         </div>
@@ -3708,12 +3887,22 @@ export default function Motos() {
                   </Button>
                 )}
                 {moto.status === "in_progress" && (
-                  <Button size="sm" variant="outline" className="text-secondary border-secondary/50 font-heading uppercase text-xs" onClick={() => doFinishMoto(moto.id)}>
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white font-heading uppercase text-xs shadow-sm" onClick={() => handleFinishClick(moto.id)}>
                     <CheckCircle size={14} className="mr-1" /> {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId ? "Finish Group" : moto.type === "practice" ? "Finish Practice" : "Finish Moto"}
                   </Button>
                 )}
+                {moto.status === "in_progress" && !(moto as any).pausedAt && (
+                  <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white font-heading uppercase text-xs shadow-sm" onClick={() => doPauseMoto(moto.id)}>
+                    <Pause size={14} className="mr-1" /> {moto.type === "practice" ? "Pause Practice" : "Pause Moto"}
+                  </Button>
+                )}
+                {moto.status === "in_progress" && (moto as any).pausedAt && (
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white font-heading uppercase text-xs shadow-sm" onClick={() => doResumeMoto(moto.id)}>
+                    <Play size={14} className="mr-1" /> {moto.type === "practice" ? "Continue Practice" : "Continue Moto"}
+                  </Button>
+                )}
                 {moto.status === "in_progress" && (
-                  <Button size="sm" variant="ghost" className="text-muted-foreground font-heading uppercase text-xs" onClick={() => setRestartDialog({ open: true, motoId: moto.id, motoName: moto.name })}>
+                  <Button size="sm" variant="outline" className="font-heading uppercase text-xs" onClick={() => setRestartDialog({ open: true, motoId: moto.id, motoName: moto.name })}>
                     <RefreshCw size={14} className="mr-1" /> {moto.type === "practice" ? "Restart Practice" : "Restart Moto"}
                   </Button>
                 )}
@@ -3740,16 +3929,17 @@ export default function Motos() {
                   </form>
                 )}
 
-                {moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" && (
-                  <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />
-                )}
-                {moto.type === "practice" && moto.status === "in_progress" && (moto as any).timeLimitMs && (
+                {moto.status === "in_progress" && (moto as any).timeLimitMs ? (
                   <PracticeTimeLimitCountdown
                     startedAt={(moto as any).startedAt ?? null}
                     timeLimitMs={(moto as any).timeLimitMs ?? null}
+                    pausedAt={(moto as any).pausedAt ?? null}
+                    totalPausedMs={(moto as any).totalPausedMs ?? 0}
                     onExpire={() => { handleStatusUpdate(moto.id, "completed"); setExpandedMotoId(null); }}
                   />
-                )}
+                ) : moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" ? (
+                  <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />
+                ) : null}
 
                 <div className="ml-auto flex gap-1.5">
                   <a href={`/live/${moto.id}`} target="_blank" rel="noopener noreferrer">
@@ -3958,6 +4148,45 @@ export default function Motos() {
               className="font-heading uppercase tracking-wider"
             >
               {deleteMutation.isPending ? "Deleting..." : "Delete Moto"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Finish moto confirmation dialog ── */}
+      <Dialog open={finishConfirmMotoId !== null} onOpenChange={open => { if (!open) setFinishConfirmMotoId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase text-xl">Finish Moto?</DialogTitle>
+            <DialogDescription>
+              This will mark the moto as completed and lock the results.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2 py-1">
+            <Checkbox
+              id="finish-dont-ask"
+              checked={finishDontAskAgain}
+              onCheckedChange={checked => {
+                const val = checked === true;
+                setFinishDontAskAgain(val);
+                if (val) localStorage.setItem("moto-finish-no-confirm", "1");
+                else localStorage.removeItem("moto-finish-no-confirm");
+              }}
+            />
+            <label htmlFor="finish-dont-ask" className="text-sm text-muted-foreground cursor-pointer select-none">
+              Don't ask me again
+            </label>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setFinishConfirmMotoId(null)}>Cancel</Button>
+            <Button
+              className="font-heading uppercase tracking-wider bg-secondary text-secondary-foreground hover:bg-secondary/90"
+              onClick={() => {
+                if (finishConfirmMotoId !== null) doFinishMoto(finishConfirmMotoId);
+                setFinishConfirmMotoId(null);
+              }}
+            >
+              Finish Moto
             </Button>
           </DialogFooter>
         </DialogContent>
