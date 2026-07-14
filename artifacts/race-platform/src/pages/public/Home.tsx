@@ -23,7 +23,7 @@ import { useUserLocation } from "@/hooks/useUserLocation";
 import { haversineDistance } from "@/lib/haversine";
 import { STATE_CENTROIDS } from "@/lib/stateCentroids";
 
-const FALLBACK_TAG = "desktop-v1.0.91";
+const FALLBACK_TAG = "desktop-v1.0.92";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
@@ -313,8 +313,8 @@ export default function Home() {
     e.date.substring(0, 10) > todayStr
   ) ?? [];
 
-  const todayStates = [...new Set(todayEvents.map(e => e.state))].sort();
-  const futureStates = [...new Set(futureEvents.map(e => e.state))].sort();
+  const todayStates = [...new Set(todayEvents.map(e => (e.state ?? "").trim()).filter(Boolean))].sort();
+  const futureStates = [...new Set(futureEvents.map(e => (e.state ?? "").trim()).filter(Boolean))].sort();
   const pastStates = states?.map(s => s.state) ?? [];
 
   // Auto-select today tab if there are events today, else upcoming or past
@@ -359,7 +359,7 @@ export default function Home() {
   }, [futureEvents, userLocation]);
 
   const filteredToday = useMemo(() => {
-    let result = selectedState === "all" ? todayEvents : todayEvents.filter(e => e.state === selectedState);
+    let result = selectedState === "all" ? todayEvents : todayEvents.filter(e => (e.state ?? "").trim() === selectedState);
     if (searchQuery.trim()) {
       result = result.filter(e => matchesSearch([e.name, e.location, (e as any).trackName, e.state, e.clubName], searchQuery));
     }
@@ -370,7 +370,7 @@ export default function Home() {
     let result = nearMe
       ? futureWithDistance.filter(e => e.distanceMi !== null)
       : futureWithDistance;
-    if (selectedState !== "all") result = result.filter(e => e.state === selectedState);
+    if (selectedState !== "all") result = result.filter(e => (e.state ?? "").trim() === selectedState);
     if (regFilter !== "all") result = result.filter(e => e.status === regFilter);
     if (searchQuery.trim()) {
       result = result.filter(e => matchesSearch([e.name, e.location, (e as any).trackName, e.state, e.clubName], searchQuery));
