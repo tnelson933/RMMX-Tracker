@@ -24,6 +24,9 @@ interface LeaderboardData {
   status: string;
   startedAt: string | null;
   completedAt: string | null;
+  timeLimitMs: number | null;
+  plusLaps: number | null;
+  timeExpiredAt: string | null;
   leaderboard: LeaderboardEntry[];
   updatedAt: string;
   correction?: boolean;
@@ -45,6 +48,27 @@ function ElapsedClock({ startedAt }: { startedAt: string }) {
   const centis = Math.floor((elapsed % 1000) / 10);
   return (
     <span className="font-mono tabular-nums">
+      {minutes}:{String(seconds).padStart(2, "0")}.{String(centis).padStart(2, "0")}
+    </span>
+  );
+}
+
+function CountdownClock({ startedAt, timeLimitMs }: { startedAt: string; timeLimitMs: number }) {
+  const [remaining, setRemaining] = useState(0);
+  useEffect(() => {
+    const start = new Date(startedAt).getTime();
+    const tick = () => setRemaining(Math.max(0, timeLimitMs - (Date.now() - start)));
+    tick();
+    const id = setInterval(tick, 100);
+    return () => clearInterval(id);
+  }, [startedAt, timeLimitMs]);
+
+  const totalSeconds = Math.floor(remaining / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const centis = Math.floor((remaining % 1000) / 10);
+  return (
+    <span className={`font-mono tabular-nums ${remaining < 60_000 ? "text-red-400" : remaining < 120_000 ? "text-orange-400" : ""}`}>
       {minutes}:{String(seconds).padStart(2, "0")}.{String(centis).padStart(2, "0")}
     </span>
   );
@@ -223,7 +247,24 @@ export default function LiveLeaderboard() {
                 {data.status.replace("_", " ")}
               </span>
 
-              {isLive && data.startedAt && (
+              {isLive && data.startedAt && data.timeLimitMs && !data.timeExpiredAt && (
+                <span className="text-white/70 text-sm flex items-center gap-1.5">
+                  <Clock size={13} />
+                  <CountdownClock startedAt={data.startedAt} timeLimitMs={data.timeLimitMs} />
+                  {data.plusLaps != null && data.plusLaps > 0 && (
+                    <span className="text-white/40 text-xs">+{data.plusLaps} lap{data.plusLaps > 1 ? "s" : ""}</span>
+                  )}
+                </span>
+              )}
+
+              {isLive && data.startedAt && data.timeLimitMs && data.timeExpiredAt && (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-500/20 text-orange-400 text-xs font-bold uppercase tracking-wide animate-pulse">
+                  <Flag size={11} />
+                  Time Expired{data.plusLaps != null && data.plusLaps > 0 ? ` — +${data.plusLaps} Lap${data.plusLaps > 1 ? "s" : ""}` : ""}
+                </span>
+              )}
+
+              {isLive && data.startedAt && !data.timeLimitMs && (
                 <span className="text-white/50 text-sm flex items-center gap-1.5">
                   <Clock size={13} />
                   <ElapsedClock startedAt={data.startedAt} />
