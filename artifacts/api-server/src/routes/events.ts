@@ -97,6 +97,8 @@ router.get("/events", async (req, res) => {
     requireWaiver: eventsTable.requireWaiver,
     requireTransponder: eventsTable.requireTransponder,
     entryFee: eventsTable.entryFee,
+    earlyBirdFee: eventsTable.earlyBirdFee,
+    earlyBirdEndsAt: eventsTable.earlyBirdEndsAt,
     maxRiders: eventsTable.maxRiders,
     imageUrl: eventsTable.imageUrl,
     timingTechnology: eventsTable.timingTechnology,
@@ -130,6 +132,7 @@ router.get("/events", async (req, res) => {
     ...e,
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
+    earlyBirdFee: e.earlyBirdFee ? Number(e.earlyBirdFee) : null,
     transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
     rfidStickerFee: e.rfidStickerFee ? Number(e.rfidStickerFee) : null,
     createdAt: e.createdAt.toISOString(),
@@ -137,7 +140,7 @@ router.get("/events", async (req, res) => {
 });
 
 router.post("/events", async (req, res) => {
-  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireTransponder, raceStyle } = req.body;
+  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireTransponder, raceStyle } = req.body;
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
@@ -182,6 +185,8 @@ router.post("/events", async (req, res) => {
     requireWaiver: requireWaiver || false,
     requireTransponder: requireTransponder || false,
     entryFee: entryFee ? String(entryFee) : null,
+    earlyBirdFee: earlyBirdFee ? String(earlyBirdFee) : null,
+    earlyBirdEndsAt: earlyBirdEndsAt ? String(earlyBirdEndsAt).substring(0, 10) : null,
     maxRiders,
     timingTechnology: timingTechnology || "rfid",
     raceStyle: raceStyle || "motocross",
@@ -198,6 +203,7 @@ router.post("/events", async (req, res) => {
   return res.status(201).json({
     ...event,
     entryFee: event.entryFee ? Number(event.entryFee) : null,
+    earlyBirdFee: event.earlyBirdFee ? Number(event.earlyBirdFee) : null,
     transponderRentalFee: event.transponderRentalFee ? Number(event.transponderRentalFee) : null,
     rfidStickerFee: event.rfidStickerFee ? Number(event.rfidStickerFee) : null,
     createdAt: event.createdAt.toISOString(),
@@ -228,6 +234,8 @@ router.get("/events/:eventId", async (req, res) => {
     requireWaiver: eventsTable.requireWaiver,
     requireTransponder: eventsTable.requireTransponder,
     entryFee: eventsTable.entryFee,
+    earlyBirdFee: eventsTable.earlyBirdFee,
+    earlyBirdEndsAt: eventsTable.earlyBirdEndsAt,
     maxRiders: eventsTable.maxRiders,
     imageUrl: eventsTable.imageUrl,
     timingTechnology: eventsTable.timingTechnology,
@@ -274,6 +282,7 @@ router.get("/events/:eventId", async (req, res) => {
     classStartTimes,
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
+    earlyBirdFee: e.earlyBirdFee ? Number(e.earlyBirdFee) : null,
     transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
     rfidStickerFee: e.rfidStickerFee ? Number(e.rfidStickerFee) : null,
     createdAt: e.createdAt.toISOString(),
@@ -297,7 +306,7 @@ router.patch("/events/:eventId", async (req, res) => {
   }
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireTransponder", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "raceClassDetails", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireTransponder", "earlyBirdEndsAt", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig", "classOrder", "contingencyBrands"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
@@ -306,6 +315,7 @@ router.patch("/events/:eventId", async (req, res) => {
   if (typeof updates.date === "string") updates.date = updates.date.substring(0, 10);
   if (typeof updates.endDate === "string") updates.endDate = updates.endDate.substring(0, 10);
   if (req.body.entryFee !== undefined) updates.entryFee = req.body.entryFee ? String(req.body.entryFee) : null;
+  if (req.body.earlyBirdFee !== undefined) updates.earlyBirdFee = req.body.earlyBirdFee ? String(req.body.earlyBirdFee) : null;
   if (req.body.transponderRentalFee !== undefined) updates.transponderRentalFee = req.body.transponderRentalFee ? String(req.body.transponderRentalFee) : null;
   if (req.body.rfidStickerFee !== undefined) updates.rfidStickerFee = req.body.rfidStickerFee ? String(req.body.rfidStickerFee) : null;
 
@@ -332,7 +342,7 @@ router.patch("/events/:eventId", async (req, res) => {
     );
   }
 
-  return res.json({ ...event, entryFee: event.entryFee ? Number(event.entryFee) : null, rfidStickerFee: event.rfidStickerFee ? Number(event.rfidStickerFee) : null, createdAt: event.createdAt.toISOString(), clubName: null });
+  return res.json({ ...event, entryFee: event.entryFee ? Number(event.entryFee) : null, earlyBirdFee: event.earlyBirdFee ? Number(event.earlyBirdFee) : null, rfidStickerFee: event.rfidStickerFee ? Number(event.rfidStickerFee) : null, createdAt: event.createdAt.toISOString(), clubName: null });
 });
 
 async function fireStatsEmails(eventId: number, eventName: string, eventDate: string): Promise<void> {
