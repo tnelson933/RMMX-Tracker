@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { formatEventDates } from "@/lib/eventDates";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,6 +13,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { RiderLayout } from "@/components/layout/RiderLayout";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -1177,6 +1187,7 @@ interface UpcomingEvent {
   name: string;
   state: string;
   date: string | null;
+  endDate?: string | null;
   location: string | null;
   trackName: string | null;
   status: string;
@@ -1210,7 +1221,7 @@ function NearbyEventCard({ event, riderEmail }: { event: UpcomingEvent; riderEma
               {event.date && (
                 <span className="flex items-center gap-1">
                   <Calendar size={12} />
-                  {new Date(event.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                  {formatEventDates(event.date, event.endDate ?? undefined)}
                 </span>
               )}
               <span className="flex items-center gap-1">
@@ -2168,6 +2179,31 @@ export default function RiderHistory() {
   const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(initialTab);
   const [practiceMode, setPracticeMode] = useState<"event" | "open">("event");
   const [practiceVenueFilter, setPracticeVenueFilter] = useState<string | null>(null);
+  const [cancelModal, setCancelModal] = useState<{
+    eventId: number;
+    eventName: string;
+    registrations: { id: number; riderName: string; raceClass: string | null }[];
+  } | null>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelSelectedIds, setCancelSelectedIds] = useState<Set<number>>(new Set());
+  const queryClient = useQueryClient();
+
+  async function handleConfirmCancel() {
+    if (!cancelModal || cancelSelectedIds.size === 0) return;
+    setCancelLoading(true);
+    setCancelError(null);
+    try {
+      const ids = Array.from(cancelSelectedIds);
+      await riderApi.cancelRegistrations(cancelModal.eventId, ids);
+      queryClient.invalidateQueries({ queryKey: ["rider-schedule", riderId] });
+      setCancelModal(null);
+    } catch (e) {
+      setCancelError((e as Error).message || "Failed to cancel registration");
+    } finally {
+      setCancelLoading(false);
+    }
+  }
 
   const { data, isLoading, error } = useQuery<RiderHistoryResponse>({
     queryKey: ["rider-history", riderId],
@@ -2562,6 +2598,25 @@ export default function RiderHistory() {
                           Race schedule not posted yet — check back closer to race day
                         </div>
                       )}
+                      {event.status === "registration_open" && event.registrations.length > 0 && (
+                        <div className="px-5 py-3 bg-background border-t flex justify-end">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                              setCancelModal({
+                                eventId: event.eventId,
+                                eventName: event.eventName,
+                                registrations: event.registrations,
+                              });
+                              setCancelSelectedIds(new Set(event.registrations.map(r => r.id)));
+                              setCancelError(null);
+                            }}
+                          >
+                            <X size={13} className="mr-1.5" /> Cancel Registration
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2766,6 +2821,62 @@ export default function RiderHistory() {
           )}
         </div>
       ) : null}
+
+      {/* Cancel registration modal */}
+      <Dialog open={!!cancelModal} onOpenChange={open => { if (!open && !cancelLoading) { setCancelModal(null); setCancelError(null); setCancelSelectedIds(new Set()); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase tracking-tight">Cancel Registration</DialogTitle>
+            <DialogDescription>
+              Select the registrations to cancel for <span className="font-semibold text-foreground">{cancelModal?.eventName}</span>. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {cancelModal && cancelModal.registrations.length > 0 && (
+            <div className="space-y-2 py-1">
+              {cancelModal.registrations.map(r => {
+                const checked = cancelSelectedIds.has(r.id);
+                return (
+                  <label
+                    key={r.id}
+                    className={`flex items-center gap-3 rounded-lg border-2 px-4 py-3 cursor-pointer transition-colors ${
+                      checked ? "border-destructive bg-destructive/5" : "border-border bg-background hover:border-border/80"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={val => {
+                        setCancelSelectedIds(prev => {
+                          const next = new Set(prev);
+                          if (val) next.add(r.id); else next.delete(r.id);
+                          return next;
+                        });
+                      }}
+                      disabled={cancelLoading}
+                      className="shrink-0 data-[state=checked]:bg-destructive data-[state=checked]:border-destructive"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold text-sm">{r.riderName}</span>
+                      {r.raceClass && <span className="text-muted-foreground text-sm"> · {r.raceClass}</span>}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          {cancelError && (
+            <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{cancelError}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setCancelModal(null); setCancelError(null); setCancelSelectedIds(new Set()); }} disabled={cancelLoading}>
+              Keep Registration
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmCancel} disabled={cancelLoading || cancelSelectedIds.size === 0}>
+              {cancelLoading ? <Loader2 size={13} className="animate-spin mr-1.5" /> : null}
+              Yes, Cancel {cancelSelectedIds.size > 0 ? `(${cancelSelectedIds.size})` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </RiderLayout>
   );
 }
