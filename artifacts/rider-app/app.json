@@ -2,7 +2,7 @@
   "expo": {
     "name": "RM Tracker",
     "slug": "rider-app",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rider-app",
@@ -27,7 +27,7 @@
     },
     "android": {
       "package": "com.rockymountain.riderapp",
-      "versionCode": 2
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/images/icon.png"
