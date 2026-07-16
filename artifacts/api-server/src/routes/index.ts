@@ -39,6 +39,7 @@ import eventReaderAssignmentsRouter from "./event-reader-assignments";
 import readerIngestRouter from "./reader-ingest";
 import adminSeedThanksgivingRouter from "./admin-seed-thanksgiving";
 import accountDeletionRouter from "./account-deletion";
+import liabilityWaiverRouter from "./liability-waiver";
 
 const router: IRouter = Router();
 
@@ -82,5 +83,6 @@ router.use(eventReaderAssignmentsRouter);
 router.use(readerIngestRouter);
 router.use(adminSeedThanksgivingRouter);
 router.use(accountDeletionRouter);
+router.use(liabilityWaiverRouter);
 
 export default router;
