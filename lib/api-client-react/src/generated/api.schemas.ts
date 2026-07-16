@@ -60,18 +60,26 @@ export interface DefaultRaceClass {
   name: string;
 }
 
+export type ClubSettingsLiabilityWaiverFieldsItem = { [key: string]: unknown };
+
 export interface ClubSettings {
   clubId: number;
   riderAcknowledgement: string | null;
   waiverPdfUrl?: string | null;
+  liabilityWaiverPdfUrl?: string | null;
+  liabilityWaiverFields?: ClubSettingsLiabilityWaiverFieldsItem[] | null;
   defaultClasses: DefaultRaceClass[];
   brandContingencies?: string[] | null;
   trackName?: string | null;
 }
 
+export type ClubSettingsInputLiabilityWaiverFieldsItem = { [key: string]: unknown };
+
 export interface ClubSettingsInput {
   riderAcknowledgement?: string | null;
   waiverPdfUrl?: string | null;
+  liabilityWaiverPdfUrl?: string | null;
+  liabilityWaiverFields?: ClubSettingsInputLiabilityWaiverFieldsItem[] | null;
   defaultClasses?: DefaultRaceClass[];
   brandContingencies?: string[] | null;
   trackName?: string | null;
