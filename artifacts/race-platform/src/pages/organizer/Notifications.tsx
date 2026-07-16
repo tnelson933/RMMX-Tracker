@@ -68,10 +68,14 @@ export function Notifications() {
     (events ?? []).map((e) => [e.id, e.name]),
   );
 
+  const sortedEvents = [...(events ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+
   useEffect(() => {
     fetch("/api/admin/notifications/push-stats")
       .then((r) => r.json())
-      .then((d) => setPushCount(d.total))
+      .then((d) => setPushCount(d.clubCount ?? d.total))
       .catch(() => {});
   }, []);
 
@@ -118,8 +122,7 @@ export function Notifications() {
     !sending &&
     title.trim().length > 0 &&
     body.trim().length > 0 &&
-    audienceSelected &&
-    audienceCount !== 0;
+    audienceSelected;
 
   async function handleSend() {
     if (!canSend) return;
@@ -240,13 +243,13 @@ export function Notifications() {
               <SelectTrigger>
                 <SelectValue placeholder="Select an event…" />
               </SelectTrigger>
-              <SelectContent>
-                {!events || events.length === 0 ? (
+              <SelectContent className="max-h-72 overflow-y-auto">
+                {sortedEvents.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-muted-foreground">
                     No events found.
                   </div>
                 ) : (
-                  events.map((event) => (
+                  sortedEvents.map((event) => (
                     <SelectItem key={event.id} value={String(event.id)}>
                       {event.name}
                     </SelectItem>
@@ -317,7 +320,7 @@ export function Notifications() {
             {history.map((entry) => (
               <div key={entry.id} className="px-4 py-3 space-y-0.5">
                 <div className="flex items-start justify-between gap-3">
-                  <p className="font-medium text-sm leading-snug flex-1 truncate">
+                  <p className="font-medium text-sm leading-snug flex-1">
                     {entry.title}
                   </p>
                   <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1 mt-0.5">
@@ -325,7 +328,10 @@ export function Notifications() {
                     {entry.sentCount}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                  {entry.body}
+                </p>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground pt-0.5">
                   <span className="flex items-center gap-1">
                     <Clock size={11} />
                     {formatSentAt(entry.sentAt)}
