@@ -10,6 +10,7 @@ import { Bell, Send, Smartphone, ShieldCheck } from "lucide-react";
 export default function AdminNotifications() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
   const [sending, setSending] = useState(false);
   const [pushCount, setPushCount] = useState<number | null>(null);
   const { toast } = useToast();
@@ -30,14 +31,29 @@ export default function AdminNotifications() {
     );
   }
 
+  const linkUrlValid =
+    linkUrl.trim() === "" ||
+    (() => {
+      try {
+        const u = new URL(linkUrl.trim());
+        return u.protocol === "http:" || u.protocol === "https:";
+      } catch {
+        return false;
+      }
+    })();
+
   async function handleSend() {
-    if (!title.trim() || !body.trim()) return;
+    if (!title.trim() || !body.trim() || !linkUrlValid) return;
     setSending(true);
     try {
       const res = await fetch("/api/admin/notifications/broadcast-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), body: body.trim() }),
+        body: JSON.stringify({
+          title: title.trim(),
+          body: body.trim(),
+          ...(linkUrl.trim() ? { linkUrl: linkUrl.trim() } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send");
@@ -47,6 +63,7 @@ export default function AdminNotifications() {
       });
       setTitle("");
       setBody("");
+      setLinkUrl("");
     } catch (e: any) {
       toast({
         title: "Failed to send",
@@ -120,6 +137,28 @@ export default function AdminNotifications() {
           </p>
         </div>
 
+        <div className="space-y-2">
+          <Label htmlFor="admin-notif-link">
+            Link URL <span className="text-muted-foreground font-normal">(optional)</span>
+          </Label>
+          <Input
+            id="admin-notif-link"
+            type="url"
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            placeholder="https://example.com/announcement"
+            maxLength={500}
+          />
+          {!linkUrlValid && (
+            <p className="text-xs text-destructive">
+              Must be a valid link starting with http:// or https://
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            When riders tap the notification, this page will open on their phone.
+          </p>
+        </div>
+
         <p className="text-xs text-muted-foreground">
           This will be sent to <strong>all {pushCount ?? "…"} riders</strong> who
           have the app installed with notifications enabled.
@@ -127,7 +166,7 @@ export default function AdminNotifications() {
 
         <Button
           onClick={handleSend}
-          disabled={!title.trim() || !body.trim() || sending}
+          disabled={!title.trim() || !body.trim() || !linkUrlValid || sending}
           className="w-full"
         >
           <Send size={15} className="mr-2" />
