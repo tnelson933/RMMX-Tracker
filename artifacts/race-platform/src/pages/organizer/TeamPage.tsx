@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink } from "lucide-react";
+import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink, ShieldCheck, LayoutTemplate } from "lucide-react";
+import { PdfFieldEditor, type WaiverField } from "@/components/PdfFieldEditor";
 
 
 function ClassDetailRow({
@@ -104,6 +106,14 @@ export default function TeamPage() {
   const [pdfUploading, setPdfUploading] = useState(false);
   const [waiverPdfUrl, setWaiverPdfUrl] = useState<string | null>(null);
   const pdfFileInputRef = useRef<HTMLInputElement>(null);
+  // Liability Waiver PDF state
+  const [liabilityWaiverPdfUrl, setLiabilityWaiverPdfUrl] = useState<string | null>(null);
+  const [liabilityWaiverPdfUploading, setLiabilityWaiverPdfUploading] = useState(false);
+  const liabilityWaiverPdfFileInputRef = useRef<HTMLInputElement>(null);
+  // Field editor state
+  const [liabilityWaiverFields, setLiabilityWaiverFields] = useState<WaiverField[]>([]);
+  const [showFieldEditor, setShowFieldEditor] = useState(false);
+  const [fieldsSaving, setFieldsSaving] = useState(false);
 
   // Track Library state
   const [tracks, setTracks] = useState<{ id: number; name: string; state: string | null }[]>([]);
@@ -126,6 +136,8 @@ export default function TeamPage() {
       const pdfUrl = (settingsData as any).waiverPdfUrl ?? null;
       setWaiverPdfUrl(pdfUrl);
       if (pdfUrl && !settingsData.riderAcknowledgement) setAckMode("pdf");
+      setLiabilityWaiverPdfUrl((settingsData as any).liabilityWaiverPdfUrl ?? null);
+      setLiabilityWaiverFields(((settingsData as any).liabilityWaiverFields as WaiverField[]) ?? []);
       setClasses((settingsData.defaultClasses as { id: string; name: string }[]) ?? []);
       setBrands(((settingsData as any).brandContingencies as string[]) ?? []);
     }
@@ -171,6 +183,71 @@ export default function TeamPage() {
     } catch {
       toast({ title: "Failed to remove track", variant: "destructive" });
     }
+  };
+
+  // Upload liability waiver PDF
+  const uploadLiabilityWaiverPdf = async (file: File) => {
+    if (!clubId || liabilityWaiverPdfUploading) return;
+    setLiabilityWaiverPdfUploading(true);
+    try {
+      const res = await fetch("/api/storage/uploads/file", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/pdf",
+          "x-file-name": file.name,
+          "x-content-type": "application/pdf",
+        },
+        body: file,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const { objectPath } = await res.json();
+      const serveUrl = `/api/storage${objectPath}`;
+      setLiabilityWaiverPdfUrl(serveUrl);
+      putSettings.mutate(
+        { clubId, data: { liabilityWaiverPdfUrl: serveUrl } as any },
+        {
+          onSuccess: () => toast({ title: "PDF uploaded", description: "Liability waiver PDF saved successfully." }),
+          onError: () => toast({ title: "Error saving PDF URL", variant: "destructive" }),
+        }
+      );
+    } catch {
+      toast({ title: "Upload failed", description: "Could not upload the PDF. Please try again.", variant: "destructive" });
+    } finally {
+      setLiabilityWaiverPdfUploading(false);
+    }
+  };
+
+  // Remove liability waiver PDF
+  const removeLiabilityWaiverPdf = () => {
+    if (!clubId) return;
+    setLiabilityWaiverPdfUrl(null);
+    setLiabilityWaiverFields([]);
+    putSettings.mutate(
+      { clubId, data: { liabilityWaiverPdfUrl: null, liabilityWaiverFields: null } as any },
+      {
+        onSuccess: () => toast({ title: "PDF removed" }),
+        onError: () => toast({ title: "Error removing PDF", variant: "destructive" }),
+      }
+    );
+  };
+
+  // Save field layout from the field editor
+  const saveLiabilityWaiverFields = (fields: WaiverField[]) => {
+    if (!clubId) return;
+    setFieldsSaving(true);
+    putSettings.mutate(
+      { clubId, data: { liabilityWaiverFields: fields } as any },
+      {
+        onSuccess: () => {
+          setLiabilityWaiverFields(fields);
+          setShowFieldEditor(false);
+          toast({ title: "Field layout saved", description: `${fields.length} signing field${fields.length !== 1 ? "s" : ""} saved to the waiver.` });
+        },
+        onError: () => toast({ title: "Error saving field layout", variant: "destructive" }),
+        onSettled: () => setFieldsSaving(false),
+      }
+    );
   };
 
   // Save rider acknowledgement text
@@ -334,6 +411,7 @@ export default function TeamPage() {
   };
 
   return (
+    <>
     <div className="p-6 max-w-4xl mx-auto">
       {/* Page header */}
       <div className="flex items-center gap-3 mb-8">
@@ -455,6 +533,117 @@ export default function TeamPage() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Liability Waiver */}
+      <div className="rounded-xl border bg-card p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <ShieldCheck size={18} className="text-primary" />
+          </div>
+          <div>
+            <h2 className="font-heading font-semibold text-base uppercase tracking-wider">Liability Waiver</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Full release-of-liability waiver — riders must type their name to e-sign before registering</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {liabilityWaiverPdfUrl ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+                <FileText size={16} className="text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">Liability Waiver PDF uploaded</p>
+                  <a
+                    href={liabilityWaiverPdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5"
+                  >
+                    <ExternalLink size={11} /> View / download PDF
+                  </a>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs shrink-0"
+                  onClick={() => setShowFieldEditor(true)}
+                >
+                  <LayoutTemplate size={13} />
+                  {liabilityWaiverFields.length > 0
+                    ? `Edit Fields (${liabilityWaiverFields.length})`
+                    : "Place Signing Fields"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={removeLiabilityWaiverPdf}
+                  title="Remove PDF"
+                >
+                  <X size={14} />
+                </Button>
+              </div>
+
+              {liabilityWaiverFields.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-1">
+                  {["name","email","date","signature"].map(type => {
+                    const count = liabilityWaiverFields.filter(f => f.type === type).length;
+                    if (!count) return null;
+                    const colors: Record<string,string> = { name:"#3b82f6", email:"#8b5cf6", date:"#10b981", signature:"#ef4444" };
+                    const labels: Record<string,string> = { name:"Rider Name", email:"Rider Email", date:"Date", signature:"Signature" };
+                    return (
+                      <span key={type} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border" style={{ borderColor: colors[type]+"50", backgroundColor: colors[type]+"10", color: colors[type] }}>
+                        <span style={{ width:7, height:7, borderRadius:2, backgroundColor: colors[type], display:"inline-block" }} />
+                        {count}× {labels[type]}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border-2 border-dashed border-border p-6 text-center space-y-3">
+              <UploadCloud size={28} className="mx-auto text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Upload your liability waiver as a PDF</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Max 20 MB · PDF only</p>
+              </div>
+              <input
+                ref={liabilityWaiverPdfFileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadLiabilityWaiverPdf(file);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={liabilityWaiverPdfUploading}
+                onClick={() => liabilityWaiverPdfFileInputRef.current?.click()}
+              >
+                {liabilityWaiverPdfUploading ? (
+                  <><RefreshCw size={14} className="mr-2 animate-spin" /> Uploading…</>
+                ) : (
+                  <><UploadCloud size={14} className="mr-2" /> Choose PDF</>
+                )}
+              </Button>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Once saved, enable per-event on the Event Settings page under "Require liability waiver e-signature".
+            Riders will view the PDF and must type their full legal name to e-sign.
+            Each signature is stored with a SHA-256 document hash, signer IP, browser, and timestamp.
+            A signed copy is automatically emailed to the rider.
+          </p>
+        </div>
       </div>
 
       {/* Track Library */}
@@ -615,5 +804,20 @@ export default function TeamPage() {
       </div>
 
     </div>
+
+    {/* ── Liability Waiver Field Editor ── */}
+    <Dialog open={showFieldEditor} onOpenChange={(open) => { if (!open && !fieldsSaving) setShowFieldEditor(false); }}>
+      <DialogContent className="max-w-[96vw] w-[96vw] h-[94vh] flex flex-col p-0 gap-0 overflow-hidden">
+        {liabilityWaiverPdfUrl && (
+          <PdfFieldEditor
+            url={liabilityWaiverPdfUrl}
+            initialFields={liabilityWaiverFields}
+            onSave={saveLiabilityWaiverFields}
+            onCancel={() => setShowFieldEditor(false)}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
