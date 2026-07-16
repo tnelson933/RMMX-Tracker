@@ -246,6 +246,7 @@ router.post("/rider/push-token", requireRiderAuth, async (req, res) => {
       set: { riderAccountId },
     });
 
+  req.log.info({ riderAccountId }, "Push token registered");
   return res.json({ ok: true });
 });
 
@@ -506,6 +507,7 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
         bikeYear: rider.bikeYear ?? null,
         skillLevel: rider.skillLevel ?? null,
         raceTypes: (rider.raceTypes as string[] | null) ?? [],
+        aiMaintenanceSuggestions: rider.aiMaintenanceSuggestions ?? false,
         eventsRaced: uniqueEvents.size,
         totalPoints,
         bestPosition,
@@ -872,6 +874,29 @@ router.delete("/rider/profiles/:riderId/bikes/:bikeId", requireRiderAuth, async 
       .limit(1);
     if (next) await db.update(riderBikesTable).set({ isDefault: true }).where(eq(riderBikesTable.id, next.id));
   }
+  return res.json({ ok: true });
+});
+
+// PATCH /rider/profiles/:riderId/maintenance-suggestions — toggle Rocky AI suggestions on/off
+router.patch("/rider/profiles/:riderId/maintenance-suggestions", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = Number(req.params.riderId);
+  const { enabled } = req.body as { enabled?: boolean };
+  if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) is required" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [rider] = await db
+    .select({ id: ridersTable.id, email: ridersTable.email })
+    .from(ridersTable)
+    .where(eq(ridersTable.id, riderId));
+
+  if (!rider || rider.email?.toLowerCase() !== account.email.toLowerCase()) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  await db.update(ridersTable).set({ aiMaintenanceSuggestions: enabled }).where(eq(ridersTable.id, riderId));
   return res.json({ ok: true });
 });
 
@@ -1885,7 +1910,10 @@ router.get("/rider/maintenance-check", requireRiderAuth, async (req, res) => {
   const riders = await db
     .select({ id: ridersTable.id, firstName: ridersTable.firstName })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+    .where(and(
+      sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`,
+      eq(ridersTable.aiMaintenanceSuggestions, true),
+    ));
 
   if (riders.length === 0) return res.json({ hasItems: false, message: null, items: [] });
 
