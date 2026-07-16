@@ -13,13 +13,27 @@ export async function sendPushNotifications(messages: PushMessage[]): Promise<vo
   for (let i = 0; i < messages.length; i += BATCH_SIZE) {
     const batch = messages.slice(i, i + BATCH_SIZE);
     try {
-      await fetch(EXPO_PUSH_URL, {
+      const res = await fetch(EXPO_PUSH_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(batch),
       });
-    } catch {
-      // fire-and-forget — ignore send errors
+
+      if (!res.ok) {
+        console.error(`[push] Expo API returned ${res.status}`);
+        continue;
+      }
+
+      const json = await res.json() as { data?: Array<{ status: string; details?: { error?: string } }> };
+      const tickets = json.data ?? [];
+      for (let j = 0; j < tickets.length; j++) {
+        const ticket = tickets[j];
+        if (ticket.status === "error") {
+          console.error(`[push] Delivery error for token ${batch[j]?.to}: ${ticket.details?.error}`);
+        }
+      }
+    } catch (err) {
+      console.error("[push] Failed to send batch:", err);
     }
   }
 }
