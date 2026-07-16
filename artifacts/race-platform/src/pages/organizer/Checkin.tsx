@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, CheckCircle, Tag, X, AlertCircle, Clock, RefreshCw, CheckCircle2, Banknote, CreditCard, ExternalLink, Loader2 } from "lucide-react";
+import { Search, CheckCircle, Tag, X, AlertCircle, Clock, RefreshCw, CheckCircle2, Banknote, CreditCard, ExternalLink, Loader2, ShieldCheck, ShieldAlert } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useOfflineAwareQuery } from "@/hooks/useOfflineAwareQuery";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
@@ -226,6 +226,17 @@ export default function Checkin() {
   const [stickerSubmitting, setStickerSubmitting] = useState(false);
   const [stickerError, setStickerError] = useState<string | null>(null);
 
+  // Liability waiver modal state
+  interface WaiverTarget { riderId: number; riderName: string; email: string; rfidNumber?: string | null; bibToSave?: string; }
+  const [waiverTarget, setWaiverTarget] = useState<WaiverTarget | null>(null);
+  const [waiverPdfUrl, setWaiverPdfUrl] = useState<string>("");
+  const [waiverFetching, setWaiverFetching] = useState(false);
+  const [waiverConsent, setWaiverConsent] = useState(false);
+  const [waiverName, setWaiverName] = useState("");
+  const [waiverEmail, setWaiverEmail] = useState("");
+  const [waiverSigning, setWaiverSigning] = useState(false);
+  const [waiverError, setWaiverError] = useState<string | null>(null);
+
   // Close any open RFID/rental panels when the search changes
   const handleSearchChange = (value: string) => {
     setSearch(value);
@@ -247,6 +258,7 @@ export default function Checkin() {
   const transponderRentalEnabled = !!(event as any)?.transponderRentalEnabled;
   const transponderRentalFee: number | null = (event as any)?.transponderRentalFee ?? null;
   const rfidStickerFee: number | null = (event as any)?.rfidStickerFee ?? null;
+  const requireLiabilityWaiver = !!(event as any)?.requireLiabilityWaiver;
 
   const { isOffline } = useOfflineStatus();
   const { pendingRiderIds, pendingCount, isSyncing, syncError, queueCheckin } = useSyncQueue(eventId);
@@ -303,6 +315,62 @@ export default function Checkin() {
         toast({ title: "Check-in failed", description: err.message, variant: "destructive" });
       }
     });
+  };
+
+  // Liability waiver handlers
+  const closeWaiverModal = useCallback(() => {
+    setWaiverTarget(null);
+    setWaiverPdfUrl("");
+    setWaiverConsent(false);
+    setWaiverName("");
+    setWaiverEmail("");
+    setWaiverError(null);
+    setWaiverSigning(false);
+  }, []);
+
+  const openWaiverModal = useCallback(async (target: WaiverTarget) => {
+    setWaiverTarget(target);
+    setWaiverName(target.riderName);
+    setWaiverEmail(target.email);
+    setWaiverConsent(false);
+    setWaiverError(null);
+    setWaiverFetching(true);
+    try {
+      const res = await fetch(`/api/public/events/${eventId}/register-info`);
+      const json = await res.json();
+      setWaiverPdfUrl(json.liabilityWaiverPdfUrl ?? "");
+    } catch { setWaiverPdfUrl(""); }
+    finally { setWaiverFetching(false); }
+  }, [eventId]);
+
+  const handleSignWaiver = async () => {
+    if (!waiverTarget || !waiverConsent || !waiverName.trim()) return;
+    const emailToUse = (waiverTarget.email || waiverEmail).trim();
+    if (!emailToUse) return;
+    setWaiverSigning(true);
+    setWaiverError(null);
+    try {
+      const res = await fetch(`/api/public/events/${eventId}/liability-waiver/sign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          signerName: waiverName.trim(),
+          signerEmail: emailToUse,
+          consentToEsign: true,
+          waiverSnapshot: waiverPdfUrl,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to sign waiver");
+      queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+      const t = waiverTarget;
+      closeWaiverModal();
+      handleCheckin(t.riderId, t.rfidNumber, t.bibToSave);
+      toast({ title: "Waiver signed — rider checked in" });
+    } catch (e: any) {
+      setWaiverError(e.message);
+      setWaiverSigning(false);
+    }
   };
 
   // RFID sticker modal close handler
@@ -752,6 +820,24 @@ export default function Checkin() {
                       </div>
                       <div className="flex items-center gap-2 text-xs md:text-sm font-medium mb-3 flex-wrap">
                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{checkin.raceClass}</span>
+                        {/* Liability waiver badge */}
+                        {requireLiabilityWaiver && (
+                          (checkin as any).waiverSigned ? (
+                            <span
+                              className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold"
+                              title="Liability waiver signed"
+                            >
+                              <ShieldCheck size={12} /> Waiver Signed
+                            </span>
+                          ) : (
+                            <span
+                              className="flex items-center gap-1 text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded text-xs font-semibold"
+                              title="Liability waiver not signed"
+                            >
+                              <ShieldAlert size={12} /> No Waiver
+                            </span>
+                          )
+                        )}
                         {/* Transponder rental status */}
                         {transponderRentalEnabled && transponderRentalFee != null && (
                           (checkin as any).transponderRental ? (
@@ -853,6 +939,16 @@ export default function Checkin() {
                           setRfidInputOpenId(checkin.riderId);
                           return;
                         }
+                        if (requireLiabilityWaiver && !(checkin as any).waiverSigned) {
+                          openWaiverModal({
+                            riderId: checkin.riderId,
+                            riderName: checkin.riderName,
+                            email: checkin.email ?? "",
+                            rfidNumber: checkin.rfidNumber,
+                            bibToSave,
+                          });
+                          return;
+                        }
                         handleCheckin(checkin.riderId, checkin.rfidNumber, bibToSave);
                       }}
                     />
@@ -883,6 +979,119 @@ export default function Checkin() {
           </div>
         </div>
     </div>
+
+    {/* ── Liability Waiver Modal ── */}
+    <Dialog open={!!waiverTarget} onOpenChange={open => { if (!open) closeWaiverModal(); }}>
+      <DialogContent className="max-w-lg flex flex-col gap-4" style={{ maxHeight: "90vh" }}>
+        <DialogHeader>
+          <DialogTitle className="font-heading uppercase tracking-wide flex items-center gap-2 text-destructive">
+            <ShieldAlert size={18} /> Rider Has Not Signed Liability Waiver
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground -mt-2">
+          <strong className="text-foreground">{waiverTarget?.riderName}</strong> must sign the liability waiver before checking in.
+          They can complete it digitally right now.
+        </p>
+
+        {waiverFetching ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 size={28} className="animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <>
+            {waiverPdfUrl ? (
+              <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+                <AlertCircle size={16} className="text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Liability Waiver PDF</p>
+                  <a
+                    href={waiverPdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5"
+                  >
+                    <ExternalLink size={11} /> Open and read before signing →
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center">No liability waiver PDF configured for this event.</p>
+            )}
+
+            {waiverPdfUrl && (
+              <div className="flex flex-col gap-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={waiverConsent}
+                    onChange={e => setWaiverConsent(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border accent-primary flex-shrink-0"
+                  />
+                  <span className="text-sm leading-snug">
+                    I have read the liability waiver PDF and agree to sign electronically.
+                  </span>
+                </label>
+
+                {waiverConsent && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Type Full Legal Name to Sign
+                    </label>
+                    <Input
+                      value={waiverName}
+                      onChange={e => setWaiverName(e.target.value)}
+                      placeholder="Full legal name…"
+                      className="font-mono"
+                      autoFocus
+                    />
+                    {!waiverTarget?.email && (
+                      <>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mt-1">
+                          Email Address (for signed copy)
+                        </label>
+                        <Input
+                          value={waiverEmail}
+                          onChange={e => setWaiverEmail(e.target.value)}
+                          placeholder="rider@email.com"
+                          type="email"
+                        />
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {waiverError && (
+                  <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg p-3">
+                    <AlertCircle size={16} className="flex-shrink-0" /> {waiverError}
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <Button variant="outline" className="flex-1" onClick={closeWaiverModal} disabled={waiverSigning}>
+                    Cancel
+                  </Button>
+                  <Button
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    onClick={handleSignWaiver}
+                    disabled={
+                      !waiverConsent ||
+                      !waiverName.trim() ||
+                      (!waiverTarget?.email && !waiverEmail.trim()) ||
+                      waiverSigning
+                    }
+                  >
+                    {waiverSigning
+                      ? <><Loader2 size={15} className="animate-spin mr-1.5" /> Signing…</>
+                      : <><ShieldCheck size={15} className="mr-1.5" /> Sign &amp; Check In</>
+                    }
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
 
     {/* ── RFID Sticker Payment Modal ── */}
     <Dialog open={!!stickerTarget} onOpenChange={open => { if (!open) closeStickerModal(); }}>
