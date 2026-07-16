@@ -34,6 +34,9 @@ router.get("/clubs/:clubId/settings", async (req, res) => {
     clubId,
     riderAcknowledgement: row?.riderAcknowledgement ?? null,
     waiverPdfUrl: row?.waiverPdfUrl ?? null,
+    liabilityWaiverText: row?.liabilityWaiverText ?? null,
+    liabilityWaiverPdfUrl: row?.liabilityWaiverPdfUrl ?? null,
+    liabilityWaiverFields: row?.liabilityWaiverFields ?? null,
     defaultClasses: row?.defaultClasses ?? [],
     brandContingencies: row?.brandContingencies ?? [],
     trackName: row?.trackName ?? null,
@@ -46,11 +49,14 @@ router.put("/clubs/:clubId/settings", async (req, res) => {
   const ok = await requireOrganizerForClub(req, res, clubId);
   if (!ok) return;
 
-  const { riderAcknowledgement, waiverPdfUrl, defaultClasses, brandContingencies, trackName } = req.body;
+  const { riderAcknowledgement, waiverPdfUrl, liabilityWaiverText, liabilityWaiverPdfUrl, liabilityWaiverFields, defaultClasses, brandContingencies, trackName } = req.body;
 
-  const values: { clubId: number; riderAcknowledgement?: string | null; waiverPdfUrl?: string | null; defaultClasses?: { id: string; name: string }[]; brandContingencies?: string[]; trackName?: string | null } = { clubId };
+  const values: any = { clubId };
   if (riderAcknowledgement !== undefined) values.riderAcknowledgement = riderAcknowledgement ?? null;
   if (waiverPdfUrl !== undefined) values.waiverPdfUrl = waiverPdfUrl ?? null;
+  if (liabilityWaiverText !== undefined) values.liabilityWaiverText = liabilityWaiverText ?? null;
+  if (liabilityWaiverPdfUrl !== undefined) values.liabilityWaiverPdfUrl = liabilityWaiverPdfUrl ?? null;
+  if (liabilityWaiverFields !== undefined) values.liabilityWaiverFields = Array.isArray(liabilityWaiverFields) ? liabilityWaiverFields : null;
   if (defaultClasses !== undefined) values.defaultClasses = Array.isArray(defaultClasses) ? defaultClasses : [];
   if (brandContingencies !== undefined) values.brandContingencies = Array.isArray(brandContingencies) ? brandContingencies : [];
   if (trackName !== undefined) values.trackName = trackName ?? null;
@@ -63,6 +69,9 @@ router.put("/clubs/:clubId/settings", async (req, res) => {
       set: {
         ...(riderAcknowledgement !== undefined ? { riderAcknowledgement: values.riderAcknowledgement } : {}),
         ...(waiverPdfUrl !== undefined ? { waiverPdfUrl: values.waiverPdfUrl } : {}),
+        ...(liabilityWaiverText !== undefined ? { liabilityWaiverText: values.liabilityWaiverText } : {}),
+        ...(liabilityWaiverPdfUrl !== undefined ? { liabilityWaiverPdfUrl: values.liabilityWaiverPdfUrl } : {}),
+        ...(liabilityWaiverFields !== undefined ? { liabilityWaiverFields: values.liabilityWaiverFields } : {}),
         ...(defaultClasses !== undefined ? { defaultClasses: values.defaultClasses } : {}),
         ...(brandContingencies !== undefined ? { brandContingencies: values.brandContingencies } : {}),
         ...(trackName !== undefined ? { trackName: values.trackName } : {}),
@@ -74,6 +83,9 @@ router.put("/clubs/:clubId/settings", async (req, res) => {
     clubId: row.clubId,
     riderAcknowledgement: row.riderAcknowledgement ?? null,
     waiverPdfUrl: row.waiverPdfUrl ?? null,
+    liabilityWaiverText: row.liabilityWaiverText ?? null,
+    liabilityWaiverPdfUrl: row.liabilityWaiverPdfUrl ?? null,
+    liabilityWaiverFields: row.liabilityWaiverFields ?? null,
     defaultClasses: row.defaultClasses ?? [],
     brandContingencies: row.brandContingencies ?? [],
     trackName: row.trackName ?? null,
