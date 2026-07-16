@@ -306,10 +306,27 @@ router.post("/admin/notifications/broadcast-all", async (req, res) => {
     return res.status(403).json({ error: "Super admin access required" });
   }
 
-  const { title, body } = req.body as { title?: string; body?: string };
+  const { title, body, linkUrl } = req.body as {
+    title?: string;
+    body?: string;
+    linkUrl?: string;
+  };
 
   if (!title?.trim() || !body?.trim()) {
     return res.status(400).json({ error: "title and body are required" });
+  }
+
+  let cleanLinkUrl: string | null = null;
+  if (linkUrl?.trim()) {
+    try {
+      const parsed = new URL(linkUrl.trim());
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return res.status(400).json({ error: "linkUrl must be an http(s) URL" });
+      }
+      cleanLinkUrl = parsed.toString();
+    } catch {
+      return res.status(400).json({ error: "linkUrl is not a valid URL" });
+    }
   }
 
   const pushRows = await db
@@ -334,6 +351,7 @@ router.post("/admin/notifications/broadcast-all", async (req, res) => {
       to: r.expoPushToken,
       title: title.trim(),
       body: body.trim(),
+      ...(cleanLinkUrl ? { data: { url: cleanLinkUrl } } : {}),
     })),
   );
 
@@ -488,15 +506,77 @@ router.get("/admin/notifications/audience-count", async (req, res) => {
 });
 
 // GET /admin/notifications/push-stats
+// Returns global total (super admin) or club-scoped count for organizers.
 router.get("/admin/notifications/push-stats", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
-  const rows = await db
-    .select({ id: riderPushTokensTable.id })
-    .from(riderPushTokensTable);
+  const [callingUser] = await db
+    .select({ role: usersTable.role, clubId: usersTable.clubId })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
 
-  return res.json({ total: rows.length });
+  if (!callingUser) return res.status(401).json({ error: "Not authenticated" });
+
+  const isSuperAdmin = callingUser.role === "super_admin";
+
+  // Global total
+  const [totalResult] = await db
+    .select({ count: countDistinct(riderPushTokensTable.riderAccountId) })
+    .from(riderPushTokensTable);
+  const total = totalResult?.count ?? 0;
+
+  // Club-scoped count: distinct rider accounts that have a push token AND registered for this club's events
+  let clubCount: number | null = null;
+  if (!isSuperAdmin && callingUser.clubId) {
+    const clubEvents = await db
+      .select({ id: eventsTable.id })
+      .from(eventsTable)
+      .where(eq(eventsTable.clubId, callingUser.clubId));
+    const eventIds = clubEvents.map((e) => e.id);
+
+    if (eventIds.length > 0) {
+      const regs = await db
+        .select({ riderId: registrationsTable.riderId })
+        .from(registrationsTable)
+        .where(inArray(registrationsTable.eventId, eventIds));
+      const riderIds = [...new Set(regs.map((r) => r.riderId).filter(Boolean) as number[])];
+
+      if (riderIds.length > 0) {
+        const riders = await db
+          .select({ email: ridersTable.email })
+          .from(ridersTable)
+          .where(inArray(ridersTable.id, riderIds));
+        const emails = [...new Set(riders.map((r) => r.email?.toLowerCase()).filter((e): e is string => !!e))];
+
+        if (emails.length > 0) {
+          const accounts = await db
+            .select({ id: riderAccountsTable.id })
+            .from(riderAccountsTable)
+            .where(inArray(riderAccountsTable.email, emails));
+          const accountIds = accounts.map((a) => a.id);
+
+          if (accountIds.length > 0) {
+            const [clubResult] = await db
+              .select({ count: countDistinct(riderPushTokensTable.riderAccountId) })
+              .from(riderPushTokensTable)
+              .where(inArray(riderPushTokensTable.riderAccountId, accountIds));
+            clubCount = clubResult?.count ?? 0;
+          } else {
+            clubCount = 0;
+          }
+        } else {
+          clubCount = 0;
+        }
+      } else {
+        clubCount = 0;
+      }
+    } else {
+      clubCount = 0;
+    }
+  }
+
+  return res.json({ total, clubCount });
 });
 
 // GET /admin/notifications/history
