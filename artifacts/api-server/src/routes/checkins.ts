@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable, motosTable } from "@workspace/db";
+import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable, motosTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, ne, asc } from "drizzle-orm";
 
 const router = Router();
@@ -56,8 +56,16 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     if (!checkinByRider.has(c.riderId)) checkinByRider.set(c.riderId, c);
   }
 
+  // Fetch all waiver signatures for this event to compute waiverSigned per rider.
+  const sigRows = await db
+    .select({ signerEmail: liabilityWaiverSignaturesTable.signerEmail })
+    .from(liabilityWaiverSignaturesTable)
+    .where(eq(liabilityWaiverSignaturesTable.eventId, eventId));
+  const signedEmails = new Set(sigRows.map(s => s.signerEmail.toLowerCase()));
+
   return res.json(regs.map(r => {
     const c = checkinByRider.get(r.riderId);
+    const riderEmail = r.email?.toLowerCase() ?? null;
     return {
       id: c?.id ?? null,
       eventId,
@@ -77,6 +85,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       checkedInAt: c?.checkedInAt?.toISOString() ?? null,
       rfidNumber: c?.rfidNumber ?? null,
       rfidLinked: c?.rfidLinked ?? false,
+      waiverSigned: riderEmail ? signedEmails.has(riderEmail) : false,
     };
   }));
 });
