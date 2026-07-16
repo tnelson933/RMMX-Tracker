@@ -101,6 +101,7 @@ const createEventSchema = z.object({
   requireClubId: z.boolean().default(false),
   noDuplicateBibs: z.boolean().default(false),
   requireWaiver: z.boolean().default(false),
+  requireLiabilityWaiver: z.boolean().default(false),
   scoringTableId: z.number().optional(),
   entryFee: z.string().optional(),
   earlyBirdEnabled: z.boolean().default(false),
@@ -262,6 +263,7 @@ export default function EventsList() {
       requireClubId: false,
       noDuplicateBibs: false,
       requireWaiver: false,
+      requireLiabilityWaiver: false,
       scoringTableId: undefined,
       entryFee: "",
       earlyBirdEnabled: false,
@@ -320,6 +322,7 @@ export default function EventsList() {
           requireClubId: data.requireClubId,
           noDuplicateBibs: data.noDuplicateBibs,
           requireWaiver: data.requireWaiver,
+          requireLiabilityWaiver: data.requireLiabilityWaiver,
           requireTransponder: data.timingTechnology === "mylaps" ? data.requireTransponder : false,
           scoringTableId: data.scoringTableId ?? null,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
@@ -759,7 +762,7 @@ export default function EventsList() {
                                   onCheckedChange={field.onChange}
                                 />
                               </FormControl>
-                              <FormLabel className="cursor-pointer font-normal">Require waiver acknowledgment</FormLabel>
+                              <FormLabel className="cursor-pointer font-normal">Require rider acknowledgement form</FormLabel>
                             </FormItem>
                           )}
                         />
@@ -768,12 +771,46 @@ export default function EventsList() {
                           <TooltipTrigger asChild>
                             <div className="flex items-center gap-2 cursor-default">
                               <Checkbox disabled checked={false} />
-                              <span className="text-sm text-muted-foreground">Require waiver acknowledgment</span>
+                              <span className="text-sm text-muted-foreground">Require rider acknowledgement form</span>
                               <Info size={14} className="text-muted-foreground" />
                             </div>
                           </TooltipTrigger>
                           <TooltipContent side="right" className="max-w-64">
-                            Set waiver text in Admin settings first.
+                            Set rider acknowledgement form text in Admin settings first.
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })()}
+
+                    {!isSuperAdmin && (() => {
+                      const hasLiabilityWaiverText = !!((clubSettingsData as any)?.liabilityWaiverText?.trim());
+                      return hasLiabilityWaiverText ? (
+                        <FormField
+                          control={form.control}
+                          name="requireLiabilityWaiver"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Require liability waiver e-signature</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center gap-2 cursor-default">
+                              <Checkbox disabled checked={false} />
+                              <span className="text-sm text-muted-foreground">Require liability waiver e-signature</span>
+                              <Info size={14} className="text-muted-foreground" />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-64">
+                            Set liability waiver text in Admin settings first.
                           </TooltipContent>
                         </Tooltip>
                       );
