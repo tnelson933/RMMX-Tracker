@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable, raceResultsTable } from "@workspace/db";
+import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable, raceResultsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, sql, desc, asc, ne, isNull, inArray } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
@@ -792,6 +792,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     noDuplicateBibs: eventsTable.noDuplicateBibs,
     requireClubId: eventsTable.requireClubId,
     requireWaiver: eventsTable.requireWaiver,
+    requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
     requireTransponder: eventsTable.requireTransponder,
     earlyBirdFee: eventsTable.earlyBirdFee,
     earlyBirdEndsAt: eventsTable.earlyBirdEndsAt,
@@ -806,11 +807,17 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
   const [settings] = await db.select({
     riderAcknowledgement: clubSettingsTable.riderAcknowledgement,
     waiverPdfUrl: clubSettingsTable.waiverPdfUrl,
+    liabilityWaiverText: clubSettingsTable.liabilityWaiverText,
+    liabilityWaiverPdfUrl: clubSettingsTable.liabilityWaiverPdfUrl,
+    liabilityWaiverFields: clubSettingsTable.liabilityWaiverFields,
     defaultClasses: clubSettingsTable.defaultClasses,
   }).from(clubSettingsTable).where(eq(clubSettingsTable.clubId, e.clubId));
 
   const waiverText: string | null = e.requireWaiver ? (settings?.riderAcknowledgement ?? null) : null;
   const waiverPdfUrl: string | null = e.requireWaiver ? (settings?.waiverPdfUrl ?? null) : null;
+  const liabilityWaiverText: string | null = e.requireLiabilityWaiver ? (settings?.liabilityWaiverText ?? null) : null;
+  const liabilityWaiverPdfUrl: string | null = e.requireLiabilityWaiver ? (settings?.liabilityWaiverPdfUrl ?? null) : null;
+  const liabilityWaiverFields = e.requireLiabilityWaiver ? (settings?.liabilityWaiverFields ?? null) : null;
 
   // Build classDetails: start from club-level defaults, then overlay per-event overrides
   const classDetails: Record<string, string> = {};
@@ -832,6 +839,9 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     classDetails,
     waiverText,
     waiverPdfUrl,
+    liabilityWaiverText,
+    liabilityWaiverPdfUrl,
+    liabilityWaiverFields,
   });
 });
 
@@ -862,6 +872,19 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   }
   if (events[0].requireWaiver && !waiverAcknowledgedAt) {
     return res.status(400).json({ error: "You must accept the club waiver to complete registration" });
+  }
+
+  const liabilityWaiverSignatureId = req.body.liabilityWaiverSignatureId ? Number(req.body.liabilityWaiverSignatureId) : null;
+  if (events[0].requireLiabilityWaiver) {
+    if (!liabilityWaiverSignatureId) {
+      return res.status(400).json({ error: "You must sign the liability waiver to complete registration" });
+    }
+    const [sig] = await db.select({ id: liabilityWaiverSignaturesTable.id, eventId: liabilityWaiverSignaturesTable.eventId })
+      .from(liabilityWaiverSignaturesTable)
+      .where(eq(liabilityWaiverSignaturesTable.id, liabilityWaiverSignatureId));
+    if (!sig || sig.eventId !== eventId) {
+      return res.status(400).json({ error: "Invalid liability waiver signature" });
+    }
   }
 
   // Fetch waiver text server-side so the snapshot can't be spoofed by the client
@@ -1137,6 +1160,13 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       selectedPurchaseOptions: idx === 0 ? (Array.isArray(selectedPurchaseOptions) ? selectedPurchaseOptions : []) : [],
     }))
   ).returning();
+
+  // Link liability waiver signature to the registration
+  if (events[0].requireLiabilityWaiver && liabilityWaiverSignatureId && insertedRegs[0]?.id) {
+    await db.update(liabilityWaiverSignaturesTable)
+      .set({ registrationId: insertedRegs[0].id })
+      .where(eq(liabilityWaiverSignaturesTable.id, liabilityWaiverSignatureId));
+  }
 
   // Mark comp code as used
   if (validatedCompCode) {
