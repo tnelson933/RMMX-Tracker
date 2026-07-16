@@ -14,6 +14,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 
+import { PdfSignedViewer } from "@/components/PdfSignedViewer";
+
 // ─── PDF Scroll Viewer ───────────────────────────────────────────────────────
 // Renders each PDF page as a canvas inside a scrollable div so scroll-to-bottom
 // tracking works the same way as the plain-text waiver modal.
@@ -172,9 +174,13 @@ interface EventInfo {
   requireAma: boolean;
   requireClubId: boolean;
   requireWaiver: boolean;
+  requireLiabilityWaiver: boolean;
   requireTransponder: boolean;
   waiverText: string | null;
   waiverPdfUrl?: string | null;
+  liabilityWaiverText?: string | null;
+  liabilityWaiverPdfUrl?: string | null;
+  liabilityWaiverFields?: Array<{ id: string; type: string; page: number; x: number; y: number; width: number; height: number }> | null;
   clubName: string | null;
   clubLogoUrl: string | null;
   registrationOpen: string | null;
@@ -281,6 +287,17 @@ export default function Register() {
   const [waiverTimestamp, setWaiverTimestamp] = useState<string | null>(null);
   const waiverScrollRef = useRef<HTMLDivElement>(null);
 
+  // Liability waiver e-sign state
+  const [liabilityWaiverModalOpen, setLiabilityWaiverModalOpen] = useState(false);
+  const [liabilityWaiverScrolledToBottom, setLiabilityWaiverScrolledToBottom] = useState(false);
+  const [liabilityWaiverConsentChecked, setLiabilityWaiverConsentChecked] = useState(false);
+  const [liabilityWaiverSignerName, setLiabilityWaiverSignerName] = useState("");
+  const [liabilityWaiverAccepted, setLiabilityWaiverAccepted] = useState(false);
+  const [liabilityWaiverSignatureId, setLiabilityWaiverSignatureId] = useState<number | null>(null);
+  const [liabilityWaiverSigning, setLiabilityWaiverSigning] = useState(false);
+  const [liabilityWaiverSignError, setLiabilityWaiverSignError] = useState<string | null>(null);
+  const [liabilityWaiverSignerType, setLiabilityWaiverSignerType] = useState<"self" | "guardian">("self");
+  const [liabilityWaiverMinorRiderName, setLiabilityWaiverMinorRiderName] = useState("");
   const handleWaiverScroll = useCallback(() => {
     const el = waiverScrollRef.current;
     if (!el) return;
@@ -311,6 +328,38 @@ export default function Register() {
     setPdfWaiverModalOpen(false);
     setPdfWaiverChecked(false);
     setPdfScrolledToBottom(false);
+  };
+
+  const handleSignLiabilityWaiver = async () => {
+    if (!event?.liabilityWaiverPdfUrl || !liabilityWaiverConsentChecked || !liabilityWaiverSignerName.trim()) return;
+    if (liabilityWaiverSignerType === "guardian" && !liabilityWaiverMinorRiderName.trim()) return;
+    setLiabilityWaiverSigning(true);
+    setLiabilityWaiverSignError(null);
+    try {
+      const signerEmail = (form.getValues("email") as string | undefined) || "";
+      const res = await fetch(`/api/public/events/${eventId}/liability-waiver/sign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          signerName: liabilityWaiverSignerName.trim(),
+          signerEmail,
+          consentToEsign: true,
+          waiverSnapshot: event.liabilityWaiverPdfUrl,
+          fieldLayout: event.liabilityWaiverFields ?? null,
+          signerType: liabilityWaiverSignerType,
+          minorRiderName: liabilityWaiverSignerType === "guardian" ? liabilityWaiverMinorRiderName.trim() : null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Signing failed");
+      setLiabilityWaiverSignatureId(json.signatureId);
+      setLiabilityWaiverAccepted(true);
+      setLiabilityWaiverModalOpen(false);
+    } catch (e: any) {
+      setLiabilityWaiverSignError(e.message || "Signing failed. Please try again.");
+    } finally {
+      setLiabilityWaiverSigning(false);
+    }
   };
 
   const handleApplyComp = async () => {
@@ -371,6 +420,8 @@ export default function Register() {
         earlyBirdFee: json.earlyBirdFee != null ? Number(json.earlyBirdFee) : null,
         earlyBirdEndsAt: json.earlyBirdEndsAt ?? null,
         waiverPdfUrl: json.waiverPdfUrl ?? null,
+        liabilityWaiverPdfUrl: json.liabilityWaiverPdfUrl ?? null,
+        liabilityWaiverFields: json.liabilityWaiverFields ?? null,
         transponderRentalFee: json.transponderRentalFee != null ? Number(json.transponderRentalFee) : null,
         rfidStickerFee: json.rfidStickerFee != null ? Number(json.rfidStickerFee) : null,
         purchaseOptions: (json.purchaseOptions ?? []).map((o: any) => ({ ...o, amount: Number(o.amount) })),
@@ -577,7 +628,11 @@ export default function Register() {
       return;
     }
     if (event?.requireWaiver && !waiverAccepted) {
-      setSubmitError("You must read and accept the club waiver before registering.");
+      setSubmitError("You must read and accept the rider acknowledgement form before registering.");
+      return;
+    }
+    if (event?.requireLiabilityWaiver && !liabilityWaiverAccepted) {
+      setSubmitError("You must sign the liability waiver before registering.");
       return;
     }
     // MyLaps events: require transponder number or rental only when requireTransponder is true
@@ -606,6 +661,7 @@ export default function Register() {
           compCode: appliedComp?.code ?? null,
           waiverAcknowledgedAt: waiverAccepted ? waiverTimestamp : null,
           waiverSnapshot: waiverAccepted ? (event?.waiverText ?? null) : null,
+          liabilityWaiverSignatureId: liabilityWaiverSignatureId,
           ...(selectedRiderId ? { riderId: selectedRiderId } : {}),
         }),
       });
@@ -1560,6 +1616,59 @@ export default function Register() {
                   </div>
                 )}
 
+                {/* Liability Waiver e-sign */}
+                {event.requireLiabilityWaiver && event.liabilityWaiverPdfUrl && (
+                  <div className={`rounded-lg border px-4 py-4 space-y-3 transition-colors ${liabilityWaiverAccepted ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-700"}`}>
+                    <div className="flex items-start gap-3">
+                      <ShieldCheck size={18} className={`mt-0.5 shrink-0 ${liabilityWaiverAccepted ? "text-green-600" : "text-red-600"}`} />
+                      <div className="flex-1 space-y-1">
+                        <p className="text-sm font-semibold">
+                          {liabilityWaiverAccepted ? "Liability Waiver Signed" : "Liability Waiver Required"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {liabilityWaiverAccepted
+                            ? `Signed by ${liabilityWaiverSignerName}${liabilityWaiverSignerType === "guardian" && liabilityWaiverMinorRiderName ? ` (parent/guardian of ${liabilityWaiverMinorRiderName})` : ""} — legally binding electronic signature`
+                            : "You must read and electronically sign the liability waiver before registering."}
+                        </p>
+                      </div>
+                      {liabilityWaiverAccepted && <ShieldCheck size={18} className="text-green-600 shrink-0 mt-0.5" />}
+                    </div>
+                    {!liabilityWaiverAccepted && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full font-heading uppercase tracking-wider border-red-400 text-red-700 hover:bg-red-100"
+                        onClick={() => {
+                          setLiabilityWaiverScrolledToBottom(false);
+                          setLiabilityWaiverConsentChecked(false);
+                          setLiabilityWaiverSignerName(`${form.getValues("firstName")} ${form.getValues("lastName")}`.trim());
+                          setLiabilityWaiverSignError(null);
+                          setLiabilityWaiverSignerType("self");
+                          setLiabilityWaiverMinorRiderName("");
+                          setLiabilityWaiverModalOpen(true);
+                        }}
+                      >
+                        <ShieldCheck size={14} className="mr-2" />
+                        Read &amp; Sign Liability Waiver
+                      </Button>
+                    )}
+                    {liabilityWaiverAccepted && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLiabilityWaiverScrolledToBottom(false);
+                          setLiabilityWaiverSignError(null);
+                          setLiabilityWaiverModalOpen(true);
+                        }}
+                        className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary w-full"
+                      >
+                        <FileText size={12} /> View signed waiver PDF
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {/* Waiver acknowledgment */}
                 {event.requireWaiver && (event.waiverText || event.waiverPdfUrl) && (
                   <div className={`rounded-lg border px-4 py-4 space-y-3 transition-colors ${waiverAccepted ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800" : "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-700"}`}>
@@ -1567,12 +1676,12 @@ export default function Register() {
                       <FileText size={18} className={`mt-0.5 shrink-0 ${waiverAccepted ? "text-green-600" : "text-amber-600"}`} />
                       <div className="flex-1 space-y-1">
                         <p className="text-sm font-semibold">
-                          {waiverAccepted ? "Waiver Accepted" : "Club Waiver Required"}
+                          {waiverAccepted ? "Acknowledgement Accepted" : "Rider Acknowledgement Form Required"}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {waiverAccepted
                             ? `Accepted on ${waiverTimestamp ? format(new Date(waiverTimestamp), "MMM d, yyyy 'at' h:mm a") : "—"}`
-                            : "You must read and acknowledge the club waiver before registering."}
+                            : "You must read and acknowledge the rider acknowledgement form before registering."}
                         </p>
                       </div>
                       {waiverAccepted && <ShieldCheck size={18} className="text-green-600 shrink-0 mt-0.5" />}
@@ -1588,7 +1697,7 @@ export default function Register() {
                         onClick={() => { setPdfWaiverChecked(false); setPdfWaiverModalOpen(true); }}
                       >
                         <FileText size={14} className="mr-2" />
-                        Read &amp; Acknowledge Waiver PDF
+                        Read &amp; Acknowledge Rider Acknowledgement Form
                       </Button>
                     )}
 
@@ -1602,7 +1711,7 @@ export default function Register() {
                         onClick={() => { setWaiverScrolledToBottom(false); setWaiverModalOpen(true); }}
                       >
                         <FileText size={14} className="mr-2" />
-                        Read &amp; Acknowledge Waiver
+                        Read &amp; Acknowledge Rider Acknowledgement Form
                       </Button>
                     )}
 
@@ -1624,7 +1733,7 @@ export default function Register() {
                         className="w-full text-xs text-muted-foreground"
                         onClick={() => { setWaiverScrolledToBottom(false); setWaiverModalOpen(true); }}
                       >
-                        View waiver text
+                        View acknowledgement form
                       </Button>
                     )}
                   </div>
@@ -1632,7 +1741,7 @@ export default function Register() {
 
                 <Button
                   type="submit"
-                  disabled={submitting || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted)}
+                  disabled={submitting || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted) || (event.requireLiabilityWaiver && !liabilityWaiverAccepted)}
                   className="w-full font-heading uppercase tracking-wider text-base h-12"
                 >
                   {submitting ? (
@@ -1758,6 +1867,163 @@ export default function Register() {
           </div>
         )}
       </div>
+
+      {/* Liability Waiver e-sign modal */}
+      <Dialog open={liabilityWaiverModalOpen} onOpenChange={(open) => {
+        if (!open) setLiabilityWaiverSignError(null);
+        setLiabilityWaiverModalOpen(open);
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+            <DialogTitle className="font-heading uppercase tracking-wide text-base flex items-center gap-2">
+              <ShieldCheck size={18} className="text-primary" />
+              Liability Waiver &amp; Release
+            </DialogTitle>
+            {!liabilityWaiverScrolledToBottom ? (
+              <p className="text-xs text-muted-foreground mt-1">Scroll to the bottom — your information will appear in the highlighted fields as you type.</p>
+            ) : (
+              <p className="text-xs text-emerald-600 mt-1">✓ Type your full legal name below to see how your signed document will look.</p>
+            )}
+          </DialogHeader>
+
+          {event?.liabilityWaiverPdfUrl && (
+            <PdfSignedViewer
+              url={event.liabilityWaiverPdfUrl}
+              fields={(event.liabilityWaiverFields ?? []) as any}
+              signerName={liabilityWaiverSignerName}
+              signerEmail={form.getValues("email") || ""}
+              signedAt={new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+              signerType={liabilityWaiverSignerType}
+              minorRiderName={liabilityWaiverMinorRiderName || undefined}
+              onScrolledToBottom={() => setLiabilityWaiverScrolledToBottom(true)}
+            />
+          )}
+
+          <div className="px-6 py-4 border-t shrink-0 space-y-3">
+            {liabilityWaiverAccepted ? (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 px-4 py-3">
+                <ShieldCheck size={16} className="text-green-600 shrink-0" />
+                <p className="text-sm text-green-800 dark:text-green-200">
+                  Signed by <strong>{liabilityWaiverSignerName}</strong>
+                  {liabilityWaiverSignerType === "guardian" && liabilityWaiverMinorRiderName && (
+                    <> — parent/guardian of <strong>{liabilityWaiverMinorRiderName}</strong></>
+                  )}
+                  {" "}— legally binding electronic signature on file.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Signer type — always visible */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Who is signing?</p>
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none group">
+                    <input
+                      type="radio"
+                      name="signerType"
+                      value="self"
+                      checked={liabilityWaiverSignerType === "self"}
+                      onChange={() => setLiabilityWaiverSignerType("self")}
+                      className="mt-0.5 shrink-0 accent-primary"
+                    />
+                    <span className="text-sm text-foreground leading-snug">
+                      I am 18 or older, signing for myself
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none group">
+                    <input
+                      type="radio"
+                      name="signerType"
+                      value="guardian"
+                      checked={liabilityWaiverSignerType === "guardian"}
+                      onChange={() => setLiabilityWaiverSignerType("guardian")}
+                      className="mt-0.5 shrink-0 accent-primary"
+                    />
+                    <span className="text-sm text-foreground leading-snug">
+                      I am the parent/legal guardian of a minor rider, signing on their behalf
+                    </span>
+                  </label>
+                </div>
+
+                {/* Minor rider name — only when guardian is selected */}
+                {liabilityWaiverSignerType === "guardian" && (
+                  <div className="space-y-1 pl-0.5">
+                    <label className="text-xs font-medium text-foreground">Minor rider's full name <span className="text-destructive">*</span></label>
+                    <Input
+                      placeholder="Minor rider's full legal name"
+                      value={liabilityWaiverMinorRiderName}
+                      onChange={(e) => setLiabilityWaiverMinorRiderName(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+                )}
+
+                {!liabilityWaiverScrolledToBottom ? (
+                  <p className="text-xs text-amber-600 text-center">↓ Scroll to the bottom to enable signing</p>
+                ) : (
+                  <>
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                      <Checkbox
+                        className="mt-0.5 shrink-0"
+                        checked={liabilityWaiverConsentChecked}
+                        onCheckedChange={(v) => setLiabilityWaiverConsentChecked(!!v)}
+                      />
+                      <span className="text-sm text-foreground leading-snug">
+                        I consent to signing this liability waiver electronically rather than on paper. I understand this constitutes a legally binding electronic signature.
+                      </span>
+                    </label>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground">
+                        {liabilityWaiverSignerType === "guardian"
+                          ? "Your full legal name (parent/guardian)"
+                          : "Confirm your full legal name to sign"}
+                      </label>
+                      <Input
+                        placeholder="Full legal name"
+                        value={liabilityWaiverSignerName}
+                        onChange={(e) => setLiabilityWaiverSignerName(e.target.value)}
+                        className="text-sm"
+                      />
+                    </div>
+                    {liabilityWaiverSignError && (
+                      <p className="text-xs text-destructive">{liabilityWaiverSignError}</p>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setLiabilityWaiverModalOpen(false)}
+              >
+                Close
+              </Button>
+              {!liabilityWaiverAccepted && (
+                <Button
+                  type="button"
+                  className="flex-1 font-heading uppercase tracking-wider"
+                  disabled={
+                    !liabilityWaiverScrolledToBottom ||
+                    !liabilityWaiverConsentChecked ||
+                    !liabilityWaiverSignerName.trim() ||
+                    (liabilityWaiverSignerType === "guardian" && !liabilityWaiverMinorRiderName.trim()) ||
+                    liabilityWaiverSigning
+                  }
+                  onClick={handleSignLiabilityWaiver}
+                >
+                  {liabilityWaiverSigning ? (
+                    <><Loader2 size={16} className="mr-2 animate-spin" /> Signing…</>
+                  ) : (
+                    <><ShieldCheck size={16} className="mr-2" /> Sign &amp; Accept</>
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Image lightbox */}
       {imageLightboxOpen && (event as any).imageUrl && (
