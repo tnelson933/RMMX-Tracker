@@ -21,9 +21,9 @@ import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { haversineDistance } from "@/lib/haversine";
-import { STATE_CENTROIDS } from "@/lib/stateCentroids";
+import { STATE_CENTROIDS, normalizeState } from "@/lib/stateCentroids";
 
-const FALLBACK_TAG = "desktop-v1.0.93";
+const FALLBACK_TAG = "desktop-v1.0.94";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
@@ -344,7 +344,7 @@ export default function Home() {
   // Attach distances to future events using state centroids
   const futureWithDistance = useMemo(() => {
     return futureEvents.map(e => {
-      const centroid = STATE_CENTROIDS[e.state];
+      const centroid = STATE_CENTROIDS[normalizeState(e.state)];
       const distanceMi =
         userLocation.status === "granted" && centroid
           ? haversineDistance(
