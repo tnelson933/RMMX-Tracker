@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { StateSelect } from "@/components/ui/StateSelect";
 import { useRoute, useLocation } from "wouter";
 import { usePublicOrigin } from "@/lib/publicOrigin";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
@@ -863,7 +864,9 @@ export default function EventDetail() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                            <FormControl><Input {...field} /></FormControl>
+                            <FormControl>
+                              <StateSelect value={field.value} onChange={field.onChange} />
+                            </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
