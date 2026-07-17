@@ -58,6 +58,7 @@ export interface UpdatePracticeSessionInput {
 export interface DefaultRaceClass {
   id: string;
   name: string;
+  details?: string | null;
 }
 
 export type ClubSettingsLiabilityWaiverFieldsItem = { [key: string]: unknown };
@@ -344,6 +345,18 @@ export interface Event {
   classOrder?: string[] | null;
   /** Brands selected for contingency sponsorships at this event. */
   contingencyBrands?: string[] | null;
+  /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
+  quickCheckinEnabled?: boolean;
+  /**
+     * Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.
+     * @nullable
+     */
+  trackLat?: number | null;
+  /**
+     * Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.
+     * @nullable
+     */
+  trackLng?: number | null;
   createdAt?: string;
 }
 
@@ -423,6 +436,8 @@ export interface EventInput {
   raceClassSeriesMap?: EventInputRaceClassSeriesMap;
   /** Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time) */
   raceStyle?: EventInputRaceStyle;
+  /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
+  quickCheckinEnabled?: boolean;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -516,6 +531,51 @@ export interface EventUpdate {
   classOrder?: string[] | null;
   /** Brands selected for contingency sponsorships at this event. */
   contingencyBrands?: string[] | null;
+  /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
+  quickCheckinEnabled?: boolean;
+}
+
+export interface QuickCheckinInput {
+  /** Specific rider ID to check in (for family accounts; defaults to first rider) */
+  riderId?: number;
+  /** Specific registration to check in (checks in that registration's rider and class) */
+  registrationId?: number;
+}
+
+/**
+ * @nullable
+ */
+export type QuickCheckinEventIneligibleReason = typeof QuickCheckinEventIneligibleReason[keyof typeof QuickCheckinEventIneligibleReason] | null;
+
+
+export const QuickCheckinEventIneligibleReason = {
+  missing_rfid: 'missing_rfid',
+  missing_transponder: 'missing_transponder',
+  missing_waiver: 'missing_waiver',
+} as const;
+
+export interface QuickCheckinEvent {
+  eventId: number;
+  eventName: string;
+  eventDate: string;
+  /** @nullable */
+  location?: string | null;
+  state: string;
+  /** @nullable */
+  trackName?: string | null;
+  /** @nullable */
+  trackLat?: number | null;
+  /** @nullable */
+  trackLng?: number | null;
+  riderId: number;
+  riderName: string;
+  registrationId: number;
+  /** @nullable */
+  raceClass?: string | null;
+  eligible: boolean;
+  checkedIn: boolean;
+  /** @nullable */
+  ineligibleReason?: QuickCheckinEventIneligibleReason;
 }
 
 export interface Rider {
@@ -1963,6 +2023,11 @@ export type UpdateResultLaps200 = {
 
 export type ListPublicSeriesParams = {
 state?: string;
+};
+
+export type PostEventQuickCheckin200 = {
+  ok?: boolean;
+  alreadyCheckedIn?: boolean;
 };
 
 export type ListRecentResultsParams = {
