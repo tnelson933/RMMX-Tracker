@@ -116,8 +116,12 @@ export default function TeamPage() {
   const [fieldsSaving, setFieldsSaving] = useState(false);
 
   // Track Library state
-  const [tracks, setTracks] = useState<{ id: number; name: string; state: string | null }[]>([]);
+  const [tracks, setTracks] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null }[]>([]);
   const [newTrackName, setNewTrackName] = useState("");
+  const [newTrackAddress, setNewTrackAddress] = useState("");
+  const [newTrackCity, setNewTrackCity] = useState("");
+  const [newTrackState, setNewTrackState] = useState("");
+  const [newTrackZip, setNewTrackZip] = useState("");
   const [addingTrack, setAddingTrack] = useState(false);
 
   // Default Classes state
@@ -161,12 +165,22 @@ export default function TeamPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed }),
+        body: JSON.stringify({
+          name: trimmed,
+          address: newTrackAddress.trim() || undefined,
+          city: newTrackCity.trim() || undefined,
+          state: newTrackState.trim() || undefined,
+          zip: newTrackZip.trim() || undefined,
+        }),
       });
       if (!res.ok) throw new Error();
       const track = await res.json();
       setTracks(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
       setNewTrackName("");
+      setNewTrackAddress("");
+      setNewTrackCity("");
+      setNewTrackState("");
+      setNewTrackZip("");
       toast({ title: "Track added" });
     } catch {
       toast({ title: "Failed to add track", variant: "destructive" });
@@ -661,36 +675,72 @@ export default function TeamPage() {
         {/* Existing tracks */}
         {tracks.length > 0 && (
           <div className="space-y-2 mb-4">
-            {tracks.map(track => (
-              <div key={track.id} className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-2.5">
-                <MapPin size={13} className="text-muted-foreground shrink-0" />
-                <span className="flex-1 text-sm font-medium">{track.name}</span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => deleteTrack(track.id)}
-                  title="Remove track"
-                >
-                  <Trash2 size={13} />
-                </Button>
-              </div>
-            ))}
+            {tracks.map(track => {
+              const addressLine = [track.address, track.city, track.state, track.zip].filter(Boolean).join(", ");
+              return (
+                <div key={track.id} className="flex items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+                  <MapPin size={13} className="text-muted-foreground shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{track.name}</p>
+                    {addressLine && <p className="text-xs text-muted-foreground mt-0.5">{addressLine}</p>}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                    onClick={() => deleteTrack(track.id)}
+                    title="Remove track"
+                  >
+                    <Trash2 size={13} />
+                  </Button>
+                </div>
+              );
+            })}
           </div>
         )}
 
         {/* Add track form */}
-        <div className="flex gap-2">
-          <Input
-            placeholder="e.g. Thunder Valley MX"
-            value={newTrackName}
-            onChange={e => setNewTrackName(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && addTrack()}
-            className="flex-1"
-          />
-          <Button onClick={addTrack} disabled={addingTrack || !newTrackName.trim()}>
+        <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Add New Track</p>
+          <div className="space-y-2">
+            <Input
+              placeholder="Track / venue name *"
+              value={newTrackName}
+              onChange={e => setNewTrackName(e.target.value)}
+            />
+            <Input
+              placeholder="Street address"
+              value={newTrackAddress}
+              onChange={e => setNewTrackAddress(e.target.value)}
+            />
+            <div className="grid grid-cols-3 gap-2">
+              <Input
+                placeholder="City"
+                value={newTrackCity}
+                onChange={e => setNewTrackCity(e.target.value)}
+                className="col-span-1"
+              />
+              <Input
+                placeholder="State"
+                value={newTrackState}
+                onChange={e => setNewTrackState(e.target.value)}
+                className="col-span-1"
+              />
+              <Input
+                placeholder="ZIP"
+                value={newTrackZip}
+                onChange={e => setNewTrackZip(e.target.value)}
+                className="col-span-1"
+              />
+            </div>
+          </div>
+          <Button
+            onClick={addTrack}
+            disabled={addingTrack || !newTrackName.trim()}
+            className="w-full"
+          >
             <Plus size={15} className="mr-1" />
-            Add
+            {addingTrack ? "Adding…" : "Add Track"}
           </Button>
         </div>
         {tracks.length === 0 && (
