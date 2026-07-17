@@ -493,6 +493,17 @@ export default function EventDetail() {
     }
   }, [isEditing]);
 
+  // Auto-select library track when entering edit mode so address isn't required again
+  useEffect(() => {
+    if (!isEditing || !event) return;
+    const trackName = (event as any).trackName as string | null | undefined;
+    if (!trackName?.trim()) return;
+    const match = trackLibrary.find(
+      t => t.name.trim().toLowerCase() === trackName.trim().toLowerCase()
+    );
+    if (match) setSelectedLibraryTrackId(match.id);
+  }, [isEditing, trackLibrary, (event as any)?.trackName]);
+
   const selectLibraryTrack = (t: typeof trackLibrary[0]) => {
     form.setValue("trackName", t.name);
     if (t.city) form.setValue("location", t.city);
@@ -857,32 +868,6 @@ export default function EventDetail() {
                         )}
                       />
                     )}
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="state"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                            <FormControl>
-                              <StateSelect value={field.value} onChange={field.onChange} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="location"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>City</FormLabel>
-                            <FormControl><Input {...field} /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
                     <FormField
                       control={form.control}
                       name="trackName"
@@ -915,30 +900,59 @@ export default function EventDetail() {
                               onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); }}
                             />
                           </FormControl>
-                          {/* Address fields when manually entering a new track */}
-                          {field.value?.trim() && !selectedLibraryTrackId && (
-                            <div className="rounded-md border border-dashed bg-muted/20 p-3 space-y-2">
-                              <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-                                <MapPin size={11} />
-                                Add address — this track will be saved to your library
-                              </p>
-                              <Input
-                                placeholder="Street address *"
-                                value={manualTrackAddress}
-                                onChange={e => setManualTrackAddress(e.target.value)}
-                              />
-                              <Input
-                                placeholder="ZIP code"
-                                value={manualTrackZip}
-                                onChange={e => setManualTrackZip(e.target.value)}
-                                className="w-36"
-                              />
-                            </div>
-                          )}
                           <FormMessage />
                         </FormItem>
                       )}
                     />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="location"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>City</FormLabel>
+                            <FormControl><Input {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="state"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>State <span className="text-destructive">*</span></FormLabel>
+                            <FormControl>
+                              <StateSelect value={field.value} onChange={field.onChange} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    {/* Address fields when manually entering a new track */}
+                    {(() => {
+                      const trackNameVal = form.watch("trackName");
+                      return trackNameVal?.trim() && !selectedLibraryTrackId ? (
+                        <div className="rounded-md border border-dashed bg-muted/20 p-3 space-y-2">
+                          <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                            <MapPin size={11} />
+                            Add address — this track will be saved to your library
+                          </p>
+                          <Input
+                            placeholder="Street address *"
+                            value={manualTrackAddress}
+                            onChange={e => setManualTrackAddress(e.target.value)}
+                          />
+                          <Input
+                            placeholder="ZIP code"
+                            value={manualTrackZip}
+                            onChange={e => setManualTrackZip(e.target.value)}
+                            className="w-36"
+                          />
+                        </div>
+                      ) : null;
+                    })()}
 
                     {/* Timing Technology */}
                     <FormField
