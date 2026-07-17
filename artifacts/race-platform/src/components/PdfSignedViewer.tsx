@@ -101,7 +101,7 @@ export function PdfSignedViewer({ url, fields, signerName, signerEmail, signedAt
     pdfRef.current = null; canvasRefs.current = [];
     (async () => {
       try {
-        const lib: any = await import("pdfjs-dist");
+        const lib: any = await import(/* @vite-ignore */ "pdfjs-dist");
         if (!lib.GlobalWorkerOptions.workerSrc)
           lib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${lib.version}/build/pdf.worker.min.mjs`;
         const resp = await fetch(url, { credentials: "include" });
