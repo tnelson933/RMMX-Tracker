@@ -39,7 +39,7 @@ function PdfScrollViewer({ url, onScrolledToBottom }: { url: string; onScrolledT
     canvasRefs.current = [];
     (async () => {
       try {
-        const pdfjsLib: any = await import("pdfjs-dist");
+        const pdfjsLib: any = await import(/* @vite-ignore */ "pdfjs-dist");
         if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
           // Use a CDN-hosted worker that is guaranteed to be loadable as a
           // standalone module worker regardless of Vite bundling config.
@@ -371,7 +371,7 @@ export default function Register() {
     if (!event?.liabilityWaiverPdfUrl || !liabilityWaiverSignerName) return;
     setLiabilityWaiverDownloading(true);
     try {
-      const lib: any = await import("pdfjs-dist");
+      const lib: any = await import(/* @vite-ignore */ "pdfjs-dist");
       if (!lib.GlobalWorkerOptions.workerSrc)
         lib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${lib.version}/build/pdf.worker.min.mjs`;
       const resp = await fetch(event.liabilityWaiverPdfUrl, { credentials: "include" });
