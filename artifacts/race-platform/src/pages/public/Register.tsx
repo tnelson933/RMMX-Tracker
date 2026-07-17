@@ -39,12 +39,10 @@ function PdfScrollViewer({ url, onScrolledToBottom }: { url: string; onScrolledT
     canvasRefs.current = [];
     (async () => {
       try {
-        const pdfjsLib: any = await import(/* @vite-ignore */ "pdfjs-dist");
+        const pdfjsLib: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs");
         if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-          // Use a CDN-hosted worker that is guaranteed to be loadable as a
-          // standalone module worker regardless of Vite bundling config.
           pdfjsLib.GlobalWorkerOptions.workerSrc =
-            `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+            "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
         }
         // Pre-fetch as ArrayBuffer so pdfjs never has to issue its own XHR
         // (avoids range-request issues behind the Replit proxy).
@@ -371,9 +369,9 @@ export default function Register() {
     if (!event?.liabilityWaiverPdfUrl || !liabilityWaiverSignerName) return;
     setLiabilityWaiverDownloading(true);
     try {
-      const lib: any = await import(/* @vite-ignore */ "pdfjs-dist");
+      const lib: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs");
       if (!lib.GlobalWorkerOptions.workerSrc)
-        lib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${lib.version}/build/pdf.worker.min.mjs`;
+        lib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
       const resp = await fetch(event.liabilityWaiverPdfUrl, { credentials: "include" });
       if (!resp.ok) throw new Error("Could not load waiver PDF");
       const data = await resp.arrayBuffer();
