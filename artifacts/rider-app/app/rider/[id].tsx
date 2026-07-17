@@ -5,7 +5,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -106,6 +108,132 @@ function SimpleField({
       ) : (
         <Text style={s.fieldEmpty}>Not set</Text>
       )}
+    </>
+  );
+}
+
+const STATE_LIST = [
+  { code: "AL", name: "Alabama" }, { code: "AK", name: "Alaska" },
+  { code: "AZ", name: "Arizona" }, { code: "AR", name: "Arkansas" },
+  { code: "CA", name: "California" }, { code: "CO", name: "Colorado" },
+  { code: "CT", name: "Connecticut" }, { code: "DE", name: "Delaware" },
+  { code: "FL", name: "Florida" }, { code: "GA", name: "Georgia" },
+  { code: "HI", name: "Hawaii" }, { code: "ID", name: "Idaho" },
+  { code: "IL", name: "Illinois" }, { code: "IN", name: "Indiana" },
+  { code: "IA", name: "Iowa" }, { code: "KS", name: "Kansas" },
+  { code: "KY", name: "Kentucky" }, { code: "LA", name: "Louisiana" },
+  { code: "ME", name: "Maine" }, { code: "MD", name: "Maryland" },
+  { code: "MA", name: "Massachusetts" }, { code: "MI", name: "Michigan" },
+  { code: "MN", name: "Minnesota" }, { code: "MS", name: "Mississippi" },
+  { code: "MO", name: "Missouri" }, { code: "MT", name: "Montana" },
+  { code: "NE", name: "Nebraska" }, { code: "NV", name: "Nevada" },
+  { code: "NH", name: "New Hampshire" }, { code: "NJ", name: "New Jersey" },
+  { code: "NM", name: "New Mexico" }, { code: "NY", name: "New York" },
+  { code: "NC", name: "North Carolina" }, { code: "ND", name: "North Dakota" },
+  { code: "OH", name: "Ohio" }, { code: "OK", name: "Oklahoma" },
+  { code: "OR", name: "Oregon" }, { code: "PA", name: "Pennsylvania" },
+  { code: "RI", name: "Rhode Island" }, { code: "SC", name: "South Carolina" },
+  { code: "SD", name: "South Dakota" }, { code: "TN", name: "Tennessee" },
+  { code: "TX", name: "Texas" }, { code: "UT", name: "Utah" },
+  { code: "VT", name: "Vermont" }, { code: "VA", name: "Virginia" },
+  { code: "WA", name: "Washington" }, { code: "WV", name: "West Virginia" },
+  { code: "WI", name: "Wisconsin" }, { code: "WY", name: "Wyoming" },
+];
+
+function StatePickerField({
+  label,
+  value,
+  isEdit,
+  editValue,
+  onChangeText,
+  s,
+  colors,
+}: {
+  label: string;
+  value: string | null | undefined;
+  isEdit: boolean;
+  editValue?: string;
+  onChangeText?: (v: string) => void;
+  s: StylesType;
+  colors: ColorsType;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filtered = query.trim()
+    ? STATE_LIST.filter(
+        (st) =>
+          st.code.toLowerCase().includes(query.toLowerCase()) ||
+          st.name.toLowerCase().includes(query.toLowerCase()),
+      )
+    : STATE_LIST;
+
+  const selected = STATE_LIST.find(
+    (st) => st.code === (editValue ?? "").toUpperCase(),
+  );
+
+  return (
+    <>
+      <Text style={s.fieldLabel}>{label}</Text>
+      {isEdit ? (
+        <Pressable
+          onPress={() => { setQuery(""); setOpen(true); }}
+          style={[
+            s.fieldInput,
+            { justifyContent: "center", paddingVertical: 0 },
+          ]}
+        >
+          <Text style={{ color: selected ? colors.foreground : colors.mutedForeground, fontSize: 14 }}>
+            {selected ? `${selected.code} — ${selected.name}` : "Select state…"}
+          </Text>
+        </Pressable>
+      ) : value ? (
+        <Text style={s.fieldValue}>{value}</Text>
+      ) : (
+        <Text style={s.fieldEmpty}>Not set</Text>
+      )}
+
+      <Modal visible={open} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: "75%", paddingBottom: 24 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground }}>Select State</Text>
+              <Pressable onPress={() => setOpen(false)}>
+                <Feather name="x" size={20} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+            <TextInput
+              style={{ margin: 12, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, color: colors.foreground, fontSize: 14 }}
+              placeholder="Search state…"
+              placeholderTextColor={colors.mutedForeground}
+              value={query}
+              onChangeText={setQuery}
+              autoCorrect={false}
+            />
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => item.code}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <Pressable
+                  style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                  onPress={() => {
+                    onChangeText?.(item.code);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                >
+                  <Text style={{ fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 13, width: 32, color: colors.foreground }}>{item.code}</Text>
+                  <Text style={{ fontSize: 14, color: colors.foreground, flex: 1 }}>{item.name}</Text>
+                  {(editValue ?? "").toUpperCase() === item.code && (
+                    <Feather name="check" size={16} color={colors.primary} />
+                  )}
+                </Pressable>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -904,7 +1032,7 @@ export default function RiderDetailScreen() {
                 />
               }
               right={
-                <SimpleField
+                <StatePickerField
                   s={s}
                   colors={colors}
                   label="State"
@@ -912,7 +1040,6 @@ export default function RiderDetailScreen() {
                   isEdit={editing}
                   editValue={form?.homeState ?? ""}
                   onChangeText={(v) => setField("homeState", v)}
-                  placeholder="AZ"
                 />
               }
             />
