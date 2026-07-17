@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable, enduroTimeChecksTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { sendStatsEmail } from "../lib/email";
+import { normalizeState } from "../utils/normalizeState";
 
 const router = Router();
 
@@ -113,6 +114,9 @@ router.get("/events", async (req, res) => {
     endDate: eventsTable.endDate,
     raceStyle: eventsTable.raceStyle,
     enduroPenaltyConfig: eventsTable.enduroPenaltyConfig,
+    quickCheckinEnabled: eventsTable.quickCheckinEnabled,
+    trackLat: eventsTable.trackLat,
+    trackLng: eventsTable.trackLng,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -153,7 +157,7 @@ router.post("/events", async (req, res) => {
   const todayFallback = `${now0.getFullYear()}-${String(now0.getMonth() + 1).padStart(2, "0")}-${String(now0.getDate()).padStart(2, "0")}`;
   // Strip any time component — always store as plain YYYY-MM-DD
   const cleanDate = isDraftCreate ? (date ? String(date).substring(0, 10) : todayFallback) : String(date).substring(0, 10);
-  const cleanState = isDraftCreate ? (state || "TBD") : state;
+  const cleanState = normalizeState(isDraftCreate ? (state || "TBD") : state);
   const cleanEndDate = endDate ? String(endDate).substring(0, 10) : undefined;
   if (cleanEndDate && cleanEndDate < cleanDate) return res.status(400).json({ error: "endDate must be on or after date" });
 
@@ -252,6 +256,9 @@ router.get("/events/:eventId", async (req, res) => {
     endDate: eventsTable.endDate,
     raceStyle: eventsTable.raceStyle,
     enduroPenaltyConfig: eventsTable.enduroPenaltyConfig,
+    quickCheckinEnabled: eventsTable.quickCheckinEnabled,
+    trackLat: eventsTable.trackLat,
+    trackLng: eventsTable.trackLng,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -295,7 +302,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
 
   // Capture previous status before update; also check club ownership for staff.
-  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date }).from(eventsTable).where(eq(eventsTable.id, id));
+  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state }).from(eventsTable).where(eq(eventsTable.id, id));
   const previousStatus = before?.status;
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
@@ -308,7 +315,7 @@ router.patch("/events/:eventId", async (req, res) => {
   }
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "raceClassDetails", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireLiabilityWaiver", "requireTransponder", "earlyBirdEndsAt", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig", "classOrder", "contingencyBrands"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "raceClassDetails", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireLiabilityWaiver", "requireTransponder", "earlyBirdEndsAt", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig", "classOrder", "contingencyBrands", "quickCheckinEnabled"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
@@ -316,10 +323,42 @@ router.patch("/events/:eventId", async (req, res) => {
   // may arrive from a datetime-local input or ISO timestamp (e.g. "2026-06-23T18:00:00.000Z").
   if (typeof updates.date === "string") updates.date = updates.date.substring(0, 10);
   if (typeof updates.endDate === "string") updates.endDate = updates.endDate.substring(0, 10);
+  if (typeof updates.state === "string") updates.state = normalizeState(updates.state);
   if (req.body.entryFee !== undefined) updates.entryFee = req.body.entryFee ? String(req.body.entryFee) : null;
   if (req.body.earlyBirdFee !== undefined) updates.earlyBirdFee = req.body.earlyBirdFee ? String(req.body.earlyBirdFee) : null;
   if (req.body.transponderRentalFee !== undefined) updates.transponderRentalFee = req.body.transponderRentalFee ? String(req.body.transponderRentalFee) : null;
   if (req.body.rfidStickerFee !== undefined) updates.rfidStickerFee = req.body.rfidStickerFee ? String(req.body.rfidStickerFee) : null;
+
+  // Auto-geocode track when quick check-in is being enabled and we have a location
+  if (updates.quickCheckinEnabled === true) {
+    const eventRow = before ?? (await db.select().from(eventsTable).where(eq(eventsTable.id, id)))[0];
+    const trackName = (updates.trackName as string | undefined) ?? eventRow?.trackName;
+    const location = (updates.location as string | undefined) ?? eventRow?.location;
+    const state = (updates.state as string | undefined) ?? eventRow?.state;
+    const queries = [
+      [trackName, location, state].filter(Boolean).join(", "),
+      [location, state].filter(Boolean).join(", "),
+    ].filter(q => q.length > 0);
+    for (const query of queries) {
+      try {
+        const geoRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
+          { headers: { "User-Agent": "RMTracker/1.0 (race-platform)" } }
+        );
+        const geoJson = await geoRes.json() as Array<{ lat: string; lon: string }>;
+        if (geoJson[0]) {
+          updates.trackLat = parseFloat(geoJson[0].lat);
+          updates.trackLng = parseFloat(geoJson[0].lon);
+          break;
+        }
+      } catch {
+        req.log?.warn("Nominatim geocoding failed for quick check-in");
+      }
+    }
+  } else if (updates.quickCheckinEnabled === false) {
+    updates.trackLat = null;
+    updates.trackLng = null;
+  }
 
   const [event] = await db.update(eventsTable).set(updates as any).where(eq(eventsTable.id, id)).returning();
   if (!event) return res.status(404).json({ error: "Not found" });
