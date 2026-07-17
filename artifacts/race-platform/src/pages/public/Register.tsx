@@ -291,10 +291,13 @@ export default function Register() {
   const [liabilityWaiverModalOpen, setLiabilityWaiverModalOpen] = useState(false);
   const [liabilityWaiverScrolledToBottom, setLiabilityWaiverScrolledToBottom] = useState(false);
   const [liabilityWaiverConsentChecked, setLiabilityWaiverConsentChecked] = useState(false);
+  const [liabilityWaiverConsentGiven, setLiabilityWaiverConsentGiven] = useState(false);
   const [liabilityWaiverSignerName, setLiabilityWaiverSignerName] = useState("");
   const [liabilityWaiverAccepted, setLiabilityWaiverAccepted] = useState(false);
   const [liabilityWaiverSignatureId, setLiabilityWaiverSignatureId] = useState<number | null>(null);
+  const [liabilityWaiverSignedAt, setLiabilityWaiverSignedAt] = useState<string | null>(null);
   const [liabilityWaiverSigning, setLiabilityWaiverSigning] = useState(false);
+  const [liabilityWaiverDownloading, setLiabilityWaiverDownloading] = useState(false);
   const [liabilityWaiverSignError, setLiabilityWaiverSignError] = useState<string | null>(null);
   const [liabilityWaiverSignerType, setLiabilityWaiverSignerType] = useState<"self" | "guardian">("self");
   const [liabilityWaiverMinorRiderName, setLiabilityWaiverMinorRiderName] = useState("");
@@ -353,12 +356,89 @@ export default function Register() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Signing failed");
       setLiabilityWaiverSignatureId(json.signatureId);
+      setLiabilityWaiverSignedAt(new Date().toISOString());
       setLiabilityWaiverAccepted(true);
       setLiabilityWaiverModalOpen(false);
     } catch (e: any) {
       setLiabilityWaiverSignError(e.message || "Signing failed. Please try again.");
     } finally {
       setLiabilityWaiverSigning(false);
+    }
+  };
+
+  const downloadSignedPdf = async () => {
+    if (!event?.liabilityWaiverPdfUrl || !liabilityWaiverSignerName) return;
+    setLiabilityWaiverDownloading(true);
+    try {
+      const lib: any = await import("pdfjs-dist");
+      if (!lib.GlobalWorkerOptions.workerSrc)
+        lib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${lib.version}/build/pdf.worker.min.mjs`;
+      const resp = await fetch(event.liabilityWaiverPdfUrl, { credentials: "include" });
+      if (!resp.ok) throw new Error("Could not load waiver PDF");
+      const data = await resp.arrayBuffer();
+      const pdfDoc = await lib.getDocument({ data }).promise;
+
+      const fields = (event.liabilityWaiverFields ?? []) as Array<{ id: string; type: string; page: number; x: number; y: number; width: number; height: number }>;
+      const signerEmail = (form.getValues("email") as string | undefined) || "";
+      const signedAtDisplay = liabilityWaiverSignedAt
+        ? new Date(liabilityWaiverSignedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+        : new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+      const { jsPDF } = await import("jspdf");
+      const MM = 0.2645835; // px → mm at 96 dpi
+      const pdf = new jsPDF({ unit: "mm", compress: true });
+      let firstPage = true;
+
+      for (let pi = 0; pi < pdfDoc.numPages; pi++) {
+        const page = await pdfDoc.getPage(pi + 1);
+        const vp = page.getViewport({ scale: 2 });
+        const cv = document.createElement("canvas");
+        cv.width = vp.width; cv.height = vp.height;
+        const ctx = cv.getContext("2d")!;
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+        // Stamp signature fields
+        const pageFields = fields.filter(f => f.page === pi);
+        for (const field of pageFields) {
+          let value = "";
+          if (field.type === "name") value = liabilityWaiverSignerName;
+          else if (field.type === "email") value = signerEmail;
+          else if (field.type === "date") value = signedAtDisplay;
+          else if (field.type === "signature")
+            value = liabilityWaiverSignerType === "guardian" && liabilityWaiverMinorRiderName
+              ? `${liabilityWaiverSignerName} — parent/guardian of ${liabilityWaiverMinorRiderName}`
+              : liabilityWaiverSignerName;
+          if (!value) continue;
+          const px = field.x * vp.width, py = field.y * vp.height;
+          const pw = field.width * vp.width, ph = field.height * vp.height;
+          const isSig = field.type === "signature";
+          const fs = Math.max(isSig ? 18 : 14, Math.min(isSig ? ph * 0.55 : ph * 0.5, isSig ? 40 : 28));
+          ctx.save();
+          ctx.fillStyle = isSig ? "rgba(17,17,17,0.06)" : "rgba(16,185,129,0.06)";
+          ctx.fillRect(px, py, pw, ph);
+          ctx.strokeStyle = isSig ? "#3b82f6" : "#10b981";
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(px, py + ph); ctx.lineTo(px + pw, py + ph); ctx.stroke();
+          ctx.fillStyle = "#111";
+          ctx.font = isSig ? `italic ${fs}px Georgia,serif` : `${fs}px system-ui,sans-serif`;
+          ctx.textBaseline = "middle";
+          ctx.fillText(value, px + 6, py + ph / 2, pw - 12);
+          ctx.restore();
+        }
+
+        const imgData = cv.toDataURL("image/jpeg", 0.92);
+        const wMm = vp.width * MM, hMm = vp.height * MM;
+        if (firstPage) { pdf.deletePage(1); firstPage = false; }
+        pdf.addPage([wMm, hMm], wMm > hMm ? "landscape" : "portrait");
+        pdf.addImage(imgData, "JPEG", 0, 0, wMm, hMm);
+      }
+
+      const safeName = (event.name ?? "waiver").replace(/[^a-z0-9]/gi, "_");
+      pdf.save(`${safeName}_signed_waiver.pdf`);
+    } catch (e: any) {
+      console.error("Download failed:", e);
+    } finally {
+      setLiabilityWaiverDownloading(false);
     }
   };
 
@@ -1642,6 +1722,7 @@ export default function Register() {
                         onClick={() => {
                           setLiabilityWaiverScrolledToBottom(false);
                           setLiabilityWaiverConsentChecked(false);
+                          setLiabilityWaiverConsentGiven(false);
                           setLiabilityWaiverSignerName(`${form.getValues("firstName")} ${form.getValues("lastName")}`.trim());
                           setLiabilityWaiverSignError(null);
                           setLiabilityWaiverSignerType("self");
@@ -1654,17 +1735,30 @@ export default function Register() {
                       </Button>
                     )}
                     {liabilityWaiverAccepted && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLiabilityWaiverScrolledToBottom(false);
-                          setLiabilityWaiverSignError(null);
-                          setLiabilityWaiverModalOpen(true);
-                        }}
-                        className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary w-full"
-                      >
-                        <FileText size={12} /> View signed waiver PDF
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLiabilityWaiverScrolledToBottom(false);
+                            setLiabilityWaiverSignError(null);
+                            setLiabilityWaiverConsentGiven(true);
+                            setLiabilityWaiverModalOpen(true);
+                          }}
+                          className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary flex-1"
+                        >
+                          <FileText size={12} /> View signed waiver
+                        </button>
+                        <button
+                          type="button"
+                          onClick={downloadSignedPdf}
+                          disabled={liabilityWaiverDownloading}
+                          className="flex items-center justify-center gap-1.5 text-xs text-primary hover:text-primary/80 font-semibold flex-1 disabled:opacity-50"
+                        >
+                          {liabilityWaiverDownloading
+                            ? <><Loader2 size={12} className="animate-spin" /> Preparing…</>
+                            : <><FileText size={12} /> Download signed copy</>}
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
@@ -1879,14 +1973,54 @@ export default function Register() {
               <ShieldCheck size={18} className="text-primary" />
               Liability Waiver &amp; Release
             </DialogTitle>
-            {!liabilityWaiverScrolledToBottom ? (
+            {liabilityWaiverConsentGiven && !liabilityWaiverScrolledToBottom && (
               <p className="text-xs text-muted-foreground mt-1">Scroll to the bottom — your information will appear in the highlighted fields as you type.</p>
-            ) : (
+            )}
+            {liabilityWaiverConsentGiven && liabilityWaiverScrolledToBottom && (
               <p className="text-xs text-emerald-600 mt-1">✓ Type your full legal name below to see how your signed document will look.</p>
             )}
           </DialogHeader>
 
-          {event?.liabilityWaiverPdfUrl && (
+          {/* Consent gate — must agree before seeing the waiver content */}
+          {!liabilityWaiverConsentGiven && (
+            <div className="flex-1 flex flex-col items-center justify-center px-8 py-10 gap-6 text-center">
+              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <ShieldCheck size={28} className="text-primary" />
+              </div>
+              <div className="space-y-2 max-w-md">
+                <p className="font-semibold text-base">Electronic Document Disclosure</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  This event requires a signed liability waiver. The waiver will be presented to you as an electronic document.
+                  By proceeding you confirm that you have the ability to access, read, and retain an electronic document,
+                  and you consent to conducting this transaction electronically rather than on paper.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  You may withdraw consent at any time by contacting the event organizer.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 w-full max-w-xs">
+                <Button
+                  type="button"
+                  className="w-full font-heading uppercase tracking-wider"
+                  onClick={() => setLiabilityWaiverConsentGiven(true)}
+                >
+                  <ShieldCheck size={15} className="mr-2" />
+                  I Agree — Show Waiver
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-muted-foreground"
+                  onClick={() => setLiabilityWaiverModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {liabilityWaiverConsentGiven && event?.liabilityWaiverPdfUrl && (
             <PdfSignedViewer
               url={event.liabilityWaiverPdfUrl}
               fields={(event.liabilityWaiverFields ?? []) as any}
@@ -1899,7 +2033,7 @@ export default function Register() {
             />
           )}
 
-          <div className="px-6 py-4 border-t shrink-0 space-y-3">
+          {liabilityWaiverConsentGiven && <div className="px-6 py-4 border-t shrink-0 space-y-3">
             {liabilityWaiverAccepted ? (
               <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 px-4 py-3">
                 <ShieldCheck size={16} className="text-green-600 shrink-0" />
@@ -2021,7 +2155,7 @@ export default function Register() {
                 </Button>
               )}
             </div>
-          </div>
+          </div>}
         </DialogContent>
       </Dialog>
 
