@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { StateSelect } from "@/components/ui/StateSelect";
 import { useRoute, Link } from "wouter";
 import { useGetRider, useUpdateRider, useAssignRfid, useListDiscountCodes, getGetRiderQueryKey } from "@workspace/api-client-react";
 import type { DiscountCode as DiscountCodeType } from "@workspace/api-client-react";
@@ -848,7 +849,7 @@ export default function RiderDetail() {
                         <FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="Tucson" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
                       <FormField control={form.control} name="homeState" render={({ field }) => (
-                        <FormItem><FormLabel>State</FormLabel><FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>State</FormLabel><FormControl><StateSelect value={field.value} onChange={field.onChange} /></FormControl><FormMessage /></FormItem>
                       )} />
                       <FormField control={form.control} name="zip" render={({ field }) => (
                         <FormItem><FormLabel>ZIP</FormLabel><FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl><FormMessage /></FormItem>
