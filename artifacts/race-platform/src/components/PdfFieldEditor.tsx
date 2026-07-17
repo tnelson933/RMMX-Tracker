@@ -59,7 +59,7 @@ export function PdfFieldEditor({ url, initialFields = [], onSave, onCancel }: Pr
     pdfRef.current = null; canvasRefs.current = []; dimsRef.current = [];
     (async () => {
       try {
-        const lib: any = await import("pdfjs-dist");
+        const lib: any = await import(/* @vite-ignore */ "pdfjs-dist");
         if (!lib.GlobalWorkerOptions.workerSrc)
           lib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${lib.version}/build/pdf.worker.min.mjs`;
         const resp = await fetch(url, { credentials: "include" });
