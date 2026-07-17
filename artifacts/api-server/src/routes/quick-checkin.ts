@@ -53,6 +53,19 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
 
   const todayStr = new Date().toISOString().substring(0, 10);
 
+  // Auto-advance any quick-checkin events whose date has arrived but status hasn't caught up.
+  // This handles the case where registration is still "open" on race day (late close date).
+  await db
+    .update(eventsTable)
+    .set({ status: "race_day" })
+    .where(
+      and(
+        eq(eventsTable.quickCheckinEnabled, true),
+        sql`${eventsTable.date}::date <= ${todayStr}::date`,
+        inArray(eventsTable.status, ["draft", "registration_open", "registration_closed"]),
+      )
+    );
+
   // Fetch registrations for events that are: race_day status, quickCheckinEnabled, today
   const regs = await db
     .select({
@@ -63,6 +76,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       bibNumber: registrationsTable.bibNumber,
       myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
       regStatus: registrationsTable.status,
+      waiverAcknowledgedAt: registrationsTable.waiverAcknowledgedAt,
       eventName: eventsTable.name,
       eventDate: eventsTable.date,
       eventEndDate: eventsTable.endDate,
@@ -177,8 +191,17 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       }
     }
 
-    // Waiver check — if either waiver flag is on, require a signature
-    if (eligible && (r.requireWaiver || r.requireLiabilityWaiver)) {
+    // Waiver check:
+    // requireWaiver = simple acknowledgment stored on the registration row (waiver_acknowledged_at)
+    // requireLiabilityWaiver = full PDF e-signature stored in liability_waiver_signatures
+    if (eligible && r.requireWaiver && !r.requireLiabilityWaiver) {
+      // Simple acknowledgment — satisfied by waiver_acknowledged_at on the registration
+      if (!r.waiverAcknowledgedAt) {
+        eligible = false;
+        ineligibleReason = "missing_waiver";
+      }
+    } else if (eligible && r.requireLiabilityWaiver) {
+      // Full liability waiver — must be in liability_waiver_signatures
       const hasWaiver =
         waiverByRegId.has(`${r.eventId}:${r.registrationId}`) ||
         waiverByEmail.has(`${r.eventId}:${account.email.toLowerCase()}`);
@@ -297,8 +320,14 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     }
   }
 
-  // Waiver eligibility
-  if (event.requireWaiver || event.requireLiabilityWaiver) {
+  // Waiver eligibility:
+  // requireWaiver = simple acknowledgment on the registration row (waiver_acknowledged_at)
+  // requireLiabilityWaiver = full PDF e-signature in liability_waiver_signatures
+  if (event.requireWaiver && !event.requireLiabilityWaiver) {
+    if (!reg.waiverAcknowledgedAt) {
+      return res.status(400).json({ error: "Waiver not signed — please complete the waiver before checking in" });
+    }
+  } else if (event.requireLiabilityWaiver) {
     const sigs = await db
       .select()
       .from(liabilityWaiverSignaturesTable)
