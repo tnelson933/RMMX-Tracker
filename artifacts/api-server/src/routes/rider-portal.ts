@@ -36,7 +36,7 @@ function generateMobileToken(): string {
   return randomBytes(32).toString("hex");
 }
 
-function requireRiderAuth(req: any, res: any, next: any) {
+export function requireRiderAuth(req: any, res: any, next: any) {
   // Session auth (web portal)
   if ((req.session as any).riderAccountId) return next();
 
