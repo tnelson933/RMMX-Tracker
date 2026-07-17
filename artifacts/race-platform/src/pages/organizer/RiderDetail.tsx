@@ -689,6 +689,7 @@ export default function RiderDetail() {
   const assignRfidMutation = useAssignRfid();
 
   const [isEditing, setIsEditing] = useState(false);
+  const [emailExpanded, setEmailExpanded] = useState(false);
   const [rfidInput, setRfidInput] = useState("");
 
   const r = rider as any;
@@ -923,7 +924,29 @@ export default function RiderDetail() {
                 <div className="space-y-6">
                   {/* Contact */}
                   <div className="grid grid-cols-2 gap-y-5">
-                    <InfoRow label="Email" value={rider.email} />
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1 flex items-center gap-1">
+                        EMAIL
+                        {rider.email && (
+                          <button
+                            onClick={() => setEmailExpanded(e => !e)}
+                            className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-muted-foreground/40 text-muted-foreground/60 hover:text-foreground hover:border-foreground transition-colors text-[10px] leading-none"
+                            title={emailExpanded ? "Collapse" : "Show full email"}
+                          >
+                            {emailExpanded ? "−" : "+"}
+                          </button>
+                        )}
+                      </div>
+                      {rider.email ? (
+                        emailExpanded ? (
+                          <div className="font-medium break-all">{rider.email}</div>
+                        ) : (
+                          <div className="font-medium truncate pr-2">{rider.email}</div>
+                        )
+                      ) : (
+                        <div className="font-medium"><span className="text-muted-foreground/50">—</span></div>
+                      )}
+                    </div>
                     <InfoRow label="Phone" value={rider.phone} />
                     <InfoRow label="Date of Birth" value={rider.dateOfBirth} />
                   </div>
