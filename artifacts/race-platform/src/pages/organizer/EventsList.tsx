@@ -92,6 +92,7 @@ const createEventSchema = z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
     seriesIds: z.array(z.number()).default([]),
+    details: z.string().optional(),
   })),
   clubId: z.number({ invalid_type_error: "Club is required" }).min(1, "Club is required"),
   registrationOpen: z.string().optional(),
@@ -102,6 +103,7 @@ const createEventSchema = z.object({
   noDuplicateBibs: z.boolean().default(false),
   requireWaiver: z.boolean().default(false),
   requireLiabilityWaiver: z.boolean().default(false),
+  quickCheckinEnabled: z.boolean().default(false),
   scoringTableId: z.number().optional(),
   entryFee: z.string().optional(),
   earlyBirdEnabled: z.boolean().default(false),
@@ -133,6 +135,7 @@ export default function EventsList() {
   const [createSeriesIds, setCreateSeriesIds] = useState<number[]>([]);
   const [createContingencyBrands, setCreateContingencyBrands] = useState<string[]>([]);
   const [createNewBrandInput, setCreateNewBrandInput] = useState("");
+  const [expandedCreateDetailRows, setExpandedCreateDetailRows] = useState<Set<number>>(new Set());
   const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
   const [imgValidationError, setImgValidationError] = useState<string | null>(null);
   const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -140,6 +143,12 @@ export default function EventsList() {
   const [createImgState, setCreateImgState] = useState<"idle" | "processing" | "uploading" | "done">("idle");
   const [removeBgOnCreate, setRemoveBgOnCreate] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+
+  // Track library state
+  const [trackLibrary, setTrackLibrary] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null }[]>([]);
+  const [selectedLibraryTrackId, setSelectedLibraryTrackId] = useState<number | null>(null);
+  const [manualTrackAddress, setManualTrackAddress] = useState("");
+  const [manualTrackZip, setManualTrackZip] = useState("");
 
   // Super-admin sees all events; club_organizer and staff see only their own club's events
   const eventsQuery = isSuperAdmin
@@ -224,8 +233,8 @@ export default function EventsList() {
 
   const { data: clubSettingsData } = useGetClubSettings(sessionClubId ?? 0, { query: { enabled: !!sessionClubId && !isSuperAdmin } as any });
   const putClubSettings = usePutClubSettings();
-  const defaultClasses = useMemo<{ id: string; name: string }[]>(
-    () => (clubSettingsData?.defaultClasses as { id: string; name: string }[] | undefined) ?? [],
+  const defaultClasses = useMemo<{ id: string; name: string; details?: string | null }[]>(
+    () => (clubSettingsData?.defaultClasses as { id: string; name: string; details?: string | null }[] | undefined) ?? [],
     [clubSettingsData]
   );
   const libraryContingencies = useMemo<string[]>(
@@ -240,6 +249,32 @@ export default function EventsList() {
       form.setValue("trackName", savedTrackName);
     }
   }, [clubSettingsData, isCreateOpen]);
+
+  // Load track library on mount
+  useEffect(() => {
+    fetch("/api/tracks", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then(setTrackLibrary)
+      .catch(() => {});
+  }, []);
+
+  // Reset track state when dialog closes
+  useEffect(() => {
+    if (!isCreateOpen) {
+      setSelectedLibraryTrackId(null);
+      setManualTrackAddress("");
+      setManualTrackZip("");
+    }
+  }, [isCreateOpen]);
+
+  const selectLibraryTrack = (t: typeof trackLibrary[0]) => {
+    form.setValue("trackName", t.name);
+    if (t.city) form.setValue("location", t.city);
+    if (t.state) form.setValue("state", t.state);
+    setSelectedLibraryTrackId(t.id);
+    setManualTrackAddress("");
+    setManualTrackZip("");
+  };
 
 
   const form = useForm<z.infer<typeof createEventSchema>>({
@@ -264,6 +299,7 @@ export default function EventsList() {
       noDuplicateBibs: false,
       requireWaiver: false,
       requireLiabilityWaiver: false,
+      quickCheckinEnabled: false,
       scoringTableId: undefined,
       entryFee: "",
       earlyBirdEnabled: false,
@@ -293,6 +329,18 @@ export default function EventsList() {
   );
 
   const onSubmit = async (data: z.infer<typeof createEventSchema>) => {
+    // Require address when a track name is manually entered (not picked from library)
+    if (data.trackName?.trim() && !selectedLibraryTrackId && !manualTrackAddress.trim()) {
+      toast({ title: "Track address required", description: "Enter a street address for this track so it can be saved to your library.", variant: "destructive" });
+      return;
+    }
+
+    const classDetails: Record<string, string> = {};
+    data.raceClasses.forEach(r => {
+      const key = r.name.trim();
+      if (key && r.details && r.details.trim()) classDetails[key] = r.details.trim();
+    });
+
     let newEvent: Awaited<ReturnType<typeof createMutation.mutateAsync>>;
     try {
       newEvent = await createMutation.mutateAsync({
@@ -315,6 +363,7 @@ export default function EventsList() {
               })
               .filter(([, ids]) => ids.length > 0)
           ),
+          raceClassDetails: Object.keys(classDetails).length > 0 ? classDetails : undefined,
           registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
           registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
           paymentEnabled: data.paymentEnabled,
@@ -324,6 +373,7 @@ export default function EventsList() {
           requireWaiver: data.requireWaiver,
           requireLiabilityWaiver: data.requireLiabilityWaiver,
           requireTransponder: data.timingTechnology === "mylaps" ? data.requireTransponder : false,
+          quickCheckinEnabled: data.quickCheckinEnabled,
           scoringTableId: data.scoringTableId ?? null,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
           earlyBirdFee: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdFee ? Number(data.earlyBirdFee) : undefined,
@@ -341,14 +391,44 @@ export default function EventsList() {
       return;
     }
 
-    // Silently save any brand-new class names back to club defaults
+    // Silently sync class names and notes back to club defaults
     if (sessionClubId && !isSuperAdmin) {
       const existingDefaultNames = new Set(defaultClasses.map(c => c.name));
       const newClassNames = data.raceClasses.map(r => r.name.trim()).filter(n => n && !existingDefaultNames.has(n));
-      if (newClassNames.length > 0) {
-        const updated = [...defaultClasses, ...newClassNames.map(n => ({ id: crypto.randomUUID(), name: n }))];
+      const hasNoteUpdates = data.raceClasses.some(r => {
+        const key = r.name.trim();
+        const existing = defaultClasses.find(c => c.name === key);
+        return existing && r.details && r.details.trim() && existing.details !== r.details.trim();
+      });
+      if (newClassNames.length > 0 || hasNoteUpdates) {
+        const updated = defaultClasses.map(c => {
+          const match = data.raceClasses.find(r => r.name.trim() === c.name);
+          return match && match.details && match.details.trim() ? { ...c, details: match.details.trim() } : c;
+        });
+        newClassNames.forEach(n => {
+          const match = data.raceClasses.find(r => r.name.trim() === n);
+          updated.push({ id: crypto.randomUUID(), name: n, details: match?.details?.trim() || undefined });
+        });
         putClubSettings.mutate({ clubId: sessionClubId, data: { defaultClasses: updated } });
       }
+    }
+
+    // Auto-save new track to library
+    if (data.trackName?.trim() && !selectedLibraryTrackId) {
+      fetch("/api/tracks", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: data.trackName.trim(),
+          address: manualTrackAddress.trim() || undefined,
+          city: data.location?.trim() || undefined,
+          state: data.state?.trim() || undefined,
+          zip: manualTrackZip.trim() || undefined,
+        }),
+      }).then(r => r.ok ? r.json() : null).then(track => {
+        if (track) setTrackLibrary(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
+      }).catch(() => {});
     }
 
     // Link to series if selected
@@ -631,6 +711,208 @@ export default function EventsList() {
                     )}
                   />
                 )}
+
+                {/* State + City */}
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input placeholder="CO" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="location"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl><Input placeholder="Denver" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="trackName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Track Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                      {/* Library quick-selects */}
+                      {trackLibrary.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {trackLibrary.map(t => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => selectLibraryTrack(t)}
+                              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-all ${
+                                selectedLibraryTrackId === t.id
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-input bg-muted/40 hover:border-primary/50 text-foreground"
+                              }`}
+                            >
+                              {selectedLibraryTrackId === t.id ? <Check size={10} /> : <MapPin size={10} />}
+                              {t.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <FormControl>
+                        <Input
+                          placeholder="Thunder Valley MX"
+                          {...field}
+                          onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); }}
+                        />
+                      </FormControl>
+                      {/* Address fields when manually entering a new track */}
+                      {field.value?.trim() && !selectedLibraryTrackId && (
+                        <div className="rounded-md border border-dashed bg-muted/20 p-3 space-y-2">
+                          <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                            <MapPin size={11} />
+                            Add address — this track will be saved to your library
+                          </p>
+                          <Input
+                            placeholder="Street address *"
+                            value={manualTrackAddress}
+                            onChange={e => setManualTrackAddress(e.target.value)}
+                          />
+                          <Input
+                            placeholder="ZIP code"
+                            value={manualTrackZip}
+                            onChange={e => setManualTrackZip(e.target.value)}
+                            className="w-36"
+                          />
+                        </div>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Timing Technology */}
+                <FormField
+                  control={form.control}
+                  name="timingTechnology"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Timing Technology</FormLabel>
+                      <FormControl>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { value: "rfid", label: "RFID Stickers", desc: "Passive RFID tags" },
+                            { value: "mylaps", label: "MyLaps Transponders", desc: "AMB / MyLaps units" },
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => field.onChange(opt.value)}
+                              className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
+                                field.value === opt.value
+                                  ? "border-primary bg-primary/5 text-foreground"
+                                  : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
+                              }`}
+                            >
+                              <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                              <span className="text-xs mt-0.5">{opt.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Require transponder — MyLaps without Stripe */}
+                {watchTimingTechnology === "mylaps" && !watchPaymentEnabled && (
+                  <FormField
+                    control={form.control}
+                    name="requireTransponder"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Require transponder number?</FormLabel>
+                        <p className="text-xs text-muted-foreground -mt-1 mb-2">
+                          Must riders provide their MyLaps transponder number to register?
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { value: true, label: "Yes – Required" },
+                            { value: false, label: "No – Optional" },
+                          ].map(opt => (
+                            <button
+                              key={String(opt.value)}
+                              type="button"
+                              onClick={() => field.onChange(opt.value)}
+                              className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
+                                field.value === opt.value
+                                  ? "border-primary bg-primary/5 text-foreground"
+                                  : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
+                              }`}
+                            >
+                              <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                        {field.value && (
+                          <p className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
+                            Riders cannot register for event without transponder number.
+                          </p>
+                        )}
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {/* Quick Check-In */}
+                <FormField
+                  control={form.control}
+                  name="quickCheckinEnabled"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <MapPin size={14} /> Quick Check-In
+                      </FormLabel>
+                      <p className="text-xs text-muted-foreground -mt-1 mb-2">
+                        Let riders self-check-in from the rider app when they arrive within 1 mile of the track on race day.
+                        Requires their RFID or Mylaps transponder to be assigned and any required waivers signed.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { value: true, label: "Enabled", desc: "Riders nearby get a check-in prompt" },
+                          { value: false, label: "Disabled", desc: "Staff checks in riders at the gate" },
+                        ].map(opt => (
+                          <button
+                            key={String(opt.value)}
+                            type="button"
+                            onClick={() => field.onChange(opt.value)}
+                            className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
+                              field.value === opt.value
+                                ? "border-primary bg-primary/5 text-foreground"
+                                : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
+                            }`}
+                          >
+                            <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                            <span className="text-xs mt-0.5">{opt.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {field.value && (
+                        <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mt-2">
+                          The track location will be auto-geocoded when you save. Riders get a notification when they arrive within 1 mile on race day.
+                        </p>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 {/* Registration window + Collect Payments */}
                 <div className="space-y-3">
@@ -1079,118 +1361,6 @@ export default function EventsList() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input placeholder="CO" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="location"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>City</FormLabel>
-                        <FormControl><Input placeholder="Denver" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="trackName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Track Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                      <FormControl><Input placeholder="Thunder Valley MX" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Timing Technology */}
-                <FormField
-                  control={form.control}
-                  name="timingTechnology"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Timing Technology</FormLabel>
-                      <FormControl>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { value: "rfid", label: "RFID Stickers", desc: "Passive RFID tags" },
-                            { value: "mylaps", label: "MyLaps Transponders", desc: "AMB / MyLaps units" },
-                          ].map(opt => (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              onClick={() => field.onChange(opt.value)}
-                              className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
-                                field.value === opt.value
-                                  ? "border-primary bg-primary/5 text-foreground"
-                                  : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
-                              }`}
-                            >
-                              <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
-                              <span className="text-xs mt-0.5">{opt.desc}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Require transponder — MyLaps without Stripe */}
-                {watchTimingTechnology === "mylaps" && !watchPaymentEnabled && (
-                  <FormField
-                    control={form.control}
-                    name="requireTransponder"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Require transponder number?</FormLabel>
-                        <p className="text-xs text-muted-foreground -mt-1 mb-2">
-                          Must riders provide their MyLaps transponder number to register?
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { value: true, label: "Yes – Required" },
-                            { value: false, label: "No – Optional" },
-                          ].map(opt => (
-                            <button
-                              key={String(opt.value)}
-                              type="button"
-                              onClick={() => field.onChange(opt.value)}
-                              className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
-                                field.value === opt.value
-                                  ? "border-primary bg-primary/5 text-foreground"
-                                  : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
-                              }`}
-                            >
-                              <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                        {field.value && (
-                          <p className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
-                            Riders cannot register for event without transponder number.
-                          </p>
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
                 {/* Race Classes */}
                 <div className="border-t pt-4">
                   <div className="flex items-center justify-between mb-3">
@@ -1201,7 +1371,21 @@ export default function EventsList() {
                   <div className="space-y-2">
                     {defaultClasses.length > 0 && (
                       <div className="mb-3">
-                        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Club Classes</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Club Classes</p>
+                          {defaultClasses.some(cls => !fields.some(f => f.name === cls.name)) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const unselected = defaultClasses.filter(cls => !fields.some(f => f.name === cls.name));
+                                unselected.forEach(cls => append({ name: cls.name, maxRiders: "", seriesIds: [], details: cls.details ?? "" }));
+                              }}
+                              className="text-xs text-primary hover:text-primary/80 font-semibold transition-colors"
+                            >
+                              Select All
+                            </button>
+                          )}
+                        </div>
                         <div className="flex flex-wrap gap-1.5">
                           {defaultClasses.map(cls => {
                             const isActive = fields.some(f => f.name === cls.name);
@@ -1212,9 +1396,9 @@ export default function EventsList() {
                                 onClick={() => {
                                   if (isActive) {
                                     const idx = fields.findIndex(f => f.name === cls.name);
-                                    if (idx !== -1) remove(idx);
+                                    if (idx !== -1) { remove(idx); setExpandedCreateDetailRows(prev => { const next = new Set<number>(); prev.forEach(i => { if (i < idx) next.add(i); else if (i > idx) next.add(i - 1); }); return next; }); }
                                   } else {
-                                    append({ name: cls.name, maxRiders: "", seriesIds: [] });
+                                    append({ name: cls.name, maxRiders: "", seriesIds: [], details: cls.details ?? "" });
                                   }
                                 }}
                                 className={
@@ -1231,15 +1415,17 @@ export default function EventsList() {
                       </div>
                     )}
                     {fields.length > 0 && (
-                      <div className="grid grid-cols-[1fr_1fr_140px_32px] gap-2 mb-1">
+                      <div className="grid grid-cols-[1fr_1fr_140px_32px_32px] gap-2 mb-1">
                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Class Name</span>
                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Series</span>
                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Max Riders</span>
                         <span />
+                        <span />
                       </div>
                     )}
                     {fields.map((field, index) => (
-                      <div key={field.id} className="grid grid-cols-[1fr_1fr_140px_32px] gap-2 items-start">
+                      <div key={field.id} className="space-y-1">
+                      <div className="grid grid-cols-[1fr_1fr_140px_32px_32px] gap-2 items-start">
                         <FormField
                           control={form.control}
                           name={`raceClasses.${index}.name`}
@@ -1332,11 +1518,52 @@ export default function EventsList() {
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-9 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => remove(index)}
+                          title={expandedCreateDetailRows.has(index) ? "Hide details" : "Add class rules / details"}
+                          className={`h-9 w-8 mt-0 ${expandedCreateDetailRows.has(index) ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`}
+                          onClick={() => setExpandedCreateDetailRows(prev => {
+                            const next = new Set(prev);
+                            if (next.has(index)) next.delete(index); else next.add(index);
+                            return next;
+                          })}
+                        >
+                          <Info size={14} />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-0"
+                          onClick={() => {
+                            remove(index);
+                            setExpandedCreateDetailRows(prev => {
+                              const next = new Set<number>();
+                              prev.forEach(i => { if (i < index) next.add(i); else if (i > index) next.add(i - 1); });
+                              return next;
+                            });
+                          }}
                         >
                           <Trash2 size={14} />
                         </Button>
+                        </div>
+                        {expandedCreateDetailRows.has(index) && (
+                          <FormField
+                            control={form.control}
+                            name={`raceClasses.${index}.details`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <textarea
+                                    {...field}
+                                    rows={3}
+                                    placeholder="Class rules, eligibility requirements, bike specs, or any other details riders should know…"
+                                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
                       </div>
                     ))}
                     <Button
@@ -1344,7 +1571,7 @@ export default function EventsList() {
                       variant="outline"
                       size="sm"
                       className="w-full gap-2 border-dashed font-heading uppercase tracking-wider text-muted-foreground hover:text-foreground mt-1"
-                      onClick={() => append({ name: "", maxRiders: "", seriesIds: [] })}
+                      onClick={() => append({ name: "", maxRiders: "", seriesIds: [], details: "" })}
                     >
                       <Plus size={14} /> Add Class
                     </Button>
