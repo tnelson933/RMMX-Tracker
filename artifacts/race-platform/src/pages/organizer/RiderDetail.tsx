@@ -58,9 +58,12 @@ interface PdfWaiverSignature {
 // ── Download helper ───────────────────────────────────────────────────────────
 
 async function downloadSignedPdf(sig: PdfWaiverSignature): Promise<void> {
-  const pdfjs = await import("pdfjs-dist");
+  // @ts-ignore — CDN import avoids Windows Rollup resolution issues with pdfjs-dist
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  const pdfjs = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs");
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${(pdfjs as any).version}/build/pdf.worker.min.mjs`;
+    pdfjs.GlobalWorkerOptions.workerSrc =
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
   }
 
   const loadingTask = pdfjs.getDocument(sig.waiverSnapshot);
