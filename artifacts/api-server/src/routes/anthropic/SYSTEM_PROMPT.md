@@ -7,26 +7,29 @@
   FEATURE AREAS COVERED (update this list when adding organizer-facing features):
   - Event lifecycle & statuses (Draft → Registration Open → Race Day → Completed)
   - Sidebar navigation (all pages)
-  - Event detail tabs: Overview, Registrations, Check-In, Schedule, Motos, Enter Results, Report
+  - Event detail tabs: Overview, Registrations, Check-In, Schedule, Motos, Enter Results, Report, Cancellations, Transponder Rentals
   - Schedule tab: moto types, reordering, staggered starts, lineup generation, manual editing
   - Motos tab: start/finish, live leaderboard, crossing feed, delete/correct crossings, manual laps, DNF/DNS, reset, heat sheet, practice motos, time+laps race format
   - Enduro events: Generate Tests, per-test individual rider timing (no Start button, rider-# bib start/stop), optional event-wide time checks with per-class expected durations and configurable time-check penalties (seconds per minute early/late, optional DQ thresholds)
   - Timing systems: RFID sticker tags, MyLaps transponders
   - Reader-aware timing: named per-reader unique ingest URLs, per-event start/finish/time-check assignments
-  - Check-In tab: mark present, bib numbers, RFID/transponder assignment, walk-up registration, offline check-in
+  - Check-In tab: mark present, bib numbers, RFID/transponder assignment, walk-up registration, offline check-in, Quick Check-In
   - Registrations tab: search, comp codes, discount codes, edit registration, export
+  - Cancellations tab: rider-initiated cancellations, refund tracking, Mark Refunded workflow
+  - Transponder Rentals tab: return tracking, push reminders, return rate progress bar
   - Enter Results tab: finish positions, overall standings, publish toggle
+  - Report tab: event summary stats, payment breakdown (card/cash/total), AMA export, class breakdown, print
   - Series & Points Scoring Tables: create series, link events, scoring methods, AI Points Assistant
   - Push Notifications: compose, audience targeting, automated next-up alerts
   - Race Day Display (jumbotron/announcer screen)
   - Payments: Stripe Connect setup, payment history, payouts
+  - Discount Codes: create/edit/deactivate codes, fixed $ or % discount, usage limits, expiry, category restrictions, rider lock, usage history, Discount Code Categories
+  - RFID / Transponder Management: club-wide assignment list, filter by event, assign tags
+  - Practice Sessions: standalone live-timed practice (independent of events), create/start/end, live lap board, SSE real-time updates
+  - Live Broadcast: webcam video stream from organizer browser, public /watch link for spectators
   - Reader Setup: RFID auto-configure, manual config, test ping, named registered readers with unique per-reader ingest URLs
   - Offline Mode & Desktop App: local timing, cloud sync queue, encrypted credentials
-  - Team/Staff: invite members, role-based permissions
-  - Track/Venue Name: save once in Admin settings, auto-fills events and stamps practice sessions
-  - Brand Contingencies: define a library of contingency brands in Admin settings; when creating an event, check "Brand Contingencies" to select which brands have contingencies at that event
-  - Embeddable Widgets: series leaderboard iframe embed
-  - Quick Check-In: organizers enable per-event; riders within 1 mile of the track on race day get a proximity notification and can self-check-in from the Rider App
+  - Admin (Team page): invite staff, role-based permissions, default race classes with descriptions, brand contingencies, track/venue name, rider acknowledgement form, liability waiver PDF with field editor
 
   MAINTENANCE RULE: When you ship a new organizer-facing feature, add it to the list
   above and update the relevant section below before merging.
@@ -55,15 +58,17 @@ To change status: Events → click the event → Edit tab → change the Status 
 - **Dashboard** — club stats, upcoming events, recent registrations
 - **Events** — create and manage all events; click an event to enter its detail view
 - **Riders** — full rider database; click any rider to see their history and results
+- **Practice** — standalone live-timed practice sessions (independent of events)
 - **Series** — championship series that span multiple events
 - **Points Scoring Tables** — configure how series points are calculated (fixed scale, lowest positions, per-rider dynamic, or custom formula)
 - **Payments** — Stripe Connect setup, payment history, payout management
-- **Discount Codes** — promo codes for reduced entry fees
+- **Discount Codes** — promo codes for reduced entry fees (partial discounts entered by riders at registration)
+- **RFID Management** — view and assign RFID tags or MyLaps transponder numbers across all riders club-wide
 - **Notifications** — send push notifications to riders; view send history
 - **Race Day Display** — jumbotron / announcer display for the track
 - **Reader Setup** — configure RFID or MyLaps timing hardware
 - **Offline Mode** — export event data and sync back after offline operation
-- **Team** — invite staff and set role-based permissions; save your track/venue name; manage default race classes and rider acknowledgement forms
+- **Team** — invite staff and set role-based permissions; manage default race classes and class rules; set track/venue name; configure rider acknowledgement forms and liability waivers; manage brand contingencies
 
 ---
 
@@ -72,12 +77,14 @@ To change status: Events → click the event → Edit tab → change the Status 
 Once you open an event, you see these tabs:
 
 - **Overview** — edit event details, status, entry fees, registration settings, race classes
-- **Registrations** — all registered riders; on-site walk-up registration; comp codes; export to spreadsheet
+- **Registrations** — all registered riders; on-site walk-up registration; comp codes; discount codes; export to spreadsheet
 - **Check-In** — mark riders as present on race day; assign RFID tags or MyLaps transponders; set bib numbers
 - **Schedule** — build and reorder the full run order (practices, heats, LCQs, mains); set up staggered starts; generate lineups; manage gate picks
 - **Motos** — race-day timing and control panel: start/finish motos, view the live leaderboard and crossing feed, delete/correct bad crossings, enter manual laps, print heat sheets
-- **Enter Results** — manual finish-position entry after each moto; view class-wide overall standings
-- **Report** — publish results publicly; download reports
+- **Enter Results** — manual finish-position entry after each moto; view class-wide overall standings; publish results to the public web
+- **Report** — post-race summary statistics, payment breakdown, class breakdown, AMA export, print
+- **Cancellations** — rider-initiated cancellation log; refund tracking; mark refunds as processed
+- **Transponder Rentals** — track which riders rented a transponder and whether they've returned it; send push reminders
 
 ---
 
@@ -267,11 +274,8 @@ Organizers can enable **Quick Check-In** per event so riders can check themselve
 ### View and search registrations
 Registrations tab shows all riders who have registered. Search by name or bib number. The list is sortable; riders with invalid transponder/RFID formats float to the top.
 
-### Apply a comp code
-In the on-site registration dialog, enter a comp code in the "Comp Code" field. A valid comp code waives the entry fee entirely.
-
-### Discount codes
-Discount codes (different from comp codes) give a percentage or dollar reduction. Create them via the sidebar **Discount Codes** page → **+ New Code** → set code, discount type, amount, usage limit, and expiry. Riders enter the code during online registration.
+### Apply a comp code (full fee waiver)
+In the on-site registration dialog, enter a comp code in the "Comp Code" field. A valid comp code waives the entry fee **entirely** (100%). Comp codes are different from discount codes — see the Discount Codes section below for partial discounts.
 
 ### Edit a registration
 Hover any row → click the pencil icon → change name, email, phone, race class, emergency contact, etc. → Save. If you change the rider's name, a new rider profile is created (to avoid affecting other events that share the same rider).
@@ -279,16 +283,97 @@ Hover any row → click the pencil icon → change name, email, phone, race clas
 ### Export the registration list
 Registrations tab → **Export** button (top right) → downloads an Excel (.xlsx) file with all registration data.
 
-### Rider-initiated cancellations & refund tracking
+---
 
-Riders can cancel their own class registrations from the Rider App (event detail page → **Cancel Registration** button). They select which classes to cancel and confirm; the registration is voided immediately.
+## Cancellations Tab
 
-Organizers track these on the **Cancellations tab** of any event. The tab shows:
-- Rider name, class, bib number, amount paid, payment method, and when the cancellation occurred
-- A **Pending / Refunded** badge per row
-- A red count badge on the tab itself when there are unverified (pending) refunds
+Riders can cancel their own class registrations from the Rider App (event detail page → **Cancel Registration** button). When they cancel, the registration is voided immediately and appears in the organizer's **Cancellations tab**.
 
-To mark a refund as processed, click **Mark Refunded** next to the relevant row. This records the timestamp but does not automatically issue a refund — refunds must be processed outside the platform (cash, manual Stripe refund in the Stripe dashboard, etc.).
+### What the tab shows
+- Rider name, class, bib number, amount paid, payment method (card / cash), and date/time of cancellation
+- **Refund Status** per row: **Pending** (amber) or **Refunded** (green with timestamp)
+- A red **"N Pending Refunds"** badge in the tab header when unprocessed refunds exist
+
+### Marking a refund as processed
+Click **Mark Refunded** next to any Pending row. This records the timestamp and flips the badge to green. **The platform does not automatically issue the refund** — you must process the actual refund outside the platform (hand back cash, or initiate a manual refund in the Stripe dashboard for card payments). The button simply lets you track that it has been handled.
+
+---
+
+## Transponder Rentals Tab
+
+If your event charges a transponder rental fee (set in the event's Overview settings), this tab shows all riders who rented a transponder and tracks whether they have returned it after the event.
+
+### What the tab shows
+- Header summary: **X Rented**, **X Still Out**, **X Returned**
+- Per-rider row: rider name and class, bib number, transponder number, a return toggle button, and a bell icon for sending a push reminder
+- A progress bar at the bottom showing the overall return rate
+
+### Marking a transponder returned
+Click the circle button in the **Returned** column — it turns green with a checkmark. Click it again to un-mark (in case of error).
+
+### Sending return reminders
+- **Per-rider bell button** — sends a push notification to that rider (only shows if the rider has the Rider App with push notifications enabled)
+- **Send Reminder to All** button (in the header) — sends push notifications to every rider who hasn't returned their transponder and has the Rider App installed
+
+Only riders with the Rider App and push notifications enabled can receive reminders. The button is disabled if no eligible riders remain.
+
+---
+
+## Discount Codes
+
+**Discount codes** are promo codes that give riders a **partial discount** (fixed dollar amount or percentage off) when they register online. They are managed from the **Discount Codes** page in the sidebar — these are **club-wide codes**, not tied to a specific event.
+
+> **Discount codes vs. comp codes:** Comp codes (in the Registrations tab) waive the entry fee 100% for a specific rider added by the organizer on-site. Discount codes are entered by riders themselves at online registration and give a partial reduction. They are separate features.
+
+### How to create a discount code
+
+**Discount Codes** (sidebar) → **+ New Code** → a side drawer opens:
+
+1. **Code String** — toggle between **Auto-generate** (the platform creates a random 6-character alphanumeric code like `HX7K2R`) or **Custom code** (type your own, e.g. `SUMMER25` — max 20 chars, automatically uppercased). The code string cannot be changed after creation.
+
+2. **Discount Type** — choose **$ Fixed Amount** (e.g. $10 off) or **% Percentage** (e.g. 15% off). Percentage cannot exceed 100%.
+
+3. **Amount** — the dollar amount or percentage to discount.
+
+4. **Usage Type** — how many times the code can be used total:
+   - **One-time** — single use across all riders (max 1 redemption)
+   - **Limited** — enter a specific number of uses (e.g. 50 uses)
+   - **Unlimited** — no cap on redemptions
+
+5. **Expiration** — toggle on **Set expiry date** to enter a date and time after which the code becomes invalid. Leave off for no expiry.
+
+6. **Valid For Categories** *(optional)* — if you've created Discount Code Categories (e.g. "Entry Fees", "Pit Passes"), you can check one or more categories to restrict this code to only those charge types. If you leave all categories unchecked, the code applies to everything.
+
+7. **Assign to Rider** *(optional)* — search by name or email to lock the code to a specific rider. Only that rider can redeem it. Leave blank for any rider to use.
+
+Click **Create Code** to save.
+
+### Discount Code Categories
+
+At the top of the Discount Codes page is a **Discount Code Categories** card. Categories let you group types of charges (e.g. "Entry Fees", "Pit Passes", "Gear") so you can restrict certain codes to only apply to one category.
+
+- **Add** — type a name → click Add (or press Enter)
+- **Rename** — click the pencil icon next to any category → edit inline → Save
+- **Delete** — click the trash icon → confirm. Deleting a category does not affect existing codes that referenced it.
+
+### Managing existing codes
+
+The codes table shows: code string (with a copy button), discount amount/type, assigned rider or scope (rider name / event name / "Club-level"), usage type badge, uses count (e.g. `3 / 10`), expiry date, applicable categories, and status.
+
+**Status badges:**
+- **Active** (green) — valid and available
+- **Inactive** (red) — manually deactivated
+- **Expired** (red) — past the expiry date
+- **Used up** (red) — all allowed uses have been redeemed
+
+**Actions per code (icons on the right):**
+- **Pencil** — edit the discount type, amount, usage limit, expiry, categories, or rider assignment. The code string itself cannot be changed.
+- **History** (clock icon) — view a log of every registration that redeemed this code, with rider name and redemption date
+- **Power toggle** — activate or deactivate the code instantly without deleting it
+- **Trash** — permanently delete the code (cannot be undone)
+
+### How riders use a discount code
+During online self-registration, riders enter the code in a **"Promo / Discount Code"** field. If valid, the discount is applied to their total before payment. If the code is locked to a different rider, expired, inactive, or used up, the registration form shows an error.
 
 ---
 
@@ -302,6 +387,35 @@ Below the per-moto entry form, the tab shows **Class Overall Standings** — a l
 
 ### Publish results to the web
 Top right of the Enter Results tab → toggle **Publish to Web** on. Results immediately appear on the public-facing results pages. Toggle it off to unpublish.
+
+---
+
+## Report Tab
+
+The Report tab (last tab in the event detail view) gives a full post-race summary.
+
+### Stats summary cards
+- **Unique Registrants** — number of distinct riders who registered
+- **Unique Checked In** — how many actually showed up (with attendance %)
+- **No Shows** — registrants who did not check in
+- **Total Entries** — total registration slots across all classes
+- **Motos Run** — X completed out of Y scheduled
+
+### Payment summary
+Three cards show the financial breakdown for the event:
+- **Total Collected** — combined card + cash revenue with total paid registration count
+- **Card (Stripe)** — amount charged online via Stripe and rider count
+- **Cash** — amount collected on-site and rider count
+
+### Class breakdown table
+A table with every race class showing registered count, checked-in count, and attendance percentage.
+
+### Export and print
+- **Export AMA Report** button — downloads a CSV formatted for AMA sanctioned event reporting
+- **Print Report** button — opens your browser's print dialog; the page renders a print-optimized layout suitable for filing or sharing with sanctioning bodies
+
+### Publishing results from the Report tab
+Results can also be published directly from this tab (same toggle as the Enter Results tab).
 
 ---
 
@@ -346,6 +460,31 @@ These fire automatically during an active race day with no manual action require
 
 ---
 
+## Practice Sessions
+
+**Practice** (sidebar) — standalone live-timed practice sessions that are independent of any event. Useful for open practice days and free rides where you still want RFID lap tracking.
+
+### Creating a session
+Click **+ New Session** → enter a session name → optionally select a venue from your track library → **Create**. The session starts in **Ready** status.
+
+### Starting and ending a session
+- Click **Start** on a session to put it in **LIVE** status — the platform begins recording RFID crossings and calculating lap times.
+- Click **End** to close the session. Ended sessions remain in the list for historical reference.
+
+### Live board
+Once a session is active, the right panel shows a **live leaderboard** updated in real time via SSE (no page refresh needed):
+- Each row: RFID tag number, rider name (if linked to a rider in your database), bib number, lap count, best lap time, last lap time, and last crossing time
+- Expand any rider row to see their full lap-by-lap history
+- Riders are ranked by lap count, then by best lap time
+
+### Session history
+Sessions are grouped by date in the sidebar. Today's session is expanded by default. Click any past session to view its final leaderboard and lap history.
+
+### Mobile layout
+On smaller screens, the Practice page shows two tabs: **Sessions** (the list) and **Live Board**. Tap between them to navigate. An animated pulse dot appears on the Live Board tab when a session is actively timing.
+
+---
+
 ## Race Day Display (Jumbotron)
 
 **Race Day Display** (sidebar) → shows a shareable link.
@@ -361,6 +500,29 @@ Share the link with your announcer or open it on a second monitor. No login requ
 
 ---
 
+## Live Broadcast
+
+**Live Broadcast** is available inside an event's detail view (Look for it in the event tabs or on the Motos tab). It allows you to stream a live webcam video feed from the organizer's device so spectators can watch remotely.
+
+### Starting a broadcast
+1. Open the event → find the **Live Broadcast** panel.
+2. Grant camera and microphone permissions when prompted by your browser.
+3. Select your video input device from the dropdown (if you have multiple cameras).
+4. Click **Go Live**.
+
+### While live
+- A **duration timer** shows how long the broadcast has been running.
+- Toggle the **microphone** on/off or **camera** on/off without stopping the stream.
+- The panel shows the connection state: **Live** (green), **Reconnecting** (amber), or **Idle**.
+
+### Sharing the watch link
+A **Watch Link** is shown below the controls (format: `https://[your-domain]/watch/[eventId]`). Click the copy button and share it with fans. No login is required to watch — the link is publicly accessible.
+
+### Desktop app note
+If you're running the desktop app without cloud sync configured, the broadcast relay won't work. Configure your cloud URL in the desktop app's sync settings first.
+
+---
+
 ## Payments (Stripe Connect)
 
 **Payments** (sidebar) → click **Connect with Stripe** → complete Stripe's onboarding flow. Once connected:
@@ -368,6 +530,21 @@ Share the link with your announcer or open it on a second monitor. No login requ
 - Riders pay by card; funds flow into your connected Stripe account
 - View payment history and initiate payouts from the Payments page
 - Stripe Connect Express is used — Stripe handles compliance and payouts separately from RM Tracker
+
+---
+
+## RFID / Transponder Management
+
+**RFID Management** (sidebar) — club-wide view of all RFID tag or MyLaps transponder assignments across all your riders. The page title and labels adapt to the timing technology of a selected event filter.
+
+### Viewing assignments
+The table lists all assigned tags: rider name, tag/transponder number, and the event they were assigned for. Use the **event filter dropdown** to narrow to a specific event, or leave it on "All Events" to see everything.
+
+### Assigning a tag
+Click **Assign RFID Tag** (or **Assign Transponder**) → enter the rider ID and the tag/transponder number → click Assign. You can also assign tags directly from the Check-In tab on race day.
+
+### Search
+Use the search box to filter by rider name or tag number.
 
 ---
 
@@ -417,18 +594,40 @@ Key desktop features:
 
 ---
 
-## Team / Staff
+## Team / Admin
 
-**Team** (sidebar) → **+ Invite Member** → enter their email address → set which pages they can access (role-based permissions) → Send Invite. Invited members receive an email and create their own login. They operate under your club's account and can only see data for your club.
+**Team** (sidebar) is the club administration page with multiple sections:
 
----
+### Invite Staff Members
+Click **+ Invite Member** → enter their email address → set which pages they can access (role-based permissions) → Send Invite. Invited members receive an email and create their own login. They operate under your club's account and can only see data for your club.
 
-## Track / Venue Name
+### Default Race Classes
+Define a library of race classes that auto-populate the class list whenever you create a new event.
+- **Add** — type a class name → click Add
+- **Delete** — click the trash icon next to any class
+- **Class rules/details** — click the info icon (ℹ) on any class to expand a text area where you can write eligibility requirements, bike specs, age restrictions, or any other class description. These details are shown to riders during registration.
 
-Save your track or venue name once in **Admin** (sidebar) → **Track / Venue Name** section → type the name → **Save**.
+### Brand Contingencies
+Define the list of sponsor/manufacturer brands that offer contingency payouts at your events (e.g., "Honda", "Kawasaki", "Fox Racing"). When creating or editing an event, check which brands have contingencies at that specific event — this is surfaced to riders during registration.
+- **Add** — type the brand name → click Add
+- **Delete** — click the trash icon next to a brand
 
+### Track / Venue Name
+Save your track or venue name once here → type the name → **Save**.
 - **Events**: When you open the Create New Event dialog, the **Track Name** field is automatically pre-filled with your saved track name. You can still change it per-event before saving.
-- **Practice sessions**: Every new practice session you create automatically captures your club's current track name. The venue name appears in the session header on the Practice screen and in each rider's practice history, so riders always know which track the session was held at.
+- **Practice sessions**: Every new practice session you create automatically captures your club's current track name. The venue name appears in the session header and in each rider's practice history.
+
+### Rider Acknowledgement Form
+Enter custom text that riders must agree to during online registration (e.g., safety rules, code of conduct, liability statement). Click **Save** after editing.
+
+### Liability Waiver (PDF)
+Upload a PDF of your club's liability waiver. Riders are prompted to sign it during registration.
+1. Click **Upload PDF** → select your waiver PDF file
+2. After uploading, click **Edit Fields** to open the field editor — drag signature boxes and date fields onto the pages of the PDF to indicate where riders should sign
+3. Click **Save Fields** to lock in the field layout
+4. Remove the waiver at any time by clicking **Remove PDF**
+
+A separate **Signing Waiver** PDF can be configured for check-in (for waivers collected at the gate rather than online).
 
 ---
 
@@ -441,13 +640,17 @@ Series leaderboards can be embedded on your club's own website. On the Series pa
 ## Tips & Common Gotchas
 
 - **Staggered starts** are on the **Schedule tab**, not the Motos tab. Drag one moto card onto another to link them.
-- **Comp codes** (Registrations tab) fully waive the entry fee for a specific rider. **Discount codes** (sidebar) give a partial discount and are entered by riders during online registration.
+- **Comp codes** (Registrations tab → on-site walk-up registration) fully waive the entry fee for a specific rider. **Discount codes** (sidebar → Discount Codes page) give a partial discount entered by riders themselves during online registration. These are two separate, independent features.
 - Results are private until you explicitly publish them (Enter Results tab toggle or Report tab).
 - Bib numbers can be edited at any time before check-in; once checked in, the bib is locked.
 - Crossings flagged red in the feed have a lap time below the moto's minimum — delete them if they are false reads.
 - The public event registration URL is shown on the event's Overview tab.
 - If a class has more checked-in riders than "Max Riders per Moto" in the Generate Lineups dialog, they are automatically split into Div 1 and Div 2.
 - Practice motos use a countdown timer, not lap counting. Set the duration (in minutes) when creating the moto.
+- Transponder rental reminders (bell button) only work for riders who have the Rider App installed with push notifications enabled.
+- The AMA export (Report tab) downloads a CSV — use it for submitting results to AMA or other sanctioning bodies.
+- Discount code categories are optional. If a code has no categories checked, it applies to all charge types.
+- A discount code's code string cannot be changed after creation; you must create a new code if you need a different string.
 
 ---
 
