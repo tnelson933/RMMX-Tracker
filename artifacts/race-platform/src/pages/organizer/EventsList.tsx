@@ -713,34 +713,6 @@ export default function EventsList() {
                   />
                 )}
 
-                {/* State + City */}
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                          <StateSelect value={field.value} onChange={field.onChange} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="location"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>City</FormLabel>
-                        <FormControl><Input placeholder="Denver" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
                 <FormField
                   control={form.control}
                   name="trackName"
@@ -774,30 +746,59 @@ export default function EventsList() {
                           onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); }}
                         />
                       </FormControl>
-                      {/* Address fields when manually entering a new track */}
-                      {field.value?.trim() && !selectedLibraryTrackId && (
-                        <div className="rounded-md border border-dashed bg-muted/20 p-3 space-y-2">
-                          <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-                            <MapPin size={11} />
-                            Add address — this track will be saved to your library
-                          </p>
-                          <Input
-                            placeholder="Street address *"
-                            value={manualTrackAddress}
-                            onChange={e => setManualTrackAddress(e.target.value)}
-                          />
-                          <Input
-                            placeholder="ZIP code"
-                            value={manualTrackZip}
-                            onChange={e => setManualTrackZip(e.target.value)}
-                            className="w-36"
-                          />
-                        </div>
-                      )}
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                {/* City + State */}
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="location"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl><Input placeholder="Denver" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                          <StateSelect value={field.value} onChange={field.onChange} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* Address fields when manually entering a new track */}
+                {form.watch("trackName")?.trim() && !selectedLibraryTrackId && (
+                  <div className="rounded-md border border-dashed bg-muted/20 p-3 space-y-2">
+                    <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                      <MapPin size={11} />
+                      Add address — this track will be saved to your library
+                    </p>
+                    <Input
+                      placeholder="Street address *"
+                      value={manualTrackAddress}
+                      onChange={e => setManualTrackAddress(e.target.value)}
+                    />
+                    <Input
+                      placeholder="ZIP code"
+                      value={manualTrackZip}
+                      onChange={e => setManualTrackZip(e.target.value)}
+                      className="w-36"
+                    />
+                  </div>
+                )}
 
                 {/* Timing Technology */}
                 <FormField
