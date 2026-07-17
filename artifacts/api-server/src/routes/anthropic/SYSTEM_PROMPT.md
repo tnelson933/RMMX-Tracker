@@ -26,6 +26,7 @@
   - Track/Venue Name: save once in Admin settings, auto-fills events and stamps practice sessions
   - Brand Contingencies: define a library of contingency brands in Admin settings; when creating an event, check "Brand Contingencies" to select which brands have contingencies at that event
   - Embeddable Widgets: series leaderboard iframe embed
+  - Quick Check-In: organizers enable per-event; riders within 1 mile of the track on race day get a proximity notification and can self-check-in from the Rider App
 
   MAINTENANCE RULE: When you ship a new organizer-facing feature, add it to the list
   above and update the relevant section below before merging.
@@ -234,6 +235,30 @@ Check-In and Registrations tabs both support on-site registration. On the Regist
 
 ### Offline check-in (no internet)
 If internet is unavailable, check-ins are queued locally and automatically sync to the cloud when connectivity returns. The "Pending Sync" counter in the top right shows how many are queued.
+
+### Quick Check-In (Rider App self-service)
+Organizers can enable **Quick Check-In** per event so riders can check themselves in from the Rider App without waiting in line.
+
+**How to enable:**
+1. Open the event in the Organizer Portal → Overview tab.
+2. Find the **Quick Check-In** card (below the timing/location settings).
+3. Click **Enable**. The platform automatically geocodes the track location using the venue name and address on file.
+
+**How it works for riders:**
+- On race day, the Rider App polls for eligible events every 60 seconds.
+- When the rider's device is within 1 mile of the track, they receive a push notification *and* a blue banner appears at the top of their **Today** tab.
+- The banner lists **every registration on the rider's account** for that event (e.g., multiple family members or multiple classes), each with its own **Check In** button.
+- Ineligible registrations are greyed out with the reason shown (e.g., "RFID sticker not assigned — see the organizer", "Missing MyLaps transponder number", "Waiver not signed") and must check in at the gate.
+- If all registrations are eligible and more than one is pending, a green **Check In for All** button checks them all in at once.
+- Once every registration is checked in, the banner turns green.
+
+**Eligibility requirements (automatically enforced):**
+- Event must be in **Race Day** status on today's date.
+- Quick Check-In must be toggled **On** for the event.
+- RFID events: rider must have an RFID tag assigned.
+- MyLaps events: rider must have a transponder number on file.
+- Any required waivers must be signed.
+- Rider must not already be checked in.
 
 ---
 
