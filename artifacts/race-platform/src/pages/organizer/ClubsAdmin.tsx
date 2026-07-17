@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { StateSelect } from "@/components/ui/StateSelect";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -524,15 +525,7 @@ export default function ClubsAdmin() {
                     <FormItem>
                       <FormLabel className="font-heading uppercase text-xs tracking-wider text-muted-foreground font-bold">State *</FormLabel>
                       <FormControl>
-                        <select
-                          {...field}
-                          className="flex h-9 w-full rounded-sm border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
-                          <option value="">Select state</option>
-                          {US_STATES.map((s) => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
+                        <StateSelect value={field.value} onChange={field.onChange} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
