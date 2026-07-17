@@ -117,6 +117,7 @@ const updateEventSchema = z.object({
   requireWaiver: z.boolean().default(false),
   requireLiabilityWaiver: z.boolean().default(false),
   requireTransponder: z.boolean().default(false),
+  quickCheckinEnabled: z.boolean().default(false),
   scoringTableId: z.number().optional(),
   purchaseOptions: z.array(z.object({
     name: z.string().min(1, "Name required"),
@@ -154,8 +155,8 @@ export default function EventDetail() {
   const clubId = (event as any)?.clubId ?? user?.clubId ?? null;
   const { data: clubSettingsData } = useGetClubSettings(clubId ?? 0, { query: { enabled: !!clubId && !isAdmin } as any });
   const putClubSettings = usePutClubSettings();
-  const defaultClasses = useMemo<{ id: string; name: string }[]>(
-    () => (clubSettingsData?.defaultClasses as { id: string; name: string }[] | undefined) ?? [],
+  const defaultClasses = useMemo<{ id: string; name: string; details?: string | null }[]>(
+    () => (clubSettingsData?.defaultClasses as { id: string; name: string; details?: string | null }[] | undefined) ?? [],
     [clubSettingsData]
   );
   const libraryContingencies = useMemo<string[]>(
@@ -199,6 +200,12 @@ export default function EventDetail() {
   const [imgValidationError, setImgValidationError] = useState<string | null>(null);
   const [imgUploadError, setImgUploadError] = useState<string | null>(null);
   const [removeBg, setRemoveBg] = useState(false);
+
+  // Track library state
+  const [trackLibrary, setTrackLibrary] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null }[]>([]);
+  const [selectedLibraryTrackId, setSelectedLibraryTrackId] = useState<number | null>(null);
+  const [manualTrackAddress, setManualTrackAddress] = useState("");
+  const [manualTrackZip, setManualTrackZip] = useState("");
 
   const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -393,6 +400,7 @@ export default function EventDetail() {
       requireWaiver: false,
       requireLiabilityWaiver: false,
       requireTransponder: false,
+      quickCheckinEnabled: false,
       scoringTableId: undefined,
       purchaseOptions: [],
       amaEventId: "",
@@ -457,6 +465,7 @@ export default function EventDetail() {
       requireWaiver: (evt as any).requireWaiver ?? false,
       requireLiabilityWaiver: (evt as any).requireLiabilityWaiver ?? false,
       requireTransponder: (evt as any).requireTransponder ?? false,
+      quickCheckinEnabled: (evt as any).quickCheckinEnabled ?? false,
       scoringTableId: (evt as any).scoringTableId ?? undefined,
       purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number; categoryId?: number | null }) => ({ name: o.name, amount: String(o.amount), categoryId: o.categoryId ?? null })),
       amaEventId: (evt as any).amaEventId ?? "",
@@ -466,7 +475,39 @@ export default function EventDetail() {
     setEditContingencyBrands(((evt as any)?.contingencyBrands as string[] | null) ?? []);
   };
 
+  // Load track library on mount
+  useEffect(() => {
+    fetch("/api/tracks", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then(setTrackLibrary)
+      .catch(() => {});
+  }, []);
+
+  // Reset track state when leaving edit mode
+  useEffect(() => {
+    if (!isEditing) {
+      setSelectedLibraryTrackId(null);
+      setManualTrackAddress("");
+      setManualTrackZip("");
+    }
+  }, [isEditing]);
+
+  const selectLibraryTrack = (t: typeof trackLibrary[0]) => {
+    form.setValue("trackName", t.name);
+    if (t.city) form.setValue("location", t.city);
+    if (t.state) form.setValue("state", t.state);
+    setSelectedLibraryTrackId(t.id);
+    setManualTrackAddress("");
+    setManualTrackZip("");
+  };
+
   const onSubmit = (data: FormValues) => {
+    // Require address when a track name is manually entered (not picked from library)
+    if (data.trackName?.trim() && !selectedLibraryTrackId && !manualTrackAddress.trim()) {
+      toast({ title: "Track address required", description: "Enter a street address for this track so it can be saved to your library.", variant: "destructive" });
+      return;
+    }
+
     const classNames = data.raceClasses.map((r) => r.name.trim()).filter(Boolean);
     const classLimits: Record<string, number | null> = {};
     const classSeriesMap: Record<string, number[]> = {};
@@ -483,12 +524,24 @@ export default function EventDetail() {
       }
     });
 
-    // Silently save any brand-new class names back to club defaults
+    // Silently sync class names and notes back to club defaults
     if (clubId && !isAdmin) {
       const existingDefaultNames = new Set(defaultClasses.map(c => c.name));
       const newClassNames = data.raceClasses.map(r => r.name.trim()).filter(n => n && !existingDefaultNames.has(n));
-      if (newClassNames.length > 0) {
-        const updated = [...defaultClasses, ...newClassNames.map(n => ({ id: crypto.randomUUID(), name: n }))];
+      const hasNoteUpdates = data.raceClasses.some(r => {
+        const key = r.name.trim();
+        const existing = defaultClasses.find(c => c.name === key);
+        return existing && r.details && r.details.trim() && existing.details !== r.details.trim();
+      });
+      if (newClassNames.length > 0 || hasNoteUpdates) {
+        const updated = defaultClasses.map(c => {
+          const match = data.raceClasses.find(r => r.name.trim() === c.name);
+          return match && match.details && match.details.trim() ? { ...c, details: match.details.trim() } : c;
+        });
+        newClassNames.forEach(n => {
+          const match = data.raceClasses.find(r => r.name.trim() === n);
+          updated.push({ id: crypto.randomUUID(), name: n, details: match?.details?.trim() || undefined });
+        });
         putClubSettings.mutate({ clubId, data: { defaultClasses: updated } });
       }
     }
@@ -516,6 +569,7 @@ export default function EventDetail() {
         requireWaiver: data.requireWaiver,
         requireLiabilityWaiver: data.requireLiabilityWaiver,
         requireTransponder: data.timingTechnology === "mylaps" ? data.requireTransponder : false,
+        quickCheckinEnabled: data.quickCheckinEnabled,
         scoringTableId: data.scoringTableId ?? null,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         earlyBirdFee: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdFee ? Number(data.earlyBirdFee) : null,
@@ -530,8 +584,26 @@ export default function EventDetail() {
         contingencyBrands: editContingencyBrands.length > 0 ? editContingencyBrands : null,
       } as any
     }, {
-      onSuccess: () => {
+      onSuccess: (_, vars) => {
         queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
+        // Auto-save new track to library
+        const tName = (vars as any)?.data?.trackName;
+        if (tName?.trim() && !selectedLibraryTrackId) {
+          fetch("/api/tracks", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: tName.trim(),
+              address: manualTrackAddress.trim() || undefined,
+              city: (vars as any)?.data?.location?.trim() || undefined,
+              state: (vars as any)?.data?.state?.trim() || undefined,
+              zip: manualTrackZip.trim() || undefined,
+            }),
+          }).then(r => r.ok ? r.json() : null).then(track => {
+            if (track) setTrackLibrary(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
+          }).catch(() => {});
+        }
         // Handle series linking changes
         const prevSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(eventId));
         const newSeriesId = editSeriesId !== "none" ? Number(editSeriesId) : null;
@@ -814,7 +886,52 @@ export default function EventDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Track Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                          <FormControl><Input {...field} /></FormControl>
+                          {/* Library quick-selects */}
+                          {trackLibrary.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {trackLibrary.map(t => (
+                                <button
+                                  key={t.id}
+                                  type="button"
+                                  onClick={() => selectLibraryTrack(t)}
+                                  className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-all ${
+                                    selectedLibraryTrackId === t.id
+                                      ? "border-primary bg-primary text-primary-foreground"
+                                      : "border-input bg-muted/40 hover:border-primary/50 text-foreground"
+                                  }`}
+                                >
+                                  {selectedLibraryTrackId === t.id ? <Check size={10} /> : <MapPin size={10} />}
+                                  {t.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <FormControl>
+                            <Input
+                              {...field}
+                              onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); }}
+                            />
+                          </FormControl>
+                          {/* Address fields when manually entering a new track */}
+                          {field.value?.trim() && !selectedLibraryTrackId && (
+                            <div className="rounded-md border border-dashed bg-muted/20 p-3 space-y-2">
+                              <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                                <MapPin size={11} />
+                                Add address — this track will be saved to your library
+                              </p>
+                              <Input
+                                placeholder="Street address *"
+                                value={manualTrackAddress}
+                                onChange={e => setManualTrackAddress(e.target.value)}
+                              />
+                              <Input
+                                placeholder="ZIP code"
+                                value={manualTrackZip}
+                                onChange={e => setManualTrackZip(e.target.value)}
+                                className="w-36"
+                              />
+                            </div>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -895,6 +1012,49 @@ export default function EventDetail() {
                       />
                     )}
 
+                    {/* Quick Check-In */}
+                    <FormField
+                      control={form.control}
+                      name="quickCheckinEnabled"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-1.5">
+                            <MapPin size={14} /> Quick Check-In
+                          </FormLabel>
+                          <p className="text-xs text-muted-foreground -mt-1 mb-2">
+                            Let riders self-check-in from the rider app when they are within 1 mile of the track on race day.
+                            Requires their RFID or Mylaps transponder to be assigned and any required waivers signed.
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { value: true, label: "Enabled", desc: "Riders nearby get a check-in prompt" },
+                              { value: false, label: "Disabled", desc: "Staff checks in riders at the gate" },
+                            ].map(opt => (
+                              <button
+                                key={String(opt.value)}
+                                type="button"
+                                onClick={() => field.onChange(opt.value)}
+                                className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
+                                  field.value === opt.value
+                                    ? "border-primary bg-primary/5 text-foreground"
+                                    : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
+                                }`}
+                              >
+                                <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                                <span className="text-xs mt-0.5">{opt.desc}</span>
+                              </button>
+                            ))}
+                          </div>
+                          {field.value && (
+                            <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mt-2">
+                              The track location will be auto-geocoded when you save. Riders get a notification when they arrive within 1 mile.
+                            </p>
+                          )}
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
                     {/* Race Classes */}
                     <div className="border-t pt-4">
                       <div className="flex items-center justify-between mb-3">
@@ -912,7 +1072,7 @@ export default function EventDetail() {
                                   type="button"
                                   onClick={() => {
                                     const unselected = defaultClasses.filter(cls => !fields.some(f => f.name === cls.name));
-                                    unselected.forEach(cls => append({ name: cls.name, maxRiders: "", seriesIds: [] }));
+                                    unselected.forEach(cls => append({ name: cls.name, maxRiders: "", seriesIds: [], details: cls.details ?? "" }));
                                     if (unselected.length > 0) scrollClassesToBottom();
                                   }}
                                   className="text-xs text-primary hover:text-primary/80 font-semibold transition-colors"
@@ -933,7 +1093,7 @@ export default function EventDetail() {
                                         const idx = fields.findIndex(f => f.name === cls.name);
                                         if (idx !== -1) remove(idx);
                                       } else {
-                                        append({ name: cls.name, maxRiders: "", seriesIds: [] });
+                                        append({ name: cls.name, maxRiders: "", seriesIds: [], details: cls.details ?? "" });
                                         scrollClassesToBottom();
                                       }
                                     }}
@@ -1702,6 +1862,34 @@ export default function EventDetail() {
                           {((event as any).timingTechnology ?? "rfid") === "mylaps" ? "MyLaps" : "RFID"}
                         </span>
                       </div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Quick Check-In</div>
+                      <div className="flex items-center gap-3">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider border ${
+                          (event as any).quickCheckinEnabled
+                            ? "bg-green-100 text-green-700 border-green-200"
+                            : "bg-muted text-muted-foreground border-border"
+                        }`}>
+                          {(event as any).quickCheckinEnabled ? "Enabled" : "Disabled"}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={updateMutation.isPending}
+                          onClick={() => {
+                            updateMutation.mutate(
+                              { eventId, data: { quickCheckinEnabled: !(event as any).quickCheckinEnabled } as any },
+                              { onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) }) }
+                            );
+                          }}
+                        >
+                          {(event as any).quickCheckinEnabled ? "Disable" : "Enable"}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Riders within 1 mile of the track on race day can self-check-in from the rider app.
+                      </p>
                     </div>
                   </div>
 
