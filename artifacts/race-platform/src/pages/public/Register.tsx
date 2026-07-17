@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { StateSelect } from "@/components/ui/StateSelect";
 import { useRoute, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -1186,7 +1187,7 @@ export default function Register() {
                       <FormField control={form.control} name="homeState" render={({ field }) => (
                         <FormItem>
                           <FormLabel>State</FormLabel>
-                          <FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl>
+                          <FormControl><StateSelect value={field.value} onChange={field.onChange} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
