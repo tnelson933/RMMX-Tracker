@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { StateSelect } from "@/components/ui/StateSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, useListPointsTables, getListEventsQueryKey, useListDiscountCategories, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -720,7 +721,9 @@ export default function EventsList() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input placeholder="CO" {...field} /></FormControl>
+                        <FormControl>
+                          <StateSelect value={field.value} onChange={field.onChange} />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
