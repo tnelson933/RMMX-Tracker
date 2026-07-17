@@ -19,27 +19,39 @@ function computeAutoStatus(event: EventRow): string | null {
   const now = new Date();
   const { status, registrationOpen, registrationClose } = event;
 
+  // Never regress from terminal statuses
+  if (status === "race_day" || status === "completed") return null;
+
+  // If the event date has arrived, jump straight to race_day regardless of registration state.
+  // An event on race day should never stay stuck in registration_open/closed.
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
+  if (eventDateStr && eventDateStr <= todayStr) return "race_day";
+
+  // Pre-race: manage the registration window
   if (status === "draft") {
     if (registrationOpen && now >= new Date(registrationOpen)) return "registration_open";
   }
   if (status === "registration_open") {
     if (registrationClose && now >= new Date(registrationClose)) return "registration_closed";
   }
-  if (status === "registration_closed") {
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
-    if (eventDateStr && eventDateStr <= todayStr) return "race_day";
-  }
+
   return null;
 }
 
-// Recompute the correct status from scratch based on the registration window.
-// Only applies to auto-managed statuses; race_day and completed are left alone.
+// Recompute the correct status from scratch based on date + registration window.
+// race_day and completed are left alone (never auto-regressed).
 function computeCorrectStatus(event: EventRow): string | null {
   const { status, registrationOpen, registrationClose } = event;
   if (!["draft", "registration_open", "registration_closed"].includes(status)) return null;
 
   const now = new Date();
+
+  // If the event date has arrived, always promote to race_day
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
+  if (eventDateStr && eventDateStr <= todayStr) return "race_day";
+
   let correct: string;
   if (registrationOpen && now >= new Date(registrationOpen)) {
     if (!registrationClose || now < new Date(registrationClose)) {
