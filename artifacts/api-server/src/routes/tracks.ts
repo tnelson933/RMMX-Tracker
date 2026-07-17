@@ -32,12 +32,19 @@ router.post("/tracks", async (req, res) => {
   const clubId = await getClubId(req);
   if (!clubId) return res.status(401).json({ error: "Unauthorized" });
 
-  const { name, state } = req.body as { name?: string; state?: string };
+  const { name, address, city, state, zip } = req.body as { name?: string; address?: string; city?: string; state?: string; zip?: string };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
   const [track] = await db
     .insert(tracksTable)
-    .values({ clubId, name: name.trim(), state: state?.trim() || null })
+    .values({
+      clubId,
+      name: name.trim(),
+      address: address?.trim() || null,
+      city: city?.trim() || null,
+      state: state?.trim() || null,
+      zip: zip?.trim() || null,
+    })
     .returning();
 
   return res.status(201).json(track);
