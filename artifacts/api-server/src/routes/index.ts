@@ -40,6 +40,7 @@ import readerIngestRouter from "./reader-ingest";
 import adminSeedThanksgivingRouter from "./admin-seed-thanksgiving";
 import accountDeletionRouter from "./account-deletion";
 import liabilityWaiverRouter from "./liability-waiver";
+import quickCheckinRouter from "./quick-checkin";
 
 const router: IRouter = Router();
 
@@ -84,5 +85,6 @@ router.use(readerIngestRouter);
 router.use(adminSeedThanksgivingRouter);
 router.use(accountDeletionRouter);
 router.use(liabilityWaiverRouter);
+router.use(quickCheckinRouter);
 
 export default router;
