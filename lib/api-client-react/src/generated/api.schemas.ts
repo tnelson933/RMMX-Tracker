@@ -357,6 +357,16 @@ export interface Event {
      * @nullable
      */
   trackLng?: number | null;
+  /**
+     * Street address of the track venue.
+     * @nullable
+     */
+  streetAddress?: string | null;
+  /**
+     * ZIP code of the track venue.
+     * @nullable
+     */
+  zip?: string | null;
   createdAt?: string;
 }
 
@@ -438,6 +448,10 @@ export interface EventInput {
   raceStyle?: EventInputRaceStyle;
   /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
   quickCheckinEnabled?: boolean;
+  /** Street address of the track venue. */
+  streetAddress?: string;
+  /** ZIP code of the track venue. */
+  zip?: string;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -533,6 +547,16 @@ export interface EventUpdate {
   contingencyBrands?: string[] | null;
   /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
   quickCheckinEnabled?: boolean;
+  /**
+     * Street address of the track venue.
+     * @nullable
+     */
+  streetAddress?: string | null;
+  /**
+     * ZIP code of the track venue.
+     * @nullable
+     */
+  zip?: string | null;
 }
 
 export interface QuickCheckinInput {
