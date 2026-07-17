@@ -474,6 +474,8 @@ export default function EventDetail() {
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
     setEditSeriesId(currentSeries ? String(currentSeries.id) : "none");
     setEditContingencyBrands(((evt as any)?.contingencyBrands as string[] | null) ?? []);
+    setManualTrackAddress((evt as any).streetAddress ?? "");
+    setManualTrackZip((evt as any).zip ?? "");
   };
 
   // Load track library on mount
@@ -509,17 +511,11 @@ export default function EventDetail() {
     if (t.city) form.setValue("location", t.city);
     if (t.state) form.setValue("state", t.state);
     setSelectedLibraryTrackId(t.id);
-    setManualTrackAddress("");
-    setManualTrackZip("");
+    setManualTrackAddress(t.address ?? "");
+    setManualTrackZip(t.zip ?? "");
   };
 
   const onSubmit = (data: FormValues) => {
-    // Require address when a track name is manually entered (not picked from library)
-    if (data.trackName?.trim() && !selectedLibraryTrackId && !manualTrackAddress.trim()) {
-      toast({ title: "Track address required", description: "Enter a street address for this track so it can be saved to your library.", variant: "destructive" });
-      return;
-    }
-
     const classNames = data.raceClasses.map((r) => r.name.trim()).filter(Boolean);
     const classLimits: Record<string, number | null> = {};
     const classSeriesMap: Record<string, number[]> = {};
@@ -568,6 +564,8 @@ export default function EventDetail() {
         state: data.state,
         location: data.location,
         trackName: data.trackName || null,
+        streetAddress: data.trackName?.trim() ? (manualTrackAddress.trim() || null) : null,
+        zip: data.trackName?.trim() ? (manualTrackZip.trim() || null) : null,
         status: data.status,
         timingTechnology: data.timingTechnology,
         raceClasses: classNames,
@@ -598,7 +596,7 @@ export default function EventDetail() {
     }, {
       onSuccess: (_, vars) => {
         queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
-        // Auto-save new track to library
+        // Auto-save new track to library, or update address on an existing one
         const tName = (vars as any)?.data?.trackName;
         if (tName?.trim() && !selectedLibraryTrackId) {
           fetch("/api/tracks", {
@@ -614,6 +612,21 @@ export default function EventDetail() {
             }),
           }).then(r => r.ok ? r.json() : null).then(track => {
             if (track) setTrackLibrary(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
+          }).catch(() => {});
+        } else if (selectedLibraryTrackId) {
+          // Update address/zip on the existing library track so it stays in sync
+          fetch(`/api/tracks/${selectedLibraryTrackId}`, {
+            method: "PATCH",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: manualTrackAddress.trim() || null,
+              city: (vars as any)?.data?.location?.trim() || null,
+              state: (vars as any)?.data?.state?.trim() || null,
+              zip: manualTrackZip.trim() || null,
+            }),
+          }).then(r => r.ok ? r.json() : null).then(track => {
+            if (track) setTrackLibrary(prev => prev.map(t => t.id === selectedLibraryTrackId ? track : t));
           }).catch(() => {});
         }
         // Handle series linking changes
@@ -897,13 +910,21 @@ export default function EventDetail() {
                           <FormControl>
                             <Input
                               {...field}
-                              onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); }}
+                              onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); setManualTrackAddress(""); setManualTrackZip(""); }}
                             />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
+                    {/* Street address — shown whenever a track name is entered */}
+                    {form.watch("trackName")?.trim() && (
+                      <Input
+                        placeholder="Street address"
+                        value={manualTrackAddress}
+                        onChange={e => setManualTrackAddress(e.target.value)}
+                      />
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
@@ -930,29 +951,15 @@ export default function EventDetail() {
                         )}
                       />
                     </div>
-                    {/* Address fields when manually entering a new track */}
-                    {(() => {
-                      const trackNameVal = form.watch("trackName");
-                      return trackNameVal?.trim() && !selectedLibraryTrackId ? (
-                        <div className="rounded-md border border-dashed bg-muted/20 p-3 space-y-2">
-                          <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-                            <MapPin size={11} />
-                            Add address — this track will be saved to your library
-                          </p>
-                          <Input
-                            placeholder="Street address *"
-                            value={manualTrackAddress}
-                            onChange={e => setManualTrackAddress(e.target.value)}
-                          />
-                          <Input
-                            placeholder="ZIP code"
-                            value={manualTrackZip}
-                            onChange={e => setManualTrackZip(e.target.value)}
-                            className="w-36"
-                          />
-                        </div>
-                      ) : null;
-                    })()}
+                    {/* ZIP — shown whenever a track name is entered */}
+                    {form.watch("trackName")?.trim() && (
+                      <Input
+                        placeholder="ZIP code"
+                        value={manualTrackZip}
+                        onChange={e => setManualTrackZip(e.target.value)}
+                        className="w-36"
+                      />
+                    )}
 
                     {/* Timing Technology */}
                     <FormField
@@ -2110,7 +2117,7 @@ export default function EventDetail() {
                     step={compDiscountType === "percentage" ? "1" : "0.01"}
                     value={compAmount}
                     onChange={e => setCompAmount(e.target.value)}
-                    placeholder={compDiscountType === "percentage" ? "10" : "45.00"}
+                    placeholder={compDiscountType === "percentage" ? "10" : "0.00"}
                     className="h-9 text-sm"
                   />
                 </div>
