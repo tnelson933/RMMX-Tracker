@@ -23,7 +23,7 @@ import { useUserLocation } from "@/hooks/useUserLocation";
 import { haversineDistance } from "@/lib/haversine";
 import { STATE_CENTROIDS, normalizeState } from "@/lib/stateCentroids";
 
-const FALLBACK_TAG = "desktop-v1.0.95";
+const FALLBACK_TAG = "desktop-v1.0.96";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
