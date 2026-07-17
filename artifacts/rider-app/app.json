@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.rockymountain.riderapp",
-      "versionCode": 8,
+      "versionCode": 9,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
