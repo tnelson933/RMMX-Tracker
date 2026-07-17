@@ -129,6 +129,8 @@ router.get("/events", async (req, res) => {
     quickCheckinEnabled: eventsTable.quickCheckinEnabled,
     trackLat: eventsTable.trackLat,
     trackLng: eventsTable.trackLng,
+    streetAddress: eventsTable.streetAddress,
+    zip: eventsTable.zip,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -271,6 +273,8 @@ router.get("/events/:eventId", async (req, res) => {
     quickCheckinEnabled: eventsTable.quickCheckinEnabled,
     trackLat: eventsTable.trackLat,
     trackLng: eventsTable.trackLng,
+    streetAddress: eventsTable.streetAddress,
+    zip: eventsTable.zip,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -314,7 +318,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
 
   // Capture previous status before update; also check club ownership for staff.
-  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state }).from(eventsTable).where(eq(eventsTable.id, id));
+  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state, quickCheckinEnabled: eventsTable.quickCheckinEnabled, streetAddress: eventsTable.streetAddress, zip: eventsTable.zip }).from(eventsTable).where(eq(eventsTable.id, id));
   const previousStatus = before?.status;
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
@@ -327,7 +331,7 @@ router.patch("/events/:eventId", async (req, res) => {
   }
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "raceClassDetails", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireLiabilityWaiver", "requireTransponder", "earlyBirdEndsAt", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig", "classOrder", "contingencyBrands", "quickCheckinEnabled"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "raceClassDetails", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireLiabilityWaiver", "requireTransponder", "earlyBirdEndsAt", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig", "classOrder", "contingencyBrands", "quickCheckinEnabled", "streetAddress", "zip"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
@@ -341,13 +345,25 @@ router.patch("/events/:eventId", async (req, res) => {
   if (req.body.transponderRentalFee !== undefined) updates.transponderRentalFee = req.body.transponderRentalFee ? String(req.body.transponderRentalFee) : null;
   if (req.body.rfidStickerFee !== undefined) updates.rfidStickerFee = req.body.rfidStickerFee ? String(req.body.rfidStickerFee) : null;
 
-  // Auto-geocode track when quick check-in is being enabled and we have a location
-  if (updates.quickCheckinEnabled === true) {
+  // Auto-geocode when: (a) quick check-in is being enabled, OR (b) quick check-in is
+  // already on and the organizer just updated address/location fields.
+  const addressFieldsChanged = updates.streetAddress !== undefined || updates.zip !== undefined
+    || updates.location !== undefined || updates.state !== undefined || updates.trackName !== undefined;
+  const alreadyEnabled = before?.quickCheckinEnabled === true;
+  const shouldGeocode = updates.quickCheckinEnabled === true
+    || (alreadyEnabled && updates.quickCheckinEnabled !== false && addressFieldsChanged);
+
+  if (shouldGeocode) {
     const eventRow = before ?? (await db.select().from(eventsTable).where(eq(eventsTable.id, id)))[0];
+    const streetAddress = (updates.streetAddress as string | undefined) ?? eventRow?.streetAddress;
     const trackName = (updates.trackName as string | undefined) ?? eventRow?.trackName;
     const location = (updates.location as string | undefined) ?? eventRow?.location;
     const state = (updates.state as string | undefined) ?? eventRow?.state;
+    const zip = (updates.zip as string | undefined) ?? eventRow?.zip;
+    // Try most-specific query first (street address), then fall back progressively
     const queries = [
+      [streetAddress, location, state, zip].filter(Boolean).join(", "),
+      [streetAddress, location, state].filter(Boolean).join(", "),
       [trackName, location, state].filter(Boolean).join(", "),
       [location, state].filter(Boolean).join(", "),
     ].filter(q => q.length > 0);
