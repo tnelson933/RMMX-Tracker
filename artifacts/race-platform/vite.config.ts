@@ -66,25 +66,8 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }: { url: URL }) =>
-              url.pathname.startsWith("/api/"),
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "api-runtime-cache",
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60,
-              },
-              networkTimeoutSeconds: 10,
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-        ],
+        navigateFallbackDenylist: [/^\/api\//, /^\/rider-app/],
+        runtimeCaching: [],
       },
     }),
     ...(process.env.NODE_ENV !== "production" &&
@@ -113,13 +96,16 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },
+  optimizeDeps: {
+    include: ["pdfjs-dist"],
+  },
   server: {
     port,
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
     fs: {
-      strict: true,
+      strict: false,
     },
   },
   preview: {
