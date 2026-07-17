@@ -51,7 +51,9 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
   const mylapsById = new Map(familyRiders.map(r => [r.id, r.mylapsTransponderId]));
   const nameById = new Map(familyRiders.map(r => [r.id, `${r.firstName} ${r.lastName}`.trim()]));
 
-  const todayStr = new Date().toISOString().substring(0, 10);
+  // "Today" anchored to Mountain Time (matches quickCheckinNotifier) so late-evening
+  // riders aren't cut off when the UTC date rolls over at ~6pm MT.
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
 
   // Auto-advance any quick-checkin events whose date has arrived but status hasn't caught up.
   // This handles the case where registration is still "open" on race day (late close date).
@@ -266,7 +268,9 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   if (!event.quickCheckinEnabled) return res.status(400).json({ error: "Quick check-in not enabled for this event" });
   if (event.status !== "race_day") return res.status(400).json({ error: "Event is not in race_day status" });
 
-  const todayStr = new Date().toISOString().substring(0, 10);
+  // "Today" anchored to Mountain Time (matches quickCheckinNotifier) so late-evening
+  // riders aren't cut off when the UTC date rolls over at ~6pm MT.
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
   if (String(event.date).substring(0, 10) !== todayStr) {
     return res.status(400).json({ error: "Quick check-in is only available on race day" });
   }
