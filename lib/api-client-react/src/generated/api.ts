@@ -94,10 +94,13 @@ import type {
   OrganizerUser,
   PointsTable,
   PointsTableInput,
+  PostEventQuickCheckin200,
   PracticeSession,
   PublicSeriesItem,
   PublicSeriesStanding,
   PublishInput,
+  QuickCheckinEvent,
+  QuickCheckinInput,
   RaceDaySummary,
   RaceResult,
   Reader,
@@ -7687,6 +7690,155 @@ export const useUpdateRiderOrganizationNotifications = <TError = ErrorType<Error
         TContext
       > => {
       return useMutation(getUpdateRiderOrganizationNotificationsMutationOptions(options));
+    }
+
+export const getGetRiderQuickCheckinEventsUrl = () => {
+
+
+
+
+  return `/api/rider/quick-checkin-events`
+}
+
+/**
+ * @summary List events eligible for quick check-in today for the authenticated rider
+ */
+export const getRiderQuickCheckinEvents = async ( options?: RequestInit): Promise<QuickCheckinEvent[]> => {
+
+  return customFetch<QuickCheckinEvent[]>(getGetRiderQuickCheckinEventsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRiderQuickCheckinEventsQueryKey = () => {
+    return [
+    `/api/rider/quick-checkin-events`
+    ] as const;
+    }
+
+
+export const getGetRiderQuickCheckinEventsQueryOptions = <TData = Awaited<ReturnType<typeof getRiderQuickCheckinEvents>>, TError = ErrorType<ErrorEnvelope>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderQuickCheckinEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRiderQuickCheckinEventsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRiderQuickCheckinEvents>>> = ({ signal }) => getRiderQuickCheckinEvents({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRiderQuickCheckinEvents>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRiderQuickCheckinEventsQueryResult = NonNullable<Awaited<ReturnType<typeof getRiderQuickCheckinEvents>>>
+export type GetRiderQuickCheckinEventsQueryError = ErrorType<ErrorEnvelope>
+
+
+/**
+ * @summary List events eligible for quick check-in today for the authenticated rider
+ */
+
+export function useGetRiderQuickCheckinEvents<TData = Awaited<ReturnType<typeof getRiderQuickCheckinEvents>>, TError = ErrorType<ErrorEnvelope>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRiderQuickCheckinEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRiderQuickCheckinEventsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getPostEventQuickCheckinUrl = (eventId: number,) => {
+
+
+
+
+  return `/api/events/${eventId}/quick-checkin`
+}
+
+/**
+ * @summary Self-service check-in for the authenticated rider at a quick-checkin event
+ */
+export const postEventQuickCheckin = async (eventId: number,
+    quickCheckinInput?: QuickCheckinInput, options?: RequestInit): Promise<PostEventQuickCheckin200> => {
+
+  return customFetch<PostEventQuickCheckin200>(getPostEventQuickCheckinUrl(eventId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      quickCheckinInput,)
+  }
+);}
+
+
+
+
+export const getPostEventQuickCheckinMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postEventQuickCheckin>>, TError,{eventId: number;data?: BodyType<QuickCheckinInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postEventQuickCheckin>>, TError,{eventId: number;data?: BodyType<QuickCheckinInput>}, TContext> => {
+
+const mutationKey = ['postEventQuickCheckin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postEventQuickCheckin>>, {eventId: number;data?: BodyType<QuickCheckinInput>}> = (props) => {
+          const {eventId,data} = props ?? {};
+
+          return  postEventQuickCheckin(eventId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostEventQuickCheckinMutationResult = NonNullable<Awaited<ReturnType<typeof postEventQuickCheckin>>>
+    export type PostEventQuickCheckinMutationBody = BodyType<QuickCheckinInput> | undefined
+    export type PostEventQuickCheckinMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Self-service check-in for the authenticated rider at a quick-checkin event
+ */
+export const usePostEventQuickCheckin = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postEventQuickCheckin>>, TError,{eventId: number;data?: BodyType<QuickCheckinInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postEventQuickCheckin>>,
+        TError,
+        {eventId: number;data?: BodyType<QuickCheckinInput>},
+        TContext
+      > => {
+      return useMutation(getPostEventQuickCheckinMutationOptions(options));
     }
 
 export const getListStatesUrl = () => {
