@@ -273,8 +273,8 @@ export default function EventsList() {
     if (t.city) form.setValue("location", t.city);
     if (t.state) form.setValue("state", t.state);
     setSelectedLibraryTrackId(t.id);
-    setManualTrackAddress("");
-    setManualTrackZip("");
+    setManualTrackAddress(t.address ?? "");
+    setManualTrackZip(t.zip ?? "");
   };
 
 
@@ -330,12 +330,6 @@ export default function EventsList() {
   );
 
   const onSubmit = async (data: z.infer<typeof createEventSchema>) => {
-    // Require address when a track name is manually entered (not picked from library)
-    if (data.trackName?.trim() && !selectedLibraryTrackId && !manualTrackAddress.trim()) {
-      toast({ title: "Track address required", description: "Enter a street address for this track so it can be saved to your library.", variant: "destructive" });
-      return;
-    }
-
     const classDetails: Record<string, string> = {};
     data.raceClasses.forEach(r => {
       const key = r.name.trim();
@@ -353,6 +347,8 @@ export default function EventsList() {
           state: data.state,
           location: data.location,
           trackName: data.trackName || null,
+          streetAddress: data.trackName?.trim() ? (manualTrackAddress.trim() || undefined) : undefined,
+          zip: data.trackName?.trim() ? (manualTrackZip.trim() || undefined) : undefined,
           raceStyle: data.raceStyle,
           timingTechnology: data.timingTechnology,
           raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
@@ -414,7 +410,7 @@ export default function EventsList() {
       }
     }
 
-    // Auto-save new track to library
+    // Auto-save new track to library, or update address on an existing one
     if (data.trackName?.trim() && !selectedLibraryTrackId) {
       fetch("/api/tracks", {
         method: "POST",
@@ -429,6 +425,20 @@ export default function EventsList() {
         }),
       }).then(r => r.ok ? r.json() : null).then(track => {
         if (track) setTrackLibrary(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
+      }).catch(() => {});
+    } else if (selectedLibraryTrackId) {
+      fetch(`/api/tracks/${selectedLibraryTrackId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: manualTrackAddress.trim() || null,
+          city: data.location?.trim() || null,
+          state: data.state?.trim() || null,
+          zip: manualTrackZip.trim() || null,
+        }),
+      }).then(r => r.ok ? r.json() : null).then(track => {
+        if (track) setTrackLibrary(prev => prev.map(t => t.id === selectedLibraryTrackId ? track : t));
       }).catch(() => {});
     }
 
@@ -743,13 +753,22 @@ export default function EventsList() {
                         <Input
                           placeholder="Thunder Valley MX"
                           {...field}
-                          onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); }}
+                          onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); setManualTrackAddress(""); setManualTrackZip(""); }}
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                {/* Street address — shown whenever a track name is entered */}
+                {form.watch("trackName")?.trim() && (
+                  <Input
+                    placeholder="Street address"
+                    value={manualTrackAddress}
+                    onChange={e => setManualTrackAddress(e.target.value)}
+                  />
+                )}
 
                 {/* City + State */}
                 <div className="grid grid-cols-2 gap-4">
@@ -779,25 +798,14 @@ export default function EventsList() {
                   />
                 </div>
 
-                {/* Address fields when manually entering a new track */}
-                {form.watch("trackName")?.trim() && !selectedLibraryTrackId && (
-                  <div className="rounded-md border border-dashed bg-muted/20 p-3 space-y-2">
-                    <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-                      <MapPin size={11} />
-                      Add address — this track will be saved to your library
-                    </p>
-                    <Input
-                      placeholder="Street address *"
-                      value={manualTrackAddress}
-                      onChange={e => setManualTrackAddress(e.target.value)}
-                    />
-                    <Input
-                      placeholder="ZIP code"
-                      value={manualTrackZip}
-                      onChange={e => setManualTrackZip(e.target.value)}
-                      className="w-36"
-                    />
-                  </div>
+                {/* ZIP — shown whenever a track name is entered */}
+                {form.watch("trackName")?.trim() && (
+                  <Input
+                    placeholder="ZIP code"
+                    value={manualTrackZip}
+                    onChange={e => setManualTrackZip(e.target.value)}
+                    className="w-36"
+                  />
                 )}
 
                 {/* Timing Technology */}
@@ -1164,7 +1172,7 @@ export default function EventsList() {
                               type="number"
                               min="0"
                               step="0.01"
-                              placeholder="45.00"
+                              placeholder="0.00"
                               {...field}
                             />
                           </FormControl>
