@@ -45,6 +45,7 @@ import type {
   CompleteAccountSetup200,
   CompleteSetupInput,
   CompleteTour200,
+  ConnectorStatus,
   CreatePracticeSessionInput,
   CreateTeamMemberInput,
   CreateUserInput,
@@ -2505,6 +2506,83 @@ export const useCreateReader = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getCreateReaderMutationOptions(options));
     }
+
+export const getGetConnectorStatusUrl = () => {
+
+
+
+
+  return `/api/readers/connector-status`
+}
+
+/**
+ * @summary Live RM Connect app connections for the caller's club
+ */
+export const getConnectorStatus = async ( options?: RequestInit): Promise<ConnectorStatus[]> => {
+
+  return customFetch<ConnectorStatus[]>(getGetConnectorStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetConnectorStatusQueryKey = () => {
+    return [
+    `/api/readers/connector-status`
+    ] as const;
+    }
+
+
+export const getGetConnectorStatusQueryOptions = <TData = Awaited<ReturnType<typeof getConnectorStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConnectorStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetConnectorStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getConnectorStatus>>> = ({ signal }) => getConnectorStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getConnectorStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetConnectorStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getConnectorStatus>>>
+export type GetConnectorStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Live RM Connect app connections for the caller's club
+ */
+
+export function useGetConnectorStatus<TData = Awaited<ReturnType<typeof getConnectorStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConnectorStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetConnectorStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getUpdateReaderUrl = (readerId: number,) => {
 
