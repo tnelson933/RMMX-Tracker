@@ -27,7 +27,7 @@
   - RFID / Transponder Management: club-wide assignment list, filter by event, assign tags
   - Practice Sessions: standalone live-timed practice (independent of events), create/start/end, live lap board, SSE real-time updates
   - Live Broadcast: webcam video stream from organizer browser, public /watch link for spectators
-  - Reader Setup: RFID auto-configure, manual config, test ping, named registered readers with unique per-reader ingest URLs
+  - Reader Setup: RFID auto-configure, manual config, test ping, named registered readers with unique per-reader ingest URLs, RM Connect tray app (recommended hardware bridge)
   - Offline Mode & Desktop App: local timing, cloud sync queue, encrypted credentials
   - Admin (Team page): invite staff, role-based permissions, default race classes with descriptions, brand contingencies, track/venue name, rider acknowledgement form, liability waiver PDF with field editor
 
@@ -211,6 +211,14 @@ Practice motos on the Schedule tab use a **countdown timer** instead of lap coun
 ## Timing Systems
 
 RM Tracker supports two timing hardware modes. Select the mode for an event in the event's Overview tab (Edit → Timing Technology field).
+
+### RM Connect (recommended hardware bridge)
+**RM Connect** is a small desktop app that runs in the laptop's system tray at the track and bridges timing hardware to the cloud — no hardware configuration needed.
+- Supports **Impinj R700** RFID readers (connects directly over the network via LLRP — the organizer enters the reader's address, e.g. the last 6 characters of the MAC on the label) and **MyLaps decoders** (enter the decoder's IP address).
+- Setup: download and install RM Connect → sign in with the organizer email → pick a registered reader from the list → choose hardware type and enter its address → leave the app running in the tray.
+- The Reader Setup page shows a live **RM Connect** status card: whether the app is online, whether the hardware is connected, and how many reads have come through.
+- Readers **start and stop automatically**: when the organizer presses Start Moto in the web app, RM Connect starts the hardware reading; completing the moto stops it. A test mode toggle in the app lets crossings flow without an active moto for pre-race verification.
+- Crossings stream to the cloud in real time and route to the active moto (or to enduro checkpoint assignments if the reader is assigned to one).
 
 ### RFID Sticker Tags (default)
 - Hardware: Impinj, Zebra, or generic UHF RFID readers
