@@ -26,6 +26,12 @@ tags:
     description: RFID transponder management
   - name: motos
     description: Race day moto and heat management
+  - name: time-checks
+    description: Enduro event-wide time checks (per-class expected arrival durations)
+  - name: readers
+    description: Club-registered RFID/MyLaps readers with unique ingest tokens
+  - name: reader-assignments
+    description: Per-event mapping of readers to checkpoint roles (start, finish, time check)
   - name: results
     description: Race results and lap times
   - name: series
@@ -44,6 +50,8 @@ tags:
     description: Club team / employee management
   - name: anthropic
     description: Anthropic AI chat operations
+  - name: practice
+    description: Standalone open-practice timing sessions
 
 paths:
   /healthz:
@@ -543,6 +551,72 @@ paths:
         "204":
           description: Club deleted
 
+  /clubs/{clubId}/settings:
+    get:
+      operationId: getClubSettings
+      tags: [clubs]
+      summary: Get club settings (rider acknowledgement, default classes)
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Club settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubSettings"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    put:
+      operationId: putClubSettings
+      tags: [clubs]
+      summary: Upsert club settings (rider acknowledgement, default classes)
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClubSettingsInput"
+      responses:
+        "200":
+          description: Updated club settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClubSettings"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   # EVENTS
   /events:
     get:
@@ -643,6 +717,92 @@ paths:
       responses:
         "204":
           description: Event deleted
+
+  # READERS (club-registered physical readers)
+  /readers:
+    get:
+      operationId: listReaders
+      tags: [readers]
+      summary: List all readers registered to the caller's club
+      responses:
+        "200":
+          description: Readers ordered by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Reader"
+    post:
+      operationId: createReader
+      tags: [readers]
+      summary: Register a new reader for the club
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReaderInput"
+      responses:
+        "201":
+          description: The created reader (includes generated token)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reader"
+
+  /readers/connector-status:
+    get:
+      operationId: getConnectorStatus
+      tags: [readers]
+      summary: Live RM Connect app connections for the caller's club
+      responses:
+        "200":
+          description: One entry per connected RM Connect app
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConnectorStatus"
+
+  /readers/{readerId}:
+    patch:
+      operationId: updateReader
+      tags: [readers]
+      summary: Rename a registered reader
+      parameters:
+        - name: readerId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReaderUpdateInput"
+      responses:
+        "200":
+          description: The updated reader
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reader"
+    delete:
+      operationId: deleteReader
+      tags: [readers]
+      summary: Remove a registered reader
+      parameters:
+        - name: readerId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Reader deleted
 
   # RIDERS
   /riders:
@@ -865,6 +1025,85 @@ paths:
               schema:
                 $ref: "#/components/schemas/Registration"
 
+  /rider/events/{eventId}/registrations/cancel:
+    post:
+      operationId: cancelMyRegistrations
+      tags: [registrations]
+      summary: Cancel one or more of the authenticated rider's registrations for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelRegistrationsInput"
+      responses:
+        "200":
+          description: Registrations cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cancelled:
+                    type: integer
+
+  /events/{eventId}/cancellations:
+    get:
+      operationId: listEventCancellations
+      tags: [registrations]
+      summary: List rider-initiated cancellations for an event (organizer)
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cancellations list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cancellations, unverifiedCount]
+                properties:
+                  unverifiedCount:
+                    type: integer
+                  cancellations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Cancellation"
+
+  /events/{eventId}/cancellations/{registrationId}/verify:
+    patch:
+      operationId: verifyCancellationRefund
+      tags: [registrations]
+      summary: Mark a cancellation refund as verified (organizer)
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: registrationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Refund marked verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cancellation"
+
   /registrations/{registrationId}:
     patch:
       operationId: updateRegistration
@@ -1031,6 +1270,217 @@ paths:
         "204":
           description: All non-completed motos deleted
 
+  /events/{eventId}/time-checks:
+    get:
+      operationId: listEnduroTimeChecks
+      tags: [time-checks]
+      summary: List enduro time checks for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Time checks ordered by checkNumber
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EnduroTimeCheck"
+    put:
+      operationId: setEnduroTimeChecks
+      tags: [time-checks]
+      summary: Replace all enduro time checks for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetEnduroTimeChecksInput"
+      responses:
+        "200":
+          description: The saved time checks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EnduroTimeCheck"
+
+  /events/{eventId}/time-checks/{checkId}/arrivals:
+    get:
+      operationId: listCheckpointArrivals
+      tags: [time-checks]
+      summary: List recorded checkpoint arrivals for a specific time check
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: checkId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Arrivals for this checkpoint
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EnduroCheckpointArrival"
+        "401":
+          description: Not authenticated
+    post:
+      operationId: recordCheckpointArrival
+      tags: [time-checks]
+      summary: Record or overwrite a rider's manual arrival at a checkpoint
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: checkId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordArrivalInput"
+      responses:
+        "200":
+          description: Arrival recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnduroCheckpointArrival"
+        "400":
+          description: Validation error
+        "401":
+          description: Not authenticated
+
+  /events/{eventId}/time-checks/{checkId}/arrivals/{riderId}:
+    delete:
+      operationId: deleteCheckpointArrival
+      tags: [time-checks]
+      summary: Remove a rider's recorded arrival at a checkpoint
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: checkId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "401":
+          description: Not authenticated
+        "404":
+          description: Not found
+
+  /events/{eventId}/penalty-summary:
+    get:
+      operationId: getEnduroPenaltySummary
+      tags: [time-checks]
+      summary: Compute per-rider penalty totals and DQ flags for an enduro event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Per-rider penalty summary
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EnduroPenaltySummaryEntry"
+        "401":
+          description: Not authenticated
+
+  /events/{eventId}/reader-assignments:
+    get:
+      operationId: listEventReaderAssignments
+      tags: [reader-assignments]
+      summary: List reader-to-checkpoint assignments for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Assignments for this event
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EventReaderAssignment"
+    put:
+      operationId: setEventReaderAssignments
+      tags: [reader-assignments]
+      summary: Replace all reader assignments for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetEventReaderAssignmentsInput"
+      responses:
+        "200":
+          description: The saved assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EventReaderAssignment"
+
   /events/{eventId}/stagger:
     post:
       operationId: linkStagger
@@ -1051,6 +1501,44 @@ paths:
       responses:
         "200":
           description: Stagger linked
+
+  /motos/{motoId}/pause:
+    post:
+      operationId: pauseMoto
+      tags: [motos]
+      summary: Pause an in-progress moto (freeze the clock without ending it)
+      parameters:
+        - name: motoId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Moto paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Moto"
+
+  /motos/{motoId}/resume:
+    post:
+      operationId: resumeMoto
+      tags: [motos]
+      summary: Resume a paused moto (restart the clock from where it stopped)
+      parameters:
+        - name: motoId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Moto resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Moto"
 
   /motos/{motoId}/stagger:
     delete:
@@ -1583,6 +2071,130 @@ paths:
         "204":
           description: Deleted
 
+  # STANDALONE PRACTICE TIMING
+  /practice:
+    get:
+      operationId: listPracticeSessions
+      tags: [practice]
+      summary: List open-practice sessions for the organizer's club
+      responses:
+        "200":
+          description: List of practice sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PracticeSession"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    post:
+      operationId: createPracticeSession
+      tags: [practice]
+      summary: Create a new open-practice session (snapshots the club's track name)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePracticeSessionInput"
+      responses:
+        "201":
+          description: Practice session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSession"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /practice/{sessionId}:
+    get:
+      operationId: getPracticeSession
+      tags: [practice]
+      summary: Get a single practice session by ID
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Practice session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSession"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    patch:
+      operationId: updatePracticeSession
+      tags: [practice]
+      summary: Update a practice session (start, end, rename)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePracticeSessionInput"
+      responses:
+        "200":
+          description: Updated practice session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSession"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    delete:
+      operationId: deletePracticeSession
+      tags: [practice]
+      summary: Delete a practice session and all its crossings
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
   # DASHBOARD / WOW ENDPOINTS
   /dashboard/club/{clubId}:
     get:
@@ -1656,6 +2268,218 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PublicSeriesItem"
+
+  /public/series/{seriesId}/standings:
+    get:
+      operationId: getPublicSeriesStandings
+      tags: [series]
+      summary: Public series standings — top riders per class with AMA# and bike brand
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Series standings per class
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicSeriesStanding"
+        "404":
+          description: Series not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /rider/maintenance/{riderId}/history:
+    get:
+      operationId: getRiderMaintenanceHistory
+      tags: [riders]
+      summary: List all maintenance history records for a rider, newest first
+      parameters:
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Maintenance history records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RiderMaintenanceHistoryEntry"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /rider/series:
+    get:
+      operationId: getRiderSeries
+      tags: [series]
+      summary: List all series the authenticated rider is enrolled in, with their points and position
+      responses:
+        "200":
+          description: Rider series enrollments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RiderSeriesEntry"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /rider/my-organizations:
+    get:
+      operationId: getRiderOrganizations
+      tags: [rider]
+      summary: List all clubs the authenticated rider has ever registered with, with notification prefs
+      responses:
+        "200":
+          description: Club list with notification preferences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RiderOrganization"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /rider/my-organizations/{clubId}/notifications:
+    patch:
+      operationId: updateRiderOrganizationNotifications
+      tags: [rider]
+      summary: Update notification preference for a specific club
+      parameters:
+        - name: clubId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRiderNotificationPrefInput"
+      responses:
+        "200":
+          description: Updated preference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiderNotificationPrefResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /rider/quick-checkin-events:
+    get:
+      operationId: getRiderQuickCheckinEvents
+      tags: [rider]
+      summary: List events eligible for quick check-in today for the authenticated rider
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of today's events with quick check-in enabled and eligibility info
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QuickCheckinEvent"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /events/{eventId}/quick-checkin:
+    post:
+      operationId: postEventQuickCheckin
+      tags: [rider]
+      summary: Self-service check-in for the authenticated rider at a quick-checkin event
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuickCheckinInput"
+      responses:
+        "200":
+          description: Check-in successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  alreadyCheckedIn:
+                    type: boolean
+        "400":
+          description: Not eligible for quick check-in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
 
   /public/states:
     get:
@@ -2194,8 +3018,99 @@ paths:
           content:
             text/event-stream: {}
 
+  /admin/notifications/audience-count:
+    get:
+      tags:
+        - notifications
+      summary: Get recipient count for a notification audience
+      operationId: getNotificationAudienceCount
+      parameters:
+        - name: audience
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [all, event]
+        - name: eventId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Number of riders who will receive the notification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationAudienceCount"
+        "401":
+          description: Not authenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Event not found
+
+  /admin/notifications/history:
+    get:
+      summary: Get recent notification send history
+      operationId: getNotificationHistory
+      tags:
+        - notifications
+      responses:
+        "200":
+          description: Last 10 notification log entries for the organizer's club
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationLogEntry"
+        "401":
+          description: Not authenticated
+        "403":
+          description: Forbidden
+
+  # READER INGEST (token-based, no session required)
+  /timing/readers/{token}/crossing:
+    post:
+      operationId: readerCrossing
+      tags: [readers]
+      summary: Ingest a crossing from a named reader (identified by its unique token)
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReaderCrossingInput"
+      responses:
+        "200":
+          description: Crossing processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+                required: [ok]
+
 components:
   schemas:
+    NotificationAudienceCount:
+      type: object
+      properties:
+        count:
+          type: integer
+      required:
+        - count
     HealthStatus:
       type: object
       properties:
@@ -2203,6 +3118,129 @@ components:
           type: string
       required:
         - status
+
+    PracticeSession:
+      type: object
+      required: [id, clubId, name, status, debounceMs, createdAt]
+      properties:
+        id:
+          type: integer
+        clubId:
+          type: integer
+        name:
+          type: string
+        status:
+          type: string
+          enum: [idle, active, ended]
+        debounceMs:
+          type: integer
+        venueName:
+          type: string
+          nullable: true
+          description: Track/venue name snapshotted from club settings at session creation time
+        startedAt:
+          type: string
+          nullable: true
+        endedAt:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+
+    CreatePracticeSessionInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        debounceMs:
+          type: integer
+
+    UpdatePracticeSessionInput:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [idle, active, ended]
+        debounceMs:
+          type: integer
+
+    DefaultRaceClass:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        details:
+          type: string
+          nullable: true
+
+    ClubSettings:
+      type: object
+      required: [clubId, riderAcknowledgement, defaultClasses]
+      properties:
+        clubId:
+          type: integer
+        riderAcknowledgement:
+          type: string
+          nullable: true
+        waiverPdfUrl:
+          type: string
+          nullable: true
+        liabilityWaiverPdfUrl:
+          type: string
+          nullable: true
+        liabilityWaiverFields:
+          type: array
+          nullable: true
+          items:
+            type: object
+        defaultClasses:
+          type: array
+          items:
+            $ref: "#/components/schemas/DefaultRaceClass"
+        brandContingencies:
+          type: array
+          nullable: true
+          items:
+            type: string
+        trackName:
+          type: string
+          nullable: true
+
+    ClubSettingsInput:
+      type: object
+      properties:
+        riderAcknowledgement:
+          type: string
+          nullable: true
+        waiverPdfUrl:
+          type: string
+          nullable: true
+        liabilityWaiverPdfUrl:
+          type: string
+          nullable: true
+        liabilityWaiverFields:
+          type: array
+          nullable: true
+          items:
+            type: object
+        defaultClasses:
+          type: array
+          items:
+            $ref: "#/components/schemas/DefaultRaceClass"
+        brandContingencies:
+          type: array
+          nullable: true
+          items:
+            type: string
+        trackName:
+          type: string
+          nullable: true
 
     UpdateMe:
       type: object
@@ -2277,9 +3315,22 @@ components:
           type: ["integer", "null"]
           description: ID of the discount category this purchase option belongs to
 
+    ClubOrganizer:
+      type: object
+      required: [id, name, email, hasPassword]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        hasPassword:
+          type: boolean
+
     Club:
       type: object
-      required: [id, name, state, autoDnfEnabled, autoDnfThreshold]
+      required: [id, name, state, autoDnfEnabled, autoDnfThreshold, active]
       properties:
         id:
           type: integer
@@ -2303,6 +3354,13 @@ components:
         autoDnfThreshold:
           type: integer
           description: Minimum % of leader laps required to score points (1-100)
+        active:
+          type: boolean
+          description: When false, the club is suspended and its organizers cannot log in
+        organizer:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ClubOrganizer"
         createdAt:
           type: string
 
@@ -2324,6 +3382,12 @@ components:
           type: string
         description:
           type: string
+        organizerName:
+          type: string
+          description: Name of the primary organizer — creates a club_organizer user account
+        organizerEmail:
+          type: string
+          description: Email of the primary organizer — sends an invite email to set their password
 
     ClubUpdate:
       type: object
@@ -2346,6 +3410,9 @@ components:
           type: boolean
         autoDnfThreshold:
           type: integer
+        active:
+          type: boolean
+          description: Set false to suspend the club
 
     Event:
       type: object
@@ -2386,6 +3453,13 @@ components:
           type: boolean
         entryFee:
           type: ["number", "null"]
+        earlyBirdFee:
+          type: ["number", "null"]
+          description: Discounted entry fee during the early sign-up incentive period (before earlyBirdEndsAt)
+        earlyBirdEndsAt:
+          type: ["string", "null"]
+          format: date
+          description: Last day (YYYY-MM-DD inclusive) of the early-bird pricing period; fee reverts to entryFee the following day
         maxRiders:
           type: ["integer", "null"]
         clubName:
@@ -2406,6 +3480,9 @@ components:
           type: boolean
         requireClubId:
           type: boolean
+        requireWaiver:
+          type: boolean
+          description: When true, riders must read and accept the club waiver before completing registration
         scoringTableId:
           type: ["integer", "null"]
         entryFeeCategoryId:
@@ -2421,6 +3498,59 @@ components:
         defaultGateConfigId:
           type: ["string", "null"]
           description: ID of the gate configuration to pre-select when generating lineups
+        endDate:
+          type: ["string", "null"]
+          format: date
+          description: End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+        raceClassSeriesMap:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: integer
+          description: Maps each race class name to an array of series IDs that should award points for that class.
+        raceClassDetails:
+          type: object
+          additionalProperties:
+            type: string
+          description: Maps each race class name to a rules/details paragraph shown to riders.
+        raceStyle:
+          type: string
+          enum: [motocross, enduro, cross_country]
+          default: motocross
+          description: Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)
+        enduroPenaltyConfig:
+          oneOf:
+            - $ref: "#/components/schemas/EnduroPenaltyConfig"
+            - type: "null"
+        classOrder:
+          type: array
+          items:
+            type: string
+          description: Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.
+          nullable: true
+        contingencyBrands:
+          type: array
+          items:
+            type: string
+          description: Brands selected for contingency sponsorships at this event.
+          nullable: true
+        quickCheckinEnabled:
+          type: boolean
+          default: false
+          description: When true, riders within 1 mile of the track on race day can self-check-in from the rider app.
+        trackLat:
+          type: ["number", "null"]
+          description: Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.
+        trackLng:
+          type: ["number", "null"]
+          description: Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.
+        streetAddress:
+          type: ["string", "null"]
+          description: Street address of the track venue.
+        zip:
+          type: ["string", "null"]
+          description: ZIP code of the track venue.
         createdAt:
           type: string
 
@@ -2458,6 +3588,11 @@ components:
           type: boolean
         entryFee:
           type: number
+        earlyBirdFee:
+          type: number
+        earlyBirdEndsAt:
+          type: string
+          format: date
         maxRiders:
           type: integer
         imageUrl:
@@ -2474,6 +3609,9 @@ components:
           type: boolean
         requireClubId:
           type: boolean
+        requireWaiver:
+          type: boolean
+          description: When true, riders must read and accept the club waiver before completing registration
         scoringTableId:
           type: ["integer", "null"]
         entryFeeCategoryId:
@@ -2489,6 +3627,32 @@ components:
         defaultGateConfigId:
           type: string
           description: ID of the gate configuration to pre-select when generating lineups
+        endDate:
+          type: ["string", "null"]
+          format: date
+          description: End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+        raceClassSeriesMap:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: integer
+          description: Maps each race class name to an array of series IDs that should award points for that class.
+        raceStyle:
+          type: string
+          enum: [motocross, enduro, cross_country]
+          default: motocross
+          description: Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)
+        quickCheckinEnabled:
+          type: boolean
+          default: false
+          description: When true, riders within 1 mile of the track on race day can self-check-in from the rider app.
+        streetAddress:
+          type: string
+          description: Street address of the track venue.
+        zip:
+          type: string
+          description: ZIP code of the track venue.
 
     EventUpdate:
       type: object
@@ -2523,6 +3687,11 @@ components:
           type: boolean
         entryFee:
           type: number
+        earlyBirdFee:
+          type: number
+        earlyBirdEndsAt:
+          type: string
+          format: date
         maxRiders:
           type: integer
         imageUrl:
@@ -2539,6 +3708,9 @@ components:
           type: boolean
         requireClubId:
           type: boolean
+        requireWaiver:
+          type: boolean
+          description: When true, riders must read and accept the club waiver before completing registration
         scoringTableId:
           type: ["integer", "null"]
         entryFeeCategoryId:
@@ -2554,6 +3726,97 @@ components:
         defaultGateConfigId:
           type: ["string", "null"]
           description: ID of the gate configuration to pre-select when generating lineups
+        endDate:
+          type: ["string", "null"]
+          format: date
+          description: End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+        raceClassSeriesMap:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: integer
+          description: Maps each race class name to an array of series IDs that should award points for that class.
+        raceClassDetails:
+          type: object
+          additionalProperties:
+            type: string
+          description: Maps each race class name to a rules/details paragraph shown to riders.
+        raceStyle:
+          type: string
+          enum: [motocross, enduro, cross_country]
+          description: Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)
+        enduroPenaltyConfig:
+          oneOf:
+            - $ref: "#/components/schemas/EnduroPenaltyConfig"
+            - type: "null"
+        classOrder:
+          type: array
+          items:
+            type: string
+          description: Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.
+          nullable: true
+        contingencyBrands:
+          type: array
+          items:
+            type: string
+          description: Brands selected for contingency sponsorships at this event.
+          nullable: true
+        quickCheckinEnabled:
+          type: boolean
+          description: When true, riders within 1 mile of the track on race day can self-check-in from the rider app.
+        streetAddress:
+          type: ["string", "null"]
+          description: Street address of the track venue.
+        zip:
+          type: ["string", "null"]
+          description: ZIP code of the track venue.
+
+    QuickCheckinInput:
+      type: object
+      properties:
+        riderId:
+          type: integer
+          description: Specific rider ID to check in (for family accounts; defaults to first rider)
+        registrationId:
+          type: integer
+          description: Specific registration to check in (checks in that registration's rider and class)
+
+    QuickCheckinEvent:
+      type: object
+      required: [eventId, eventName, eventDate, state, riderId, riderName, registrationId, eligible, checkedIn]
+      properties:
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        eventDate:
+          type: string
+        location:
+          type: ["string", "null"]
+        state:
+          type: string
+        trackName:
+          type: ["string", "null"]
+        trackLat:
+          type: ["number", "null"]
+        trackLng:
+          type: ["number", "null"]
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        registrationId:
+          type: integer
+        raceClass:
+          type: ["string", "null"]
+        eligible:
+          type: boolean
+        checkedIn:
+          type: boolean
+        ineligibleReason:
+          type: ["string", "null"]
+          enum: [missing_rfid, missing_transponder, missing_waiver, null]
 
     Rider:
       type: object
@@ -2598,6 +3861,13 @@ components:
         clubIdNumber:
           type: ["string", "null"]
           description: Most recent club membership ID from the rider's registrations
+        skillLevel:
+          type: ["string", "null"]
+        raceTypes:
+          type: array
+          items:
+            type: string
+          description: Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert)
         createdAt:
           type: string
 
@@ -2641,6 +3911,13 @@ components:
           type: ["string", "null"]
         zip:
           type: ["string", "null"]
+        skillLevel:
+          type: ["string", "null"]
+        raceTypes:
+          type: array
+          items:
+            type: string
+          description: Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert)
         recentResults:
           type: array
           items:
@@ -2726,6 +4003,13 @@ components:
           type: string
         zip:
           type: string
+        skillLevel:
+          type: string
+        raceTypes:
+          type: array
+          items:
+            type: string
+          description: Race disciplines the rider competes in
 
     Registration:
       type: object
@@ -2761,8 +4045,56 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PurchaseOption'
+        waiverAcknowledgedAt:
+          type: ["string", "null"]
+          description: ISO timestamp of when the rider accepted the club waiver, or null if not required/accepted
+        waiverSnapshot:
+          type: ["string", "null"]
+          description: Full text of the club waiver at the time of acceptance
+        cancelledAt:
+          type: ["string", "null"]
+        cancellationSource:
+          type: ["string", "null"]
+        refundVerifiedAt:
+          type: ["string", "null"]
         createdAt:
           type: string
+
+    CancelRegistrationsInput:
+      type: object
+      required: [registrationIds]
+      properties:
+        registrationIds:
+          type: array
+          items:
+            type: integer
+
+    Cancellation:
+      type: object
+      required: [id, eventId, riderId, riderName, raceClass, cancelledAt]
+      properties:
+        id:
+          type: integer
+        eventId:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        raceClass:
+          type: string
+        bibNumber:
+          type: ["string", "null"]
+        amountPaid:
+          type: ["number", "null"]
+        paymentMethod:
+          type: ["string", "null"]
+        paymentStatus:
+          type: ["string", "null"]
+        cancelledAt:
+          type: string
+        refundVerifiedAt:
+          type: ["string", "null"]
 
     RegistrationInput:
       type: object
@@ -2879,7 +4211,7 @@ components:
           type: string
         type:
           type: string
-          enum: [heat, lcq, main, practice, moto]
+          enum: [heat, lcq, main, practice, moto, enduro_test]
         raceClass:
           type: string
         raceClasses:
@@ -2899,6 +4231,13 @@ components:
         timeLimitMs:
           type: ["integer", "null"]
           description: Time limit in milliseconds (practice sessions only, optional)
+        plusLaps:
+          type: ["integer", "null"]
+          description: Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag
+        timeExpiredAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps
         practiceMode:
           type: ["string", "null"]
           enum: [lap_count, countdown, null]
@@ -2918,12 +4257,28 @@ components:
         completedAt:
           type: ["string", "null"]
           format: date-time
-        staggeredWithMotoId:
-          type: ["integer", "null"]
-          description: ID of the paired moto in a staggered start
+        pausedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Set when the moto is paused; null when running or completed
+        totalPausedMs:
+          type: integer
+          description: Total accumulated paused duration in milliseconds across all pause/resume cycles
         staggeredOrder:
           type: ["integer", "null"]
-          description: 1 = starts first, 2 = starts second in a staggered pair
+          description: 1 = starts first, 2+ = subsequent start positions in a staggered group
+        staggeredGroupId:
+          type: ["integer", "null"]
+          description: Shared group identifier for all motos in a staggered start group
+        staggeredGroupMembers:
+          type: array
+          items:
+            type: integer
+          nullable: true
+          description: Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)
+        enduroHasRfidStart:
+          type: boolean
+          description: Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock
 
     MotoInput:
       type: object
@@ -2933,7 +4288,7 @@ components:
           type: string
         type:
           type: string
-          enum: [heat, lcq, main, practice, moto]
+          enum: [heat, lcq, main, practice, moto, enduro_test]
         raceClass:
           type: string
         raceClasses:
@@ -2949,6 +4304,9 @@ components:
         timeLimitMs:
           type: integer
           description: Time limit in milliseconds (practice sessions only, optional)
+        plusLaps:
+          type: integer
+          description: Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format)
         practiceMode:
           type: string
           enum: [lap_count, countdown]
@@ -2962,6 +4320,9 @@ components:
           type: array
           items:
             type: integer
+        enduroHasRfidStart:
+          type: boolean
+          description: Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock
 
     MotoUpdate:
       type: object
@@ -2978,6 +4339,13 @@ components:
           type: ["integer", "null"]
         timeLimitMs:
           type: ["integer", "null"]
+        plusLaps:
+          type: ["integer", "null"]
+          description: Extra laps after the time limit expires; null to clear
+        timeExpiredAt:
+          type: ["string", "null"]
+          format: date-time
+          description: ISO timestamp; set when the race timer expires; pass null to clear
         practiceMode:
           type: ["string", "null"]
           enum: [lap_count, countdown, null]
@@ -2987,18 +4355,20 @@ components:
           type: integer
         name:
           type: string
+        enduroHasRfidStart:
+          type: boolean
+          description: Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock
 
     StaggerLinkInput:
       type: object
-      required: [motoId1, motoId2, firstMotoId]
+      required: [orderedMotoIds]
       properties:
-        motoId1:
-          type: integer
-        motoId2:
-          type: integer
-        firstMotoId:
-          type: integer
-          description: Which of the two motos starts first
+        orderedMotoIds:
+          type: array
+          items:
+            type: integer
+          minItems: 2
+          description: Ordered list of moto IDs — first element starts first, last starts last
 
     MotoReorderInput:
       type: object
@@ -3069,6 +4439,19 @@ components:
             prior_round_finish = sort by prior round finish position, best finisher picks first;
             first_registered = sort by registration timestamp, earliest registered gets first gate pick.
             Supersedes gateSeedingMethod when both are present.
+        timeLimitMs:
+          type: integer
+          description: >
+            Race time limit in milliseconds. When set, the race runs until this
+            duration expires, then plusLaps additional laps are counted before
+            the moto ends. Mutually exclusive with lapCount (time-based vs
+            laps-based).
+        plusLaps:
+          type: integer
+          description: >
+            Number of additional laps riders complete after the time limit
+            expires. Defaults to 1 (classic "time + 1 lap" motocross format).
+            Only meaningful when timeLimitMs is also set.
         lapCount:
           type: integer
           description: >
@@ -3085,6 +4468,13 @@ components:
             reorder classes in the run order to satisfy this constraint. If it
             cannot fully satisfy the constraint, motos are still created and the
             remaining conflicts are surfaced in the response header.
+        useRegistrations:
+          type: boolean
+          description: >
+            When true, generate lineup slots for all registered riders (not only
+            those who have checked in). Riders who have not yet checked in appear
+            in the lineup with checkedIn: false. When a rider later checks in,
+            their slot is automatically updated to checkedIn: true.
 
     GenerateMotoLineupInput:
       type: object
@@ -3375,6 +4765,80 @@ components:
         checkedIn:
           type: integer
 
+    PublicSeriesStanding:
+      type: object
+      required: [position, riderId, riderName, raceClass, totalScore, eventsEntered]
+      properties:
+        position:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        raceClass:
+          type: string
+        totalScore:
+          type: integer
+        eventsEntered:
+          type: integer
+        amaNumber:
+          type: string
+          nullable: true
+        bikeBrand:
+          type: string
+          nullable: true
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeriesEventBreakdown"
+
+    RiderSeriesEntry:
+      type: object
+      required: [seriesId, seriesName, raceClass, totalPoints, position]
+      properties:
+        seriesId:
+          type: integer
+        seriesName:
+          type: string
+        raceClass:
+          type: string
+        totalPoints:
+          type: integer
+        position:
+          type: integer
+
+    RiderOrganization:
+      type: object
+      required: [clubId, clubName, state, notificationsEnabled]
+      properties:
+        clubId:
+          type: integer
+        clubName:
+          type: string
+        state:
+          type: string
+        logoUrl:
+          type: string
+          nullable: true
+        notificationsEnabled:
+          type: boolean
+
+    UpdateRiderNotificationPrefInput:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+
+    RiderNotificationPrefResult:
+      type: object
+      required: [clubId, notificationsEnabled]
+      properties:
+        clubId:
+          type: integer
+        notificationsEnabled:
+          type: boolean
+
     PublicSeriesItem:
       type: object
       required: [id, name, season, clubId, clubName, state]
@@ -3417,6 +4881,10 @@ components:
           type: string
         date:
           type: string
+        endDate:
+          type: ["string", "null"]
+          format: date
+          description: End date for multi-day events (YYYY-MM-DD). Null for single-day events.
         location:
           type: string
         trackName:
@@ -3443,6 +4911,10 @@ components:
         raceClass:
           type: string
         clubName:
+          type: string
+        location:
+          type: string
+        trackName:
           type: string
 
     EventReport:
@@ -4015,3 +5487,347 @@ components:
           type: string
       required:
         - error
+
+    RiderMaintenanceHistoryEntry:
+      type: object
+      required: [id, riderId, itemKey, itemName, servicedAt, createdAt]
+      properties:
+        id:
+          type: integer
+        riderId:
+          type: integer
+        itemKey:
+          type: string
+        itemName:
+          type: string
+        servicedAt:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    NotificationLogEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        body:
+          type: string
+        audienceType:
+          type: string
+        eventId:
+          type: integer
+          nullable: true
+        sentCount:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - body
+        - audienceType
+        - sentCount
+        - sentAt
+
+    EnduroTimeCheckTarget:
+      type: object
+      required: [raceClass, durationMs]
+      properties:
+        raceClass:
+          type: string
+        durationMs:
+          type: integer
+          description: Expected duration (ms from the rider's start) for this class to reach the check
+
+    EnduroTimeCheck:
+      type: object
+      required: [id, eventId, checkNumber, name, targets]
+      properties:
+        id:
+          type: integer
+        eventId:
+          type: integer
+        checkNumber:
+          type: integer
+          description: 1-based order through the day
+        name:
+          type: string
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/EnduroTimeCheckTarget"
+        createdAt:
+          type: ["string", "null"]
+          format: date-time
+
+    EnduroTimeCheckInput:
+      type: object
+      required: [checkNumber, name, targets]
+      properties:
+        checkNumber:
+          type: integer
+        name:
+          type: string
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/EnduroTimeCheckTarget"
+
+    SetEnduroTimeChecksInput:
+      type: object
+      required: [timeChecks]
+      properties:
+        timeChecks:
+          type: array
+          items:
+            $ref: "#/components/schemas/EnduroTimeCheckInput"
+        penaltyConfig:
+          oneOf:
+            - $ref: "#/components/schemas/EnduroPenaltyConfig"
+            - type: "null"
+
+    RecordArrivalInput:
+      type: object
+      required: [riderId, arrivalTime]
+      properties:
+        riderId:
+          type: integer
+        arrivalTime:
+          type: string
+          format: date-time
+
+    EnduroPenaltyConfig:
+      type: object
+      required: [earlySecPerMin, lateSecPerMin]
+      properties:
+        earlySecPerMin:
+          type: number
+          description: Seconds added to overall time per whole minute a rider arrives early
+        lateSecPerMin:
+          type: number
+          description: Seconds added to overall time per whole minute a rider arrives late
+        earlyDqMinutes:
+          type: ["number", "null"]
+          description: Disqualify rider if more than this many minutes early (null = disabled)
+        lateDqMinutes:
+          type: ["number", "null"]
+          description: Disqualify rider if more than this many minutes late (null = disabled)
+        timezone:
+          type: ["string", "null"]
+          description: IANA timezone identifier used when comparing RFID arrival times against expected times (e.g. "America/Denver"). Defaults to server local time if omitted.
+
+    EnduroCheckpointArrival:
+      type: object
+      required: [id, eventId, timeCheckId, riderId, arrivalTime, recordedBy]
+      properties:
+        id:
+          type: integer
+        eventId:
+          type: integer
+        timeCheckId:
+          type: integer
+        riderId:
+          type: integer
+        riderName:
+          type: ["string", "null"]
+        arrivalTime:
+          type: string
+          format: date-time
+        recordedBy:
+          type: string
+          enum: [rfid, manual]
+        createdAt:
+          type: ["string", "null"]
+          format: date-time
+
+    EnduroPenaltySummaryEntry:
+      type: object
+      required: [riderId, riderName, raceClass, totalPenaltySeconds, disqualified]
+      properties:
+        riderId:
+          type: integer
+        riderName:
+          type: string
+        raceClass:
+          type: ["string", "null"]
+        totalPenaltySeconds:
+          type: number
+          description: Total extra seconds added to this rider's time across all checkpoints
+        disqualified:
+          type: boolean
+          description: True if the rider exceeded any DQ threshold at any checkpoint
+        checkDetails:
+          type: array
+          items:
+            type: object
+            required: [checkId, checkName, diffMinutes, penaltySeconds, disqualified]
+            properties:
+              checkId:
+                type: integer
+              checkName:
+                type: string
+              diffMinutes:
+                type: number
+                description: Positive = late, negative = early
+              penaltySeconds:
+                type: number
+              disqualified:
+                type: boolean
+              hasArrival:
+                type: boolean
+
+    Reader:
+      type: object
+      required: [id, clubId, name, type, token, createdAt]
+      properties:
+        id:
+          type: integer
+        clubId:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [rfid, mylaps]
+        token:
+          type: string
+          description: UUID used as the URL key for this reader's ingest endpoint
+        hardwareAddress:
+          type: ["string", "null"]
+          description: Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders. Used by RM Connect to connect to the hardware.
+        lastSeenAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    ReaderInput:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [rfid, mylaps]
+        hardwareAddress:
+          type: string
+          description: Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders
+
+    ReaderUpdateInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        hardwareAddress:
+          type: ["string", "null"]
+          description: Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders
+
+    ConnectorStatus:
+      type: object
+      required: [readerId, readerName, readerType, connectedAt, hardware]
+      properties:
+        readerId:
+          type: integer
+        readerName:
+          type: string
+        readerType:
+          type: string
+        connectedAt:
+          type: string
+          format: date-time
+        hardware:
+          type: object
+          required: [kind, connected, readCount]
+          properties:
+            kind:
+              type: ["string", "null"]
+              enum: [impinj, zebra, generic, mylaps, null]
+            connected:
+              type: boolean
+            detail:
+              type: ["string", "null"]
+            lastReadAt:
+              type: ["string", "null"]
+              format: date-time
+            readCount:
+              type: integer
+
+    EventReaderAssignment:
+      type: object
+      required: [id, eventId, readerId, role]
+      properties:
+        id:
+          type: integer
+        eventId:
+          type: integer
+        readerId:
+          type: integer
+        antennaId:
+          type: ["integer", "null"]
+          description: Specific antenna port (1-4), or null for any antenna on this reader
+        role:
+          type: string
+          enum: [start, finish, time_check]
+        motoId:
+          type: ["integer", "null"]
+          description: For start/finish roles — the specific test moto this reader covers
+        timeCheckId:
+          type: ["integer", "null"]
+          description: For time_check role — the enduro_time_check this reader is positioned at
+        createdAt:
+          type: string
+          format: date-time
+
+    EventReaderAssignmentInput:
+      type: object
+      required: [readerId, role]
+      properties:
+        readerId:
+          type: integer
+        antennaId:
+          type: integer
+          nullable: true
+        role:
+          type: string
+          enum: [start, finish, time_check]
+        motoId:
+          type: integer
+          nullable: true
+        timeCheckId:
+          type: integer
+          nullable: true
+
+    SetEventReaderAssignmentsInput:
+      type: object
+      required: [assignments]
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventReaderAssignmentInput"
+
+    ReaderCrossingInput:
+      type: object
+      properties:
+        rfidNumber:
+          type: string
+          description: RFID tag EPC or MyLaps transponder number
+        crossingTime:
+          type: string
+          format: date-time
+          description: ISO timestamp of the crossing; defaults to server time if omitted
+        antennaId:
+          type: integer
+          description: Antenna port number (used to disambiguate multi-antenna readers)
+        eventId:
+          type: integer
+          description: Optional — if omitted the server resolves the active race_day event for this reader's club
