@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>RM Connect</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #f97316;
+    --green: #22c55e;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px;
+    padding: 16px; user-select: none;
+  }
+  h1 { font-size: 16px; margin-bottom: 2px; }
+  .sub { color: var(--muted); margin-bottom: 14px; font-size: 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 10px; }
+  label { display: block; color: var(--muted); font-size: 11px; margin: 8px 0 3px; }
+  input, select {
+    width: 100%; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--border);
+    background: #0b1220; color: var(--text); font-size: 13px; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  button {
+    margin-top: 10px; padding: 8px 14px; border: none; border-radius: 6px;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.danger { background: transparent; border: 1px solid var(--red); color: var(--red); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row button { flex: 1; }
+  .status-line { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.on { background: var(--green); }
+  .dot.off { background: var(--red); }
+  .err { color: var(--red); font-size: 12px; margin-top: 8px; min-height: 15px; }
+  .ok-msg { color: var(--green); font-size: 12px; margin-top: 8px; }
+  .muted { color: var(--muted); font-size: 11px; }
+  .hidden { display: none; }
+  .badge { background: #0b1220; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 11px; color: var(--muted); }
+  .switch { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>RM Connect</h1>
+  <div class="sub">Bridges your timing hardware to the cloud — leave it running on race day.</div>
+
+  <!-- STATUS -->
+  <div class="card" id="statusCard">
+    <h2>Status</h2>
+    <div class="status-line"><span class="dot" id="dotCloud"></span><span id="txtCloud">Cloud: —</span></div>
+    <div class="status-line"><span class="dot" id="dotDevice"></span><span id="txtDevice">Hardware: —</span></div>
+    <div class="status-line"><span class="dot" id="dotMoto"></span><span id="txtMoto">Idle — waiting for a moto to start</span></div>
+    <div class="muted" id="txtReads"></div>
+    <div class="switch">
+      <span>Test mode <span class="muted">(forward reads without a live moto)</span></span>
+      <input type="checkbox" id="chkTest" style="width:auto" />
+    </div>
+    <div class="row">
+      <button id="btnDisconnect" class="secondary">Disconnect</button>
+      <button id="btnReconnect">Reconnect</button>
+    </div>
+    <div class="err" id="errStatus"></div>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="card" id="loginCard">
+    <h2>Sign in</h2>
+    <label>Cloud URL</label>
+    <input id="inCloudUrl" placeholder="https://your-app.replit.app" />
+    <label>Organizer email</label>
+    <input id="inEmail" type="email" placeholder="you@yourclub.com" />
+    <label>Password</label>
+    <input id="inPassword" type="password" />
+    <button id="btnLogin">Sign in</button>
+    <div class="err" id="errLogin"></div>
+  </div>
+
+  <!-- SETUP -->
+  <div class="card hidden" id="setupCard">
+    <h2>Hardware setup</h2>
+    <label>Reader registration <span class="muted">(from Reader Setup in the web app)</span></label>
+    <div class="row">
+      <select id="selReader" style="flex:1"></select>
+      <button id="btnNewReader" class="secondary" style="flex:0 0 auto; margin-top:0">＋ New</button>
+    </div>
+    <label>Hardware type</label>
+    <select id="selHardware">
+      <option value="impinj">Impinj R700 (RFID)</option>
+      <option value="mylaps">MyLaps / AMB decoder</option>
+    </select>
+    <label id="lblAddress">Last 6 of reader MAC address</label>
+    <input id="inAddress" placeholder="e.g. 16-25-B2" />
+    <div class="muted" id="hintAddress">Printed on the reader label — we connect via impinj-XX-XX-XX.local</div>
+    <button id="btnConnect">Save &amp; Connect</button>
+    <div class="err" id="errSetup"></div>
+  </div>
+
+  <div class="row">
+    <button id="btnLogout" class="danger hidden">Sign out &amp; reset</button>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const api = window.connector;
+  let currentStatus = null;
+
+  function fmtAgo(iso) {
+    if (!iso) return "";
+    const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 5) return "just now";
+    if (s < 60) return s + "s ago";
+    return Math.round(s / 60) + "m ago";
+  }
+
+  function renderStatus(st) {
+    currentStatus = st;
+    const configured = st.configured;
+    $("statusCard").classList.toggle("hidden", !configured);
+    $("loginCard").classList.toggle("hidden", configured);
+    $("btnLogout").classList.toggle("hidden", !st.email);
+
+    if (!configured) return;
+    $("dotCloud").className = "dot " + (st.cloud.connected ? "on" : "off");
+    $("txtCloud").textContent = "Cloud: " + (st.cloud.connected ? "connected" : (st.cloud.error || "disconnected"));
+    $("dotDevice").className = "dot " + (st.device.connected ? "on" : "off");
+    const hwName = st.hardware === "impinj" ? "Impinj R700" : "MyLaps decoder";
+    $("txtDevice").textContent = hwName + ": " + (st.device.connected ? (st.device.reading ? "reading" : "connected, idle") : (st.device.error || "disconnected"));
+    if (st.activeMoto) {
+      $("dotMoto").className = "dot on";
+      $("txtMoto").textContent = "Racing — " + st.activeMoto.name;
+    } else if (st.testMode) {
+      $("dotMoto").className = "dot on";
+      $("txtMoto").textContent = "Test mode — forwarding all reads";
+    } else {
+      $("dotMoto").className = "dot";
+      $("txtMoto").textContent = "Idle — waiting for a moto to start";
+    }
+    $("txtReads").textContent = st.device.readCount
+      ? st.device.readCount + " reads · last " + fmtAgo(st.device.lastReadAt)
+      : "No reads yet";
+    $("chkTest").checked = st.testMode;
+  }
+
+  function populateReaders(readers, selectedId) {
+    const sel = $("selReader");
+    sel.innerHTML = "";
+    for (const r of readers) {
+      const opt = document.createElement("option");
+      opt.value = r.id;
+      opt.textContent = r.name + " (" + r.type + ")";
+      if (selectedId && r.id === selectedId) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    if (!readers.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "No readers yet — click ＋ New";
+      sel.appendChild(opt);
+    }
+  }
+
+  $("selHardware").addEventListener("change", () => {
+    const impinj = $("selHardware").value === "impinj";
+    $("lblAddress").textContent = impinj ? "Last 6 of reader MAC address" : "Decoder IP address";
+    $("inAddress").placeholder = impinj ? "e.g. 16-25-B2" : "e.g. 192.168.1.50";
+    $("hintAddress").textContent = impinj
+      ? "Printed on the reader label — we connect via impinj-XX-XX-XX.local"
+      : "Shown on the decoder display or your router's device list";
+  });
+
+  $("btnLogin").addEventListener("click", async () => {
+    $("errLogin").textContent = "";
+    $("btnLogin").disabled = true;
+    const res = await api.login({
+      cloudUrl: $("inCloudUrl").value,
+      email: $("inEmail").value,
+      password: $("inPassword").value,
+    });
+    $("btnLogin").disabled = false;
+    if (!res.ok) { $("errLogin").textContent = res.error; return; }
+    $("loginCard").classList.add("hidden");
+    $("setupCard").classList.remove("hidden");
+    $("btnLogout").classList.remove("hidden");
+    populateReaders(res.readers || []);
+  });
+
+  $("btnNewReader").addEventListener("click", async () => {
+    const name = prompt("Name for this reader (e.g. Finish Line):");
+    if (!name) return;
+    const type = $("selHardware").value === "mylaps" ? "mylaps" : "rfid";
+    const res = await api.createReader({ name, type });
+    if (!res.ok) { $("errSetup").textContent = res.error; return; }
+    populateReaders(res.readers || []);
+    const created = (res.readers || []).find((r) => r.name === name);
+    if (created) $("selReader").value = created.id;
+  });
+
+  $("btnConnect").addEventListener("click", async () => {
+    $("errSetup").textContent = "";
+    const readerId = parseInt($("selReader").value, 10);
+    if (!readerId) { $("errSetup").textContent = "Select or create a reader first"; return; }
+    if (!$("inAddress").value.trim()) { $("errSetup").textContent = "Enter the hardware address"; return; }
+    $("btnConnect").disabled = true;
+    $("btnConnect").textContent = "Connecting…";
+    const res = await api.connect({
+      readerId,
+      hardware: $("selHardware").value,
+      hardwareAddress: $("inAddress").value,
+    });
+    $("btnConnect").disabled = false;
+    $("btnConnect").textContent = "Save & Connect";
+    if (!res.ok) { $("errSetup").textContent = res.error; return; }
+    $("setupCard").classList.add("hidden");
+    refresh();
+  });
+
+  $("btnDisconnect").addEventListener("click", async () => {
+    await api.disconnect();
+    $("setupCard").classList.remove("hidden");
+    const s = await api.getSettings();
+    const res = await api.listReaders();
+    if (res.ok) populateReaders(res.readers || [], s.readerId);
+    if (s.hardware) $("selHardware").value = s.hardware;
+    $("inAddress").value = s.hardwareAddress || "";
+    $("selHardware").dispatchEvent(new Event("change"));
+    refresh();
+  });
+
+  $("btnReconnect").addEventListener("click", async () => {
+    $("errStatus").textContent = "";
+    const s = await api.getSettings();
+    const res = await api.connect({
+      readerId: s.readerId,
+      hardware: s.hardware,
+      hardwareAddress: s.hardwareAddress,
+    });
+    if (!res.ok) $("errStatus").textContent = res.error;
+  });
+
+  $("chkTest").addEventListener("change", async () => {
+    const res = await api.toggleTest($("chkTest").checked);
+    if (!res.ok) { $("errStatus").textContent = res.error; $("chkTest").checked = false; }
+  });
+
+  $("btnLogout").addEventListener("click", async () => {
+    if (!confirm("Sign out and clear all saved settings?")) return;
+    await api.logout();
+    location.reload();
+  });
+
+  async function refresh() {
+    const st = await api.getStatus();
+    renderStatus(st);
+  }
+
+  async function init() {
+    const s = await api.getSettings();
+    if (s.cloudUrl) $("inCloudUrl").value = s.cloudUrl;
+    if (s.email) $("inEmail").value = s.email;
+    await refresh();
+    // If signed in but not fully configured, show setup
+    if (!currentStatus.configured && s.email && s.cloudUrl) {
+      const res = await api.listReaders();
+      if (res.ok) {
+        $("loginCard").classList.add("hidden");
+        $("setupCard").classList.remove("hidden");
+        populateReaders(res.readers || [], s.readerId);
+        if (s.hardware) $("selHardware").value = s.hardware;
+        $("inAddress").value = s.hardwareAddress || "";
+        $("selHardware").dispatchEvent(new Event("change"));
+      }
+    }
+    api.onStatus(renderStatus);
+  }
+  init();
+</script>
+</body>
+</html>
