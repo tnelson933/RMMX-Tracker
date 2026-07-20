@@ -102,6 +102,80 @@ export async function sendDeletionRequestEmail(opts: {
   return sendEmail("support@rockymountainatv.com", subject, html);
 }
 
+export async function sendLiabilityWaiverConfirmation(opts: {
+  to: string;
+  signerName: string;
+  eventName: string;
+  signedAt: string;
+  contentHash: string;
+  waiverSnapshot: string;
+}): Promise<{ ok: boolean; reason?: string }> {
+  const { to, signerName, eventName, signedAt, contentHash, waiverSnapshot } = opts;
+  const subject = `Your liability waiver — ${eventName}`;
+  const formattedDate = new Date(signedAt).toLocaleString("en-US", {
+    month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short",
+  });
+
+  const isPdfUrl = waiverSnapshot.startsWith("http") || waiverSnapshot.startsWith("/api/storage");
+  const documentSection = isPdfUrl
+    ? `<p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#888">Document you signed</p>
+       <div style="background:#f7f7f7;border:1px solid #e5e5e5;border-radius:4px;padding:16px 20px">
+         <a href="${waiverSnapshot}" style="color:#2563eb;font-size:14px;word-break:break-all">View Liability Waiver PDF →</a>
+       </div>`
+    : `<p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#888">Document you signed</p>
+       <div style="background:#f7f7f7;border:1px solid #e5e5e5;border-radius:4px;padding:16px 20px;max-height:500px;overflow:hidden">
+         <pre style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#333;white-space:pre-wrap;line-height:1.6">${(waiverSnapshot.length > 4000 ? waiverSnapshot.substring(0, 4000) + "\n\n[... full document truncated for email display ...]" : waiverSnapshot).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+       </div>`;
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:40px 24px;background:#f9f9f9">
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;overflow:hidden">
+
+        <div style="background:#111;padding:28px 32px">
+          <p style="margin:0 0 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#dc2626">Liability Waiver — Signed Copy</p>
+          <h1 style="margin:0;font-size:22px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#fff">${eventName}</h1>
+        </div>
+
+        <div style="padding:28px 32px">
+          <p style="margin:0 0 20px;font-size:15px;color:#444;line-height:1.6">
+            Hi ${signerName},<br><br>
+            This email confirms your legally binding electronic signature on the liability waiver for <strong>${eventName}</strong>.
+            Keep this email for your records.
+          </p>
+
+          <table style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:14px">
+            <tr style="border-bottom:1px solid #f0f0f0">
+              <td style="padding:10px 0;color:#888;width:140px">Signed by</td>
+              <td style="padding:10px 0;color:#111;font-weight:600">${signerName}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f0f0f0">
+              <td style="padding:10px 0;color:#888">Event</td>
+              <td style="padding:10px 0;color:#111">${eventName}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f0f0f0">
+              <td style="padding:10px 0;color:#888">Signed at</td>
+              <td style="padding:10px 0;color:#111">${formattedDate}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 0;color:#888;vertical-align:top">Document hash</td>
+              <td style="padding:10px 0;color:#555;font-family:monospace;font-size:11px;word-break:break-all">${contentHash}</td>
+            </tr>
+          </table>
+
+          ${documentSection}
+
+          <p style="margin:20px 0 0;font-size:11px;color:#aaa;line-height:1.5">
+            The document hash above is a SHA-256 fingerprint of the exact waiver document you signed.
+            It can be used to verify the integrity of this record at any time.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  return sendEmail(to, subject, html);
+}
+
 export interface MotoResult {
   motoName: string;
   raceClass: string;
