@@ -151,6 +151,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           <Link
             href="/team"
             onClick={close}
+            data-tour="nav-admin"
             className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
               location.startsWith("/team")
                 ? "bg-sidebar-primary text-sidebar-primary-foreground"
@@ -167,6 +168,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           <Link
             href="/staff"
             onClick={close}
+            data-tour="nav-staff"
             className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
               location.startsWith("/staff")
                 ? "bg-sidebar-primary text-sidebar-primary-foreground"
