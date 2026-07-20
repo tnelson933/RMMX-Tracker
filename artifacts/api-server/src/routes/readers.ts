@@ -43,12 +43,13 @@ router.post("/readers", async (req, res) => {
 
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   const type = req.body?.type === "mylaps" ? "mylaps" : "rfid";
+  const hardwareAddress = typeof req.body?.hardwareAddress === "string" ? req.body.hardwareAddress.trim() || null : null;
 
   if (!name) return res.status(400).json({ error: "name is required" });
 
   const [reader] = await db
     .insert(readersTable)
-    .values({ clubId, name, type, token: randomUUID() })
+    .values({ clubId, name, type, token: randomUUID(), hardwareAddress })
     .returning();
 
   return res.status(201).json(reader);
@@ -65,14 +66,22 @@ router.patch("/readers/:readerId", async (req, res) => {
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   if (!name) return res.status(400).json({ error: "name is required" });
 
+  const hardwareAddressRaw = req.body?.hardwareAddress;
+  const hardwareAddress = hardwareAddressRaw === undefined
+    ? undefined
+    : typeof hardwareAddressRaw === "string" ? hardwareAddressRaw.trim() || null : null;
+
   // Verify ownership before update
   const [existing] = await db.select({ clubId: readersTable.clubId }).from(readersTable).where(eq(readersTable.id, readerId));
   if (!existing) return res.status(404).json({ error: "Reader not found" });
   if (existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
 
+  const updatePayload: Record<string, unknown> = { name };
+  if (hardwareAddress !== undefined) updatePayload.hardwareAddress = hardwareAddress;
+
   const [reader] = await db
     .update(readersTable)
-    .set({ name })
+    .set(updatePayload)
     .where(eq(readersTable.id, readerId))
     .returning();
 
