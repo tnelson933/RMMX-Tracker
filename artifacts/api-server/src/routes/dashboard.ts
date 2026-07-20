@@ -45,7 +45,13 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     checkedInToday = checkinCount[0]?.count || 0;
   }
 
-  const [ridersCount] = await db.select({ count: count() }).from(ridersTable);
+  let ridersCount = { count: 0 };
+  if (eventIdList.length > 0) {
+    const [row] = await db.select({ count: countDistinct(registrationsTable.riderId) })
+      .from(registrationsTable)
+      .where(inArray(registrationsTable.eventId, eventIdList));
+    ridersCount = { count: Number(row?.count || 0) };
+  }
 
   const upcomingEvents = await db.select({
     id: eventsTable.id,
