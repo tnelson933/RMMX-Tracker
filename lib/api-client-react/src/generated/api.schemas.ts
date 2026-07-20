@@ -1927,6 +1927,36 @@ export interface ReaderUpdateInput {
   name: string;
 }
 
+/**
+ * @nullable
+ */
+export type ConnectorStatusHardwareKind = typeof ConnectorStatusHardwareKind[keyof typeof ConnectorStatusHardwareKind] | null;
+
+
+export const ConnectorStatusHardwareKind = {
+  impinj: 'impinj',
+  mylaps: 'mylaps',
+} as const;
+
+export type ConnectorStatusHardware = {
+  /** @nullable */
+  kind: ConnectorStatusHardwareKind;
+  connected: boolean;
+  /** @nullable */
+  detail?: string | null;
+  /** @nullable */
+  lastReadAt?: string | null;
+  readCount: number;
+};
+
+export interface ConnectorStatus {
+  readerId: number;
+  readerName: string;
+  readerType: string;
+  connectedAt: string;
+  hardware: ConnectorStatusHardware;
+}
+
 export type EventReaderAssignmentRole = typeof EventReaderAssignmentRole[keyof typeof EventReaderAssignmentRole];
 
 
