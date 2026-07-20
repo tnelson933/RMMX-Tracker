@@ -42,7 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   GripVertical, Plus, Clock, LayoutList, LayoutGrid, Flag, ExternalLink,
-  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown, Trash2, Link2, Unlink2, Info,
+  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown, Trash2, Link2, Unlink2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -1240,7 +1240,6 @@ export default function EventSchedule() {
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [generateMinRacesBetween, setGenerateMinRacesBetween] = useState<number>(0);
   const [generateClass, setGenerateClass] = useState<string>("all");
-  const noneCheckedIn = (checkins as any[]).filter((c: any) => c.checkedIn).length === 0;
 
   // Enduro "Generate Tests" dialog
   const [genTestCount, setGenTestCount] = useState("3");
@@ -2146,7 +2145,7 @@ export default function EventSchedule() {
           gatePickMethod: generateGateMethod,
           rounds: roundsToSend,
           ...(generateMinRacesBetween > 0 ? { minRacesBetween: generateMinRacesBetween } : {}),
-          ...(noneCheckedIn ? { useRegistrations: true } : {}),
+          useRegistrations: true,
         } as any,
       },
       {
@@ -4102,13 +4101,6 @@ export default function EventSchedule() {
               );
             })()}
 
-            {/* Auto info: no check-ins yet */}
-            {noneCheckedIn && (
-              <div className="flex items-start gap-2 text-xs text-blue-300 bg-blue-500/10 border border-blue-500/30 rounded-md px-3 py-2.5">
-                <Info size={13} className="shrink-0 mt-0.5 text-blue-400" />
-                <span>No riders have checked in yet — lineups will be built from registrations. Riders will appear as <strong>Pending</strong> and automatically confirm when they check in on race day.</span>
-              </div>
-            )}
 
             <Button
               onClick={handleGenerate}
