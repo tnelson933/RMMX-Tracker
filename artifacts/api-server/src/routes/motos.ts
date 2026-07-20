@@ -4,6 +4,29 @@ import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, 
 import { eq, and, inArray, min, ne, gt, asc } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 import { sendPushNotifications } from "../lib/push";
+import { sendConnectorCommand } from "../lib/connectorRelay";
+
+/**
+ * Broadcast a moto start/stop command to any RM Connect apps for the club.
+ * Fire-and-forget — never blocks the HTTP response.
+ */
+async function notifyConnectors(
+  moto: { id: number; eventId: number; name: string; type: string },
+  action: "start_moto" | "stop_moto",
+): Promise<void> {
+  const [event] = await db
+    .select({ clubId: eventsTable.clubId })
+    .from(eventsTable)
+    .where(eq(eventsTable.id, moto.eventId));
+  if (!event) return;
+  sendConnectorCommand(event.clubId, {
+    type: action,
+    motoId: moto.id,
+    eventId: moto.eventId,
+    motoName: moto.name,
+    motoType: moto.type,
+  });
+}
 
 /** Notify riders who are next up or 3 races away after a moto completes. Fire-and-forget. */
 async function sendRaceNotifications(eventId: number): Promise<void> {
@@ -308,6 +331,13 @@ router.patch("/motos/:motoId", async (req, res) => {
     buildLeaderboard(id).then(snapshot => {
       if (snapshot) sseBroadcast(id, snapshot);
     }).catch(() => {});
+  }
+
+  // RM Connect: tell any connected tray apps to start/stop the reader
+  if (req.body.status === "in_progress") {
+    notifyConnectors(moto, "start_moto").catch(() => {});
+  } else if (req.body.status === "completed") {
+    notifyConnectors(moto, "stop_moto").catch(() => {});
   }
 
   // Race-day push notifications: notify riders next up or 3 away when a moto completes
