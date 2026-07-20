@@ -31,7 +31,7 @@ export interface ConnectorStatus {
   connectedAt: string;
   /** Last hardware status reported by the connector app */
   hardware: {
-    kind: "impinj" | "mylaps" | null;
+    kind: "impinj" | "zebra" | "generic" | "mylaps" | null;
     connected: boolean;
     detail: string | null;
     lastReadAt: string | null;
@@ -164,7 +164,7 @@ export function attachConnectorWebSocket(httpServer: Server): void {
             }
             if (msg?.type === "status") {
               conn.status.hardware = {
-                kind: msg.hardware === "mylaps" ? "mylaps" : msg.hardware === "impinj" ? "impinj" : null,
+                kind: ["impinj", "zebra", "generic", "mylaps"].includes(msg.hardware) ? msg.hardware : null,
                 connected: !!msg.connected,
                 detail: typeof msg.detail === "string" ? msg.detail.slice(0, 200) : null,
                 lastReadAt: typeof msg.lastReadAt === "string" ? msg.lastReadAt.slice(0, 40) : conn.status.hardware.lastReadAt,
