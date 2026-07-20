@@ -1,0 +1,55 @@
+appId: com.rockymtn.rm-connect
+productName: RM Connect
+copyright: Copyright © 2026 RM Tracker
+
+directories:
+  output: release
+  buildResources: assets
+
+# No native modules — everything is bundled by esbuild into dist/.
+files:
+  - dist/**/*
+  - package.json
+  - "!node_modules/**/*"
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.sports
+  darkModeSupport: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  publisherName: RM Tracker
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Sports
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  artifactName: "RM-Connect-Setup.${ext}"
+
+dmg:
+  artifactName: "RM-Connect-${arch}.${ext}"
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
