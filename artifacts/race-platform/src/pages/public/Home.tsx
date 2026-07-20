@@ -275,6 +275,7 @@ function PastCard({ result }: { result: RecentResultItem }) {
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("today");
   const [showDownloads, setShowDownloads] = useState(false);
+  const [showConnectorDownloads, setShowConnectorDownloads] = useState(false);
   const [selectedState, setSelectedState] = useState("all");
   const [nearMe, setNearMe] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -700,41 +701,53 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* Subtle desktop app download */}
-        <div className="mt-3 flex flex-col items-center gap-3">
-          <button
-            onClick={() => setShowDownloads(v => !v)}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Download size={12} />
-            Download Desktop Scoring App
-            <ChevronDown size={12} className={`transition-transform duration-200 ${showDownloads ? "rotate-180" : ""}`} />
-          </button>
-          {showDownloads && (
-            <div className="flex flex-wrap justify-center gap-2">
-              <a href={downloads.macArm} title="macOS Apple Silicon (M1/M2/M3)">
-                <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-                  <Apple size={13} />
-                  Mac (Apple Silicon)
-                </Button>
-              </a>
-              <a href={downloads.macX64} title="macOS Intel">
-                <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-                  <Apple size={13} />
-                  Mac (Intel)
-                </Button>
-              </a>
-              <a href={downloads.windows} title="Windows 10/11">
-                <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-                  <Monitor size={13} />
-                  Windows
-                </Button>
-              </a>
-            </div>
-          )}
-          {showDownloads && (
-            <div className="flex flex-col items-center gap-2">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">RM Connect — timing hardware bridge</p>
+        {/* Downloads — two independent rows */}
+        <div className="mt-3 flex flex-col items-center gap-2">
+          {/* Desktop Scoring App */}
+          <div className="flex flex-col items-center gap-2">
+            <button
+              onClick={() => setShowDownloads(v => !v)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Download size={12} />
+              Download Desktop Scoring App
+              <ChevronDown size={12} className={`transition-transform duration-200 ${showDownloads ? "rotate-180" : ""}`} />
+            </button>
+            {showDownloads && (
+              <div className="flex flex-wrap justify-center gap-2">
+                <a href={downloads.macArm} title="macOS Apple Silicon (M1/M2/M3)">
+                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+                    <Apple size={13} />
+                    Mac (Apple Silicon)
+                  </Button>
+                </a>
+                <a href={downloads.macX64} title="macOS Intel">
+                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+                    <Apple size={13} />
+                    Mac (Intel)
+                  </Button>
+                </a>
+                <a href={downloads.windows} title="Windows 10/11">
+                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+                    <Monitor size={13} />
+                    Windows
+                  </Button>
+                </a>
+              </div>
+            )}
+          </div>
+
+          {/* RM Connect */}
+          <div className="flex flex-col items-center gap-2">
+            <button
+              onClick={() => setShowConnectorDownloads(v => !v)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Download size={12} />
+              Download RM Connect (Hardware Bridge)
+              <ChevronDown size={12} className={`transition-transform duration-200 ${showConnectorDownloads ? "rotate-180" : ""}`} />
+            </button>
+            {showConnectorDownloads && (
               <div className="flex flex-wrap justify-center gap-2">
                 <a href={connectorDownloads.macArm} title="macOS Apple Silicon (M1/M2/M3)">
                   <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
@@ -755,8 +768,8 @@ export default function Home() {
                   </Button>
                 </a>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </section>
     </div>
