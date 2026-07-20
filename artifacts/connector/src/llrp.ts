@@ -340,7 +340,8 @@ export class LlrpClient extends EventEmitter {
    * Connect to the reader and prepare (but do not start) the inventory ROSpec.
    * `host` may be an IP or an mDNS hostname like impinj-XX-XX-XX.local.
    */
-  async connect(host: string): Promise<void> {
+  async connect(host: string, opts: { impinjExtensions?: boolean } = {}): Promise<void> {
+    const useImpinjExtensions = opts.impinjExtensions ?? true;
     await this.disconnect();
     this.closingIntentionally = false;
     this.lastError = null;
@@ -387,8 +388,11 @@ export class LlrpClient extends EventEmitter {
     // Status 0 = success; anything else means another client holds the connection.
     await this.waitForConnectionAttemptEvent();
 
-    // Handshake sequence
-    await this.enableImpinjExtensions();
+    // Handshake sequence (vendor extensions only for Impinj readers —
+    // Zebra/generic LLRP readers use the standard handshake)
+    if (useImpinjExtensions) {
+      await this.enableImpinjExtensions();
+    }
     await this.setKeepalive();
     await this.deleteAllROSpecs();
     await this.addROSpec();
