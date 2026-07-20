@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, asc } from "drizzle-orm";
 import type { Response } from "express";
+import { sendConnectorCommand } from "../lib/connectorRelay";
 
 type CallerInfo = { clubId: number | null; isSuperAdmin: boolean };
 
@@ -290,9 +291,15 @@ router.post("/practice", async (req, res) => {
   const venueName: string = venueNameOverride.trim();
 
   // Auto-end any previously active sessions for this club before starting a new one
+  const previouslyActive = await db.select({ id: practiceSessionsTable.id })
+    .from(practiceSessionsTable)
+    .where(and(eq(practiceSessionsTable.clubId, clubId), eq(practiceSessionsTable.status, "active")));
   await db.update(practiceSessionsTable)
     .set({ status: "ended", endedAt: new Date() })
     .where(and(eq(practiceSessionsTable.clubId, clubId), eq(practiceSessionsTable.status, "active")));
+  for (const prev of previouslyActive) {
+    sendConnectorCommand(clubId, { type: "stop_moto", motoId: prev.id, eventId: null });
+  }
 
   const [session] = await db.insert(practiceSessionsTable).values({
     clubId,
@@ -302,6 +309,16 @@ router.post("/practice", async (req, res) => {
     debounceMs: debounceMs ? Number(debounceMs) : 10000,
     venueName,
   }).returning();
+
+  // Tell any connected RM Connect apps to start the reader
+  sendConnectorCommand(clubId, {
+    type: "start_moto",
+    motoId: session.id,
+    motoName: name,
+    motoType: "practice",
+    eventId: null,
+  });
+
   return res.status(201).json(toJson(session));
 });
 
@@ -334,6 +351,24 @@ router.patch("/practice/:id", async (req, res) => {
     .where(eq(practiceCrossingsTable.sessionId, id))
     .orderBy(asc(practiceCrossingsTable.crossingTime));
   broadcast(id, { session: toJson(session), riders: buildLiveBoard(crossings) });
+
+  // Keep RM Connect in sync with practice session lifecycle
+  const effectiveClubId = session.clubId ?? existing.clubId;
+  if (req.body.status === "active") {
+    sendConnectorCommand(effectiveClubId, {
+      type: "start_moto",
+      motoId: session.id,
+      motoName: session.name,
+      motoType: "practice",
+      eventId: null,
+    });
+  } else if (req.body.status === "ended") {
+    sendConnectorCommand(effectiveClubId, {
+      type: "stop_moto",
+      motoId: session.id,
+      eventId: null,
+    });
+  }
 
   return res.json(toJson(session));
 });
