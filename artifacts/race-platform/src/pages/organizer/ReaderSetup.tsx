@@ -195,6 +195,7 @@ export default function ReaderSetup() {
   const [tech,       setTech]       = useState<"rfid" | "mylaps">("rfid");
   const [readerType, setReaderType] = useState<ReaderType>("impinj-r700");
   const [readerIp,   setReaderIp]   = useState("");
+  const [readerMac,  setReaderMac]  = useState("");
 
   const [copiedUrl,       setCopiedUrl]       = useState(false);
   const [copiedManualUrl, setCopiedManualUrl] = useState(false);
@@ -361,6 +362,15 @@ export default function ReaderSetup() {
     readerType === "zebra-fx7500" ? `http://${readerIp || "READER_IP"}:8080` :
                                     `http://${readerIp || "READER_IP"}`;
 
+  // Derive the impinj-XX-XX-XX.local mDNS URL from the last 6 MAC hex digits
+  const macLocalUrl = (() => {
+    const hex = readerMac.replace(/[^0-9a-fA-F]/g, "");
+    if (hex.length < 6) return null;
+    const last6 = hex.slice(-6);
+    const parts = [last6.slice(0, 2), last6.slice(2, 4), last6.slice(4, 6)];
+    return `http://impinj-${parts.join("-").toUpperCase()}.local`;
+  })();
+
   const urlCopyButton = (
     <button onClick={copyManualUrl} className="shrink-0 flex items-center gap-1 rounded border bg-background px-2 py-1.5 text-xs font-medium hover:bg-muted transition-colors">
       {copiedManualUrl ? <Check size={10} className="text-green-500" /> : <Copy size={10} />}
@@ -396,9 +406,14 @@ export default function ReaderSetup() {
             <p className="text-xs text-muted-foreground">
               Click <strong className="text-foreground">Profile Presets</strong> in the top navigation. Click <strong className="text-foreground">New</strong> (or select an existing preset).
             </p>
+            <p className="text-xs text-muted-foreground font-medium text-foreground">Under Antenna Configurations, set each antenna port:</p>
             <ul className="text-xs text-muted-foreground space-y-0.5 pl-3 list-disc">
               <li>Enable <strong className="text-foreground">Antenna Port 1</strong> (and Port 2 if you have a second antenna)</li>
               <li>Set <strong className="text-foreground">Transmit Power</strong> to <strong className="text-foreground">3000 cdBm</strong> for maximum read range</li>
+              <li>Set <strong className="text-foreground">Population Estimate</strong> to <strong className="text-foreground">32</strong> for a start/finish gate where many riders may pass at once (holeshot). Use <strong className="text-foreground">8</strong> for an interior timing gate where riders typically pass 1–3 at a time. This tells the reader how many tags to expect simultaneously — too low causes missed reads when riders bunch up, too high wastes inventory time.</li>
+              <li>Set <strong className="text-foreground">Session</strong> to <strong className="text-foreground">2</strong> — keeps tag state persistent across inventory rounds so the same transponder can be read on every lap</li>
+              <li>Set <strong className="text-foreground">Search Mode</strong> to <strong className="text-foreground">Dual Target</strong> (not Single Target) — Single Target only reads each tag once per cycle; Dual Target captures the transponder every time a rider passes the gate</li>
+              <li>Set <strong className="text-foreground">FastID</strong> to <strong className="text-foreground">Enabled</strong> — embeds the tag's TID in the response without a separate memory read, giving faster reads on fast-moving riders</li>
             </ul>
             <p className="text-xs text-muted-foreground">Click <strong className="text-foreground">Save</strong>, then click the <strong className="text-foreground">Start</strong> button on the preset. The reader must have an active preset running or it won't send any reads.</p>
           </div>
@@ -720,14 +735,43 @@ export default function ReaderSetup() {
                   </div>
                 </div>
 
-                {/* IP field */}
+                {/* IP / MAC fields */}
                 {readerType !== "generic" && (
-                  <div className="space-y-1.5">
-                    <label className="text-xs text-muted-foreground">
-                      Reader's IP address <span className="text-muted-foreground/60">(shown on the reader's screen, or check your router's connected-devices list)</span>
-                    </label>
-                    <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
-                      placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-xs" />
+                  <div className="space-y-3">
+                    {/* R700 MAC address helper */}
+                    {readerType === "impinj-r700" && (
+                      <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                        <p className="text-xs font-semibold text-foreground">Open your reader by MAC address</p>
+                        <p className="text-xs text-muted-foreground">Enter your reader's MAC address (printed on the label on the bottom of the unit) to get a direct link — no IP lookup needed.</p>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={readerMac}
+                            onChange={e => setReaderMac(e.target.value)}
+                            placeholder="e.g. AA:BB:CC:DD:EE:FF"
+                            className="font-mono h-9 text-sm max-w-xs"
+                          />
+                          {macLocalUrl ? (
+                            <a
+                              href={macLocalUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 shrink-0 rounded-md border bg-background px-3 py-2 text-xs font-mono font-medium text-primary hover:bg-muted transition-colors"
+                            >
+                              {macLocalUrl} <ExternalLink size={11} />
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted-foreground font-mono">http://impinj-XX-XX-XX.local</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-muted-foreground">
+                        Reader's IP address <span className="text-muted-foreground/60">(shown on the reader's screen, or check your router's connected-devices list)</span>
+                      </label>
+                      <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
+                        placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-xs" />
+                    </div>
                   </div>
                 )}
 
