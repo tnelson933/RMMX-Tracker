@@ -107,11 +107,13 @@ export default function ReaderSetup() {
   const updateReaderMutation = useUpdateReader();
   const [newReaderName, setNewReaderName] = useState("");
   const [newReaderType, setNewReaderType] = useState<"rfid" | "mylaps">("rfid");
+  const [newReaderAddress, setNewReaderAddress] = useState("");
   const [showAddReader, setShowAddReader] = useState(false);
 
-  // Inline rename
+  // Inline edit
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
+  const [editAddress, setEditAddress] = useState("");
 
   // Identify reader — snapshot each reader's lastSeenAt when we start, then
   // detect which reader's value *changes* (avoids any client/server clock comparison).
@@ -160,28 +162,32 @@ export default function ReaderSetup() {
   function beginEdit(reader: any) {
     setEditingId(reader.id);
     setEditName(reader.name);
+    setEditAddress(reader.hardwareAddress ?? "");
   }
 
-  async function handleSaveName(readerId: number) {
+  async function handleSaveReader(readerId: number) {
     const name = editName.trim();
     if (!name) return;
+    const hardwareAddress = editAddress.trim() || null;
     try {
-      await updateReaderMutation.mutateAsync({ readerId, data: { name } });
+      await updateReaderMutation.mutateAsync({ readerId, data: { name, hardwareAddress } as any });
       queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
       setEditingId(null);
-      toast({ title: "Reader renamed" });
+      toast({ title: "Reader updated" });
     } catch {
-      toast({ title: "Failed to rename reader", variant: "destructive" });
+      toast({ title: "Failed to update reader", variant: "destructive" });
     }
   }
 
   async function handleAddReader() {
     const name = newReaderName.trim();
     if (!name) return;
+    const hardwareAddress = newReaderAddress.trim() || undefined;
     try {
-      await createReaderMutation.mutateAsync({ data: { name, type: newReaderType } });
+      await createReaderMutation.mutateAsync({ data: { name, type: newReaderType, hardwareAddress } as any });
       queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
       setNewReaderName("");
+      setNewReaderAddress("");
       setShowAddReader(false);
       toast({ title: "Reader registered" });
     } catch {
@@ -543,12 +549,12 @@ export default function ReaderSetup() {
         {showAddReader && (
           <div className="rounded-lg border p-4 space-y-3 bg-muted/20">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">New Reader</p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Input
                 value={newReaderName}
                 onChange={e => setNewReaderName(e.target.value)}
-                placeholder='e.g. "Start Gate Test 1"'
-                className="h-9 flex-1"
+                placeholder='e.g. "Start Gate"'
+                className="h-9 flex-1 min-w-36"
                 onKeyDown={e => e.key === "Enter" && handleAddReader()}
               />
               <Select value={newReaderType} onValueChange={(v: "rfid" | "mylaps") => setNewReaderType(v)}>
@@ -560,10 +566,19 @@ export default function ReaderSetup() {
                   <SelectItem value="mylaps">MyLaps</SelectItem>
                 </SelectContent>
               </Select>
+              <Input
+                value={newReaderAddress}
+                onChange={e => setNewReaderAddress(e.target.value)}
+                placeholder={newReaderType === "mylaps" ? "IP address (e.g. 192.168.1.50)" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
+                className="h-9 flex-1 min-w-48 font-mono text-xs"
+                onKeyDown={e => e.key === "Enter" && handleAddReader()}
+              />
+            </div>
+            <div className="flex gap-2">
               <Button size="sm" onClick={handleAddReader} disabled={createReaderMutation.isPending || !newReaderName.trim()}>
                 {createReaderMutation.isPending ? "Adding…" : "Add"}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowAddReader(false)}>Cancel</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setShowAddReader(false); setNewReaderName(""); setNewReaderAddress(""); }}>Cancel</Button>
             </div>
           </div>
         )}
@@ -589,28 +604,43 @@ export default function ReaderSetup() {
                       <Radio size={14} className={`shrink-0 mt-0.5 ${isIdentified ? "text-primary" : "text-muted-foreground"}`} />
                       <div className="min-w-0 flex-1">
                         {isEditing ? (
-                          <div className="flex items-center gap-2">
-                            <Input
-                              value={editName}
-                              onChange={e => setEditName(e.target.value)}
-                              className="h-8 flex-1"
-                              autoFocus
-                              onKeyDown={e => {
-                                if (e.key === "Enter") handleSaveName(reader.id);
-                                if (e.key === "Escape") setEditingId(null);
-                              }}
-                            />
-                            <Button
-                              size="sm"
-                              className="h-8"
-                              onClick={() => handleSaveName(reader.id)}
-                              disabled={updateReaderMutation.isPending || !editName.trim()}
-                            >
-                              {updateReaderMutation.isPending ? "Saving…" : "Save"}
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditingId(null)} title="Cancel">
-                              <X size={14} />
-                            </Button>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={editName}
+                                onChange={e => setEditName(e.target.value)}
+                                className="h-8 flex-1"
+                                autoFocus
+                                placeholder="Reader name"
+                                onKeyDown={e => {
+                                  if (e.key === "Enter") handleSaveReader(reader.id);
+                                  if (e.key === "Escape") setEditingId(null);
+                                }}
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={editAddress}
+                                onChange={e => setEditAddress(e.target.value)}
+                                className="h-8 flex-1 font-mono text-xs"
+                                placeholder={reader.type === "mylaps" ? "IP address" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
+                                onKeyDown={e => {
+                                  if (e.key === "Enter") handleSaveReader(reader.id);
+                                  if (e.key === "Escape") setEditingId(null);
+                                }}
+                              />
+                              <Button
+                                size="sm"
+                                className="h-8"
+                                onClick={() => handleSaveReader(reader.id)}
+                                disabled={updateReaderMutation.isPending || !editName.trim()}
+                              >
+                                {updateReaderMutation.isPending ? "Saving…" : "Save"}
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditingId(null)} title="Cancel">
+                                <X size={14} />
+                              </Button>
+                            </div>
                           </div>
                         ) : (
                           <>
@@ -622,8 +652,13 @@ export default function ReaderSetup() {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 mt-0.5">
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                               <span className="text-xs text-muted-foreground uppercase">{reader.type === "mylaps" ? "MyLaps / AMB" : "RFID"}</span>
+                              {reader.hardwareAddress ? (
+                                <span className="text-xs font-mono text-muted-foreground bg-muted rounded px-1.5 py-0.5">{reader.hardwareAddress}</span>
+                              ) : (
+                                <span className="text-xs text-amber-500">No address set</span>
+                              )}
                               <span className={`text-xs font-medium ${live ? "text-green-500" : "text-muted-foreground"}`}>
                                 {live ? "● " : "○ "}{lsText}
                               </span>
@@ -687,7 +722,7 @@ export default function ReaderSetup() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{c.readerName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "mylaps" ? "MyLaps decoder" : "Hardware"}
+                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "zebra" ? "Zebra reader" : c.hardware?.kind === "generic" ? "LLRP reader" : c.hardware?.kind === "mylaps" ? "MyLaps decoder" : "Hardware"}
                     {" — "}
                     {c.hardware?.connected ? "connected" : (c.hardware?.detail || "not connected")}
                     {c.hardware?.readCount > 0 && ` · ${c.hardware.readCount} reads`}
@@ -725,8 +760,25 @@ export default function ReaderSetup() {
 
         <div className="space-y-2 text-sm">
           <div className="flex gap-2"><MiniStep n={1} /><p>Download and install RM Connect on the laptop you bring to the track.</p></div>
-          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, and enter your hardware's address (Impinj: last 6 of the MAC on the label · MyLaps: decoder IP).</p></div>
+          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, choose your hardware (Impinj R700, Zebra FX7500/FX9600, other LLRP reader, or MyLaps), and enter its address (Impinj: last 6 of the MAC on the label · Zebra/other: IP address · MyLaps: decoder IP).</p></div>
           <div className="flex gap-2"><MiniStep n={3} /><p>That's it — leave it running in the tray. When you press <strong>Start Moto</strong> here, the reader starts reading automatically.</p></div>
+        </div>
+
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-1.5">
+          <p className="font-semibold text-amber-700 dark:text-amber-400">RFID readers: make sure LLRP is enabled first</p>
+          <p className="text-muted-foreground">
+            RM Connect talks to RFID readers over LLRP. If the reader's LLRP interface is off, it will refuse the connection and
+            RM Connect will show "Reader disconnected."
+          </p>
+          <ol className="list-decimal ml-5 space-y-0.5 text-muted-foreground">
+            <li><strong>Impinj R700</strong>: open the reader's web page at <span className="font-mono text-xs">http://impinj-xx-xx-xx.local</span> (last 6 of the MAC) or its IP. Log in, change the <strong>RFID interface</strong> setting from "Impinj IoT device interface" to <strong>LLRP</strong>, and reboot when prompted.</li>
+            <li><strong>Zebra FX7500 / FX9600</strong>: open <span className="font-mono text-xs">http://READER_IP</span>, log in (default admin / change#me), and make sure the operating mode is <strong>LLRP</strong> (this is the factory default).</li>
+            <li><strong>Other LLRP readers</strong>: enable LLRP in the reader's admin page — RM Connect connects on TCP port 5084.</li>
+            <li>Once LLRP is on, RM Connect connects automatically within a few seconds.</li>
+          </ol>
+          <p className="text-muted-foreground text-xs">
+            Tip: if the <span className="font-mono">.local</span> address won't load, find the reader's IP in your router's device list and enter the IP in RM Connect instead.
+          </p>
         </div>
       </div>
 
