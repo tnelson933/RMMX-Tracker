@@ -5,7 +5,7 @@ export interface AggregateStatus {
   cloudUrl: string;
   email: string;
   readerName: string | null;
-  hardware: "impinj" | "mylaps" | null;
+  hardware: "impinj" | "zebra" | "generic" | "mylaps" | null;
   hardwareAddress: string;
   cloud: { connected: boolean; error: string | null };
   device: {
@@ -27,6 +27,6 @@ export interface LoginResult {
 
 export interface ConnectInput {
   readerId: number;
-  hardware: "impinj" | "mylaps";
+  hardware: "impinj" | "zebra" | "generic" | "mylaps";
   hardwareAddress: string;
 }
