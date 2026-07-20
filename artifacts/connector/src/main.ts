@@ -69,9 +69,9 @@ const LOCAL_DEDUPE_MS = 1_500;
 // ── Status aggregation ────────────────────────────────────────────────────────
 
 function getAggregateStatus(): AggregateStatus {
-  const isImpinj = settings.hardware === "impinj";
-  const dev = isImpinj ? llrp.getStatus() : null;
-  const ml = !isImpinj && settings.hardware === "mylaps" ? mylaps.getStatus() : null;
+  const isLlrp = settings.hardware === "impinj" || settings.hardware === "zebra" || settings.hardware === "generic";
+  const dev = isLlrp ? llrp.getStatus() : null;
+  const ml = settings.hardware === "mylaps" ? mylaps.getStatus() : null;
 
   return {
     configured: !!settings.readerToken && !!settings.hardware && !!settings.hardwareAddress,
@@ -205,6 +205,10 @@ mylaps.on("passing", (transponder: string, crossingTime: Date) => {
 
 // ── Hardware connection management ────────────────────────────────────────────
 
+function isLlrpHardware(): boolean {
+  return settings.hardware === "impinj" || settings.hardware === "zebra" || settings.hardware === "generic";
+}
+
 function resolveHardwareHost(): string {
   const addr = settings.hardwareAddress.trim();
   if (settings.hardware === "impinj") {
@@ -214,14 +218,14 @@ function resolveHardwareHost(): string {
     }
     return addr;
   }
-  return addr; // mylaps: decoder IP
+  return addr; // zebra/generic: hostname or IP · mylaps: decoder IP
 }
 
 async function connectHardware(): Promise<void> {
   hardwareWanted = true;
   const host = resolveHardwareHost();
-  if (settings.hardware === "impinj") {
-    await llrp.connect(host);
+  if (isLlrpHardware()) {
+    await llrp.connect(host, { impinjExtensions: settings.hardware === "impinj" });
     // If a moto is already live (reconnect mid-race), resume reading
     if (shouldForward()) {
       await llrp.startReading().catch(() => {});
@@ -278,7 +282,7 @@ cloud.setStatusProvider(() => {
 cloud.on("command", (cmd: CloudCommand) => {
   if (cmd.type === "start_moto" && cmd.motoId) {
     activeMoto = { motoId: cmd.motoId, name: cmd.motoName ?? `Moto ${cmd.motoId}` };
-    if (settings.hardware === "impinj") {
+    if (isLlrpHardware()) {
       llrp.startReading().catch(() => {
         // Reader not connected — reconnect loop will resume reading when back
         scheduleHardwareReconnect();
@@ -286,7 +290,7 @@ cloud.on("command", (cmd: CloudCommand) => {
     }
   } else if (cmd.type === "stop_moto") {
     activeMoto = null;
-    if (settings.hardware === "impinj" && !testMode) {
+    if (isLlrpHardware() && !testMode) {
       llrp.stopReading().catch(() => {});
     }
   }
@@ -404,7 +408,7 @@ function registerIpc(): void {
   ipcMain.handle("test:toggle", async (_e, enabled: boolean) => {
     testMode = !!enabled;
     try {
-      if (settings.hardware === "impinj") {
+      if (isLlrpHardware()) {
         if (testMode && !llrp.getStatus().reading) {
           await llrp.startReading();
         } else if (!testMode && activeMoto === null && llrp.getStatus().reading) {
