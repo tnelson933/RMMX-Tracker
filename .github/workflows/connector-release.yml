@@ -1,0 +1,138 @@
+name: Connector Release
+
+on:
+  push:
+    tags:
+      - "connector-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    name: Build macOS installer
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Remove Replit platform-exclusion overrides
+        run: |
+          sed -i '' '/": "-"/d' pnpm-workspace.yaml
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build connector main + preload
+        run: pnpm --filter @workspace/connector run build
+        env:
+          CLOUD_URL: ${{ vars.CLOUD_URL }}
+
+      - name: Generate icon.icns from PNG (sips + iconutil)
+        working-directory: artifacts/connector/assets
+        run: |
+          mkdir -p icon.iconset
+          sips -z 16   16   icon.png --out icon.iconset/icon_16x16.png
+          sips -z 32   32   icon.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 32   32   icon.png --out icon.iconset/icon_32x32.png
+          sips -z 64   64   icon.png --out icon.iconset/icon_32x32@2x.png
+          sips -z 128  128  icon.png --out icon.iconset/icon_128x128.png
+          sips -z 256  256  icon.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256  256  icon.png --out icon.iconset/icon_256x256.png
+          sips -z 512  512  icon.png --out icon.iconset/icon_256x256@2x.png
+          sips -z 512  512  icon.png --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 icon.png --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o icon.icns
+          rm -rf icon.iconset
+          echo "icon.icns generated:" && ls -lh icon.icns
+
+      - name: Package macOS installer
+        working-directory: artifacts/connector
+        run: ./node_modules/.bin/electron-builder --mac --x64 --arm64
+
+      - name: List release artifacts
+        if: always()
+        run: |
+          echo "=== Contents of artifacts/connector/release ==="
+          ls -lh artifacts/connector/release/ 2>/dev/null || echo "release directory does not exist"
+
+      - name: Upload macOS installers to release
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "artifacts/connector/release/RM-Connect-arm64.dmg" \
+            "artifacts/connector/release/RM-Connect-x64.dmg" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    name: Build Windows installer
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Remove Replit platform-exclusion overrides
+        shell: pwsh
+        run: |
+          (Get-Content pnpm-workspace.yaml) | Where-Object { $_ -notmatch '": "-"' } | Set-Content pnpm-workspace.yaml
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build connector main + preload
+        run: pnpm --filter @workspace/connector run build
+        env:
+          CLOUD_URL: ${{ vars.CLOUD_URL }}
+
+      - name: Generate icon.ico from PNG (ImageMagick)
+        working-directory: artifacts/connector/assets
+        shell: pwsh
+        run: |
+          magick convert icon.png -define icon:auto-resize=256,128,64,48,32,16 icon.ico
+          Write-Host "icon.ico generated:"; Get-Item icon.ico | Select-Object Name, Length
+
+      - name: Package Windows installer
+        working-directory: artifacts/connector
+        shell: pwsh
+        run: ./node_modules/.bin/electron-builder --win --x64
+
+      - name: List release artifacts
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "=== Contents of artifacts/connector/release ==="
+          if (Test-Path "artifacts/connector/release") {
+            Get-ChildItem "artifacts/connector/release" | Format-Table Name, Length, LastWriteTime -AutoSize
+          } else {
+            Write-Host "release directory does not exist - build likely failed"
+          }
+
+      - name: Upload Windows installer to release
+        shell: pwsh
+        run: |
+          gh release upload "${{ github.ref_name }}" "artifacts/connector/release/RM-Connect-Setup.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
