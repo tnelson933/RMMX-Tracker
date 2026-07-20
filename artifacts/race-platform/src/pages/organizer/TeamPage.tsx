@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink, ShieldCheck, LayoutTemplate } from "lucide-react";
 import { PdfFieldEditor, type WaiverField } from "@/components/PdfFieldEditor";
+import { StateSelect } from "@/components/ui/StateSelect";
 
 
 function ClassDetailRow({
@@ -713,26 +714,23 @@ export default function TeamPage() {
               value={newTrackAddress}
               onChange={e => setNewTrackAddress(e.target.value)}
             />
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <Input
                 placeholder="City"
                 value={newTrackCity}
                 onChange={e => setNewTrackCity(e.target.value)}
-                className="col-span-1"
-              />
-              <Input
-                placeholder="State"
-                value={newTrackState}
-                onChange={e => setNewTrackState(e.target.value)}
-                className="col-span-1"
               />
               <Input
                 placeholder="ZIP"
                 value={newTrackZip}
                 onChange={e => setNewTrackZip(e.target.value)}
-                className="col-span-1"
               />
             </div>
+            <StateSelect
+              value={newTrackState}
+              onChange={setNewTrackState}
+              placeholder="Select state…"
+            />
           </div>
           <Button
             onClick={addTrack}
