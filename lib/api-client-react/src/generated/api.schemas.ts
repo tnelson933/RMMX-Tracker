@@ -1905,6 +1905,11 @@ export interface Reader {
   type: ReaderType;
   /** UUID used as the URL key for this reader's ingest endpoint */
   token: string;
+  /**
+     * Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders. Used by RM Connect to connect to the hardware.
+     * @nullable
+     */
+  hardwareAddress?: string | null;
   /** @nullable */
   lastSeenAt?: string | null;
   createdAt: string;
@@ -1921,10 +1926,17 @@ export const ReaderInputType = {
 export interface ReaderInput {
   name: string;
   type: ReaderInputType;
+  /** Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders */
+  hardwareAddress?: string;
 }
 
 export interface ReaderUpdateInput {
   name: string;
+  /**
+     * Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders
+     * @nullable
+     */
+  hardwareAddress?: string | null;
 }
 
 /**
@@ -1935,6 +1947,8 @@ export type ConnectorStatusHardwareKind = typeof ConnectorStatusHardwareKind[key
 
 export const ConnectorStatusHardwareKind = {
   impinj: 'impinj',
+  zebra: 'zebra',
+  generic: 'generic',
   mylaps: 'mylaps',
 } as const;
 
