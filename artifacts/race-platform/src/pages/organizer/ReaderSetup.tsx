@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Wifi, Timer, Copy, Check, Send, RefreshCw,
   CheckCircle2, XCircle, Download, Circle, ExternalLink,
-  Usb, Trash2, Plus, Radio, Pencil, X, ScanLine, Loader2,
+  Usb, Trash2, Plus, Radio, Pencil, X, ScanLine, Loader2, MonitorDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListReaders, useCreateReader, useDeleteReader, useUpdateReader, getListReadersQueryKey,
+  useGetConnectorStatus,
 } from "@workspace/api-client-react";
 
 const BASE_URL = window.location.origin;
@@ -84,6 +85,23 @@ export default function ReaderSetup() {
   const { data: readers = [] } = useListReaders({
     query: { refetchInterval: identifying ? 1500 : false } as any,
   });
+  // RM Connect live status — refresh every 10s so the card stays current
+  const { data: connectorStatuses = [] } = useGetConnectorStatus({
+    query: { refetchInterval: 10_000 } as any,
+  });
+  const [connectorDl, setConnectorDl] = useState({
+    macArm:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.0/RM-Connect-arm64.dmg",
+    macX64:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.0/RM-Connect-x64.dmg",
+    windows: "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.0/RM-Connect-Setup.exe",
+  });
+  useEffect(() => {
+    fetch("/api/config/connector-release")
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { macArm: string; macX64: string; windows: string } | null) => {
+        if (data?.macArm) setConnectorDl({ macArm: data.macArm, macX64: data.macX64, windows: data.windows });
+      })
+      .catch(() => {});
+  }, []);
   const createReaderMutation = useCreateReader();
   const deleteReaderMutation = useDeleteReader();
   const updateReaderMutation = useUpdateReader();
@@ -642,6 +660,74 @@ export default function ReaderSetup() {
             })}
           </div>
         )}
+      </div>
+
+      {/* ── RM Connect ── */}
+      <div className="rounded-xl border-2 p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <MonitorDown size={18} className="text-primary" />
+              <h2 className="font-heading font-bold uppercase tracking-tight text-lg">RM Connect</h2>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/15 rounded px-1.5 py-0.5">Recommended</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              A tiny app that runs in your laptop's system tray at the track. It talks to your Impinj R700 or
+              MyLaps decoder directly and streams crossings to the cloud — no hardware configuration needed.
+              Readers start and stop automatically when you start or complete a moto here in the web app.
+            </p>
+          </div>
+        </div>
+
+        {(connectorStatuses as any[]).length > 0 ? (
+          <div className="rounded-lg border divide-y">
+            {(connectorStatuses as any[]).map((c: any) => (
+              <div key={c.readerId} className="flex items-center gap-3 p-3">
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.hardware?.connected ? "bg-green-500" : "bg-amber-500"}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold truncate">{c.readerName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "mylaps" ? "MyLaps decoder" : "Hardware"}
+                    {" — "}
+                    {c.hardware?.connected ? "connected" : (c.hardware?.detail || "not connected")}
+                    {c.hardware?.readCount > 0 && ` · ${c.hardware.readCount} reads`}
+                  </p>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-green-500 bg-green-500/10 rounded px-1.5 py-0.5 shrink-0">
+                  App online
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            No RM Connect app is currently connected for your club.
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <a href={connectorDl.macArm} title="macOS Apple Silicon (M1/M2/M3)">
+            <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+              <Download size={13} /> Mac (Apple Silicon)
+            </Button>
+          </a>
+          <a href={connectorDl.macX64} title="macOS Intel">
+            <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+              <Download size={13} /> Mac (Intel)
+            </Button>
+          </a>
+          <a href={connectorDl.windows} title="Windows 10/11">
+            <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+              <Download size={13} /> Windows
+            </Button>
+          </a>
+        </div>
+
+        <div className="space-y-2 text-sm">
+          <div className="flex gap-2"><MiniStep n={1} /><p>Download and install RM Connect on the laptop you bring to the track.</p></div>
+          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, and enter your hardware's address (Impinj: last 6 of the MAC on the label · MyLaps: decoder IP).</p></div>
+          <div className="flex gap-2"><MiniStep n={3} /><p>That's it — leave it running in the tray. When you press <strong>Start Moto</strong> here, the reader starts reading automatically.</p></div>
+        </div>
       </div>
 
       {/* Hardware toggle */}
