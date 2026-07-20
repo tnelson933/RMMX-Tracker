@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld("connector", {
   listReaders: () => ipcRenderer.invoke("readers:list"),
   createReader: (input: { name: string; type: "rfid" | "mylaps" }) =>
     ipcRenderer.invoke("readers:create", input),
-  connect: (input: { readerId: number; hardware: "impinj" | "mylaps"; hardwareAddress: string }) =>
+  connect: (input: { readerId: number; hardware: "impinj" | "zebra" | "generic" | "mylaps"; hardwareAddress: string }) =>
     ipcRenderer.invoke("connect", input),
   disconnect: () => ipcRenderer.invoke("disconnect"),
   toggleTest: (enabled: boolean) => ipcRenderer.invoke("test:toggle", enabled),
