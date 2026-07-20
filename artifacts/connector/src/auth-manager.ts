@@ -19,7 +19,7 @@ export interface ConnectorSettings {
   readerId: number | null;
   readerToken: string | null;
   readerName: string | null;
-  hardware: "impinj" | "mylaps" | null;
+  hardware: "impinj" | "zebra" | "generic" | "mylaps" | null;
   /** Impinj: last 6 MAC chars OR a full hostname/IP. MyLaps: decoder IP. */
   hardwareAddress: string;
   /** Reconnect hardware + cloud automatically when the app launches. */
