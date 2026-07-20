@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { readersTable, usersTable, eventReaderAssignmentsTable } from "@workspace/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { getConnectorStatus } from "../lib/connectorRelay";
 
 const router = Router();
 
@@ -13,6 +14,13 @@ async function getCallerClubId(req: any): Promise<number | null> {
   const [user] = await db.select({ clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, userId));
   return user?.clubId ?? null;
 }
+
+// GET /readers/connector-status — live RM Connect app connections for this club
+router.get("/readers/connector-status", async (req, res) => {
+  const clubId = await getCallerClubId(req);
+  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  return res.json(getConnectorStatus(clubId));
+});
 
 // GET /readers — list club's readers
 router.get("/readers", async (req, res) => {
