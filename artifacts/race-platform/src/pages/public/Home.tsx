@@ -25,6 +25,8 @@ import { STATE_CENTROIDS, normalizeState } from "@/lib/stateCentroids";
 
 const FALLBACK_TAG = "desktop-v1.0.101";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
+const CONNECTOR_FALLBACK_TAG = "connector-v1.0.0";
+const CONNECTOR_FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${CONNECTOR_FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
 
@@ -283,12 +285,23 @@ export default function Home() {
     macX64:  `${FALLBACK_BASE}/RM-Tracker-x64.dmg`,
     windows: `${FALLBACK_BASE}/RM-Tracker-Setup.exe`,
   });
+  const [connectorDownloads, setConnectorDownloads] = useState({
+    macArm:  `${CONNECTOR_FALLBACK_BASE}/RM-Connect-arm64.dmg`,
+    macX64:  `${CONNECTOR_FALLBACK_BASE}/RM-Connect-x64.dmg`,
+    windows: `${CONNECTOR_FALLBACK_BASE}/RM-Connect-Setup.exe`,
+  });
 
   useEffect(() => {
     fetch("/api/config/desktop-release")
       .then(r => r.ok ? r.json() : null)
       .then((data: { macArm: string; macX64: string; windows: string } | null) => {
         if (data?.macArm) setDownloads({ macArm: data.macArm, macX64: data.macX64, windows: data.windows });
+      })
+      .catch(() => {});
+    fetch("/api/config/connector-release")
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { macArm: string; macX64: string; windows: string } | null) => {
+        if (data?.macArm) setConnectorDownloads({ macArm: data.macArm, macX64: data.macX64, windows: data.windows });
       })
       .catch(() => {});
   }, []);
@@ -717,6 +730,31 @@ export default function Home() {
                   Windows
                 </Button>
               </a>
+            </div>
+          )}
+          {showDownloads && (
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">RM Connect — timing hardware bridge</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <a href={connectorDownloads.macArm} title="macOS Apple Silicon (M1/M2/M3)">
+                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+                    <Apple size={13} />
+                    Mac (Apple Silicon)
+                  </Button>
+                </a>
+                <a href={connectorDownloads.macX64} title="macOS Intel">
+                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+                    <Apple size={13} />
+                    Mac (Intel)
+                  </Button>
+                </a>
+                <a href={connectorDownloads.windows} title="Windows 10/11">
+                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+                    <Monitor size={13} />
+                    Windows
+                  </Button>
+                </a>
+              </div>
             </div>
           )}
         </div>
