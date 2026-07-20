@@ -17,6 +17,23 @@ A full-stack SaaS race operations platform for motorcycle and ATV clubs — live
 - `pnpm --filter @workspace/desktop run dist` — build + package as .dmg (Mac), .exe NSIS (Windows), or AppImage (Linux)
 - Built artifacts written to `artifacts/desktop/release/`
 
+### One-time GitHub setup (do this once, not every release)
+
+- Go to **github.com/tnelson933/RMMX-Tracker → Settings → Variables → Actions**
+- Add a repository variable: **`CLOUD_URL`** = your deployed app URL (e.g. `https://rmmx.username.replit.app`)
+- This bakes the URL into every desktop build so users never have to type it in the sync setup
+
+### 🚀 Release Checklist (do these IN ORDER every time)
+
+**Steps 1–3 are done by the agent automatically. Steps 4–6 are done by you.**
+
+1. **[Agent runs this automatically]** GitHub sync check — `pnpm --filter @workspace/scripts run check:github-sync` — must show "All N files match GitHub" before proceeding. Agent pushes any diffs it finds.
+2. **[Agent]** Bump `"version"` in `artifacts/desktop/package.json` — change to the next number (e.g. `1.0.50` → `1.0.51`). This MUST match the GitHub tag or the installers won't upload.
+3. **[Agent]** Update `RELEASE_TAG` in `artifacts/race-platform/src/pages/public/Home.tsx` to the new tag. Agent pushes both files to GitHub.
+4. Go to **github.com/tnelson933/RMMX-Tracker/releases/new**
+5. In "Choose a tag", type `desktop-v1.0.51` (matching the version above) → "Create new tag on publish" → give it a title → click **Publish release**
+6. GitHub Actions runs automatically — wait for green checkmarks on both Mac and Windows jobs. Download links on the homepage now work ✓
+
 **Pre-requisites for `dist`:**
 1. `pnpm --filter @workspace/local-server run build` — build the local Express server (bundled into the app)
 2. `pnpm --filter @workspace/race-platform run build` — build the web frontend (served from local server)
@@ -27,6 +44,16 @@ A full-stack SaaS race operations platform for motorcycle and ATV clubs — live
 **Cloud sync endpoints added to the cloud API:**
 - `POST /api/clubs/:clubId/desktop-push` — receive write-queue batches from the desktop
 - `POST /api/clubs/:clubId/sync-pull` — send new cloud rows to the desktop (watermark-based)
+
+## RM Connect (Electron tray app)
+
+Lightweight hardware bridge at `artifacts/connector` (separate from `artifacts/desktop`). Runs in the system tray, connects to Impinj R700 (LLRP, TCP 5084, zero-dep client in `src/llrp.ts`) or MyLaps decoders (AMBrc, TCP 3601), and streams crossings to the cloud.
+
+- `pnpm --filter @workspace/connector run typecheck` / `run build` — esbuild main+preload, copies `ui/`
+- Cloud link: WebSocket `/api/connector/ws?token=<readerToken>` (relay in `artifacts/api-server/src/lib/connectorRelay.ts`); moto PATCH broadcasts `start_moto`/`stop_moto` to connected apps; `GET /api/readers/connector-status` reports live app + hardware state (shown on Reader Setup page)
+- Crossings: POST per-reader endpoint first (enduro checkpoint routing); on 422 falls back to facility endpoint for regular motos
+- Forwarding gated on active moto or the app's test mode toggle; credentials stored via Electron `safeStorage`
+- **Releases**: tag `connector-v*` on GitHub triggers `.github/workflows/connector-release.yml` (builds Mac + Windows installers, uploads `RM-Connect-arm64.dmg` / `RM-Connect-x64.dmg` / `RM-Connect-Setup.exe`). Download links: home page (under the desktop app links) and Reader Setup's RM Connect card, both resolved via `GET /api/config/connector-release` (latest `connector-v*` release, falls back to `connector-v1.0.0`). The `CLOUD_URL` repo variable is baked into the app so users never type the server URL.
 
 ## Stack
 
@@ -70,9 +97,15 @@ A full-stack SaaS race operations platform for motorcycle and ATV clubs — live
 - Event 1 (Desert Classic, AZ, race_day) has registrations and check-ins
 - Rider portal logins (all password `Rider123!`): `tyler@email.com` (6 results), `marcus@email.com` (5), `blake@email.com` (5), `devon@email.com` (4), `brett@email.com` (4), `jaxon@email.com` (4)
 
+## AI Assistant Prompt Maintenance
+
+The organizer AI assistant's knowledge base lives in `artifacts/api-server/src/routes/anthropic/SYSTEM_PROMPT.md`.
+**When you ship a new organizer-facing feature, update that file before merging** — add the feature to the coverage list at the top of the file and add or update the relevant section in the body.
+The file is bundled at build time (esbuild text loader), so changes take effect after the next server build/restart.
+
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- **Release workflow**: Do NOT bump the version, push to GitHub, or create release tags after individual fixes. Collect all changes locally and only push + bump + release when the user explicitly says to do a release build.
 
 ## Gotchas
 
