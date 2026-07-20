@@ -97,6 +97,8 @@
     <label>Hardware type</label>
     <select id="selHardware">
       <option value="impinj">Impinj R700 (RFID)</option>
+      <option value="zebra">Zebra FX7500 / FX9600 (RFID)</option>
+      <option value="generic">Other LLRP reader (RFID)</option>
       <option value="mylaps">MyLaps / AMB decoder</option>
     </select>
     <label id="lblAddress">Last 6 of reader MAC address</label>
@@ -134,7 +136,10 @@
     $("dotCloud").className = "dot " + (st.cloud.connected ? "on" : "off");
     $("txtCloud").textContent = "Cloud: " + (st.cloud.connected ? "connected" : (st.cloud.error || "disconnected"));
     $("dotDevice").className = "dot " + (st.device.connected ? "on" : "off");
-    const hwName = st.hardware === "impinj" ? "Impinj R700" : "MyLaps decoder";
+    const hwName = st.hardware === "impinj" ? "Impinj R700"
+      : st.hardware === "zebra" ? "Zebra reader"
+      : st.hardware === "generic" ? "LLRP reader"
+      : "MyLaps decoder";
     $("txtDevice").textContent = hwName + ": " + (st.device.connected ? (st.device.reading ? "reading" : "connected, idle") : (st.device.error || "disconnected"));
     if (st.activeMoto) {
       $("dotMoto").className = "dot on";
@@ -171,12 +176,20 @@
   }
 
   $("selHardware").addEventListener("change", () => {
-    const impinj = $("selHardware").value === "impinj";
-    $("lblAddress").textContent = impinj ? "Last 6 of reader MAC address" : "Decoder IP address";
-    $("inAddress").placeholder = impinj ? "e.g. 16-25-B2" : "e.g. 192.168.1.50";
-    $("hintAddress").textContent = impinj
-      ? "Printed on the reader label — we connect via impinj-XX-XX-XX.local"
-      : "Shown on the decoder display or your router's device list";
+    const hw = $("selHardware").value;
+    if (hw === "impinj") {
+      $("lblAddress").textContent = "Last 6 of reader MAC address";
+      $("inAddress").placeholder = "e.g. 16-25-B2";
+      $("hintAddress").textContent = "Printed on the reader label — we connect via impinj-XX-XX-XX.local";
+    } else if (hw === "zebra" || hw === "generic") {
+      $("lblAddress").textContent = "Reader IP address or hostname";
+      $("inAddress").placeholder = "e.g. 192.168.1.50";
+      $("hintAddress").textContent = "Find it in your router's device list — the reader must have LLRP enabled";
+    } else {
+      $("lblAddress").textContent = "Decoder IP address";
+      $("inAddress").placeholder = "e.g. 192.168.1.50";
+      $("hintAddress").textContent = "Shown on the decoder display or your router's device list";
+    }
   });
 
   $("btnLogin").addEventListener("click", async () => {
