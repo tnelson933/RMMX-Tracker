@@ -89,6 +89,20 @@ const ALL_STEPS: TourStep[] = [
       "Run events at remote tracks without internet. Sync everything back to the cloud once you're online — nothing is lost.",
   },
   {
+    selector: '[data-tour="nav-admin"]',
+    side: "right",
+    title: "Admin",
+    description:
+      "Manage your club's team members — invite co-organizers, set their roles, and control which sections of the platform each person can access.",
+  },
+  {
+    selector: '[data-tour="nav-staff"]',
+    side: "right",
+    title: "Staff",
+    description:
+      "Create limited-access accounts for gate workers, check-in volunteers, and scorers. Staff accounts only see the tabs you grant them permission to use.",
+  },
+  {
     selector: '[data-tour="ai-assistant"]',
     side: "left",
     title: "AI Assistant",
@@ -189,7 +203,7 @@ export function ProductTour({ onComplete }: ProductTourProps) {
   } else {
     const r = targetRect!;
     const side = current.side ?? "right";
-    const vCenter = Math.max(12, Math.min(r.top + r.height / 2 - 90, window.innerHeight - 200));
+    const vCenter = Math.max(12, Math.min(r.top + r.height / 2 - 90, window.innerHeight - 280));
 
     if (side === "right") {
       popoverStyle.top = vCenter;
