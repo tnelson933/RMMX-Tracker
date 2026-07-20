@@ -12,11 +12,24 @@ import {
 import { eq, and, desc, asc } from "drizzle-orm";
 import type { Response } from "express";
 
-async function getClubId(req: any): Promise<number | null> {
+type CallerInfo = { clubId: number | null; isSuperAdmin: boolean };
+
+async function getCallerInfo(req: any): Promise<CallerInfo> {
   const userId = (req.session as any).userId;
-  if (!userId) return null;
-  const [user] = await db.select({ clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, userId));
-  return user?.clubId ?? null;
+  if (!userId) return { clubId: null, isSuperAdmin: false };
+  const [user] = await db
+    .select({ clubId: usersTable.clubId, role: usersTable.role })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+  return {
+    clubId: user?.clubId ?? null,
+    isSuperAdmin: user?.role === "super_admin",
+  };
+}
+
+// Legacy shim used by routes that only need clubId
+async function getClubId(req: any): Promise<number | null> {
+  return (await getCallerInfo(req)).clubId;
 }
 
 const router = Router();
@@ -239,15 +252,15 @@ router.post("/practice/active/crossing", async (req, res) => {
   });
 });
 
-// GET /practice — list sessions for organizer's club
+// GET /practice — list sessions for organizer's club (super admins see all)
 router.get("/practice", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const clubId = await getClubId(req);
-  if (!clubId) return res.status(403).json({ error: "No club" });
+  const { clubId, isSuperAdmin } = await getCallerInfo(req);
+  if (!isSuperAdmin && !clubId) return res.status(403).json({ error: "No club" });
 
   const sessions = await db.select().from(practiceSessionsTable)
-    .where(eq(practiceSessionsTable.clubId, clubId))
+    .where(isSuperAdmin ? undefined : eq(practiceSessionsTable.clubId, clubId!))
     .orderBy(desc(practiceSessionsTable.createdAt));
   return res.json(sessions.map(toJson));
 });
@@ -266,20 +279,15 @@ router.get("/practice/:id", async (req, res) => {
 router.post("/practice", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const clubId = await getClubId(req);
+  const { clubId: callerClubId, isSuperAdmin } = await getCallerInfo(req);
+  const clubId = isSuperAdmin && req.body.clubId ? Number(req.body.clubId) : callerClubId;
   if (!clubId) return res.status(403).json({ error: "No club" });
 
   const { name, debounceMs, venueName: venueNameOverride } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
+  if (!venueNameOverride?.trim()) return res.status(400).json({ error: "Track name is required" });
 
-  // Use explicitly passed venueName; fall back to club's default track name
-  let venueName: string | null = venueNameOverride?.trim() || null;
-  if (!venueName) {
-    const [settings] = await db.select({ trackName: clubSettingsTable.trackName })
-      .from(clubSettingsTable)
-      .where(eq(clubSettingsTable.clubId, clubId));
-    venueName = settings?.trackName ?? null;
-  }
+  const venueName: string = venueNameOverride.trim();
 
   // Auto-end any previously active sessions for this club before starting a new one
   await db.update(practiceSessionsTable)
@@ -302,11 +310,11 @@ router.patch("/practice/:id", async (req, res) => {
   const id = Number(req.params.id);
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const clubId = await getClubId(req);
+  const { clubId, isSuperAdmin } = await getCallerInfo(req);
 
   const [existing] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
   if (!existing) return res.status(404).json({ error: "Not found" });
-  if (existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!isSuperAdmin && existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
 
   const updates: Record<string, unknown> = {};
   if (req.body.name !== undefined) updates.name = req.body.name;
@@ -335,11 +343,11 @@ router.delete("/practice/:id", async (req, res) => {
   const id = Number(req.params.id);
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  const clubId = await getClubId(req);
+  const { clubId, isSuperAdmin } = await getCallerInfo(req);
 
   const [existing] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
   if (!existing) return res.status(404).json({ error: "Not found" });
-  if (existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!isSuperAdmin && existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
 
   await db.delete(practiceCrossingsTable).where(eq(practiceCrossingsTable.sessionId, id));
   await db.delete(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
