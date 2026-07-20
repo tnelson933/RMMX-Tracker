@@ -22,7 +22,7 @@ export interface CloudCommand {
 }
 
 export interface CloudStatusReport {
-  hardware: "impinj" | "mylaps" | null;
+  hardware: "impinj" | "zebra" | "generic" | "mylaps" | null;
   connected: boolean;
   detail: string | null;
   lastReadAt: string | null;
