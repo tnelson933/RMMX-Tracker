@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useListClubs } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,7 @@ type LiveBoard = {
 export default function StandalonePractice() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isSuperAdmin = user?.role === "super_admin";
 
   const [sessions, setSessions] = useState<PracticeSession[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -71,12 +73,15 @@ export default function StandalonePractice() {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [selectedClubId, setSelectedClubId] = useState<number | "">("");
   const [expandedRfids, setExpandedRfids] = useState<Set<string>>(new Set());
   const [mobilePanel, setMobilePanel] = useState<"sidebar" | "board">("board");
   const [expandedDates, setExpandedDates] = useState<Set<string>>(() => new Set([new Date().toISOString().slice(0, 10)]));
   const [tracks, setTracks] = useState<{ id: number; name: string }[]>([]);
   const [selectedVenue, setSelectedVenue] = useState("");
   const esRef = useRef<EventSource | null>(null);
+
+  const { data: clubs = [] } = useListClubs({ query: { enabled: isSuperAdmin } as any });
 
   const loadSessions = useCallback(async () => {
     try {
@@ -153,13 +158,21 @@ export default function StandalonePractice() {
 
   async function createSession() {
     if (!newName.trim()) return;
+    if (isSuperAdmin && !selectedClubId) {
+      toast({ title: "Select a club first", variant: "destructive" });
+      return;
+    }
     setCreating(true);
     try {
       const res = await fetch("/api/practice", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), ...(selectedVenue ? { venueName: selectedVenue } : {}) }),
+        body: JSON.stringify({
+          name: newName.trim(),
+          ...(selectedVenue ? { venueName: selectedVenue } : {}),
+          ...(isSuperAdmin && selectedClubId ? { clubId: selectedClubId } : {}),
+        }),
       });
       if (!res.ok) throw new Error();
       const session: PracticeSession = await res.json();
@@ -306,6 +319,18 @@ export default function StandalonePractice() {
 
             {showNewForm && (
               <div className="mt-3 space-y-2">
+                {isSuperAdmin && (
+                  <select
+                    value={selectedClubId}
+                    onChange={e => setSelectedClubId(e.target.value ? Number(e.target.value) : "")}
+                    className="h-8 w-full text-sm bg-sidebar-accent border border-sidebar-border text-white rounded-md px-2 focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">Select club…</option>
+                    {clubs.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
                 <Input
                   value={newName}
                   onChange={e => setNewName(e.target.value)}
@@ -314,23 +339,30 @@ export default function StandalonePractice() {
                   className="h-8 text-sm bg-sidebar-accent border-sidebar-border text-white placeholder:text-sidebar-foreground/40 w-full"
                   autoFocus
                 />
-                {tracks.length > 0 && (
+                {tracks.length > 0 ? (
                   <select
                     value={selectedVenue}
                     onChange={e => setSelectedVenue(e.target.value)}
                     className="h-8 w-full text-sm bg-sidebar-accent border border-sidebar-border text-white rounded-md px-2 focus:outline-none focus:ring-1 focus:ring-primary"
                   >
-                    <option value="">No track selected</option>
+                    <option value="">Select track… (required)</option>
                     {tracks.map(t => (
                       <option key={t.id} value={t.name}>{t.name}</option>
                     ))}
                   </select>
+                ) : (
+                  <Input
+                    value={selectedVenue}
+                    onChange={e => setSelectedVenue(e.target.value)}
+                    placeholder="Track name (required)…"
+                    className="h-8 text-sm bg-sidebar-accent border-sidebar-border text-white placeholder:text-sidebar-foreground/40 w-full"
+                  />
                 )}
                 <Button
                   size="sm"
                   className="h-8 w-full font-heading uppercase text-xs"
                   onClick={createSession}
-                  disabled={creating || !newName.trim()}
+                  disabled={creating || !newName.trim() || !selectedVenue.trim() || (isSuperAdmin && !selectedClubId)}
                 >
                   Add
                 </Button>
