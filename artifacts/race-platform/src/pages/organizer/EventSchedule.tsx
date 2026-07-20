@@ -42,7 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   GripVertical, Plus, Clock, LayoutList, LayoutGrid, Flag, ExternalLink,
-  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown, Trash2, Link2, Unlink2,
+  Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown, Trash2, Link2, Unlink2, Info,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -1240,7 +1240,7 @@ export default function EventSchedule() {
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [generateMinRacesBetween, setGenerateMinRacesBetween] = useState<number>(0);
   const [generateClass, setGenerateClass] = useState<string>("all");
-  const [generateUseRegistrations, setGenerateUseRegistrations] = useState(false);
+  const noneCheckedIn = (checkins as any[]).filter((c: any) => c.checkedIn).length === 0;
 
   // Enduro "Generate Tests" dialog
   const [genTestCount, setGenTestCount] = useState("3");
@@ -2146,7 +2146,7 @@ export default function EventSchedule() {
           gatePickMethod: generateGateMethod,
           rounds: roundsToSend,
           ...(generateMinRacesBetween > 0 ? { minRacesBetween: generateMinRacesBetween } : {}),
-          ...(generateUseRegistrations ? { useRegistrations: true } : {}),
+          ...(noneCheckedIn ? { useRegistrations: true } : {}),
         } as any,
       },
       {
@@ -3431,7 +3431,7 @@ export default function EventSchedule() {
       </AlertDialog>
 
       {/* ── Generate Lineups dialog ── */}
-      <Dialog open={isGenerateOpen} onOpenChange={open => { setIsGenerateOpen(open); if (open) { setGenerateClass("all"); setGenerateSelectedRounds([]); setGenerateUseRegistrations(false); } }}>
+      <Dialog open={isGenerateOpen} onOpenChange={open => { setIsGenerateOpen(open); if (open) { setGenerateClass("all"); setGenerateSelectedRounds([]); } }}>
         <DialogContent className="sm:max-w-md flex flex-col max-h-[90vh]">
           <DialogHeader className="shrink-0">
             <DialogTitle className="font-heading uppercase text-xl">{isEnduro ? "Generate Tests" : "Generate Lineups"}</DialogTitle>
@@ -4102,23 +4102,13 @@ export default function EventSchedule() {
               );
             })()}
 
-            {/* Pre-generate from registrations toggle */}
-            <div
-              className="flex items-start gap-3 p-3 rounded-lg border border-border bg-muted/20 cursor-pointer select-none"
-              onClick={() => setGenerateUseRegistrations(v => !v)}
-            >
-              <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition-colors ${
-                generateUseRegistrations ? "border-primary bg-primary" : "border-muted-foreground/40"
-              }`}>
-                {generateUseRegistrations && <Check size={10} className="text-white" />}
+            {/* Auto info: no check-ins yet */}
+            {noneCheckedIn && (
+              <div className="flex items-start gap-2 text-xs text-blue-300 bg-blue-500/10 border border-blue-500/30 rounded-md px-3 py-2.5">
+                <Info size={13} className="shrink-0 mt-0.5 text-blue-400" />
+                <span>No riders have checked in yet — lineups will be built from registrations. Riders will appear as <strong>Pending</strong> and automatically confirm when they check in on race day.</span>
               </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium leading-tight">Pre-generate from registrations</span>
-                <span className="text-xs text-muted-foreground leading-snug">
-                  Slot all registered riders now, even before they check in. Riders who haven't checked in yet appear as <strong>Pending</strong> and are automatically confirmed when they check in.
-                </span>
-              </div>
-            </div>
+            )}
 
             <Button
               onClick={handleGenerate}
