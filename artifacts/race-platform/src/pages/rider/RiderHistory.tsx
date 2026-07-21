@@ -519,7 +519,31 @@ function GarageCard({ riderId }: { riderId: number }) {
 
 function MotoRow({ moto }: { moto: MotoResult }) {
   const [lapOpen, setLapOpen] = useState(false);
+  const [gapMode, setGapMode] = useState<"best" | "leader" | "ahead">("best");
   const hasTimes = moto.lapTimes && moto.lapTimes.length > 0;
+  const hasGaps = (moto.lapGaps ?? []).some((g) => g.leader != null);
+
+  const parseLapMsLocal = (s: string): number => {
+    const c = s.indexOf(":");
+    if (c >= 0) return (parseInt(s.slice(0, c)) * 60 + parseFloat(s.slice(c + 1))) * 1000;
+    return parseFloat(s.replace("s", "")) * 1000;
+  };
+  const lapMsArr = hasTimes ? moto.lapTimes.map(parseLapMsLocal) : [];
+  const bestMs = lapMsArr.length ? Math.min(...lapMsArr) : Infinity;
+  const gapMsStr = (ms: number) => `+${(ms / 1000).toFixed(3)}s`;
+
+  const gapLabel = (i: number): { text: string; highlight: boolean } | null => {
+    if (gapMode === "best") {
+      if (lapMsArr[i] === bestMs) return { text: "BEST", highlight: true };
+      const d = lapMsArr[i] - bestMs;
+      return isFinite(d) && d > 0 ? { text: gapMsStr(d), highlight: false } : null;
+    }
+    const g = moto.lapGaps?.[i];
+    if (!g || g.leader == null) return { text: "—", highlight: false };
+    if (g.leader === 0) return { text: "LEADER", highlight: true };
+    if (gapMode === "leader") return { text: gapMsStr(g.leader), highlight: false };
+    return g.ahead != null ? { text: gapMsStr(g.ahead), highlight: false } : { text: "—", highlight: false };
+  };
 
   return (
     <div className="border rounded-lg overflow-hidden">
@@ -570,14 +594,43 @@ function MotoRow({ moto }: { moto: MotoResult }) {
 
       {lapOpen && hasTimes && (
         <div className="px-4 py-3 bg-background border-t">
-          <div className="text-xs text-muted-foreground mb-2 font-heading uppercase tracking-wider">Lap Times</div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-            {moto.lapTimes.map((t, i) => (
-              <div key={i} className="bg-muted rounded px-2 py-1.5 text-center">
-                <div className="text-xs text-muted-foreground">Lap {i + 1}</div>
-                <div className="font-mono text-xs font-medium">{t}</div>
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+            <div className="text-xs text-muted-foreground font-heading uppercase tracking-wider">Lap Times</div>
+            {hasGaps && (
+              <div className="flex rounded-md border overflow-hidden">
+                {([
+                  { key: "best", label: "vs Best Lap" },
+                  { key: "leader", label: "vs Leader" },
+                  { key: "ahead", label: "vs Ahead" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setGapMode(opt.key)}
+                    className={`px-2.5 py-1 text-[11px] font-heading font-bold uppercase tracking-wide transition-colors ${
+                      gapMode === opt.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
-            ))}
+            )}
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+            {moto.lapTimes.map((t, i) => {
+              const gl = gapLabel(i);
+              return (
+                <div key={i} className="bg-muted rounded px-2 py-1.5 text-center">
+                  <div className="text-xs text-muted-foreground">Lap {i + 1}</div>
+                  <div className="font-mono text-xs font-medium">{t}</div>
+                  {gl && (
+                    <div className={`text-[10px] font-mono ${gl.highlight ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                      {gl.text}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
