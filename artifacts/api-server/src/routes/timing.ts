@@ -12,10 +12,11 @@ import {
   practiceSessionsTable,
 } from "@workspace/db";
 import { fetchEnduoPenaltyMap } from "./enduro-scoring";
-import { eq, and, asc, desc, isNotNull, or, gt, sql } from "drizzle-orm";
+import { eq, and, asc, desc, isNotNull, or, gt, sql, inArray } from "drizzle-orm";
 import type { Response } from "express";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
+import { recordTagSeen } from "../lib/recentTags";
 
 const router = Router();
 
@@ -757,6 +758,7 @@ router.post("/timing/active/crossing", async (req, res) => {
     if (tagEvents.length === 0) {
       return res.json({ ok: true, processed: 0, note: "No tagInventoryEvent entries in payload" });
     }
+    for (const t of tagEvents) recordTagSeen(clubId, t.epcHex.toUpperCase());
     const moto = await getActiveMotoForClub(clubId);
     if (!moto) {
       const session = await getActivePracticeSessionForClub(clubId);
@@ -805,6 +807,7 @@ router.post("/timing/active/crossing", async (req, res) => {
       // top-level event batch timestamp, with fallback to batch timestamp then server time.
       timestamp: (e.tagInventoryEvent.lastSeenTime ?? e.timestamp) as string | undefined,
     }));
+    for (const t of tagEvents) recordTagSeen(clubId, t.epcHex);
     const moto = await getActiveMotoForClub(clubId);
     if (!moto) {
       const session = await getActivePracticeSessionForClub(clubId);
@@ -883,6 +886,7 @@ router.post("/timing/active/crossing", async (req, res) => {
   if (isNaN(crossingTime.getTime())) {
     return res.status(400).json({ error: "Invalid crossing time — must be ISO 8601" });
   }
+  recordTagSeen(clubId, String(rfidNumber).toUpperCase());
 
   const moto = await getActiveMotoForClub(clubId);
   if (!moto) {
@@ -892,7 +896,9 @@ router.post("/timing/active/crossing", async (req, res) => {
     }
     try {
       const r = await processPracticeCrossing(session, String(rfidNumber), crossingTime);
-      if ("skipped" in r) return res.json({ ok: true, skipped: true, practiceSessionId: session.id });
+      const outcome = "skipped" in r ? `skipped(${r.reason})` : `recorded(crossing=${r.crossing?.id})`;
+      req.log.info({ epc: String(rfidNumber), outcome, crossingTime }, "practice crossing");
+      if ("skipped" in r) return res.json({ ok: true, skipped: true, reason: r.reason, practiceSessionId: session.id });
       return res.json({ ok: true, practiceSessionId: session.id, crossingId: r.crossing?.id });
     } catch (err: any) {
       return res.status(409).json({ error: err.message });
@@ -1262,6 +1268,7 @@ router.get("/timing/crossings/:motoId", async (req, res) => {
       id: lapCrossingsTable.id,
       rfidNumber: lapCrossingsTable.rfidNumber,
       riderId: lapCrossingsTable.riderId,
+      eventId: lapCrossingsTable.eventId,
       crossingTime: lapCrossingsTable.crossingTime,
       lapNumber: lapCrossingsTable.lapNumber,
       lapTimeMs: lapCrossingsTable.lapTimeMs,
@@ -1274,13 +1281,44 @@ router.get("/timing/crossings/:motoId", async (req, res) => {
     .where(eq(lapCrossingsTable.motoId, motoId))
     .orderBy(asc(lapCrossingsTable.crossingTime));
 
+  // Fallback: crossings recorded before the RFID assignment existed have riderId=null
+  // and therefore miss the join above. Look them up via rfid_assignments so the feed
+  // always shows a name when the rider is registered for this event.
+  const nameByRfid = new Map<string, { firstName: string | null; lastName: string | null }>();
+  const unnamedRfids = [...new Set(crossings.filter(c => !c.firstName).map(c => c.rfidNumber))];
+  if (unnamedRfids.length > 0) {
+    const eventId = crossings.find(c => !c.firstName)!.eventId;
+    const assignments = await db
+      .select({
+        rfidNumber: rfidAssignmentsTable.rfidNumber,
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+      })
+      .from(rfidAssignmentsTable)
+      .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
+      .where(and(
+        eq(rfidAssignmentsTable.eventId, eventId),
+        inArray(rfidAssignmentsTable.rfidNumber, unnamedRfids),
+      ));
+    for (const a of assignments) nameByRfid.set(a.rfidNumber, { firstName: a.firstName, lastName: a.lastName });
+  }
+
   return res.json(
-    crossings.map((c) => ({
-      ...c,
-      crossingTime: c.crossingTime.toISOString(),
-      riderName: c.firstName ? `${c.firstName} ${c.lastName}` : null,
-      lapTime: c.lapTimeMs ? formatLapTime(c.lapTimeMs) : null,
-    }))
+    crossings.map((c) => {
+      const firstName = c.firstName ?? nameByRfid.get(c.rfidNumber)?.firstName ?? null;
+      const lastName = c.lastName ?? nameByRfid.get(c.rfidNumber)?.lastName ?? null;
+      return {
+        id: c.id,
+        rfidNumber: c.rfidNumber,
+        riderId: c.riderId,
+        crossingTime: c.crossingTime.toISOString(),
+        lapNumber: c.lapNumber,
+        lapTimeMs: c.lapTimeMs,
+        readerId: c.readerId,
+        riderName: firstName ? `${firstName} ${lastName}` : null,
+        lapTime: c.lapTimeMs ? formatLapTime(c.lapTimeMs) : null,
+      };
+    })
   );
 });
 
