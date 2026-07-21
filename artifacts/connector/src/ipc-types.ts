@@ -14,6 +14,7 @@ export interface AggregateStatus {
     error: string | null;
     lastReadAt: string | null;
     readCount: number;
+    antennaIds: number[];
   };
   activeMoto: { motoId: number; name: string } | null;
   testMode: boolean;
