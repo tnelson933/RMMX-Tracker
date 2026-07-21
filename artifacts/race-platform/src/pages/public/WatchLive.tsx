@@ -57,6 +57,8 @@ export default function WatchLive() {
 
   const [viewerState, setViewerState] = useState<ViewerState>("connecting");
   const setViewerStateSynced = (s: ViewerState) => { viewerStateRef.current = s; setViewerState(s); };
+  // True when we've been in "connecting" for more than 8 s with no server response
+  const [connectingSlow, setConnectingSlow] = useState(false);
 
   const [viewerCount, setViewerCount] = useState<number | null>(null);
   const [is360, setIs360] = useState(false);
@@ -339,6 +341,14 @@ export default function WatchLive() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
+  // Show a "slow connection" hint after 8 s in "connecting" state so the user
+  // knows the page is still trying rather than silently stuck.
+  useEffect(() => {
+    if (viewerState !== "connecting") { setConnectingSlow(false); return; }
+    const t = setTimeout(() => setConnectingSlow(true), 8_000);
+    return () => clearTimeout(t);
+  }, [viewerState]);
+
   function teardownMSE() {
     // Null refs first — any subsequent sourceclose/updateend from old objects is harmless
     const hadMs = msRef.current !== null;
@@ -561,6 +571,16 @@ export default function WatchLive() {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "hello" }));
       }
+      // Liveness watchdog: the server always sends either {"type":"offline"} or
+      // {"type":"init"} within ~150 ms of the WS opening, followed by heartbeats
+      // every 1 s.  If no message arrives within 6 s the proxy is silently
+      // blocking server→client frames — close and let ws.onclose schedule a retry.
+      const livenessTimer = setTimeout(() => {
+        logEvent("no server message in 6 s — reconnecting");
+        if (ws.readyState === WebSocket.OPEN) ws.close();
+      }, 6_000);
+      ws.addEventListener("message", () => clearTimeout(livenessTimer), { once: true });
+      ws.addEventListener("close",   () => clearTimeout(livenessTimer), { once: true });
     };
 
     // Independent client→server keep-alive: send a ping every 1.5 s regardless
@@ -580,7 +600,11 @@ export default function WatchLive() {
       // handle them correctly regardless of whether they arrive as string or ArrayBuffer.
       let jsonMsg: Record<string, unknown> | null = null;
       if (typeof e.data === "string") {
-        jsonMsg = JSON.parse(e.data) as Record<string, unknown>;
+        try {
+          jsonMsg = JSON.parse(e.data) as Record<string, unknown>;
+        } catch {
+          // Non-JSON string frame — ignore (shouldn't happen in normal operation)
+        }
       } else {
         const bytes = new Uint8Array(e.data as ArrayBuffer);
         if (bytes[0] === 0x7b) {
@@ -1141,6 +1165,20 @@ export default function WatchLive() {
               <>
                 <Radio size={52} className="text-white/20 animate-pulse" />
                 <p className="text-white/40 text-sm font-heading uppercase tracking-widest animate-pulse">Connecting…</p>
+                {connectingSlow && (
+                  <>
+                    <p className="text-white/30 text-xs text-center max-w-xs">
+                      Taking longer than expected. The stream may not be live yet.
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="border-white/20 text-white/60 hover:text-white font-heading uppercase text-xs mt-1"
+                      onClick={() => { cleanup(); connect(); }}
+                    >
+                      Retry
+                    </Button>
+                  </>
+                )}
               </>
             )}
             {viewerState === "error" && (
