@@ -687,7 +687,7 @@ function PracticeTimeLimitCountdown({
 
 // ── Drag-and-drop sub-components ───────────────────────────────────────────
 
-type LineupEntry = { riderId: number; riderName: string; position: number; bibNumber?: string | null; rfidNumber?: string | null };
+type LineupEntry = { riderId: number; riderName: string; position: number; bibNumber?: string | null; rfidNumber?: string | null; checkedIn?: boolean };
 
 function DraggablePoolRider({ riderId, riderName, bibNumber }: { riderId: number; riderName: string; bibNumber?: string | null }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `pool-${riderId}` });
@@ -1268,6 +1268,13 @@ export default function Motos() {
   const getLineup = (moto: { id: number; lineup?: unknown }): LineupEntry[] =>
     lineupDrafts[moto.id] ?? (Array.isArray(moto.lineup) ? (moto.lineup as LineupEntry[]) : []);
 
+  // Race Day shows only confirmed (checked-in) riders. Riders pre-slotted from
+  // registrations carry checkedIn:false until they check in — they stay visible
+  // on the Schedule screen as pending, but are hidden here.
+  const isConfirmed = (e: LineupEntry) => e.checkedIn !== false;
+  const getVisibleLineup = (moto: { id: number; lineup?: unknown }): LineupEntry[] =>
+    getLineup(moto).filter(isConfirmed);
+
   const handleQuickAddHeat = (sourceMoto: Moto) => {
     const nextMotoNumber = (motos?.length ? Math.max(...motos.map(m => m.motoNumber ?? 0)) : 0) + 1;
     const typeLabel = sourceMoto.type === "heat" ? (isSupercrossFormat ? "Heat" : "Moto")
@@ -1705,11 +1712,6 @@ export default function Motos() {
           setIsGenerateOpen(false);
           if (gatePickMethod === "prior_round_finish") {
             toast({ title: "Lineups generated", description: "Gate picks seeded from prior moto finish order." });
-          } else if (lockedClasses.length > 0) {
-            toast({
-              title: "Lineups generated",
-              description: `Skipped ${lockedClasses.length} class${lockedClasses.length > 1 ? "es" : ""} with completed motos: ${lockedClasses.join(", ")}`,
-            });
           } else {
             toast({ title: "Lineups generated" });
           }
@@ -2347,43 +2349,24 @@ export default function Motos() {
             <div className="space-y-6 py-4 overflow-y-auto pr-1">
               {(() => {
                 const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
-                const lockedClasses = allClasses.filter(cls =>
+                const classesWithCompleted = allClasses.filter(cls =>
                   (motos ?? []).some(m => m.raceClass === cls && m.status === "completed")
                 );
-                const regenerableClasses = allClasses.filter(cls => !lockedClasses.includes(cls));
-                if (lockedClasses.length === 0) return null;
+                if (classesWithCompleted.length === 0) return null;
                 return (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-3 py-2.5 space-y-1.5">
-                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                      <span>⚠️</span> Some classes have completed motos
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 px-3 py-2.5 space-y-1.5">
+                    <p className="text-xs font-semibold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
+                      <span>ℹ️</span> Some classes have completed motos
                     </p>
-                    <p className="text-xs text-amber-700 dark:text-amber-400">
-                      Completed motos and their results are never overwritten. Only classes without completed motos will be regenerated.
+                    <p className="text-xs text-blue-700 dark:text-blue-400">
+                      Completed motos and their results are preserved. The next round will be added for these classes.
                     </p>
-                    <div className="space-y-1 pt-0.5">
-                      <p className="text-[11px] font-medium text-amber-800 dark:text-amber-300 uppercase tracking-wider">Skipped (has completed motos):</p>
-                      <div className="flex flex-wrap gap-1">
-                        {lockedClasses.map(cls => (
-                          <span key={cls} className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
-                            {cls}
-                          </span>
-                        ))}
-                      </div>
-                      {regenerableClasses.length > 0 && (
-                        <>
-                          <p className="text-[11px] font-medium text-green-700 dark:text-green-400 uppercase tracking-wider pt-1">Will regenerate:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {regenerableClasses.map(cls => (
-                              <span key={cls} className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-700">
-                                {cls}
-                              </span>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      {regenerableClasses.length === 0 && (
-                        <p className="text-xs text-amber-700 dark:text-amber-400 pt-1 font-medium">All classes are locked — nothing to regenerate.</p>
-                      )}
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {classesWithCompleted.map(cls => (
+                        <span key={cls} className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          {cls}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 );
@@ -2395,7 +2378,7 @@ export default function Motos() {
               ) : (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Generates motos from registered riders. Riders are marked pending until they check in — check-in automatically places them into their assigned moto.
+                    Generates motos from registered riders. Pending riders appear on the Schedule screen only — they show up here on Race Day once they check in and are confirmed.
                   </p>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Motos per Class</label>
@@ -2920,7 +2903,7 @@ export default function Motos() {
               <div className="heat-sheet-motos">
                 {runOrderMotos.map((moto) => {
                   const lineup: LineupEntry[] = Array.isArray(moto.lineup)
-                    ? [...(moto.lineup as LineupEntry[])].sort((a, b) => a.position - b.position)
+                    ? (moto.lineup as LineupEntry[]).filter(e => e.checkedIn !== false).sort((a, b) => a.position - b.position)
                     : [];
                   return (
                     <div key={moto.id} className="heat-sheet-moto">
@@ -2984,7 +2967,7 @@ export default function Motos() {
                 </TableHeader>
                 <TableBody>
                   {runOrderMotos.map((moto, idx) => {
-                    const riderCount = Array.isArray(moto.lineup) ? (moto.lineup as any[]).length : 0;
+                    const riderCount = Array.isArray(moto.lineup) ? (moto.lineup as LineupEntry[]).filter(e => e.checkedIn !== false).length : 0;
                     const isNext = moto.status === "scheduled" && runOrderMotos.slice(0, idx).every(m => m.status === "completed" || m.status === "in_progress");
                     return (
                       <TableRow
@@ -3160,7 +3143,7 @@ export default function Motos() {
                     </span>
                     {/* Rider count */}
                     <span className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
-                      <Flag size={11} /> {Array.isArray(moto.lineup) ? moto.lineup.length : 0} riders
+                      <Flag size={11} /> {Array.isArray(moto.lineup) ? (moto.lineup as LineupEntry[]).filter(e => e.checkedIn !== false).length : 0} riders
                     </span>
                     {/* Staggered start badge */}
                     {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId && (
@@ -3168,6 +3151,26 @@ export default function Motos() {
                         <Link2 size={9} /> Staggered
                       </span>
                     )}
+                    {/* Race format pill — "15 min + 1 lap", "15 min", or "5 laps" */}
+                    {moto.type !== "practice" && moto.type !== "enduro_test" && (() => {
+                      const tMs  = (moto as any).timeLimitMs as number | null;
+                      const pl   = (moto as any).plusLaps    as number | null;
+                      const laps = (moto as any).lapCount    as number | null;
+                      let label: string | null = null;
+                      if (tMs) {
+                        const mins = Math.round(tMs / 60_000);
+                        label = pl != null && pl > 0
+                          ? `${mins} min + ${pl} lap${pl > 1 ? "s" : ""}`
+                          : `${mins} min`;
+                      } else if (laps != null) {
+                        label = `${laps} lap${laps !== 1 ? "s" : ""}`;
+                      }
+                      return label ? (
+                        <span className="text-xs px-1.5 py-0.5 rounded border bg-sky-500/10 text-sky-300 border-sky-500/30 flex items-center gap-1 font-semibold">
+                          <Timer size={9} />{label}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
 
@@ -3250,8 +3253,8 @@ export default function Motos() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {getLineup(moto).length > 0 ? (
-                          sortLineup(getLineup(moto), getMotoSort(moto.id)).flatMap((entry, idx, arr) => {
+                        {getVisibleLineup(moto).length > 0 ? (
+                          sortLineup(getVisibleLineup(moto), getMotoSort(moto.id)).flatMap((entry, idx, arr) => {
                             const isSorted = getMotoSort(moto.id) !== "gate";
                             const isSlotActive = !isSorted && activeDragMotoId === moto.id && moto.status !== "completed";
                             const slotColSpan = moto.status === "in_progress" ? 6 : 5;
@@ -3327,8 +3330,8 @@ export default function Motos() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {getLineup(partner).length > 0 ? (
-                              sortLineup(getLineup(partner), getMotoSort(partner.id)).flatMap((entry, idx, arr) => [
+                            {getVisibleLineup(partner).length > 0 ? (
+                              sortLineup(getVisibleLineup(partner), getMotoSort(partner.id)).flatMap((entry, idx, arr) => [
                                 ...(!isSorted ? [<GateDropSlotRow key={`slot-${partner.id}-${idx}`} id={`gate-slot-${partner.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                                 <DraggableRiderRow
                                   key={entry.riderId} entry={entry} motoId={partner.id} locked={partner.status === "completed" || isSorted}
@@ -3459,7 +3462,7 @@ export default function Motos() {
                   {(moto.status === "in_progress" || (moto.type === "enduro_test" && moto.status !== "completed")) && (
                     <form
                       className="flex items-center gap-1"
-                      onSubmit={e => { e.preventDefault(); handleBibEntry(moto.id, getLineup(moto)); }}
+                      onSubmit={e => { e.preventDefault(); handleBibEntry(moto.id, getVisibleLineup(moto)); }}
                     >
                       <div className="relative">
                         <Timer size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -3646,8 +3649,8 @@ export default function Motos() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {getLineup(moto).length > 0 ? (
-                          sortLineup(getLineup(moto), getMotoSort(moto.id)).flatMap((entry, idx, arr) => {
+                        {getVisibleLineup(moto).length > 0 ? (
+                          sortLineup(getVisibleLineup(moto), getMotoSort(moto.id)).flatMap((entry, idx, arr) => {
                             const isSorted = getMotoSort(moto.id) !== "gate";
                             const isSlotActive = !isSorted && activeDragMotoId === moto.id && moto.status !== "completed";
                             const slotColSpan = moto.status === "in_progress" ? 6 : 5;
@@ -3687,8 +3690,8 @@ export default function Motos() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {moto.lineup && moto.lineup.length > 0 ? (
-                          sortLineup(moto.lineup as LineupEntry[], getMotoSort(moto.id)).map((entry) => {
+                        {getVisibleLineup(moto).length > 0 ? (
+                          sortLineup(getVisibleLineup(moto), getMotoSort(moto.id)).map((entry) => {
                             const cooldown = manualLapCooldown.has(`${moto.id}-${entry.riderId}`);
                             const entryHasShortLap = shortLapSet.has(`${moto.id}-${entry.riderId}`);
                             return (
@@ -3790,8 +3793,8 @@ export default function Motos() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {getLineup(partner).length > 0 ? (
-                              sortLineup(getLineup(partner), getMotoSort(partner.id)).flatMap((entry, idx, arr) => [
+                            {getVisibleLineup(partner).length > 0 ? (
+                              sortLineup(getVisibleLineup(partner), getMotoSort(partner.id)).flatMap((entry, idx, arr) => [
                                 ...(!isSorted ? [<GateDropSlotRow key={`slot-${partner.id}-${idx}`} id={`gate-slot-${partner.id}-${idx}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                                 <DraggableRiderRow
                                   key={entry.riderId} entry={entry} motoId={partner.id} locked={partner.status === "completed" || isSorted}
@@ -3910,7 +3913,7 @@ export default function Motos() {
                 {(moto.status === "in_progress" || (moto.type === "enduro_test" && moto.status !== "completed")) && (
                   <form
                     className="flex items-center gap-1.5"
-                    onSubmit={e => { e.preventDefault(); handleBibEntry(moto.id, getLineup(moto)); }}
+                    onSubmit={e => { e.preventDefault(); handleBibEntry(moto.id, getVisibleLineup(moto)); }}
                   >
                     <div className="relative">
                       <Timer size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
