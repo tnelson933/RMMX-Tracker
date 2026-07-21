@@ -1,41 +1,56 @@
-import { db } from "@workspace/db";
 import {
+  db,
   eventsTable,
   registrationsTable,
   ridersTable,
   riderAccountsTable,
   riderPushTokensTable,
   rfidAssignmentsTable,
+  checkinsTable,
   liabilityWaiverSignaturesTable,
+  riderNotificationPrefsTable,
   quickCheckinNotificationsTable,
 } from "@workspace/db";
-import { and, eq, ne, inArray, isNull, sql, notInArray } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { sendPushNotifications, type PushMessage } from "./push";
 
-const CHECK_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
+// Race-day morning push for quick check-in.
+//
+// Every poll cycle, if it's past SEND_HOUR in Mountain Time, find events with
+// quick check-in enabled whose (start) date is today, and send ONE push per
+// eligible rider account that hasn't been notified for that event yet
+// (deduped durably via the quick_checkin_notifications table).
+//
+// This complements the local arrival alert in the rider app (fires when the
+// app is foregrounded within 1 mile of the track) — the morning push works
+// even when the app is closed.
 
-// "Today" in Mountain Time — the platform serves Rocky Mountain clubs, so race
-// day is anchored to America/Denver rather than UTC (UTC flips over at ~6pm MT).
-function todayMountain(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+const POLL_INTERVAL_MS = 5 * 60 * 1000;
+const SEND_HOUR = 7; // don't push before 7:00 AM Mountain Time
+const SEND_HOUR_END = 18; // don't start pushing after 6:00 PM (race is winding down)
+
+function mountainNow(): { dateStr: string; hour: number } {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: "America/Denver", hour: "numeric", hour12: false }).format(now),
+  );
+  return { dateStr, hour };
 }
 
-// Finds quick-checkin events happening today, advances their status to race_day
-// if needed, checks each rider's eligibility (RFID/waiver/transponder), and
-// sends a push to every eligible rider who hasn't already received a notification
-// for this event.  Uses quick_checkin_notifications (event_id, rider_account_id)
-// as the per-rider dedup guard — so each rider gets at most ONE notification per
-// event even if the event-level flag is ever reset for testing.
-export async function notifyQuickCheckinOpen(): Promise<void> {
-  const todayStr = todayMountain();
+export async function runQuickCheckinNotifierOnce(): Promise<void> {
+  const { dateStr: todayStr, hour } = mountainNow();
+  if (hour < SEND_HOUR || hour >= SEND_HOUR_END) return;
 
+  // Events with quick check-in enabled starting today. Status may lag behind
+  // (registration still "open" on race morning), so filter on date + flag, not status.
   const events = await db
     .select({
       id: eventsTable.id,
       name: eventsTable.name,
+      clubId: eventsTable.clubId,
       trackName: eventsTable.trackName,
-      status: eventsTable.status,
       timingTechnology: eventsTable.timingTechnology,
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
@@ -44,195 +59,199 @@ export async function notifyQuickCheckinOpen(): Promise<void> {
     .where(
       and(
         eq(eventsTable.quickCheckinEnabled, true),
-        sql`${eventsTable.date}::date = ${todayStr}::date`,
-        isNull(eventsTable.quickCheckinNotifiedAt),
-      )
+        sql`SUBSTRING(${eventsTable.date}::text, 1, 10) = ${todayStr}`,
+        ne(eventsTable.status, "completed"),
+      ),
     );
-
-  if (events.length === 0) return;
 
   for (const event of events) {
-    // Atomically claim the event — only the process that flips notified_at from
-    // NULL proceeds, preventing duplicate sends from concurrent notifier instances.
-    const claimed = await db
-      .update(eventsTable)
-      .set({ quickCheckinNotifiedAt: new Date() })
-      .where(and(eq(eventsTable.id, event.id), isNull(eventsTable.quickCheckinNotifiedAt)))
-      .returning({ id: eventsTable.id });
-    if (claimed.length === 0) continue;
-
-    // Advance status so the rider app's quick check-in flow activates.
-    if (["draft", "registration_open", "registration_closed"].includes(event.status)) {
-      await db.update(eventsTable).set({ status: "race_day" }).where(eq(eventsTable.id, event.id));
-    }
-
-    // ── 1. All non-void registrations for this event ────────────────────────
-    const regs = await db
-      .select({
-        registrationId: registrationsTable.id,
-        riderId: registrationsTable.riderId,
-        raceClass: registrationsTable.raceClass,
-        myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
-        waiverAcknowledgedAt: registrationsTable.waiverAcknowledgedAt,
-        riderEmail: ridersTable.email,
-        riderMylaps: ridersTable.mylapsTransponderId,
-      })
-      .from(registrationsTable)
-      .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
-      .where(
-        and(
-          eq(registrationsTable.eventId, event.id),
-          ne(registrationsTable.status, "void"),
-        )
-      );
-
-    if (regs.length === 0) {
-      logger.info({ eventId: event.id }, "Quick check-in notifier: no registrations, skipping");
-      continue;
-    }
-
-    // ── 2. RFID assignments for this event ─────────────────────────────────
-    const riderIds = [...new Set(regs.map(r => r.riderId))];
-    const rfidRows = await db
-      .select({ riderId: rfidAssignmentsTable.riderId })
-      .from(rfidAssignmentsTable)
-      .where(
-        and(
-          eq(rfidAssignmentsTable.eventId, event.id),
-          inArray(rfidAssignmentsTable.riderId, riderIds),
-        )
-      );
-    const rfidRiderIds = new Set(rfidRows.map(r => r.riderId));
-
-    // ── 3. Liability waiver signatures for this event ───────────────────────
-    const waiverRows = await db
-      .select({
-        registrationId: liabilityWaiverSignaturesTable.registrationId,
-        signerEmail: liabilityWaiverSignaturesTable.signerEmail,
-      })
-      .from(liabilityWaiverSignaturesTable)
-      .where(eq(liabilityWaiverSignaturesTable.eventId, event.id));
-    const waiverByRegId = new Set(
-      waiverRows.filter(w => w.registrationId != null).map(w => w.registrationId!)
-    );
-    const waiverByEmail = new Set(
-      waiverRows.map(w => w.signerEmail?.toLowerCase()).filter(Boolean) as string[]
-    );
-
-    // ── 4. Determine eligible rider emails ──────────────────────────────────
-    const eligibleEmails = new Set<string>();
-    for (const r of regs) {
-      if (!r.riderEmail) continue;
-
-      // RFID events: rider must have an RFID assignment for this event
-      if (event.timingTechnology === "rfid" && !rfidRiderIds.has(r.riderId)) continue;
-
-      // Mylaps events: must have a transponder (registration-level or rider-level)
-      if (event.timingTechnology === "mylaps") {
-        if (!r.myLapsTransponderNumber && !r.riderMylaps) continue;
-      }
-
-      // Simple acknowledgment waiver
-      if (event.requireWaiver && !event.requireLiabilityWaiver) {
-        if (!r.waiverAcknowledgedAt) continue;
-      }
-
-      // Full liability waiver
-      if (event.requireLiabilityWaiver) {
-        const hasSig =
-          waiverByRegId.has(r.registrationId) ||
-          waiverByEmail.has(r.riderEmail.toLowerCase());
-        if (!hasSig) continue;
-      }
-
-      eligibleEmails.add(r.riderEmail.toLowerCase());
-    }
-
-    if (eligibleEmails.size === 0) {
-      logger.info({ eventId: event.id, eventName: event.name }, "Quick check-in notifier: no eligible riders");
-      continue;
-    }
-
-    // ── 5. Resolve eligible emails → rider accounts ─────────────────────────
-    const emailList = [...eligibleEmails];
-    const accounts = await db
-      .select({ id: riderAccountsTable.id })
-      .from(riderAccountsTable)
-      .where(inArray(sql`LOWER(${riderAccountsTable.email})`, emailList));
-
-    if (accounts.length === 0) continue;
-    const accountIds = accounts.map(a => a.id);
-
-    // ── 6. Per-rider dedup: skip accounts already notified for this event ───
-    //    This guard survives event-level flag resets (e.g. for testing), so
-    //    each rider can never receive this event's notification more than once.
-    const alreadyNotifiedRows = await db
-      .select({ riderAccountId: quickCheckinNotificationsTable.riderAccountId })
-      .from(quickCheckinNotificationsTable)
-      .where(
-        and(
-          eq(quickCheckinNotificationsTable.eventId, event.id),
-          inArray(quickCheckinNotificationsTable.riderAccountId, accountIds),
-        )
-      );
-    const alreadyNotifiedIds = new Set(alreadyNotifiedRows.map(r => r.riderAccountId));
-    const newAccountIds = accountIds.filter(id => !alreadyNotifiedIds.has(id));
-
-    if (newAccountIds.length === 0) {
-      logger.info({ eventId: event.id, eventName: event.name }, "Quick check-in notifier: all eligible riders already notified");
-      continue;
-    }
-
-    // ── 7. Get push tokens for unnotified accounts ──────────────────────────
-    const tokens = await db
-      .select({ token: riderPushTokensTable.expoPushToken, accountId: riderPushTokensTable.riderAccountId })
-      .from(riderPushTokensTable)
-      .where(inArray(riderPushTokensTable.riderAccountId, newAccountIds));
-
-    // Deduplicate: one message per push token
-    const tokenMap = new Map<string, number>(); // token → accountId
-    for (const t of tokens) tokenMap.set(t.token, t.accountId);
-
-    const messages: PushMessage[] = [...tokenMap.keys()].map(token => ({
-      to: token,
-      title: "🏁 Race Day — Quick Check-In is Open",
-      body: `Welcome to ${event.name}${event.trackName ? ` at ${event.trackName}` : ""}! Tap here to complete Quick Check-In and skip the check-in line.`,
-      data: { type: "quick_checkin", eventId: event.id },
-    }));
-
-    // ── 8. Send and record per-rider notifications ──────────────────────────
-    let sentOk = true;
-    if (messages.length > 0) {
-      sentOk = await sendPushNotifications(messages);
-    }
-
-    if (!sentOk) {
-      // Transport failure — release the event-level claim so the next tick
-      // retries.  The per-rider table has no rows yet, so they'll be retried too.
-      await db
-        .update(eventsTable)
-        .set({ quickCheckinNotifiedAt: null })
-        .where(eq(eventsTable.id, event.id));
-      logger.warn({ eventId: event.id, eventName: event.name }, "Quick check-in push failed; will retry next tick");
-    } else {
-      // Record which accounts were successfully notified so they never get
-      // a duplicate, even if the event-level flag is reset later.
-      if (newAccountIds.length > 0) {
-        await db
-          .insert(quickCheckinNotificationsTable)
-          .values(newAccountIds.map(riderAccountId => ({ eventId: event.id, riderAccountId })))
-          .onConflictDoNothing();
-      }
-      logger.info(
-        { eventId: event.id, eventName: event.name, pushCount: messages.length, eligibleRiders: eligibleEmails.size },
-        "Quick check-in race-day notification sent"
-      );
+    try {
+      await notifyForEvent(event);
+    } catch (err) {
+      logger.error({ err, eventId: event.id }, "Quick check-in morning push failed for event");
     }
   }
 }
 
+type EventRow = {
+  id: number;
+  name: string;
+  clubId: number | null;
+  trackName: string | null;
+  timingTechnology: string | null;
+  requireWaiver: boolean | null;
+  requireLiabilityWaiver: boolean | null;
+};
+
+async function notifyForEvent(event: EventRow): Promise<void> {
+  // Non-void registrations with rider emails
+  const regs = await db
+    .select({
+      registrationId: registrationsTable.id,
+      riderId: registrationsTable.riderId,
+      raceClass: registrationsTable.raceClass,
+      myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
+      waiverAcknowledgedAt: registrationsTable.waiverAcknowledgedAt,
+      email: ridersTable.email,
+      riderTransponder: ridersTable.mylapsTransponderId,
+    })
+    .from(registrationsTable)
+    .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+    .where(
+      and(
+        eq(registrationsTable.eventId, event.id),
+        ne(registrationsTable.status, "void"),
+      ),
+    );
+  if (regs.length === 0) return;
+
+  const riderIds = [...new Set(regs.map(r => r.riderId))];
+
+  // Already checked-in riders (keyed per event+rider+class, matching the route)
+  const checkins = await db
+    .select({ riderId: checkinsTable.riderId, raceClass: checkinsTable.raceClass })
+    .from(checkinsTable)
+    .where(and(eq(checkinsTable.eventId, event.id), eq(checkinsTable.checkedIn, true)));
+  const checkedInSet = new Set(checkins.map(c => `${c.riderId}:${c.raceClass ?? "Unknown"}`));
+
+  // RFID assignments (only needed for RFID events)
+  const rfidSet = new Set<number>();
+  if (event.timingTechnology === "rfid") {
+    const rfidRows = await db
+      .select({ riderId: rfidAssignmentsTable.riderId })
+      .from(rfidAssignmentsTable)
+      .where(and(eq(rfidAssignmentsTable.eventId, event.id), inArray(rfidAssignmentsTable.riderId, riderIds)));
+    for (const r of rfidRows) rfidSet.add(r.riderId);
+  }
+
+  // Waiver signatures (only needed when the event requires the full waiver)
+  const waiverByRegId = new Set<number>();
+  const waiverByEmail = new Set<string>();
+  if (event.requireLiabilityWaiver) {
+    const waiverRows = await db
+      .select({ registrationId: liabilityWaiverSignaturesTable.registrationId, signerEmail: liabilityWaiverSignaturesTable.signerEmail })
+      .from(liabilityWaiverSignaturesTable)
+      .where(eq(liabilityWaiverSignaturesTable.eventId, event.id));
+    for (const w of waiverRows) {
+      if (w.registrationId) waiverByRegId.add(w.registrationId);
+      if (w.signerEmail) waiverByEmail.add(w.signerEmail.toLowerCase());
+    }
+  }
+
+  // Emails of riders with at least one eligible, unchecked-in registration
+  const eligibleEmails = new Set<string>();
+  for (const r of regs) {
+    const email = r.email?.toLowerCase();
+    if (!email) continue;
+    if (checkedInSet.has(`${r.riderId}:${r.raceClass ?? "Unknown"}`)) continue;
+    if (event.timingTechnology === "rfid" && !rfidSet.has(r.riderId)) continue;
+    if (event.timingTechnology === "mylaps" && !r.myLapsTransponderNumber && !r.riderTransponder) continue;
+    if (event.requireWaiver && !event.requireLiabilityWaiver && !r.waiverAcknowledgedAt) continue;
+    if (event.requireLiabilityWaiver && !waiverByRegId.has(r.registrationId) && !waiverByEmail.has(email)) continue;
+    eligibleEmails.add(email);
+  }
+  if (eligibleEmails.size === 0) return;
+
+  // Rider accounts for those emails
+  const accounts = await db
+    .select({ id: riderAccountsTable.id, email: riderAccountsTable.email })
+    .from(riderAccountsTable)
+    .where(inArray(sql`LOWER(${riderAccountsTable.email})`, [...eligibleEmails]));
+  if (accounts.length === 0) return;
+  let accountIds = accounts.map(a => a.id);
+
+  // Respect club-level notification opt-outs
+  if (event.clubId != null) {
+    const optOuts = await db
+      .select({ riderAccountId: riderNotificationPrefsTable.riderAccountId })
+      .from(riderNotificationPrefsTable)
+      .where(
+        and(
+          eq(riderNotificationPrefsTable.clubId, event.clubId),
+          eq(riderNotificationPrefsTable.enabled, false),
+          inArray(riderNotificationPrefsTable.riderAccountId, accountIds),
+        ),
+      );
+    const optedOut = new Set(optOuts.map(o => o.riderAccountId));
+    accountIds = accountIds.filter(id => !optedOut.has(id));
+  }
+  if (accountIds.length === 0) return;
+
+  // Only consider accounts that actually have a device to push to — riders who
+  // install the app later today can still get the push on a later cycle.
+  const tokens = await db
+    .select({ riderAccountId: riderPushTokensTable.riderAccountId, expoPushToken: riderPushTokensTable.expoPushToken })
+    .from(riderPushTokensTable)
+    .where(inArray(riderPushTokensTable.riderAccountId, accountIds));
+
+  const tokensByAccount = new Map<number, string[]>();
+  for (const t of tokens) {
+    const list = tokensByAccount.get(t.riderAccountId) ?? [];
+    list.push(t.expoPushToken);
+    tokensByAccount.set(t.riderAccountId, list);
+  }
+  const withDevices = accountIds.filter(id => (tokensByAccount.get(id) ?? []).length > 0);
+  if (withDevices.length === 0) return;
+
+  // Atomically claim dedup rows BEFORE sending — ON CONFLICT DO NOTHING with
+  // RETURNING means only one worker/cycle wins each (event, account) pair,
+  // preventing duplicate pushes from overlapping cycles or multiple instances.
+  const claimed = await db
+    .insert(quickCheckinNotificationsTable)
+    .values(withDevices.map(riderAccountId => ({ eventId: event.id, riderAccountId })))
+    .onConflictDoNothing()
+    .returning({ riderAccountId: quickCheckinNotificationsTable.riderAccountId });
+  const notifiableAccounts = claimed.map(c => c.riderAccountId);
+  if (notifiableAccounts.length === 0) return;
+
+  const messages: PushMessage[] = [];
+  for (const accountId of notifiableAccounts) {
+    for (const token of tokensByAccount.get(accountId)!) {
+      messages.push({
+        to: token,
+        title: `🏁 Race day at ${event.trackName ?? event.name}`,
+        body: `Quick Check-In is open for ${event.name.trim()}. Tap to check in from your phone and skip the line.`,
+        data: { type: "quick_checkin", eventId: event.id },
+      });
+    }
+  }
+
+  const ok = await sendPushNotifications(messages);
+  if (!ok) {
+    // Transport-level failure — release the claims so a later cycle retries
+    logger.warn({ eventId: event.id }, "Quick check-in morning push: transport failure, will retry");
+    await db
+      .delete(quickCheckinNotificationsTable)
+      .where(
+        and(
+          eq(quickCheckinNotificationsTable.eventId, event.id),
+          inArray(quickCheckinNotificationsTable.riderAccountId, notifiableAccounts),
+        ),
+      );
+    return;
+  }
+
+  logger.info(
+    { eventId: event.id, accounts: notifiableAccounts.length, devices: messages.length },
+    "Quick check-in morning push sent",
+  );
+}
+
+let cycleRunning = false;
+
 export function startQuickCheckinNotifier(): void {
-  const run = () => notifyQuickCheckinOpen().catch(err => logger.error({ err }, "quickCheckinNotifier failed"));
-  run(); // run once on startup
-  setInterval(run, CHECK_INTERVAL_MS);
+  const tick = async () => {
+    if (cycleRunning) return;
+    cycleRunning = true;
+    try {
+      await runQuickCheckinNotifierOnce();
+    } catch (err) {
+      logger.error({ err }, "Quick check-in notifier cycle failed");
+    } finally {
+      cycleRunning = false;
+      setTimeout(tick, POLL_INTERVAL_MS);
+    }
+  };
+  void tick();
+  logger.info("Quick check-in morning push notifier started");
 }
