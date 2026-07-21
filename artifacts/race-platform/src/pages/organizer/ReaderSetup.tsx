@@ -14,6 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListReaders, useCreateReader, useDeleteReader, useUpdateReader, getListReadersQueryKey,
   useGetConnectorStatus,
+  useGetRecentTags, useClearRecentTags, getGetRecentTagsQueryKey,
 } from "@workspace/api-client-react";
 
 const BASE_URL = window.location.origin;
@@ -31,6 +32,27 @@ interface MyLapsStatus {
   lastPassingAt: string | null;
   passingCount: number;
 }
+
+// ── RF Configuration (LLRP) ───────────────────────────────────────────────────
+
+interface LlrpRfConfig {
+  transmitPowerIndex: number;
+  rfModeIndex: number;
+  tagPopulation: number;
+  tagTransitTime: number;
+}
+
+const RF_PRESETS: Record<"raceday" | "dense" | "low", LlrpRfConfig> = {
+  // Max power, MaxThroughput mode, small Q (few tags at gate), 500ms dwell
+  // — 500ms gives the reader ~3-5 read attempts as a rider passes at race speed
+  raceday: { transmitPowerIndex: 81, rfModeIndex: 0, tagPopulation: 4,  tagTransitTime: 500  },
+  // Max power still (Dense Reader M8 handles multi-antenna interference via modulation,
+  // not by reducing power), Q=8 for a busy start line, 600ms dwell for grouped starts
+  dense:   { transmitPowerIndex: 81, rfModeIndex: 3, tagPopulation: 8,  tagTransitTime: 600  },
+  // Low power for indoor walk-through testing; longer dwell, small Q
+  low:     { transmitPowerIndex: 21, rfModeIndex: 0, tagPopulation: 4,  tagTransitTime: 800  },
+};
+
 
 const StepBadge = ({ n }: { n: number }) => (
   <div className="w-8 h-8 shrink-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-heading font-bold text-sm">
@@ -88,6 +110,16 @@ export default function ReaderSetup() {
   // RM Connect live status — refresh every 10s so the card stays current
   const { data: connectorStatuses = [] } = useGetConnectorStatus({
     query: { refetchInterval: 10_000 } as any,
+  });
+  // Live tag scanner — poll every 2s while enabled
+  const [scannerOn, setScannerOn] = useState(false);
+  const { data: recentTags = [] } = useGetRecentTags({
+    query: { refetchInterval: scannerOn ? 2000 : false, enabled: scannerOn } as any,
+  });
+  const clearTagsMutation = useClearRecentTags({
+    mutation: {
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetRecentTagsQueryKey() }),
+    } as any,
   });
   const [connectorDl, setConnectorDl] = useState({
     macArm:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.0/RM-Connect-arm64.dmg",
@@ -214,6 +246,41 @@ export default function ReaderSetup() {
     if (diffMs < 60_000) return { text: `${Math.round(diffMs / 1000)}s ago`, live: true };
     if (diffMs < 3_600_000) return { text: `${Math.round(diffMs / 60_000)}m ago`, live: diffMs < 300_000 };
     return { text: new Date(lastSeenAt).toLocaleTimeString(), live: false };
+  }
+
+  // ── RF config (LLRP antenna tuning) ─────────────────────────────────────────
+  const [rfPreset,   setRfPreset]   = useState<"raceday" | "dense" | "low" | "custom">("raceday");
+  const [rfConfig,   setRfConfig]   = useState<LlrpRfConfig>(RF_PRESETS.raceday);
+  const [rfApplying, setRfApplying] = useState(false);
+  const [rfResult,   setRfResult]   = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function applyRfConfig() {
+    setRfApplying(true);
+    setRfResult(null);
+    try {
+      const res = await fetch(`${BASE_URL}/api/readers/llrp-config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rfConfig),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRfResult({ ok: false, message: data.error ?? "Failed to apply" });
+      } else {
+        const sent: number = data.sent ?? 0;
+        setRfResult({
+          ok: true,
+          message: sent > 0
+            ? `Applied to ${sent} connected reader${sent !== 1 ? "s" : ""}.`
+            : "Settings saved. Will apply when RM Connect connects.",
+        });
+      }
+    } catch {
+      setRfResult({ ok: false, message: "Network error — check server connection." });
+    } finally {
+      setRfApplying(false);
+    }
   }
 
   const [tech,       setTech]       = useState<"rfid" | "mylaps">("rfid");
@@ -726,6 +793,7 @@ export default function ReaderSetup() {
                     {" — "}
                     {c.hardware?.connected ? "connected" : (c.hardware?.detail || "not connected")}
                     {c.hardware?.readCount > 0 && ` · ${c.hardware.readCount} reads`}
+                    {c.hardware?.antennaIds?.length > 0 && ` · ${c.hardware.antennaIds.length} antenna${c.hardware.antennaIds.length === 1 ? "" : "s"} active`}
                   </p>
                 </div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-green-500 bg-green-500/10 rounded px-1.5 py-0.5 shrink-0">
@@ -780,6 +848,72 @@ export default function ReaderSetup() {
             Tip: if the <span className="font-mono">.local</span> address won't load, find the reader's IP in your router's device list and enter the IP in RM Connect instead.
           </p>
         </div>
+      </div>
+
+      {/* ── Live Tag Scanner ── */}
+      <div className="rounded-xl border-2 p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <ScanLine size={18} className="text-primary" />
+              <h2 className="font-heading font-bold uppercase tracking-tight text-lg">Live Tag Scanner</h2>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Identify RFID tags so you can assign them to riders. Turn the scanner on, hold a tag near
+              the antenna, and its number appears below. Tags already assigned to a rider show the rider's name.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {scannerOn && (recentTags as any[]).length > 0 && (
+              <Button
+                variant="ghost" size="sm"
+                className="h-8 px-3 text-xs font-heading uppercase tracking-wider"
+                onClick={() => clearTagsMutation.mutate()}
+              >
+                <Trash2 size={13} className="mr-1" /> Clear
+              </Button>
+            )}
+            <Button
+              variant={scannerOn ? "default" : "outline"} size="sm"
+              className="h-8 px-4 text-xs font-heading uppercase tracking-wider"
+              onClick={() => setScannerOn(v => !v)}
+            >
+              {scannerOn ? <><Loader2 size={13} className="mr-1.5 animate-spin" /> Scanning…</> : <><ScanLine size={13} className="mr-1.5" /> Start Scanning</>}
+            </Button>
+          </div>
+        </div>
+
+        {scannerOn && (
+          (recentTags as any[]).length > 0 ? (
+            <div className="rounded-lg border divide-y">
+              {(recentTags as any[]).map((t: any) => (
+                <div key={t.rfidNumber} className="flex items-center gap-3 p-3">
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${t.riderId ? "bg-green-500" : "bg-blue-500 animate-pulse"}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-mono font-semibold truncate">{t.rfidNumber}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t.riderName ? `Assigned to ${t.riderName}` : "Not assigned to any rider"}
+                      {" · "}{t.count} read{t.count === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <CopyButton text={t.rfidNumber} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin shrink-0" />
+              Waiting for tag reads… make sure RM Connect (or your reader) is connected, then hold a tag near an antenna.
+            </div>
+          )
+        )}
+
+        {scannerOn && (recentTags as any[]).some((t: any) => !t.riderId) && (
+          <p className="text-xs text-muted-foreground">
+            To assign an unassigned tag: copy its number, open the rider's profile under <strong>Riders</strong>, and paste it
+            into the RFID number field. Practice sessions and races only count tags assigned to a rider.
+          </p>
+        )}
       </div>
 
       {/* Hardware toggle */}
@@ -1135,6 +1269,185 @@ export default function ReaderSetup() {
           )}
         </div>
       </div>
+
+      {/* Antenna RF Settings — RFID only */}
+      {tech === "rfid" && (
+        <div className="border rounded-xl bg-card overflow-hidden">
+          <div className="px-5 py-3 bg-muted/30 border-b">
+            <p className="font-heading font-bold uppercase tracking-wider text-sm">Reader Signal Settings</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Control how your RFID reader scans for tags at the timing gate. Sent live to RM Connect when you click Apply.
+            </p>
+          </div>
+          <div className="p-5 space-y-5">
+
+            {/* Quick presets */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Starting Points</p>
+              <div className="flex gap-2 flex-wrap">
+                {(["raceday", "dense", "low"] as const).map(key => {
+                  const labels: Record<string, string> = {
+                    raceday: "Race Day",
+                    dense:   "Crowded Start Gate",
+                    low:     "Bench Testing",
+                  };
+                  const descs: Record<string, string> = {
+                    raceday: "Full power, fastest scanning — best for a single finish line or timing gate",
+                    dense:   "Use when you have multiple readers close together or many riders crossing at once",
+                    low:     "Short range — for walking a tag past the antenna slowly while setting up",
+                  };
+                  return (
+                    <button key={key}
+                      title={descs[key]}
+                      onClick={() => { setRfPreset(key); setRfConfig(RF_PRESETS[key]); setRfResult(null); }}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                        rfPreset === key
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted/40 border-border hover:border-primary/40"
+                      }`}>
+                      {labels[key]}
+                    </button>
+                  );
+                })}
+                {rfPreset === "custom" && (
+                  <span className="px-3 py-1.5 rounded-lg border text-xs font-semibold bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300">
+                    Custom
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Controls grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+              {/* Signal Strength */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-medium">Signal Strength</label>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {rfConfig.transmitPowerIndex <= 21 ? "Low"
+                      : rfConfig.transmitPowerIndex <= 41 ? "Medium"
+                      : rfConfig.transmitPowerIndex <= 61 ? "High"
+                      : "Maximum"}
+                  </span>
+                </div>
+                <input type="range" min={1} max={81} step={1}
+                  value={rfConfig.transmitPowerIndex}
+                  onChange={e => {
+                    setRfConfig(c => ({ ...c, transmitPowerIndex: Number(e.target.value) }));
+                    setRfPreset("custom");
+                    setRfResult(null);
+                  }}
+                  className="w-full accent-primary" />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>Low — short range</span><span>Maximum — widest read zone</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  Higher signal = wider read zone around the antenna. For outdoor timing gates, keep this at Maximum. Only turn it down if your reader is picking up tags from areas you don't want (e.g. the pits).
+                </p>
+              </div>
+
+              {/* Gate Crossing Time */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-medium">Gate Crossing Time</label>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {rfConfig.tagTransitTime < 1000
+                      ? `${rfConfig.tagTransitTime} ms`
+                      : `${(rfConfig.tagTransitTime / 1000).toFixed(1)} s`}
+                  </span>
+                </div>
+                <input type="range" min={100} max={2000} step={50}
+                  value={rfConfig.tagTransitTime}
+                  onChange={e => {
+                    setRfConfig(c => ({ ...c, tagTransitTime: Number(e.target.value) }));
+                    setRfPreset("custom");
+                    setRfResult(null);
+                  }}
+                  className="w-full accent-primary" />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>Very fast (100ms)</span><span>Slow walk-through (2s)</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  How long a rider is in range of the antenna as they pass. The reader uses this to decide how many times to try reading a tag. At race speed, 400–600ms is the sweet spot — long enough to catch every rider, short enough to not confuse back-to-back crossings.
+                </p>
+              </div>
+
+              {/* Scanning Mode */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Scanning Mode</label>
+                <Select value={String(rfConfig.rfModeIndex)}
+                  onValueChange={v => {
+                    setRfConfig(c => ({ ...c, rfModeIndex: Number(v) }));
+                    setRfPreset("custom");
+                    setRfResult(null);
+                  }}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Speed Mode — reads as fast as possible</SelectItem>
+                    <SelectItem value="1">Balanced — speed and reliability</SelectItem>
+                    <SelectItem value="2">Multi-Reader (light) — 2–3 readers at same venue</SelectItem>
+                    <SelectItem value="3">Multi-Reader (full) — 4+ readers at same venue</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  Speed Mode is best if you have one timing gate. If you're running multiple readers at the same venue (start, finish, and checkpoints), switch to a Multi-Reader mode — it prevents the readers from stepping on each other's signals.
+                </p>
+              </div>
+
+              {/* Riders at Gate */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Riders Expected at Gate</label>
+                <Select value={String(rfConfig.tagPopulation)}
+                  onValueChange={v => {
+                    setRfConfig(c => ({ ...c, tagPopulation: Number(v) }));
+                    setRfPreset("custom");
+                    setRfResult(null);
+                  }}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 — riders come through one at a time</SelectItem>
+                    <SelectItem value="2">2 — up to 2 riders at once</SelectItem>
+                    <SelectItem value="4">4 — up to 4 riders at once</SelectItem>
+                    <SelectItem value="8">8 — busy gate, up to 8 riders</SelectItem>
+                    <SelectItem value="16">16 — mass start or very crowded gate</SelectItem>
+                    <SelectItem value="32">32 — large mass start</SelectItem>
+                    <SelectItem value="64">64 — very large group start</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  How many riders the reader expects to see at the gate at the same time. Matching this to reality makes the reader faster and more accurate — a lower number is quicker for single-file finish lines; a higher number is needed so no one gets missed in a pack.
+                </p>
+              </div>
+
+            </div>
+
+            {/* Apply button + result */}
+            <div className="flex items-center gap-3 pt-1 flex-wrap">
+              <Button onClick={applyRfConfig} disabled={rfApplying}
+                className="font-heading uppercase tracking-wider h-9 px-5 gap-2 text-xs shrink-0">
+                {rfApplying
+                  ? <RefreshCw size={13} className="animate-spin" />
+                  : <Radio size={13} />}
+                {rfApplying ? "Applying…" : "Apply to Reader"}
+              </Button>
+              {rfResult && (
+                <div className={`flex items-center gap-2 text-xs ${rfResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                  {rfResult.ok
+                    ? <CheckCircle2 size={14} />
+                    : <XCircle size={14} />}
+                  {rfResult.message}
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* Desktop RFID / Serial section */}
       {isDesktop && tech === "rfid" && (
