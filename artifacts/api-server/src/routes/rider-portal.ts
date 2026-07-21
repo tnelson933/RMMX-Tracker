@@ -579,6 +579,66 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     .where(historyWhere)
     .orderBy(desc(eventsTable.date), asc(motosTable.motoNumber));
 
+  // ── Per-lap gap computation ────────────────────────────────────────────────
+  // For each moto this rider raced, load ALL riders' lap times so we can
+  // compute, per lap, the gap to the leader and to the rider directly ahead
+  // (based on cumulative race time at the end of that lap).
+  const parseLapValueMs = (lt: unknown): number | null => {
+    if (typeof lt === "number") return lt > 0 ? lt : null;
+    const s = lt && typeof lt === "object" && "time" in lt ? String((lt as { time: string }).time) : String(lt ?? "");
+    const m = s.trim().match(/^(\d+):(\d{2})\.(\d{1,3})$/);
+    if (m) return parseInt(m[1]) * 60_000 + parseInt(m[2]) * 1_000 + parseInt(m[3].padEnd(3, "0"));
+    const sec = s.trim().replace(/s$/i, "").match(/^(\d+)(?:\.(\d{1,3}))?$/);
+    if (sec) return parseInt(sec[1]) * 1_000 + (sec[2] ? parseInt(sec[2].padEnd(3, "0")) : 0);
+    return null;
+  };
+
+  const motoIds = [...new Set(rows.map((r) => r.motoId))];
+  const competitorRows = motoIds.length
+    ? await db
+        .select({
+          motoId: raceResultsTable.motoId,
+          riderId: raceResultsTable.riderId,
+          lapTimes: raceResultsTable.lapTimes,
+        })
+        .from(raceResultsTable)
+        .where(inArray(raceResultsTable.motoId, motoIds))
+    : [];
+
+  // motoId → array of { riderId, cum: cumulative ms at end of each lap }
+  const cumByMoto = new Map<number, Array<{ riderId: number; cum: number[] }>>();
+  for (const cr of competitorRows) {
+    const laps = ((cr.lapTimes as unknown[]) ?? []).map(parseLapValueMs);
+    if (laps.some((l) => l == null) || laps.length === 0) continue;
+    const cum: number[] = [];
+    let t = 0;
+    for (const l of laps) { t += l!; cum.push(t); }
+    if (!cumByMoto.has(cr.motoId)) cumByMoto.set(cr.motoId, []);
+    cumByMoto.get(cr.motoId)!.push({ riderId: cr.riderId, cum });
+  }
+
+  /** Gap (ms) to leader and to the rider directly ahead at the end of each lap. */
+  const computeLapGaps = (motoId: number, lapCount: number): Array<{ leader: number | null; ahead: number | null }> => {
+    const field = cumByMoto.get(motoId) ?? [];
+    const me = field.find((f) => f.riderId === riderId);
+    const gaps: Array<{ leader: number | null; ahead: number | null }> = [];
+    for (let i = 0; i < lapCount; i++) {
+      if (!me || me.cum[i] == null) { gaps.push({ leader: null, ahead: null }); continue; }
+      const myCum = me.cum[i];
+      // Everyone who has completed at least i+1 laps, ranked by cumulative time
+      const ranked = field.filter((f) => f.cum[i] != null).map((f) => f.cum[i]).sort((a, b) => a - b);
+      const leaderCum = ranked[0];
+      if (leaderCum == null || myCum <= leaderCum) { gaps.push({ leader: 0, ahead: null }); continue; }
+      // Rider directly ahead = largest cumulative time strictly below mine
+      const aheadCum = [...ranked].reverse().find((c) => c < myCum) ?? null;
+      gaps.push({
+        leader: myCum - leaderCum,
+        ahead: aheadCum != null ? myCum - aheadCum : null,
+      });
+    }
+    return gaps;
+  };
+
   // Group by event
   const eventMap = new Map<number, {
     eventId: number;
@@ -597,6 +657,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       points: number | null;
       totalTime: string | null;
       lapTimes: string[];
+      lapGaps: Array<{ leader: number | null; ahead: number | null }>;
       dnf: boolean;
       dns: boolean;
       bibNumber: string | null;
@@ -616,6 +677,11 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
         motos: [],
       });
     }
+    const lapTimesFormatted = ((row.lapTimes as unknown[]) ?? []).map((lt) => {
+      if (typeof lt === "number") return formatLapTime(lt);
+      if (lt && typeof lt === "object" && "time" in lt) return (lt as { time: string }).time;
+      return String(lt ?? "");
+    }).filter(Boolean);
     eventMap.get(row.eventId)!.motos.push({
       motoId: row.motoId,
       motoName: row.motoName ?? `Moto ${row.motoNumber}`,
@@ -624,11 +690,8 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       position: row.position,
       points: row.points,
       totalTime: row.totalTime,
-      lapTimes: ((row.lapTimes as unknown[]) ?? []).map((lt) => {
-        if (typeof lt === "number") return formatLapTime(lt);
-        if (lt && typeof lt === "object" && "time" in lt) return (lt as { time: string }).time;
-        return String(lt ?? "");
-      }).filter(Boolean),
+      lapTimes: lapTimesFormatted,
+      lapGaps: computeLapGaps(row.motoId, lapTimesFormatted.length),
       dnf: row.dnf,
       dns: row.dns,
       bibNumber: row.bibNumber,
