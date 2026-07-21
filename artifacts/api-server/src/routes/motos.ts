@@ -654,9 +654,8 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     return 1; // heat / lcq / unknown → qualifying round
   }
 
-  // --- Guard: skip classes that already have completed motos to preserve results ---
-  // Exception: previous_round intentionally uses completed motos for seeding, so those classes
-  // are NOT locked — we keep completed motos and only delete/replace the scheduled ones.
+  // Fetch all existing motos for this event so we can protect completed results,
+  // clean up stale scheduled motos, and skip rounds that already ran.
   const existingMotos = await db.select({
     id: motosTable.id,
     raceClass: motosTable.raceClass,
@@ -666,17 +665,22 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     type: motosTable.type,
   }).from(motosTable).where(eq(motosTable.eventId, eventId));
 
-  const lockedClasses = seedingMethod === "previous_round"
-    ? new Set<string>()  // previous_round: no locking — completed motos are needed for seeding
-    : new Set(
-        existingMotos
-          .filter(m => m.status === "completed")
-          .map(m => m.raceClass)
-          .filter((c): c is string => c != null)
-      );
+  // Track the highest completed round number per class so we can skip those rounds
+  // during generation and only add the next round (e.g. Moto 2 after a completed Moto 1).
+  // previous_round seeding seeds from completed motos so no skipping is needed there.
+  const completedRoundsPerClass = new Map<string, number>();
+  if (seedingMethod !== "previous_round") {
+    for (const m of existingMotos) {
+      if (m.status === "completed" && m.raceClass != null && m.type !== "practice") {
+        const round = getRoundFromMoto(m);
+        completedRoundsPerClass.set(m.raceClass, Math.max(completedRoundsPerClass.get(m.raceClass) ?? 0, round));
+      }
+    }
+  }
 
-  // Only generate for classes that have no completed motos (or all classes for previous_round)
-  const classesToGenerate: string[] = ((classes as string[]) || []).filter(c => !lockedClasses.has(c));
+  // Generate for all requested classes — completed motos are never overwritten,
+  // only the missing rounds beyond the already-completed count are added.
+  const classesToGenerate: string[] = ((classes as string[]) || []).filter((c): c is string => c != null);
 
   // Compute divCount early so the deletion step can use it for locked-class cleanup.
   const divCount = raceFormat === "three_moto" ? 3 : raceFormat === "two_moto" ? 2 : 1;
@@ -693,13 +697,8 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const idsToDelete = existingMotos
     .filter(m => {
       if (m.raceClass == null) return false;
-      if (m.status === "completed") return false;
+      if (m.status === "completed") return false; // completed motos and their results are always preserved
       if (m.type === "practice") return false; // never delete practice sessions on lineup generation
-      if (lockedClasses.has(m.raceClass)) {
-        // Locked class: only prune rounds beyond what was requested.
-        return getRoundFromMoto(m) > divCount;
-      }
-      // Unlocked class: only touch classes being regenerated.
       if (!classesToGenerate.includes(m.raceClass)) return false;
       if (roundsSet !== null && !roundsSet.has(getRoundFromMoto(m))) return false;
       return true;
@@ -1113,6 +1112,8 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     for (let d = 1; d <= divCount; d++) {
       if (roundsSet !== null && !roundsSet.has(d)) continue;
       for (const { cls, groups } of allClassGroups) {
+        // Skip rounds already covered by a completed moto for this class
+        if (d <= (completedRoundsPerClass.get(cls) ?? 0)) continue;
         const multiGroup = groups.length > 1;
         for (let h = 0; h < groups.length; h++) {
           const groupLabel = multiGroup ? ` Div ${h + 1}` : "";
