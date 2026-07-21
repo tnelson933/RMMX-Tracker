@@ -226,6 +226,7 @@ export interface CloudReader {
   name: string;
   type: string;
   token: string;
+  hardwareAddress?: string | null;
 }
 
 /** Login with organizer credentials; returns the session cookie + clubId. */
@@ -261,23 +262,3 @@ export async function fetchReaders(cloudUrl: string, cookie: string): Promise<Cl
   return (await res.json()) as CloudReader[];
 }
 
-/** Create a new reader registration in the cloud. */
-export async function createReader(
-  cloudUrl: string,
-  cookie: string,
-  name: string,
-  type: "rfid" | "mylaps",
-): Promise<CloudReader> {
-  const base = cloudUrl.replace(/\/+$/, "");
-  const res = await fetch(`${base}/api/readers`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({ name, type }),
-  });
-  if (res.status === 401) throw new Error("Session expired — sign in again");
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error ?? `Failed to create reader (${res.status})`);
-  }
-  return (await res.json()) as CloudReader;
-}
