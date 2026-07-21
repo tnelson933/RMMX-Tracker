@@ -56,6 +56,7 @@ export interface MotoResult {
   points: number | null;
   totalTime: string | null;
   lapTimes: string[];
+  lapGaps?: Array<{ leader: number | null; ahead: number | null }>;
   dnf: boolean;
   dns: boolean;
   bibNumber: string | null;
