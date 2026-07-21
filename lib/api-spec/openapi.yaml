@@ -766,6 +766,28 @@ paths:
                 items:
                   $ref: "#/components/schemas/ConnectorStatus"
 
+  /readers/recent-tags:
+    get:
+      operationId: getRecentTags
+      tags: [readers]
+      summary: Tags recently seen by this club's readers (live tag scanner)
+      responses:
+        "200":
+          description: Recently seen tags, most recent first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecentTag"
+    delete:
+      operationId: clearRecentTags
+      tags: [readers]
+      summary: Clear the live tag scanner list
+      responses:
+        "204":
+          description: Cleared
+
   /readers/{readerId}:
     patch:
       operationId: updateReader
@@ -5760,6 +5782,27 @@ components:
               format: date-time
             readCount:
               type: integer
+
+    RecentTag:
+      type: object
+      required: [rfidNumber, count, firstSeenAt, lastSeenAt]
+      properties:
+        rfidNumber:
+          type: string
+        count:
+          type: integer
+          description: Number of reads since first seen
+        firstSeenAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        riderId:
+          type: ["integer", "null"]
+          description: Rider whose profile has this tag assigned, if any
+        riderName:
+          type: ["string", "null"]
 
     EventReaderAssignment:
       type: object
