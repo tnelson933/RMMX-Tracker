@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable } from "@workspace/db";
-import { eq, and, ne, count, countDistinct, sql, inArray, desc } from "drizzle-orm";
+import { eq, and, ne, count, countDistinct, sql, inArray, desc, asc } from "drizzle-orm";
+import { buildLeaderboard } from "./timing";
 
 const router = Router();
 
@@ -401,6 +402,126 @@ router.get("/reports/event/:eventId", async (req, res) => {
       noShow: regCount.count - checkinCount.count,
     },
   });
+});
+
+// ─── Public Race Results browser ─────────────────────────────────────────────
+
+// GET /public/events/browse — live (race_day) + completed events, optional text search
+router.get("/public/events/browse", async (req, res) => {
+  const q = String(req.query.q ?? "").trim().toLowerCase();
+
+  const events = await db.select({
+    id: eventsTable.id,
+    name: eventsTable.name,
+    state: eventsTable.state,
+    date: eventsTable.date,
+    endDate: eventsTable.endDate,
+    location: eventsTable.location,
+    trackName: eventsTable.trackName,
+    status: eventsTable.status,
+    clubName: clubsTable.name,
+  }).from(eventsTable)
+    .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
+    .where(inArray(eventsTable.status, ["race_day", "completed"]))
+    .orderBy(desc(eventsTable.date));
+
+  const out = events
+    .filter(e =>
+      !q ||
+      (e.name ?? "").toLowerCase().includes(q) ||
+      (e.state ?? "").toLowerCase().includes(q) ||
+      (e.location ?? "").toLowerCase().includes(q) ||
+      (e.trackName ?? "").toLowerCase().includes(q) ||
+      (e.clubName ?? "").toLowerCase().includes(q)
+    )
+    .map(e => ({
+      eventId: e.id,
+      name: e.name ?? "",
+      state: (e.state ?? "").trim(),
+      date: e.date ?? "",
+      endDate: e.endDate ?? null,
+      location: e.location ?? "",
+      trackName: e.trackName ?? "",
+      status: e.status,
+      clubName: e.clubName ?? "",
+    }));
+
+  return res.json(out);
+});
+
+// GET /public/events/:eventId/schedule — event schedule with motos for public viewing
+router.get("/public/events/:eventId/schedule", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+
+  const [event] = await db.select({
+    id: eventsTable.id,
+    name: eventsTable.name,
+    state: eventsTable.state,
+    date: eventsTable.date,
+    endDate: eventsTable.endDate,
+    location: eventsTable.location,
+    trackName: eventsTable.trackName,
+    status: eventsTable.status,
+    raceStyle: eventsTable.raceStyle,
+  }).from(eventsTable)
+    .where(and(
+      eq(eventsTable.id, eventId),
+      ne(eventsTable.status, "draft"),
+    ));
+
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const motos = await db.select().from(motosTable)
+    .where(eq(motosTable.eventId, eventId))
+    .orderBy(asc(motosTable.motoNumber));
+
+  return res.json({
+    eventId: event.id,
+    name: event.name ?? "",
+    state: (event.state ?? "").trim(),
+    date: event.date ?? "",
+    endDate: event.endDate ?? null,
+    location: event.location ?? "",
+    trackName: event.trackName ?? "",
+    status: event.status,
+    raceStyle: event.raceStyle ?? "motocross",
+    motos: motos
+      .filter(m => m.type !== "practice")
+      .map(m => ({
+        motoId: m.id,
+        motoNumber: m.motoNumber,
+        name: m.name,
+        raceClass: m.raceClass ?? null,
+        status: m.status,
+        type: m.type ?? "heat",
+        scheduledTime: m.scheduledTime ?? null,
+        startedAt: m.startedAt?.toISOString() ?? null,
+        completedAt: m.completedAt?.toISOString() ?? null,
+        lineup: ((Array.isArray(m.lineup) ? m.lineup : []) as Array<{ position: number; riderName: string; bibNumber?: string | null }>)
+          .sort((a, b) => a.position - b.position)
+          .map(e => ({ gate: e.position, riderName: e.riderName, bibNumber: e.bibNumber ?? null })),
+      })),
+  });
+});
+
+// GET /public/motos/:motoId/detail — public moto detail (leaderboard + lineup, no auth)
+router.get("/public/motos/:motoId/detail", async (req, res) => {
+  const motoId = Number(req.params.motoId);
+  if (isNaN(motoId)) return res.status(400).json({ error: "Invalid moto ID" });
+
+  const snapshot = await buildLeaderboard(motoId);
+  if (!snapshot) return res.status(404).json({ error: "Moto not found" });
+
+  const [moto] = await db.select({ lineup: motosTable.lineup }).from(motosTable).where(eq(motosTable.id, motoId));
+  const rawLineup = (Array.isArray(moto?.lineup) ? moto.lineup : []) as Array<{
+    position: number; riderName: string; bibNumber?: string | null;
+  }>;
+  const lineup = rawLineup
+    .sort((a, b) => a.position - b.position)
+    .map(e => ({ gate: e.position, riderName: e.riderName, bibNumber: e.bibNumber ?? null }));
+
+  return res.json({ ...snapshot, lineup });
 });
 
 export default router;
