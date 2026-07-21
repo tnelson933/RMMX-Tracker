@@ -6,8 +6,6 @@ contextBridge.exposeInMainWorld("connector", {
   login: (input: { cloudUrl: string; email: string; password: string }) =>
     ipcRenderer.invoke("auth:login", input),
   listReaders: () => ipcRenderer.invoke("readers:list"),
-  createReader: (input: { name: string; type: "rfid" | "mylaps" }) =>
-    ipcRenderer.invoke("readers:create", input),
   connect: (input: { readerId: number; hardware: "impinj" | "zebra" | "generic" | "mylaps"; hardwareAddress: string }) =>
     ipcRenderer.invoke("connect", input),
   disconnect: () => ipcRenderer.invoke("disconnect"),
