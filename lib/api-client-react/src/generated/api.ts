@@ -110,6 +110,7 @@ import type {
   ReaderInput,
   ReaderUpdateInput,
   RecentResultItem,
+  RecentTag,
   RecordArrivalInput,
   Registration,
   RegistrationInput,
@@ -2583,6 +2584,153 @@ export function useGetConnectorStatus<TData = Awaited<ReturnType<typeof getConne
 
 
 
+
+export const getGetRecentTagsUrl = () => {
+
+
+
+
+  return `/api/readers/recent-tags`
+}
+
+/**
+ * @summary Tags recently seen by this club's readers (live tag scanner)
+ */
+export const getRecentTags = async ( options?: RequestInit): Promise<RecentTag[]> => {
+
+  return customFetch<RecentTag[]>(getGetRecentTagsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRecentTagsQueryKey = () => {
+    return [
+    `/api/readers/recent-tags`
+    ] as const;
+    }
+
+
+export const getGetRecentTagsQueryOptions = <TData = Awaited<ReturnType<typeof getRecentTags>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRecentTags>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRecentTagsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRecentTags>>> = ({ signal }) => getRecentTags({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRecentTags>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRecentTagsQueryResult = NonNullable<Awaited<ReturnType<typeof getRecentTags>>>
+export type GetRecentTagsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Tags recently seen by this club's readers (live tag scanner)
+ */
+
+export function useGetRecentTags<TData = Awaited<ReturnType<typeof getRecentTags>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRecentTags>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRecentTagsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getClearRecentTagsUrl = () => {
+
+
+
+
+  return `/api/readers/recent-tags`
+}
+
+/**
+ * @summary Clear the live tag scanner list
+ */
+export const clearRecentTags = async ( options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getClearRecentTagsUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getClearRecentTagsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearRecentTags>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearRecentTags>>, TError,void, TContext> => {
+
+const mutationKey = ['clearRecentTags'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearRecentTags>>, void> = () => {
+
+
+          return  clearRecentTags(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearRecentTagsMutationResult = NonNullable<Awaited<ReturnType<typeof clearRecentTags>>>
+
+    export type ClearRecentTagsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Clear the live tag scanner list
+ */
+export const useClearRecentTags = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearRecentTags>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearRecentTags>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearRecentTagsMutationOptions(options));
+    }
 
 export const getUpdateReaderUrl = (readerId: number,) => {
 
