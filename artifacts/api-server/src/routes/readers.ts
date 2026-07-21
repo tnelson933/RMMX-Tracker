@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { readersTable, usersTable, eventReaderAssignmentsTable } from "@workspace/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { readersTable, usersTable, eventReaderAssignmentsTable, ridersTable } from "@workspace/db/schema";
+import { eq, asc, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { getConnectorStatus } from "../lib/connectorRelay";
+import { getConnectorStatus, sendConnectorCommand } from "../lib/connectorRelay";
+import { getRecentTags, clearRecentTags } from "../lib/recentTags";
 
 const router = Router();
 
@@ -20,6 +21,42 @@ router.get("/readers/connector-status", async (req, res) => {
   const clubId = await getCallerClubId(req);
   if (!clubId) return res.status(401).json({ error: "Unauthorized" });
   return res.json(getConnectorStatus(clubId));
+});
+
+// GET /readers/recent-tags — live tag scanner: tags recently seen by this club's readers
+router.get("/readers/recent-tags", async (req, res) => {
+  const clubId = await getCallerClubId(req);
+  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+
+  const tags = getRecentTags(clubId);
+  if (tags.length === 0) return res.json([]);
+
+  // Match tags to riders via the permanent rfid_number on rider profiles
+  const riders = await db
+    .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName, rfidNumber: ridersTable.rfidNumber })
+    .from(ridersTable)
+    .where(and(eq(ridersTable.clubId, clubId), inArray(ridersTable.rfidNumber, tags.map((t) => t.rfidNumber))));
+  const byTag = new Map(riders.map((r) => [r.rfidNumber, r]));
+
+  return res.json(tags.map((t) => {
+    const rider = byTag.get(t.rfidNumber);
+    return {
+      rfidNumber: t.rfidNumber,
+      count: t.count,
+      firstSeenAt: new Date(t.firstSeenAt).toISOString(),
+      lastSeenAt: new Date(t.lastSeenAt).toISOString(),
+      riderId: rider?.id ?? null,
+      riderName: rider ? `${rider.firstName} ${rider.lastName}`.trim() : null,
+    };
+  }));
+});
+
+// DELETE /readers/recent-tags — clear the live tag scanner list
+router.delete("/readers/recent-tags", async (req, res) => {
+  const clubId = await getCallerClubId(req);
+  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  clearRecentTags(clubId);
+  return res.status(204).end();
 });
 
 // GET /readers — list club's readers
@@ -86,6 +123,30 @@ router.patch("/readers/:readerId", async (req, res) => {
     .returning();
 
   return res.json(reader);
+});
+
+// POST /readers/llrp-config — broadcast RF config to all connected RM Connect instances for this club
+router.post("/readers/llrp-config", async (req, res) => {
+  const clubId = await getCallerClubId(req);
+  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+
+  const { transmitPowerIndex, rfModeIndex, tagPopulation, tagTransitTime } = req.body ?? {};
+
+  if (
+    typeof transmitPowerIndex !== "number" || transmitPowerIndex < 1 || transmitPowerIndex > 81 ||
+    typeof rfModeIndex !== "number" || rfModeIndex < 0 || rfModeIndex > 3 ||
+    typeof tagPopulation !== "number" || tagPopulation < 1 || tagPopulation > 64 ||
+    typeof tagTransitTime !== "number" || tagTransitTime < 50 || tagTransitTime > 5000
+  ) {
+    return res.status(400).json({ error: "Invalid RF config values" });
+  }
+
+  const sent = sendConnectorCommand(clubId, {
+    type: "set_llrp_config",
+    config: { transmitPowerIndex, rfModeIndex, tagPopulation, tagTransitTime },
+  });
+
+  return res.json({ sent });
 });
 
 // DELETE /readers/:readerId — remove a reader
