@@ -120,6 +120,21 @@ function statusLabel(status: string): string {
   }
 }
 
+function formatRaceFormat(moto: Moto): string | null {
+  const timeLimitMs = (moto as any).timeLimitMs as number | null | undefined;
+  const plusLaps    = (moto as any).plusLaps    as number | null | undefined;
+  const lapCount    = moto.lapCount;
+  if (timeLimitMs) {
+    const mins = Math.round(timeLimitMs / 60_000);
+    const pl   = plusLaps != null && plusLaps > 0 ? plusLaps : null;
+    return pl != null
+      ? `${mins} min + ${pl} lap${pl > 1 ? "s" : ""}`
+      : `${mins} min`;
+  }
+  if (lapCount != null) return `${lapCount} lap${lapCount !== 1 ? "s" : ""}`;
+  return null;
+}
+
 function sectionLabel(type: string): string {
   switch (type) {
     case "practice": return "Practice Sessions";
@@ -725,8 +740,10 @@ function SortableMotoCard({
               <Flag size={11} /> {riderCount} riders
               <ChevronDown size={11} className={`transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} />
             </button>
-            {moto.lapCount != null && !isCountdownMode && (
-              <span className="text-xs text-sidebar-foreground/60">{moto.lapCount} laps</span>
+            {!isCountdownMode && !!formatRaceFormat(moto) && (
+              <span className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
+                <Timer size={11} />{formatRaceFormat(moto)}
+              </span>
             )}
             {isCountdownActive && onCountdownExpire && (
               <PracticeCountdownTimer
@@ -916,8 +933,10 @@ function StaticMotoCard({
               <Flag size={11} /> {riderCount} riders
               <ChevronDown size={11} className={`transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`} />
             </button>
-            {moto.lapCount != null && !isCountdownMode && (
-              <span className="text-xs text-sidebar-foreground/60">{moto.lapCount} laps</span>
+            {!isCountdownMode && !!formatRaceFormat(moto) && (
+              <span className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
+                <Timer size={11} />{formatRaceFormat(moto)}
+              </span>
             )}
             {isCountdownActive && onCountdownExpire && (
               <PracticeCountdownTimer
@@ -2121,9 +2140,6 @@ export default function EventSchedule() {
       ? [...classOrderState.filter(c => allClasses.includes(c)), ...allClasses.filter(c => !classOrderState.includes(c))]
       : allClasses;
     const classesToUse = generateClass === "all" ? orderedAllClasses : [generateClass];
-    const lockedClasses = generateGateMethod === "prior_round_finish"
-      ? []
-      : classesToUse.filter(cls => rawMotos.some(m => m.raceClass === cls && m.status === "completed"));
     const ridersPerHeatVal = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
     const lapCountVal = generateLapCount.trim() ? parseInt(generateLapCount, 10) : undefined;
     const timeLimitMsVal = generateTimeLimitMins.trim() ? Math.round(parseFloat(generateTimeLimitMins) * 60 * 1000) : undefined;
@@ -2155,11 +2171,6 @@ export default function EventSchedule() {
           setIsGenerateOpen(false);
           if (generateGateMethod === "prior_round_finish") {
             toast({ title: "Lineups generated", description: "Gate picks seeded from prior moto finish order." });
-          } else if (lockedClasses.length > 0) {
-            toast({
-              title: "Lineups generated",
-              description: `Skipped ${lockedClasses.length} class${lockedClasses.length > 1 ? "es" : ""} with completed motos: ${lockedClasses.join(", ")}`,
-            });
           } else {
             toast({ title: "Lineups generated" });
           }
@@ -3813,36 +3824,29 @@ export default function EventSchedule() {
               );
             })()}
 
-            {/* Locked classes warning */}
+            {/* Classes with completed motos — informational only */}
             {(() => {
               const allClasses: string[] = (event?.raceClasses as string[] | undefined) ?? [];
               const classesToCheck = generateClass === "all" ? allClasses : [generateClass];
-              const lockedClasses = classesToCheck.filter(cls =>
+              const classesWithCompleted = classesToCheck.filter(cls =>
                 rawMotos.some(m => m.raceClass === cls && m.status === "completed")
               );
-              const regenerableClasses = classesToCheck.filter(cls => !lockedClasses.includes(cls));
-              if (lockedClasses.length === 0) return null;
+              if (classesWithCompleted.length === 0) return null;
               return (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-3 py-2.5 space-y-1.5">
-                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                    <span>⚠️</span> {lockedClasses.length === 1 ? "This class has" : "Some classes have"} completed motos
+                <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 px-3 py-2.5 space-y-1.5">
+                  <p className="text-xs font-semibold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
+                    <span>ℹ️</span> {classesWithCompleted.length === 1 ? "This class has" : "Some classes have"} completed motos
                   </p>
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    Completed motos and their results are never overwritten.
+                  <p className="text-xs text-blue-700 dark:text-blue-400">
+                    Completed motos and their results are preserved. The next round will be added for {classesWithCompleted.length === 1 ? "this class" : "these classes"}.
                   </p>
                   <div className="flex flex-wrap gap-1 pt-0.5">
-                    <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300 uppercase tracking-wider w-full">Skipped:</span>
-                    {lockedClasses.map(cls => (
-                      <span key={cls} className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+                    {classesWithCompleted.map(cls => (
+                      <span key={cls} className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                         {cls}
                       </span>
                     ))}
                   </div>
-                  {regenerableClasses.length === 0 && (
-                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
-                      {generateClass === "all" ? "All classes are locked" : "This class is locked"} — nothing to regenerate.
-                    </p>
-                  )}
                 </div>
               );
             })()}
