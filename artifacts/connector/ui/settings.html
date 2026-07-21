@@ -89,11 +89,8 @@
   <!-- SETUP -->
   <div class="card hidden" id="setupCard">
     <h2>Hardware setup</h2>
-    <label>Reader registration <span class="muted">(from Reader Setup in the web app)</span></label>
-    <div class="row">
-      <select id="selReader" style="flex:1"></select>
-      <button id="btnNewReader" class="secondary" style="flex:0 0 auto; margin-top:0">＋ New</button>
-    </div>
+    <label>Reader registration <span class="muted">(create readers on Reader Setup in the web app)</span></label>
+    <select id="selReader"></select>
     <label>Hardware type</label>
     <select id="selHardware">
       <option value="impinj">Impinj R700 (RFID)</option>
@@ -157,23 +154,43 @@
     $("chkTest").checked = st.testMode;
   }
 
+  let readersCache = [];
+
   function populateReaders(readers, selectedId) {
+    readersCache = readers || [];
     const sel = $("selReader");
     sel.innerHTML = "";
-    for (const r of readers) {
+    for (const r of readersCache) {
       const opt = document.createElement("option");
       opt.value = r.id;
       opt.textContent = r.name + " (" + r.type + ")";
       if (selectedId && r.id === selectedId) opt.selected = true;
       sel.appendChild(opt);
     }
-    if (!readers.length) {
+    if (!readersCache.length) {
       const opt = document.createElement("option");
       opt.value = "";
-      opt.textContent = "No readers yet — click ＋ New";
+      opt.textContent = "No readers yet — create one on Reader Setup in the web app";
       sel.appendChild(opt);
     }
+    autofillFromReader();
   }
+
+  // Pull hardware type + address from the cloud reader record (set on the
+  // Reader Setup page) so the user doesn't have to retype the IP here.
+  function autofillFromReader() {
+    const reader = readersCache.find((r) => String(r.id) === $("selReader").value);
+    if (!reader) return;
+    if (reader.type === "mylaps") {
+      $("selHardware").value = "mylaps";
+      $("selHardware").dispatchEvent(new Event("change"));
+    }
+    if (reader.hardwareAddress) {
+      $("inAddress").value = reader.hardwareAddress;
+    }
+  }
+
+  $("selReader").addEventListener("change", autofillFromReader);
 
   $("selHardware").addEventListener("change", () => {
     const hw = $("selHardware").value;
@@ -208,17 +225,6 @@
     populateReaders(res.readers || []);
   });
 
-  $("btnNewReader").addEventListener("click", async () => {
-    const name = prompt("Name for this reader (e.g. Finish Line):");
-    if (!name) return;
-    const type = $("selHardware").value === "mylaps" ? "mylaps" : "rfid";
-    const res = await api.createReader({ name, type });
-    if (!res.ok) { $("errSetup").textContent = res.error; return; }
-    populateReaders(res.readers || []);
-    const created = (res.readers || []).find((r) => r.name === name);
-    if (created) $("selReader").value = created.id;
-  });
-
   $("btnConnect").addEventListener("click", async () => {
     $("errSetup").textContent = "";
     const readerId = parseInt($("selReader").value, 10);
@@ -245,7 +251,7 @@
     const res = await api.listReaders();
     if (res.ok) populateReaders(res.readers || [], s.readerId);
     if (s.hardware) $("selHardware").value = s.hardware;
-    $("inAddress").value = s.hardwareAddress || "";
+    if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
     $("selHardware").dispatchEvent(new Event("change"));
     refresh();
   });
@@ -290,7 +296,7 @@
         $("setupCard").classList.remove("hidden");
         populateReaders(res.readers || [], s.readerId);
         if (s.hardware) $("selHardware").value = s.hardware;
-        $("inAddress").value = s.hardwareAddress || "";
+        if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
         $("selHardware").dispatchEvent(new Event("change"));
       }
     }
