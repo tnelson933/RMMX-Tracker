@@ -23,7 +23,7 @@ export interface AggregateStatus {
 export interface LoginResult {
   ok: boolean;
   error?: string;
-  readers?: Array<{ id: number; name: string; type: string }>;
+  readers?: Array<{ id: number; name: string; type: string; hardwareAddress: string | null }>;
 }
 
 export interface ConnectInput {
