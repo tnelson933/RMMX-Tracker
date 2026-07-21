@@ -1971,6 +1971,21 @@ export interface ConnectorStatus {
   hardware: ConnectorStatusHardware;
 }
 
+export interface RecentTag {
+  rfidNumber: string;
+  /** Number of reads since first seen */
+  count: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  /**
+     * Rider whose profile has this tag assigned, if any
+     * @nullable
+     */
+  riderId?: number | null;
+  /** @nullable */
+  riderName?: string | null;
+}
+
 export type EventReaderAssignmentRole = typeof EventReaderAssignmentRole[keyof typeof EventReaderAssignmentRole];
 
 
