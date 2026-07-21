@@ -260,8 +260,9 @@ Organizers can enable **Quick Check-In** per event so riders can check themselve
 3. Click **Enable**. The platform automatically geocodes the track location using the venue name and address on file.
 
 **How it works for riders:**
-- On race day, the Rider App polls for eligible events every 60 seconds.
-- When the rider's device is within 1 mile of the track, they receive a push notification *and* a blue banner appears at the top of their **Today** tab.
+- **Race-day morning push:** starting at 7:00 AM Mountain Time on the event date, the platform automatically sends one push notification to every eligible rider who hasn't checked in yet (works even if the app is closed). Riders who install the app or become eligible later in the day get the push on a later cycle (checked every 5 minutes, until 6:00 PM). Each rider gets at most one push per event.
+- On race day, the Rider App also polls for eligible events every 60 seconds while open.
+- When the rider's device is within 1 mile of the track (app open), they receive an arrival alert *and* a blue banner appears at the top of their **Today** tab.
 - The banner lists **every registration on the rider's account** for that event (e.g., multiple family members or multiple classes), each with its own **Check In** button.
 - Ineligible registrations are greyed out with the reason shown (e.g., "RFID sticker not assigned — see the organizer", "Missing MyLaps transponder number", "Waiver not signed") and must check in at the gate.
 - If all registrations are eligible and more than one is pending, a green **Check In for All** button checks them all in at once.
