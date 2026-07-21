@@ -2,7 +2,7 @@
   "expo": {
     "name": "RM Tracker",
     "slug": "rider-app",
-    "version": "1.0.13",
+    "version": "1.0.14",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rider-app",
@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.rockymountain.riderapp",
+      "appleTeamId": "3ZTSW3FGZ3",
       "entitlements": {
         "aps-environment": "production"
       },
@@ -29,7 +30,7 @@
     },
     "android": {
       "package": "com.rockymountain.riderapp",
-      "versionCode": 13,
+      "versionCode": 14,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
