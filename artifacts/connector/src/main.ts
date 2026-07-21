@@ -25,7 +25,6 @@ import {
   CloudLink,
   cloudLogin,
   fetchReaders,
-  createReader,
   type CloudCommand,
 } from "./cloud";
 import {
@@ -351,7 +350,7 @@ function registerIpc(): void {
         savePassword(input.password);
         saveSessionCookie(cookie);
         const readers = await fetchReaders(cloudUrl, cookie);
-        return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type })) };
+        return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type, hardwareAddress: r.hardwareAddress ?? null })) };
       } catch (err: any) {
         return { ok: false, error: err?.message ?? "Login failed" };
       }
@@ -362,25 +361,11 @@ function registerIpc(): void {
     try {
       const cookie = await ensureSession();
       const readers = await fetchReaders(settings.cloudUrl, cookie);
-      return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type })) };
+      return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type, hardwareAddress: r.hardwareAddress ?? null })) };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? "Failed to load readers" };
     }
   });
-
-  ipcMain.handle(
-    "readers:create",
-    async (_e, input: { name: string; type: "rfid" | "mylaps" }): Promise<LoginResult> => {
-      try {
-        const cookie = await ensureSession();
-        await createReader(settings.cloudUrl, cookie, input.name, input.type);
-        const readers = await fetchReaders(settings.cloudUrl, cookie);
-        return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type })) };
-      } catch (err: any) {
-        return { ok: false, error: err?.message ?? "Failed to create reader" };
-      }
-    },
-  );
 
   ipcMain.handle("connect", async (_e, input: ConnectInput) => {
     try {
