@@ -410,6 +410,25 @@ router.get("/reports/event/:eventId", async (req, res) => {
 router.get("/public/events/browse", async (req, res) => {
   const q = String(req.query.q ?? "").trim().toLowerCase();
 
+  // Auto-advance any events whose race date has arrived but status is still stuck
+  // in an earlier stage (mirrors /public/upcoming so browse reflects real-time state).
+  const advanceCandidates = await db.select({
+    id: eventsTable.id,
+    date: eventsTable.date,
+    status: eventsTable.status,
+    registrationOpen: eventsTable.registrationOpen,
+    registrationClose: eventsTable.registrationClose,
+  }).from(eventsTable)
+    .where(and(
+      sql`${eventsTable.status} NOT IN ('race_day', 'completed')`,
+      sql`SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')`,
+    ));
+  if (advanceCandidates.length > 0) {
+    // Run twice to handle events that need two steps (e.g. registration_open → registration_closed → race_day)
+    await _advanceStatuses(advanceCandidates);
+    await _advanceStatuses(advanceCandidates.map(e => ({ ...e, status: "registration_closed" })));
+  }
+
   const events = await db.select({
     id: eventsTable.id,
     name: eventsTable.name,
@@ -503,6 +522,91 @@ router.get("/public/events/:eventId/schedule", async (req, res) => {
           .map(e => ({ gate: e.position, riderName: e.riderName, bibNumber: e.bibNumber ?? null })),
       })),
   });
+});
+
+// GET /public/events/:eventId/overall-standings — per-class aggregate standings for an event
+router.get("/public/events/:eventId/overall-standings", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+
+  const rows = await db.select({
+    riderId: raceResultsTable.riderId,
+    raceClass: raceResultsTable.raceClass,
+    position: raceResultsTable.position,
+    points: raceResultsTable.points,
+    dnf: raceResultsTable.dnf,
+    dns: raceResultsTable.dns,
+    bibNumber: raceResultsTable.bibNumber,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+  }).from(raceResultsTable)
+    .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
+    .where(eq(raceResultsTable.eventId, eventId));
+
+  if (rows.length === 0) return res.json({ classes: [] });
+
+  // Aggregate per rider+class: sum points, best position, moto count
+  const key = (riderId: number, raceClass: string) => `${riderId}::${raceClass}`;
+  const agg = new Map<string, {
+    riderId: number; raceClass: string; riderName: string;
+    bibNumber: string | null; totalPoints: number;
+    bestPosition: number; motosRaced: number; dnf: boolean;
+  }>();
+
+  for (const row of rows) {
+    const raceClass = row.raceClass ?? "Unknown";
+    const k = key(row.riderId, raceClass);
+    const existing = agg.get(k);
+    const name = [row.firstName, row.lastName].filter(Boolean).join(" ") || `Rider #${row.riderId}`;
+    if (!existing) {
+      agg.set(k, {
+        riderId: row.riderId,
+        raceClass,
+        riderName: name,
+        bibNumber: row.bibNumber ?? null,
+        totalPoints: row.points ?? 0,
+        bestPosition: row.dnf || row.dns ? 999 : (row.position ?? 999),
+        motosRaced: 1,
+        dnf: !!(row.dnf && !row.dns),
+      });
+    } else {
+      existing.totalPoints += row.points ?? 0;
+      const pos = row.dnf || row.dns ? 999 : (row.position ?? 999);
+      if (pos < existing.bestPosition) existing.bestPosition = pos;
+      existing.motosRaced += 1;
+      if (!row.dnf && !row.dns) existing.dnf = false;
+    }
+  }
+
+  type AggEntry = { riderId: number; raceClass: string; riderName: string; bibNumber: string | null; totalPoints: number; bestPosition: number; motosRaced: number; dnf: boolean };
+  // Group by class, rank within each class
+  const classMap = new Map<string, AggEntry[]>();
+  for (const entry of agg.values()) {
+    if (!classMap.has(entry.raceClass)) classMap.set(entry.raceClass, []);
+    classMap.get(entry.raceClass)!.push(entry);
+  }
+
+  const hasPoints = [...agg.values()].some(e => e.totalPoints > 0);
+
+  const classes = [...classMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([raceClass, riders]) => {
+    const sorted = [...riders].sort((a, b) => {
+      if (hasPoints) return b.totalPoints - a.totalPoints || a.bestPosition - b.bestPosition;
+      return a.bestPosition - b.bestPosition;
+    });
+    return {
+      raceClass,
+      riders: sorted.map((r, i) => ({
+        position: i + 1,
+        riderName: r.riderName,
+        bibNumber: r.bibNumber,
+        totalPoints: r.totalPoints,
+        motosRaced: r.motosRaced,
+        bestPosition: r.bestPosition >= 999 ? null : r.bestPosition,
+      })),
+    };
+  });
+
+  return res.json({ classes, hasPoints });
 });
 
 // GET /public/motos/:motoId/detail — public moto detail (leaderboard + lineup, no auth)
