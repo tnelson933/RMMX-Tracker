@@ -55,6 +55,8 @@ const PARAM = {
   AISpec: 183,
   AISpecStopTrigger: 184,
   InventoryParameterSpec: 186,
+  AntennaConfiguration: 222,
+  RFTransmitter: 224,
   KeepaliveSpec: 220,
   ROReportSpec: 237,
   TagReportContentSelector: 238,
@@ -62,8 +64,44 @@ const PARAM = {
   EPCData: 241,
   ConnectionAttemptEvent: 256,
   LLRPStatus: 287,
+  C1G2InventoryCommand: 330,
+  C1G2RFControl: 335,
+  C1G2SingulationControl: 336,
   C1G2EPCMemorySelector: 348,
 } as const;
+
+// ── RF Configuration ──────────────────────────────────────────────────────────
+
+/**
+ * RF parameters that control how aggressively the reader reads tags.
+ * All fields are sent to the reader via standard LLRP parameters.
+ *
+ * transmitPowerIndex — index into the reader's power table (1–81 for Impinj R700;
+ *   higher = more transmit power = more range).  81 ≈ 30 dBm on an R700.
+ * rfModeIndex — LLRP link profile / modulation mode:
+ *   0 = MaxThroughput (fastest read rate, best for fast-moving tags)
+ *   1 = Hybrid
+ *   2 = DenseReaderM4 (better interference rejection, multiple readers)
+ *   3 = DenseReaderM8 (most interference-resistant, slightly lower rate)
+ * tagPopulation — expected number of tags in the field at once (Q hint).
+ *   Lower = faster when few tags; higher = fewer collisions with many tags.
+ * tagTransitTime — milliseconds a tag is expected to stay in the antenna field.
+ *   For a rider passing a gate at speed, 200–500 ms is typical.
+ */
+export interface LlrpRfConfig {
+  transmitPowerIndex: number;
+  rfModeIndex: number;
+  tagPopulation: number;
+  tagTransitTime: number;
+}
+
+/** Recommended defaults for outdoor race timing gates. */
+export const RF_CONFIG_RACE_DAY: LlrpRfConfig = {
+  transmitPowerIndex: 81,
+  rfModeIndex: 0,
+  tagPopulation: 4,
+  tagTransitTime: 300,
+};
 
 // TV parameter types found inside TagReportData
 const TV = {
@@ -156,17 +194,38 @@ function u32(v: number): Buffer {
  *   - all antennas (antenna id 0)
  *   - reports every tag observation immediately (N=1)
  *   - report contents: AntennaID + PeakRSSI + FirstSeenTimestampUTC
+ *   - optional C1G2InventoryCommand for RF mode + singulation tuning
  */
-function buildROSpec(): Buffer {
+function buildROSpec(rfConfig?: LlrpRfConfig): Buffer {
   const roSpecStartTrigger = tlv(PARAM.ROSpecStartTrigger, u8(0)); // null
   const roSpecStopTrigger = tlv(PARAM.ROSpecStopTrigger, Buffer.concat([u8(0), u32(0)])); // null
   const roBoundarySpec = tlv(PARAM.ROBoundarySpec, Buffer.concat([roSpecStartTrigger, roSpecStopTrigger]));
 
   const aiSpecStopTrigger = tlv(PARAM.AISpecStopTrigger, Buffer.concat([u8(0), u32(0)])); // null
-  const inventoryParameterSpec = tlv(
-    PARAM.InventoryParameterSpec,
-    Buffer.concat([u16(1) /* spec id */, u8(1) /* EPCGlobalClass1Gen2 */]),
-  );
+
+  // Build C1G2InventoryCommand with optional RF tuning parameters
+  let c1g2InventoryCmd: Buffer | null = null;
+  if (rfConfig) {
+    const rfControl = tlv(
+      PARAM.C1G2RFControl,
+      Buffer.concat([u16(rfConfig.rfModeIndex), u16(0) /* Tari = 0: use mode default */]),
+    );
+    const singulationControl = tlv(
+      PARAM.C1G2SingulationControl,
+      Buffer.concat([u16(rfConfig.tagPopulation), u32(rfConfig.tagTransitTime)]),
+    );
+    c1g2InventoryCmd = tlv(
+      PARAM.C1G2InventoryCommand,
+      Buffer.concat([u8(0) /* TagInventoryStateAware = false */, rfControl, singulationControl]),
+    );
+  }
+
+  const inventoryParamBody = Buffer.concat([
+    u16(1), // InventoryParameterSpecID
+    u8(1),  // AirProtocolID = EPCGlobalClass1Gen2
+    ...(c1g2InventoryCmd ? [c1g2InventoryCmd] : []),
+  ]);
+  const inventoryParameterSpec = tlv(PARAM.InventoryParameterSpec, inventoryParamBody);
   const aiSpec = tlv(
     PARAM.AISpec,
     Buffer.concat([
@@ -304,6 +363,8 @@ export interface LlrpStatus {
   error: string | null;
   lastReadAt: string | null;
   readCount: number;
+  /** Unique antenna port IDs seen since the current connection session started. */
+  antennaIds: number[];
 }
 
 /**
@@ -322,8 +383,10 @@ export class LlrpClient extends EventEmitter {
   private reading = false;
   private lastReadAt: string | null = null;
   private readCount = 0;
+  private antennaSet = new Set<number>();
   private lastError: string | null = null;
   private closingIntentionally = false;
+  private rfConfig: LlrpRfConfig | null = null;
 
   getStatus(): LlrpStatus {
     return {
@@ -333,6 +396,7 @@ export class LlrpClient extends EventEmitter {
       error: this.lastError,
       lastReadAt: this.lastReadAt,
       readCount: this.readCount,
+      antennaIds: [...this.antennaSet].sort((a, b) => a - b),
     };
   }
 
@@ -372,6 +436,7 @@ export class LlrpClient extends EventEmitter {
         if (this.socket === s) {
           this.socket = null;
           this.reading = false;
+          this.antennaSet = new Set();
         }
         for (const p of this.pending.values()) {
           clearTimeout(p.timer);
@@ -394,6 +459,7 @@ export class LlrpClient extends EventEmitter {
       await this.enableImpinjExtensions();
     }
     await this.setKeepalive();
+    if (this.rfConfig) await this.setAntennaConfig(this.rfConfig);
     await this.deleteAllROSpecs();
     await this.addROSpec();
     await this.enableROSpec();
@@ -414,6 +480,23 @@ export class LlrpClient extends EventEmitter {
     }
     this.socket = null;
     this.reading = false;
+  }
+
+  /**
+   * Set RF configuration. Applies immediately if connected (re-adds the ROSpec
+   * with the new parameters). Also persisted so reconnects use the same config.
+   */
+  async applyRfConfig(config: LlrpRfConfig): Promise<void> {
+    this.rfConfig = config;
+    if (!this.socket || this.socket.destroyed) return; // applied on next connect
+
+    const wasReading = this.reading;
+    if (wasReading) await this.stopReading().catch(() => {});
+    await this.setAntennaConfig(config);
+    await this.deleteAllROSpecs();
+    await this.addROSpec();
+    await this.enableROSpec();
+    if (wasReading) await this.startReading();
   }
 
   /** Begin inventory — tags start streaming. */
@@ -498,9 +581,32 @@ export class LlrpClient extends EventEmitter {
   }
 
   private async addROSpec(): Promise<void> {
-    const body = await this.request(MSG.ADD_ROSPEC, buildROSpec());
+    const body = await this.request(MSG.ADD_ROSPEC, buildROSpec(this.rfConfig ?? undefined));
     const code = statusCode(body);
     if (code !== 0) throw new Error(`ADD_ROSPEC failed (LLRP status ${code})`);
+  }
+
+  /** Apply transmit power to all antennas via SET_READER_CONFIG AntennaConfiguration. */
+  private async setAntennaConfig(config: LlrpRfConfig): Promise<void> {
+    const rfTransmitter = tlv(
+      PARAM.RFTransmitter,
+      Buffer.concat([
+        u16(1), // HopTableID = 1 (default frequency hop table)
+        u16(0), // ChannelIndex = 0 (reader picks channel automatically)
+        u16(config.transmitPowerIndex),
+      ]),
+    );
+    const antennaConfig = tlv(
+      PARAM.AntennaConfiguration,
+      Buffer.concat([
+        u16(0), // AntennaID = 0 → applies to all antennas
+        rfTransmitter,
+      ]),
+    );
+    const payload = Buffer.concat([u8(0) /* no factory reset */, antennaConfig]);
+    const body = await this.request(MSG.SET_READER_CONFIG, payload);
+    const code = statusCode(body);
+    if (code !== 0) throw new Error(`SET_READER_CONFIG (antenna power) failed (LLRP status ${code})`);
   }
 
   private async enableROSpec(): Promise<void> {
@@ -581,6 +687,7 @@ export class LlrpClient extends EventEmitter {
           if (read) {
             this.lastReadAt = new Date().toISOString();
             this.readCount++;
+            if (read.antennaId != null) this.antennaSet.add(read.antennaId);
             this.emit("tag", read);
           }
         }
