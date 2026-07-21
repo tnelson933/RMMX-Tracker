@@ -30,6 +30,7 @@ import {
 import { eq, and, count } from "drizzle-orm";
 import { processCrossing } from "./timing";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
+import { recordTagSeen } from "../lib/recentTags";
 
 const router = Router();
 
@@ -67,6 +68,10 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
   // 1. Resolve reader by token
   const [reader] = await db.select().from(readersTable).where(eq(readersTable.token, token));
   if (!reader) return res.status(404).json({ ok: false, message: "Unknown reader token" });
+
+  // Record the tag in the live scanner buffer — even if this request ends in
+  // a 422 (no checkpoint assignment), so organizers can identify tags.
+  recordTagSeen(reader.clubId, String(body.rfidNumber).toUpperCase());
 
   // 2. Update last-seen (fire-and-forget)
   db.update(readersTable)
