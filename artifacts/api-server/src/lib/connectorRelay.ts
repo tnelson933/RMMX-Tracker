@@ -20,8 +20,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage, Server } from "http";
 import { db } from "@workspace/db";
-import { readersTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { readersTable, motosTable, eventsTable, practiceSessionsTable } from "@workspace/db/schema";
+import { eq, and } from "drizzle-orm";
 import { logger } from "./logger";
 
 export interface ConnectorStatus {
@@ -36,6 +36,7 @@ export interface ConnectorStatus {
     detail: string | null;
     lastReadAt: string | null;
     readCount: number;
+    antennaIds: number[];
   };
 }
 
@@ -139,6 +140,7 @@ export function attachConnectorWebSocket(httpServer: Server): void {
                 detail: null,
                 lastReadAt: null,
                 readCount: 0,
+                antennaIds: [],
               },
             },
           };
@@ -155,6 +157,68 @@ export function attachConnectorWebSocket(httpServer: Server): void {
             .where(eq(readersTable.id, reader.id))
             .catch(() => {});
 
+          // Catch-up: if a moto or practice session is already live for this
+          // club, send start_moto immediately so the reader doesn't stay idle
+          // when RM Connect reconnects mid-session.
+          (async () => {
+            try {
+              // Check for an active moto first
+              const activeMoto = await db
+                .select({
+                  id: motosTable.id,
+                  name: motosTable.name,
+                  type: motosTable.type,
+                  eventId: motosTable.eventId,
+                })
+                .from(motosTable)
+                .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
+                .where(
+                  and(
+                    eq(eventsTable.clubId, reader.clubId),
+                    eq(motosTable.status, "in_progress"),
+                  ),
+                )
+                .limit(1);
+
+              if (activeMoto.length > 0) {
+                const m = activeMoto[0];
+                ws.send(JSON.stringify({
+                  type: "start_moto",
+                  motoId: m.id,
+                  eventId: m.eventId,
+                  motoName: m.name,
+                  motoType: m.type,
+                }));
+                return;
+              }
+
+              // No active moto — check for an active practice session
+              const activePractice = await db
+                .select({ id: practiceSessionsTable.id, name: practiceSessionsTable.name })
+                .from(practiceSessionsTable)
+                .where(
+                  and(
+                    eq(practiceSessionsTable.clubId, reader.clubId),
+                    eq(practiceSessionsTable.status, "active"),
+                  ),
+                )
+                .limit(1);
+
+              if (activePractice.length > 0) {
+                const p = activePractice[0];
+                ws.send(JSON.stringify({
+                  type: "start_moto",
+                  motoId: p.id,
+                  motoName: p.name,
+                  motoType: "practice",
+                  eventId: null,
+                }));
+              }
+            } catch {
+              // Non-fatal — connector will receive next start_moto on demand
+            }
+          })();
+
           ws.on("message", (data) => {
             let msg: any;
             try {
@@ -169,6 +233,9 @@ export function attachConnectorWebSocket(httpServer: Server): void {
                 detail: typeof msg.detail === "string" ? msg.detail.slice(0, 200) : null,
                 lastReadAt: typeof msg.lastReadAt === "string" ? msg.lastReadAt.slice(0, 40) : conn.status.hardware.lastReadAt,
                 readCount: Number.isFinite(msg.readCount) && Number(msg.readCount) >= 0 ? Math.floor(Number(msg.readCount)) : conn.status.hardware.readCount,
+                antennaIds: Array.isArray(msg.antennaIds)
+                  ? (msg.antennaIds as unknown[]).filter((v): v is number => typeof v === "number" && Number.isFinite(v)).slice(0, 16)
+                  : conn.status.hardware.antennaIds,
               };
             } else if (msg?.type === "pong") {
               conn.alive = true;
