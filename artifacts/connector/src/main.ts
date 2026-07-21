@@ -90,6 +90,7 @@ function getAggregateStatus(): AggregateStatus {
       error: dev?.error ?? ml?.error ?? null,
       lastReadAt: dev?.lastReadAt ?? ml?.lastPassingAt ?? null,
       readCount: dev?.readCount ?? ml?.passingCount ?? 0,
+      antennaIds: dev?.antennaIds ?? [],
     },
     activeMoto,
     testMode,
@@ -276,6 +277,7 @@ cloud.setStatusProvider(() => {
     detail: s.device.error,
     lastReadAt: s.device.lastReadAt,
     readCount: s.device.readCount,
+    antennaIds: s.device.antennaIds,
   };
 });
 
@@ -293,6 +295,10 @@ cloud.on("command", (cmd: CloudCommand) => {
     if (isLlrpHardware() && !testMode) {
       llrp.stopReading().catch(() => {});
     }
+  } else if (cmd.type === "set_llrp_config" && cmd.config && isLlrpHardware()) {
+    llrp.applyRfConfig(cmd.config).catch(() => {
+      // Non-fatal — config stored and will be applied on next reconnect
+    });
   }
   cloud.sendStatus();
   pushStatusToWindow();
