@@ -14,11 +14,17 @@ const RECONNECT_MAX_MS = 30_000;
 const STATUS_INTERVAL_MS = 15_000;
 
 export interface CloudCommand {
-  type: "start_moto" | "stop_moto" | "ping";
+  type: "start_moto" | "stop_moto" | "ping" | "set_llrp_config";
   motoId?: number;
   eventId?: number;
   motoName?: string;
   motoType?: string;
+  config?: {
+    transmitPowerIndex: number;
+    rfModeIndex: number;
+    tagPopulation: number;
+    tagTransitTime: number;
+  };
 }
 
 export interface CloudStatusReport {
@@ -27,6 +33,7 @@ export interface CloudStatusReport {
   detail: string | null;
   lastReadAt: string | null;
   readCount: number;
+  antennaIds: number[];
 }
 
 export interface CloudLinkStatus {
