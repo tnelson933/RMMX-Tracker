@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { randomBytes, randomUUID } from "crypto";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
-import { formatLapTime } from "./timing";
+import { formatLapTime, buildLeaderboard } from "./timing";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
 import {
@@ -1485,6 +1485,59 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
   });
 
   return res.json({ familyRiderIds, events: results });
+});
+
+// GET /rider/motos/:motoId/detail — leaderboard (live/completed) or lineup (scheduled)
+router.get("/rider/motos/:motoId/detail", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const motoId = parseInt(req.params.motoId, 10);
+  if (isNaN(motoId)) return res.status(400).json({ error: "Invalid moto ID" });
+
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
+  if (!moto) return res.status(404).json({ error: "Moto not found" });
+
+  const familyRiders = await db
+    .select({ id: ridersTable.id })
+    .from(ridersTable)
+    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+  const familyRiderIds = familyRiders.map(r => r.id);
+
+  const reg = await db
+    .select({ id: registrationsTable.id })
+    .from(registrationsTable)
+    .where(and(
+      inArray(registrationsTable.riderId, familyRiderIds),
+      eq(registrationsTable.eventId, moto.eventId),
+      eq(registrationsTable.status, "confirmed"),
+    ))
+    .limit(1);
+  if (reg.length === 0) return res.status(403).json({ error: "Access denied" });
+
+  const snapshot = await buildLeaderboard(motoId);
+  if (!snapshot) return res.status(404).json({ error: "Moto not found" });
+
+  const leaderboard = snapshot.leaderboard.map(e => ({
+    ...e,
+    isFamilyMember: e.riderId != null && familyRiderIds.includes(e.riderId),
+  }));
+
+  const rawLineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{
+    position: number; riderId: number; riderName: string; bibNumber?: string | null;
+  }>;
+  const lineup = rawLineup
+    .sort((a, b) => a.position - b.position)
+    .map(e => ({
+      gate: e.position,
+      riderId: e.riderId,
+      riderName: e.riderName,
+      bibNumber: e.bibNumber ?? null,
+      isFamilyMember: familyRiderIds.includes(e.riderId),
+    }));
+
+  return res.json({ ...snapshot, leaderboard, lineup });
 });
 
 // GET /rider/memory — return the server-side Rocky memory blob for this account
