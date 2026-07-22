@@ -4575,6 +4575,10 @@ components:
           type: boolean
         dns:
           type: boolean
+        bibNumber:
+          type: string
+        riderName:
+          type: string
 
     PublishInput:
       type: object
