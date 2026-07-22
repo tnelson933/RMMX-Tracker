@@ -780,7 +780,7 @@ function parseLapInput(s: string): number {
 
 // ── Lap Times Editor Dialog ────────────────────────────────────────────────────
 
-type LapEditTarget = { riderId: number; riderName: string; motoId: number; eventId: number; minLapTimeMs?: number | null };
+type LapEditTarget = { riderId: number; riderName: string; motoId: number; eventId: number; minLapTimeMs?: number | null; lapCount?: number | null };
 
 function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: () => void }) {
   const [laps, setLaps] = useState<string[]>([]);
@@ -799,7 +799,10 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
         if (match) {
           setResultId(match.id);
           const rawLaps: unknown[] = Array.isArray(match.lapTimes) ? match.lapTimes : [];
-          setLaps(rawLaps.map(t => fmtLapMs(typeof t === "number" ? t : 0)));
+          const cappedLaps = target.lapCount != null && target.lapCount > 0
+            ? rawLaps.slice(0, target.lapCount)
+            : rawLaps;
+          setLaps(cappedLaps.map(t => fmtLapMs(typeof t === "number" ? t : 0)));
         } else {
           setResultId(null);
           setLaps([]);
@@ -809,7 +812,10 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
       .finally(() => setLoading(false));
   }, [target.eventId, target.motoId, target.riderId]);
 
-  const lapMs = laps.map(parseLapInput).filter(ms => ms > 0);
+  const allLapMs = laps.map(parseLapInput).filter(ms => ms > 0);
+  const lapMs = target.lapCount != null && target.lapCount > 0
+    ? allLapMs.slice(0, target.lapCount)
+    : allLapMs;
   const totalMs = lapMs.reduce((s, t) => s + t, 0);
 
   const handleSave = () => {
@@ -3266,7 +3272,7 @@ export default function Motos() {
                                 lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
                                 rowNum={entry.position}
                                 hasShortLap={shortLapSet.has(`${moto.id}-${entry.riderId}`)}
-                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
+                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null, lapCount: (moto as any).lapCount ?? null }) : undefined}
                               />,
                               ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${moto.id}-${idx + 1}`} id={`gate-slot-${moto.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                             ];
@@ -3339,7 +3345,7 @@ export default function Motos() {
                                   lapCooldown={manualLapCooldown.has(`${partner.id}-${entry.riderId}`)}
                                   rowNum={entry.position}
                                   hasShortLap={partner.status !== "scheduled" && shortLapSet.has(`${partner.id}-${entry.riderId}`)}
-                                  onViewLaps={partner.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: partner.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
+                                  onViewLaps={partner.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: partner.id, eventId, minLapTimeMs: minLapMs ?? null, lapCount: (partner as any).lapCount ?? null }) : undefined}
                                 />,
                                 ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${partner.id}-${idx + 1}`} id={`gate-slot-${partner.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                               ])
@@ -3668,7 +3674,7 @@ export default function Motos() {
                                 lapCooldown={manualLapCooldown.has(`${moto.id}-${entry.riderId}`)}
                                 rowNum={entry.position}
                                 hasShortLap={shortLapSet.has(`${moto.id}-${entry.riderId}`)}
-                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
+                                onViewLaps={moto.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null, lapCount: (moto as any).lapCount ?? null }) : undefined}
                               />,
                               ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${moto.id}-${idx + 1}`} id={`gate-slot-${moto.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                             ];
@@ -3705,7 +3711,7 @@ export default function Motos() {
                                 <TableCell className="text-center font-heading font-bold">{entry.position}</TableCell>
                                 <TableCell className={`font-medium ${entryHasShortLap ? "text-red-600 dark:text-red-400" : ""}`}>
                                   {moto.status === "completed" ? (
-                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
+                                    <button onClick={() => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: moto.id, eventId, minLapTimeMs: minLapMs ?? null, lapCount: (moto as any).lapCount ?? null })} className={`flex items-center gap-1 transition-colors group ${entryHasShortLap ? "hover:text-red-700 dark:hover:text-red-300" : "hover:text-primary"}`}>
                                       {entry.riderName}
                                       <Clock size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
                                     </button>
@@ -3808,7 +3814,7 @@ export default function Motos() {
                                   lapCooldown={manualLapCooldown.has(`${partner.id}-${entry.riderId}`)}
                                   rowNum={entry.position}
                                   hasShortLap={partner.status !== "scheduled" && shortLapSet.has(`${partner.id}-${entry.riderId}`)}
-                                  onViewLaps={partner.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: partner.id, eventId, minLapTimeMs: minLapMs ?? null }) : undefined}
+                                  onViewLaps={partner.status === "completed" ? () => setLapEditTarget({ riderId: entry.riderId, riderName: entry.riderName, motoId: partner.id, eventId, minLapTimeMs: minLapMs ?? null, lapCount: (partner as any).lapCount ?? null }) : undefined}
                                 />,
                                 ...(!isSorted && idx === arr.length - 1 ? [<GateDropSlotRow key={`slot-${partner.id}-${idx + 1}`} id={`gate-slot-${partner.id}-${idx + 1}`} isActive={isSlotActive} colSpan={slotColSpan} />] : []),
                               ])
