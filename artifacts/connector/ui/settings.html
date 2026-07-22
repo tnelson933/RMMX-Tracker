@@ -114,6 +114,21 @@
   const api = window.connector;
   let currentStatus = null;
 
+  // ── View state ──────────────────────────────────────────────────────────────
+  // Tracks which panel is active so periodic status pushes don't clobber the
+  // setup card while the user is mid-configuration.
+  // 'login' | 'setup' | 'status'
+  let view = 'login';
+
+  function showView(v) {
+    view = v;
+    $("loginCard").classList.toggle("hidden", v !== 'login');
+    $("setupCard").classList.toggle("hidden", v !== 'setup');
+    $("statusCard").classList.toggle("hidden", v !== 'status');
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
   function fmtAgo(iso) {
     if (!iso) return "";
     const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
@@ -122,14 +137,26 @@
     return Math.round(s / 60) + "m ago";
   }
 
+  // ── Status rendering ────────────────────────────────────────────────────────
+  // Only drives view transitions in two cases:
+  //   1. Fully configured → always show status view
+  //   2. Signed out (no email) → always show login view
+  // Anything else (signed in but not yet configured) leaves the current view
+  // alone so setup can proceed uninterrupted.
+
   function renderStatus(st) {
     currentStatus = st;
-    const configured = st.configured;
-    $("statusCard").classList.toggle("hidden", !configured);
-    $("loginCard").classList.toggle("hidden", configured);
     $("btnLogout").classList.toggle("hidden", !st.email);
 
-    if (!configured) return;
+    if (st.configured) {
+      showView('status');
+    } else if (!st.email) {
+      showView('login');
+    }
+    // else: signed in but not configured — leave view as-is
+
+    if (view !== 'status') return;
+
     $("dotCloud").className = "dot " + (st.cloud.connected ? "on" : "off");
     $("txtCloud").textContent = "Cloud: " + (st.cloud.connected ? "connected" : (st.cloud.error || "disconnected"));
     $("dotDevice").className = "dot " + (st.device.connected ? "on" : "off");
@@ -154,6 +181,8 @@
     $("chkTest").checked = st.testMode;
   }
 
+  // ── Reader list ─────────────────────────────────────────────────────────────
+
   let readersCache = [];
 
   function populateReaders(readers, selectedId) {
@@ -176,8 +205,6 @@
     autofillFromReader();
   }
 
-  // Pull hardware type + address from the cloud reader record (set on the
-  // Reader Setup page) so the user doesn't have to retype the IP here.
   function autofillFromReader() {
     const reader = readersCache.find((r) => String(r.id) === $("selReader").value);
     if (!reader) return;
@@ -209,6 +236,8 @@
     }
   });
 
+  // ── Button handlers ─────────────────────────────────────────────────────────
+
   $("btnLogin").addEventListener("click", async () => {
     $("errLogin").textContent = "";
     $("btnLogin").disabled = true;
@@ -219,8 +248,7 @@
     });
     $("btnLogin").disabled = false;
     if (!res.ok) { $("errLogin").textContent = res.error; return; }
-    $("loginCard").classList.add("hidden");
-    $("setupCard").classList.remove("hidden");
+    showView('setup');
     $("btnLogout").classList.remove("hidden");
     populateReaders(res.readers || []);
   });
@@ -240,20 +268,19 @@
     $("btnConnect").disabled = false;
     $("btnConnect").textContent = "Save & Connect";
     if (!res.ok) { $("errSetup").textContent = res.error; return; }
-    $("setupCard").classList.add("hidden");
+    showView('status');
     refresh();
   });
 
   $("btnDisconnect").addEventListener("click", async () => {
     await api.disconnect();
-    $("setupCard").classList.remove("hidden");
     const s = await api.getSettings();
     const res = await api.listReaders();
     if (res.ok) populateReaders(res.readers || [], s.readerId);
     if (s.hardware) $("selHardware").value = s.hardware;
     if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
     $("selHardware").dispatchEvent(new Event("change"));
-    refresh();
+    showView('setup');
   });
 
   $("btnReconnect").addEventListener("click", async () => {
@@ -278,6 +305,8 @@
     location.reload();
   });
 
+  // ── Init ────────────────────────────────────────────────────────────────────
+
   async function refresh() {
     const st = await api.getStatus();
     renderStatus(st);
@@ -288,12 +317,11 @@
     if (s.cloudUrl) $("inCloudUrl").value = s.cloudUrl;
     if (s.email) $("inEmail").value = s.email;
     await refresh();
-    // If signed in but not fully configured, show setup
-    if (!currentStatus.configured && s.email && s.cloudUrl) {
+    // Signed in but not fully configured → go straight to setup
+    if (!currentStatus?.configured && s.email && s.cloudUrl) {
       const res = await api.listReaders();
       if (res.ok) {
-        $("loginCard").classList.add("hidden");
-        $("setupCard").classList.remove("hidden");
+        showView('setup');
         populateReaders(res.readers || [], s.readerId);
         if (s.hardware) $("selHardware").value = s.hardware;
         if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
