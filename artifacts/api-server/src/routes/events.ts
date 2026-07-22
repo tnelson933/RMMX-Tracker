@@ -13,18 +13,25 @@ function getStaffClubId(res: Response): number | null {
   return typeof id === "number" ? id : null;
 }
 
-type EventRow = { id: number; date: string; status: string; registrationOpen: string | null; registrationClose: string | null };
+type EventRow = { id: number; date: string; endDate?: string | null; status: string; registrationOpen: string | null; registrationClose: string | null };
 
 function computeAutoStatus(event: EventRow): string | null {
   const now = new Date();
   const { status, registrationOpen, registrationClose } = event;
-
-  // Never regress from terminal statuses
-  if (status === "race_day" || status === "completed") return null;
-
-  // If the event date has arrived, jump straight to race_day regardless of registration state.
-  // An event on race day should never stay stuck in registration_open/closed.
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  // Never regress from completed
+  if (status === "completed") return null;
+
+  // Auto-complete race_day events whose last day has already passed
+  if (status === "race_day") {
+    const lastDayStr = event.endDate ? String(event.endDate).substring(0, 10) : (event.date ? String(event.date).substring(0, 10) : null);
+    if (lastDayStr && lastDayStr < todayStr) return "completed";
+    return null;
+  }
+
+  // If today is on or after the event start date, jump straight to race_day.
+  // An event on race day should never stay stuck in registration_open/closed.
   const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
   if (eventDateStr && eventDateStr <= todayStr) return "race_day";
 
@@ -40,17 +47,20 @@ function computeAutoStatus(event: EventRow): string | null {
 }
 
 // Recompute the correct status from scratch based on date + registration window.
-// race_day and completed are left alone (never auto-regressed).
 function computeCorrectStatus(event: EventRow): string | null {
   const { status, registrationOpen, registrationClose } = event;
-  if (!["draft", "registration_open", "registration_closed"].includes(status)) return null;
+  if (!["draft", "registration_open", "registration_closed", "race_day"].includes(status)) return null;
 
   const now = new Date();
-
-  // If the event date has arrived, always promote to race_day
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
-  if (eventDateStr && eventDateStr <= todayStr) return "race_day";
+  const lastDayStr = event.endDate ? String(event.endDate).substring(0, 10) : eventDateStr;
+
+  // If the event's last day has already passed, it should be completed
+  if (lastDayStr && lastDayStr < todayStr) return status !== "completed" ? "completed" : null;
+
+  // If today is on or after the start date, it should be race_day
+  if (eventDateStr && eventDateStr <= todayStr) return status !== "race_day" ? "race_day" : null;
 
   let correct: string;
   if (registrationOpen && now >= new Date(registrationOpen)) {
@@ -395,6 +405,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const nextStatus = computeCorrectStatus({
     id: event.id,
     date: event.date,
+    endDate: event.endDate,
     status: event.status,
     registrationOpen: event.registrationOpen,
     registrationClose: event.registrationClose,
