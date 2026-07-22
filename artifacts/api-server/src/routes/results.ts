@@ -405,8 +405,9 @@ router.post("/events/:eventId/results", async (req, res) => {
         totalTime: r.totalTime || null,
         lapTimes:  r.lapTimes || [],
         points,
-        dnf: r.dnf || false,
-        dns: r.dns || false,
+        dnf:       r.dnf || false,
+        dns:       r.dns || false,
+        bibNumber: r.bibNumber || null,
       }).returning();
       inserted.push(result as Record<string, unknown>);
     }
