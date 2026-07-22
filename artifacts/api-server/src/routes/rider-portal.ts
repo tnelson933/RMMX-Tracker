@@ -1294,7 +1294,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
   const familyRiderIds = familyRiders.map(r => r.id);
   const familyRiderMap = new Map(familyRiders.map(r => [r.id, `${r.firstName} ${r.lastName}`]));
 
-  // Only confirmed registrations for ALL family riders
+  // Only confirmed registrations for the SPECIFIC requested rider
   const regs = await db
     .select({
       id: registrationsTable.id,
@@ -1305,7 +1305,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     })
     .from(registrationsTable)
     .where(and(
-      inArray(registrationsTable.riderId, familyRiderIds),
+      eq(registrationsTable.riderId, riderId),
       eq(registrationsTable.status, "confirmed"),
     ));
 
@@ -1367,12 +1367,12 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     ))
     .orderBy(asc(motosTable.motoNumber));
 
-  // Fetch checkins to know which family riders are checked into each event
+  // Fetch checkins to know if this specific rider is checked into each event
   const familyCheckins = await db
     .select({ riderId: checkinsTable.riderId, eventId: checkinsTable.eventId })
     .from(checkinsTable)
     .where(and(
-      inArray(checkinsTable.riderId, familyRiderIds),
+      eq(checkinsTable.riderId, riderId),
       inArray(checkinsTable.eventId, eventIds),
       eq(checkinsTable.checkedIn, true),
     ));
@@ -1422,8 +1422,8 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
         const motoLineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{
           position: number; riderId: number; riderName: string; bibNumber?: string | null;
         }>;
-        const familyInLineup = motoLineup.filter(e => familyRiderIds.includes(e.riderId));
-        // If the moto has an assigned lineup, only family riders IN the lineup see it as "their" moto
+        const familyInLineup = motoLineup.filter(e => e.riderId === riderId);
+        // If the moto has an assigned lineup, only this rider IN the lineup sees it as "their" moto
         const hasAssignedLineup = motoLineup.length > 0;
         const isAnyFamilyMemberInMoto = hasAssignedLineup ? familyInLineup.length > 0 : isCheckedIn;
 
@@ -1447,12 +1447,12 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
             riderId: e.riderId,
             riderName: e.riderName,
             bestLapMs: e.bestLapMs,
-            isMe: e.riderId != null && familyRiderIds.includes(e.riderId),
+            isMe: e.riderId === riderId,
           }));
 
         // My lap times
         const practiceLaps = validCrossings
-          .filter(c => c.riderId != null && familyRiderIds.includes(c.riderId))
+          .filter(c => c.riderId === riderId)
           .map(c => ({ riderId: c.riderId!, lapNumber: c.lapNumber ?? 0, lapTimeMs: c.lapTimeMs }))
           .sort((a, b) => a.lapNumber - b.lapNumber);
 
@@ -1479,7 +1479,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
               riderId: e.riderId,
               riderName: e.riderName,
               bibNumber: e.bibNumber ?? null,
-              isFamilyMember: familyRiderIds.includes(e.riderId),
+              isFamilyMember: e.riderId === riderId,
             })),
           practiceLaps,
           practiceLeaderboard,
@@ -1490,7 +1490,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       const lineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{
         position: number; riderId: number; riderName: string; bibNumber?: string | null;
       }>;
-      const familyInLineup = lineup.filter(e => familyRiderIds.includes(e.riderId));
+      const familyInLineup = lineup.filter(e => e.riderId === riderId);
 
       return {
         motoId: moto.id,
@@ -1514,7 +1514,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
             riderId: e.riderId,
             riderName: e.riderName,
             bibNumber: e.bibNumber ?? null,
-            isFamilyMember: familyRiderIds.includes(e.riderId),
+            isFamilyMember: e.riderId === riderId,
           })),
       };
     });
