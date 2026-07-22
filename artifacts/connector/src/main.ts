@@ -150,7 +150,9 @@ function openSettingsWindow(): void {
   settingsWindow = new BrowserWindow({
     width: 460,
     height: 640,
-    resizable: false,
+    minWidth: 400,
+    minHeight: 500,
+    resizable: true,
     title: "RM Connect",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
