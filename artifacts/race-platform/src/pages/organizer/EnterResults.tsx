@@ -92,20 +92,25 @@ function LapEditor({
   riderId,
   riderState,
   onChange,
+  lapCount,
 }: {
   riderId: number;
   riderState: RiderState;
   onChange: (riderId: number, updated: Partial<RiderState>) => void;
+  lapCount?: number | null;
 }) {
   const laps = riderState.laps;
   const lapErrors = laps.map((l) => l.trim() !== "" && parseLapMs(l) == null);
+  const cap = lapCount != null && lapCount > 0 ? lapCount : null;
+
+  const countingLaps = (next: string[]) => cap != null ? next.slice(0, cap) : next;
 
   const handleLapChange = (idx: number, val: string) => {
     const next = [...laps];
     next[idx] = val;
     let newTime = riderState.time;
     if (!riderState.totalOverridden) {
-      const total = sumLaps(next);
+      const total = sumLaps(countingLaps(next));
       if (total != null) newTime = fmtMs(total);
     }
     onChange(riderId, { laps: next, time: newTime, totalOverridden: riderState.totalOverridden });
@@ -115,7 +120,7 @@ function LapEditor({
     const next = laps.filter((_, i) => i !== idx);
     let newTime = riderState.time;
     if (!riderState.totalOverridden) {
-      const total = sumLaps(next);
+      const total = sumLaps(countingLaps(next));
       if (total != null) newTime = fmtMs(total);
     }
     onChange(riderId, { laps: next, time: newTime });
@@ -127,28 +132,39 @@ function LapEditor({
         <p className="text-xs text-muted-foreground italic py-1">No laps recorded.</p>
       ) : (
         laps.map((l, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-muted-foreground w-8 text-right shrink-0">
-              {i + 1}
-            </span>
-            <Input
-              value={l}
-              onChange={(e) => handleLapChange(i, e.target.value)}
-              placeholder="M:SS.mmm"
-              className={`h-7 text-xs font-mono flex-1 ${lapErrors[i] ? "border-destructive focus-visible:ring-destructive" : ""}`}
-            />
-            {lapErrors[i] && (
-              <span className="text-[10px] text-destructive shrink-0">invalid</span>
+          <Fragment key={i}>
+            {cap != null && i === cap && (
+              <div className="flex items-center gap-2 py-0.5">
+                <div className="flex-1 border-t border-dashed border-destructive/50" />
+                <span className="text-[10px] text-destructive font-semibold shrink-0 uppercase tracking-wide">
+                  Race cap — laps beyond {cap} not counted
+                </span>
+                <div className="flex-1 border-t border-dashed border-destructive/50" />
+              </div>
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
-              onClick={() => handleDelete(i)}
-            >
-              <Trash2 size={12} />
-            </Button>
-          </div>
+            <div className={`flex items-center gap-2 ${cap != null && i >= cap ? "opacity-40" : ""}`}>
+              <span className="text-[10px] font-mono text-muted-foreground w-8 text-right shrink-0">
+                {i + 1}
+              </span>
+              <Input
+                value={l}
+                onChange={(e) => handleLapChange(i, e.target.value)}
+                placeholder="M:SS.mmm"
+                className={`h-7 text-xs font-mono flex-1 ${lapErrors[i] ? "border-destructive focus-visible:ring-destructive" : ""}`}
+              />
+              {lapErrors[i] && (
+                <span className="text-[10px] text-destructive shrink-0">invalid</span>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                onClick={() => handleDelete(i)}
+              >
+                <Trash2 size={12} />
+              </Button>
+            </div>
+          </Fragment>
         ))
       )}
       <Button
@@ -171,12 +187,14 @@ function MotoSection({
   onUpdate,
   onSave,
   saving,
+  lapCount,
 }: {
   moto: any;
   motoResults: MotoResults;
   onUpdate: (riderId: number, field: keyof RiderState, value: any) => void;
   onSave: (motoId: number) => void;
   saving: boolean;
+  lapCount?: number | null;
 }) {
   const [expandedRiders, setExpandedRiders] = useState<Set<number>>(new Set());
 
@@ -360,6 +378,7 @@ function MotoSection({
                             <LapEditor
                               riderId={entry.riderId}
                               riderState={row}
+                              lapCount={lapCount}
                               onChange={(rid, updated) => {
                                 for (const [k, v] of Object.entries(updated)) {
                                   onUpdate(rid, k as keyof RiderState, v);
@@ -452,9 +471,9 @@ export default function EnterResults() {
           dnf: existing?.dnf ?? false,
           dns: existing?.dns ?? false,
           laps: Array.isArray(existing?.lapTimes)
-            ? (existing!.lapTimes as Array<string | number>).map((l) =>
-                typeof l === "number" ? fmtMs(l) : l
-              )
+            ? (existing!.lapTimes as Array<string | number>)
+                .slice(0, moto.lapCount != null ? moto.lapCount : undefined)
+                .map((l) => typeof l === "number" ? fmtMs(l) : l)
             : [],
           totalOverridden: false,
           bibNumber: existing?.bibNumber ?? entry.bibNumber ?? "",
@@ -490,7 +509,9 @@ export default function EnterResults() {
           pos: "", time: "", dnf: false, dns: false, laps: [],
           totalOverridden: false, bibNumber: "", riderName: "",
         };
+        const lapCap = moto.lapCount != null && moto.lapCount > 0 ? moto.lapCount : data.laps.length;
         const lapTimesMs = data.laps
+          .slice(0, lapCap)
           .map((l) => parseLapMs(l))
           .filter((ms): ms is number => ms != null)
           .map((ms) => fmtMs(ms));
@@ -681,6 +702,7 @@ export default function EnterResults() {
                   onUpdate={(riderId, field, value) => handleUpdate(moto.id, riderId, field, value)}
                   onSave={handleSave}
                   saving={savingMotoId === moto.id}
+                  lapCount={(moto as any).lapCount ?? null}
                 />
               ))}
             </div>
