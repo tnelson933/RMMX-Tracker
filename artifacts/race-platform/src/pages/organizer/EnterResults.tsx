@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { useRoute } from "wouter";
 import {
   useListMotos,
@@ -15,17 +15,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch as UISwitch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Save, CheckCircle, Activity, Globe, Trophy, ChevronDown, ChevronRight,
-  Plus, Trash2, Zap,
+  Plus, Trash2, Zap, Clock,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // ── Lap-time utilities ────────────────────────────────────────────────────────
 
-/** Parse "M:SS.mmm" or "M:SS.mm" or "SS.mmm" into milliseconds, null if invalid. */
-function parseLapMs(s: string): number | null {
+function parseLapMs(s: string | number): number | null {
+  if (typeof s === "number") return s > 0 ? s : null;
   const t = s.trim();
   if (!t) return null;
   const full = t.match(/^(\d+):(\d{2})\.(\d{1,3})$/);
@@ -41,7 +48,6 @@ function parseLapMs(s: string): number | null {
   return null;
 }
 
-/** Format milliseconds as "M:SS.mmm". */
 function fmtMs(ms: number): string {
   const m = Math.floor(ms / 60_000);
   const rem = ms % 60_000;
@@ -50,7 +56,6 @@ function fmtMs(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}.${String(f).padStart(3, "0")}`;
 }
 
-/** Sum lap strings to milliseconds total, null if any lap is invalid. */
 function sumLaps(laps: string[]): number | null {
   let total = 0;
   for (const l of laps) {
@@ -68,13 +73,20 @@ interface RiderState {
   time: string;
   dnf: boolean;
   dns: boolean;
-  laps: string[];           // editable lap time strings
-  totalOverridden: boolean; // true when organizer manually edited totalTime
+  laps: string[];
+  totalOverridden: boolean;
+  bibNumber: string;
+  riderName: string;
 }
+
+const DEFAULT_RIDER_STATE: RiderState = {
+  pos: "", time: "", dnf: false, dns: false, laps: [],
+  totalOverridden: false, bibNumber: "", riderName: "",
+};
 
 type MotoResults = Record<number, RiderState>;
 
-// ── Lap row component ─────────────────────────────────────────────────────────
+// ── Lap editor ────────────────────────────────────────────────────────────────
 
 function LapEditor({
   riderId,
@@ -86,18 +98,17 @@ function LapEditor({
   onChange: (riderId: number, updated: Partial<RiderState>) => void;
 }) {
   const laps = riderState.laps;
+  const lapErrors = laps.map((l) => l.trim() !== "" && parseLapMs(l) == null);
 
   const handleLapChange = (idx: number, val: string) => {
     const next = [...laps];
     next[idx] = val;
-    const newLaps = next;
     let newTime = riderState.time;
-    let overridden = riderState.totalOverridden;
-    if (!overridden) {
-      const total = sumLaps(newLaps);
-      if (total != null) { newTime = fmtMs(total); }
+    if (!riderState.totalOverridden) {
+      const total = sumLaps(next);
+      if (total != null) newTime = fmtMs(total);
     }
-    onChange(riderId, { laps: newLaps, time: newTime, totalOverridden: overridden });
+    onChange(riderId, { laps: next, time: newTime, totalOverridden: riderState.totalOverridden });
   };
 
   const handleDelete = (idx: number) => {
@@ -109,12 +120,6 @@ function LapEditor({
     }
     onChange(riderId, { laps: next, time: newTime });
   };
-
-  const handleAdd = () => {
-    onChange(riderId, { laps: [...laps, ""], totalOverridden: riderState.totalOverridden });
-  };
-
-  const lapErrors = laps.map((l) => l.trim() !== "" && parseLapMs(l) == null);
 
   return (
     <div className="px-4 pb-3 pt-1 bg-muted/30 border-t space-y-1">
@@ -150,7 +155,7 @@ function LapEditor({
         variant="ghost"
         size="sm"
         className="h-6 text-xs text-muted-foreground hover:text-foreground gap-1 px-1 mt-1"
-        onClick={handleAdd}
+        onClick={() => onChange(riderId, { laps: [...laps, ""], totalOverridden: riderState.totalOverridden })}
       >
         <Plus size={11} /> Add lap
       </Button>
@@ -178,8 +183,7 @@ function MotoSection({
   const toggleRider = (riderId: number) => {
     setExpandedRiders((prev) => {
       const next = new Set(prev);
-      if (next.has(riderId)) next.delete(riderId);
-      else next.add(riderId);
+      next.has(riderId) ? next.delete(riderId) : next.add(riderId);
       return next;
     });
   };
@@ -197,10 +201,9 @@ function MotoSection({
       })
     : [];
 
-  // Validation: any lap with a non-empty invalid string blocks save
   const hasLapErrors = sortedLineup.some((e: any) => {
     const s = motoResults[e.riderId];
-    return s?.laps.some((l) => l.trim() !== "" && parseLapMs(l) == null);
+    return s?.laps?.some((l) => l.trim() !== "" && parseLapMs(l) == null);
   });
 
   return (
@@ -210,7 +213,9 @@ function MotoSection({
           <span className="font-heading font-bold uppercase tracking-wider text-sm">
             Moto {moto.motoNumber}
           </span>
-          <span className="text-sidebar-foreground/70 text-sm">{moto.name}</span>
+          {moto.name && (
+            <span className="text-sidebar-foreground/70 text-sm">{moto.name}</span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {isCompleted && (
@@ -223,6 +228,11 @@ function MotoSection({
               <Zap size={13} className="mr-1" /> In Progress
             </div>
           )}
+          {moto.status === "scheduled" && (
+            <div className="flex items-center text-muted-foreground text-xs font-bold uppercase tracking-wider">
+              <Clock size={13} className="mr-1" /> Scheduled
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent className="p-0">
@@ -232,9 +242,9 @@ function MotoSection({
               <TableHeader className="bg-muted/50">
                 <TableRow>
                   <TableHead className="w-6 pl-3" />
-                  <TableHead className="w-14">#</TableHead>
+                  <TableHead className="w-20">Bib #</TableHead>
                   <TableHead>Rider</TableHead>
-                  <TableHead className="w-20 text-center">Laps</TableHead>
+                  <TableHead className="w-16 text-center">Laps</TableHead>
                   <TableHead className="w-24 text-center">Position</TableHead>
                   <TableHead className="w-32">Total Time</TableHead>
                   <TableHead className="w-16 text-center">DNF</TableHead>
@@ -244,37 +254,66 @@ function MotoSection({
               <TableBody>
                 {sortedLineup.map((entry: any) => {
                   const row = motoResults[entry.riderId] ?? {
-                    pos: "", time: "", dnf: false, dns: false, laps: [], totalOverridden: false,
+                    ...DEFAULT_RIDER_STATE,
+                    bibNumber: entry.bibNumber ?? "", riderName: entry.riderName ?? "",
                   };
                   const isDnfDns = row.dnf || row.dns;
                   const isExpanded = expandedRiders.has(entry.riderId);
 
-                  const handleTimeChange = (val: string) => {
-                    onUpdate(entry.riderId, "time" as any, val);
-                    // Mark overridden only when the user manually edits the field
-                    onUpdate(entry.riderId, "totalOverridden" as any, true);
-                  };
-
                   return (
-                    <>
+                    <Fragment key={entry.riderId}>
                       <TableRow
-                        key={entry.riderId}
-                        className={`${isDnfDns ? "opacity-50 bg-muted/50" : ""} cursor-pointer hover:bg-muted/30`}
-                        onClick={() => toggleRider(entry.riderId)}
+                        className={isDnfDns ? "opacity-50 bg-muted/50" : ""}
                       >
+                        {/* Expand toggle — clicking chevron or lap badge expands */}
                         <TableCell className="pl-3 pr-0">
-                          {isExpanded ? (
-                            <ChevronDown size={14} className="text-muted-foreground" />
-                          ) : (
-                            <ChevronRight size={14} className="text-muted-foreground" />
-                          )}
+                          <button
+                            onClick={() => toggleRider(entry.riderId)}
+                            className="text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </button>
                         </TableCell>
-                        <TableCell className="font-mono font-medium">{entry.bibNumber || "—"}</TableCell>
-                        <TableCell className="font-bold">{entry.riderName}</TableCell>
-                        <TableCell className="text-center text-sm font-mono">
-                          {row.laps.length > 0 ? row.laps.length : "—"}
+
+                        {/* Editable bib # */}
+                        <TableCell>
+                          <Input
+                            value={row.bibNumber}
+                            onChange={(e) => onUpdate(entry.riderId, "bibNumber", e.target.value)}
+                            placeholder="—"
+                            className="w-16 text-center font-mono font-medium h-8 text-sm"
+                          />
                         </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+
+                        {/* Editable rider name */}
+                        <TableCell>
+                          <Input
+                            value={row.riderName}
+                            onChange={(e) => onUpdate(entry.riderId, "riderName", e.target.value)}
+                            className="font-bold h-8 text-sm min-w-[140px]"
+                          />
+                        </TableCell>
+
+                        {/* Lap count — click to expand/collapse lap times */}
+                        <TableCell className="text-center">
+                          <button
+                            onClick={() => toggleRider(entry.riderId)}
+                            title={isExpanded ? "Collapse lap times" : "View lap times"}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-mono font-semibold transition-colors ${
+                              isExpanded
+                                ? "bg-primary text-primary-foreground"
+                                : row.laps.length > 0
+                                  ? "bg-muted hover:bg-muted-foreground/20 text-foreground"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                            }`}
+                          >
+                            {row.laps.length > 0 ? row.laps.length : "—"}
+                            {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                          </button>
+                        </TableCell>
+
+                        {/* Position */}
+                        <TableCell>
                           <Input
                             value={row.pos}
                             onChange={(e) => onUpdate(entry.riderId, "pos", e.target.value)}
@@ -282,30 +321,41 @@ function MotoSection({
                             disabled={isDnfDns}
                           />
                         </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+
+                        {/* Total time */}
+                        <TableCell>
                           <Input
                             value={row.time}
-                            onChange={(e) => handleTimeChange(e.target.value)}
+                            onChange={(e) => {
+                              onUpdate(entry.riderId, "time", e.target.value);
+                              onUpdate(entry.riderId, "totalOverridden", true);
+                            }}
                             placeholder="0:00.000"
                             className="font-mono text-sm h-9"
                             disabled={isDnfDns}
                           />
                         </TableCell>
-                        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+
+                        {/* DNF */}
+                        <TableCell className="text-center">
                           <UISwitch
                             checked={row.dnf}
                             onCheckedChange={(v) => onUpdate(entry.riderId, "dnf", v)}
                           />
                         </TableCell>
-                        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+
+                        {/* DNS */}
+                        <TableCell className="text-center">
                           <UISwitch
                             checked={row.dns}
                             onCheckedChange={(v) => onUpdate(entry.riderId, "dns", v)}
                           />
                         </TableCell>
                       </TableRow>
+
+                      {/* Expandable lap editor */}
                       {isExpanded && (
-                        <TableRow key={`${entry.riderId}-laps`}>
+                        <TableRow>
                           <TableCell colSpan={8} className="p-0">
                             <LapEditor
                               riderId={entry.riderId}
@@ -319,11 +369,12 @@ function MotoSection({
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </TableBody>
             </Table>
+
             <div className="p-4 bg-muted/30 border-t flex items-center justify-between">
               {hasLapErrors && (
                 <span className="text-xs text-destructive font-medium">
@@ -342,7 +393,7 @@ function MotoSection({
             </div>
           </>
         ) : (
-          <div className="p-8 text-center text-muted-foreground">No lineup found for this moto.</div>
+          <div className="p-8 text-center text-muted-foreground">No lineup assigned to this moto yet.</div>
         )}
       </CardContent>
     </Card>
@@ -358,9 +409,7 @@ export default function EnterResults() {
   const { toast } = useToast();
 
   const [selectedClass, setSelectedClass] = useState<string>("");
-  // motoId → riderId → RiderState
   const [allMotoResults, setAllMotoResults] = useState<Record<number, MotoResults>>({});
-  // which moto IDs we've already loaded from server (to avoid overwriting edits on refetch)
   const [initializedMotos, setInitializedMotos] = useState<Set<number>>(new Set());
   const [savingMotoId, setSavingMotoId] = useState<number | null>(null);
 
@@ -374,21 +423,23 @@ export default function EnterResults() {
   const submitMutation = useSubmitResults();
   const publishMutation = usePublishResults();
 
-  // Derive class list and active motos
-  const allActiveMotes = (motos || []).filter(
-    (m) => m.status === "completed" || m.status === "in_progress",
-  );
-  const raceClasses = [...new Set(allActiveMotes.map((m) => m.raceClass))].sort() as string[];
+  // All motos (any status) — organizer may need to enter results for any moto
+  const allMotos = (motos || []);
+
+  // Derive class list from all motos that have a class assigned
+  const raceClasses = [...new Set(
+    allMotos.filter(m => m.raceClass).map(m => m.raceClass)
+  )].sort() as string[];
   const displayClass = selectedClass || raceClasses[0] || "";
 
-  const classMotos = allActiveMotes
+  const classMotos = allMotos
     .filter((m) => m.raceClass === displayClass)
     .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0));
 
-  // Initialize moto state from server data (once per moto, not on every refetch)
+  // Initialize moto state from server data (once per moto)
   useEffect(() => {
     if (!existingResults || !motos) return;
-    for (const moto of allActiveMotes) {
+    for (const moto of allMotos) {
       if (initializedMotos.has(moto.id)) continue;
       if (!moto.lineup) continue;
       const motoResults: MotoResults = {};
@@ -400,8 +451,14 @@ export default function EnterResults() {
           time: existing?.totalTime ?? "",
           dnf: existing?.dnf ?? false,
           dns: existing?.dns ?? false,
-          laps: Array.isArray(existing?.lapTimes) ? (existing!.lapTimes as string[]) : [],
+          laps: Array.isArray(existing?.lapTimes)
+            ? (existing!.lapTimes as Array<string | number>).map((l) =>
+                typeof l === "number" ? fmtMs(l) : l
+              )
+            : [],
           totalOverridden: false,
+          bibNumber: existing?.bibNumber ?? entry.bibNumber ?? "",
+          riderName: existing?.riderName ?? entry.riderName ?? "",
         };
       });
       setAllMotoResults((prev) => ({ ...prev, [moto.id]: motoResults }));
@@ -415,7 +472,7 @@ export default function EnterResults() {
         ...prev,
         [motoId]: {
           ...prev[motoId],
-          [riderId]: { ...prev[motoId]?.[riderId], [field]: value },
+          [riderId]: { ...DEFAULT_RIDER_STATE, ...prev[motoId]?.[riderId], [field]: value },
         },
       }));
     },
@@ -424,26 +481,28 @@ export default function EnterResults() {
 
   const handleSave = useCallback(
     (motoId: number) => {
-      const moto = allActiveMotes.find((m) => m.id === motoId);
+      const moto = allMotos.find((m) => m.id === motoId);
       if (!moto?.lineup) return;
       const motoResults = allMotoResults[motoId] ?? {};
 
       const results = moto.lineup.map((entry: any) => {
         const data = motoResults[entry.riderId] ?? {
-          pos: "", time: "", dnf: false, dns: false, laps: [], totalOverridden: false,
+          pos: "", time: "", dnf: false, dns: false, laps: [],
+          totalOverridden: false, bibNumber: "", riderName: "",
         };
-        // Convert lap strings to ms integers for the API
         const lapTimesMs = data.laps
           .map((l) => parseLapMs(l))
           .filter((ms): ms is number => ms != null)
           .map((ms) => fmtMs(ms));
         return {
-          riderId: entry.riderId,
-          position: parseInt(data.pos) || 999,
-          totalTime: data.time || undefined,
-          dnf: data.dnf,
-          dns: data.dns,
-          lapTimes: lapTimesMs,
+          riderId:    entry.riderId,
+          position:   parseInt(data.pos) || 999,
+          totalTime:  data.time || undefined,
+          dnf:        data.dnf,
+          dns:        data.dns,
+          lapTimes:   lapTimesMs,
+          bibNumber:  data.bibNumber || undefined,
+          riderName:  data.riderName || undefined,
         };
       });
 
@@ -453,6 +512,7 @@ export default function EnterResults() {
         {
           onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: getListResultsQueryKey(eventId) });
+            queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
             toast({ title: `Moto ${moto.motoNumber} results saved` });
             setSavingMotoId(null);
           },
@@ -463,7 +523,7 @@ export default function EnterResults() {
         },
       );
     },
-    [allMotoResults, allActiveMotes, eventId, submitMutation, queryClient, toast],
+    [allMotoResults, allMotos, eventId, submitMutation, queryClient, toast],
   );
 
   const handlePublish = (published: boolean) => {
@@ -492,8 +552,10 @@ export default function EnterResults() {
     return `${mins}:${secs}`;
   };
 
+  // Use saved results to build standings (reflects what's actually in the DB)
+  const completedClassMotos = classMotos.filter(m => m.status === "completed" || m.status === "in_progress");
   const classResults = (existingResults || []).filter((r) =>
-    classMotos.some((m) => m.id === r.motoId),
+    completedClassMotos.some((m) => m.id === r.motoId),
   );
 
   const riderMap = new Map<number, {
@@ -512,7 +574,7 @@ export default function EnterResults() {
 
   const overallStandings = Array.from(riderMap.entries())
     .map(([riderId, data]) => {
-      const motoPoints = classMotos.map((moto) => {
+      const motoPoints = completedClassMotos.map((moto) => {
         const result = data.motos.get(moto.id);
         if (!result) return { display: "-" as string | number, value: 0 };
         if (result.dnf) return { display: "DNF", value: 0 };
@@ -520,7 +582,7 @@ export default function EnterResults() {
         return { display: result.points, value: result.points };
       });
       const total = motoPoints.reduce((sum, p) => sum + p.value, 0);
-      const totalTimeSeconds = classMotos.reduce((sum, moto) => {
+      const totalTimeSeconds = completedClassMotos.reduce((sum, moto) => {
         const t = data.times.get(moto.id);
         return isFinite(t ?? Infinity) ? sum + (t ?? 0) : sum;
       }, 0);
@@ -528,7 +590,7 @@ export default function EnterResults() {
     })
     .sort((a, b) => b.total - a.total || a.totalTimeSeconds - b.totalTimeSeconds);
 
-  const standingsWithPos: Array<(typeof overallStandings)[number] & { overallPos: number; totalTimeDisplay: string }> = [];
+  const standingsWithPos: Array<(typeof overallStandings)[0] & { overallPos: number; totalTimeDisplay: string }> = [];
   for (let idx = 0; idx < overallStandings.length; idx++) {
     const row = overallStandings[idx];
     let overallPos = idx + 1;
@@ -537,7 +599,7 @@ export default function EnterResults() {
       row.total === overallStandings[idx - 1].total &&
       row.totalTimeSeconds === overallStandings[idx - 1].totalTimeSeconds
     ) {
-      overallPos = standingsWithPos[idx - 1].overallPos;
+      overallPos = standingsWithPos[idx - 1]?.overallPos ?? idx + 1;
     }
     standingsWithPos.push({ ...row, overallPos, totalTimeDisplay: formatSeconds(row.totalTimeSeconds) });
   }
@@ -548,13 +610,14 @@ export default function EnterResults() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-6">
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-heading font-bold uppercase tracking-tight flex items-center gap-2">
             <Activity className="text-primary" /> Enter Results
           </h2>
-          <p className="text-muted-foreground mt-1">Record finishes for completed motos.</p>
+          <p className="text-muted-foreground mt-1">Review and edit results for each moto. All fields are editable.</p>
         </div>
         <div className="flex items-center gap-4 bg-muted p-2 rounded-lg border">
           <Globe size={18} className="text-muted-foreground ml-2" />
@@ -565,40 +628,47 @@ export default function EnterResults() {
         </div>
       </div>
 
-      {allActiveMotes.length === 0 ? (
+      {raceClasses.length === 0 ? (
         <Card>
           <CardContent className="p-16 text-center">
             <Activity className="mx-auto text-muted-foreground opacity-20 mb-4" size={48} />
-            <h3 className="text-xl font-heading font-bold mb-2">No Active Motos</h3>
+            <h3 className="text-xl font-heading font-bold mb-2">No Motos Found</h3>
             <p className="text-muted-foreground">
-              Start and complete motos on the Motos tab before entering results.
+              Create motos with lineups on the Motos tab first.
             </p>
           </CardContent>
         </Card>
       ) : (
         <>
-          {/* Class selector */}
-          <div className="flex flex-wrap gap-2">
-            {raceClasses.map((cls) => (
-              <button
-                key={cls}
-                onClick={() => setSelectedClass(cls)}
-                className={`px-4 py-1.5 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
-                  displayClass === cls
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
-                }`}
-              >
-                {cls}
-              </button>
-            ))}
+          {/* Class selector dropdown */}
+          <div className="flex items-center gap-3">
+            <Label className="font-heading font-bold uppercase tracking-wider text-sm text-muted-foreground shrink-0">
+              Class
+            </Label>
+            <Select value={displayClass} onValueChange={setSelectedClass}>
+              <SelectTrigger className="w-56 font-heading font-bold uppercase tracking-wider">
+                <SelectValue placeholder="Select a class" />
+              </SelectTrigger>
+              <SelectContent>
+                {raceClasses.map((cls) => (
+                  <SelectItem key={cls} value={cls} className="font-heading font-bold uppercase tracking-wider">
+                    {cls}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {classMotos.length > 0 && (
+              <span className="text-sm text-muted-foreground">
+                {classMotos.length} moto{classMotos.length !== 1 ? "s" : ""}
+              </span>
+            )}
           </div>
 
-          {/* Moto sections */}
+          {/* All motos for the selected class */}
           {classMotos.length === 0 ? (
             <Card>
               <CardContent className="p-10 text-center text-muted-foreground">
-                No completed or in-progress motos for <strong>{displayClass}</strong>.
+                No motos found for <strong>{displayClass}</strong>.
               </CardContent>
             </Card>
           ) : (
@@ -616,17 +686,17 @@ export default function EnterResults() {
             </div>
           )}
 
-          {/* Overall standings */}
-          {raceClasses.length > 0 && (
-            <div className="space-y-4 pt-4">
+          {/* Total points standings — always at the bottom */}
+          {completedClassMotos.length > 0 && (
+            <div className="space-y-4 pt-6 border-t">
               <h2 className="text-2xl font-heading font-bold uppercase tracking-tight flex items-center gap-2">
-                <Trophy className="text-primary" /> Class Overall Standings
+                <Trophy className="text-primary" /> Total Points — {displayClass}
               </h2>
 
               <Card className="border-sidebar-border">
                 <CardHeader className="bg-sidebar text-sidebar-foreground border-b py-3 px-6">
                   <CardTitle className="font-heading uppercase tracking-wider text-base">
-                    {displayClass} — Overall
+                    {displayClass} — Overall Standings
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -634,14 +704,14 @@ export default function EnterResults() {
                     <Table>
                       <TableHeader className="bg-muted/50">
                         <TableRow>
-                          <TableHead className="w-16 text-center">OA Pos</TableHead>
+                          <TableHead className="w-16 text-center">OA</TableHead>
                           <TableHead>Rider</TableHead>
-                          {classMotos.map((m) => (
+                          {completedClassMotos.map((m) => (
                             <TableHead key={m.id} className="w-24 text-center text-xs">
                               Moto {m.motoNumber}
                             </TableHead>
                           ))}
-                          <TableHead className="w-20 text-center">Points</TableHead>
+                          <TableHead className="w-20 text-center">Total Pts</TableHead>
                           <TableHead className="w-32 text-center">Total Time</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -666,7 +736,7 @@ export default function EnterResults() {
                               </TableCell>
                             ))}
                             <TableCell className="text-center">
-                              <span className="font-heading font-bold text-primary">{row.total}</span>
+                              <span className="font-heading font-bold text-primary text-lg">{row.total}</span>
                             </TableCell>
                             <TableCell className="text-center font-mono text-sm text-muted-foreground">
                               {row.totalTimeDisplay}
@@ -677,7 +747,7 @@ export default function EnterResults() {
                     </Table>
                   ) : (
                     <div className="p-10 text-center text-muted-foreground">
-                      No completed moto results for <strong>{displayClass}</strong> yet.
+                      Save moto results to see standings for <strong>{displayClass}</strong>.
                     </div>
                   )}
                 </CardContent>
