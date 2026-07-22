@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable } from "@workspace/db";
-import { eq, and, ne, count, countDistinct, sql, inArray, desc, asc } from "drizzle-orm";
+import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable, lapCrossingsTable } from "@workspace/db";
+import { eq, and, ne, count, countDistinct, sql, inArray, desc, asc, gt, lte } from "drizzle-orm";
 import { buildLeaderboard } from "./timing";
 
 const router = Router();
@@ -251,9 +251,18 @@ router.get("/public/states", async (req, res) => {
 });
 
 // ── Status auto-advancement helpers (mirrors events.ts) ──────────────────────
-function _computeAutoStatus(event: { id: number; date: string; status: string; registrationOpen: string | null; registrationClose: string | null }): string | null {
+function _computeAutoStatus(event: { id: number; date: string; endDate?: string | null; status: string; registrationOpen: string | null; registrationClose: string | null }): string | null {
   const now = new Date();
   const { status, registrationOpen, registrationClose } = event;
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  // Auto-complete race_day events whose last day has already passed
+  if (status === "race_day") {
+    const lastDayStr = event.endDate ? String(event.endDate).substring(0, 10) : (event.date ? String(event.date).substring(0, 10) : null);
+    if (lastDayStr && lastDayStr < todayStr) return "completed";
+    return null;
+  }
+
   if (status === "draft") {
     if (registrationOpen && now >= new Date(registrationOpen)) return "registration_open";
   }
@@ -261,14 +270,16 @@ function _computeAutoStatus(event: { id: number; date: string; status: string; r
     if (registrationClose && now >= new Date(registrationClose)) return "registration_closed";
   }
   if (status === "registration_closed") {
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
+    const lastDayStr = event.endDate ? String(event.endDate).substring(0, 10) : eventDateStr;
+    // Past → completed; today → race_day
+    if (lastDayStr && lastDayStr < todayStr) return "completed";
     if (eventDateStr && eventDateStr <= todayStr) return "race_day";
   }
   return null;
 }
 
-async function _advanceStatuses(events: Array<{ id: number; date: string; status: string; registrationOpen: string | null; registrationClose: string | null }>): Promise<Map<number, string>> {
+async function _advanceStatuses(events: Array<{ id: number; date: string; endDate?: string | null; status: string; registrationOpen: string | null; registrationClose: string | null }>): Promise<Map<number, string>> {
   const updates = new Map<number, string>();
   for (const e of events) {
     const next = _computeAutoStatus(e);
@@ -410,23 +421,32 @@ router.get("/reports/event/:eventId", async (req, res) => {
 router.get("/public/events/browse", async (req, res) => {
   const q = String(req.query.q ?? "").trim().toLowerCase();
 
-  // Auto-advance any events whose race date has arrived but status is still stuck
-  // in an earlier stage (mirrors /public/upcoming so browse reflects real-time state).
+  // Auto-advance stale statuses: promote pre-race events whose date arrived, and
+  // complete race_day events whose last day has already passed.
   const advanceCandidates = await db.select({
     id: eventsTable.id,
     date: eventsTable.date,
+    endDate: eventsTable.endDate,
     status: eventsTable.status,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
   }).from(eventsTable)
-    .where(and(
-      sql`${eventsTable.status} NOT IN ('race_day', 'completed')`,
-      sql`SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')`,
-    ));
+    .where(sql`
+      (${eventsTable.status} NOT IN ('race_day', 'completed')
+        AND SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD'))
+      OR
+      (${eventsTable.status} = 'race_day'
+        AND SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) < to_char(CURRENT_DATE, 'YYYY-MM-DD'))
+    `);
   if (advanceCandidates.length > 0) {
-    // Run twice to handle events that need two steps (e.g. registration_open → registration_closed → race_day)
+    // First pass: advance each event one step (race_day→completed, or registration→race_day).
     await _advanceStatuses(advanceCandidates);
-    await _advanceStatuses(advanceCandidates.map(e => ({ ...e, status: "registration_closed" })));
+    // Second pass: catch events that need two steps (e.g. draft → registration_open → registration_closed → race_day).
+    // Only apply to pre-race candidates — do not reclassify the race_day ones we just completed.
+    const preRaceCandidates = advanceCandidates.filter(e => e.status !== "race_day");
+    if (preRaceCandidates.length > 0) {
+      await _advanceStatuses(preRaceCandidates.map(e => ({ ...e, status: "registration_closed" as const })));
+    }
   }
 
   const events = await db.select({
@@ -607,6 +627,33 @@ router.get("/public/events/:eventId/overall-standings", async (req, res) => {
   });
 
   return res.json({ classes, hasPoints });
+});
+
+// GET /public/motos/:motoId/laps/:riderId — public rider lap times (no auth)
+router.get("/public/motos/:motoId/laps/:riderId", async (req, res) => {
+  const motoId = Number(req.params.motoId);
+  const riderId = Number(req.params.riderId);
+  if (isNaN(motoId) || isNaN(riderId)) return res.status(400).json({ error: "Invalid ID" });
+
+  const [moto] = await db.select({ lapCount: motosTable.lapCount })
+    .from(motosTable).where(eq(motosTable.id, motoId));
+
+  const conditions = [
+    eq(lapCrossingsTable.motoId, motoId),
+    eq(lapCrossingsTable.riderId, riderId),
+    gt(lapCrossingsTable.lapTimeMs, 0),
+    ...(moto?.lapCount != null ? [lte(lapCrossingsTable.lapNumber, moto.lapCount)] : []),
+  ];
+
+  const laps = await db.select({
+    lapNumber: lapCrossingsTable.lapNumber,
+    lapTimeMs: lapCrossingsTable.lapTimeMs,
+  })
+  .from(lapCrossingsTable)
+  .where(and(...conditions))
+  .orderBy(asc(lapCrossingsTable.lapNumber));
+
+  return res.json(laps);
 });
 
 // GET /public/motos/:motoId/detail — public moto detail (leaderboard + lineup, no auth)
