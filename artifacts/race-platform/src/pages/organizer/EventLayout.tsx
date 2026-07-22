@@ -57,6 +57,7 @@ function PracticeRedirect() {
 
 export default function EventLayout() {
   const [match, params] = useRoute("/events/:eventId/*?");
+  const [location] = useLocation();
   const eventId = parseInt(params?.eventId || "0");
   
   const { data: event, isLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
@@ -100,7 +101,7 @@ export default function EventLayout() {
       </div>
       
       <div className="flex-1 overflow-auto">
-        <PageErrorBoundary>
+        <PageErrorBoundary key={location}>
           <Switch>
             <Route path="/events/:eventId" component={EventDetail} />
             <Route path="/events/:eventId/registrations" component={Registrations} />
