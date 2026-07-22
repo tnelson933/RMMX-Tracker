@@ -71,6 +71,22 @@
       <button id="btnReconnect">Reconnect</button>
     </div>
     <div class="err" id="errStatus"></div>
+    <!-- Reader picker — shown when reader is missing or user clicks "Change reader" -->
+    <div id="readerPickerWrap" class="hidden" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
+      <label style="display:block; color:var(--muted); font-size:11px; margin-bottom:4px;">Switch reader</label>
+      <div class="row" style="margin-top:0;">
+        <select id="selReaderStatus" style="flex:1;"></select>
+        <button id="btnSwitchReader" style="margin-top:0; flex:0 0 auto; padding:7px 12px;">Switch</button>
+        <button id="btnCancelSwitch" class="secondary" style="margin-top:0; flex:0 0 auto; padding:7px 10px;">✕</button>
+      </div>
+      <div class="muted" style="margin-top:6px; line-height:1.4;">
+        Need to add a reader first? Go to <strong style="color:var(--text);">Reader Setup</strong> in the web app, add the reader there, then come back and the dropdown above will include it.
+      </div>
+      <div class="err" id="errSwitch"></div>
+    </div>
+    <div style="margin-top:8px;">
+      <button id="btnChangeReader" class="secondary" style="margin-top:0; width:100%; font-size:11px; padding:5px 10px;">Change reader…</button>
+    </div>
   </div>
 
   <!-- LOGIN -->
@@ -179,7 +195,70 @@
       ? st.device.readCount + " reads · last " + fmtAgo(st.device.lastReadAt)
       : "No reads yet";
     $("chkTest").checked = st.testMode;
+
   }
+
+  // ── Status-view reader picker ────────────────────────────────────────────────
+
+  let statusReadersCache = [];
+
+  function populateStatusReaders(readers, currentId) {
+    statusReadersCache = readers || [];
+    const sel = $("selReaderStatus");
+    sel.innerHTML = "";
+    if (!statusReadersCache.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "No readers found — create one in the web app";
+      sel.appendChild(opt);
+    } else {
+      for (const r of statusReadersCache) {
+        const opt = document.createElement("option");
+        opt.value = r.id;
+        opt.textContent = r.name + " (" + r.type + ")";
+        if (currentId && r.id === currentId) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+  }
+
+  async function openReaderPicker() {
+    $("errSwitch").textContent = "";
+    $("readerPickerWrap").classList.remove("hidden");
+    // Load fresh reader list from cloud
+    const s = await api.getSettings();
+    const res = await api.listReaders();
+    if (res.ok) populateStatusReaders(res.readers || [], s.readerId);
+    else $("errSwitch").textContent = res.error || "Could not load readers";
+  }
+
+  function closeReaderPicker() {
+    $("readerPickerWrap").classList.add("hidden");
+    $("errSwitch").textContent = "";
+  }
+
+  $("btnChangeReader").addEventListener("click", openReaderPicker);
+  $("btnCancelSwitch").addEventListener("click", closeReaderPicker);
+
+  $("btnSwitchReader").addEventListener("click", async () => {
+    $("errSwitch").textContent = "";
+    const readerId = parseInt($("selReaderStatus").value, 10);
+    if (!readerId) { $("errSwitch").textContent = "Select a reader first"; return; }
+    $("btnSwitchReader").disabled = true;
+    $("btnSwitchReader").textContent = "Switching…";
+    const s = await api.getSettings();
+    const res = await api.connect({
+      readerId,
+      hardware: s.hardware,
+      hardwareAddress: s.hardwareAddress,
+    });
+    $("btnSwitchReader").disabled = false;
+    $("btnSwitchReader").textContent = "Switch";
+    if (!res.ok) { $("errSwitch").textContent = res.error; return; }
+    $("errStatus").textContent = "";
+    closeReaderPicker();
+    refresh();
+  });
 
   // ── Reader list ─────────────────────────────────────────────────────────────
 
@@ -291,7 +370,12 @@
       hardware: s.hardware,
       hardwareAddress: s.hardwareAddress,
     });
-    if (!res.ok) $("errStatus").textContent = res.error;
+    if (!res.ok) {
+      $("errStatus").textContent = res.error;
+      if (res.error && res.error.toLowerCase().includes("no longer exists")) {
+        openReaderPicker();
+      }
+    }
   });
 
   $("chkTest").addEventListener("change", async () => {
