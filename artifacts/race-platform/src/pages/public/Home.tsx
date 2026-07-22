@@ -25,7 +25,7 @@ import { STATE_CENTROIDS, normalizeState } from "@/lib/stateCentroids";
 
 const FALLBACK_TAG = "desktop-v1.0.104";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
-const CONNECTOR_FALLBACK_TAG = "connector-v1.0.4";
+const CONNECTOR_FALLBACK_TAG = "connector-v1.0.5";
 const CONNECTOR_FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${CONNECTOR_FALLBACK_TAG}`;
 
 type Tab = "today" | "upcoming" | "past";
