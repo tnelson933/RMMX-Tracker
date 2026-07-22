@@ -200,8 +200,13 @@ export async function buildLeaderboard(motoId: number) {
 
   const leaderboard = results.map((r) => {
     const raw = Array.isArray(r.lapTimes) ? (r.lapTimes as unknown[]) : [];
-    const lapMs = raw.map(normalizeLapMs);
-    const totalMs = lapMs.reduce((s, t) => s + t, 0);
+    const lapMs = raw.map(normalizeLapMs).filter(t => t > 0);
+    // Always prefer stored totalTime (matches web platform exactly — covers manually entered
+    // results, RFID results, and results that were RFID-timed then manually corrected).
+    // Fall back to summing RFID laps only when no stored value (live/in-progress moto).
+    const storedTotalMs = r.totalTime ? parseTimeToMs(r.totalTime) : 0;
+    const rfidTotalMs = lapMs.length ? lapMs.reduce((s, t) => s + t, 0) : 0;
+    const totalMs = storedTotalMs || rfidTotalMs;
     const lastMs = lapMs.at(-1) ?? null;
     const validMs = lapMs.filter(t => t > 0);
     const bestMs = validMs.length ? Math.min(...validMs) : null;
@@ -217,7 +222,9 @@ export async function buildLeaderboard(motoId: number) {
       bestLapMs: bestMs,
       bestLap: bestMs != null ? formatLapTime(bestMs) : null,
       totalMs,
-      totalTime: lapMs.length ? formatLapTime(totalMs) : null,
+      // Stored value is source of truth for display (same as web platform).
+      // Fall back to formatted RFID sum for live in-progress motos.
+      totalTime: r.totalTime ?? (rfidTotalMs ? formatLapTime(rfidTotalMs) : null),
       dnf: r.dnf,
       dns: r.dns,
     };
@@ -227,8 +234,10 @@ export async function buildLeaderboard(motoId: number) {
   const leader = leaderboard[0];
   const withGaps = leaderboard.map((entry) => {
     if (!leader || entry.position === 1) return { ...entry, gap: "Leader" };
-    if (entry.laps < leader.laps)
+    // Lap-count gap (RFID motos where one rider is lapped)
+    if (entry.laps > 0 && leader.laps > 0 && entry.laps < leader.laps)
       return { ...entry, gap: `+${leader.laps - entry.laps} lap${leader.laps - entry.laps > 1 ? "s" : ""}` };
+    // Time gap — works for both RFID (totalMs from laps) and manually entered (totalMs from stored string)
     return {
       ...entry,
       gap: entry.totalMs > 0 && leader.totalMs > 0 ? `+${formatLapTime(entry.totalMs - leader.totalMs)}` : "—",
