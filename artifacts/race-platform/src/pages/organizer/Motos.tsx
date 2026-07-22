@@ -3412,7 +3412,9 @@ export default function Motos() {
                     .filter(id => id !== moto.id)
                     .map(id => (motos ?? []).find(m => m.id === id))
                     .filter((m): m is NonNullable<typeof m> => !!m && m.status === "in_progress");
-                  const showMoto1 = moto.status === "in_progress";
+                  const isActive = moto.status === "in_progress";
+                  const isDone   = moto.status === "completed";
+                  const showMoto1 = isActive || isDone;
                   const showAny = showMoto1 || staggerPartners.length > 0;
                   if (!showAny) return null;
                   return (
@@ -3422,10 +3424,14 @@ export default function Motos() {
                           {staggerPartners.length > 0 && (
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
-                          <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
-                            <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
-                          </div>
+                          {isActive ? (
+                            <div className="grid grid-cols-2 divide-x">
+                              <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
+                              <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
+                            </div>
+                          ) : (
+                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                          )}
                         </div>
                       )}
                       {staggerPartners.map(partner => (
@@ -3845,14 +3851,16 @@ export default function Motos() {
                   </div>
                 )}
 
-                {/* Live leaderboard + crossing feed — shown in expanded view too */}
+                {/* Live leaderboard + crossing feed — shown in expanded view too; leaderboard persists after completion */}
                 {(() => {
                   const groupMemberIds: number[] = (moto as any).staggeredGroupMembers ?? [];
                   const runningPartners = groupMemberIds
                     .filter(id => id !== moto.id)
                     .map(id => (motos ?? []).find(m => m.id === id))
                     .filter((m): m is NonNullable<typeof m> => !!m && m.status === "in_progress");
-                  const showMoto1 = moto.status === "in_progress";
+                  const isActive  = moto.status === "in_progress";
+                  const isDone    = moto.status === "completed";
+                  const showMoto1 = isActive || isDone;
                   const hasPartners = runningPartners.length > 0;
                   if (!showMoto1 && !hasPartners) return null;
                   return (
@@ -3862,10 +3870,14 @@ export default function Motos() {
                           {hasPartners && (
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
-                          <div className="grid grid-cols-2 divide-x">
-                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
-                            <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
-                          </div>
+                          {isActive ? (
+                            <div className="grid grid-cols-2 divide-x">
+                              <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
+                              <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
+                            </div>
+                          ) : (
+                            <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
+                          )}
                         </div>
                       )}
                       {runningPartners.map(partner => (
