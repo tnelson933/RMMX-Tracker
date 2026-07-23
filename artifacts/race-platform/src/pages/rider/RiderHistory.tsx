@@ -529,12 +529,13 @@ function MotoRow({ moto }: { moto: MotoResult }) {
     return parseFloat(s.replace("s", "")) * 1000;
   };
   const lapMsArr = hasTimes ? moto.lapTimes.map(parseLapMsLocal) : [];
-  const bestMs = lapMsArr.length ? Math.min(...lapMsArr) : Infinity;
+  const trueLapMs = lapMsArr.slice(1); // exclude lap 1 (gate-to-line partial lap)
+  const bestMs = trueLapMs.length ? Math.min(...trueLapMs) : Infinity;
   const gapMsStr = (ms: number) => `+${(ms / 1000).toFixed(3)}s`;
 
   const gapLabel = (i: number): { text: string; highlight: boolean } | null => {
     if (gapMode === "best") {
-      if (lapMsArr[i] === bestMs) return { text: "BEST", highlight: true };
+      if (i > 0 && lapMsArr[i] === bestMs) return { text: "BEST", highlight: true };
       const d = lapMsArr[i] - bestMs;
       return isFinite(d) && d > 0 ? { text: gapMsStr(d), highlight: false } : null;
     }
