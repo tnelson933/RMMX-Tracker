@@ -436,7 +436,7 @@ export default function SeriesWidget() {
                 const allLaps = motoResults.flatMap(m => toLapNums(m.lapTimes ?? undefined));
                 const directLaps = toLapNums(rider.lapTimes ?? undefined);
                 const lapsToShow = allLaps.length > 0 ? allLaps : directLaps;
-                const bl = bestLapMs(lapsToShow);
+                const bl = bestLapMs(lapsToShow.slice(1)); // exclude lap 1 (gate-to-line partial lap)
                 const totalMs = parseTotalTimeMs(rider.totalTime);
                 const totalPts = !mainMotoForEventClass
                   ? motoResults.reduce((sum, r) => sum + ((r as any).points ?? 0), 0)
@@ -494,7 +494,7 @@ export default function SeriesWidget() {
                         {motoResults.length > 0 ? motoResults.map(moto => {
                           const laps = toLapNums(moto.lapTimes ?? undefined);
                           const motoInfo = eventMotos.find(m => m.id === moto.motoId);
-                          const mbl = bestLapMs(laps);
+                          const mbl = bestLapMs(laps.slice(1)); // exclude lap 1 (gate-to-line partial lap)
                           return (
                             <div key={moto.id} style={{ marginBottom: 14 }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#dc2626", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
@@ -505,7 +505,7 @@ export default function SeriesWidget() {
                               {laps.length > 0 ? (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                                   {laps.map((lap, i) => {
-                                    const isBest = mbl !== null && lap === mbl;
+                                    const isBest = i > 0 && mbl !== null && lap === mbl;
                                     return (
                                       <div key={i} style={{ background: isBest ? "rgba(22,163,74,0.08)" : "#f1f5f9", border: `1px solid ${isBest ? "rgba(22,163,74,0.35)" : "#e2e8f0"}`, borderRadius: 5, padding: "4px 10px", fontSize: 12, color: isBest ? "#16a34a" : "#374151", fontVariantNumeric: "tabular-nums" }}>
                                         <span style={{ fontSize: 9, color: isBest ? "#16a34a" : "#94a3b8", marginRight: 4 }}>L{i + 1}</span>
@@ -523,7 +523,7 @@ export default function SeriesWidget() {
                         }) : directLaps.length > 0 ? (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                             {directLaps.map((lap, i) => {
-                              const isBest = bestLapMs(directLaps) === lap;
+                              const isBest = i > 0 && bestLapMs(directLaps.slice(1)) === lap;
                               return (
                                 <div key={i} style={{ background: isBest ? "rgba(22,163,74,0.08)" : "#f1f5f9", border: `1px solid ${isBest ? "rgba(22,163,74,0.35)" : "#e2e8f0"}`, borderRadius: 5, padding: "4px 10px", fontSize: 12, color: isBest ? "#16a34a" : "#374151", fontVariantNumeric: "tabular-nums" }}>
                                   <span style={{ fontSize: 9, color: "#94a3b8", marginRight: 4 }}>L{i + 1}</span>
