@@ -42,7 +42,8 @@ function LapTimesModal({
 
   const lapTimes = result.lapTimes ?? [];
   const parsedLaps = lapTimes.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n > 0);
-  const bestLapMs = parsedLaps.length > 0 ? Math.min(...parsedLaps) : null;
+  const trueParsedLaps = parsedLaps.slice(1); // exclude lap 1 (gate-to-line partial lap)
+  const bestLapMs = trueParsedLaps.length > 0 ? Math.min(...trueParsedLaps) : null;
 
   return (
     <Dialog open={!!result} onOpenChange={open => !open && onClose()}>
@@ -71,7 +72,7 @@ function LapTimesModal({
             </div>
             <div className="space-y-0.5 max-h-72 overflow-y-auto">
               {parsedLaps.map((lapMs, idx) => {
-                const isBest = lapMs === bestLapMs;
+                const isBest = idx > 0 && lapMs === bestLapMs;
                 return (
                   <div
                     key={idx}
