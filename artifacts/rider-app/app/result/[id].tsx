@@ -216,8 +216,9 @@ export default function ResultDetailScreen() {
             {ev.motos.map(moto => {
               const hasTimes = moto.lapTimes.length > 0;
               const lapMsArr = hasTimes ? moto.lapTimes.map(parseLapMs) : [];
-              const bestMs = hasTimes ? Math.min(...lapMsArr) : Infinity;
-              const fastestIdx = hasTimes ? lapMsArr.indexOf(bestMs) : -1;
+              const trueLaps = lapMsArr.slice(1); // lap 1 is partial (gate to line), exclude from best
+              const bestMs = trueLaps.length > 0 ? Math.min(...trueLaps) : Infinity;
+              const fastestIdx = bestMs < Infinity ? lapMsArr.findIndex((ms, i) => i > 0 && ms === bestMs) : -1;
 
               return (
                 <View key={moto.motoId} style={{
