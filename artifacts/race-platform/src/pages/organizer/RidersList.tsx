@@ -70,7 +70,7 @@ function toExportRows(riders: ExportRider[]) {
     ZIP: r.zip ?? "",
     "Bike Manufacturer": r.bikeManufacturer ?? "",
     "AMA #": r.amaNumber ?? "",
-    "RFID #": r.rfidNumber ?? "",
+    "RFID Sticker #": r.rfidNumber ?? "",
     "Active Timing Transponder #": r.mylapsTransponderId ?? "",
     Sponsors: r.sponsors ?? "",
     Email: r.email ?? "",
@@ -385,7 +385,7 @@ export default function RidersList() {
                       <FormItem><FormLabel>AMA #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={form.control} name="rfidNumber" render={({ field }) => (
-                      <FormItem><FormLabel>RFID Tag #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>RFID Sticker Number</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
                   </div>
 
@@ -470,7 +470,7 @@ export default function RidersList() {
                   onClick={() => handleSort("rfid")}
                 >
                   <span className="inline-flex items-center justify-center w-full">
-                    RFID <SortIcon col="rfid" sortKey={sortKey} sortDir={sortDir} />
+                     RFID Sticker <SortIcon col="rfid" sortKey={sortKey} sortDir={sortDir} />
                   </span>
                 </TableHead>
                 <TableHead
@@ -518,7 +518,7 @@ export default function RidersList() {
                     <TableCell className="text-center">
                       {rider.rfidNumber ? (
                         <span className="inline-flex items-center gap-1 text-xs text-primary font-bold bg-primary/10 px-2 py-0.5 rounded">
-                          <Tag size={11} /> Active
+                           <Tag size={11} /> Assigned
                         </span>
                       ) : (
                         <span className="text-muted-foreground/40 text-sm">—</span>

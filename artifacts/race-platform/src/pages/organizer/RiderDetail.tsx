@@ -14,7 +14,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ticket, Copy, Check, Trash2, Plus, Loader2, FileText, ShieldCheck, ChevronDown, Download, ExternalLink } from "lucide-react";
+import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ticket, Copy, Check, Trash2, Plus, Loader2, FileText, ShieldCheck, ChevronDown, Download, ExternalLink, Radio } from "lucide-react";
 import { format } from "date-fns";
 import { useGetMe } from "@workspace/api-client-react";
 import { PdfSignedViewer } from "@/components/PdfSignedViewer";
@@ -691,6 +691,7 @@ export default function RiderDetail() {
   const [isEditing, setIsEditing] = useState(false);
   const [emailExpanded, setEmailExpanded] = useState(false);
   const [rfidInput, setRfidInput] = useState("");
+  const [activeTransponderInput, setActiveTransponderInput] = useState("");
 
   const r = rider as any;
   const clubId = (me as any)?.clubId;
@@ -768,6 +769,24 @@ export default function RiderDetail() {
           queryClient.invalidateQueries({ queryKey: getGetRiderQueryKey(riderId) });
           setRfidInput("");
           toast({ title: "RFID assigned successfully" });
+        },
+        onError: (err) => {
+          toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  const handleAssignActiveTransponder = () => {
+    const value = activeTransponderInput.trim();
+    if (!value) return;
+    updateMutation.mutate(
+      { riderId, data: { mylapsTransponderId: value } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetRiderQueryKey(riderId) });
+          setActiveTransponderInput("");
+          toast({ title: "Active transponder assigned successfully" });
         },
         onError: (err) => {
           toast({ title: "Assignment failed", description: err.message, variant: "destructive" });
@@ -1059,7 +1078,7 @@ export default function RiderDetail() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-center p-6 bg-secondary/10 rounded-lg border border-secondary/20">
                     <div className="text-center">
-                      <div className="text-xs font-bold text-secondary uppercase tracking-widest mb-2">Active Tag</div>
+                      <div className="text-xs font-bold text-secondary uppercase tracking-widest mb-2">RFID Sticker Number</div>
                       <div className="font-mono text-xl font-bold text-secondary break-all">{rider.rfidNumber}</div>
                     </div>
                   </div>
@@ -1068,16 +1087,16 @@ export default function RiderDetail() {
               ) : (
                 <div className="flex items-center justify-center p-6 bg-destructive/10 rounded-lg border border-destructive/20">
                   <div className="text-center">
-                    <div className="text-xs font-bold text-destructive uppercase tracking-widest mb-2">No Tag Assigned</div>
+                    <div className="text-xs font-bold text-destructive uppercase tracking-widest mb-2">No RFID Sticker Assigned</div>
                     <div className="text-sm text-destructive/80 font-medium">Manual check-in required</div>
                   </div>
                 </div>
               )}
               <div className="mt-6 pt-6 border-t space-y-3">
-                <label className="text-sm font-bold uppercase tracking-wider block">Assign New Tag</label>
+                <label className="text-sm font-bold uppercase tracking-wider block">Assign RFID Sticker</label>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Scan or enter RFID #..."
+                    placeholder="Scan or enter RFID sticker number..."
                     value={rfidInput}
                     onChange={(e) => setRfidInput(e.target.value)}
                     className="font-mono"
@@ -1086,6 +1105,52 @@ export default function RiderDetail() {
                     Assign
                   </Button>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Active timing transponder */}
+          <Card className={r.mylapsTransponderId ? "border-primary" : "border-muted"}>
+            <CardHeader className={`${r.mylapsTransponderId ? "bg-primary/5" : "bg-muted/30"} border-b pb-4`}>
+              <CardTitle className="font-heading uppercase text-xl flex items-center gap-2">
+                <Radio className={r.mylapsTransponderId ? "text-primary" : "text-muted-foreground"} size={20} />
+                Active Timing Transponder
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-center p-6 bg-muted/40 rounded-lg border">
+                <div className="text-center">
+                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">
+                    Active Transponder Number
+                  </div>
+                  <div className="font-mono text-xl font-bold break-all">
+                    {r.mylapsTransponderId || <span className="text-muted-foreground/60 text-sm font-sans">None assigned</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 pt-6 border-t space-y-3">
+                <label className="text-sm font-bold uppercase tracking-wider block">
+                  {r.mylapsTransponderId ? "Replace Active Transponder" : "Assign Active Transponder"}
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Enter transponder number..."
+                    value={activeTransponderInput}
+                    onChange={(e) => setActiveTransponderInput(e.target.value)}
+                    className="font-mono"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAssignActiveTransponder(); }}
+                  />
+                  <Button
+                    onClick={handleAssignActiveTransponder}
+                    disabled={!activeTransponderInput.trim() || updateMutation.isPending}
+                    className="font-heading uppercase"
+                  >
+                    {updateMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : "Assign"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Used by the Active Timing Reader. This is separate from the rider&apos;s RFID sticker number.
+                </p>
               </div>
             </CardContent>
           </Card>
