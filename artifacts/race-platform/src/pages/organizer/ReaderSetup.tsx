@@ -130,7 +130,7 @@ function FeibotGuidedSetup({
     if (!isDesktop) return; // browser flow is passive via connectorStatuses
     let finalAddress = address.trim();
     if (!finalAddress) return;
-    if (!finalAddress.includes(":")) finalAddress += ":3333";
+    if (!finalAddress.includes(":")) finalAddress += ":55555";
 
     setAddress(finalAddress);
     localStorage.setItem("f2000_host", finalAddress);
@@ -304,7 +304,7 @@ function FeibotGuidedSetup({
                 <Input
                   value={address}
                   onChange={e => handleAddressChange(e.target.value)}
-                  placeholder="e.g. 192.168.1.50 or 192.168.1.50:3333"
+                  placeholder="e.g. 192.168.1.50 or 192.168.1.50:55555"
                   className="font-mono bg-background"
                   disabled={connecting || isConnected || !isDesktop}
                 />
@@ -335,7 +335,7 @@ function FeibotGuidedSetup({
               <div>
                 <p className="font-semibold text-sm">TCP Connection & Machine Identity</p>
                 <p className="text-xs text-muted-foreground">
-                  The software connects to port 3333 and listens for heartbeats and loop status.
+                  The software connects to port 55555 and listens for heartbeats and loop status.
                 </p>
               </div>
 
@@ -367,7 +367,7 @@ function FeibotGuidedSetup({
                     </div>
                     {errorMsg && (
                       <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                        {errorMsg} — Verify the IP, port 3333, and ensure no other software is connected.
+                        {errorMsg} — Verify the IP, port 55555, and ensure no other software is connected.
                       </p>
                     )}
                   </div>
@@ -513,9 +513,9 @@ export default function ReaderSetup() {
     } as any,
   });
   const [connectorDl, setConnectorDl] = useState({
-    macArm:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.8/RM-Connect-arm64.dmg",
-    macX64:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.8/RM-Connect-x64.dmg",
-    windows: "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.8/RM-Connect-Setup.exe",
+    macArm:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.9/RM-Connect-arm64.dmg",
+    macX64:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.9/RM-Connect-x64.dmg",
+    windows: "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.9/RM-Connect-Setup.exe",
   });
   useEffect(() => {
     fetch("/api/config/connector-release")

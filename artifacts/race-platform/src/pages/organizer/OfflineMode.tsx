@@ -506,7 +506,7 @@ export default function OfflineMode() {
                   <Download size={12} /> Download switch-to-cloud script
                 </button>
               ) : (
-                <p className="text-xs text-muted-foreground">Open RM Connect and reconnect the Feibot F2000 on TCP port 3333.</p>
+                <p className="text-xs text-muted-foreground">Open RM Connect and reconnect the Feibot F2000 on TCP port 55555.</p>
               )}
               <button
                 onClick={() => setShowReconnectBanner(false)}
@@ -548,7 +548,7 @@ export default function OfflineMode() {
               <Timer size={18} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
               <div>
                 <p className="font-semibold text-sm">Active Timing Reader</p>
-                <p className="text-xs text-muted-foreground">Feibot F2000 · port 3333</p>
+                <p className="text-xs text-muted-foreground">Feibot F2000 · port 55555</p>
               </div>
             </button>
           </div>
@@ -901,7 +901,7 @@ export default function OfflineMode() {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   In RM Connect, select <strong>Active Timing Reader</strong>, enter the F2000's IP address, and connect.
-                  RM Connect uses TCP port <strong className="font-mono">3333</strong> and forwards crossings to the local server.
+                  RM Connect uses TCP port <strong className="font-mono">55555</strong> and forwards crossings to the local server.
                 </p>
               </div>
             )}
@@ -971,7 +971,7 @@ export default function OfflineMode() {
             ) : (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  Open RM Connect and reconnect the Feibot F2000 to the cloud on TCP port <strong className="font-mono">3333</strong>.
+                  Open RM Connect and reconnect the Feibot F2000 to the cloud on TCP port <strong className="font-mono">55555</strong>.
                 </p>
               </div>
             )}

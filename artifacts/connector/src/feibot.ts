@@ -7,7 +7,7 @@
 import net from "net";
 import { EventEmitter } from "events";
 
-const FEIBOT_PORT = 3333;
+const FEIBOT_PORT = 55555;
 const CONNECT_TIMEOUT_MS = 8_000;
 const HEARTBEAT_STALE_MS = 5_000;
 
@@ -136,7 +136,7 @@ export class FeibotClient extends EventEmitter {
       ? "Feibot heartbeat stopped — check the reader and network connection."
       : null;
     const diagnosis = this.lastError ?? heartbeatError ?? (!connected
-      ? "Connect the Feibot on the same network using its IP address and TCP port 3333."
+      ? "Connect the Feibot on the same network using its IP address and TCP port 55555."
       : !this.machineId
         ? "Transport is connected. Waiting for the F2000 machine identification and heartbeat."
         : !heartbeatFresh

@@ -1,7 +1,7 @@
 import net from "net";
 
 // Feibot F2000 TCP protocol (v3.2). Packets are:
-// machineId@cmd@cmdSN@parameters; (normally TCP port 3333).
+// machineId@cmd@cmdSN@parameters; (normally TCP port 55555).
 
 export type ActiveTransponderConnectionState =
   | "disconnected"
@@ -52,7 +52,7 @@ export interface ActiveTransponderConfiguration {
 export type ActiveTransponderPassingCallback = (epc: string, crossingTime: Date) => void;
 export type ActiveTransponderStatusCallback = (status: ActiveTransponderStatus) => void;
 
-const ACTIVE_TRANSPONDER_PORT = 3333;
+const ACTIVE_TRANSPONDER_PORT = 55555;
 const CONNECT_TIMEOUT_MS = 8_000;
 const RECONNECT_DELAY_MS = 1_000;
 const HEARTBEAT_TIMEOUT_MS = 15_000;
@@ -477,7 +477,7 @@ function getState(connected: boolean): ActiveTransponderConnectionState {
   return connected ? "connected_idle" : "connecting";
 }
 function getDiagnosis(state: ActiveTransponderConnectionState): string {
-  if (state === "disconnected") return "Disconnected. Enter the F2000 address (port 3333 is used when no port is supplied).";
+  if (state === "disconnected") return "Disconnected. Enter the F2000 address (port 55555 is used when no port is supplied).";
   if (state === "connecting") return "Connecting to the F2000. Waiting for its first heartbeat to identify the machine.";
   if (state === "reconnecting") return `F2000 connection dropped; retry ${reconnectAttempt} is scheduled. Reader intent will resume after reconnecting.`;
   if (state === "error") return connectError ?? "F2000 requires attention. Check its address, network, and heartbeat.";

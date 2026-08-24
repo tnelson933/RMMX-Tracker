@@ -3,7 +3,7 @@
  *
  * A tray-only Electron app that bridges local timing hardware to the cloud:
  *   - Impinj R700 via LLRP (TCP 5084, reached by mDNS hostname from MAC digits)
- *   - Feibot F2000 active transponder timing (TCP 3333)
+ *   - Feibot F2000 active transponder timing (TCP 55555)
  *
  * Crossings are forwarded to the cloud ingest endpoint. Start/stop commands
  * arrive over a WebSocket when the organizer starts or completes a moto in
