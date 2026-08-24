@@ -488,7 +488,7 @@ export default function NewRiderScreen() {
 
           <Text style={s.note}>
             After creating the profile, you can add your address, emergency contact,
-            RFID transponder, and MyLaps number from the profile detail screen.
+            RFID transponder, and Active Timing transponder number from the profile detail screen.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

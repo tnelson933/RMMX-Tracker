@@ -79,7 +79,7 @@ const ALL_STEPS: TourStep[] = [
     side: "right",
     title: "Reader Setup",
     description:
-      "Configure RFID or Active Transponder Timing readers. The platform supports both timing technologies — switch per-event as needed.",
+      "Configure RFID or Active Timing Readers. The platform supports both timing technologies — switch per-event as needed.",
   },
   {
     selector: '[data-tour="nav-offline"]',

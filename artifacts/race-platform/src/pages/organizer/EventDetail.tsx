@@ -972,7 +972,7 @@ export default function EventDetail() {
                             <div className="grid grid-cols-2 gap-2">
                               {[
                                 { value: "rfid", label: "RFID Stickers", desc: "Passive RFID tags" },
-                    { value: "active_transponder", label: "Active Transponder Timing", desc: "Feibot F2000 active transponders" },
+                    { value: "active_transponder", label: "Active Timing Reader", desc: "Feibot F2000 active transponders" },
                               ].map(opt => (
                                 <button
                                   key={opt.value}
@@ -1883,7 +1883,7 @@ export default function EventDetail() {
                       <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Timing Technology</div>
                       <div className="font-medium">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-muted text-muted-foreground border border-border">
-                          {((event as any).timingTechnology ?? "rfid") === "active_transponder" ? "Active Transponder Timing" : "RFID"}
+                          {((event as any).timingTechnology ?? "rfid") === "active_transponder" ? "Active Timing Reader" : "RFID"}
                         </span>
                       </div>
                     </div>

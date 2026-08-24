@@ -889,7 +889,7 @@ export default function RiderDetail() {
                           <FormItem><FormLabel>AMA #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
                         <FormField control={form.control} name="mylapsTransponderId" render={({ field }) => (
-                          <FormItem><FormLabel>Active Transponder #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                          <FormItem><FormLabel>Active Timing Transponder #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
                       </div>
                       <div className="mt-4">
@@ -969,7 +969,7 @@ export default function RiderDetail() {
                       <InfoRow label="Bike Year" value={(r as any).bikeYear} />
                       <InfoRow label="Default Bib #" value={rider.bibNumber} />
                       <InfoRow label="AMA #" value={r.amaNumber} />
-                      <InfoRow label="Active Transponder #" value={r.mylapsTransponderId} />
+                      <InfoRow label="Active Timing Transponder #" value={r.mylapsTransponderId} />
                       <InfoRow label="Club ID #" value={(rider as any).clubIdNumber} />
                     </div>
                     {r.sponsors && (
@@ -1104,7 +1104,7 @@ export default function RiderDetail() {
           {r.mylapsTransponderId && (
             <Card>
               <CardContent className="p-5 space-y-1">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Active Transponder</div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Active Timing Transponder</div>
                 <div className="font-mono text-lg font-bold">{r.mylapsTransponderId}</div>
               </CardContent>
             </Card>

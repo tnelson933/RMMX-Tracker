@@ -1321,7 +1321,7 @@ export default function Register() {
                 {event.timingTechnology === "active_transponder" && (
                   <Card className="border-primary/30 bg-primary/[0.03]">
                     <CardHeader className="pb-2 border-b">
-                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Active Transponder</h3>
+                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Active Timing Transponder</h3>
                     </CardHeader>
                     <CardContent className="p-6 space-y-4">
                       {/* Own transponder number */}
@@ -1330,7 +1330,7 @@ export default function Register() {
                         name="myLapsTransponderNumber"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>My Transponder Number</FormLabel>
+                            <FormLabel>Active Timing Transponder Number</FormLabel>
                             <FormControl>
                               <Input
                                 {...field}

@@ -307,7 +307,7 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
         <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
           {field("#", "bibNumber", "e.g. 42")}
           {field("AMA Number", "amaNumber", "AMA membership #")}
-          {field("Active Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
+          {field("Active Timing Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
           <div className="col-span-2 space-y-1.5">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sponsors</Label>
             {editing ? (
@@ -668,7 +668,7 @@ function EventCard({ event }: { event: EventHistory }) {
               {event.timingTechnology && (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Timer size={11} />
-                  {event.timingTechnology === "active_transponder" ? "Timed with Active Transponder Timing" : "Timed with RFID"}
+                  {event.timingTechnology === "active_transponder" ? "Timed with Active Timing Reader" : "Timed with RFID"}
                 </span>
               )}
             </div>
@@ -841,7 +841,7 @@ function EventPracticeSessionCard({ session, riderId }: { session: EventPractice
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
             >
               {showMyLaps ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              My lap times ({myLapsWithTime.length})
+              Lap times ({myLapsWithTime.length})
             </button>
             {showMyLaps && (
               <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
@@ -1687,7 +1687,7 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
             const bestMs = Math.min(...laps.map(l => l.lapTimeMs ?? Infinity));
             return (
               <div className="px-4 py-3 bg-background border-b">
-                <div className="text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground mb-2">My Laps</div>
+                <div className="text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground mb-2">Lap Times</div>
                 <div className="flex flex-wrap gap-2">
                   {laps.map((lap, i) => {
                     const isPB = lap.lapTimeMs != null && lap.lapTimeMs === bestMs;

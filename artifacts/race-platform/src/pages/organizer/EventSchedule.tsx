@@ -1229,7 +1229,7 @@ export default function EventSchedule() {
   const isEnduro = raceStyle === "enduro";
   const isCrossCountry = raceStyle === "cross_country";
   const isActiveTransponder = ((event as any)?.timingTechnology ?? "rfid") === "active_transponder";
-  const timingLabel = isActiveTransponder ? "Active Transponder Timing" : "RFID";
+  const timingLabel = isActiveTransponder ? "Active Timing Reader" : "RFID";
 
   // ── Local state ──
   const [viewMode, setViewMode] = useState<ViewMode>("run-order");

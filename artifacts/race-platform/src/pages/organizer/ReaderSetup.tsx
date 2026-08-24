@@ -284,7 +284,7 @@ function FeibotGuidedSetup({
           <Activity className="text-primary shrink-0" size={24} />
           <div>
             <h3 className="font-heading font-bold uppercase tracking-wider text-sm">Feibot F2000 Setup</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Guided pre-flight checklist for active transponder timing.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Guided pre-flight checklist for Active Timing Reader setup.</p>
           </div>
         </div>
 
@@ -322,7 +322,7 @@ function FeibotGuidedSetup({
 
               {!isDesktop && (
                 <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  You are using the cloud platform. On the track laptop, open <strong className="text-foreground">RM Connect</strong>, select the Active Transponder reader, and enter this IP to bridge the connection.
+                  You are using the cloud platform. On the track laptop, open <strong className="text-foreground">RM Connect</strong>, select the Active Timing Reader, and enter this IP to bridge the connection.
                 </div>
               )}
             </div>
@@ -1000,7 +1000,7 @@ export default function ReaderSetup() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="rfid">RFID</SelectItem>
-                  <SelectItem value="active_transponder">Active Transponder Timing</SelectItem>
+                  <SelectItem value="active_transponder">Active Timing Reader</SelectItem>
                 </SelectContent>
               </Select>
               <Input
@@ -1090,7 +1090,7 @@ export default function ReaderSetup() {
                               )}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                              <span className="text-xs text-muted-foreground uppercase">{reader.type === "active_transponder" ? "Active Transponder Timing" : "RFID"}</span>
+                              <span className="text-xs text-muted-foreground uppercase">{reader.type === "active_transponder" ? "Active Timing Reader" : "RFID"}</span>
                               {reader.hardwareAddress ? (
                                 <span className="text-xs font-mono text-muted-foreground bg-muted rounded px-1.5 py-0.5">{reader.hardwareAddress}</span>
                               ) : (
@@ -1145,7 +1145,7 @@ export default function ReaderSetup() {
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               A tiny app that runs in your laptop's system tray at the track. It talks to your Impinj R700 or
-              Feibot F2000 Active Transponder Timing hardware directly and streams live crossings to the cloud.
+              Feibot F2000 Active Timing Reader hardware directly and streams live crossings to the cloud.
               Readers start and stop automatically when you start or complete a moto here in the web app.
             </p>
           </div>
@@ -1306,14 +1306,14 @@ export default function ReaderSetup() {
           >
             <Timer size={22} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
             <div>
-              <p className="font-semibold text-sm">Active Transponder Timing</p>
+              <p className="font-semibold text-sm">Active Timing Reader</p>
               <p className="text-xs text-muted-foreground">Feibot F2000 active transponders</p>
             </div>
           </button>
         </div>
       </div>
 
-      {/* Active Transponder Timing is configured through RM Connect; no bridge or desktop setup is required. */}
+      {/* Active Timing Reader is configured through RM Connect; no bridge or desktop setup is required. */}
       {false && (
         <div className="flex items-center gap-2 text-sm">
           <span className="font-medium text-muted-foreground">My laptop runs:</span>
@@ -1332,7 +1332,7 @@ export default function ReaderSetup() {
       <div className="border rounded-xl bg-card overflow-hidden divide-y">
         <div className="px-5 py-3 bg-muted/30 border-b">
           <p className="font-heading font-bold uppercase tracking-wider text-sm">
-            {tech === "rfid" ? "RFID Setup — 3 Steps" : "Active Transponder Timing Setup — 3 Steps"}
+            {tech === "rfid" ? "RFID Setup — 3 Steps" : "Active Timing Reader Setup — 3 Steps"}
           </p>
         </div>
 

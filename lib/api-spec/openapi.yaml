@@ -5870,7 +5870,7 @@ components:
       properties:
         rfidNumber:
           type: string
-          description: RFID tag EPC or MyLaps transponder number
+          description: RFID tag EPC or Active Timing transponder number
         crossingTime:
           type: string
           format: date-time

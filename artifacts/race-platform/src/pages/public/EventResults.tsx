@@ -505,7 +505,7 @@ export default function EventResults() {
                 {event.timingTechnology && (
                   <Badge variant="outline" className="bg-white/10 text-white/80 border-white/20 font-heading uppercase tracking-wider px-3 py-1 text-sm flex items-center gap-1.5">
                     <Timer size={13} />
-                    {event.timingTechnology === "active_transponder" ? "Timed with Active Transponder Timing" : "Timed with RFID"}
+                    {event.timingTechnology === "active_transponder" ? "Timed with Active Timing Reader" : "Timed with RFID"}
                   </Badge>
                 )}
               </div>

@@ -1191,9 +1191,9 @@ export default function RiderDetailScreen() {
               }
             />
 
-            {/* MyLaps transponder */}
+            {/* Active Timing transponder */}
             <View style={s.fieldRow}>
-              <Text style={s.fieldLabel}>MyLaps Transponder #</Text>
+              <Text style={s.fieldLabel}>Active Timing Transponder #</Text>
               {editing && form ? (
                 <TextInput
                   style={s.fieldInput}

@@ -725,7 +725,7 @@ export default function Registrations() {
             {/* ── Active transponder (conditional) ── */}
             {isActiveTransponder && (
               <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/[0.03] p-4">
-                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Active Transponder</h3>
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Active Timing Transponder</h3>
                 <FormField control={form.control} name="myLapsTransponderNumber" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Transponder Number</FormLabel>

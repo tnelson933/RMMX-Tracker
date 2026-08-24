@@ -17,26 +17,26 @@ this bridge running locally on your laptop. The bridge:
 Your lap times are never lost — even if you lose internet for the entire race.
 
 ────────────────────────────────────────────────────────────────────────────────
-QUICK START — MyLaps / AMB transponder decoders
+QUICK START — Active Timing decoder bridge
 ────────────────────────────────────────────────────────────────────────────────
 
-  python rfid_bridge.py --mylaps DECODER_IP \
+  python rfid_bridge.py --active-timing DECODER_IP \
                         --club-id YOUR_CLUB_ID \
                         --api-url https://your-app.replit.app
 
   Replace DECODER_IP with the IP address printed on your decoder or shown in
-  AMBrc.  Replace YOUR_CLUB_ID with the number in your organizer portal URL.
+  Replace YOUR_CLUB_ID with the number in your organizer portal URL.
 
   The bridge connects to your decoder on port 3601 and streams crossings
-  automatically.  You do not need to configure anything inside AMBrc or the
+  automatically.  You do not need to configure anything inside decoder software or the
   decoder — just enter the IP and run.
 
-  Compatible hardware: AMB TranX 160/260, AMB RC4, AMB MX, AMB RC4-WA,
-  MyLaps X2, P3 Flex, and any decoder supported by AMBrc 4.x / 5.x.
+  Compatible hardware: legacy active timing decoders that provide the
+  standard transponder crossing stream on TCP port 3601.
 
   For offline use (race-day laptop), point the bridge at your local server:
 
-      python rfid_bridge.py --mylaps DECODER_IP \
+      python rfid_bridge.py --active-timing DECODER_IP \
                             --club-id YOUR_CLUB_ID \
                             --api-url http://LAPTOP_IP:8080
 
@@ -93,7 +93,7 @@ Add --rmonitor 50000 and --event-id N to any of the above commands:
 Then point your scoreboard or announcer software to:
        tcp://YOUR-LAPTOP-IP:50000
 
-Compatible software: Race Monitor, AMBrc, Orbits, any RMonitor TCP client.
+Compatible software: Race Monitor, Orbits, and any RMonitor TCP client.
 
 ────────────────────────────────────────────────────────────────────────────────
 Optional flags (all readers):
@@ -384,16 +384,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# ── AMB / MyLaps decoder TCP protocol ──────────────────────────────────────────
-# Record format for AMBrc-compatible decoders on port 3601 (13 bytes each):
+# ── Legacy active timing decoder TCP protocol ───────────────────────────────────
+# Record format for compatible decoders on port 3601 (13 bytes each):
 #   [0]     Record type  — 0x02 = transponder crossing; others = status/ignored
 #   [1..6]  Transponder  — 48-bit big-endian integer (decoder serial number)
 #   [7..10] Time         — 32-bit big-endian uint, centiseconds since midnight UTC
 #   [11]    Loop/antenna — antenna number (informational)
 #   [12]    RSSI/battery — signal quality (informational)
 #
-# Compatible: AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX,
-#             MyLaps X2, P3 Flex, any decoder supported by AMBrc 4.x/5.x.
+# Compatible: legacy active timing decoders that emit the standard
+#             13-byte crossing record.
 # NOTE: a small number of older decoders use 10-byte records; contact support
 # if crossings aren't appearing and we can adjust AMB_RECORD_SIZE for your model.
 AMB_DECODER_PORT  = 3601
@@ -426,7 +426,7 @@ def _parse_amb_crossing(record: bytes):
 def run_mylaps_bridge(decoder_ip: str, api_url: str, club_id: str,
                        db: sqlite3.Connection, db_lock: threading.Lock,
                        stop: threading.Event, retry: int = 10):
-    """Connect to an AMB/MyLaps decoder via TCP and stream crossings to the API.
+    """Connect to a legacy active timing decoder via TCP and stream crossings to the API.
 
     Opens a persistent TCP connection to port 3601 on the decoder.  Each
     transponder crossing is cached locally and forwarded to the cloud API.
@@ -436,16 +436,16 @@ def run_mylaps_bridge(decoder_ip: str, api_url: str, club_id: str,
 
     while not stop.is_set():
         try:
-            log.info("MyLaps: connecting to decoder at %s:%d…", decoder_ip, AMB_DECODER_PORT)
+            log.info("Active Timing: connecting to decoder at %s:%d…", decoder_ip, AMB_DECODER_PORT)
             with socket.create_connection((decoder_ip, AMB_DECODER_PORT), timeout=10) as sock:
                 sock.settimeout(2.0)
-                log.info("MyLaps: connected — streaming crossings from %s", decoder_ip)
+                log.info("Active Timing: connected — streaming crossings from %s", decoder_ip)
                 buf = b""
                 while not stop.is_set():
                     try:
                         chunk = sock.recv(4096)
                         if not chunk:
-                            log.warning("MyLaps: decoder closed connection — reconnecting")
+                            log.warning("Active Timing: decoder closed connection — reconnecting")
                             break
                         buf += chunk
                         while len(buf) >= AMB_RECORD_SIZE:
@@ -459,7 +459,7 @@ def run_mylaps_bridge(decoder_ip: str, api_url: str, club_id: str,
                                 "transponder": transponder_id,
                                 "passingTime": crossing_time.isoformat(),
                             }
-                            log.info("MyLaps: crossing — transponder=%-10s  time=%s",
+                            log.info("Active Timing: crossing — transponder=%-10s  time=%s",
                                      transponder_id, crossing_time.strftime("%H:%M:%S"))
                             with db_lock:
                                 cursor = db.execute(
@@ -477,18 +477,18 @@ def run_mylaps_bridge(decoder_ip: str, api_url: str, club_id: str,
                     except socket.timeout:
                         continue
                     except OSError as e:
-                        log.warning("MyLaps: socket error: %s — reconnecting", e)
+                        log.warning("Active Timing: socket error: %s — reconnecting", e)
                         break
         except (OSError, ConnectionRefusedError) as e:
-            log.warning("MyLaps: could not reach %s — %s (retry in %ds)",
+            log.warning("Active Timing: could not reach %s — %s (retry in %ds)",
                         decoder_ip, e, retry)
         except Exception as e:
-            log.error("MyLaps: unexpected error: %s (retry in %ds)", e, retry)
+            log.error("Active Timing: unexpected error: %s (retry in %ds)", e, retry)
 
         if not stop.is_set():
             stop.wait(retry)
 
-    log.info("MyLaps bridge stopped.")
+    log.info("Active Timing bridge stopped.")
 
 
 # ── HTTP request handler ────────────────────────────────────────────────────────

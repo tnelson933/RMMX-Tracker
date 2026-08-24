@@ -129,7 +129,7 @@ export default function RiderCreateProfile() {
             <div className="grid grid-cols-2 gap-4">
               {field("#", "bibNumber", "e.g. 42")}
               {field("AMA Number", "amaNumber", "AMA membership #")}
-              {field("Active Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
+              {field("Active Timing Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
             </div>
 
             <div className="space-y-1.5">

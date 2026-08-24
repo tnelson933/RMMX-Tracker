@@ -547,7 +547,7 @@ export default function OfflineMode() {
             >
               <Timer size={18} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
               <div>
-                <p className="font-semibold text-sm">Active Transponder Timing</p>
+                <p className="font-semibold text-sm">Active Timing Reader</p>
                 <p className="text-xs text-muted-foreground">Feibot F2000 · port 3333</p>
               </div>
             </button>
@@ -900,7 +900,7 @@ export default function OfflineMode() {
                   Connect the Feibot F2000 through RM Connect on the track laptop:
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  In RM Connect, select <strong>Active Transponder Timing</strong>, enter the F2000's IP address, and connect.
+                  In RM Connect, select <strong>Active Timing Reader</strong>, enter the F2000's IP address, and connect.
                   RM Connect uses TCP port <strong className="font-mono">3333</strong> and forwards crossings to the local server.
                 </p>
               </div>

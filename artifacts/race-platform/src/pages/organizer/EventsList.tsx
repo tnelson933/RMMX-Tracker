@@ -819,7 +819,7 @@ export default function EventsList() {
                         <div className="grid grid-cols-2 gap-2">
                           {[
                             { value: "rfid", label: "RFID Stickers", desc: "Passive RFID tags" },
-                            { value: "active_transponder", label: "Active Transponder Timing", desc: "Feibot F2000 active transponders" },
+                            { value: "active_transponder", label: "Active Timing Reader", desc: "Feibot F2000 active transponders" },
                           ].map(opt => (
                             <button
                               key={opt.value}
@@ -842,7 +842,7 @@ export default function EventsList() {
                   )}
                 />
 
-                {/* Require transponder — Active Transponder Timing without Stripe */}
+                {/* Require transponder — Active Timing Reader without Stripe */}
                 {watchTimingTechnology === "active_transponder" && !watchPaymentEnabled && (
                   <FormField
                     control={form.control}
@@ -1251,7 +1251,7 @@ export default function EventsList() {
                     </div>
                   )}
 
-                  {/* Transponder rental (Active Transponder Timing + payment only) */}
+                  {/* Transponder rental (Active Timing Reader + payment only) */}
                   {stripeReady && watchPaymentEnabled && watchTimingTechnology === "active_transponder" && (
                     <div className="space-y-2 pl-0.5">
                       <FormField
@@ -1844,7 +1844,7 @@ export default function EventsList() {
                       <div className="flex items-center gap-2">
                         {(event as any).timingTechnology && (
                           <span className="bg-muted text-muted-foreground border border-border px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                            {(event as any).timingTechnology === "active_transponder" ? "Active Transponder Timing" : "RFID"}
+                            {(event as any).timingTechnology === "active_transponder" ? "Active Timing Reader" : "RFID"}
                           </span>
                         )}
                         {(() => {
