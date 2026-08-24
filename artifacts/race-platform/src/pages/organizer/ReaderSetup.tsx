@@ -603,8 +603,8 @@ export default function ReaderSetup() {
   }
 
   async function handleAddReader() {
-    const name = newReaderName.trim();
-    if (!name) return;
+    const name = newReaderName.trim() || (newReaderType === "active_transponder" ? "F2000 Reader" : "");
+    if (!name || (newReaderType === "active_transponder" && !newReaderAddress.trim())) return;
     const hardwareAddress = newReaderAddress.trim() || undefined;
     try {
       await createReaderMutation.mutateAsync({ data: { name, type: newReaderType, hardwareAddress } as any });
@@ -1039,7 +1039,7 @@ export default function ReaderSetup() {
               <Input
                 value={newReaderName}
                 onChange={e => setNewReaderName(e.target.value)}
-                placeholder='e.g. "Start Gate"'
+                placeholder={tech === "active_transponder" ? 'Optional name (defaults to "F2000 Reader")' : 'e.g. "Start Gate"'}
                 className="h-9 flex-1 min-w-36"
                 onKeyDown={e => e.key === "Enter" && handleAddReader()}
               />
@@ -1049,13 +1049,22 @@ export default function ReaderSetup() {
               <Input
                 value={newReaderAddress}
                 onChange={e => setNewReaderAddress(e.target.value)}
-                placeholder={newReaderType === "active_transponder" ? "Feibot F2000 IP address (e.g. 192.168.1.50)" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
+                placeholder={newReaderType === "active_transponder" ? "F2000 IP address (e.g. 192.168.1.50)" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
                 className="h-9 flex-1 min-w-48 font-mono text-xs"
                 onKeyDown={e => e.key === "Enter" && handleAddReader()}
               />
             </div>
+            {tech === "active_transponder" && (
+              <p className="text-xs text-muted-foreground">
+                Enter the IP shown by the F2000. A port is optional; RM Connect uses port 55555 when only an IP is provided.
+              </p>
+            )}
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleAddReader} disabled={createReaderMutation.isPending || !newReaderName.trim()}>
+              <Button
+                size="sm"
+                onClick={handleAddReader}
+                disabled={createReaderMutation.isPending || (tech === "active_transponder" ? !newReaderAddress.trim() : !newReaderName.trim())}
+              >
                 {createReaderMutation.isPending ? "Adding…" : "Add"}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => { setShowAddReader(false); setNewReaderName(""); setNewReaderAddress(""); }}>Cancel</Button>
@@ -1178,18 +1187,21 @@ export default function ReaderSetup() {
       </div>
 
       {/* ── RM Connect ── */}
-      <div className="rounded-xl border-2 p-5 space-y-4">
+        <div className="rounded-xl border-2 p-5 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
               <MonitorDown size={18} className="text-primary" />
-              <h2 className="font-heading font-bold uppercase tracking-tight text-lg">3. Connect the track laptop</h2>
+              <h2 className="font-heading font-bold uppercase tracking-tight text-lg">
+                3. {tech === "active_transponder" ? "Start RM Connect" : "Connect the track laptop"}
+              </h2>
               <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/15 rounded px-1.5 py-0.5">Recommended</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               RM Connect runs in the laptop's system tray at the track. It connects directly to your{" "}
               {tech === "rfid" ? "RFID reader and streams tag reads" : "Feibot F2000 and streams PowerTag crossings"}{" "}
               to the cloud. Leave it running on race day; readers start and stop automatically with each moto.
+              {tech === "active_transponder" && " Your saved IP address is used automatically—no channel, power, loop, or clock setup is needed for normal use."}
             </p>
           </div>
         </div>
@@ -1344,15 +1356,13 @@ export default function ReaderSetup() {
         </div>
       )}
 
-      {/* Steps */}
+      {/* RFID-only setup instructions */}
+      {tech === "rfid" && (
       <div className="border rounded-xl bg-card overflow-hidden divide-y">
         <div className="px-5 py-3 bg-muted/30 border-b">
-          <p className="font-heading font-bold uppercase tracking-wider text-sm">
-            {tech === "rfid" ? "RFID Setup — 3 Steps" : "Active Timing Reader Setup — 3 Steps"}
-          </p>
+          <p className="font-heading font-bold uppercase tracking-wider text-sm">RFID Setup — 3 Steps</p>
         </div>
 
-        {tech === "rfid" ? (
           <>
             {/* Step 1 */}
             <div className="flex gap-4 p-5">
@@ -1459,17 +1469,30 @@ export default function ReaderSetup() {
               </div>
             </div>
           </>
-        ) : null}
       </div>
+      )}
 
       {tech === "active_transponder" && (
         <>
           {isDesktop && (
-            <FeibotGuidedSetup
-              isDesktop={isDesktop}
-              connectorStatuses={connectorStatuses}
-              readers={readers}
-            />
+            <details className="rounded-xl border bg-card overflow-hidden">
+              <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
+                <Activity size={18} className="text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-heading font-bold uppercase tracking-wider text-sm">Desktop-only F2000 diagnostic</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Optional: connect directly, inspect loop status, or run a PowerTag crossing test.
+                  </p>
+                </div>
+              </summary>
+              <div className="border-t px-5 pb-5">
+                <FeibotGuidedSetup
+                  isDesktop={isDesktop}
+                  connectorStatuses={connectorStatuses}
+                  readers={readers}
+                />
+              </div>
+            </details>
           )}
 
           <details className="rounded-xl border bg-card overflow-hidden">
