@@ -112,7 +112,7 @@
       <option value="impinj">Impinj R700 (RFID)</option>
       <option value="zebra">Zebra FX7500 / FX9600 (RFID)</option>
       <option value="generic">Other LLRP reader (RFID)</option>
-      <option value="mylaps">MyLaps / AMB decoder</option>
+      <option value="active_transponder">Feibot F2000 active transponder</option>
     </select>
     <label id="lblAddress">Last 6 of reader MAC address</label>
     <input id="inAddress" placeholder="e.g. 16-25-B2" />
@@ -179,8 +179,9 @@
     const hwName = st.hardware === "impinj" ? "Impinj R700"
       : st.hardware === "zebra" ? "Zebra reader"
       : st.hardware === "generic" ? "LLRP reader"
-      : "MyLaps decoder";
-    $("txtDevice").textContent = hwName + ": " + (st.device.connected ? (st.device.reading ? "reading" : "connected, idle") : (st.device.error || "disconnected"));
+      : "Feibot F2000";
+    const deviceDetail = st.device.detail ? " — " + st.device.detail : "";
+    $("txtDevice").textContent = hwName + ": " + (st.device.connected ? (st.device.reading ? "reading" : "connected, idle") : (st.device.error || "disconnected")) + deviceDetail;
     if (st.activeMoto) {
       $("dotMoto").className = "dot on";
       $("txtMoto").textContent = "Racing — " + st.activeMoto.name;
@@ -287,8 +288,8 @@
   function autofillFromReader() {
     const reader = readersCache.find((r) => String(r.id) === $("selReader").value);
     if (!reader) return;
-    if (reader.type === "mylaps") {
-      $("selHardware").value = "mylaps";
+    if (reader.type === "active_transponder") {
+      $("selHardware").value = "active_transponder";
       $("selHardware").dispatchEvent(new Event("change"));
     }
     if (reader.hardwareAddress) {
@@ -309,9 +310,9 @@
       $("inAddress").placeholder = "e.g. 192.168.1.50";
       $("hintAddress").textContent = "Find it in your router's device list — the reader must have LLRP enabled";
     } else {
-      $("lblAddress").textContent = "Decoder IP address";
-      $("inAddress").placeholder = "e.g. 192.168.1.50";
-      $("hintAddress").textContent = "Shown on the decoder display or your router's device list";
+      $("lblAddress").textContent = "Feibot F2000 IP address (or IP:port)";
+      $("inAddress").placeholder = "e.g. 192.168.1.50 or 192.168.1.50:3333";
+      $("hintAddress").textContent = "Enter the Feibot F2000 network address. TCP port 3333 is used by default; enter IP:port only if your device uses a different port.";
     }
   });
 

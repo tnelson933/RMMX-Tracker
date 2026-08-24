@@ -3,7 +3,7 @@
  *
  * A tray-only Electron app that bridges local timing hardware to the cloud:
  *   - Impinj R700 via LLRP (TCP 5084, reached by mDNS hostname from MAC digits)
- *   - MyLaps / AMB decoder via AMBrc protocol (TCP 3601)
+ *   - Feibot F2000 active transponder timing (TCP 3333)
  *
  * Crossings are forwarded to the cloud ingest endpoint. Start/stop commands
  * arrive over a WebSocket when the organizer starts or completes a moto in
@@ -20,7 +20,8 @@ import {
 } from "electron";
 import path from "path";
 import { LlrpClient, impinjHostFromMac } from "./llrp";
-import { MyLapsClient } from "./mylaps";
+import { FeibotClient } from "./feibot";
+import { RecentReadDeduper } from "./recent-read-deduper";
 import {
   CloudLink,
   cloudLogin,
@@ -53,7 +54,7 @@ if (!settings.cloudUrl && __DEFAULT_CLOUD_URL__) {
 let sessionCookie: string | null = null;
 
 const llrp = new LlrpClient();
-const mylaps = new MyLapsClient();
+const feibot = new FeibotClient();
 const cloud = new CloudLink();
 
 let activeMoto: { motoId: number; name: string } | null = null;
@@ -61,16 +62,15 @@ let testMode = false;
 let deviceReconnectTimer: NodeJS.Timeout | null = null;
 let hardwareWanted = false; // true while the user wants the device connected
 
-// EPC → last forward time, for local debounce (server also debounces)
-const recentReads = new Map<string, number>();
 const LOCAL_DEDUPE_MS = 1_500;
+const recentReads = new RecentReadDeduper(LOCAL_DEDUPE_MS);
 
 // ── Status aggregation ────────────────────────────────────────────────────────
 
 function getAggregateStatus(): AggregateStatus {
   const isLlrp = settings.hardware === "impinj" || settings.hardware === "zebra" || settings.hardware === "generic";
   const dev = isLlrp ? llrp.getStatus() : null;
-  const ml = settings.hardware === "mylaps" ? mylaps.getStatus() : null;
+  const active = settings.hardware === "active_transponder" ? feibot.getStatus() : null;
 
   return {
     configured: !!settings.readerToken && !!settings.hardware && !!settings.hardwareAddress,
@@ -84,11 +84,12 @@ function getAggregateStatus(): AggregateStatus {
       error: cloud.getStatus().error,
     },
     device: {
-      connected: dev?.connected ?? ml?.connected ?? false,
-      reading: dev?.reading ?? (ml?.connected && (activeMoto !== null || testMode)) ?? false,
-      error: dev?.error ?? ml?.error ?? null,
-      lastReadAt: dev?.lastReadAt ?? ml?.lastPassingAt ?? null,
-      readCount: dev?.readCount ?? ml?.passingCount ?? 0,
+      connected: dev?.connected ?? active?.connected ?? false,
+      reading: dev?.reading ?? active?.reading ?? false,
+      error: dev?.error ?? active?.error ?? null,
+      detail: active?.detail ?? null,
+      lastReadAt: dev?.lastReadAt ?? active?.lastPassingAt ?? null,
+      readCount: dev?.readCount ?? active?.passingCount ?? 0,
       antennaIds: dev?.antennaIds ?? [],
     },
     activeMoto,
@@ -176,16 +177,7 @@ function shouldForward(): boolean {
 async function forwardCrossing(rfidNumber: string, crossingTime: Date, antennaId?: number | null): Promise<void> {
   if (!shouldForward()) return;
 
-  const now = Date.now();
-  const last = recentReads.get(rfidNumber);
-  if (last !== undefined && now - last < LOCAL_DEDUPE_MS) return;
-  recentReads.set(rfidNumber, now);
-  // Bound the dedupe map
-  if (recentReads.size > 2000) {
-    for (const [k, t] of recentReads) {
-      if (now - t > LOCAL_DEDUPE_MS) recentReads.delete(k);
-    }
-  }
+  if (!recentReads.accept(rfidNumber)) return;
 
   try {
     await cloud.postCrossing({ rfidNumber, crossingTime, antennaId, clubId: settings.clubId });
@@ -200,8 +192,8 @@ llrp.on("tag", (read) => {
   pushStatusToWindow();
 });
 
-mylaps.on("passing", (transponder: string, crossingTime: Date) => {
-  forwardCrossing(transponder, crossingTime).catch(() => {});
+feibot.on("tag", (tag: string, crossingTime: Date) => {
+  forwardCrossing(tag, crossingTime).catch(() => {});
   pushStatusToWindow();
 });
 
@@ -220,7 +212,7 @@ function resolveHardwareHost(): string {
     }
     return addr;
   }
-  return addr; // zebra/generic: hostname or IP · mylaps: decoder IP
+  return addr; // zebra/generic: hostname or IP · Feibot: hostname/IP[:port]
 }
 
 async function connectHardware(): Promise<void> {
@@ -232,8 +224,9 @@ async function connectHardware(): Promise<void> {
     if (shouldForward()) {
       await llrp.startReading().catch(() => {});
     }
-  } else if (settings.hardware === "mylaps") {
-    await mylaps.connect(host);
+  } else if (settings.hardware === "active_transponder") {
+    await feibot.connect(host);
+    if (shouldForward()) feibot.startReading();
   }
   pushStatusToWindow();
 }
@@ -245,7 +238,7 @@ function disconnectHardware(): void {
     deviceReconnectTimer = null;
   }
   llrp.disconnect().catch(() => {});
-  mylaps.disconnect();
+  feibot.disconnect();
   pushStatusToWindow();
 }
 
@@ -263,10 +256,12 @@ llrp.on("disconnected", () => {
   scheduleHardwareReconnect();
 });
 llrp.on("error", () => pushStatusToWindow());
-mylaps.on("disconnected", () => {
+feibot.on("disconnected", () => {
   pushStatusToWindow();
   scheduleHardwareReconnect();
 });
+feibot.on("status", pushStatusToWindow);
+feibot.on("error", pushStatusToWindow);
 
 // ── Cloud command handling ────────────────────────────────────────────────────
 
@@ -275,7 +270,7 @@ cloud.setStatusProvider(() => {
   return {
     hardware: settings.hardware,
     connected: s.device.connected,
-    detail: s.device.error,
+    detail: s.device.error ?? s.device.detail ?? null,
     lastReadAt: s.device.lastReadAt,
     readCount: s.device.readCount,
     antennaIds: s.device.antennaIds,
@@ -290,11 +285,15 @@ cloud.on("command", (cmd: CloudCommand) => {
         // Reader not connected — reconnect loop will resume reading when back
         scheduleHardwareReconnect();
       });
+    } else if (settings.hardware === "active_transponder") {
+      feibot.startReading();
     }
   } else if (cmd.type === "stop_moto") {
     activeMoto = null;
     if (isLlrpHardware() && !testMode) {
       llrp.stopReading().catch(() => {});
+    } else if (settings.hardware === "active_transponder" && !testMode) {
+      feibot.stopReading();
     }
   } else if (cmd.type === "set_llrp_config" && cmd.config && isLlrpHardware()) {
     llrp.applyRfConfig(cmd.config).catch(() => {
@@ -407,6 +406,9 @@ function registerIpc(): void {
         } else if (!testMode && activeMoto === null && llrp.getStatus().reading) {
           await llrp.stopReading();
         }
+      } else if (settings.hardware === "active_transponder") {
+        if (testMode || activeMoto !== null) feibot.startReading();
+        else feibot.stopReading();
       }
       pushStatusToWindow();
       return { ok: true };

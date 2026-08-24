@@ -5,7 +5,7 @@ export interface AggregateStatus {
   cloudUrl: string;
   email: string;
   readerName: string | null;
-  hardware: "impinj" | "zebra" | "generic" | "mylaps" | null;
+  hardware: "impinj" | "zebra" | "generic" | "active_transponder" | null;
   hardwareAddress: string;
   cloud: { connected: boolean; error: string | null };
   device: {
@@ -15,6 +15,7 @@ export interface AggregateStatus {
     lastReadAt: string | null;
     readCount: number;
     antennaIds: number[];
+    detail?: string | null;
   };
   activeMoto: { motoId: number; name: string } | null;
   testMode: boolean;
@@ -28,6 +29,6 @@ export interface LoginResult {
 
 export interface ConnectInput {
   readerId: number;
-  hardware: "impinj" | "zebra" | "generic" | "mylaps";
+  hardware: "impinj" | "zebra" | "generic" | "active_transponder";
   hardwareAddress: string;
 }

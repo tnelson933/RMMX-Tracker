@@ -19,8 +19,8 @@ export interface ConnectorSettings {
   readerId: number | null;
   readerToken: string | null;
   readerName: string | null;
-  hardware: "impinj" | "zebra" | "generic" | "mylaps" | null;
-  /** Impinj: last 6 MAC chars OR a full hostname/IP. MyLaps: decoder IP. */
+  hardware: "impinj" | "zebra" | "generic" | "active_transponder" | null;
+  /** Impinj: last 6 MAC chars OR a full hostname/IP. Feibot: host/IP[:port]. */
   hardwareAddress: string;
   /** Reconnect hardware + cloud automatically when the app launches. */
   autoConnect: boolean;
@@ -42,7 +42,11 @@ export function loadSettings(): ConnectorSettings {
   try {
     if (!fs.existsSync(SETTINGS_FILE())) return { ...DEFAULT_SETTINGS };
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE(), "utf8"));
-    return { ...DEFAULT_SETTINGS, ...raw };
+    // The former decoder selection is protocol-incompatible. Preserve its
+    // address while migrating users to the active-transponder hardware kind.
+    const migrated = raw.hardware === "mylaps" ? { ...raw, hardware: "active_transponder" } : raw;
+    if (migrated !== raw) fs.writeFileSync(SETTINGS_FILE(), JSON.stringify({ ...DEFAULT_SETTINGS, ...migrated }, null, 2), "utf8");
+    return { ...DEFAULT_SETTINGS, ...migrated };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

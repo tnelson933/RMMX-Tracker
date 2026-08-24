@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld("connector", {
   login: (input: { cloudUrl: string; email: string; password: string }) =>
     ipcRenderer.invoke("auth:login", input),
   listReaders: () => ipcRenderer.invoke("readers:list"),
-  connect: (input: { readerId: number; hardware: "impinj" | "zebra" | "generic" | "mylaps"; hardwareAddress: string }) =>
+  connect: (input: { readerId: number; hardware: "impinj" | "zebra" | "generic" | "active_transponder"; hardwareAddress: string }) =>
     ipcRenderer.invoke("connect", input),
   disconnect: () => ipcRenderer.invoke("disconnect"),
   toggleTest: (enabled: boolean) => ipcRenderer.invoke("test:toggle", enabled),

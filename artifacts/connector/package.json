@@ -1,6 +1,6 @@
 {
   "name": "@workspace/connector",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "description": "RM Connect \u2014 lightweight tray app that bridges timing hardware to the cloud",
   "main": "dist/main.js",
@@ -8,6 +8,7 @@
     "build": "node build.mjs",
     "start": "pnpm run build && electron .",
     "dist": "pnpm run build && electron-builder",
+    "test": "node test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
