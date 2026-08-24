@@ -70,7 +70,7 @@
      <div class="checklist" id="feibotChecklist">
        <div class="check" id="checkTransport"><span class="mark">●</span><span><b>Network transport</b> — connect to the F2000 on TCP 55555</span></div>
        <div class="check" id="checkMachine"><span class="mark">●</span><span><b>Machine &amp; heartbeat</b> — waiting for F2000 identification</span></div>
-       <div class="check" id="checkLoops"><span class="mark">●</span><span><b>Loop 1 / Loop 2</b> — idle until a moto or test starts</span></div>
+       <div class="check" id="checkLoops"><span class="mark">●</span><span><b>Finish-gate loops 1 / 2</b> — idle until a moto, practice, or test starts</span></div>
        <div class="check" id="checkCloud"><span class="mark">●</span><span><b>Cloud registration</b> — reader must be online in RM Race</span></div>
      </div>
     <div class="switch">
@@ -241,7 +241,7 @@
       };
       setCheck("checkTransport", st.device.connected, "<b>Network transport</b> — " + (st.device.connected ? "connected" : "check IP, same network, and TCP 55555"));
       setCheck("checkMachine", st.device.transportReady && st.device.heartbeatFresh, "<b>Machine & heartbeat</b> — " + (st.device.machineId ? st.device.machineId + (st.device.heartbeatFresh ? " reporting" : " heartbeat is stale") : "waiting for F2000 identification"));
-      setCheck("checkLoops", st.device.ready, "<b>Loop 1 / Loop 2</b> — " + (st.device.loop1State || "pending") + " / " + (st.device.loop2State || "pending") + (st.device.ready ? "" : " (not ready yet)"));
+      setCheck("checkLoops", st.device.ready, "<b>Finish-gate loops 1 / 2</b> — " + (st.device.loop1State || "pending") + " / " + (st.device.loop2State || "pending") + (st.device.ready ? " (same finish gate)" : " (not ready yet)"));
       setCheck("checkCloud", st.cloud.connected, "<b>Cloud registration</b> — " + (st.cloud.connected ? "connected" : "cloud disconnected; verify internet and reader registration"));
     }
     $("errStatus").textContent = st.device.diagnosis || "";

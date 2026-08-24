@@ -390,15 +390,18 @@ function FeibotGuidedSetup({
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground mb-1">Active Loops</p>
+                         <p className="text-muted-foreground mb-1">Finish-gate coverage loops</p>
                       <div className="flex items-center gap-3 font-medium">
                         <span className={loops?.l1 ? "text-green-600" : "text-red-500 flex items-center gap-1"}>
-                          {!loops?.l1 && <AlertCircle size={12} />} L1 (Start)
+                           {!loops?.l1 && <AlertCircle size={12} />} Loop 1
                         </span>
                         <span className={loops?.l2 ? "text-green-600" : "text-red-500 flex items-center gap-1"}>
-                          {!loops?.l2 && <AlertCircle size={12} />} L2 (Finish)
+                           {!loops?.l2 && <AlertCircle size={12} />} Loop 2
                         </span>
                       </div>
+                         <p className="text-[11px] text-muted-foreground mt-1">
+                           Both loops cover the same finish gate; either loop reports the same crossing.
+                         </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground mb-1">Read Count</p>
@@ -1500,8 +1503,8 @@ export default function ReaderSetup() {
               <Settings size={18} className="text-muted-foreground shrink-0" />
               <div className="min-w-0">
                 <p className="font-heading font-bold uppercase tracking-wider text-sm">Advanced F2000 settings</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Optional — the default channel, full power, and both loops work for most readers.
+                   <p className="text-xs text-muted-foreground mt-0.5">
+                   Optional — the default channel, full power, and both finish-gate coverage loops work for most readers.
                 </p>
               </div>
             </summary>
