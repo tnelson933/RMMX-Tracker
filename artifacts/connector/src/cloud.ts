@@ -181,9 +181,15 @@ export class CloudLink extends EventEmitter {
     const res = await fetch(tokenUrl, { method: "POST", headers, body: payload });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
 
-    // 422 "no checkpoint assignment" → not an enduro setup; use facility routing
-    const noAssignment = res.status === 422 && (data.message ?? "").toLowerCase().includes("assignment");
-    if (!noAssignment) {
+    // 422 "no checkpoint assignment" → not an enduro setup; use facility routing.
+    // Practice sessions also have no race_day event, so the token endpoint
+    // returns 422 before it can route them; those must use the same fallback.
+    const tokenMessage = (data.message ?? "").toLowerCase();
+    const shouldUseFacilityRouting = res.status === 422 && (
+      tokenMessage.includes("assignment") ||
+      tokenMessage.includes("no active race_day event")
+    );
+    if (!shouldUseFacilityRouting) {
       return { ok: !!data.ok, message: data.message };
     }
 
