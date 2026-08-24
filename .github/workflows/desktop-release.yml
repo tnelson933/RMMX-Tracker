@@ -9,8 +9,21 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release if needed
+        run: |
+          version="${GITHUB_REF_NAME#desktop-v}"
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --title "RM Tracker $version" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-mac:
     name: Build macOS installer
+    needs: create-release
     runs-on: macos-14
     steps:
       - name: Checkout
@@ -110,6 +123,7 @@ jobs:
 
   build-windows:
     name: Build Windows installer
+    needs: create-release
     runs-on: windows-2022
     steps:
       - name: Checkout
