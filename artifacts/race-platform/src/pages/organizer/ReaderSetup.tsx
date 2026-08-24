@@ -1459,74 +1459,79 @@ export default function ReaderSetup() {
               </div>
             </div>
           </>
-        ) : tech === "active_transponder" ? (
-          <>
-            <div className="p-5 space-y-4">
-              <div className="flex gap-4">
-                <StepBadge n={4} />
-                <div className="min-w-0 flex-1 space-y-3">
-                  <div>
-                    <p className="font-semibold">Set F2000 device settings here</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      These are saved with the reader and pushed to RM Connect automatically. Nobody needs to enter them again on the track laptop.
-                    </p>
-                  </div>
-                  {(readers as any[]).filter(reader => reader.type === "active_transponder").length === 0 ? (
-                    <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                      Register your Active Timing Reader above before configuring its F2000 settings.
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border bg-muted/20 p-4 space-y-4">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Active Timing Reader</Label>
-                        <Select value={activeConfigReaderId ? String(activeConfigReaderId) : ""} onValueChange={value => selectActiveTimingReader(Number(value))}>
-                          <SelectTrigger className="bg-background"><SelectValue placeholder="Choose a reader" /></SelectTrigger>
-                          <SelectContent>
-                            {(readers as any[]).filter(reader => reader.type === "active_transponder").map(reader => (
-                              <SelectItem key={reader.id} value={String(reader.id)}>{reader.name}{reader.hardwareAddress ? ` · ${reader.hardwareAddress}` : ""}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs text-muted-foreground">Active channel (0–5)</Label>
-                          <Input type="number" min={0} max={5} value={activeTimingConfig.channel} onChange={event => setActiveTimingConfig(config => ({ ...config, channel: Number(event.target.value) }))} />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs text-muted-foreground">Active power (0–100)</Label>
-                          <Input type="number" min={0} max={100} value={activeTimingConfig.power} onChange={event => setActiveTimingConfig(config => ({ ...config, power: Number(event.target.value) }))} />
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-4">
-                        <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop1Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop1Enabled: event.target.checked }))} /> Loop 1 (Start)</label>
-                        <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop2Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop2Enabled: event.target.checked }))} /> Loop 2 (Finish)</label>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button onClick={() => saveActiveTimingConfig(false)} disabled={activeTimingConfigSaving || !activeConfigReaderId} className="gap-2">
-                          {activeTimingConfigSaving ? <Loader2 size={14} className="animate-spin" /> : <Settings size={14} />}
-                          Save & send to RM Connect
-                        </Button>
-                        <Button variant="outline" onClick={() => saveActiveTimingConfig(true)} disabled={activeTimingConfigSaving || !activeConfigReaderId}>
-                          Sync reader clock
-                        </Button>
-                      </div>
-                      {activeTimingConfigResult && (
-                        <p className={`text-xs ${activeTimingConfigResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{activeTimingConfigResult.message}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+        ) : null}
+      </div>
+
+      {tech === "active_transponder" && (
+        <>
+          {isDesktop && (
             <FeibotGuidedSetup
               isDesktop={isDesktop}
               connectorStatuses={connectorStatuses}
               readers={readers}
             />
-          </>
-        ) : null}
-      </div>
+          )}
+
+          <details className="rounded-xl border bg-card overflow-hidden">
+            <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
+              <Settings size={18} className="text-muted-foreground shrink-0" />
+              <div className="min-w-0">
+                <p className="font-heading font-bold uppercase tracking-wider text-sm">Advanced F2000 settings</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Optional — the default channel, full power, and both loops work for most readers.
+                </p>
+              </div>
+            </summary>
+            <div className="border-t p-5 space-y-4">
+              {(readers as any[]).filter(reader => reader.type === "active_transponder").length === 0 ? (
+                <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                  Register an Active Timing Reader above before changing its F2000 settings.
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Active Timing Reader</Label>
+                    <Select value={activeConfigReaderId ? String(activeConfigReaderId) : ""} onValueChange={value => selectActiveTimingReader(Number(value))}>
+                      <SelectTrigger className="bg-background"><SelectValue placeholder="Choose a reader" /></SelectTrigger>
+                      <SelectContent>
+                        {(readers as any[]).filter(reader => reader.type === "active_transponder").map(reader => (
+                          <SelectItem key={reader.id} value={String(reader.id)}>{reader.name}{reader.hardwareAddress ? ` · ${reader.hardwareAddress}` : ""}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Active channel (0–5)</Label>
+                      <Input type="number" min={0} max={5} value={activeTimingConfig.channel} onChange={event => setActiveTimingConfig(config => ({ ...config, channel: Number(event.target.value) }))} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Active power (0–100)</Label>
+                      <Input type="number" min={0} max={100} value={activeTimingConfig.power} onChange={event => setActiveTimingConfig(config => ({ ...config, power: Number(event.target.value) }))} />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop1Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop1Enabled: event.target.checked }))} /> Loop 1 (Start)</label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop2Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop2Enabled: event.target.checked }))} /> Loop 2 (Finish)</label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button onClick={() => saveActiveTimingConfig(false)} disabled={activeTimingConfigSaving || !activeConfigReaderId} className="gap-2">
+                      {activeTimingConfigSaving ? <Loader2 size={14} className="animate-spin" /> : <Settings size={14} />}
+                      Save & send to RM Connect
+                    </Button>
+                    <Button variant="outline" onClick={() => saveActiveTimingConfig(true)} disabled={activeTimingConfigSaving || !activeConfigReaderId}>
+                      Sync reader clock
+                    </Button>
+                  </div>
+                  {activeTimingConfigResult && (
+                    <p className={`text-xs ${activeTimingConfigResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{activeTimingConfigResult.message}</p>
+                  )}
+                </>
+              )}
+            </div>
+          </details>
+        </>
+      )}
 
       {/* Test Connection */}
       {tech === "rfid" && (

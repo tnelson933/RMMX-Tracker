@@ -15,6 +15,7 @@ export const clubsTable = pgTable("clubs", {
   stripeOnboardingComplete: boolean("stripe_onboarding_complete").notNull().default(false),
   autoDnfEnabled: boolean("auto_dnf_enabled").notNull().default(false),
   autoDnfThreshold: integer("auto_dnf_threshold").notNull().default(75),
+  active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
