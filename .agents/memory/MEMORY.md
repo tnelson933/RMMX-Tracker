@@ -7,3 +7,4 @@
 - [better-sqlite3 native build](better-sqlite3-build.md) — pnpm blocks build scripts by default; must add to onlyBuiltDependencies in pnpm-workspace.yaml then run `pnpm rebuild better-sqlite3`.
 - [Expo static build debugging](expo-static-build-debugging.md) — use a configurable Metro port and retain bundle HTTP diagnostics when an export fails.
 - [F2000 loop readiness](f2000-loop-readiness.md) — heartbeats alone are insufficient; confirm enabled loops before timing.
+- [F2000 practice routing](f2000-practice-routing.md) — practice scans must bypass event-only reader routing and resolve active transponder IDs.
