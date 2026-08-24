@@ -11,6 +11,7 @@ export const eventsTable = pgTable("events", {
   clubId: integer("club_id").notNull().references(() => clubsTable.id),
   name: text("name").notNull(),
   date: text("date").notNull(),
+  endDate: text("end_date"),
   state: text("state").notNull(),
   location: text("location"),
   trackName: text("track_name"),
