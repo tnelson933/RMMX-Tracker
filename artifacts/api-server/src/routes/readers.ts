@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { readersTable, usersTable, eventReaderAssignmentsTable, ridersTable, type ActiveTimingConfig } from "@workspace/db/schema";
-import { eq, asc, and, inArray } from "drizzle-orm";
+import { readersTable, usersTable, eventReaderAssignmentsTable, ridersTable, registrationsTable, eventsTable, type ActiveTimingConfig } from "@workspace/db/schema";
+import { eq, asc, and, inArray, ilike, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getConnectorStatus, sendConnectorCommand, sendReaderConnectorCommand } from "../lib/connectorRelay";
 import { getRecentTags, clearRecentTags } from "../lib/recentTags";
@@ -53,15 +53,32 @@ router.get("/readers/recent-tags", async (req, res) => {
   const tags = getRecentTags(clubId);
   if (tags.length === 0) return res.json([]);
 
-  // Match tags to riders via the permanent rfid_number on rider profiles
+  // Match passive RFID and F2000 active-transponder identifiers. Scope riders
+  // through registrations for this club because riders themselves are global.
+  const tagMatches = tags.flatMap((tag) => [
+    ilike(ridersTable.rfidNumber, tag.rfidNumber),
+    ilike(ridersTable.mylapsTransponderId, tag.rfidNumber),
+  ]);
   const riders = await db
-    .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName, rfidNumber: ridersTable.rfidNumber })
+    .select({
+      id: ridersTable.id,
+      firstName: ridersTable.firstName,
+      lastName: ridersTable.lastName,
+      rfidNumber: ridersTable.rfidNumber,
+      mylapsTransponderId: ridersTable.mylapsTransponderId,
+    })
     .from(ridersTable)
-    .where(and(eq(ridersTable.clubId, clubId), inArray(ridersTable.rfidNumber, tags.map((t) => t.rfidNumber))));
-  const byTag = new Map(riders.map((r) => [r.rfidNumber, r]));
+    .innerJoin(registrationsTable, eq(registrationsTable.riderId, ridersTable.id))
+    .innerJoin(eventsTable, eq(eventsTable.id, registrationsTable.eventId))
+    .where(and(eq(eventsTable.clubId, clubId), or(...tagMatches)));
+  const byTag = new Map<string, (typeof riders)[number]>();
+  for (const rider of riders) {
+    if (rider.rfidNumber) byTag.set(rider.rfidNumber.toUpperCase(), rider);
+    if (rider.mylapsTransponderId) byTag.set(rider.mylapsTransponderId.toUpperCase(), rider);
+  }
 
   return res.json(tags.map((t) => {
-    const rider = byTag.get(t.rfidNumber);
+    const rider = byTag.get(t.rfidNumber.toUpperCase());
     return {
       rfidNumber: t.rfidNumber,
       count: t.count,

@@ -339,21 +339,25 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
       rows.registrationsPulled++;
     }
 
-    // ── Riders (minimal: id, first_name, last_name, rfid_number) ──────────────
-    // The sync-pull endpoint only returns id/name/rfid for privacy reasons; the
-    // email field is required NOT NULL so we store '' for new cloud-only riders.
+    // ── Riders (minimal identifiers only; no contact details) ──────────────────
+    // The email field is required NOT NULL so we store '' for new cloud-only riders.
     const riderStmt = db.prepare(`
-      INSERT INTO riders (id, email, first_name, last_name, rfid_number)
-      VALUES (?, '', ?, ?, ?)
+      INSERT INTO riders (id, email, first_name, last_name, rfid_number, mylaps_transponder_id)
+      VALUES (?, '', ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
-        first_name  = excluded.first_name,
-        last_name   = excluded.last_name,
-        rfid_number = excluded.rfid_number
+        first_name             = excluded.first_name,
+        last_name              = excluded.last_name,
+        rfid_number            = excluded.rfid_number,
+        mylaps_transponder_id  = excluded.mylaps_transponder_id
     `);
 
     for (const rider of data.riders ?? []) {
       riderStmt.run(
-        rider.id, rider.firstName ?? "", rider.lastName ?? "", rider.rfidNumber ?? null,
+        rider.id,
+        rider.firstName ?? "",
+        rider.lastName ?? "",
+        rider.rfidNumber ?? null,
+        rider.mylapsTransponderId ?? null,
       );
       rows.ridersPulled++;
     }

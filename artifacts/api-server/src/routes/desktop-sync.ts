@@ -1077,6 +1077,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
             firstName:  ridersTable.firstName,
             lastName:   ridersTable.lastName,
             rfidNumber: ridersTable.rfidNumber,
+            mylapsTransponderId: ridersTable.mylapsTransponderId,
             email:      ridersTable.email,
           })
           .from(ridersTable)

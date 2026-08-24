@@ -25,14 +25,14 @@ A full-stack SaaS race operations platform for motorcycle and ATV clubs — live
 
 ### 🚀 Release Checklist (do these IN ORDER every time)
 
-**Steps 1–3 are done by the agent automatically. Steps 4–6 are done by you.**
+**Steps 1–6 are done by the agent automatically after each production publish.**
 
 1. **[Agent runs this automatically]** GitHub sync check — `pnpm --filter @workspace/scripts run check:github-sync` — must show "All N files match GitHub" before proceeding. Agent pushes any diffs it finds.
 2. **[Agent]** Bump `"version"` in `artifacts/desktop/package.json` — change to the next number (e.g. `1.0.50` → `1.0.51`). This MUST match the GitHub tag or the installers won't upload.
-3. **[Agent]** Update `RELEASE_TAG` in `artifacts/race-platform/src/pages/public/Home.tsx` to the new tag. Agent pushes both files to GitHub.
-4. Go to **github.com/tnelson933/RMMX-Tracker/releases/new**
-5. In "Choose a tag", type `desktop-v1.0.51` (matching the version above) → "Create new tag on publish" → give it a title → click **Publish release**
-6. GitHub Actions runs automatically — wait for green checkmarks on both Mac and Windows jobs. Download links on the homepage now work ✓
+3. **[Agent]** Update `RELEASE_TAG` in `artifacts/race-platform/src/pages/public/Home.tsx` and any API fallback to the new tag.
+4. **[Agent]** Build the desktop/local-server bundle, commit the release inputs, and push them to GitHub.
+5. **[Agent]** Create and push the matching `desktop-v*` tag. GitHub Actions creates the Mac and Windows installers automatically.
+6. **[Agent]** Wait for both release jobs to finish and verify the download assets before considering the publish complete.
 
 **Pre-requisites for `dist`:**
 1. `pnpm --filter @workspace/local-server run build` — build the local Express server (bundled into the app)
@@ -105,7 +105,7 @@ The file is bundled at build time (esbuild text loader), so changes take effect 
 
 ## User preferences
 
-- **Release workflow**: Do NOT bump the version, push to GitHub, or create release tags after individual fixes. Collect all changes locally and only push + bump + release when the user explicitly says to do a release build.
+- **Release workflow**: Every production publish must also produce a new software-download release. The agent bumps the desktop version, updates download fallbacks, pushes the release inputs, creates the matching GitHub tag, and verifies the Mac and Windows installers. Do not defer this unless the user explicitly opts out.
 
 ## Gotchas
 

@@ -27,7 +27,7 @@ import {
   ridersTable,
   enduroCheckpointArrivalsTable,
 } from "@workspace/db/schema";
-import { eq, and, count } from "drizzle-orm";
+import { eq, and, count, ilike, or } from "drizzle-orm";
 import { processCrossing } from "./timing";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { recordTagSeen } from "../lib/recentTags";
@@ -36,21 +36,28 @@ const router = Router();
 
 /**
  * Resolve a tag number to a riderId for the given event.
- * Checks rfid_assignments first, then the riders table (permanent column).
+ * Checks event RFID assignments first, then permanent RFID and active-transponder
+ * identifiers on the rider record.
  */
 async function resolveRider(rfidNumber: string, eventId: number): Promise<number | null> {
+  const tagNumber = rfidNumber.trim();
+
   // Event-specific assignment takes priority
   const [assignment] = await db
     .select({ riderId: rfidAssignmentsTable.riderId })
     .from(rfidAssignmentsTable)
-    .where(and(eq(rfidAssignmentsTable.eventId, eventId), eq(rfidAssignmentsTable.rfidNumber, rfidNumber)));
+    .where(and(eq(rfidAssignmentsTable.eventId, eventId), ilike(rfidAssignmentsTable.rfidNumber, tagNumber)));
   if (assignment) return assignment.riderId;
 
-  // Fall back to permanent rfid_number on the rider record
+  // Fall back to permanent RFID sticker or active-transponder identifiers.
+  // F2000 hexadecimal values may use a different letter case than the stored ID.
   const [rider] = await db
     .select({ id: ridersTable.id })
     .from(ridersTable)
-    .where(eq(ridersTable.rfidNumber, rfidNumber));
+    .where(or(
+      ilike(ridersTable.rfidNumber, tagNumber),
+      ilike(ridersTable.mylapsTransponderId, tagNumber),
+    ));
   return rider?.id ?? null;
 }
 

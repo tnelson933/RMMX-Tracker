@@ -117,6 +117,7 @@ function processCrossing(opts: {
 }) {
   const db = getDb();
   const { rfidNumber, motoId, crossingTime, readerId, antennaId, bypassDebounce, overrideRiderId } = opts;
+  const tagNumber = rfidNumber.trim();
 
   type CrossingResult =
     | { debounced: true; crossing: null; lapNumber: null; lapTimeMs: null }
@@ -139,8 +140,17 @@ function processCrossing(opts: {
     if (riderId === null && overrideRiderId === undefined) {
       const assignment = db
         .prepare("SELECT rider_id FROM rfid_assignments WHERE rfid_number = ? AND event_id = ? LIMIT 1")
-        .get(rfidNumber, moto.event_id) as any;
+        .get(tagNumber, moto.event_id) as any;
       riderId = assignment?.rider_id ?? null;
+    }
+
+    // F2000 active transponder IDs are assigned on the rider profile, separately
+    // from passive RFID sticker assignments. Hexadecimal casing is not significant.
+    if (!riderId) {
+      const activeTransponderMatch = db
+        .prepare("SELECT id FROM riders WHERE mylaps_transponder_id = ? COLLATE NOCASE LIMIT 1")
+        .get(tagNumber) as any;
+      riderId = activeTransponderMatch?.id ?? null;
     }
 
     // Bib-number fallback: if the rfidNumber didn't match an RFID assignment (e.g.
@@ -149,14 +159,14 @@ function processCrossing(opts: {
     if (!riderId) {
       const bibMatch = db
         .prepare("SELECT rider_id FROM checkins WHERE event_id = ? AND bib_number = ? AND checked_in = 1 LIMIT 1")
-        .get(moto.event_id, rfidNumber) as any;
+        .get(moto.event_id, tagNumber) as any;
       riderId = bibMatch?.rider_id ?? null;
     }
 
     // Previous crossings for this tag+moto (ordered oldest → newest)
     const prevCrossings = db
       .prepare("SELECT * FROM lap_crossings WHERE moto_id = ? AND rfid_number = ? ORDER BY crossing_time ASC")
-      .all(motoId, rfidNumber) as any[];
+      .all(motoId, tagNumber) as any[];
 
     // Debounce: reject burst antenna reads
     if (!bypassDebounce && prevCrossings.length > 0) {
@@ -181,7 +191,7 @@ function processCrossing(opts: {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insResult = ins.run(
-      moto.event_id, motoId, riderId, rfidNumber,
+      moto.event_id, motoId, riderId, tagNumber,
       crossingTime.toISOString(), lapNumber, lapTimeMs,
       readerId ?? null, antennaId ?? null
     );
@@ -273,12 +283,13 @@ function processPracticeCrossing(opts: {
 }): { id: number; lapNumber: number; lapTimeMs: number | null } | { debounced: true } | null {
   const db = getDb();
   const { rfidNumber, session, crossingTime } = opts;
+  const tagNumber = rfidNumber.trim();
 
   const lastCrossing = db
     .prepare(
       "SELECT * FROM practice_crossings WHERE session_id = ? AND rfid_number = ? ORDER BY crossing_time DESC LIMIT 1",
     )
-    .get(session.id, rfidNumber) as any;
+    .get(session.id, tagNumber) as any;
 
   if (lastCrossing) {
     const elapsed = crossingTime.getTime() - new Date(lastCrossing.crossing_time).getTime();
@@ -294,7 +305,7 @@ function processPracticeCrossing(opts: {
        WHERE ra.rfid_number = ? AND e.club_id = ?
        LIMIT 1`,
     )
-    .get(rfidNumber, session.club_id) as any;
+    .get(tagNumber, session.club_id) as any;
 
   let riderId: number | null = null;
   let riderName: string | null = null;
@@ -307,9 +318,12 @@ function processPracticeCrossing(opts: {
   } else {
     const directRider = db
       .prepare(
-        "SELECT id, first_name, last_name, bib_number FROM riders WHERE rfid_number = ? LIMIT 1",
+        `SELECT id, first_name, last_name, bib_number
+         FROM riders
+         WHERE rfid_number = ? OR mylaps_transponder_id = ? COLLATE NOCASE
+         LIMIT 1`,
       )
-      .get(rfidNumber) as any;
+      .get(tagNumber, tagNumber) as any;
     if (directRider) {
       riderId = directRider.id;
       riderName =
@@ -331,7 +345,7 @@ function processPracticeCrossing(opts: {
     )
     .run(
       session.id,
-      rfidNumber,
+      tagNumber,
       riderId,
       riderName,
       bibNumber,

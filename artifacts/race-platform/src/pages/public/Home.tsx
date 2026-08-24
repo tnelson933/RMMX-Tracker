@@ -23,7 +23,7 @@ import { useUserLocation } from "@/hooks/useUserLocation";
 import { haversineDistance } from "@/lib/haversine";
 import { STATE_CENTROIDS, normalizeState } from "@/lib/stateCentroids";
 
-const FALLBACK_TAG = "desktop-v1.0.109";
+const FALLBACK_TAG = "desktop-v1.0.110";
 const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 const CONNECTOR_FALLBACK_TAG = "connector-v1.0.11";
 const CONNECTOR_FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${CONNECTOR_FALLBACK_TAG}`;
