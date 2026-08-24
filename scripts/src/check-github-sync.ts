@@ -36,7 +36,7 @@ const EXTRA_FILES = [
   "artifacts/desktop/package.json",
   "artifacts/local-server/package.json",
   "artifacts/api-server/package.json",
-  ".github/workflows/build-desktop.yml",
+  ".github/workflows/desktop-release.yml",
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
