@@ -26,9 +26,11 @@ import {
   rfidAssignmentsTable,
   ridersTable,
   enduroCheckpointArrivalsTable,
+  practiceSessionsTable,
 } from "@workspace/db/schema";
 import { eq, and, count, ilike, or } from "drizzle-orm";
 import { processCrossing } from "./timing";
+import { processPracticeCrossing } from "./practice";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { recordTagSeen } from "../lib/recentTags";
 
@@ -86,14 +88,41 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
     .where(eq(readersTable.id, reader.id))
     .catch(() => {});
 
-  // 3. Resolve the active event for this reader's club
+  const crossingTime = body.crossingTime ? new Date(body.crossingTime) : new Date();
+
+  // 3. Resolve the active event for this reader's club. A running practice has
+  // no race_day event or checkpoint assignment, so accept it here as well. This
+  // keeps token-based readers working even if an older RM Connect client does
+  // not yet retry through the facility-routing endpoint.
   let eventId = body.eventId ?? null;
   if (!eventId) {
     const activeEvents = await db
       .select({ id: eventsTable.id })
       .from(eventsTable)
       .where(and(eq(eventsTable.clubId, reader.clubId), eq(eventsTable.status, "race_day")));
-    if (activeEvents.length === 0) return res.status(422).json({ ok: false, message: "No active race_day event for this club" });
+    if (activeEvents.length === 0) {
+      const [practice] = await db
+        .select()
+        .from(practiceSessionsTable)
+        .where(and(
+          eq(practiceSessionsTable.clubId, reader.clubId),
+          eq(practiceSessionsTable.status, "active"),
+        ))
+        .limit(1);
+
+      if (practice) {
+        const result = await processPracticeCrossing(practice, String(body.rfidNumber), crossingTime);
+        if ("skipped" in result) {
+          const message = result.reason === "unknown_tag"
+            ? `Tag ${body.rfidNumber} is not assigned to a rider`
+            : "Practice crossing ignored by the debounce window";
+          return res.json({ ok: false, message });
+        }
+        return res.json({ ok: true, message: "Practice crossing recorded" });
+      }
+
+      return res.status(422).json({ ok: false, message: "No active race_day event or practice session for this club" });
+    }
     if (activeEvents.length > 1) return res.status(422).json({ ok: false, message: "Multiple active events — include eventId in the request body" });
     eventId = activeEvents[0].id;
   }
@@ -109,7 +138,6 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
     return res.status(422).json({ ok: false, message: "Reader has no checkpoint assignment for this event" });
   }
 
-  const crossingTime = body.crossingTime ? new Date(body.crossingTime) : new Date();
   const rfidNumber = body.rfidNumber!;
 
   // 5. Handle time_check role — persist arrival and return
