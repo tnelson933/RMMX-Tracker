@@ -62,7 +62,7 @@ router.get("/config/connector-release", async (_req, res) => {
     connectorCache = { ...info, fetchedAt: Date.now() };
     return res.json(info);
   } catch {
-    const info = buildConnectorFromTag("connector-v1.0.0");
+    const info = buildConnectorFromTag("connector-v1.0.7");
     return res.json(info);
   }
 });
@@ -84,7 +84,7 @@ router.get("/config/desktop-release", async (_req, res) => {
     cache = { ...info, fetchedAt: Date.now() };
     return res.json(info);
   } catch {
-    const info = buildFromTag("desktop-v1.0.62");
+    const info = buildFromTag("desktop-v1.0.106");
     return res.json(info);
   }
 });

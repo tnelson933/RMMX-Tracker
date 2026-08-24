@@ -80,7 +80,7 @@ export function FeibotConnectionStatus({ className = "" }: { className?: string 
   // When not connected and not desktop, and no active connector exists, we assume we need setup.
   if (!isConnected && !hasError && !isDesktop && !activeConnector) {
     return (
-      <Link href="/reader-setup" className={`inline-flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-500/20 transition-colors ${className}`}>
+      <Link href="/rfid/setup" className={`inline-flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-500/20 transition-colors ${className}`}>
         <AlertCircle size={14} className="shrink-0" />
         <span className="font-medium">Feibot Disconnected</span>
         <Settings size={12} className="ml-1 opacity-70" />
@@ -89,7 +89,7 @@ export function FeibotConnectionStatus({ className = "" }: { className?: string 
   }
 
   return (
-    <Link href="/reader-setup" className={`inline-flex items-center gap-3 rounded-md border px-3 py-1.5 text-xs transition-colors hover:bg-muted/50 ${isConnected ? (hasError ? "border-amber-500/30 bg-amber-500/5 text-amber-700" : "border-green-500/30 bg-green-500/5 text-green-700") : "border-red-500/30 bg-red-500/5 text-red-700"} ${className}`}>
+    <Link href="/rfid/setup" className={`inline-flex items-center gap-3 rounded-md border px-3 py-1.5 text-xs transition-colors hover:bg-muted/50 ${isConnected ? (hasError ? "border-amber-500/30 bg-amber-500/5 text-amber-700" : "border-green-500/30 bg-green-500/5 text-green-700") : "border-red-500/30 bg-red-500/5 text-red-700"} ${className}`}>
       <div className="flex items-center gap-1.5 font-medium">
         {isConnected ? <CheckCircle2 size={14} className={hasError ? "text-amber-500" : "text-green-500"} /> : <XCircle size={14} className="text-red-500" />}
         <span>{isConnected ? "Feibot F2000" : "Feibot Disconnected"}</span>
