@@ -75,6 +75,7 @@ interface ScheduleEvent {
   eventId: number;
   eventName: string;
   eventDate: string | null;
+  eventEndDate?: string | null;
   eventState: string | null;
   eventLocation: string | null;
   status: string;

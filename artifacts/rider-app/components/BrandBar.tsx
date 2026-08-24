@@ -103,7 +103,7 @@ export function BrandBar() {
       <View style={styles.left}>
         <View style={styles.logoBacking}>
           <Image
-            source={require("../assets/images/rm-logo.png")}
+            source={require("../assets/images/icon.png")}
             style={styles.logo}
             resizeMode="contain"
           />
