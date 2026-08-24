@@ -217,7 +217,7 @@ export type EventTimingTechnology = typeof EventTimingTechnology[keyof typeof Ev
 
 export const EventTimingTechnology = {
   rfid: 'rfid',
-  mylaps: 'mylaps',
+  active_transponder: 'active_transponder',
 } as const;
 
 /**
@@ -265,6 +265,8 @@ export interface EnduroPenaltyConfig {
 }
 
 export interface Event {
+  /** Whether results are published to the public */
+  published?: boolean;
   id: number;
   clubId: number;
   name: string;
@@ -377,7 +379,7 @@ export type EventInputTimingTechnology = typeof EventInputTimingTechnology[keyof
 
 export const EventInputTimingTechnology = {
   rfid: 'rfid',
-  mylaps: 'mylaps',
+  active_transponder: 'active_transponder',
 } as const;
 
 /**
@@ -461,7 +463,7 @@ export type EventUpdateTimingTechnology = typeof EventUpdateTimingTechnology[key
 
 export const EventUpdateTimingTechnology = {
   rfid: 'rfid',
-  mylaps: 'mylaps',
+  active_transponder: 'active_transponder',
 } as const;
 
 /**
@@ -1897,7 +1899,7 @@ export type ReaderType = typeof ReaderType[keyof typeof ReaderType];
 
 export const ReaderType = {
   rfid: 'rfid',
-  mylaps: 'mylaps',
+  active_transponder: 'active_transponder',
 } as const;
 
 export interface Reader {
@@ -1908,7 +1910,7 @@ export interface Reader {
   /** UUID used as the URL key for this reader's ingest endpoint */
   token: string;
   /**
-     * Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders. Used by RM Connect to connect to the hardware.
+     * Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 3333.
      * @nullable
      */
   hardwareAddress?: string | null;
@@ -1922,20 +1924,20 @@ export type ReaderInputType = typeof ReaderInputType[keyof typeof ReaderInputTyp
 
 export const ReaderInputType = {
   rfid: 'rfid',
-  mylaps: 'mylaps',
+  active_transponder: 'active_transponder',
 } as const;
 
 export interface ReaderInput {
   name: string;
   type: ReaderInputType;
-  /** Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders */
+  /** Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address */
   hardwareAddress?: string;
 }
 
 export interface ReaderUpdateInput {
   name: string;
   /**
-     * Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders
+     * Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address
      * @nullable
      */
   hardwareAddress?: string | null;
@@ -1951,7 +1953,7 @@ export const ConnectorStatusHardwareKind = {
   impinj: 'impinj',
   zebra: 'zebra',
   generic: 'generic',
-  mylaps: 'mylaps',
+  active_transponder: 'active_transponder',
 } as const;
 
 export type ConnectorStatusHardware = {

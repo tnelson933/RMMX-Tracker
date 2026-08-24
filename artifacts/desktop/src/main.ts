@@ -28,10 +28,18 @@ import {
   disconnectPort,
 } from "./serial";
 import {
-  connectDecoder,
-  disconnectDecoder,
-  getMyLapsStatus,
-} from "./mylaps";
+  connectActiveTransponder,
+  configureActiveTransponder,
+  disconnectActiveTransponder,
+  getActiveTransponderStatus,
+  normalizeActiveTransponderAddress,
+  reportActiveTransponderError,
+  startActiveTransponderTest,
+  stopActiveTransponderTest,
+  setActiveTransponderReading,
+  syncActiveTransponderClock,
+  type ActiveTransponderConfiguration,
+} from "./active-transponder";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -44,6 +52,8 @@ const WINDOW_TITLE = "RM Tracker";
 let mainWindow: BrowserWindow | null = null;
 let localServerProcess: ChildProcess | null = null;
 let syncEngine: SyncEngine | null = null;
+let readerStatePollTimer: ReturnType<typeof setInterval> | null = null;
+let lastReaderState: boolean | null = null;
 
 // ── App paths ─────────────────────────────────────────────────────────────────
 
@@ -70,6 +80,32 @@ function getRacePlatformDist(): string {
 
 function getDbPath(): string {
   return path.join(app.getPath("userData"), "race_data.db");
+}
+
+function getActiveTransponderSettingsPath(): string {
+  return path.join(app.getPath("userData"), "active-transponder.json");
+}
+
+interface ActiveTransponderSettings {
+  address?: string;
+  configuration?: ActiveTransponderConfiguration;
+}
+
+function loadActiveTransponderSettings(): ActiveTransponderSettings {
+  try {
+    const saved = JSON.parse(fs.readFileSync(getActiveTransponderSettingsPath(), "utf8")) as ActiveTransponderSettings;
+    return saved && typeof saved === "object" ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+function loadActiveTransponderAddress(): string {
+  return typeof loadActiveTransponderSettings().address === "string" ? loadActiveTransponderSettings().address! : "";
+}
+
+function saveActiveTransponderSettings(settings: ActiveTransponderSettings): void {
+  fs.writeFileSync(getActiveTransponderSettingsPath(), JSON.stringify(settings), { mode: 0o600 });
 }
 
 // ── Local server management ───────────────────────────────────────────────────
@@ -216,6 +252,50 @@ function stopLocalServer(): Promise<void> {
       }
     }, 3000);
   });
+}
+
+function startReaderStatePolling(): void {
+  if (readerStatePollTimer) return;
+
+  const poll = () => {
+    const req = http.get(
+      `http://127.0.0.1:${LOCAL_PORT}/api/timing/reader-state`,
+      (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        res.on("end", () => {
+          if (res.statusCode !== 200) return;
+          try {
+            const state = JSON.parse(body) as { reading?: unknown };
+            if (typeof state.reading === "boolean" && state.reading !== lastReaderState) {
+              lastReaderState = state.reading;
+              setActiveTransponderReading(state.reading);
+            }
+          } catch {
+            // Ignore a malformed poll response and try again on the next tick.
+          }
+        });
+      },
+    );
+    req.setTimeout(900, () => req.destroy());
+    req.on("error", () => {
+      // The local server may be stopping; leave the last known state unchanged.
+    });
+  };
+
+  poll();
+  readerStatePollTimer = setInterval(poll, 1_000);
+}
+
+function stopReaderStatePolling(): void {
+  if (readerStatePollTimer) {
+    clearInterval(readerStatePollTimer);
+    readerStatePollTimer = null;
+  }
+  lastReaderState = null;
 }
 
 // ── Session secret (derived from machine-stable data) ─────────────────────────
@@ -422,20 +502,53 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("serial:getStatus", () => getSerialStatus());
 
-  ipcMain.handle("mylaps:connect", async (_event, ip: string) => {
-    await connectDecoder(ip, (transponder, crossingTime) => {
-      postCrossingToLocalServer({ tag: transponder, fieldName: "transponder", crossingTime });
-      mainWindow?.webContents.send("mylaps:status", getMyLapsStatus());
-    });
-    mainWindow?.webContents.send("mylaps:status", getMyLapsStatus());
+  ipcMain.handle("active-transponder:connect", async (_event, ip?: string) => {
+    const savedSettings = loadActiveTransponderSettings();
+    const requestedAddress = ip?.trim() || loadActiveTransponderAddress();
+    // Validate before attempting the network connection, and retain the
+    // normalized endpoint only after a successful direct connection.
+    const normalized = normalizeActiveTransponderAddress(requestedAddress);
+    if (savedSettings.configuration) configureActiveTransponder(savedSettings.configuration);
+    await connectActiveTransponder(
+      requestedAddress,
+      (epc, crossingTime) => {
+        postCrossingToLocalServer(
+          { tag: epc, fieldName: "transponder", crossingTime },
+          (error) => error && reportActiveTransponderError(error),
+        );
+      },
+      (status) => {
+        mainWindow?.webContents.send("active-transponder:status", status);
+      },
+    );
+    saveActiveTransponderSettings({ ...savedSettings, address: normalized.address });
+    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
   });
 
-  ipcMain.handle("mylaps:disconnect", () => {
-    disconnectDecoder();
-    mainWindow?.webContents.send("mylaps:status", getMyLapsStatus());
+  ipcMain.handle("active-transponder:disconnect", () => {
+    disconnectActiveTransponder();
+    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
   });
 
-  ipcMain.handle("mylaps:getStatus", () => getMyLapsStatus());
+  ipcMain.handle("active-transponder:getStatus", () => getActiveTransponderStatus());
+  ipcMain.handle("active-transponder:startTest", () => {
+    startActiveTransponderTest();
+    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+  });
+  ipcMain.handle("active-transponder:stopTest", () => {
+    stopActiveTransponderTest();
+    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+  });
+  ipcMain.handle("active-transponder:configure", (_event, configuration: ActiveTransponderConfiguration) => {
+    configureActiveTransponder(configuration);
+    const savedSettings = loadActiveTransponderSettings();
+    saveActiveTransponderSettings({ ...savedSettings, configuration });
+    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+  });
+  ipcMain.handle("active-transponder:syncClock", () => {
+    syncActiveTransponderClock();
+    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+  });
 
   ipcMain.handle("auth:getCredentials", () => getPublicCredentials());
 
@@ -662,7 +775,7 @@ function postCrossingToLocalServer(opts: {
   tag: string;
   fieldName?: "rfidNumber" | "transponder";
   crossingTime?: Date;
-}): void {
+}, onFailure?: (message: string) => void): void {
   const { tag, fieldName = "rfidNumber", crossingTime } = opts;
   const body = JSON.stringify({ [fieldName]: tag, crossingTime: (crossingTime ?? new Date()).toISOString() });
   const req = http.request(
@@ -679,8 +792,20 @@ function postCrossingToLocalServer(opts: {
     (res) => {
       if (res.statusCode && res.statusCode >= 400) {
         console.error(`[rfid] crossing rejected: HTTP ${res.statusCode}`);
+        let rejection = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => { rejection += chunk; });
+        res.on("end", () => {
+          const noActiveMoto = res.statusCode === 404 || res.statusCode === 409;
+          onFailure?.(
+            noActiveMoto
+              ? "F2000 read a real crossing, but no active moto or practice is running. Start a moto/practice and try again."
+              : `F2000 read a real crossing, but the local timing server rejected it (HTTP ${res.statusCode}${rejection ? `: ${rejection}` : ""}).`,
+          );
+        });
+      } else {
+        res.resume();
       }
-      res.resume();
 
       if (syncEngine) {
         setTimeout(() => void syncEngine?.flush(), 800);
@@ -690,6 +815,7 @@ function postCrossingToLocalServer(opts: {
 
   req.on("error", (err) => {
     console.error(`[rfid] failed to post crossing: ${err.message}`);
+    onFailure?.(`F2000 read a real crossing, but it could not reach the local timing server: ${err.message}`);
   });
 
   req.write(body);
@@ -756,6 +882,7 @@ app.whenReady().then(async () => {
 
   createWindow();
   startSyncEngine();
+  startReaderStatePolling();
   setupAutoUpdater();
 
   app.on("activate", () => {
@@ -776,9 +903,10 @@ app.on("before-quit", () => {
 });
 
 function cleanupAndQuit(): void {
+  stopReaderStatePolling();
   stopSyncEngine();
   disconnectPort();
-  disconnectDecoder();
+  disconnectActiveTransponder();
   void stopLocalServer().finally(() => {
     app.quit();
   });

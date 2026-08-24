@@ -96,7 +96,7 @@ export function rmonitorClientCount(eventId: number): number {
 }
 
 // ── RMonitor message builders ──────────────────────────────────────────────────
-// All times in "M:SS.cc" (centiseconds) — the standard AMB/MyLaps format.
+// All times in "M:SS.cc" (centiseconds) — the active transponder timing format.
 // Lines do NOT include the trailing \r\n — the bridge adds that when sending TCP.
 
 function rmonitorEscape(s: string): string {
@@ -339,7 +339,7 @@ async function _processCrossing(opts: {
       riderId = anyEventAssignment?.riderId ?? null;
     }
 
-    // Fallback: permanent rfid_number or mylaps_transponder_id on the rider's profile
+    // Fallback: permanent RFID or active-transponder identifier on the rider profile.
     if (!riderId) {
       const [directRider] = await db
         .select({ id: ridersTable.id })
@@ -551,14 +551,25 @@ async function _processCrossing(opts: {
 
     if (existing[0]) {
       const prevLaps = Array.isArray(existing[0].lapTimes) ? (existing[0].lapTimes as number[]) : [];
+      // Only cap by lapCount for fixed-lap races; time-limit races (timeLimitMs > 0) run until
+      // the flag + plusLaps logic fires — capping would silently drop the decisive final lap.
+      const timingLapCap = moto.lapCount != null && moto.lapCount > 0 && !moto.timeLimitMs ? Number(moto.lapCount) : null;
+      // If already at the lap cap, don't add another lap to race_results
+      if (timingLapCap != null && prevLaps.length >= timingLapCap) {
+        // crossing is stored in lap_crossings above; just don't update race_results
+      } else {
       const newLaps = [...prevLaps, lapTimeMs];
-      const totalMs = newLaps.reduce((s, t) => s + t, 0);
+      const cappedLaps = timingLapCap != null ? newLaps.slice(0, timingLapCap) : newLaps;
+      const totalMs = cappedLaps.reduce((s, t) => s + t, 0);
       await db
         .update(raceResultsTable)
-        .set({ lapTimes: newLaps, totalTime: formatLapTime(totalMs) })
+        .set({ lapTimes: cappedLaps, totalTime: formatLapTime(totalMs) })
         .where(eq(raceResultsTable.id, existing[0].id));
+      }
     } else {
-      const totalMs = lapTimeMs;
+      const timingLapCapNew = moto.lapCount != null && moto.lapCount > 0 && !moto.timeLimitMs ? Number(moto.lapCount) : null;
+      // Only create the result row if within the lap limit (lap 1 is always within limit)
+      if (timingLapCapNew == null || 1 <= timingLapCapNew) {
       await db.insert(raceResultsTable).values({
         eventId: moto.eventId,
         motoId,
@@ -566,11 +577,12 @@ async function _processCrossing(opts: {
         raceClass: moto.raceClass,
         position: 999,
         lapTimes: [lapTimeMs],
-        totalTime: formatLapTime(totalMs),
+        totalTime: formatLapTime(lapTimeMs),
         bibNumber: checkin?.bibNumber ?? null,
         dnf: false,
         dns: false,
       });
+      }
     }
 
     // 6. Recalculate positions for all riders in moto
@@ -740,8 +752,8 @@ async function getActivePracticeSessionForClub(clubId: number) {
 // currently in_progress for any of your club's events.
 //
 // Accepts ALL hardware payload formats:
-//   • Generic / bridge:  { rfidNumber, crossingTime? }
-//   • AMBrc / MyLaps:    { transponder, passingTime? }
+//   • Generic:           { rfidNumber, crossingTime? }
+//   • Feibot F2000 Active Transponder Timing: { transponder, passingTime? }
 //   • Impinj R700:       { events: [{ type:"tagInventoryEvent", tagInventoryEvent:{epcHex,firstSeenTime} }] }
 //   • Zebra FX7500:      { data: { tags: [{idHex, firstSeenTimestamp}] } } or { tags:[...] }
 router.post("/timing/active/crossing", async (req, res) => {
@@ -881,7 +893,7 @@ router.post("/timing/active/crossing", async (req, res) => {
     return res.json({ ok: true, processed: zebraTags.length, motoId: moto.id, results });
   }
 
-  // ── Generic / AMBrc / MyLaps format ────────────────────────────────────────
+// ── Generic / Active Transponder Timing format ─────────────────────────────
   const rfidNumber: string | undefined =
     body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
   if (!rfidNumber) {
@@ -968,7 +980,7 @@ router.post("/timing/ping", async (req, res) => {
     return res.json({ ok: true, received: rfidNumber || "(zebra payload)", clubId });
   }
 
-  // Generic / AMBrc / MyLaps
+  // Generic active-transponder payload
   const rfidNumber: string | undefined =
     body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
   if (!rfidNumber) {
@@ -1101,9 +1113,9 @@ router.post("/timing/zebra-crossing", async (req, res) => {
   return res.json({ ok: true, processed: tags.length, motoId: moto.id, results });
 });
 
-// POST /timing/mylaps-crossing?eventId=N — AMBrc / MyLaps native format
+// POST /timing/mylaps-crossing?eventId=N — legacy endpoint for Active Transponder Timing.
 // Body: { transponder: "12345", passingTime: "2026-05-27T14:32:01.123Z", loopId?: "finish-line-1" }
-//   or the AMBrc template variables already substituted (rfidNumber accepted as alias)
+//   rfidNumber is accepted as an alias for legacy bridge compatibility.
 router.post("/timing/mylaps-crossing", async (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) {
@@ -1117,7 +1129,7 @@ router.post("/timing/mylaps-crossing", async (req, res) => {
   }
 
   const body = req.body as any;
-  // Accept: transponder / rfidNumber / transponderId (common AMBrc field names)
+  // Accept common active-transponder field names.
   const transponder: string | undefined =
     body?.transponder ?? body?.rfidNumber ?? body?.transponderId ?? body?.id;
 
@@ -1141,7 +1153,7 @@ router.post("/timing/mylaps-crossing", async (req, res) => {
     return res.status(409).json({ error: "No moto currently in progress for this event" });
   }
 
-  const readerId: string = body?.loopId ?? body?.readerId ?? "mylaps";
+  const readerId: string = body?.loopId ?? body?.readerId ?? "active-transponder";
 
   try {
     const result = await processCrossing({

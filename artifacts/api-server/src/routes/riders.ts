@@ -5,6 +5,13 @@ import { eq, ilike, or, desc, and, inArray, sql } from "drizzle-orm";
 
 const router = Router();
 
+/** Slice a lapTimes array to at most lapCount entries. Handles null/undefined gracefully. */
+function capLapTimes(lapTimes: unknown, lapCount: number | null | undefined): unknown[] {
+  const arr = Array.isArray(lapTimes) ? lapTimes : [];
+  if (lapCount != null && lapCount > 0) return arr.slice(0, lapCount);
+  return arr;
+}
+
 function getStaffClubId(res: any): number | null {
   const v = res.locals?.staffClubId;
   return typeof v === "number" ? v : null;
@@ -132,6 +139,8 @@ router.get("/riders/:riderId", async (req, res) => {
     dns: raceResultsTable.dns,
     bibNumber: raceResultsTable.bibNumber,
     motoName: motosTable.name,
+    lapCount: motosTable.lapCount,
+    timeLimitMs: motosTable.timeLimitMs,
   }).from(raceResultsTable)
     .leftJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
     .where(eq(raceResultsTable.riderId, id))
@@ -150,7 +159,7 @@ router.get("/riders/:riderId", async (req, res) => {
     clubIdNumber: latestClubId?.clubIdNumber ?? null,
     recentResults: recentResults.map(r => ({
       ...r,
-      lapTimes: Array.isArray(r.lapTimes) ? r.lapTimes : [],
+      lapTimes: capLapTimes(r.lapTimes, r.timeLimitMs ? null : r.lapCount),
       motoName: r.motoName || "",
     })),
     totalEvents: recentResults.length,

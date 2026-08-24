@@ -28,7 +28,7 @@ export interface CloudCommand {
 }
 
 export interface CloudStatusReport {
-  hardware: "impinj" | "zebra" | "generic" | "mylaps" | null;
+  hardware: "impinj" | "zebra" | "generic" | "active_transponder" | null;
   connected: boolean;
   detail: string | null;
   lastReadAt: string | null;

@@ -13,6 +13,7 @@ function deserializeReg(r: Record<string, unknown>) {
     paymentStatus: r.payment_status,
     bibNumber: r.bib_number,
     bikeBrand: r.bike_brand,
+    transponderNumber: r.mylaps_transponder_number,
     myLapsTransponderNumber: r.mylaps_transponder_number,
     clubIdNumber: r.club_id_number,
     amountPaid: r.amount_paid != null ? Number(r.amount_paid) : null,
@@ -69,7 +70,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
     streetAddress, city, homeState, zip,
     raceClass, bibNumber, clubIdNumber, bikeBrand, rentTransponder,
-    myLapsTransponderNumber, selectedPurchaseOptions,
+    transponderNumber, selectedPurchaseOptions,
     paymentMethod, amountPaid, status: reqStatus,
   } = req.body;
 
@@ -133,7 +134,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
       hasPaid ? String(amountPaid) : null,
       bibNumber || null, clubIdNumber || null, bikeBrand || null,
       rentTransponder ? 1 : 0,
-      myLapsTransponderNumber || null,
+      (transponderNumber ?? req.body.myLapsTransponderNumber) || null,
       JSON.stringify(selectedPurchaseOptions || []),
     );
 

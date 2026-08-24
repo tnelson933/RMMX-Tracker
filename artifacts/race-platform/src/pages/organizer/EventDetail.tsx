@@ -95,7 +95,7 @@ const updateEventSchema = z.object({
   location: z.string().optional(),
   trackName: z.string().optional(),
   status: z.string(),
-  timingTechnology: z.enum(["rfid", "mylaps"]).default("rfid"),
+  timingTechnology: z.enum(["rfid", "active_transponder"]).default("rfid"),
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
@@ -443,7 +443,7 @@ export default function EventDetail() {
       location: evt.location || "",
       trackName: evt.trackName || "",
       status: evt.status,
-      timingTechnology: ((evt as any).timingTechnology ?? "rfid") as "rfid" | "mylaps",
+      timingTechnology: ((evt as any).timingTechnology ?? "rfid") as "rfid" | "active_transponder",
       raceClasses: (evt.raceClasses ?? []).map((cls) => ({
         name: cls,
         maxRiders: limits[cls] ?? "",
@@ -578,7 +578,7 @@ export default function EventDetail() {
         requireClubId: data.requireClubId,
         requireWaiver: data.requireWaiver,
         requireLiabilityWaiver: data.requireLiabilityWaiver,
-        requireTransponder: data.timingTechnology === "mylaps" ? data.requireTransponder : false,
+        requireTransponder: data.timingTechnology === "active_transponder" ? data.requireTransponder : false,
         quickCheckinEnabled: data.quickCheckinEnabled,
         scoringTableId: data.scoringTableId ?? null,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
@@ -586,8 +586,8 @@ export default function EventDetail() {
         earlyBirdEndsAt: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdEndsAt ? data.earlyBirdEndsAt : null,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
-        transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
-        transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
+        transponderRentalEnabled: data.timingTechnology === "active_transponder" && data.paymentEnabled ? data.transponderRentalEnabled : false,
+        transponderRentalFee: data.timingTechnology === "active_transponder" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
         rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
         purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
         amaEventId: data.amaEventId || undefined,
@@ -972,7 +972,7 @@ export default function EventDetail() {
                             <div className="grid grid-cols-2 gap-2">
                               {[
                                 { value: "rfid", label: "RFID Stickers", desc: "Passive RFID tags" },
-                                { value: "mylaps", label: "MyLaps Transponders", desc: "AMB / MyLaps units" },
+                    { value: "active_transponder", label: "Active Transponder Timing", desc: "Feibot F2000 active transponders" },
                               ].map(opt => (
                                 <button
                                   key={opt.value}
@@ -995,8 +995,8 @@ export default function EventDetail() {
                       )}
                     />
 
-                    {/* Require transponder — MyLaps without Stripe */}
-                    {watchTimingTechnology === "mylaps" && !watchPaymentEnabled && (
+                    {/* Require transponder for active timing without Stripe */}
+                    {watchTimingTechnology === "active_transponder" && !watchPaymentEnabled && (
                       <FormField
                         control={form.control}
                         name="requireTransponder"
@@ -1004,7 +1004,7 @@ export default function EventDetail() {
                           <FormItem>
                             <FormLabel>Require transponder number?</FormLabel>
                             <p className="text-xs text-muted-foreground -mt-1 mb-2">
-                              Must riders provide their MyLaps transponder number to register?
+                              Must riders provide their active transponder number to register?
                             </p>
                             <div className="grid grid-cols-2 gap-2">
                               {[
@@ -1047,7 +1047,7 @@ export default function EventDetail() {
                           </FormLabel>
                           <p className="text-xs text-muted-foreground -mt-1 mb-2">
                             Let riders self-check-in from the rider app when they are within 1 mile of the track on race day.
-                            Requires their RFID or Mylaps transponder to be assigned and any required waivers signed.
+                            Requires their RFID or active transponder to be assigned and any required waivers signed.
                           </p>
                           <div className="grid grid-cols-2 gap-2">
                             {[
@@ -1612,8 +1612,8 @@ export default function EventDetail() {
                       </div>
                     )}
 
-                    {/* Transponder rental — only shown for MyLaps events with payments */}
-                    {stripeReady && watchPaymentEnabled && watchTimingTechnology === "mylaps" && (
+                    {/* Transponder rental — shown for active-transponder events with payments */}
+                    {stripeReady && watchPaymentEnabled && watchTimingTechnology === "active_transponder" && (
                       <div className="space-y-2 pl-0.5">
                         <FormField
                           control={form.control}
@@ -1883,7 +1883,7 @@ export default function EventDetail() {
                       <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Timing Technology</div>
                       <div className="font-medium">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-muted text-muted-foreground border border-border">
-                          {((event as any).timingTechnology ?? "rfid") === "mylaps" ? "MyLaps" : "RFID"}
+                          {((event as any).timingTechnology ?? "rfid") === "active_transponder" ? "Active Transponder Timing" : "RFID"}
                         </span>
                       </div>
                     </div>

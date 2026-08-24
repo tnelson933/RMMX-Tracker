@@ -345,6 +345,18 @@ function processPracticeCrossing(opts: {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
+// GET /timing/reader-state — local desktop hardware lifecycle state
+router.get("/timing/reader-state", (_req, res) => {
+  const db = getDb();
+  const activeMoto = db
+    .prepare("SELECT 1 FROM motos WHERE status = 'in_progress' LIMIT 1")
+    .get();
+  const activePractice = db
+    .prepare("SELECT 1 FROM practice_sessions WHERE status = 'active' LIMIT 1")
+    .get();
+  return res.json({ reading: !!activeMoto || !!activePractice });
+});
+
 // POST /timing/crossing — direct motoId crossing (hardware or simulation)
 router.post("/timing/crossing", (req, res) => {
   const { rfidNumber, motoId, crossingTime, readerId, antennaId } = req.body;
@@ -366,7 +378,7 @@ router.post("/timing/crossing", (req, res) => {
 });
 
 // POST /timing/active/crossing?clubId=N — stable facility endpoint
-// Accepts all hardware formats: Generic/RFID bridge, AMBrc/MyLaps, Impinj R700, Zebra FX7500
+// Accepts all hardware formats: Generic/RFID bridge, AMBrc, Impinj R700, Zebra FX7500
 // In the local server, clubId is accepted for compatibility but ignored (only one club).
 router.post("/timing/active/crossing", (req, res) => {
   const body = req.body as any;
@@ -432,7 +444,7 @@ router.post("/timing/active/crossing", (req, res) => {
     return res.json({ ok: true, processed: zebraTags.length, practiceSessionId: practiceZebra!.id, results });
   }
 
-  // Generic / AMBrc / MyLaps format
+  // Generic / AMBrc timing-decoder format
   const rfidNumber: string | undefined = body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
   if (!rfidNumber) {
     return res.status(400).json({ error: "Cannot extract tag/transponder ID — expected rfidNumber, transponder, transponderId, Impinj events[], or Zebra tags[]" });
@@ -465,8 +477,9 @@ router.post("/timing/active/crossing", (req, res) => {
   return res.json({ ok: true, practiceSessionId: practiceGeneric!.id, crossingId: practiceResult.id, lapNumber: practiceResult.lapNumber, lapTimeMs: practiceResult.lapTimeMs });
 });
 
-// POST /timing/mylaps-crossing?eventId=N — AMBrc / MyLaps native format
-router.post("/timing/mylaps-crossing", (req, res) => {
+// POST /timing/transponder-crossing?eventId=N — AMBrc timing-decoder format.
+// The former endpoint remains available as a compatibility alias.
+router.post(["/timing/transponder-crossing", "/timing/mylaps-crossing"], (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) return res.status(400).json({ error: "eventId query param is required" });
   const body = req.body as any;
@@ -477,7 +490,7 @@ router.post("/timing/mylaps-crossing", (req, res) => {
   if (isNaN(crossingTime.getTime())) return res.status(400).json({ error: "Invalid passingTime — must be ISO 8601" });
   const moto = getActiveMotoForEvent(eventId);
   if (!moto) return res.status(409).json({ error: "No moto currently in progress for this event" });
-  const readerId: string = body?.loopId ?? body?.readerId ?? "mylaps";
+  const readerId: string = body?.loopId ?? body?.readerId ?? "active-transponder";
   try {
     const result = processCrossing({ rfidNumber: String(transponder), motoId: moto.id, crossingTime, readerId });
     if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });

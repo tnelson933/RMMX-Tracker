@@ -29,7 +29,7 @@ tags:
   - name: time-checks
     description: Enduro event-wide time checks (per-class expected arrival durations)
   - name: readers
-    description: Club-registered RFID/MyLaps readers with unique ingest tokens
+    description: Club-registered RFID and Active Transponder Timing readers with unique ingest tokens
   - name: reader-assignments
     description: Per-event mapping of readers to checkpoint roles (start, finish, time check)
   - name: results
@@ -3440,6 +3440,9 @@ components:
       type: object
       required: [id, clubId, name, date, state, status]
       properties:
+        published:
+          type: boolean
+          description: Whether results are published to the public
         id:
           type: integer
         clubId:
@@ -3492,7 +3495,7 @@ components:
           type: ["string", "null"]
         timingTechnology:
           type: string
-          enum: [rfid, mylaps]
+          enum: [rfid, active_transponder]
           default: rfid
         transponderRentalEnabled:
           type: boolean
@@ -3621,7 +3624,7 @@ components:
           type: string
         timingTechnology:
           type: string
-          enum: [rfid, mylaps]
+          enum: [rfid, active_transponder]
           default: rfid
         transponderRentalEnabled:
           type: boolean
@@ -3720,7 +3723,7 @@ components:
           type: string
         timingTechnology:
           type: string
-          enum: [rfid, mylaps]
+          enum: [rfid, active_transponder]
           default: rfid
         transponderRentalEnabled:
           type: boolean
@@ -5720,13 +5723,13 @@ components:
           type: string
         type:
           type: string
-          enum: [rfid, mylaps]
+          enum: [rfid, active_transponder]
         token:
           type: string
           description: UUID used as the URL key for this reader's ingest endpoint
         hardwareAddress:
           type: ["string", "null"]
-          description: Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders. Used by RM Connect to connect to the hardware.
+          description: Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 3333.
         lastSeenAt:
           type: ["string", "null"]
           format: date-time
@@ -5742,10 +5745,10 @@ components:
           type: string
         type:
           type: string
-          enum: [rfid, mylaps]
+          enum: [rfid, active_transponder]
         hardwareAddress:
           type: string
-          description: Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders
+          description: Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address
 
     ReaderUpdateInput:
       type: object
@@ -5755,7 +5758,7 @@ components:
           type: string
         hardwareAddress:
           type: ["string", "null"]
-          description: Last 6 of MAC address for Impinj R700, or IP address for MyLaps decoders
+          description: Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address
 
     ConnectorStatus:
       type: object
@@ -5776,7 +5779,7 @@ components:
           properties:
             kind:
               type: ["string", "null"]
-              enum: [impinj, zebra, generic, mylaps, null]
+              enum: [impinj, zebra, generic, active_transponder, null]
             connected:
               type: boolean
             detail:

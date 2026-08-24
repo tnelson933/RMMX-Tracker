@@ -3,7 +3,7 @@
  *
  * A tray-only Electron app that bridges local timing hardware to the cloud:
  *   - Impinj R700 via LLRP (TCP 5084, reached by mDNS hostname from MAC digits)
- *   - MyLaps / AMB decoder via AMBrc protocol (TCP 3601)
+ *   - Feibot F2000 active transponder timing (TCP 3333)
  *
  * Crossings are forwarded to the cloud ingest endpoint. Start/stop commands
  * arrive over a WebSocket when the organizer starts or completes a moto in
@@ -20,7 +20,8 @@ import {
 } from "electron";
 import path from "path";
 import { LlrpClient, impinjHostFromMac } from "./llrp";
-import { MyLapsClient } from "./mylaps";
+import { FeibotClient } from "./feibot";
+import { RecentReadDeduper } from "./recent-read-deduper";
 import {
   CloudLink,
   cloudLogin,
@@ -53,25 +54,41 @@ if (!settings.cloudUrl && __DEFAULT_CLOUD_URL__) {
 let sessionCookie: string | null = null;
 
 const llrp = new LlrpClient();
-const mylaps = new MyLapsClient();
+const feibot = new FeibotClient();
 const cloud = new CloudLink();
 
 let activeMoto: { motoId: number; name: string } | null = null;
 let testMode = false;
 let deviceReconnectTimer: NodeJS.Timeout | null = null;
 let hardwareWanted = false; // true while the user wants the device connected
+let hardwareConnecting = false;
+let reconnectNextAttemptAt: string | null = null;
+let testProgress: AggregateStatus["testProgress"] = "inactive";
+let testMessage: string | null = null;
 
-// EPC → last forward time, for local debounce (server also debounces)
-const recentReads = new Map<string, number>();
 const LOCAL_DEDUPE_MS = 1_500;
+const recentReads = new RecentReadDeduper(LOCAL_DEDUPE_MS);
 
 // ── Status aggregation ────────────────────────────────────────────────────────
 
 function getAggregateStatus(): AggregateStatus {
   const isLlrp = settings.hardware === "impinj" || settings.hardware === "zebra" || settings.hardware === "generic";
   const dev = isLlrp ? llrp.getStatus() : null;
-  const ml = settings.hardware === "mylaps" ? mylaps.getStatus() : null;
+  const active = settings.hardware === "active_transponder" ? feibot.getStatus() : null;
 
+  const cloudStatus = cloud.getStatus();
+  const deviceConnected = dev?.connected ?? active?.connected ?? false;
+  const deviceError = dev?.error ?? active?.error ?? null;
+  const state: AggregateStatus["state"] = deviceError ? "error"
+    : reconnectNextAttemptAt ? "reconnecting"
+      : hardwareConnecting ? "connecting"
+        : activeMoto ? "race_active"
+          : testMode ? "testing"
+            : deviceConnected ? "connected_idle" : "disconnected";
+  const diagnosis = active?.diagnosis
+    ?? deviceError
+    ?? (!cloudStatus.connected ? (cloudStatus.error ?? "Cloud disconnected — check internet access and reader registration.") : null)
+    ?? (!activeMoto && !testMode ? "No active moto. Start a moto in RM Race when you are ready to time." : null);
   return {
     configured: !!settings.readerToken && !!settings.hardware && !!settings.hardwareAddress,
     cloudUrl: settings.cloudUrl,
@@ -80,19 +97,34 @@ function getAggregateStatus(): AggregateStatus {
     hardware: settings.hardware,
     hardwareAddress: settings.hardwareAddress,
     cloud: {
-      connected: cloud.getStatus().connected,
-      error: cloud.getStatus().error,
+      connected: cloudStatus.connected,
+      error: cloudStatus.error,
+    },
+    state,
+    reconnect: {
+      nextAttemptAt: reconnectNextAttemptAt,
+      secondsUntilAttempt: reconnectNextAttemptAt ? Math.max(0, Math.ceil((new Date(reconnectNextAttemptAt).getTime() - Date.now()) / 1000)) : null,
     },
     device: {
-      connected: dev?.connected ?? ml?.connected ?? false,
-      reading: dev?.reading ?? (ml?.connected && (activeMoto !== null || testMode)) ?? false,
-      error: dev?.error ?? ml?.error ?? null,
-      lastReadAt: dev?.lastReadAt ?? ml?.lastPassingAt ?? null,
-      readCount: dev?.readCount ?? ml?.passingCount ?? 0,
+      connected: deviceConnected,
+      reading: dev?.reading ?? active?.reading ?? false,
+      error: deviceError,
+      detail: active?.detail ?? null,
+      lastReadAt: dev?.lastReadAt ?? active?.lastPassingAt ?? null,
+      readCount: dev?.readCount ?? active?.passingCount ?? 0,
       antennaIds: dev?.antennaIds ?? [],
+      transportReady: active?.transportReady,
+      heartbeatFresh: active?.heartbeatFresh,
+      machineId: active?.machineId,
+      loop1State: active?.loop1State,
+      loop2State: active?.loop2State,
+      diagnosis,
+      ready: active?.ready,
     },
     activeMoto,
     testMode,
+    testProgress,
+    testMessage,
   };
 }
 
@@ -176,20 +208,36 @@ function shouldForward(): boolean {
 async function forwardCrossing(rfidNumber: string, crossingTime: Date, antennaId?: number | null): Promise<void> {
   if (!shouldForward()) return;
 
-  const now = Date.now();
-  const last = recentReads.get(rfidNumber);
-  if (last !== undefined && now - last < LOCAL_DEDUPE_MS) return;
-  recentReads.set(rfidNumber, now);
-  // Bound the dedupe map
-  if (recentReads.size > 2000) {
-    for (const [k, t] of recentReads) {
-      if (now - t > LOCAL_DEDUPE_MS) recentReads.delete(k);
-    }
-  }
+  if (!recentReads.accept(rfidNumber)) return;
 
   try {
-    await cloud.postCrossing({ rfidNumber, crossingTime, antennaId, clubId: settings.clubId });
+    if (testMode) {
+      testProgress = "sending_crossing";
+      testMessage = "PowerTag received. Sending the crossing to RM Race…";
+      pushStatusToWindow();
+    }
+    const result = await cloud.postCrossing({ rfidNumber, crossingTime, antennaId, clubId: settings.clubId });
+    if (testMode) {
+      if (result.ok) {
+        testProgress = "confirmed";
+        testMessage = result.message ?? "PowerTag crossing received and confirmed by RM Race.";
+        testMode = false;
+        if (!activeMoto) {
+          if (isLlrpHardware()) await llrp.stopReading().catch(() => {});
+          else feibot.stopReading();
+        }
+      } else {
+        testProgress = "unresolved";
+        testMessage = result.message ?? "PowerTag was read, but RM Race could not confirm the crossing. Check cloud connection and reader registration.";
+      }
+      pushStatusToWindow();
+    }
   } catch {
+    if (testMode) {
+      testProgress = "unresolved";
+      testMessage = "PowerTag was read, but the crossing could not reach RM Race. Check the cloud connection.";
+      pushStatusToWindow();
+    }
     // Network hiccup — the rider will cross again next lap; server-side
     // parity/debounce keeps state consistent. Cloud WS status shows red.
   }
@@ -200,8 +248,12 @@ llrp.on("tag", (read) => {
   pushStatusToWindow();
 });
 
-mylaps.on("passing", (transponder: string, crossingTime: Date) => {
-  forwardCrossing(transponder, crossingTime).catch(() => {});
+feibot.on("tag", (tag: string, crossingTime: Date) => {
+  if (testMode) {
+    testProgress = "sending_crossing";
+    testMessage = "PowerTag received from Feibot. Confirming the cloud crossing…";
+  }
+  forwardCrossing(tag, crossingTime).catch(() => {});
   pushStatusToWindow();
 });
 
@@ -220,53 +272,82 @@ function resolveHardwareHost(): string {
     }
     return addr;
   }
-  return addr; // zebra/generic: hostname or IP · mylaps: decoder IP
+  return addr; // zebra/generic: hostname or IP · Feibot: hostname/IP[:port]
+}
+
+function applyFeibotSettings(): void {
+  feibot.configure({
+    channel: settings.feibotChannel,
+    power: settings.feibotPower,
+    loop1Enabled: settings.feibotLoop1Enabled,
+    loop2Enabled: settings.feibotLoop2Enabled,
+  });
 }
 
 async function connectHardware(): Promise<void> {
   hardwareWanted = true;
+  hardwareConnecting = true;
+  reconnectNextAttemptAt = null;
   const host = resolveHardwareHost();
-  if (isLlrpHardware()) {
-    await llrp.connect(host, { impinjExtensions: settings.hardware === "impinj" });
-    // If a moto is already live (reconnect mid-race), resume reading
-    if (shouldForward()) {
-      await llrp.startReading().catch(() => {});
+  try {
+    if (isLlrpHardware()) {
+      await llrp.connect(host, { impinjExtensions: settings.hardware === "impinj" });
+      // If a moto is already live (reconnect mid-race), resume reading
+      if (shouldForward()) {
+        await llrp.startReading().catch(() => {});
+      }
+    } else if (settings.hardware === "active_transponder") {
+      applyFeibotSettings();
+      await feibot.connect(host);
+      if (shouldForward()) feibot.startReading();
     }
-  } else if (settings.hardware === "mylaps") {
-    await mylaps.connect(host);
+  } finally {
+    hardwareConnecting = false;
   }
   pushStatusToWindow();
 }
 
 function disconnectHardware(): void {
   hardwareWanted = false;
+  hardwareConnecting = false;
+  reconnectNextAttemptAt = null;
   if (deviceReconnectTimer) {
     clearTimeout(deviceReconnectTimer);
     deviceReconnectTimer = null;
   }
   llrp.disconnect().catch(() => {});
-  mylaps.disconnect();
+  feibot.disconnect();
   pushStatusToWindow();
 }
 
 function scheduleHardwareReconnect(): void {
   if (!hardwareWanted || deviceReconnectTimer) return;
+  reconnectNextAttemptAt = new Date(Date.now() + 10_000).toISOString();
   deviceReconnectTimer = setTimeout(() => {
     deviceReconnectTimer = null;
+    reconnectNextAttemptAt = null;
     if (!hardwareWanted) return;
     connectHardware().catch(() => scheduleHardwareReconnect());
   }, 10_000);
 }
 
 llrp.on("disconnected", () => {
-  pushStatusToWindow();
   scheduleHardwareReconnect();
+  pushStatusToWindow();
 });
 llrp.on("error", () => pushStatusToWindow());
-mylaps.on("disconnected", () => {
-  pushStatusToWindow();
+feibot.on("disconnected", () => {
   scheduleHardwareReconnect();
+  pushStatusToWindow();
 });
+feibot.on("status", () => {
+  if (testMode && testProgress === "opening_loops" && feibot.getStatus().transportReady) {
+    testProgress = "waiting_for_tag";
+    testMessage = "Feibot is identified. Both loops were asked to open; pass a PowerTag over either loop.";
+  }
+  pushStatusToWindow();
+});
+feibot.on("error", pushStatusToWindow);
 
 // ── Cloud command handling ────────────────────────────────────────────────────
 
@@ -275,7 +356,7 @@ cloud.setStatusProvider(() => {
   return {
     hardware: settings.hardware,
     connected: s.device.connected,
-    detail: s.device.error,
+    detail: s.device.error ?? s.device.detail ?? null,
     lastReadAt: s.device.lastReadAt,
     readCount: s.device.readCount,
     antennaIds: s.device.antennaIds,
@@ -290,11 +371,16 @@ cloud.on("command", (cmd: CloudCommand) => {
         // Reader not connected — reconnect loop will resume reading when back
         scheduleHardwareReconnect();
       });
+    } else if (settings.hardware === "active_transponder") {
+      applyFeibotSettings();
+      feibot.startReading();
     }
   } else if (cmd.type === "stop_moto") {
     activeMoto = null;
     if (isLlrpHardware() && !testMode) {
       llrp.stopReading().catch(() => {});
+    } else if (settings.hardware === "active_transponder" && !testMode) {
+      feibot.stopReading();
     }
   } else if (cmd.type === "set_llrp_config" && cmd.config && isLlrpHardware()) {
     llrp.applyRfConfig(cmd.config).catch(() => {
@@ -337,6 +423,10 @@ function registerIpc(): void {
     readerName: settings.readerName,
     hardware: settings.hardware,
     hardwareAddress: settings.hardwareAddress,
+    feibotChannel: settings.feibotChannel,
+    feibotPower: settings.feibotPower,
+    feibotLoop1Enabled: settings.feibotLoop1Enabled,
+    feibotLoop2Enabled: settings.feibotLoop2Enabled,
     hasSession: !!sessionCookie,
   }));
 
@@ -382,7 +472,9 @@ function registerIpc(): void {
         readerToken: reader.token,
         readerName: reader.name,
         hardware: input.hardware,
-        hardwareAddress: input.hardwareAddress.trim(),
+        // The cloud registration is canonical when it has an address. Keep a
+        // single saved address locally rather than maintaining a second value.
+        hardwareAddress: reader.hardwareAddress?.trim() || input.hardwareAddress.trim(),
       };
       saveSettings(settings);
 
@@ -398,8 +490,28 @@ function registerIpc(): void {
     return { ok: true };
   });
 
+  ipcMain.handle("hardware:configure", async (_e, input: { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean; syncClock?: boolean }) => {
+    try {
+      if (settings.hardware !== "active_transponder") throw new Error("Feibot settings are only available for an F2000 reader.");
+      if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("Channel must be a whole number from 0 to 5.");
+      if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("Power must be a whole number from 0 to 100.");
+      settings = { ...settings, feibotChannel: input.channel, feibotPower: input.power, feibotLoop1Enabled: !!input.loop1Enabled, feibotLoop2Enabled: !!input.loop2Enabled };
+      saveSettings(settings);
+      applyFeibotSettings();
+      if (input.syncClock) feibot.syncClock();
+      pushStatusToWindow();
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? "Unable to apply Feibot settings." };
+    }
+  });
+
   ipcMain.handle("test:toggle", async (_e, enabled: boolean) => {
     testMode = !!enabled;
+    testProgress = testMode ? (settings.hardware === "active_transponder" ? "opening_loops" : "waiting_for_tag") : "inactive";
+    testMessage = testMode ? (settings.hardware === "active_transponder"
+      ? "Opening Feibot loops 1 and 2. Waiting for a real PowerTag crossing…"
+      : "Waiting for a real tag read…") : null;
     try {
       if (isLlrpHardware()) {
         if (testMode && !llrp.getStatus().reading) {
@@ -407,11 +519,20 @@ function registerIpc(): void {
         } else if (!testMode && activeMoto === null && llrp.getStatus().reading) {
           await llrp.stopReading();
         }
+      } else if (settings.hardware === "active_transponder") {
+        if (testMode || activeMoto !== null) feibot.startReading();
+        else feibot.stopReading();
+        if (testMode && feibot.getStatus().transportReady) {
+          testProgress = "waiting_for_tag";
+          testMessage = "Both Feibot loops were asked to open. Pass a PowerTag over either loop.";
+        }
       }
       pushStatusToWindow();
       return { ok: true };
     } catch (err: any) {
       testMode = false;
+      testProgress = "unresolved";
+      testMessage = err?.message ?? "Unable to start the hardware test.";
       pushStatusToWindow();
       return { ok: false, error: err?.message ?? "Test mode failed" };
     }

@@ -28,19 +28,19 @@ export default function RfidManagement() {
 
   const selectedEvent = events?.find(e => e.id.toString() === filterEventId);
   const hasEventFilter = filterEventId !== "all";
-  const tech = ((selectedEvent as any)?.timingTechnology ?? "rfid") as "rfid" | "mylaps";
-  const isMylaps = hasEventFilter && tech === "mylaps";
+  const tech = ((selectedEvent as any)?.timingTechnology ?? "rfid") as "rfid" | "active_transponder";
+  const isActiveTransponder = hasEventFilter && tech === "active_transponder";
   const isRfid = hasEventFilter && tech === "rfid";
 
-  const transponderLabel = isMylaps ? "MyLaps Transponder #" : isRfid ? "RFID Tag #" : "Transponder #";
-  const assignLabel = isMylaps ? "Assign Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
-  const assignDialogTitle = isMylaps ? "Assign MyLaps Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
-  const scanLabel = isMylaps ? "Enter Transponder Number" : isRfid ? "Scan or Enter Tag Number" : "Enter Tag / Transponder Number";
-  const placeholder = isMylaps ? "e.g. 12345" : isRfid ? "e.g. 1A2B3C4D" : "e.g. 1A2B3C4D or 12345";
-  const emptyLabel = isMylaps ? "No transponders assigned yet" : isRfid ? "No RFID tags assigned yet" : "No transponders assigned yet";
-  const successLabel = isMylaps ? "Transponder assigned successfully" : isRfid ? "RFID tag assigned successfully" : "Transponder assigned successfully";
-  const pageTitle = isMylaps ? "MyLaps Transponder Management" : isRfid ? "RFID Management" : "Transponder Management";
-  const pageDesc = isMylaps ? "Track and assign MyLaps transponder numbers to riders." : isRfid ? "Track and assign RFID tags to riders." : "Track and assign timing transponders to riders.";
+  const transponderLabel = isActiveTransponder ? "Active Transponder #" : isRfid ? "RFID Tag #" : "Transponder #";
+  const assignLabel = isActiveTransponder ? "Assign Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
+  const assignDialogTitle = isActiveTransponder ? "Assign Active Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
+  const scanLabel = isActiveTransponder ? "Enter Transponder Number" : isRfid ? "Scan or Enter Tag Number" : "Enter Tag / Transponder Number";
+  const placeholder = isActiveTransponder ? "e.g. 12345" : isRfid ? "e.g. 1A2B3C4D" : "e.g. 1A2B3C4D or 12345";
+  const emptyLabel = isActiveTransponder ? "No transponders assigned yet" : isRfid ? "No RFID tags assigned yet" : "No transponders assigned yet";
+  const successLabel = isActiveTransponder ? "Transponder assigned successfully" : isRfid ? "RFID tag assigned successfully" : "Transponder assigned successfully";
+  const pageTitle = isActiveTransponder ? "Active Transponder Management" : isRfid ? "RFID Management" : "Transponder Management";
+  const pageDesc = isActiveTransponder ? "Track and assign active transponder numbers to riders." : isRfid ? "Track and assign RFID tags to riders." : "Track and assign timing transponders to riders.";
 
   const handleAssign = () => {
     if (!riderIdStr || !rfidInput) return;
@@ -122,7 +122,7 @@ export default function RfidManagement() {
                 disabled={assignMutation.isPending || !riderIdStr || !rfidInput} 
                 className="w-full h-12 font-heading uppercase text-lg tracking-wider mt-2"
               >
-                {assignMutation.isPending ? "Assigning..." : isMylaps ? "Link Transponder" : "Link RFID Tag"}
+                {assignMutation.isPending ? "Assigning..." : isActiveTransponder ? "Link Transponder" : "Link RFID Tag"}
               </Button>
             </div>
           </DialogContent>
@@ -150,8 +150,8 @@ export default function RfidManagement() {
                 {events?.map(e => (
                   <SelectItem key={e.id} value={e.id.toString()}>
                     {e.name}
-                    {(e as any).timingTechnology === "mylaps" && (
-                      <span className="ml-1 text-xs text-muted-foreground">(MyLaps)</span>
+                    {(e as any).timingTechnology === "active_transponder" && (
+                      <span className="ml-1 text-xs text-muted-foreground">(Active Transponder)</span>
                     )}
                   </SelectItem>
                 ))}

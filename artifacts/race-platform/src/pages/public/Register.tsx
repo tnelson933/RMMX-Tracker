@@ -714,13 +714,13 @@ export default function Register() {
       setSubmitError("You must sign the liability waiver before registering.");
       return;
     }
-    // MyLaps events: require transponder number or rental only when requireTransponder is true
-    if (event?.timingTechnology === "mylaps" && event.requireTransponder) {
+    // Active transponder events require a transponder number or rental when required.
+    if (event?.timingTechnology === "active_transponder" && event.requireTransponder) {
       const hasNumber = !!data.myLapsTransponderNumber?.trim();
       const hasRental = !!data.rentTransponder;
       if (!hasNumber && !hasRental) {
         form.setError("myLapsTransponderNumber", {
-          message: "Enter your MyLaps transponder number, or select a rental below.",
+          message: "Enter your active transponder number, or select a rental below.",
         });
         return;
       }
@@ -1318,10 +1318,10 @@ export default function Register() {
                   </CardContent>
                 </Card>
 
-                {event.timingTechnology === "mylaps" && (
+                {event.timingTechnology === "active_transponder" && (
                   <Card className="border-primary/30 bg-primary/[0.03]">
                     <CardHeader className="pb-2 border-b">
-                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">MyLaps Transponder</h3>
+                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Active Transponder</h3>
                     </CardHeader>
                     <CardContent className="p-6 space-y-4">
                       {/* Own transponder number */}
@@ -1344,7 +1344,7 @@ export default function Register() {
                                 }}
                               />
                             </FormControl>
-                            <p className="text-xs text-muted-foreground">Enter the number printed on your personal MyLaps transponder.</p>
+                            <p className="text-xs text-muted-foreground">Enter the number printed on your personal active transponder.</p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -1378,7 +1378,7 @@ export default function Register() {
                                   </FormControl>
                                   <div className="space-y-0.5 leading-none">
                                     <label htmlFor="rent-transponder" className="text-sm font-semibold cursor-pointer">
-                                      Rent a MyLaps transponder — <span className="text-primary">${Number(event.transponderRentalFee).toFixed(2)}</span>
+                                      Rent an active transponder — <span className="text-primary">${Number(event.transponderRentalFee).toFixed(2)}</span>
                                     </label>
                                     <p className="text-xs text-muted-foreground">
                                       Don't have your own? Add a rental — the transponder will be ready for you at the gate.

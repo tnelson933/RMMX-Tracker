@@ -236,8 +236,7 @@ export default function OfflineMode() {
   }, [resetRebuild, triggerRebuild]);
 
   const [os, setOs] = useState<"mac" | "windows">("mac");
-  const [tech, setTech] = useState<"rfid" | "mylaps">("rfid");
-  const [decoderIp, setDecoderIp] = useState("");
+  const [tech, setTech] = useState<"rfid" | "active_transponder">("rfid");
   const [syncEnabled, setSyncEnabled] = useState(false);
   const [syncToken, setSyncToken] = useState<string | null>(null);
   const [syncTokenLoading, setSyncTokenLoading] = useState(false);
@@ -333,9 +332,6 @@ export default function OfflineMode() {
   const cloudEndpoint = `${cloudDomain}/api/timing/active/crossing?clubId=${clubId}`;
   const bridgeCmdLocal = `python rfid_bridge.py --api-url http://localhost:8080`;
   const bridgeCmdCloud = `python rfid_bridge.py --api-url ${cloudDomain}`;
-  const decoderIpDisplay = decoderIp || "<decoder-ip>";
-  const mylapsBridgeCmdLocal = `python rfid_bridge.py --mylaps ${decoderIpDisplay} --club-id ${clubId} --api-url http://localhost:8080`;
-  const mylapsBridgeCmdCloud = `python rfid_bridge.py --mylaps ${decoderIpDisplay} --club-id ${clubId} --api-url ${cloudDomain}`;
 
   const installCmdMac = `unzip rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
   const installCmdWindows = `tar -xf rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
@@ -500,24 +496,24 @@ export default function OfflineMode() {
             <p className="text-sm font-semibold text-foreground">You're back online!</p>
             <p className="text-xs text-muted-foreground">Switch your timing reader back to the cloud now so it's ready for your next event.</p>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => {
-                  downloadLauncher(os, tech === "rfid" ? bridgeCmdCloud : mylapsBridgeCmdCloud);
-                  setShowReconnectBanner(false);
-                }}
-                disabled={tech === "mylaps" && !decoderIp.trim()}
-                className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border bg-background transition-colors ${tech === "mylaps" && !decoderIp.trim() ? "opacity-40 cursor-not-allowed" : "hover:bg-muted"}`}>
-                <Download size={12} /> Download switch-to-cloud script
-              </button>
+              {tech === "rfid" ? (
+                <button
+                  onClick={() => {
+                    downloadLauncher(os, bridgeCmdCloud);
+                    setShowReconnectBanner(false);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border bg-background transition-colors hover:bg-muted">
+                  <Download size={12} /> Download switch-to-cloud script
+                </button>
+              ) : (
+                <p className="text-xs text-muted-foreground">Open RM Connect and reconnect the Feibot F2000 on TCP port 3333.</p>
+              )}
               <button
                 onClick={() => setShowReconnectBanner(false)}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
                 Skip for now
               </button>
             </div>
-            {tech === "mylaps" && !decoderIp.trim() && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">Enter your decoder IP in Step 2c to enable the download.</p>
-            )}
           </div>
         </div>
       )}
@@ -546,13 +542,13 @@ export default function OfflineMode() {
               </div>
             </button>
             <button
-              onClick={() => setTech("mylaps")}
-              className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${tech === "mylaps" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+              onClick={() => setTech("active_transponder")}
+              className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${tech === "active_transponder" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
             >
-              <Timer size={18} className={tech === "mylaps" ? "text-primary" : "text-muted-foreground"} />
+              <Timer size={18} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
               <div>
-                <p className="font-semibold text-sm">MyLaps / AMB</p>
-                <p className="text-xs text-muted-foreground">Transponder decoder</p>
+                <p className="font-semibold text-sm">Active Transponder Timing</p>
+                <p className="text-xs text-muted-foreground">Feibot F2000 · port 3333</p>
               </div>
             </button>
           </div>
@@ -901,36 +897,11 @@ export default function OfflineMode() {
             ) : (
               <div className="space-y-3">
                 <p className="text-xs font-medium text-foreground">
-                  Start the bridge pointed at your laptop — it will connect to your decoder and forward crossings locally:
+                  Connect the Feibot F2000 through RM Connect on the track laptop:
                 </p>
-                <div className="space-y-1.5">
-                  <p className="text-xs text-muted-foreground">
-                    Decoder IP address <span className="opacity-60">(from the decoder label or AMBrc)</span>:
-                  </p>
-                  <Input
-                    value={decoderIp}
-                    onChange={e => setDecoderIp(e.target.value)}
-                    placeholder="e.g. 192.168.1.50"
-                    className="font-mono h-8 text-xs max-w-xs"
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <a href="/rfid_bridge.py" download="rfid_bridge.py"
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                    <Download size={12} /> rfid_bridge.py
-                  </a>
-                  <button onClick={() => downloadLauncher(os, mylapsBridgeCmdLocal)}
-                    disabled={!decoderIp.trim()}
-                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                    <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
-                  </button>
-                </div>
-                {!decoderIp.trim() && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable the download.</p>
-                )}
                 <p className="text-xs text-muted-foreground">
-                  Save both files to your <strong>Downloads</strong> folder — they must be in the same folder.
-                  Open your Downloads folder and double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal opens and the bridge starts. Keep the window open all day — closing it disconnects from the decoder.
+                  In RM Connect, select <strong>Active Transponder Timing</strong>, enter the F2000's IP address, and connect.
+                  RM Connect uses TCP port <strong className="font-mono">3333</strong> and forwards crossings to the local server.
                 </p>
               </div>
             )}
@@ -999,15 +970,9 @@ export default function OfflineMode() {
               </div>
             ) : (
               <div className="space-y-2">
-                <button onClick={() => downloadLauncher(os, mylapsBridgeCmdCloud)}
-                  disabled={!decoderIp.trim()}
-                  className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${decoderIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                  <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
-                </button>
-                {!decoderIp.trim() && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">Enter your decoder IP in Step 2c to enable the download.</p>
-                )}
-                <p className="text-xs text-muted-foreground">This is the same script you use on normal race days — double-click it and the decoder reconnects automatically.</p>
+                <p className="text-xs text-muted-foreground">
+                  Open RM Connect and reconnect the Feibot F2000 to the cloud on TCP port <strong className="font-mono">3333</strong>.
+                </p>
               </div>
             )}
           </div>

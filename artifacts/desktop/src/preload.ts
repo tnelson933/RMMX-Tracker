@@ -3,7 +3,8 @@ import type {
   SyncState,
   SerialPortInfo,
   SerialStatus,
-  MyLapsStatus,
+  ActiveTransponderStatus,
+  ActiveTransponderConfiguration,
   CloudCredentials,
 } from "./ipc-types";
 
@@ -35,14 +36,25 @@ const electronAPI = {
     },
   },
 
-  mylaps: {
-    connect: (ip: string): Promise<void> => ipcRenderer.invoke("mylaps:connect", ip),
-    disconnect: (): Promise<void> => ipcRenderer.invoke("mylaps:disconnect"),
-    getStatus: (): Promise<MyLapsStatus> => ipcRenderer.invoke("mylaps:getStatus"),
-    onStatus: (cb: (status: MyLapsStatus) => void): (() => void) => {
-      const handler = (_: unknown, status: MyLapsStatus) => cb(status);
-      ipcRenderer.on("mylaps:status", handler);
-      return () => ipcRenderer.off("mylaps:status", handler);
+  activeTransponder: {
+    connect: (ip?: string): Promise<void> =>
+      ipcRenderer.invoke("active-transponder:connect", ip),
+    disconnect: (): Promise<void> =>
+      ipcRenderer.invoke("active-transponder:disconnect"),
+    getStatus: (): Promise<ActiveTransponderStatus> =>
+      ipcRenderer.invoke("active-transponder:getStatus"),
+    startTest: (): Promise<void> =>
+      ipcRenderer.invoke("active-transponder:startTest"),
+    stopTest: (): Promise<void> =>
+      ipcRenderer.invoke("active-transponder:stopTest"),
+    configure: (configuration: ActiveTransponderConfiguration): Promise<void> =>
+      ipcRenderer.invoke("active-transponder:configure", configuration),
+    syncClock: (): Promise<void> =>
+      ipcRenderer.invoke("active-transponder:syncClock"),
+    onStatus: (cb: (status: ActiveTransponderStatus) => void): (() => void) => {
+      const handler = (_: unknown, status: ActiveTransponderStatus) => cb(status);
+      ipcRenderer.on("active-transponder:status", handler);
+      return () => ipcRenderer.off("active-transponder:status", handler);
     },
   },
 

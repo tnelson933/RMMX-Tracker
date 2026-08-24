@@ -897,14 +897,39 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     total += practiceCrossingsUpserted;
   });
 
-  // Broadcast updated leaderboard to any SSE subscribers watching affected motos.
+  // Recalculate positions from actual performance data and broadcast leaderboards.
   // Runs after the transaction commits so readers see the committed rows.
-  // Fire-and-forget: don't let broadcast errors fail the push response.
+  // Fire-and-forget: don't let errors fail the push response.
   if (affectedMotoIds.size > 0) {
     setImmediate(() => {
       void (async () => {
         for (const motoId of affectedMotoIds) {
           try {
+            // Re-sort positions: most laps first, then shortest total time —
+            // matches supercross / AMA time+laps convention and overrides whatever
+            // the desktop app sent so the cloud is always the authoritative source.
+            const allResults = await db
+              .select()
+              .from(raceResultsTable)
+              .where(eq(raceResultsTable.motoId, motoId));
+            if (allResults.length > 0) {
+              const sorted = allResults
+                .map((r) => {
+                  const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
+                  return {
+                    id: r.id,
+                    laps: laps.length,
+                    totalMs: laps.reduce((s: number, t: unknown) => s + (typeof t === "number" ? t : 0), 0),
+                  };
+                })
+                .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
+              for (let i = 0; i < sorted.length; i++) {
+                await db
+                  .update(raceResultsTable)
+                  .set({ position: i + 1 })
+                  .where(eq(raceResultsTable.id, sorted[i].id));
+              }
+            }
             const snapshot = await buildLeaderboard(motoId);
             if (snapshot) sseBroadcast(motoId, snapshot);
           } catch { /* ignore — broadcast is best-effort */ }

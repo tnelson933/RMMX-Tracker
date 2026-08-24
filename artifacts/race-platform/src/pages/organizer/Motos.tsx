@@ -28,6 +28,7 @@ import {
 } from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { LiveBroadcast } from "./LiveBroadcast";
+import { FeibotConnectionStatus } from "@/components/organizer/FeibotConnectionStatus";
 import { format } from "date-fns";
 
 type RawCrossing = {
@@ -1788,7 +1789,7 @@ export default function Motos() {
     const groupMembers: number[] = (motoObj as any)?.staggeredGroupMembers ?? [];
     const partnerIds = groupMembers.filter(id => id !== motoId);
 
-    const timingLabel = (event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID";
+    const timingLabel = (event as any)?.timingTechnology === "active_transponder" ? "Active Transponder Timing" : "RFID";
 
     try {
       // Fire all group start requests simultaneously so no moto briefly shows "Waiting".
@@ -1817,7 +1818,7 @@ export default function Motos() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-          if (status === "in_progress") toast({ title: `🏁 Moto started — ${(event as any)?.timingTechnology === "mylaps" ? "MyLaps" : "RFID"} timing active` });
+          if (status === "in_progress") toast({ title: `🏁 Moto started — ${(event as any)?.timingTechnology === "active_transponder" ? "Active Transponder Timing" : "RFID"} timing active` });
           if (status === "completed") {
             toast({ title: "Moto finished" });
             if (autoStartEnabled) {
@@ -2067,7 +2068,9 @@ export default function Motos() {
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div className="flex justify-between items-center">
-        <div />
+        <div>
+          <FeibotConnectionStatus />
+        </div>
 
         <div className="flex items-center gap-2">
           {/* Auto Start Next Moto toggle — not applicable to enduro (riders start individually) */}

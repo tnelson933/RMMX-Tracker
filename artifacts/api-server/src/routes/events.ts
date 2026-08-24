@@ -6,6 +6,8 @@ import { sendStatsEmail } from "../lib/email";
 import { normalizeState } from "../utils/normalizeState";
 
 const router = Router();
+const normalizeTimingTechnology = (value: unknown) =>
+  value === "mylaps" || value === "active_transponder" ? "active_transponder" : "rfid";
 
 /** Returns the staff user's club restriction, or null for organizer/admin. */
 function getStaffClubId(res: Response): number | null {
@@ -158,6 +160,7 @@ router.get("/events", async (req, res) => {
   const advanced = await advanceStatuses(events);
   return res.json(events.map(e => ({
     ...e,
+    timingTechnology: normalizeTimingTechnology(e.timingTechnology),
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
     earlyBirdFee: e.earlyBirdFee ? Number(e.earlyBirdFee) : null,
@@ -217,7 +220,7 @@ router.post("/events", async (req, res) => {
     earlyBirdFee: earlyBirdFee ? String(earlyBirdFee) : null,
     earlyBirdEndsAt: earlyBirdEndsAt ? String(earlyBirdEndsAt).substring(0, 10) : null,
     maxRiders,
-    timingTechnology: timingTechnology || "rfid",
+    timingTechnology: normalizeTimingTechnology(timingTechnology),
     raceStyle: raceStyle || "motocross",
     transponderRentalEnabled: transponderRentalEnabled || false,
     transponderRentalFee: transponderRentalFee ? String(transponderRentalFee) : null,
@@ -231,6 +234,7 @@ router.post("/events", async (req, res) => {
 
   return res.status(201).json({
     ...event,
+    timingTechnology: normalizeTimingTechnology(event.timingTechnology),
     entryFee: event.entryFee ? Number(event.entryFee) : null,
     earlyBirdFee: event.earlyBirdFee ? Number(event.earlyBirdFee) : null,
     transponderRentalFee: event.transponderRentalFee ? Number(event.transponderRentalFee) : null,
@@ -288,7 +292,11 @@ router.get("/events/:eventId", async (req, res) => {
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
-  }).from(eventsTable).leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id)).where(eq(eventsTable.id, id));
+    published: eventPublicationTable.published,
+  }).from(eventsTable)
+    .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
+    .leftJoin(eventPublicationTable, eq(eventPublicationTable.eventId, eventsTable.id))
+    .where(eq(eventsTable.id, id));
 
   if (!events[0]) return res.status(404).json({ error: "Not found" });
   const staffCId = getStaffClubId(res);
@@ -314,6 +322,7 @@ router.get("/events/:eventId", async (req, res) => {
 
   return res.json({
     ...e,
+    timingTechnology: normalizeTimingTechnology(e.timingTechnology),
     classStartTimes,
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
@@ -344,6 +353,9 @@ router.patch("/events/:eventId", async (req, res) => {
   const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "raceClassDetails", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireLiabilityWaiver", "requireTransponder", "earlyBirdEndsAt", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig", "classOrder", "contingencyBrands", "quickCheckinEnabled", "streetAddress", "zip"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
+  }
+  if (updates.timingTechnology !== undefined) {
+    updates.timingTechnology = normalizeTimingTechnology(updates.timingTechnology);
   }
   // Always store date fields as plain YYYY-MM-DD — strip any time component that
   // may arrive from a datetime-local input or ISO timestamp (e.g. "2026-06-23T18:00:00.000Z").
@@ -422,7 +434,7 @@ router.patch("/events/:eventId", async (req, res) => {
     );
   }
 
-  return res.json({ ...event, entryFee: event.entryFee ? Number(event.entryFee) : null, earlyBirdFee: event.earlyBirdFee ? Number(event.earlyBirdFee) : null, rfidStickerFee: event.rfidStickerFee ? Number(event.rfidStickerFee) : null, createdAt: event.createdAt.toISOString(), clubName: null });
+  return res.json({ ...event, timingTechnology: normalizeTimingTechnology(event.timingTechnology), entryFee: event.entryFee ? Number(event.entryFee) : null, earlyBirdFee: event.earlyBirdFee ? Number(event.earlyBirdFee) : null, rfidStickerFee: event.rfidStickerFee ? Number(event.rfidStickerFee) : null, createdAt: event.createdAt.toISOString(), clubName: null });
 });
 
 async function fireStatsEmails(eventId: number, eventName: string, eventDate: string): Promise<void> {

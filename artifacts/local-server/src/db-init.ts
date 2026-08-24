@@ -678,7 +678,7 @@ export function initDb() {
     ["registrations", "transponder_rental        INTEGER NOT NULL DEFAULT 0"],
     ["registrations", "comp_code                 TEXT"],
     ["registrations", "comp_discount             TEXT"],
-    // rename old mylaps column (keep old for compat)
+    // Legacy transponder column retained for database compatibility.
     ["registrations", "mylaps_transponder_number TEXT"],
     ["registrations", "selected_purchase_options TEXT NOT NULL DEFAULT '[]'"],
     ["registrations", "display_first_name        TEXT"],

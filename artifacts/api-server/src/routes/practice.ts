@@ -200,16 +200,16 @@ export async function processPracticeCrossing(
   return { crossing };
 }
 
-// POST /practice/active/crossing?clubId=N — stable endpoint for bridge / MyLaps
+// POST /practice/active/crossing?clubId=N — stable endpoint for RFID and active transponder bridges.
 // No session ID needed — server finds the active session for the club automatically.
-// Accepts both RFID bridge format ({ rfidNumber }) and MyLaps format ({ transponder, passingTime }).
+// Accepts both RFID bridge format ({ rfidNumber }) and active transponder format ({ transponder, passingTime }).
 router.post("/practice/active/crossing", async (req, res) => {
   const clubId = Number(req.query.clubId);
   if (!clubId || isNaN(clubId)) {
     return res.status(400).json({ error: "clubId query param is required" });
   }
 
-  // Accept both RFID bridge format and MyLaps/AMBrc format
+  // Accept both RFID bridge and active transponder payload formats.
   const body = req.body as any;
   const rfidNumber: string | undefined =
     body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;

@@ -7,7 +7,7 @@ import { sendPushNotifications } from "../lib/push";
 
 const router = Router();
 
-// ── Auto-link a MyLaps transponder when it's provided at registration ──────────
+// ── Auto-link an active transponder when it's provided at registration ──────────
 // Saves it to the rider's permanent profile and creates an rfid_assignment so
 // the check-in screen shows the transponder already linked — no manual entry needed.
 async function autoLinkTransponder(riderId: number, eventId: number, transponderNumber: string) {
@@ -204,7 +204,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     riderId, raceClass, bibNumber, bikeBrand, bikeModel, bikeYear, clubIdNumber,
     // Full on-site rider info (alternative to riderId)
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
-    // MyLaps transponder fields
+    // Active transponder fields (legacy API property retained for compatibility)
     rentTransponder, myLapsTransponderNumber,
     // Purchase options
     selectedPurchaseOptions,
@@ -444,7 +444,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
       lineItems.push({
         price_data: {
           currency: "usd",
-          product_data: { name: "MyLaps Transponder Rental" },
+          product_data: { name: "Active Transponder Rental" },
           unit_amount: Math.round(rentalFee * 100),
         },
         quantity: 1,
@@ -525,7 +525,7 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
         line_items: [{
           price_data: {
             currency: "usd",
-            product_data: { name: "MyLaps Transponder Rental" },
+            product_data: { name: "Active Transponder Rental" },
             unit_amount: Math.round(rentalFee * 100),
           },
           quantity: 1,
@@ -1233,7 +1233,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           lineItems.push({
             price_data: {
               currency: "usd",
-              product_data: { name: "MyLaps Transponder Rental" },
+              product_data: { name: "Active Transponder Rental" },
               unit_amount: Math.round(rentalFeeNum * 100),
             },
             quantity: 1,
@@ -1410,7 +1410,7 @@ router.post("/events/:eventId/transponder-rentals/:riderId/remind", async (req, 
   await sendPushNotifications(tokens.map(t => ({
     to: t.expoPushToken,
     title: "Transponder Reminder",
-    body: "Please remember to turn in your rented MyLaps transponder.",
+    body: "Please remember to turn in your rented active transponder.",
   })));
 
   return res.json({ sent: tokens.length });
@@ -1451,7 +1451,7 @@ router.post("/events/:eventId/transponder-rentals/remind-all", async (req, res) 
   await sendPushNotifications(tokens.map(t => ({
     to: t.expoPushToken,
     title: "Transponder Reminder",
-    body: "Please remember to turn in your rented MyLaps transponder.",
+    body: "Please remember to turn in your rented active transponder.",
   })));
 
   return res.json({ sent: tokens.length });

@@ -307,7 +307,7 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
         <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
           {field("#", "bibNumber", "e.g. 42")}
           {field("AMA Number", "amaNumber", "AMA membership #")}
-          {field("MyLaps Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
+          {field("Active Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
           <div className="col-span-2 space-y-1.5">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sponsors</Label>
             {editing ? (
@@ -668,7 +668,7 @@ function EventCard({ event }: { event: EventHistory }) {
               {event.timingTechnology && (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Timer size={11} />
-                  {event.timingTechnology === "mylaps" ? "Timed with MyLaps" : "Timed with RFID"}
+                  {event.timingTechnology === "active_transponder" ? "Timed with Active Transponder Timing" : "Timed with RFID"}
                 </span>
               )}
             </div>

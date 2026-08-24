@@ -1228,8 +1228,8 @@ export default function EventSchedule() {
   const raceStyle: "motocross" | "enduro" | "cross_country" = (event as any)?.raceStyle ?? "motocross";
   const isEnduro = raceStyle === "enduro";
   const isCrossCountry = raceStyle === "cross_country";
-  const isMylaps = ((event as any)?.timingTechnology ?? "rfid") === "mylaps";
-  const timingLabel = isMylaps ? "MyLaps" : "RFID";
+  const isActiveTransponder = ((event as any)?.timingTechnology ?? "rfid") === "active_transponder";
+  const timingLabel = isActiveTransponder ? "Active Transponder Timing" : "RFID";
 
   // ── Local state ──
   const [viewMode, setViewMode] = useState<ViewMode>("run-order");

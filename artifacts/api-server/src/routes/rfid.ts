@@ -180,7 +180,10 @@ router.post("/rfid", async (req, res) => {
           .where(and(eq(checkinsTable.eventId, moto.eventId), eq(checkinsTable.riderId, numRiderId)));
         const checkin = checkins.find(c => c.raceClass === moto.raceClass) ?? checkins[0];
 
-        const lapTimes = riderCrossings.map(c => c.lapTimeMs).filter((t): t is number => t !== null);
+        const allLapTimes = riderCrossings.map(c => c.lapTimeMs).filter((t): t is number => t !== null);
+        // Only cap by lapCount for fixed-lap races; time-limit races let laps run freely
+        const rfidLapCap = moto.lapCount != null && moto.lapCount > 0 && !moto.timeLimitMs ? Number(moto.lapCount) : null;
+        const lapTimes = rfidLapCap != null ? allLapTimes.slice(0, rfidLapCap) : allLapTimes;
         const totalMs = lapTimes.reduce((s, t) => s + t, 0);
 
         const [existing] = await db.select().from(raceResultsTable)

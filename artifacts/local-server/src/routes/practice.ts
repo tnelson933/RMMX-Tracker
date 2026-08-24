@@ -201,7 +201,7 @@ function processCrossing(
   return { id: Number(ins.lastInsertRowid) };
 }
 
-// POST /practice/active/crossing — from RFID bridge / MyLaps, no session ID needed
+// POST /practice/active/crossing — from an RFID bridge or timing decoder, no session ID needed
 router.post("/practice/active/crossing", (req, res) => {
   const clubId = Number(req.query.clubId);
   if (!clubId || isNaN(clubId)) {

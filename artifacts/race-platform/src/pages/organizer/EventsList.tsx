@@ -87,7 +87,7 @@ const createEventSchema = z.object({
   state: z.string().min(1, "State is required"),
   location: z.string().optional(),
   trackName: z.string().optional(),
-  timingTechnology: z.enum(["rfid", "mylaps"]).default("rfid"),
+  timingTechnology: z.enum(["rfid", "active_transponder"]).default("rfid"),
   requireTransponder: z.boolean().default(false),
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
@@ -369,14 +369,14 @@ export default function EventsList() {
           noDuplicateBibs: data.noDuplicateBibs,
           requireWaiver: data.requireWaiver,
           requireLiabilityWaiver: data.requireLiabilityWaiver,
-          requireTransponder: data.timingTechnology === "mylaps" ? data.requireTransponder : false,
+          requireTransponder: data.timingTechnology === "active_transponder" ? data.requireTransponder : false,
           quickCheckinEnabled: data.quickCheckinEnabled,
           scoringTableId: data.scoringTableId ?? null,
           entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
           earlyBirdFee: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdFee ? Number(data.earlyBirdFee) : undefined,
           earlyBirdEndsAt: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdEndsAt ? data.earlyBirdEndsAt : undefined,
-          transponderRentalEnabled: data.timingTechnology === "mylaps" && data.paymentEnabled ? data.transponderRentalEnabled : false,
-          transponderRentalFee: data.timingTechnology === "mylaps" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
+          transponderRentalEnabled: data.timingTechnology === "active_transponder" && data.paymentEnabled ? data.transponderRentalEnabled : false,
+          transponderRentalFee: data.timingTechnology === "active_transponder" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
           rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
           purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
           amaEventId: data.amaEventId || undefined,
@@ -819,7 +819,7 @@ export default function EventsList() {
                         <div className="grid grid-cols-2 gap-2">
                           {[
                             { value: "rfid", label: "RFID Stickers", desc: "Passive RFID tags" },
-                            { value: "mylaps", label: "MyLaps Transponders", desc: "AMB / MyLaps units" },
+                            { value: "active_transponder", label: "Active Transponder Timing", desc: "Feibot F2000 active transponders" },
                           ].map(opt => (
                             <button
                               key={opt.value}
@@ -842,8 +842,8 @@ export default function EventsList() {
                   )}
                 />
 
-                {/* Require transponder — MyLaps without Stripe */}
-                {watchTimingTechnology === "mylaps" && !watchPaymentEnabled && (
+                {/* Require transponder — Active Transponder Timing without Stripe */}
+                {watchTimingTechnology === "active_transponder" && !watchPaymentEnabled && (
                   <FormField
                     control={form.control}
                     name="requireTransponder"
@@ -851,7 +851,7 @@ export default function EventsList() {
                       <FormItem>
                         <FormLabel>Require transponder number?</FormLabel>
                         <p className="text-xs text-muted-foreground -mt-1 mb-2">
-                          Must riders provide their MyLaps transponder number to register?
+                          Must riders provide their active transponder number to register?
                         </p>
                         <div className="grid grid-cols-2 gap-2">
                           {[
@@ -894,7 +894,7 @@ export default function EventsList() {
                       </FormLabel>
                       <p className="text-xs text-muted-foreground -mt-1 mb-2">
                         Let riders self-check-in from the rider app when they arrive within 1 mile of the track on race day.
-                        Requires their RFID or Mylaps transponder to be assigned and any required waivers signed.
+                        Requires their RFID or active transponder to be assigned and any required waivers signed.
                       </p>
                       <div className="grid grid-cols-2 gap-2">
                         {[
@@ -1251,8 +1251,8 @@ export default function EventsList() {
                     </div>
                   )}
 
-                  {/* Transponder rental (MyLaps + payment only) */}
-                  {stripeReady && watchPaymentEnabled && watchTimingTechnology === "mylaps" && (
+                  {/* Transponder rental (Active Transponder Timing + payment only) */}
+                  {stripeReady && watchPaymentEnabled && watchTimingTechnology === "active_transponder" && (
                     <div className="space-y-2 pl-0.5">
                       <FormField
                         control={form.control}
@@ -1844,7 +1844,7 @@ export default function EventsList() {
                       <div className="flex items-center gap-2">
                         {(event as any).timingTechnology && (
                           <span className="bg-muted text-muted-foreground border border-border px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                            {(event as any).timingTechnology === "mylaps" ? "MyLaps" : "RFID"}
+                            {(event as any).timingTechnology === "active_transponder" ? "Active Transponder Timing" : "RFID"}
                           </span>
                         )}
                         {(() => {

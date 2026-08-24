@@ -7,6 +7,32 @@ import { logger } from "../lib/logger";
 
 const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
+/** Slice a lapTimes array to at most lapCount entries. Handles null/undefined gracefully. */
+function capLapTimes(lapTimes: unknown, lapCount: number | null | undefined): unknown[] {
+  const arr = Array.isArray(lapTimes) ? lapTimes : [];
+  if (lapCount != null && lapCount > 0) return arr.slice(0, lapCount);
+  return arr;
+}
+
+/**
+ * Parse a totalTime string ("M:SS.cc") to milliseconds for position sorting.
+ * Returns Infinity when the string is missing or unparseable so those riders
+ * sort to the back of their group (DNF/DNS groups are already separated).
+ */
+function parseResultTimeToMs(t: string | null | undefined): number {
+  if (!t) return Infinity;
+  try {
+    const [minPart, rest] = t.split(":");
+    const [secPart, fracPart] = rest.split(".");
+    const mins = parseInt(minPart, 10);
+    const secs = parseInt(secPart, 10);
+    const frac = fracPart ? parseInt(fracPart.padEnd(3, "0").slice(0, 3), 10) : 0;
+    return (mins * 60 + secs) * 1000 + frac;
+  } catch {
+    return Infinity;
+  }
+}
+
 /**
  * Safely evaluate a user-defined formula string.
  * Sandbox only exposes: position (1-based), riders (total starters), Math.
@@ -285,6 +311,8 @@ router.get("/events/:eventId/results", async (req, res) => {
     dns: raceResultsTable.dns,
     bibNumber: raceResultsTable.bibNumber,
     motoName: motosTable.name,
+    lapCount: motosTable.lapCount,
+    timeLimitMs: motosTable.timeLimitMs,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
     amaNumber: registrationsTable.amaNumber,
@@ -309,7 +337,7 @@ router.get("/events/:eventId/results", async (req, res) => {
     raceClass: r.raceClass,
     position: r.position,
     totalTime: r.totalTime,
-    lapTimes: Array.isArray(r.lapTimes) ? r.lapTimes : [],
+    lapTimes: capLapTimes(r.lapTimes, r.timeLimitMs ? null : r.lapCount),
     points: r.points,
     dnf: r.dnf,
     dns: r.dns,
@@ -399,11 +427,13 @@ router.post("/events/:eventId/results", async (req, res) => {
         leaderLapsCompleted,
       });
 
+      // Don't cap laps by lapCount for time-limit motos — extra laps after the flag are valid
+      const cappedLaps = capLapTimes(r.lapTimes || [], (moto as any).timeLimitMs ? null : (moto as any).lapCount);
       const [result] = await tx.insert(raceResultsTable).values({
         eventId, motoId, riderId: r.riderId, raceClass,
         position:  r.position,
         totalTime: r.totalTime || null,
-        lapTimes:  r.lapTimes || [],
+        lapTimes:  cappedLaps,
         points,
         dnf:       r.dnf || false,
         dns:       r.dns || false,
@@ -481,12 +511,21 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
     return;
   }
 
-  const totalMs = (lapTimes as number[]).reduce((s, t) => s + t, 0);
-  const totalTime = lapTimes.length > 0 ? formatMs(totalMs) : null;
+  // Fetch the moto's lapCount to enforce the cap
+  const [existingResult] = await db.select({ motoId: raceResultsTable.motoId })
+    .from(raceResultsTable).where(eq(raceResultsTable.id, resultId));
+  if (!existingResult) { res.status(404).json({ error: "Result not found" }); return; }
+
+  const [lapMoto] = await db.select({ lapCount: motosTable.lapCount })
+    .from(motosTable).where(eq(motosTable.id, existingResult.motoId));
+
+  const cappedLapTimes = capLapTimes(lapTimes as number[], lapMoto?.lapCount) as number[];
+  const totalMs = cappedLapTimes.reduce((s, t) => s + t, 0);
+  const totalTime = cappedLapTimes.length > 0 ? formatMs(totalMs) : null;
 
   const [updated] = await db
     .update(raceResultsTable)
-    .set({ lapTimes: lapTimes as number[], totalTime })
+    .set({ lapTimes: cappedLapTimes, totalTime })
     .where(eq(raceResultsTable.id, resultId))
     .returning();
 

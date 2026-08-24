@@ -356,7 +356,7 @@ router.get("/public/series/:seriesId/standings", async (req, res) => {
   const standings: Array<{
     position: number; riderId: number; riderName: string; raceClass: string;
     totalScore: number; eventsEntered: number; amaNumber: string | null; bikeBrand: string | null;
-    events: Array<{ eventId: number; eventName: string; eventScore: number; attended: boolean; motos: number[] }>;
+    events: Array<{ eventId: number; eventName: string; eventScore: number; attended: boolean; motos: number[]; finishPositions: (number | null)[] }>;
   }> = [];
 
   for (const [raceClass, eventMap] of Object.entries(classByEvent)) {
@@ -378,18 +378,23 @@ router.get("/public/series/:seriesId/standings", async (req, res) => {
         const motoEntries = eventMap[eventId];
         if (!motoEntries?.length) continue;
         const sortedMotos = [...motoEntries].sort((a, b) => (a.moto.motoNumber ?? 0) - (b.moto.motoNumber ?? 0));
-        let eventScore = 0; const motoPositions: number[] = []; let attended = false;
+        let eventScore = 0; const motoPositions: number[] = []; const finishPositions: (number | null)[] = []; let attended = false;
         for (const { results } of sortedMotos) {
           const result = results.find(r => r.riderId === riderId);
           if (result) {
             attended = true;
             const pts = (result.dnf || result.dns) ? 0 : (result.points ?? 0);
-            eventScore += pts; motoPositions.push(pts);
-          } else { motoPositions.push(0); }
+            eventScore += pts;
+            motoPositions.push(pts);
+            finishPositions.push(result.dnf || result.dns ? null : (result.position ?? null));
+          } else {
+            motoPositions.push(0);
+            finishPositions.push(null);
+          }
         }
         if (attended) eventsEntered++;
         totalScore += eventScore;
-        eventBreakdowns.push({ eventId, eventName: eventNameMap[eventId] ?? `Event ${eventId}`, eventScore, attended, motos: motoPositions });
+        eventBreakdowns.push({ eventId, eventName: eventNameMap[eventId] ?? `Event ${eventId}`, eventScore, attended, motos: motoPositions, finishPositions });
       }
       classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, amaNumber: null, bikeBrand: null, events: eventBreakdowns });
     }

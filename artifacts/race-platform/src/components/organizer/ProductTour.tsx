@@ -37,7 +37,7 @@ const ALL_STEPS: TourStep[] = [
     side: "right",
     title: "Riders",
     description:
-      "Your club's rider database. Assign RFID or MyLaps transponder numbers here so the timing system knows who's who on the track.",
+      "Your club's rider database. Assign RFID or active transponder numbers here so the timing system knows who's who on the track.",
   },
   {
     selector: '[data-tour="nav-series"]',
@@ -79,7 +79,7 @@ const ALL_STEPS: TourStep[] = [
     side: "right",
     title: "Reader Setup",
     description:
-      "Configure your RFID or MyLaps timing readers. The platform supports both transponder technologies — switch per-event as needed.",
+      "Configure RFID or Active Transponder Timing readers. The platform supports both timing technologies — switch per-event as needed.",
   },
   {
     selector: '[data-tour="nav-offline"]',

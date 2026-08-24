@@ -3,6 +3,7 @@ import { useRoute } from "wouter";
 import {
   useListMotos,
   useListResults,
+  useGetEvent,
   useSubmitResults,
   usePublishResults,
   getListResultsQueryKey,
@@ -131,18 +132,9 @@ function LapEditor({
       {laps.length === 0 ? (
         <p className="text-xs text-muted-foreground italic py-1">No laps recorded.</p>
       ) : (
-        laps.map((l, i) => (
+        (cap != null ? laps.slice(0, cap) : laps).map((l, i) => (
           <Fragment key={i}>
-            {cap != null && i === cap && (
-              <div className="flex items-center gap-2 py-0.5">
-                <div className="flex-1 border-t border-dashed border-destructive/50" />
-                <span className="text-[10px] text-destructive font-semibold shrink-0 uppercase tracking-wide">
-                  Race cap — laps beyond {cap} not counted
-                </span>
-                <div className="flex-1 border-t border-dashed border-destructive/50" />
-              </div>
-            )}
-            <div className={`flex items-center gap-2 ${cap != null && i >= cap ? "opacity-40" : ""}`}>
+            <div className="flex items-center gap-2">
               <span className="text-[10px] font-mono text-muted-foreground w-8 text-right shrink-0">
                 {i + 1}
               </span>
@@ -432,6 +424,9 @@ export default function EnterResults() {
   const [initializedMotos, setInitializedMotos] = useState<Set<number>>(new Set());
   const [savingMotoId, setSavingMotoId] = useState<number | null>(null);
 
+  const { data: event } = useGetEvent(eventId, {
+    query: { enabled: !!eventId } as any,
+  });
   const { data: motos, isLoading: motosLoading } = useListMotos(eventId, {
     query: { enabled: !!eventId } as any,
   });
@@ -480,6 +475,38 @@ export default function EnterResults() {
           riderName: existing?.riderName ?? entry.riderName ?? "",
         };
       });
+
+      // When there are existing results, auto-assign positions by performance so the
+      // organizer always sees the correct ranking without having to do anything.
+      // Rule: most laps → shortest total time. DNF below finishers, DNS last.
+      // The organizer can still edit any position and Save will respect their changes.
+      if (motoRes.length > 0) {
+        const getPerf = (riderId: number) => {
+          const s = motoResults[riderId];
+          if (!s) return { laps: 0, totalMs: Infinity };
+          const validLaps = (s.laps ?? []).map((l) => parseLapMs(l)).filter((ms): ms is number => ms != null);
+          const totalMs = validLaps.length
+            ? validLaps.reduce((sum, ms) => sum + ms, 0)
+            : (parseLapMs(s.time) ?? Infinity);
+          return { laps: validLaps.length, totalMs };
+        };
+        const riderIds: number[] = moto.lineup.map((e: any) => e.riderId as number);
+        const active = riderIds.filter((id) => !motoResults[id]?.dnf && !motoResults[id]?.dns);
+        const dnf    = riderIds.filter((id) => motoResults[id]?.dnf  && !motoResults[id]?.dns);
+        const dns    = riderIds.filter((id) => motoResults[id]?.dns);
+        const byPerf = (a: number, b: number) => {
+          const ap = getPerf(a); const bp = getPerf(b);
+          if (bp.laps !== ap.laps) return bp.laps - ap.laps;
+          return ap.totalMs - bp.totalMs;
+        };
+        active.sort(byPerf);
+        dnf.sort(byPerf);
+        let pos = 1;
+        for (const id of [...active, ...dnf, ...dns]) {
+          if (motoResults[id]) motoResults[id].pos = (pos++).toString();
+        }
+      }
+
       setAllMotoResults((prev) => ({ ...prev, [moto.id]: motoResults }));
       setInitializedMotos((prev) => new Set([...prev, moto.id]));
     }
@@ -645,7 +672,7 @@ export default function EnterResults() {
           <Label htmlFor="publish-results" className="font-heading font-bold uppercase tracking-wider cursor-pointer">
             Publish to Web
           </Label>
-          <UISwitch id="publish-results" onCheckedChange={handlePublish} />
+          <UISwitch id="publish-results" checked={event?.published ?? false} onCheckedChange={handlePublish} />
         </div>
       </div>
 

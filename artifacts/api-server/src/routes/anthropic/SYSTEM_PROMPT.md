@@ -11,7 +11,7 @@
   - Schedule tab: moto types, reordering, staggered starts, lineup generation, manual editing
   - Motos tab: start/finish, live leaderboard, crossing feed, delete/correct crossings, manual laps, DNF/DNS, reset, heat sheet, practice motos, time+laps race format
   - Enduro events: Generate Tests, per-test individual rider timing (no Start button, rider-# bib start/stop), optional event-wide time checks with per-class expected durations and configurable time-check penalties (seconds per minute early/late, optional DQ thresholds)
-  - Timing systems: RFID sticker tags, MyLaps transponders
+  - Timing systems: RFID sticker tags, Active Transponder Timing
   - Reader-aware timing: named per-reader unique ingest URLs, per-event start/finish/time-check assignments
   - Check-In tab: mark present, bib numbers, RFID/transponder assignment, walk-up registration, offline check-in, Quick Check-In
   - Registrations tab: search, comp codes, discount codes, edit registration, export
@@ -63,10 +63,10 @@ To change status: Events → click the event → Edit tab → change the Status 
 - **Points Scoring Tables** — configure how series points are calculated (fixed scale, lowest positions, per-rider dynamic, or custom formula)
 - **Payments** — Stripe Connect setup, payment history, payout management
 - **Discount Codes** — promo codes for reduced entry fees (partial discounts entered by riders at registration)
-- **RFID Management** — view and assign RFID tags or MyLaps transponder numbers across all riders club-wide
+- **RFID Management** — view and assign RFID tags or active transponder numbers across all riders club-wide
 - **Notifications** — send push notifications to riders; view send history
 - **Race Day Display** — jumbotron / announcer display for the track
-- **Reader Setup** — configure RFID or MyLaps timing hardware
+- **Reader Setup** — configure RFID or Active Transponder Timing hardware
 - **Offline Mode** — export event data and sync back after offline operation
 - **Team** — invite staff and set role-based permissions; manage default race classes and class rules; set track/venue name; configure rider acknowledgement forms and liability waivers; manage brand contingencies
 
@@ -78,7 +78,7 @@ Once you open an event, you see these tabs:
 
 - **Overview** — edit event details, status, entry fees, registration settings, race classes
 - **Registrations** — all registered riders; on-site walk-up registration; comp codes; discount codes; export to spreadsheet
-- **Check-In** — mark riders as present on race day; assign RFID tags or MyLaps transponders; set bib numbers
+- **Check-In** — mark riders as present on race day; assign RFID tags or active transponders; set bib numbers
 - **Schedule** — build and reorder the full run order (practices, heats, LCQs, mains); set up staggered starts; generate lineups; manage gate picks
 - **Motos** — race-day timing and control panel: start/finish motos, view the live leaderboard and crossing feed, delete/correct bad crossings, enter manual laps, print heat sheets
 - **Enter Results** — manual finish-position entry after each moto; view class-wide overall standings; publish results to the public web
@@ -214,7 +214,7 @@ RM Tracker supports two timing hardware modes. Select the mode for an event in t
 
 ### RM Connect (recommended hardware bridge)
 **RM Connect** is a small desktop app that runs in the laptop's system tray at the track and bridges timing hardware to the cloud — no hardware configuration needed.
-- Supports **Impinj R700** RFID readers (connects directly over the network via LLRP — the organizer enters the reader's address, e.g. the last 6 characters of the MAC on the label) and **MyLaps decoders** (enter the decoder's IP address).
+- Supports **Impinj R700** RFID readers (connects directly over the network via LLRP — the organizer enters the reader's address, e.g. the last 6 characters of the MAC on the label) and **active transponder decoders** (enter the decoder's IP address).
 - Setup: download and install RM Connect → sign in with the organizer email → pick a registered reader from the list → choose hardware type and enter its address → leave the app running in the tray.
 - The Reader Setup page shows a live **RM Connect** status card: whether the app is online, whether the hardware is connected, and how many reads have come through.
 - Readers **start and stop automatically**: when the organizer presses Start Moto in the web app, RM Connect starts the hardware reading; completing the moto stops it. A test mode toggle in the app lets crossings flow without an active moto for pre-race verification.
@@ -226,10 +226,10 @@ RM Tracker supports two timing hardware modes. Select the mode for an event in t
 - Riders are assigned RFID tag numbers (alphanumeric, 1–32 chars) in the Check-In tab
 - A "Ping" test tool in Reader Setup sends a test read to verify connectivity
 
-### MyLaps Transponders
-- Hardware: MyLaps AMB decoders (RC4 / Orbits series)
-- Each rider needs a MyLaps transponder number (numeric, 1–9 digits) — assigned in the Check-In tab or entered during registration
-- In Reader Setup, switch mode to MyLaps and configure the decoder IP; the desktop app adds a native serial-port picker
+### Active Transponder Timing
+- Hardware: compatible active transponder decoders
+- Each rider needs an active transponder number (numeric, 1–9 digits) — assigned in the Check-In tab or entered during registration
+- In Reader Setup, switch to Active Transponder Timing and configure the decoder IP; the desktop app adds a native serial-port picker
 - Transponder rental: if enabled in the event settings, riders can rent a transponder at registration; a rental fee is added to their total
 
 ---
@@ -243,7 +243,7 @@ Check-In tab → search by name or bib number → click the **Check In** button 
 Click the bib number area on the left of any rider card (before check-in) to edit it inline. Press Enter or click away to save. Duplicate bibs are flagged in red.
 
 ### Assign an RFID tag or transponder
-After finding a rider, click **Assign RFID** (or **Assign Transponder** in MyLaps mode) → type or scan the tag/number → click Assign.
+After finding a rider, click **Assign RFID** (or **Assign Transponder** in Active Transponder Timing mode) → type or scan the tag/number → click Assign.
 
 ### On-site walk-up registration
 Check-In and Registrations tabs both support on-site registration. On the Registrations tab, click **+ Add Rider** → fill in the rider's details and race class → proceed through the payment steps (cash, card via Stripe, or waived). The desktop app combines payment collection into a single step.
@@ -264,7 +264,7 @@ Organizers can enable **Quick Check-In** per event so riders can check themselve
 - On race day, the Rider App also polls for eligible events every 60 seconds while open.
 - When the rider's device is within 1 mile of the track (app open), they receive an arrival alert *and* a blue banner appears at the top of their **Today** tab.
 - The banner lists **every registration on the rider's account** for that event (e.g., multiple family members or multiple classes), each with its own **Check In** button.
-- Ineligible registrations are greyed out with the reason shown (e.g., "RFID sticker not assigned — see the organizer", "Missing MyLaps transponder number", "Waiver not signed") and must check in at the gate.
+- Ineligible registrations are greyed out with the reason shown (e.g., "RFID sticker not assigned — see the organizer", "Missing active transponder number", "Waiver not signed") and must check in at the gate.
 - If all registrations are eligible and more than one is pending, a green **Check In for All** button checks them all in at once.
 - Once every registration is checked in, the banner turns green.
 
@@ -272,7 +272,7 @@ Organizers can enable **Quick Check-In** per event so riders can check themselve
 - Event must be in **Race Day** status on today's date.
 - Quick Check-In must be toggled **On** for the event.
 - RFID events: rider must have an RFID tag assigned.
-- MyLaps events: rider must have a transponder number on file.
+- Active Transponder Timing events: rider must have a transponder number on file.
 - Any required waivers must be signed.
 - Rider must not already be checked in.
 
@@ -544,7 +544,7 @@ If you're running the desktop app without cloud sync configured, the broadcast r
 
 ## RFID / Transponder Management
 
-**RFID Management** (sidebar) — club-wide view of all RFID tag or MyLaps transponder assignments across all your riders. The page title and labels adapt to the timing technology of a selected event filter.
+**RFID Management** (sidebar) — club-wide view of all RFID tag or active transponder assignments across all your riders. The page title and labels adapt to the timing technology of a selected event filter.
 
 ### Viewing assignments
 The table lists all assigned tags: rider name, tag/transponder number, and the event they were assigned for. Use the **event filter dropdown** to narrow to a specific event, or leave it on "All Events" to see everything.
@@ -560,17 +560,17 @@ Use the search box to filter by rider name or tag number.
 ## Reader Setup
 
 **Reader Setup** (sidebar):
-- Choose timing technology: **RFID Sticker Tags** or **MyLaps/AMB**
+- Choose timing technology: **RFID Sticker Tags** or **Active Transponder Timing**
 - **Auto-configure** — enter your reader's IP address; the platform's Python bridge programs the reader's target URL and authentication headers automatically
 - **Manual configuration** — step-by-step instructions for programming via the reader's built-in web interface
 - **Test Ping** — sends a fake tag read to the cloud to confirm end-to-end connectivity
-- **Desktop app** — adds a native serial-port picker for direct USB/serial connections to MyLaps decoders
+- **Desktop app** — adds a native serial-port picker for direct USB/serial connections to active transponder decoders
 
 ### Registered Readers (reader-aware timing)
 
 For enduro events you can give each physical reader its own **unique ingest URL** so crossings are routed to the correct gate automatically:
 
-1. In **Reader Setup → Registered Readers**, click **Add Reader** → enter a name (e.g. "Start Gate Test 1") and select RFID or MyLaps → click **Add**
+1. In **Reader Setup → Registered Readers**, click **Add Reader** → enter a name (e.g. "Start Gate Test 1") and select RFID or Active Transponder Timing → click **Add**
 2. The platform generates a unique URL: `https://<your-domain>/api/timing/readers/<token>/crossing`
 3. Copy that URL and program it into the physical reader hardware — you only do this once per reader
 4. In the **Event Schedule tab** (enduro events only) a **Checkpoint Readers** card appears at the bottom — use the dropdowns to assign a reader to the **Start** and **Finish** of each test moto, and to each **Time Check** → click **Save**
@@ -595,7 +595,7 @@ For enduro events you can give each physical reader its own **unique ingest URL*
 The desktop app is a separate Windows/Mac application that runs a full local race server on localhost:9090. It is designed for race-day reliability without depending on internet connectivity.
 
 Key desktop features:
-- **Local timing** — the local server receives RFID/MyLaps reads directly; no cloud required during racing
+- **Local timing** — the local server receives RFID or active transponder reads directly; no cloud required during racing
 - **Cloud sync queue** — all writes are queued in a local SQLite database and synced to the cloud in the background. The sync queue survives network outages and retries automatically.
 - **Sync status** — a sync indicator in the top bar shows pending items and last-sync time
 - **RFID via serial port** — native USB/serial reader support (bypasses network configuration)

@@ -27,6 +27,9 @@ import {
   clubsTable,
   enduroTimeChecksTable,
   riderBikesTable,
+  rfidAssignmentsTable,
+  enduroCheckpointArrivalsTable,
+  compCodesTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql, ilike } from "drizzle-orm";
 
@@ -557,6 +560,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       eventId: raceResultsTable.eventId,
       eventName: eventsTable.name,
       eventDate: eventsTable.date,
+      eventEndDate: eventsTable.endDate,
       eventState: eventsTable.state,
       eventLocation: eventsTable.location,
       timingTechnology: eventsTable.timingTechnology,
@@ -644,6 +648,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     eventId: number;
     eventName: string;
     eventDate: string;
+    eventEndDate: string | null;
     eventState: string;
     eventLocation: string | null;
     timingTechnology: string | null;
@@ -670,6 +675,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
         eventId: row.eventId,
         eventName: row.eventName ?? `Event ${row.eventId}`,
         eventDate: row.eventDate ?? "",
+        eventEndDate: row.eventEndDate ?? null,
         eventState: row.eventState ?? "",
         eventLocation: row.eventLocation ?? null,
         timingTechnology: row.timingTechnology ?? null,
@@ -817,7 +823,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     }
   }
 
-  // myLapsTransponderNumber in the API maps to mylapsTransponderId in the DB
+  // The legacy API property maps to the retained DB property.
   if ("myLapsTransponderNumber" in req.body) {
     const val = req.body.myLapsTransponderNumber;
     patch.mylapsTransponderId = typeof val === "string" ? val.trim() || null : null;
@@ -938,6 +944,64 @@ router.delete("/rider/profiles/:riderId/bikes/:bikeId", requireRiderAuth, async 
     if (next) await db.update(riderBikesTable).set({ isDefault: true }).where(eq(riderBikesTable.id, next.id));
   }
   return res.json({ ok: true });
+});
+
+// DELETE /rider/profiles/:riderId — remove a rider profile from this account.
+// If the profile has race history (registrations, results, crossings, check-ins),
+// we DETACH it instead of deleting: the club keeps its records and series points
+// intact, but the profile disappears from this account. A clean profile with no
+// history is deleted outright (bikes cascade).
+router.delete("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  const ownership = await verifyRiderOwnership(riderAccountId, riderId);
+  if (!ownership) return res.status(403).json({ error: "Access denied" });
+
+  // Block removal while registered for an upcoming event (today counts as upcoming).
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+  const [upcomingReg] = await db
+    .select({ id: registrationsTable.id })
+    .from(registrationsTable)
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(and(
+      eq(registrationsTable.riderId, riderId),
+      ne(registrationsTable.status, "void"),
+      sql`SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= ${today}`,
+    ))
+    .limit(1);
+  if (upcomingReg) {
+    return res.status(409).json({
+      error: "This rider is registered for an upcoming event. Cancel the registration first, then remove the profile.",
+    });
+  }
+
+  const [[reg], [result], [checkin], [lap], [practice], [rfidAssign], [enduroArrival], [seriesPoint]] = await Promise.all([
+    db.select({ id: registrationsTable.id }).from(registrationsTable).where(eq(registrationsTable.riderId, riderId)).limit(1),
+    db.select({ id: raceResultsTable.id }).from(raceResultsTable).where(eq(raceResultsTable.riderId, riderId)).limit(1),
+    db.select({ id: checkinsTable.id }).from(checkinsTable).where(eq(checkinsTable.riderId, riderId)).limit(1),
+    db.select({ id: lapCrossingsTable.id }).from(lapCrossingsTable).where(eq(lapCrossingsTable.riderId, riderId)).limit(1),
+    db.select({ id: practiceCrossingsTable.id }).from(practiceCrossingsTable).where(eq(practiceCrossingsTable.riderId, riderId)).limit(1),
+    db.select({ id: rfidAssignmentsTable.id }).from(rfidAssignmentsTable).where(eq(rfidAssignmentsTable.riderId, riderId)).limit(1),
+    db.select({ id: enduroCheckpointArrivalsTable.id }).from(enduroCheckpointArrivalsTable).where(eq(enduroCheckpointArrivalsTable.riderId, riderId)).limit(1),
+    db.select({ id: seriesPointsTable.id }).from(seriesPointsTable).where(eq(seriesPointsTable.riderId, riderId)).limit(1),
+  ]);
+  const hasHistory = !!(reg || result || checkin || lap || practice || rfidAssign || enduroArrival || seriesPoint);
+
+  if (hasHistory) {
+    // Detach: clear the email link so it no longer appears under this account.
+    // Club-side records (results, registrations, series points) stay intact.
+    await db.update(ridersTable).set({ email: null }).where(eq(ridersTable.id, riderId));
+    return res.json({ ok: true, mode: "detached" });
+  }
+
+  // No history — safe to hard delete. Clean up rider-owned rows first
+  // (bikes cascade via FK; maintenance tables have no cascade).
+  await db.delete(riderMaintenanceHistoryTable).where(eq(riderMaintenanceHistoryTable.riderId, riderId));
+  await db.delete(riderMaintenanceTable).where(eq(riderMaintenanceTable.riderId, riderId));
+  await db.update(compCodesTable).set({ riderId: null }).where(eq(compCodesTable.riderId, riderId));
+  await db.delete(ridersTable).where(eq(ridersTable.id, riderId));
+  return res.json({ ok: true, mode: "deleted" });
 });
 
 // PATCH /rider/profiles/:riderId/maintenance-suggestions — toggle Rocky AI suggestions on/off
@@ -1244,14 +1308,14 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
       const myEntry = [...riderMap.values()].find(
         r => r.riderId === riderId || (!!rider.rfidNumber && r.rfidNumber === rider.rfidNumber)
       );
-      const myLaps = (myEntry?.laps ?? []).sort((a, b) => a.lapNumber - b.lapNumber);
+      const riderLaps = (myEntry?.laps ?? []).sort((a, b) => a.lapNumber - b.lapNumber);
 
       sessions.push({
         motoId: moto.id,
         sessionName: moto.name as string,
         status: moto.status as string,
         leaderboard,
-        myLaps,
+        myLaps: riderLaps,
       });
     }
 

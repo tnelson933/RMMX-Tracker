@@ -313,7 +313,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     firstName, lastName, email, phone, dateOfBirth,
     emergencyContact, emergencyPhone, streetAddress, city, homeState, zip,
     raceClass, bibNumber, amaNumber, clubIdNumber, bikeBrand, bikeModel, bikeYear,
-    myLapsTransponderNumber, rentTransponder, selectedPurchaseOptions,
+    transponderNumber, rentTransponder, selectedPurchaseOptions,
     paymentMethod, amountPaid, status,
     riderId: explicitRiderId,
   } = req.body;
@@ -373,7 +373,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     eventId, riderId, String(raceClass),
     bibNumber ?? null, amaNumber ?? null, clubIdNumber ?? null,
     bikeBrand ?? null, bikeModel ?? null, bikeYear ?? null,
-    myLapsTransponderNumber ?? null,
+    (transponderNumber ?? req.body.myLapsTransponderNumber) ?? null,
     rentTransponder ? 1 : 0,
     paymentMethod ?? null,
     amountPaid ?? null,

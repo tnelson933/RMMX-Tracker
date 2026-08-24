@@ -24,6 +24,7 @@ function serializeRider(r: any) {
     bikeYear: r.bike_year ?? null,
     sponsors: r.sponsors ?? null,
     amaNumber: r.ama_number ?? null,
+    transponderId: r.mylaps_transponder_id ?? null,
     mylapsTransponderId: r.mylaps_transponder_id ?? null,
     createdAt: r.created_at,
   };
@@ -122,7 +123,7 @@ router.post("/riders", (req, res) => {
   const {
     firstName, lastName, email, phone, bibNumber, dateOfBirth,
     emergencyContact, emergencyPhone, rfidNumber, bikeManufacturer,
-    bikeModel, bikeYear, sponsors, amaNumber, mylapsTransponderId,
+    bikeModel, bikeYear, sponsors, amaNumber, transponderId,
     streetAddress, city, homeState, zip,
   } = req.body;
 
@@ -145,7 +146,7 @@ router.post("/riders", (req, res) => {
       dateOfBirth ?? null, emergencyContact ?? null, emergencyPhone ?? null,
       rfidNumber ?? null, bikeManufacturer ?? null, bikeModel ?? null,
       bikeYear ?? null, sponsors ?? null, amaNumber ?? null,
-      mylapsTransponderId ?? null, streetAddress ?? null, city ?? null,
+      (transponderId ?? req.body.mylapsTransponderId) ?? null, streetAddress ?? null, city ?? null,
       homeState ?? null, zip ?? null,
     );
 
@@ -178,7 +179,7 @@ router.patch("/riders/:riderId", (req, res) => {
     bikeYear: "bike_year",
     sponsors: "sponsors",
     amaNumber: "ama_number",
-    mylapsTransponderId: "mylaps_transponder_id",
+    transponderId: "mylaps_transponder_id",
     streetAddress: "street_address",
     city: "city",
     homeState: "home_state",
@@ -193,6 +194,11 @@ router.patch("/riders/:riderId", (req, res) => {
       fields.push(`${dbCol} = ?`);
       values.push(req.body[jsKey]);
     }
+  }
+  // Accept the former API alias while storing it in the unchanged legacy column.
+  if (req.body.mylapsTransponderId !== undefined && req.body.transponderId === undefined) {
+    fields.push("mylaps_transponder_id = ?");
+    values.push(req.body.mylapsTransponderId);
   }
 
   if (fields.length === 0) {

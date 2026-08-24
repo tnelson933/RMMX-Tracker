@@ -41,14 +41,14 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
 
   // Resolve all riders linked to this account by email
   const familyRiders = await db
-    .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName, mylapsTransponderId: ridersTable.mylapsTransponderId })
+    .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName, transponderId: ridersTable.mylapsTransponderId })
     .from(ridersTable)
     .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
 
   if (familyRiders.length === 0) return res.json([]);
 
   const familyRiderIds = familyRiders.map(r => r.id);
-  const mylapsById = new Map(familyRiders.map(r => [r.id, r.mylapsTransponderId]));
+  const transponderByRiderId = new Map(familyRiders.map(r => [r.id, r.transponderId]));
   const nameById = new Map(familyRiders.map(r => [r.id, `${r.firstName} ${r.lastName}`.trim()]));
 
   // "Today" anchored to Mountain Time (matches quickCheckinNotifier) so late-evening
@@ -183,10 +183,10 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       ineligibleReason = "missing_rfid";
     }
 
-    // Mylaps events: must have a transponder number (registration-level OR rider-level)
-    if (eligible && r.timingTechnology === "mylaps") {
+    // Active transponder events must have a registration-level or rider-level number.
+    if (eligible && ["active_transponder", "mylaps"].includes(r.timingTechnology)) {
       const hasRegTransponder = !!r.myLapsTransponderNumber;
-      const hasRiderTransponder = !!mylapsById.get(r.riderId);
+      const hasRiderTransponder = !!transponderByRiderId.get(r.riderId);
       if (!hasRegTransponder && !hasRiderTransponder) {
         eligible = false;
         ineligibleReason = "missing_transponder";
@@ -277,7 +277,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
 
   // Confirm the rider belongs to this account
   const familyRiders = await db
-    .select({ id: ridersTable.id, mylapsTransponderId: ridersTable.mylapsTransponderId })
+    .select({ id: ridersTable.id, transponderId: ridersTable.mylapsTransponderId })
     .from(ridersTable)
     .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
 
@@ -316,11 +316,11 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     if (!rfid) return res.status(400).json({ error: "RFID not assigned — contact the organizer" });
   }
 
-  // Mylaps eligibility
-  if (event.timingTechnology === "mylaps") {
+  // Active transponder eligibility (including legacy stored values).
+  if (["active_transponder", "mylaps"].includes(event.timingTechnology)) {
     const riderRow = familyRiders.find(r => r.id === riderId);
-    if (!reg.myLapsTransponderNumber && !riderRow?.mylapsTransponderId) {
-      return res.status(400).json({ error: "Mylaps transponder number not assigned — contact the organizer" });
+    if (!reg.myLapsTransponderNumber && !riderRow?.transponderId) {
+      return res.status(400).json({ error: "Active transponder number not assigned — contact the organizer" });
     }
   }
 

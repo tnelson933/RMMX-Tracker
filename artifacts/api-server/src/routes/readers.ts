@@ -7,6 +7,12 @@ import { getConnectorStatus, sendConnectorCommand } from "../lib/connectorRelay"
 import { getRecentTags, clearRecentTags } from "../lib/recentTags";
 
 const router = Router();
+const normalizeReaderType = (type: unknown) =>
+  type === "mylaps" || type === "active_transponder" ? "active_transponder" : "rfid";
+const publicReader = <T extends { type: string }>(reader: T) => ({
+  ...reader,
+  type: normalizeReaderType(reader.type),
+});
 
 /** Get the caller's clubId from session, or null if not authenticated. */
 async function getCallerClubId(req: any): Promise<number | null> {
@@ -70,7 +76,7 @@ router.get("/readers", async (req, res) => {
     .where(eq(readersTable.clubId, clubId))
     .orderBy(asc(readersTable.name));
 
-  return res.json(rows);
+  return res.json(rows.map(publicReader));
 });
 
 // POST /readers — register a new reader (generates a unique token)
@@ -79,7 +85,7 @@ router.post("/readers", async (req, res) => {
   if (!clubId) return res.status(401).json({ error: "Unauthorized" });
 
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-  const type = req.body?.type === "mylaps" ? "mylaps" : "rfid";
+  const type = normalizeReaderType(req.body?.type);
   const hardwareAddress = typeof req.body?.hardwareAddress === "string" ? req.body.hardwareAddress.trim() || null : null;
 
   if (!name) return res.status(400).json({ error: "name is required" });
@@ -89,7 +95,7 @@ router.post("/readers", async (req, res) => {
     .values({ clubId, name, type, token: randomUUID(), hardwareAddress })
     .returning();
 
-  return res.status(201).json(reader);
+  return res.status(201).json(publicReader(reader));
 });
 
 // PATCH /readers/:readerId — rename a reader
@@ -122,7 +128,7 @@ router.patch("/readers/:readerId", async (req, res) => {
     .where(eq(readersTable.id, readerId))
     .returning();
 
-  return res.json(reader);
+  return res.json(publicReader(reader));
 });
 
 // POST /readers/llrp-config — broadcast RF config to all connected RM Connect instances for this club

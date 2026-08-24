@@ -3,7 +3,7 @@
  *
  * POST /timing/readers/:token/crossing
  *
- * Each physical reader (RFID or MyLaps) is pointed at its own URL containing
+ * Each physical reader (RFID or Active Transponder Timing) is pointed at its own URL containing
  * its unique token.  The token resolves to a registered reader, which has an
  * event-reader-assignment telling us which test moto + role (start | finish)
  * the reader is covering.  The crossing is then routed directly to the correct

@@ -71,7 +71,7 @@ function toExportRows(riders: ExportRider[]) {
     "Bike Manufacturer": r.bikeManufacturer ?? "",
     "AMA #": r.amaNumber ?? "",
     "RFID #": r.rfidNumber ?? "",
-    "MyLaps Transponder #": r.mylapsTransponderId ?? "",
+    "Active Transponder #": r.mylapsTransponderId ?? "",
     Sponsors: r.sponsors ?? "",
     Email: r.email ?? "",
     Phone: r.phone ?? "",
@@ -390,7 +390,7 @@ export default function RidersList() {
                   </div>
 
                   <FormField control={form.control} name="mylapsTransponderId" render={({ field }) => (
-                    <FormItem><FormLabel>MyLaps Transponder #</FormLabel><FormControl><Input placeholder="Transponder ID" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Active Transponder #</FormLabel><FormControl><Input placeholder="Transponder ID" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
 
                   <FormField control={form.control} name="sponsors" render={({ field }) => (
@@ -478,7 +478,7 @@ export default function RidersList() {
                   onClick={() => handleSort("mylaps")}
                 >
                   <span className="inline-flex items-center justify-center w-full">
-                    MyLaps <SortIcon col="mylaps" sortKey={sortKey} sortDir={sortDir} />
+                    Active Transponder <SortIcon col="mylaps" sortKey={sortKey} sortDir={sortDir} />
                   </span>
                 </TableHead>
                 <TableHead className="w-8"></TableHead>

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Wifi, Timer, Copy, Check, Send, RefreshCw,
   CheckCircle2, XCircle, Download, Circle, ExternalLink,
-  Usb, Trash2, Plus, Radio, Pencil, X, ScanLine, Loader2, MonitorDown,
+  Usb, Trash2, Plus, Radio, Pencil, X, ScanLine, Loader2, MonitorDown, Activity, Battery, AlertCircle, Play, Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,17 +20,19 @@ import {
 const BASE_URL = window.location.origin;
 const FACILITY_ENDPOINT_BASE = `${BASE_URL}/api/timing/active/crossing`;
 const PING_ENDPOINT_BASE = `${BASE_URL}/api/timing/ping`;
-const BRIDGE_URL = "http://localhost:5555";
-
-type BridgeStatus = "checking" | "running" | "offline";
 type ReaderType   = "impinj-r700" | "zebra-fx7500" | "generic";
 
-interface MyLapsStatus {
+interface ActiveTransponderStatus {
   connected: boolean;
-  decoderIp: string | null;
+  deviceIp: string | null;
+  machineId: string | null;
   error: string | null;
   lastPassingAt: string | null;
   passingCount: number;
+  lastHeartbeatAt: string | null;
+  batteryPercent: number | null;
+  reader1Working: string | null;
+  reader2Working: string | null;
 }
 
 // ── RF Configuration (LLRP) ───────────────────────────────────────────────────
@@ -82,6 +84,457 @@ const MiniStep = ({ n }: { n: number }) => (
   </div>
 );
 
+function FeibotGuidedSetup({
+  isDesktop,
+  connectorStatuses,
+  readers,
+}: {
+  isDesktop: boolean;
+  connectorStatuses: any[];
+  readers: any[];
+}) {
+  const [address, setAddress] = useState("");
+  const [activeStatus, setActiveStatus] = useState<ActiveTransponderStatus | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  // Test state
+  const [testMode, setTestMode] = useState(false);
+  const [initialReadCount, setInitialReadCount] = useState<number | null>(null);
+
+  // Desktop activeTransponder hook
+  useEffect(() => {
+    if (!isDesktop) return;
+    const api = (window as any).electronAPI?.activeTransponder;
+    if (!api) return;
+    api.getStatus().then(setActiveStatus).catch(() => {});
+    return api.onStatus(setActiveStatus);
+  }, [isDesktop]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("f2000_host");
+    const activeReader = readers.find(r => r.type === "active_transponder");
+    if (activeReader?.hardwareAddress) {
+      setAddress(activeReader.hardwareAddress);
+    } else if (saved) {
+      setAddress(saved);
+    }
+  }, [readers]);
+
+  const handleAddressChange = (val: string) => {
+    setAddress(val);
+    localStorage.setItem("f2000_host", val);
+  };
+
+  const connect = async () => {
+    if (!isDesktop) return; // browser flow is passive via connectorStatuses
+    let finalAddress = address.trim();
+    if (!finalAddress) return;
+    if (!finalAddress.includes(":")) finalAddress += ":3333";
+
+    setAddress(finalAddress);
+    localStorage.setItem("f2000_host", finalAddress);
+
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      await (window as any).electronAPI.activeTransponder.connect(finalAddress);
+      setActiveStatus(await (window as any).electronAPI.activeTransponder.getStatus());
+    } catch (error) {
+      setConnectError(error instanceof Error ? error.message : "Could not connect to the Feibot F2000.");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const disconnect = async () => {
+    if (!isDesktop) return;
+    await (window as any).electronAPI.activeTransponder.disconnect();
+    setActiveStatus(await (window as any).electronAPI.activeTransponder.getStatus());
+    setConnectError(null);
+    setTestMode(false);
+  };
+
+  const toggleTest = async () => {
+    if (testMode) {
+      // stop
+      if (isDesktop && (window as any).electronAPI.activeTransponder.stopTest) {
+        try { await (window as any).electronAPI.activeTransponder.stopTest(); } catch {}
+      }
+      setTestMode(false);
+      setInitialReadCount(null);
+    } else {
+      // start
+      const currentReads = isDesktop ? activeStatus?.passingCount ?? 0 : activeConnector?.hardware.readCount ?? 0;
+      setInitialReadCount(currentReads);
+      if (isDesktop && (window as any).electronAPI.activeTransponder.startTest) {
+        try { await (window as any).electronAPI.activeTransponder.startTest(); } catch {}
+      }
+      setTestMode(true);
+    }
+  };
+
+  const activeConnector = !isDesktop ? connectorStatuses.find(c => c.readerType === "active_transponder") : null;
+
+  // Desktop configuration state
+  const [activeChannel, setActiveChannel] = useState(0);
+  const [activePower, setActivePower] = useState(50);
+  const [loop1Enabled, setLoop1Enabled] = useState(true);
+  const [loop2Enabled, setLoop2Enabled] = useState(true);
+  const [applyingConfig, setApplyingConfig] = useState(false);
+  const [syncingClock, setSyncingClock] = useState(false);
+
+  // When status comes in with config properties (ready, configApplied, loopsReady), read them if possible.
+  // The backend might not parse them into activeStatus yet, so we will use activeStatus direct if present.
+  let isConfigApplied = false;
+  let isLoopsReady = false;
+  let isReady = false;
+
+  if (isDesktop && activeStatus) {
+    // If the API was updated to provide these:
+    if ((activeStatus as any).configApplied) isConfigApplied = true;
+    if ((activeStatus as any).loopsReady) isLoopsReady = true;
+    if ((activeStatus as any).ready) isReady = true;
+  } else if (!isDesktop && activeConnector) {
+    try {
+      if (activeConnector.hardware.detail) {
+        const detail = JSON.parse(activeConnector.hardware.detail);
+        if (detail.configApplied) isConfigApplied = true;
+        if (detail.loopsReady) isLoopsReady = true;
+        if (detail.ready) isReady = true;
+      }
+    } catch {}
+  }
+
+  const applyConfig = async () => {
+    if (!isDesktop || !isConnected) return;
+    setApplyingConfig(true);
+    try {
+      const api = (window as any).electronAPI?.activeTransponder;
+      if (api?.configure) {
+        await api.configure({
+          activeChannel,
+          activePower,
+          loopEnabled: { 1: loop1Enabled, 2: loop2Enabled }
+        });
+      }
+    } catch {}
+    setApplyingConfig(false);
+  };
+
+  const syncClock = async () => {
+    if (!isDesktop || !isConnected) return;
+    setSyncingClock(true);
+    try {
+      const api = (window as any).electronAPI?.activeTransponder;
+      if (api?.syncClock) {
+        await api.syncClock();
+      }
+    } catch {}
+    setSyncingClock(false);
+  };
+
+
+  let isConnected = false;
+  let hasError = false;
+  let readCount = 0;
+  let heartbeat: string | null = null;
+  let loops: { l1: boolean; l2: boolean } | null = null;
+  let battery: number | null = null;
+  let errorMsg = connectError;
+  let machineId: string | null = null;
+
+  if (isDesktop && activeStatus) {
+    isConnected = activeStatus.connected;
+    hasError = !!activeStatus.error;
+    if (activeStatus.error && !errorMsg) errorMsg = activeStatus.error;
+    readCount = activeStatus.passingCount;
+    heartbeat = activeStatus.lastHeartbeatAt;
+    battery = activeStatus.batteryPercent;
+    machineId = activeStatus.machineId;
+    if (activeStatus.reader1Working != null) {
+      loops = { l1: activeStatus.reader1Working === "1", l2: activeStatus.reader2Working === "1" };
+    }
+  } else if (!isDesktop && activeConnector) {
+    isConnected = activeConnector.hardware.connected;
+    readCount = activeConnector.hardware.readCount;
+    try {
+      if (activeConnector.hardware.detail) {
+        const detail = JSON.parse(activeConnector.hardware.detail);
+        if (detail.lastHeartbeatAt) heartbeat = detail.lastHeartbeatAt;
+        if (detail.batteryPercent != null) battery = detail.batteryPercent;
+        if (detail.machineId) machineId = detail.machineId;
+        if (detail.error) {
+          hasError = true;
+          errorMsg = detail.error;
+        }
+        if (detail.reader1Working != null) {
+          loops = { l1: detail.reader1Working === "1", l2: detail.reader2Working === "1" };
+        }
+      }
+    } catch {}
+  }
+
+  const testPassed = testMode && initialReadCount != null && readCount > initialReadCount;
+
+  return (
+    <div className="space-y-8 mt-6">
+      <div className="rounded-xl border-2 border-primary/20 bg-card overflow-hidden">
+        <div className="px-5 py-4 bg-primary/5 border-b border-primary/10 flex items-center gap-3">
+          <Activity className="text-primary shrink-0" size={24} />
+          <div>
+            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">Feibot F2000 Setup</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Guided pre-flight checklist for active transponder timing.</p>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-8">
+          {/* Step 1: Network & Address */}
+          <div className="flex gap-4">
+            <StepBadge n={1} />
+            <div className="space-y-3 min-w-0 flex-1">
+              <div>
+                <p className="font-semibold text-sm">Network & Address</p>
+                <p className="text-xs text-muted-foreground">
+                  Connect this computer and the F2000 to the same network router (wired or wireless).
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 max-w-md">
+                <Input
+                  value={address}
+                  onChange={e => handleAddressChange(e.target.value)}
+                  placeholder="e.g. 192.168.1.50 or 192.168.1.50:3333"
+                  className="font-mono bg-background"
+                  disabled={connecting || isConnected || !isDesktop}
+                />
+                {isDesktop && (
+                  isConnected ? (
+                    <Button variant="outline" onClick={disconnect}>Disconnect</Button>
+                  ) : (
+                    <Button onClick={connect} disabled={connecting || !address.trim()}>
+                      {connecting ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+                      Connect
+                    </Button>
+                  )
+                )}
+              </div>
+
+              {!isDesktop && (
+                <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                  You are using the cloud platform. On the track laptop, open <strong className="text-foreground">RM Connect</strong>, select the Active Transponder reader, and enter this IP to bridge the connection.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Step 2: Connection Status */}
+          <div className="flex gap-4">
+            <StepBadge n={2} />
+            <div className="space-y-3 min-w-0 flex-1">
+              <div>
+                <p className="font-semibold text-sm">TCP Connection & Machine Identity</p>
+                <p className="text-xs text-muted-foreground">
+                  The software connects to port 3333 and listens for heartbeats and loop status.
+                </p>
+              </div>
+
+              <div className={`rounded-xl border-2 p-4 transition-all ${
+                isConnected && !hasError ? "border-green-500/40 bg-green-500/5" :
+                hasError ? "border-red-500/40 bg-red-500/5" :
+                connecting ? "border-amber-500/40 bg-amber-500/5" :
+                "border-border bg-muted/20"
+              }`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      {isConnected && !hasError ? <CheckCircle2 size={16} className="text-green-600" /> :
+                       hasError ? <XCircle size={16} className="text-red-600" /> :
+                       connecting ? <Loader2 size={16} className="text-amber-600 animate-spin" /> :
+                       <Circle size={16} className="text-muted-foreground" />}
+
+                      <p className={`font-semibold text-sm ${
+                        isConnected && !hasError ? "text-green-700 dark:text-green-400" :
+                        hasError ? "text-red-700 dark:text-red-400" :
+                        connecting ? "text-amber-700 dark:text-amber-400" :
+                        "text-muted-foreground"
+                      }`}>
+                        {isConnected && !hasError ? "Connected & Active" :
+                         hasError ? "Connection Error" :
+                         connecting ? "Connecting..." :
+                         "Disconnected"}
+                      </p>
+                    </div>
+                    {errorMsg && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                        {errorMsg} — Verify the IP, port 3333, and ensure no other software is connected.
+                      </p>
+                    )}
+                  </div>
+
+                  {isConnected && (
+                    <div className="text-right text-xs space-y-1 opacity-80">
+                      {machineId && <p>ID: <strong className="font-mono">{machineId}</strong></p>}
+                      {heartbeat && <p>Last beat: {new Date(heartbeat).toLocaleTimeString()}</p>}
+                    </div>
+                  )}
+                </div>
+
+                {isConnected && (
+                  <div className="mt-4 pt-4 border-t flex gap-6 text-xs">
+                    <div>
+                      <p className="text-muted-foreground mb-1">Power / Battery</p>
+                      <p className="font-medium flex items-center gap-1.5">
+                        <Battery size={14} className={battery != null && battery < 20 ? "text-red-500" : "text-green-500"} />
+                        {battery != null ? `${battery}%` : "AC Power"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-1">Active Loops</p>
+                      <div className="flex items-center gap-3 font-medium">
+                        <span className={loops?.l1 ? "text-green-600" : "text-red-500 flex items-center gap-1"}>
+                          {!loops?.l1 && <AlertCircle size={12} />} L1 (Start)
+                        </span>
+                        <span className={loops?.l2 ? "text-green-600" : "text-red-500 flex items-center gap-1"}>
+                          {!loops?.l2 && <AlertCircle size={12} />} L2 (Finish)
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-1">Read Count</p>
+                      <p className="font-medium font-mono">{readCount}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Step 3: Device Settings */}
+          <div className="flex gap-4">
+            <StepBadge n={3} />
+            <div className="space-y-3 min-w-0 flex-1">
+              <div>
+                <p className="font-semibold text-sm">Device Settings</p>
+                <p className="text-xs text-muted-foreground">
+                  Configure hardware properties. Starting a moto will command both enabled loops open and confirm readiness.
+                </p>
+              </div>
+
+              {!isDesktop ? (
+                <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                  Open <strong className="text-foreground">RM Connect</strong> on the track laptop to configure active channel, transmit power, and loop status. Device settings cannot be configured remotely via the browser.
+                  {isConnected && (
+                    <div className="mt-2 text-[11px] space-y-1">
+                      <p>Config Applied: {isConfigApplied ? "Yes" : "No"}</p>
+                      <p>Loops Ready: {isLoopsReady ? "Yes" : "No"}</p>
+                      <p>Race Ready: {isReady ? "Yes" : "No"}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-xl border p-4 space-y-4 bg-muted/20">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">Active Channel (0-5)</label>
+                      <Input
+                        type="number"
+                        min={0} max={5}
+                        value={activeChannel}
+                        onChange={e => setActiveChannel(parseInt(e.target.value) || 0)}
+                        disabled={!isConnected}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">Active Power (0-100)</label>
+                      <Input
+                        type="number"
+                        min={0} max={100}
+                        value={activePower}
+                        onChange={e => setActivePower(parseInt(e.target.value) || 0)}
+                        disabled={!isConnected}
+                        className="h-8"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Enable Loops</p>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="checkbox" checked={loop1Enabled} onChange={e => setLoop1Enabled(e.target.checked)} disabled={!isConnected} className="rounded border-input text-primary focus:ring-primary h-4 w-4" />
+                        Loop 1 (Start)
+                      </label>
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="checkbox" checked={loop2Enabled} onChange={e => setLoop2Enabled(e.target.checked)} disabled={!isConnected} className="rounded border-input text-primary focus:ring-primary h-4 w-4" />
+                        Loop 2 (Finish)
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2 border-t border-border/50">
+                    <Button onClick={applyConfig} disabled={!isConnected || applyingConfig} size="sm" className="h-8 gap-1.5">
+                      {applyingConfig ? <Loader2 size={12} className="animate-spin" /> : <Settings size={12} />}
+                      Apply Settings
+                    </Button>
+                    <Button onClick={syncClock} disabled={!isConnected || syncingClock} size="sm" variant="outline" className="h-8 gap-1.5">
+                      {syncingClock ? <Loader2 size={12} className="animate-spin" /> : <Timer size={12} />}
+                      Sync Device Clock
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+
+          {/* Step 4: End-to-End Test */}
+          <div className="flex gap-4">
+            <StepBadge n={4} />
+            <div className="space-y-3 min-w-0 flex-1">
+              <div>
+                <p className="font-semibold text-sm">Real Crossing Test</p>
+                <p className="text-xs text-muted-foreground">
+                  Put the system into test mode and walk a PowerTag across the loop.
+                  The test succeeds when the read count goes up.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <Button
+                  onClick={toggleTest}
+                  disabled={!isConnected}
+                  variant={testMode ? (testPassed ? "default" : "secondary") : "outline"}
+                  className={`font-heading uppercase tracking-wider ${
+                    testPassed ? "bg-green-600 hover:bg-green-700 text-white" :
+                    testMode ? "bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 dark:bg-amber-900/30 dark:text-amber-100" : ""
+                  }`}
+                >
+                  {testPassed ? <CheckCircle2 size={16} className="mr-2" /> : testMode ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Play size={16} className="mr-2" />}
+                  {testPassed ? "Test Successful" : testMode ? "Waiting for crossing..." : "Start System Test"}
+                </Button>
+
+                {testMode && !testPassed && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400 animate-pulse font-medium">
+                    Walk a tag over the loop now...
+                  </p>
+                )}
+                {testPassed && (
+                  <p className="text-xs text-green-700 dark:text-green-400 font-medium">
+                    Crossing received! End-to-end connection verified.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export default function ReaderSetup() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -122,9 +575,9 @@ export default function ReaderSetup() {
     } as any,
   });
   const [connectorDl, setConnectorDl] = useState({
-    macArm:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.5/RM-Connect-arm64.dmg",
-    macX64:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.5/RM-Connect-x64.dmg",
-    windows: "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.5/RM-Connect-Setup.exe",
+    macArm:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.7/RM-Connect-arm64.dmg",
+    macX64:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.7/RM-Connect-x64.dmg",
+    windows: "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.7/RM-Connect-Setup.exe",
   });
   useEffect(() => {
     fetch("/api/config/connector-release")
@@ -138,7 +591,7 @@ export default function ReaderSetup() {
   const deleteReaderMutation = useDeleteReader();
   const updateReaderMutation = useUpdateReader();
   const [newReaderName, setNewReaderName] = useState("");
-  const [newReaderType, setNewReaderType] = useState<"rfid" | "mylaps">("rfid");
+  const [newReaderType, setNewReaderType] = useState<"rfid" | "active_transponder">("rfid");
   const [newReaderAddress, setNewReaderAddress] = useState("");
   const [showAddReader, setShowAddReader] = useState(false);
 
@@ -283,7 +736,7 @@ export default function ReaderSetup() {
     }
   }
 
-  const [tech,       setTech]       = useState<"rfid" | "mylaps">("rfid");
+  const [tech,       setTech]       = useState<"rfid" | "active_transponder">("rfid");
   const [readerType, setReaderType] = useState<ReaderType>("impinj-r700");
   const [readerIp,   setReaderIp]   = useState("");
   const [readerMac,  setReaderMac]  = useState("");
@@ -291,58 +744,39 @@ export default function ReaderSetup() {
   const [copiedUrl,       setCopiedUrl]       = useState(false);
   const [copiedManualUrl, setCopiedManualUrl] = useState(false);
 
-  // Bridge detection — only needed for MyLaps browser mode
-  const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
+  // The packaged desktop app connects directly to the F2000 for offline timing.
+  const [activeStatus, setActiveStatus] = useState<ActiveTransponderStatus | null>(null);
+  const [activeConnecting, setActiveConnecting] = useState(false);
+  const [activeConnectError, setActiveConnectError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (tech !== "mylaps" || isDesktop) return;
-    setBridgeStatus("checking");
-    const check = async () => {
-      try {
-        const res = await fetch(`${BRIDGE_URL}/api-status`);
-        setBridgeStatus(res.ok ? "running" : "offline");
-      } catch {
-        setBridgeStatus("offline");
-      }
-    };
-    check();
-    const id = setInterval(check, 5000);
-    return () => clearInterval(id);
-  }, [tech, isDesktop]);
-
-  // MyLaps desktop TCP connection
-  const [myLapsStatus,       setMyLapsStatus]       = useState<MyLapsStatus | null>(null);
-  const [myLapsConnecting,   setMyLapsConnecting]   = useState(false);
-  const [myLapsConnectError, setMyLapsConnectError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isDesktop || tech !== "mylaps") return;
-    const api = (window as any).electronAPI;
-    if (!api?.mylaps) return;
-    api.mylaps.getStatus().then(setMyLapsStatus).catch(() => {});
-    const unsub = api.mylaps.onStatus(setMyLapsStatus);
-    return unsub;
+    if (!isDesktop || tech !== "active_transponder") return;
+    const api = (window as any).electronAPI?.activeTransponder;
+    if (!api) return;
+    api.getStatus().then(setActiveStatus).catch(() => {});
+    return api.onStatus(setActiveStatus);
   }, [isDesktop, tech]);
 
-  const handleMyLapsConnect = async () => {
-    if (!readerIp.trim()) return;
-    const api = (window as any).electronAPI;
-    setMyLapsConnecting(true);
-    setMyLapsConnectError(null);
+  async function connectActiveTransponder() {
+    const address = readerIp.trim();
+    if (!address) return;
+    setActiveConnecting(true);
+    setActiveConnectError(null);
     try {
-      await api.mylaps.connect(readerIp.trim());
-    } catch (err: unknown) {
-      setMyLapsConnectError(err instanceof Error ? err.message : "Could not connect to decoder.");
+      await (window as any).electronAPI.activeTransponder.connect(address);
+      setActiveStatus(await (window as any).electronAPI.activeTransponder.getStatus());
+    } catch (error) {
+      setActiveConnectError(error instanceof Error ? error.message : "Could not connect to the Feibot F2000.");
     } finally {
-      setMyLapsConnecting(false);
+      setActiveConnecting(false);
     }
-  };
+  }
 
-  const handleMyLapsDisconnect = async () => {
-    const api = (window as any).electronAPI;
-    await api.mylaps.disconnect().catch(() => {});
-    setMyLapsConnectError(null);
-  };
+  async function disconnectActiveTransponder() {
+    await (window as any).electronAPI.activeTransponder.disconnect();
+    setActiveStatus(await (window as any).electronAPI.activeTransponder.getStatus());
+    setActiveConnectError(null);
+  }
 
   // Test crossing
   const [os,          setOs]          = useState<"windows" | "mac">("windows");
@@ -355,7 +789,7 @@ export default function ReaderSetup() {
     setTestLoading(true);
     setTestResult(null);
     try {
-      const body = tech === "mylaps"
+      const body = tech === "active_transponder"
         ? { transponder: testValue, passingTime: new Date().toISOString() }
         : { rfidNumber: testValue };
       const res = await fetch(pingEndpoint, {
@@ -381,72 +815,8 @@ export default function ReaderSetup() {
     }
   };
 
-  const mylapsBridgeCmd = `python rfid_bridge.py --mylaps ${readerIp || "<decoder-ip>"} --club-id ${user?.clubId ?? "YOUR_CLUB_ID"} --api-url ${BASE_URL}`;
-
   const copyUrl       = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedUrl(true);       setTimeout(() => setCopiedUrl(false),       2000); };
   const copyManualUrl = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedManualUrl(true); setTimeout(() => setCopiedManualUrl(false), 2000); };
-
-  const downloadLauncher = (platform: "windows" | "mac") => {
-    const cmd  = mylapsBridgeCmd;
-    const cmd3 = cmd.replace(/^python /, "python3 ");
-    const bridgeUrl = `${BASE_URL}/rfid_bridge.py`;
-    let content: string;
-    let filename: string;
-    if (platform === "windows") {
-      content = [
-        "@echo off",
-        "title RM Tracker Setup Tool",
-        "echo ================================================",
-        "echo   RM Tracker — MyLaps Bridge",
-        "echo ================================================",
-        "echo.",
-        "echo Keep this window open while racing.",
-        "echo.",
-        "set SCRIPT_DIR=%~dp0",
-        'cd /d "%SCRIPT_DIR%"',
-        "echo Checking for updates...",
-        `curl -s -L -o rfid_bridge_update.py "${bridgeUrl}" && move /y rfid_bridge_update.py rfid_bridge.py`,
-        "echo.",
-        cmd,
-        "echo.",
-        "echo Bridge stopped. Press any key to close.",
-        "pause > nul",
-      ].join("\r\n");
-      filename = "start-mylaps.bat";
-    } else {
-      content = [
-        "#!/bin/bash",
-        'cd "$(dirname "$0")"',
-        "echo '================================================'",
-        "echo '  RM Tracker — MyLaps Bridge'",
-        "echo '================================================'",
-        "echo ''",
-        "echo 'Keep this window open while racing.'",
-        "echo ''",
-        "echo 'Checking for updates...'",
-        `curl -s -L -o rfid_bridge_update.py "${bridgeUrl}" && mv rfid_bridge_update.py rfid_bridge.py`,
-        "echo ''",
-        cmd3,
-        "echo ''",
-        "echo 'Bridge stopped.'",
-      ].join("\n");
-      filename = "start-mylaps.command";
-    }
-    const blob = new Blob([content], { type: "text/plain" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const bridgeDot =
-    bridgeStatus === "checking" ? <RefreshCw size={12} className="animate-spin text-muted-foreground" /> :
-    bridgeStatus === "running"  ? <Circle size={10} className="fill-green-500 text-green-500" /> :
-                                  <Circle size={10} className="fill-amber-400 text-amber-400" />;
 
   const manualReaderUrl =
     readerType === "impinj-r700"  ? `https://${readerIp || "READER_IP"}` :
@@ -624,19 +994,19 @@ export default function ReaderSetup() {
                 className="h-9 flex-1 min-w-36"
                 onKeyDown={e => e.key === "Enter" && handleAddReader()}
               />
-              <Select value={newReaderType} onValueChange={(v: "rfid" | "mylaps") => setNewReaderType(v)}>
+              <Select value={newReaderType} onValueChange={(v: "rfid" | "active_transponder") => setNewReaderType(v)}>
                 <SelectTrigger className="h-9 w-28">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="rfid">RFID</SelectItem>
-                  <SelectItem value="mylaps">MyLaps</SelectItem>
+                  <SelectItem value="active_transponder">Active Transponder Timing</SelectItem>
                 </SelectContent>
               </Select>
               <Input
                 value={newReaderAddress}
                 onChange={e => setNewReaderAddress(e.target.value)}
-                placeholder={newReaderType === "mylaps" ? "IP address (e.g. 192.168.1.50)" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
+                placeholder={newReaderType === "active_transponder" ? "Feibot F2000 IP address (e.g. 192.168.1.50)" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
                 className="h-9 flex-1 min-w-48 font-mono text-xs"
                 onKeyDown={e => e.key === "Enter" && handleAddReader()}
               />
@@ -690,7 +1060,7 @@ export default function ReaderSetup() {
                                 value={editAddress}
                                 onChange={e => setEditAddress(e.target.value)}
                                 className="h-8 flex-1 font-mono text-xs"
-                                placeholder={reader.type === "mylaps" ? "IP address" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
+                                placeholder={reader.type === "active_transponder" ? "Feibot F2000 IP address" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
                                 onKeyDown={e => {
                                   if (e.key === "Enter") handleSaveReader(reader.id);
                                   if (e.key === "Escape") setEditingId(null);
@@ -720,7 +1090,7 @@ export default function ReaderSetup() {
                               )}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                              <span className="text-xs text-muted-foreground uppercase">{reader.type === "mylaps" ? "MyLaps / AMB" : "RFID"}</span>
+                              <span className="text-xs text-muted-foreground uppercase">{reader.type === "active_transponder" ? "Active Transponder Timing" : "RFID"}</span>
                               {reader.hardwareAddress ? (
                                 <span className="text-xs font-mono text-muted-foreground bg-muted rounded px-1.5 py-0.5">{reader.hardwareAddress}</span>
                               ) : (
@@ -775,7 +1145,7 @@ export default function ReaderSetup() {
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               A tiny app that runs in your laptop's system tray at the track. It talks to your Impinj R700 or
-              MyLaps decoder directly and streams crossings to the cloud — no hardware configuration needed.
+              Feibot F2000 Active Transponder Timing hardware directly and streams live crossings to the cloud.
               Readers start and stop automatically when you start or complete a moto here in the web app.
             </p>
           </div>
@@ -789,7 +1159,7 @@ export default function ReaderSetup() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{c.readerName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "zebra" ? "Zebra reader" : c.hardware?.kind === "generic" ? "LLRP reader" : c.hardware?.kind === "mylaps" ? "MyLaps decoder" : "Hardware"}
+                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "zebra" ? "Zebra reader" : c.hardware?.kind === "generic" ? "LLRP reader" : c.hardware?.kind === "active_transponder" ? "Feibot F2000" : "Hardware"}
                     {" — "}
                     {c.hardware?.connected ? "connected" : (c.hardware?.detail || "not connected")}
                     {c.hardware?.readCount > 0 && ` · ${c.hardware.readCount} reads`}
@@ -828,7 +1198,7 @@ export default function ReaderSetup() {
 
         <div className="space-y-2 text-sm">
           <div className="flex gap-2"><MiniStep n={1} /><p>Download and install RM Connect on the laptop you bring to the track.</p></div>
-          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, choose your hardware (Impinj R700, Zebra FX7500/FX9600, other LLRP reader, or MyLaps), and enter its address (Impinj: last 6 of the MAC on the label · Zebra/other: IP address · MyLaps: decoder IP).</p></div>
+          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, choose your hardware (Impinj R700, Zebra FX7500/FX9600, other LLRP reader, or Feibot F2000), and enter its address (Impinj: last 6 of the MAC on the label · Zebra/other: IP address · Feibot: IP address).</p></div>
           <div className="flex gap-2"><MiniStep n={3} /><p>That's it — leave it running in the tray. When you press <strong>Start Moto</strong> here, the reader starts reading automatically.</p></div>
         </div>
 
@@ -931,20 +1301,20 @@ export default function ReaderSetup() {
             </div>
           </button>
           <button
-            onClick={() => { setTech("mylaps"); setTestResult(null); }}
-            className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "mylaps" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+            onClick={() => { setTech("active_transponder"); setTestResult(null); }}
+            className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "active_transponder" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
           >
-            <Timer size={22} className={tech === "mylaps" ? "text-primary" : "text-muted-foreground"} />
+            <Timer size={22} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
             <div>
-              <p className="font-semibold text-sm">MyLaps / AMB</p>
-              <p className="text-xs text-muted-foreground">Active transponders on riders</p>
+              <p className="font-semibold text-sm">Active Transponder Timing</p>
+              <p className="text-xs text-muted-foreground">Feibot F2000 active transponders</p>
             </div>
           </button>
         </div>
       </div>
 
-      {/* OS picker — only needed for MyLaps browser bridge download */}
-      {tech === "mylaps" && !isDesktop && (
+      {/* Active Transponder Timing is configured through RM Connect; no bridge or desktop setup is required. */}
+      {false && (
         <div className="flex items-center gap-2 text-sm">
           <span className="font-medium text-muted-foreground">My laptop runs:</span>
           <button
@@ -962,7 +1332,7 @@ export default function ReaderSetup() {
       <div className="border rounded-xl bg-card overflow-hidden divide-y">
         <div className="px-5 py-3 bg-muted/30 border-b">
           <p className="font-heading font-bold uppercase tracking-wider text-sm">
-            {tech === "rfid" ? "RFID Setup — 3 Steps" : "MyLaps / AMB Setup — 3 Steps"}
+            {tech === "rfid" ? "RFID Setup — 3 Steps" : "Active Transponder Timing Setup — 3 Steps"}
           </p>
         </div>
 
@@ -1073,162 +1443,17 @@ export default function ReaderSetup() {
               </div>
             </div>
           </>
-        ) : (
-          <>
-            {/* MyLaps Step 1 */}
-            <div className="flex gap-4 p-5">
-              <StepBadge n={1} />
-              <div className="space-y-2 min-w-0">
-                <p className="font-semibold">Link transponders to riders</p>
-                <p className="text-sm text-muted-foreground">
-                  Go to <strong className="text-foreground">Riders</strong> in the sidebar and open each rider's profile. Enter the number printed on or programmed into their MyLaps transponder.
-                </p>
-                <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
-                  <strong>Good to know:</strong> Unknown transponders are still logged — you can link them after the race and all crossings update automatically.
-                </p>
-              </div>
-            </div>
-
-            {/* MyLaps Step 2 */}
-            <div className="flex gap-4 p-5">
-              <StepBadge n={2} />
-              <div className="space-y-3 min-w-0 w-full">
-
-                {isDesktop ? (
-                  <>
-                    <div>
-                      <p className="font-semibold">Connect to your decoder</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Enter your decoder's IP address and click Connect. The app talks to it directly — no scripts or extra software needed.
-                      </p>
-                    </div>
-
-                    <div className="flex gap-2 max-w-sm">
-                      <Input
-                        value={readerIp}
-                        onChange={e => { setReaderIp(e.target.value); setMyLapsConnectError(null); }}
-                        placeholder="e.g. 192.168.1.50"
-                        className="font-mono h-9 text-sm"
-                        disabled={myLapsStatus?.connected}
-                        onKeyDown={e => { if (e.key === "Enter" && !myLapsStatus?.connected) handleMyLapsConnect(); }}
-                      />
-                      <Button
-                        onClick={myLapsStatus?.connected ? handleMyLapsDisconnect : handleMyLapsConnect}
-                        disabled={myLapsConnecting || (!myLapsStatus?.connected && !readerIp.trim())}
-                        variant={myLapsStatus?.connected ? "outline" : "default"}
-                        className="h-9 px-4 shrink-0 gap-1.5"
-                      >
-                        {myLapsConnecting && <RefreshCw size={13} className="animate-spin" />}
-                        {myLapsConnecting ? "Connecting…" : myLapsStatus?.connected ? "Disconnect" : "Connect"}
-                      </Button>
-                    </div>
-
-                    {myLapsStatus?.connected && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Circle size={10} className="fill-green-500 text-green-500 shrink-0" />
-                        <span className="text-green-700 dark:text-green-400 font-medium">
-                          Connected to {myLapsStatus.decoderIp}
-                        </span>
-                        {(myLapsStatus.passingCount ?? 0) > 0 && (
-                          <span className="text-muted-foreground">
-                            — {myLapsStatus.passingCount} passing{myLapsStatus.passingCount !== 1 ? "s" : ""}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {(myLapsConnectError || (myLapsStatus?.error && !myLapsStatus.connected)) && (
-                      <div className="flex items-start gap-2 text-sm text-destructive">
-                        <XCircle size={14} className="shrink-0 mt-0.5" />
-                        <span>{myLapsConnectError ?? myLapsStatus?.error}</span>
-                      </div>
-                    )}
-
-                    <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
-                      <strong>Compatible hardware:</strong> AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX, MyLaps X2, P3 Flex — any decoder supported by AMBrc 4.x/5.x. The decoder must be on the same local network as this computer.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-semibold">Run the bridge script with your decoder's IP</p>
-                    <p className="text-sm text-muted-foreground">
-                      The bridge connects directly to your decoder over the local network — no AMBrc configuration needed.
-                      Download the script, enter your decoder's IP, and run the command shown below.
-                    </p>
-                    <div className="border rounded-lg bg-muted/20 p-4 space-y-3">
-                      <div className="space-y-3">
-                        <div className="border rounded-lg divide-y overflow-hidden">
-                          <div className="flex gap-3 px-3 py-2.5">
-                            <MiniStep n={1} />
-                            <div className="space-y-1.5 min-w-0">
-                              <p className="text-xs font-medium">Install Python — one time only</p>
-                              <a href={os === "windows" ? "https://www.python.org/ftp/python/3.13.3/python-3.13.3-amd64.exe" : "https://www.python.org/ftp/python/3.13.3/python-3.13.3-macos11.pkg"}
-                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                                <Download size={12} /> {os === "windows" ? "Python for Windows" : "Python for Mac"}
-                              </a>
-                              <p className="text-xs text-muted-foreground">
-                                Click through the installer.{os === "windows" && <> Check <strong>"Add Python to PATH"</strong> if it appears.</>}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex gap-3 px-3 py-2.5">
-                            <MiniStep n={2} />
-                            <div className="space-y-2 min-w-0 w-full">
-                              <p className="text-xs font-medium">Enter your decoder IP, then download the launcher</p>
-                              <div className="space-y-1">
-                                <label className="text-xs text-muted-foreground">
-                                  Decoder IP address <span className="opacity-60">(printed on the decoder or shown in AMBrc)</span>
-                                </label>
-                                <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
-                                  placeholder="e.g. 192.168.1.50" className="font-mono h-8 text-xs max-w-xs" />
-                              </div>
-                              <button onClick={() => downloadLauncher(os)}
-                                disabled={!readerIp.trim()}
-                                className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background transition-colors ${readerIp.trim() ? "hover:bg-muted" : "opacity-40 cursor-not-allowed"}`}>
-                                <Download size={12} /> {os === "windows" ? "start-mylaps.bat" : "start-mylaps.command"}
-                              </button>
-                              {!readerIp.trim() && (
-                                <p className="text-xs text-amber-600 dark:text-amber-400">Enter the decoder IP above to enable the download.</p>
-                              )}
-                              <p className="text-xs text-muted-foreground">Save it anywhere and double-click it — it downloads the latest bridge code automatically each time it runs. A terminal opens and the bridge starts with your decoder IP already set.</p>
-                              {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click → Open the first time to allow it past Gatekeeper.</p>}
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground">Keep the window open while racing — closing it disconnects from the decoder.</p>
-                      </div>
-                      <div className="flex items-center gap-2 pt-2 border-t text-sm">
-                        {bridgeDot}
-                        <span className={bridgeStatus === "running" ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
-                          {bridgeStatus === "checking" && "Checking for bridge…"}
-                          {bridgeStatus === "running"  && "Bridge connected — decoder linked"}
-                          {bridgeStatus === "offline"  && `Waiting for bridge — open Downloads and double-click ${os === "windows" ? "start-mylaps.bat" : "start-mylaps.command"}`}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
-                      <strong>Compatible hardware:</strong> AMB TranX 160/260, AMB RC4, AMB RC4-WA, AMB MX, MyLaps X2, P3 Flex — any decoder supported by AMBrc 4.x/5.x.
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* MyLaps Step 3 */}
-            <div className="flex gap-4 p-5">
-              <StepBadge n={3} />
-              <div className="space-y-2 min-w-0">
-                <p className="font-semibold">Test before race day</p>
-                <p className="text-sm text-muted-foreground">
-                  Use the test tool below — enter a transponder number and confirm the server receives it. No moto needs to be running.
-                </p>
-              </div>
-            </div>
-          </>
-        )}
+        ) : tech === "active_transponder" ? (
+          <FeibotGuidedSetup
+            isDesktop={isDesktop}
+            connectorStatuses={connectorStatuses}
+            readers={readers}
+          />
+        ) : null}
       </div>
 
       {/* Test Connection */}
+      {tech === "rfid" && (
       <div className="border rounded-xl bg-card overflow-hidden">
         <div className="px-5 py-3 bg-muted/30 border-b">
           <p className="font-heading font-bold uppercase tracking-wider text-sm">Test Your Connection</p>
@@ -1240,10 +1465,10 @@ export default function ReaderSetup() {
           <div className="flex gap-3 items-end max-w-sm">
             <div className="flex-1 space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">
-                {tech === "mylaps" ? "Transponder number" : "Tag number (hex)"}
+                "Tag number (hex)"
               </label>
               <Input value={testValue} onChange={e => setTestValue(e.target.value)}
-                placeholder={tech === "mylaps" ? "e.g. 12345" : "e.g. 1A2B3C4D"}
+                placeholder="e.g. 1A2B3C4D"
                 className="font-mono h-10"
                 onKeyDown={e => { if (e.key === "Enter") sendTest(); }} />
             </div>
@@ -1269,6 +1494,8 @@ export default function ReaderSetup() {
           )}
         </div>
       </div>
+
+      )}
 
       {/* Antenna RF Settings — RFID only */}
       {tech === "rfid" && (

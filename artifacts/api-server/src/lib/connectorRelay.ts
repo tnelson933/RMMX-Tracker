@@ -27,11 +27,11 @@ import { logger } from "./logger";
 export interface ConnectorStatus {
   readerId: number;
   readerName: string;
-  readerType: string;
+    readerType: "rfid" | "active_transponder";
   connectedAt: string;
   /** Last hardware status reported by the connector app */
   hardware: {
-    kind: "impinj" | "zebra" | "generic" | "mylaps" | null;
+     kind: "impinj" | "zebra" | "generic" | "active_transponder" | null;
     connected: boolean;
     detail: string | null;
     lastReadAt: string | null;
@@ -132,7 +132,7 @@ export function attachConnectorWebSocket(httpServer: Server): void {
             status: {
               readerId: reader.id,
               readerName: reader.name,
-              readerType: reader.type,
+               readerType: reader.type === "mylaps" ? "active_transponder" : reader.type as "rfid" | "active_transponder",
               connectedAt: new Date().toISOString(),
               hardware: {
                 kind: null,
@@ -228,7 +228,9 @@ export function attachConnectorWebSocket(httpServer: Server): void {
             }
             if (msg?.type === "status") {
               conn.status.hardware = {
-                kind: ["impinj", "zebra", "generic", "mylaps"].includes(msg.hardware) ? msg.hardware : null,
+                 kind: msg.hardware === "mylaps" || msg.hardware === "active_transponder"
+                   ? "active_transponder"
+                   : ["impinj", "zebra", "generic"].includes(msg.hardware) ? msg.hardware : null,
                 connected: !!msg.connected,
                 detail: typeof msg.detail === "string" ? msg.detail.slice(0, 200) : null,
                 lastReadAt: typeof msg.lastReadAt === "string" ? msg.lastReadAt.slice(0, 40) : conn.status.hardware.lastReadAt,

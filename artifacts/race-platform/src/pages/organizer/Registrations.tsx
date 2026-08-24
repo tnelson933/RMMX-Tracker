@@ -26,7 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 
-// MyLaps transponder numbers are purely numeric, 1–9 digits.
+// Active transponder numbers are purely numeric, 1–9 digits.
 // Anything else (letters, dashes, spaces, >9 digits) is a format error.
 function isInvalidTransponder(val: string | null | undefined): boolean {
   if (!val || !val.trim()) return false;
@@ -272,10 +272,10 @@ export default function Registrations() {
     }
   };
 
-  const isMyLaps = (event as any)?.timingTechnology === "mylaps";
+  const isActiveTransponder = (event as any)?.timingTechnology === "active_transponder";
   const transponderRentalEnabled = !!(event as any)?.transponderRentalEnabled;
   const transponderRentalFee: number | null = (event as any)?.transponderRentalFee ?? null;
-  const rfidStickerFee: number | null = !isMyLaps ? ((event as any)?.rfidStickerFee ?? null) : null;
+  const rfidStickerFee: number | null = !isActiveTransponder ? ((event as any)?.rfidStickerFee ?? null) : null;
   const eventPurchaseOptions = ((event as any)?.purchaseOptions ?? []) as Array<{ id: string; name: string; amount: number }>;
 
   useEffect(() => {
@@ -423,10 +423,10 @@ export default function Registrations() {
 
   // Float registrations with invalid transponder/RFID numbers to the top.
   const sortedRegs = [...filteredRegs].sort((a, b) => {
-    const aInvalid = isMyLaps
+    const aInvalid = isActiveTransponder
       ? isInvalidTransponder((a as any).myLapsTransponderNumber)
       : isInvalidRfid((a as any).rfidNumber);
-    const bInvalid = isMyLaps
+    const bInvalid = isActiveTransponder
       ? isInvalidTransponder((b as any).myLapsTransponderNumber)
       : isInvalidRfid((b as any).rfidNumber);
     if (aInvalid && !bInvalid) return -1;
@@ -436,12 +436,12 @@ export default function Registrations() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreate = async (data: OnSiteRegForm) => {
-    if (isMyLaps) {
+    if (isActiveTransponder) {
       const hasNumber = !!data.myLapsTransponderNumber?.trim();
       const hasRental = !!data.rentTransponder;
       if (!hasNumber && !hasRental) {
         form.setError("myLapsTransponderNumber", {
-          message: "Enter the rider's MyLaps transponder number, or select a rental.",
+          message: "Enter the rider's active transponder number, or select a rental.",
         });
         return;
       }
@@ -722,10 +722,10 @@ export default function Registrations() {
               )} />
             </div>
 
-            {/* ── MyLaps transponder (conditional) ── */}
-            {isMyLaps && (
+            {/* ── Active transponder (conditional) ── */}
+            {isActiveTransponder && (
               <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/[0.03] p-4">
-                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">MyLaps Transponder</h3>
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Active Transponder</h3>
                 <FormField control={form.control} name="myLapsTransponderNumber" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Transponder Number</FormLabel>
@@ -740,7 +740,7 @@ export default function Registrations() {
                         }}
                       />
                     </FormControl>
-                    <p className="text-xs text-muted-foreground">Number printed on the rider's personal MyLaps transponder.</p>
+                    <p className="text-xs text-muted-foreground">Number printed on the rider's personal active transponder.</p>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -769,7 +769,7 @@ export default function Registrations() {
                           </FormControl>
                           <div className="space-y-0.5 leading-none">
                             <label htmlFor="rent-transponder-onsite" className="text-sm font-semibold cursor-pointer">
-                              Rent a MyLaps transponder — <span className="text-primary">${Number(transponderRentalFee).toFixed(2)}</span>
+                              Rent an active transponder — <span className="text-primary">${Number(transponderRentalFee).toFixed(2)}</span>
                             </label>
                             <p className="text-xs text-muted-foreground">Rider doesn't have their own transponder.</p>
                           </div>
@@ -782,7 +782,7 @@ export default function Registrations() {
             )}
 
             {/* ── RFID Sticker ── */}
-            {!isMyLaps && rfidStickerFee != null && (
+            {!isActiveTransponder && rfidStickerFee != null && (
               <div className="space-y-2">
                 <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">RFID Sticker</h3>
                 <FormField control={form.control} name="purchaseRfidSticker" render={({ field }) => (
@@ -1621,7 +1621,7 @@ export default function Registrations() {
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Rider</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Class</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">#</TableHead>
-                <TableHead className="font-heading font-bold uppercase tracking-wider">{isMyLaps ? "Transponder" : "RFID"}</TableHead>
+                <TableHead className="font-heading font-bold uppercase tracking-wider">{isActiveTransponder ? "Transponder" : "RFID"}</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Status</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Waiver</TableHead>
                 <TableHead className="text-right font-heading font-bold uppercase tracking-wider">Actions</TableHead>
@@ -1639,9 +1639,9 @@ export default function Registrations() {
                   const isEditing = editingBibId === reg.id;
                   const transponderVal = (reg as any).myLapsTransponderNumber as string | null;
                   const transponderIsRental = !!(reg as any).transponderRental;
-                  const hasInvalidTransponder = isMyLaps && isInvalidTransponder(transponderVal);
-                  const rfidVal = !isMyLaps ? (reg as any).rfidNumber as string | null : null;
-                  const hasInvalidRfid = !isMyLaps && isInvalidRfid(rfidVal);
+                  const hasInvalidTransponder = isActiveTransponder && isInvalidTransponder(transponderVal);
+                  const rfidVal = !isActiveTransponder ? (reg as any).rfidNumber as string | null : null;
+                  const hasInvalidRfid = !isActiveTransponder && isInvalidRfid(rfidVal);
 
                   return (
                     <TableRow key={reg.id} className={hasInvalidTransponder || hasInvalidRfid ? "bg-red-50 dark:bg-red-950/20 border-l-4 border-l-destructive" : ""}>
@@ -1759,7 +1759,7 @@ export default function Registrations() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {isMyLaps ? (
+                        {isActiveTransponder ? (
                           hasInvalidTransponder ? (
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono text-sm text-destructive">{transponderVal}</span>

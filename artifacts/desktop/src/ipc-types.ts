@@ -29,12 +29,47 @@ export interface SerialStatus {
   tagCount: number;
 }
 
-export interface MyLapsStatus {
+export interface ActiveTransponderStatus {
   connected: boolean;
-  decoderIp: string | null;
+  state:
+    | "disconnected"
+    | "connecting"
+    | "connected_idle"
+    | "testing"
+    | "race_active"
+    | "reconnecting"
+    | "error";
+  deviceIp: string | null;
+  port: number | null;
+  machineId: string | null;
   error: string | null;
+  diagnosis: string;
   lastPassingAt: string | null;
+  lastCrossingAt: string | null;
   passingCount: number;
+  lastHeartbeatAt: string | null;
+  reconnectAttempt: number;
+  reconnectCountdownMs: number | null;
+  configApplied: boolean;
+  loopsReady: boolean;
+  ready: boolean;
+  activeChannel: number;
+  activePower: number;
+  loopEnabled: [boolean, boolean];
+  reader1State: "open" | "closed" | "unknown";
+  reader2State: "open" | "closed" | "unknown";
+  batteryPercent: number | null;
+  totalTagsRead: number | null;
+  differentTagsRead: number | null;
+  reader1Working: string | null;
+  reader2Working: string | null;
+  eventId: string | null;
+}
+
+export interface ActiveTransponderConfiguration {
+  activeChannel: number;
+  activePower: number;
+  loopEnabled: [boolean, boolean];
 }
 
 export interface CloudCredentials {
@@ -52,9 +87,13 @@ export type IpcChannels = {
   "serial:connect": (portPath: string, baudRate?: number) => void;
   "serial:disconnect": () => void;
   "serial:getStatus": () => SerialStatus;
-  "mylaps:connect": (ip: string) => void;
-  "mylaps:disconnect": () => void;
-  "mylaps:getStatus": () => MyLapsStatus;
+  "active-transponder:connect": (ip?: string) => void;
+  "active-transponder:disconnect": () => void;
+  "active-transponder:getStatus": () => ActiveTransponderStatus;
+  "active-transponder:startTest": () => void;
+  "active-transponder:stopTest": () => void;
+  "active-transponder:configure": (configuration: ActiveTransponderConfiguration) => void;
+  "active-transponder:syncClock": () => void;
   "auth:getCredentials": () => CloudCredentials | null;
   "auth:setCredentials": (email: string, password: string, cloudUrl: string, clubId: string) => void;
   "auth:clearCredentials": () => void;
