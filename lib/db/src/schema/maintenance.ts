@@ -15,3 +15,15 @@ export const riderMaintenanceTable = pgTable("rider_maintenance", {
 });
 
 export type RiderMaintenance = typeof riderMaintenanceTable.$inferSelect;
+
+export const riderMaintenanceHistoryTable = pgTable("rider_maintenance_history", {
+  id: serial("id").primaryKey(),
+  riderId: integer("rider_id").notNull().references(() => ridersTable.id),
+  itemKey: text("item_key").notNull(),
+  itemName: text("item_name").notNull(),
+  servicedAt: text("serviced_at").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type RiderMaintenanceHistory = typeof riderMaintenanceHistoryTable.$inferSelect;

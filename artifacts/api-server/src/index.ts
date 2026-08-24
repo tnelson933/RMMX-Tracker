@@ -2,7 +2,6 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { attachVideoWebSocket } from "./lib/videoRelay";
-import { ensureSuperAdmin } from "./ensureSuperAdmin";
 import { normalizeEventStates } from "./normalizeStateMigration";
 
 const rawPort = process.env["PORT"];
@@ -29,6 +28,5 @@ httpServer.listen(port, (err?: Error) => {
   }
 
   logger.info({ port }, "Server listening");
-  ensureSuperAdmin();
   normalizeEventStates().catch(err => logger.error({ err }, "normalizeEventStates failed"));
 });
