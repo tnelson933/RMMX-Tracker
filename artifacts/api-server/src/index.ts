@@ -2,6 +2,7 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { attachVideoWebSocket } from "./lib/videoRelay";
+import { attachConnectorWebSocket } from "./lib/connectorRelay";
 import { normalizeEventStates } from "./normalizeStateMigration";
 
 const rawPort = process.env["PORT"];
@@ -20,6 +21,7 @@ if (Number.isNaN(port) || port <= 0) {
 
 const httpServer = http.createServer(app);
 attachVideoWebSocket(httpServer);
+attachConnectorWebSocket(httpServer);
 
 httpServer.listen(port, (err?: Error) => {
   if (err) {

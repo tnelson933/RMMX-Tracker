@@ -14,7 +14,7 @@ const RECONNECT_MAX_MS = 30_000;
 const STATUS_INTERVAL_MS = 15_000;
 
 export interface CloudCommand {
-  type: "start_moto" | "stop_moto" | "ping" | "set_llrp_config";
+  type: "start_moto" | "stop_moto" | "ping" | "set_llrp_config" | "set_active_timing_config";
   motoId?: number;
   eventId?: number;
   motoName?: string;
@@ -24,7 +24,47 @@ export interface CloudCommand {
     rfModeIndex: number;
     tagPopulation: number;
     tagTransitTime: number;
+  } | {
+    channel: number;
+    power: number;
+    loop1Enabled: boolean;
+    loop2Enabled: boolean;
   };
+  syncClock?: boolean;
+}
+
+function isValidLlrpConfig(config: unknown): boolean {
+  if (!config || typeof config !== "object") return false;
+  const value = config as Record<string, unknown>;
+  return (
+    Number.isInteger(value.transmitPowerIndex) &&
+    Number(value.transmitPowerIndex) >= 1 &&
+    Number(value.transmitPowerIndex) <= 81 &&
+    Number.isInteger(value.rfModeIndex) &&
+    Number(value.rfModeIndex) >= 0 &&
+    Number(value.rfModeIndex) <= 3 &&
+    Number.isInteger(value.tagPopulation) &&
+    Number(value.tagPopulation) >= 1 &&
+    Number(value.tagPopulation) <= 64 &&
+    Number.isInteger(value.tagTransitTime) &&
+    Number(value.tagTransitTime) >= 50 &&
+    Number(value.tagTransitTime) <= 5000
+  );
+}
+
+function isValidActiveTimingConfig(config: unknown): boolean {
+  if (!config || typeof config !== "object") return false;
+  const value = config as Record<string, unknown>;
+  return (
+    Number.isInteger(value.channel) &&
+    Number(value.channel) >= 0 &&
+    Number(value.channel) <= 5 &&
+    Number.isInteger(value.power) &&
+    Number(value.power) >= 0 &&
+    Number(value.power) <= 100 &&
+    typeof value.loop1Enabled === "boolean" &&
+    typeof value.loop2Enabled === "boolean"
+  );
 }
 
 export interface CloudStatusReport {
@@ -174,13 +214,15 @@ export class CloudLink extends EventEmitter {
     });
 
     ws.on("message", (data) => {
-      let msg: CloudCommand;
+      let msg: unknown;
       try {
         msg = JSON.parse(data.toString());
       } catch {
         return;
       }
-      if (msg?.type === "ping") {
+      if (!msg || typeof msg !== "object") return;
+      const command = msg as CloudCommand;
+      if (command.type === "ping") {
         try {
           ws.send(JSON.stringify({ type: "pong" }));
         } catch {
@@ -188,8 +230,12 @@ export class CloudLink extends EventEmitter {
         }
         return;
       }
-      if (msg?.type === "start_moto" || msg?.type === "stop_moto") {
-        this.emit("command", msg);
+      if (command.type === "start_moto" || command.type === "stop_moto") {
+        this.emit("command", command);
+      } else if (command.type === "set_llrp_config" && isValidLlrpConfig(command.config)) {
+        this.emit("command", command);
+      } else if (command.type === "set_active_timing_config" && isValidActiveTimingConfig(command.config)) {
+        this.emit("command", command);
       }
     });
 
@@ -227,6 +273,12 @@ export interface CloudReader {
   type: string;
   token: string;
   hardwareAddress?: string | null;
+  activeTimingConfig?: {
+    channel: number;
+    power: number;
+    loop1Enabled: boolean;
+    loop2Enabled: boolean;
+  } | null;
 }
 
 /** Login with organizer credentials; returns the session cookie + clubId. */

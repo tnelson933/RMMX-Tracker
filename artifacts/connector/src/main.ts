@@ -284,6 +284,28 @@ function applyFeibotSettings(): void {
   });
 }
 
+function applyWebsiteActiveTimingConfig(
+  config: { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean },
+  syncClock = false,
+): void {
+  if (!Number.isInteger(config.channel) || config.channel < 0 || config.channel > 5) {
+    throw new Error("Website sent an invalid Feibot channel.");
+  }
+  if (!Number.isInteger(config.power) || config.power < 0 || config.power > 100) {
+    throw new Error("Website sent an invalid Feibot power value.");
+  }
+  settings = {
+    ...settings,
+    feibotChannel: config.channel,
+    feibotPower: config.power,
+    feibotLoop1Enabled: !!config.loop1Enabled,
+    feibotLoop2Enabled: !!config.loop2Enabled,
+  };
+  saveSettings(settings);
+  applyFeibotSettings();
+  if (syncClock && feibot.getStatus().transportReady) feibot.syncClock();
+}
+
 async function connectHardware(): Promise<void> {
   hardwareWanted = true;
   hardwareConnecting = true;
@@ -383,9 +405,16 @@ cloud.on("command", (cmd: CloudCommand) => {
       feibot.stopReading();
     }
   } else if (cmd.type === "set_llrp_config" && cmd.config && isLlrpHardware()) {
-    llrp.applyRfConfig(cmd.config).catch(() => {
+    llrp.applyRfConfig(cmd.config as { transmitPowerIndex: number; rfModeIndex: number; tagPopulation: number; tagTransitTime: number }).catch(() => {
       // Non-fatal — config stored and will be applied on next reconnect
     });
+  } else if (cmd.type === "set_active_timing_config" && cmd.config && settings.hardware === "active_transponder") {
+    try {
+      applyWebsiteActiveTimingConfig(cmd.config as { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean }, cmd.syncClock === true);
+    } catch {
+      // Preserve the active connection and report its existing status; a valid
+      // portal save is replayed automatically on the next connector reconnect.
+    }
   }
   cloud.sendStatus();
   pushStatusToWindow();
@@ -442,7 +471,7 @@ function registerIpc(): void {
         savePassword(input.password);
         saveSessionCookie(cookie);
         const readers = await fetchReaders(cloudUrl, cookie);
-        return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type, hardwareAddress: r.hardwareAddress ?? null })) };
+        return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type, hardwareAddress: r.hardwareAddress ?? null, activeTimingConfig: r.activeTimingConfig ?? null })) };
       } catch (err: any) {
         return { ok: false, error: err?.message ?? "Login failed" };
       }
@@ -453,7 +482,7 @@ function registerIpc(): void {
     try {
       const cookie = await ensureSession();
       const readers = await fetchReaders(settings.cloudUrl, cookie);
-      return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type, hardwareAddress: r.hardwareAddress ?? null })) };
+      return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type, hardwareAddress: r.hardwareAddress ?? null, activeTimingConfig: r.activeTimingConfig ?? null })) };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? "Failed to load readers" };
     }
@@ -476,6 +505,15 @@ function registerIpc(): void {
         // single saved address locally rather than maintaining a second value.
         hardwareAddress: reader.hardwareAddress?.trim() || input.hardwareAddress.trim(),
       };
+      if (reader.type === "active_transponder" && reader.activeTimingConfig) {
+        settings = {
+          ...settings,
+          feibotChannel: reader.activeTimingConfig.channel,
+          feibotPower: reader.activeTimingConfig.power,
+          feibotLoop1Enabled: reader.activeTimingConfig.loop1Enabled,
+          feibotLoop2Enabled: reader.activeTimingConfig.loop2Enabled,
+        };
+      }
       saveSettings(settings);
 
       await connectAll();

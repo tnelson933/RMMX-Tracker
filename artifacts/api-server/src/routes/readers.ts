@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { readersTable, usersTable, eventReaderAssignmentsTable, ridersTable } from "@workspace/db/schema";
+import { readersTable, usersTable, eventReaderAssignmentsTable, ridersTable, type ActiveTimingConfig } from "@workspace/db/schema";
 import { eq, asc, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { getConnectorStatus, sendConnectorCommand } from "../lib/connectorRelay";
+import { getConnectorStatus, sendConnectorCommand, sendReaderConnectorCommand } from "../lib/connectorRelay";
 import { getRecentTags, clearRecentTags } from "../lib/recentTags";
 
 const router = Router();
@@ -13,6 +13,22 @@ const publicReader = <T extends { type: string }>(reader: T) => ({
   ...reader,
   type: normalizeReaderType(reader.type),
 });
+
+function parseActiveTimingConfig(input: unknown): ActiveTimingConfig | null {
+  if (!input || typeof input !== "object") return null;
+  const config = input as Record<string, unknown>;
+  if (
+    !Number.isInteger(config.channel) || Number(config.channel) < 0 || Number(config.channel) > 5 ||
+    !Number.isInteger(config.power) || Number(config.power) < 0 || Number(config.power) > 100 ||
+    typeof config.loop1Enabled !== "boolean" || typeof config.loop2Enabled !== "boolean"
+  ) return null;
+  return {
+    channel: Number(config.channel),
+    power: Number(config.power),
+    loop1Enabled: config.loop1Enabled,
+    loop2Enabled: config.loop2Enabled,
+  };
+}
 
 /** Get the caller's clubId from session, or null if not authenticated. */
 async function getCallerClubId(req: any): Promise<number | null> {
@@ -153,6 +169,41 @@ router.post("/readers/llrp-config", async (req, res) => {
   });
 
   return res.json({ sent });
+});
+
+// POST /readers/:readerId/active-timing-config — save F2000 settings in the
+// organizer portal and send them to this reader's RM Connect instance.
+router.post("/readers/:readerId/active-timing-config", async (req, res) => {
+  const clubId = await getCallerClubId(req);
+  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+
+  const readerId = Number(req.params.readerId);
+  if (!readerId) return res.status(400).json({ error: "Invalid readerId" });
+  const config = parseActiveTimingConfig(req.body?.config);
+  if (!config) return res.status(400).json({ error: "Channel must be 0–5, power must be 0–100, and both loop settings are required." });
+  const syncClock = req.body?.syncClock === true;
+
+  const [reader] = await db.select().from(readersTable).where(eq(readersTable.id, readerId));
+  if (!reader) return res.status(404).json({ error: "Reader not found" });
+  if (reader.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (normalizeReaderType(reader.type) !== "active_transponder") {
+    return res.status(400).json({ error: "This configuration is only available for an Active Timing Reader." });
+  }
+
+  const [saved] = await db
+    .update(readersTable)
+    .set({ activeTimingConfig: config })
+    .where(eq(readersTable.id, readerId))
+    .returning();
+
+  const sent = sendReaderConnectorCommand(clubId, readerId, {
+    type: "set_active_timing_config",
+    readerId,
+    config,
+    syncClock,
+  });
+
+  return res.json({ reader: publicReader(saved), sent, queued: sent === 0 });
 });
 
 // DELETE /readers/:readerId — remove a reader

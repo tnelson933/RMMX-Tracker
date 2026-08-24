@@ -410,80 +410,18 @@ function FeibotGuidedSetup({
             </div>
           </div>
 
-          {/* Step 3: Device Settings */}
+          {/* Step 3: Website-managed settings */}
           <div className="flex gap-4">
             <StepBadge n={3} />
-            <div className="space-y-3 min-w-0 flex-1">
-              <div>
-                <p className="font-semibold text-sm">Device Settings</p>
-                <p className="text-xs text-muted-foreground">
-                  Configure hardware properties. Starting a moto will command both enabled loops open and confirm readiness.
+            <div className="space-y-2 min-w-0 flex-1">
+              <p className="font-semibold text-sm">Device settings come from Reader Setup</p>
+              <p className="text-xs text-muted-foreground">
+                Active channel, power, enabled loops, and clock sync are saved in the website above. RM Connect applies them automatically whenever it connects to this reader.
+              </p>
+              {isConnected && (
+                <p className="text-xs font-medium text-green-700 dark:text-green-400">
+                  Connection is live — website settings can be sent to the reader now.
                 </p>
-              </div>
-
-              {!isDesktop ? (
-                <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  Open <strong className="text-foreground">RM Connect</strong> on the track laptop to configure active channel, transmit power, and loop status. Device settings cannot be configured remotely via the browser.
-                  {isConnected && (
-                    <div className="mt-2 text-[11px] space-y-1">
-                      <p>Config Applied: {isConfigApplied ? "Yes" : "No"}</p>
-                      <p>Loops Ready: {isLoopsReady ? "Yes" : "No"}</p>
-                      <p>Race Ready: {isReady ? "Yes" : "No"}</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-xl border p-4 space-y-4 bg-muted/20">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-muted-foreground">Active Channel (0-5)</label>
-                      <Input
-                        type="number"
-                        min={0} max={5}
-                        value={activeChannel}
-                        onChange={e => setActiveChannel(parseInt(e.target.value) || 0)}
-                        disabled={!isConnected}
-                        className="h-8"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-muted-foreground">Active Power (0-100)</label>
-                      <Input
-                        type="number"
-                        min={0} max={100}
-                        value={activePower}
-                        onChange={e => setActivePower(parseInt(e.target.value) || 0)}
-                        disabled={!isConnected}
-                        className="h-8"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Enable Loops</p>
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input type="checkbox" checked={loop1Enabled} onChange={e => setLoop1Enabled(e.target.checked)} disabled={!isConnected} className="rounded border-input text-primary focus:ring-primary h-4 w-4" />
-                        Loop 1 (Start)
-                      </label>
-                      <label className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input type="checkbox" checked={loop2Enabled} onChange={e => setLoop2Enabled(e.target.checked)} disabled={!isConnected} className="rounded border-input text-primary focus:ring-primary h-4 w-4" />
-                        Loop 2 (Finish)
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 pt-2 border-t border-border/50">
-                    <Button onClick={applyConfig} disabled={!isConnected || applyingConfig} size="sm" className="h-8 gap-1.5">
-                      {applyingConfig ? <Loader2 size={12} className="animate-spin" /> : <Settings size={12} />}
-                      Apply Settings
-                    </Button>
-                    <Button onClick={syncClock} disabled={!isConnected || syncingClock} size="sm" variant="outline" className="h-8 gap-1.5">
-                      {syncingClock ? <Loader2 size={12} className="animate-spin" /> : <Timer size={12} />}
-                      Sync Device Clock
-                    </Button>
-                  </div>
-                </div>
               )}
             </div>
           </div>
@@ -740,6 +678,70 @@ export default function ReaderSetup() {
   const [readerType, setReaderType] = useState<ReaderType>("impinj-r700");
   const [readerIp,   setReaderIp]   = useState("");
   const [readerMac,  setReaderMac]  = useState("");
+  const [activeConfigReaderId, setActiveConfigReaderId] = useState<number | null>(null);
+  const [activeTimingConfig, setActiveTimingConfig] = useState({ channel: 0, power: 100, loop1Enabled: true, loop2Enabled: true });
+  const [activeTimingConfigSaving, setActiveTimingConfigSaving] = useState(false);
+  const [activeTimingConfigResult, setActiveTimingConfigResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    const activeReaders = (readers as any[]).filter(reader => reader.type === "active_transponder");
+    if (!activeReaders.length) {
+      setActiveConfigReaderId(null);
+      return;
+    }
+    const selected = activeReaders.find(reader => reader.id === activeConfigReaderId) ?? activeReaders[0];
+    if (selected.id !== activeConfigReaderId) {
+      setActiveConfigReaderId(selected.id);
+      const saved = selected.activeTimingConfig;
+      setActiveTimingConfig({
+        channel: saved?.channel ?? 0,
+        power: saved?.power ?? 100,
+        loop1Enabled: saved?.loop1Enabled !== false,
+        loop2Enabled: saved?.loop2Enabled !== false,
+      });
+    }
+  }, [readers, activeConfigReaderId]);
+
+  const selectActiveTimingReader = (readerId: number) => {
+    const reader = (readers as any[]).find(item => item.id === readerId);
+    if (!reader) return;
+    setActiveConfigReaderId(readerId);
+    const saved = reader.activeTimingConfig;
+    setActiveTimingConfig({
+      channel: saved?.channel ?? 0,
+      power: saved?.power ?? 100,
+      loop1Enabled: saved?.loop1Enabled !== false,
+      loop2Enabled: saved?.loop2Enabled !== false,
+    });
+    setActiveTimingConfigResult(null);
+  };
+
+  const saveActiveTimingConfig = async (syncClock = false) => {
+    if (!activeConfigReaderId) return;
+    setActiveTimingConfigSaving(true);
+    setActiveTimingConfigResult(null);
+    try {
+      const response = await fetch(`${BASE_URL}/api/readers/${activeConfigReaderId}/active-timing-config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ config: activeTimingConfig, syncClock }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "Unable to save Active Timing Reader settings.");
+      queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
+      setActiveTimingConfigResult({
+        ok: true,
+        message: result.sent > 0
+          ? `Saved and sent to RM Connect${syncClock ? "; the reader clock is syncing." : "."}`
+          : "Saved. RM Connect will receive these settings as soon as it reconnects.",
+      });
+    } catch (error) {
+      setActiveTimingConfigResult({ ok: false, message: error instanceof Error ? error.message : "Unable to save Active Timing Reader settings." });
+    } finally {
+      setActiveTimingConfigSaving(false);
+    }
+  };
 
   const [copiedUrl,       setCopiedUrl]       = useState(false);
   const [copiedManualUrl, setCopiedManualUrl] = useState(false);
@@ -925,7 +927,52 @@ export default function ReaderSetup() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-heading font-bold uppercase tracking-tight">Reader Setup</h1>
-        <p className="text-muted-foreground mt-1">Get your timing hardware connected in a few minutes.</p>
+        <p className="text-muted-foreground mt-1">Choose your timing system, then follow one clear setup path.</p>
+      </div>
+
+      {/* Start with the choice that determines every instruction below. */}
+      <section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
+        <div>
+          <p className="font-heading font-bold uppercase tracking-wider text-sm">1. Choose your timing system</p>
+          <p className="text-sm text-muted-foreground mt-1">Only the instructions for the system you choose are shown below.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            onClick={() => { setTech("rfid"); setNewReaderType("rfid"); setTestResult(null); setShowAddReader(false); }}
+            className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "rfid" ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}
+          >
+            <Wifi size={22} className={tech === "rfid" ? "text-primary" : "text-muted-foreground"} />
+            <div>
+              <p className="font-semibold">RFID</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Sticker tags read by an Impinj, Zebra, or compatible RFID reader.</p>
+            </div>
+          </button>
+          <button
+            onClick={() => { setTech("active_transponder"); setNewReaderType("active_transponder"); setTestResult(null); setShowAddReader(false); }}
+            className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "active_transponder" ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}
+          >
+            <Timer size={22} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
+            <div>
+              <p className="font-semibold">Active Timing Reader</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Feibot F2000 reader with PowerTag transponders.</p>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-lg border bg-card p-3">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Selected system</p>
+          <p className="text-sm font-semibold mt-1">{tech === "rfid" ? "RFID" : "Active Timing Reader"}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-3">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Registered readers</p>
+          <p className="text-sm font-semibold mt-1">{(readers as any[]).filter(r => r.type === tech).length} for this system</p>
+        </div>
+        <div className="rounded-lg border bg-card p-3">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Next action</p>
+          <p className="text-sm font-semibold mt-1">{(readers as any[]).some(r => r.type === tech) ? "Connect your reader" : "Register your reader"}</p>
+        </div>
       </div>
 
       {/* Timing URL — RFID only */}
@@ -953,11 +1000,13 @@ export default function ReaderSetup() {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="font-heading font-bold uppercase tracking-tight text-lg">Registered Readers</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Name each physical reader — the system gives it a unique URL you paste into the hardware.</p>
+            <h2 className="font-heading font-bold uppercase tracking-tight text-lg">2. Register your {tech === "rfid" ? "RFID reader" : "Active Timing Reader"}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Give this physical device a name and save its address. {tech === "rfid" ? "You will use its timing URL in the next step." : "RM Connect or the desktop app will use the F2000 address in the next step."}
+            </p>
           </div>
           <div className="flex items-center gap-2">
-            {(readers as any[]).length > 0 && (
+            {tech === "rfid" && (readers as any[]).filter(r => r.type === tech).length > 0 && (
               identifying ? (
                 <Button size="sm" variant="secondary" onClick={stopIdentify} className="gap-1.5">
                   <Loader2 size={13} className="animate-spin" /> Listening… Cancel
@@ -994,15 +1043,9 @@ export default function ReaderSetup() {
                 className="h-9 flex-1 min-w-36"
                 onKeyDown={e => e.key === "Enter" && handleAddReader()}
               />
-              <Select value={newReaderType} onValueChange={(v: "rfid" | "active_transponder") => setNewReaderType(v)}>
-                <SelectTrigger className="h-9 w-28">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="rfid">RFID</SelectItem>
-                  <SelectItem value="active_transponder">Active Timing Reader</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="h-9 inline-flex items-center rounded-md border bg-background px-3 text-xs font-semibold whitespace-nowrap">
+                {tech === "rfid" ? "RFID" : "Active Timing Reader"}
+              </div>
               <Input
                 value={newReaderAddress}
                 onChange={e => setNewReaderAddress(e.target.value)}
@@ -1020,13 +1063,13 @@ export default function ReaderSetup() {
           </div>
         )}
 
-        {(readers as any[]).length === 0 ? (
+        {(readers as any[]).filter(r => r.type === tech).length === 0 ? (
           <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No readers registered yet — add one above to get its unique timing URL.
+            No {tech === "rfid" ? "RFID readers" : "Active Timing Readers"} registered yet — add the physical device you are setting up above.
           </div>
         ) : (
           <div className="rounded-xl border overflow-hidden divide-y">
-            {(readers as any[]).map((reader: any) => {
+            {(readers as any[]).filter(reader => reader.type === tech).map((reader: any) => {
               const { text: lsText, live } = lastSeenLabel(reader.lastSeenAt);
               const url = readerIngestUrl(reader.token);
               const isEditing = editingId === reader.id;
@@ -1140,13 +1183,13 @@ export default function ReaderSetup() {
           <div>
             <div className="flex items-center gap-2">
               <MonitorDown size={18} className="text-primary" />
-              <h2 className="font-heading font-bold uppercase tracking-tight text-lg">RM Connect</h2>
+              <h2 className="font-heading font-bold uppercase tracking-tight text-lg">3. Connect the track laptop</h2>
               <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/15 rounded px-1.5 py-0.5">Recommended</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              A tiny app that runs in your laptop's system tray at the track. It talks to your Impinj R700 or
-              Feibot F2000 Active Timing Reader hardware directly and streams live crossings to the cloud.
-              Readers start and stop automatically when you start or complete a moto here in the web app.
+              RM Connect runs in the laptop's system tray at the track. It connects directly to your{" "}
+              {tech === "rfid" ? "RFID reader and streams tag reads" : "Feibot F2000 and streams PowerTag crossings"}{" "}
+              to the cloud. Leave it running on race day; readers start and stop automatically with each moto.
             </p>
           </div>
         </div>
@@ -1202,8 +1245,8 @@ export default function ReaderSetup() {
           <div className="flex gap-2"><MiniStep n={3} /><p>That's it — leave it running in the tray. When you press <strong>Start Moto</strong> here, the reader starts reading automatically.</p></div>
         </div>
 
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-1.5">
-          <p className="font-semibold text-amber-700 dark:text-amber-400">RFID readers: make sure LLRP is enabled first</p>
+         {tech === "rfid" && <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-1.5">
+           <p className="font-semibold text-amber-700 dark:text-amber-400">RFID readers: enable LLRP before connecting</p>
           <p className="text-muted-foreground">
             RM Connect talks to RFID readers over LLRP. If the reader's LLRP interface is off, it will refuse the connection and
             RM Connect will show "Reader disconnected."
@@ -1217,11 +1260,11 @@ export default function ReaderSetup() {
           <p className="text-muted-foreground text-xs">
             Tip: if the <span className="font-mono">.local</span> address won't load, find the reader's IP in your router's device list and enter the IP in RM Connect instead.
           </p>
-        </div>
+         </div>}
       </div>
 
       {/* ── Live Tag Scanner ── */}
-      <div className="rounded-xl border-2 p-5 space-y-4">
+      {tech === "rfid" && <div className="rounded-xl border-2 p-5 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -1284,34 +1327,7 @@ export default function ReaderSetup() {
             into the RFID number field. Practice sessions and races only count tags assigned to a rider.
           </p>
         )}
-      </div>
-
-      {/* Hardware toggle */}
-      <div className="space-y-3">
-        <p className="text-sm font-medium">What timing hardware do you have?</p>
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => { setTech("rfid"); setTestResult(null); }}
-            className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "rfid" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-          >
-            <Wifi size={22} className={tech === "rfid" ? "text-primary" : "text-muted-foreground"} />
-            <div>
-              <p className="font-semibold text-sm">RFID Sticker Tags</p>
-              <p className="text-xs text-muted-foreground">Passive tags on helmets or bikes</p>
-            </div>
-          </button>
-          <button
-            onClick={() => { setTech("active_transponder"); setTestResult(null); }}
-            className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "active_transponder" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-          >
-            <Timer size={22} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
-            <div>
-              <p className="font-semibold text-sm">Active Timing Reader</p>
-              <p className="text-xs text-muted-foreground">Feibot F2000 active transponders</p>
-            </div>
-          </button>
-        </div>
-      </div>
+      </div>}
 
       {/* Active Timing Reader is configured through RM Connect; no bridge or desktop setup is required. */}
       {false && (
@@ -1444,11 +1460,71 @@ export default function ReaderSetup() {
             </div>
           </>
         ) : tech === "active_transponder" ? (
-          <FeibotGuidedSetup
-            isDesktop={isDesktop}
-            connectorStatuses={connectorStatuses}
-            readers={readers}
-          />
+          <>
+            <div className="p-5 space-y-4">
+              <div className="flex gap-4">
+                <StepBadge n={4} />
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div>
+                    <p className="font-semibold">Set F2000 device settings here</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      These are saved with the reader and pushed to RM Connect automatically. Nobody needs to enter them again on the track laptop.
+                    </p>
+                  </div>
+                  {(readers as any[]).filter(reader => reader.type === "active_transponder").length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                      Register your Active Timing Reader above before configuring its F2000 settings.
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border bg-muted/20 p-4 space-y-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Active Timing Reader</Label>
+                        <Select value={activeConfigReaderId ? String(activeConfigReaderId) : ""} onValueChange={value => selectActiveTimingReader(Number(value))}>
+                          <SelectTrigger className="bg-background"><SelectValue placeholder="Choose a reader" /></SelectTrigger>
+                          <SelectContent>
+                            {(readers as any[]).filter(reader => reader.type === "active_transponder").map(reader => (
+                              <SelectItem key={reader.id} value={String(reader.id)}>{reader.name}{reader.hardwareAddress ? ` · ${reader.hardwareAddress}` : ""}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Active channel (0–5)</Label>
+                          <Input type="number" min={0} max={5} value={activeTimingConfig.channel} onChange={event => setActiveTimingConfig(config => ({ ...config, channel: Number(event.target.value) }))} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Active power (0–100)</Label>
+                          <Input type="number" min={0} max={100} value={activeTimingConfig.power} onChange={event => setActiveTimingConfig(config => ({ ...config, power: Number(event.target.value) }))} />
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-4">
+                        <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop1Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop1Enabled: event.target.checked }))} /> Loop 1 (Start)</label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop2Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop2Enabled: event.target.checked }))} /> Loop 2 (Finish)</label>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button onClick={() => saveActiveTimingConfig(false)} disabled={activeTimingConfigSaving || !activeConfigReaderId} className="gap-2">
+                          {activeTimingConfigSaving ? <Loader2 size={14} className="animate-spin" /> : <Settings size={14} />}
+                          Save & send to RM Connect
+                        </Button>
+                        <Button variant="outline" onClick={() => saveActiveTimingConfig(true)} disabled={activeTimingConfigSaving || !activeConfigReaderId}>
+                          Sync reader clock
+                        </Button>
+                      </div>
+                      {activeTimingConfigResult && (
+                        <p className={`text-xs ${activeTimingConfigResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{activeTimingConfigResult.message}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <FeibotGuidedSetup
+              isDesktop={isDesktop}
+              connectorStatuses={connectorStatuses}
+              readers={readers}
+            />
+          </>
         ) : null}
       </div>
 

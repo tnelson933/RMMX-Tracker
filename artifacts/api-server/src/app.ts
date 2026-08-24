@@ -10,6 +10,9 @@ import { WebhookHandlers } from "./webhookHandlers";
 import { staffPermissionMiddleware } from "./middleware/staffPermissions";
 
 const app: Express = express();
+// The Replit/deployment proxy terminates TLS before requests reach Express.
+// Trust it so secure organizer sessions can be created and forwarded correctly.
+app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({

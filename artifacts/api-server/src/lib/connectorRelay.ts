@@ -92,6 +92,29 @@ export function sendConnectorCommand(
   return sent;
 }
 
+/** Send a command only to the RM Connect instance paired with one reader. */
+export function sendReaderConnectorCommand(
+  clubId: number,
+  readerId: number,
+  command: Record<string, unknown>,
+): number {
+  const set = connectors.get(clubId);
+  if (!set) return 0;
+
+  const payload = JSON.stringify(command);
+  let sent = 0;
+  for (const conn of set) {
+    if (conn.status.readerId !== readerId || conn.ws.readyState !== WebSocket.OPEN) continue;
+    try {
+      conn.ws.send(payload);
+      sent++;
+    } catch {
+      // Socket cleanup is handled by its close/error listeners.
+    }
+  }
+  return sent;
+}
+
 /** Live connector connections for a club (for the organizer UI). */
 export function getConnectorStatus(clubId: number): ConnectorStatus[] {
   const set = connectors.get(clubId);
@@ -156,6 +179,20 @@ export function attachConnectorWebSocket(httpServer: Server): void {
             .set({ lastSeenAt: new Date() })
             .where(eq(readersTable.id, reader.id))
             .catch(() => {});
+
+          // Website-managed F2000 settings are replayed whenever RM Connect
+          // joins, so reconnecting a laptop never requires re-entering them.
+          if (reader.activeTimingConfig) {
+            try {
+              ws.send(JSON.stringify({
+                type: "set_active_timing_config",
+                config: reader.activeTimingConfig,
+                syncClock: true,
+              }));
+            } catch {
+              // The connector will request/reconnect if this socket has closed.
+            }
+          }
 
           // Catch-up: if a moto or practice session is already live for this
           // club, send start_moto immediately so the reader doesn't stay idle

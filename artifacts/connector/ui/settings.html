@@ -81,7 +81,10 @@
       <button id="btnDisconnect" class="secondary">Disconnect</button>
       <button id="btnReconnect">Reconnect</button>
     </div>
-     <button id="btnFeibotSettings" class="secondary hidden" style="width:100%">Feibot device settings…</button>
+      <div id="feibotManagedNotice" class="hidden muted" style="margin-top:10px; line-height:1.45;">
+        F2000 channel, power, loop, and clock settings are managed from Reader Setup in RM Race and sync here automatically.
+      </div>
+      <button id="btnFeibotSettings" class="secondary hidden" style="width:100%">Feibot device settings…</button>
     <div class="err" id="errStatus"></div>
     <!-- Reader picker — shown when reader is missing or user clicks "Change reader" -->
     <div id="readerPickerWrap" class="hidden" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
@@ -130,9 +133,9 @@
     <input id="inAddress" placeholder="e.g. 16-25-B2" />
     <div class="muted" id="hintAddress">Printed on the reader label — we connect via impinj-XX-XX-XX.local</div>
      <div class="checklist hidden" id="feibotSetupGuide">
-       <div class="check ready"><span class="mark">●</span><span><b>1. Register</b> — select the F2000 reader created in RM Race.</span></div>
-       <div class="check"><span class="mark">●</span><span><b>2. Network</b> — use the F2000's IP; port <b>3333</b> is automatic.</span></div>
-       <div class="check"><span class="mark">●</span><span><b>3. Verify</b> — connect, then run a PowerTag test through either loop.</span></div>
+        <div class="check ready"><span class="mark">●</span><span><b>1. Register</b> — select the F2000 reader created in RM Race.</span></div>
+        <div class="check"><span class="mark">●</span><span><b>2. Sync</b> — F2000 address and device settings come from Reader Setup in RM Race.</span></div>
+        <div class="check"><span class="mark">●</span><span><b>3. Verify</b> — connect, then run a PowerTag test through either loop.</span></div>
      </div>
      <div class="hidden" id="feibotControls">
        <label>Active channel <span class="muted">(0–5)</span></label>
@@ -184,17 +187,15 @@
   }
 
   // ── Status rendering ────────────────────────────────────────────────────────
-  // Only drives view transitions in two cases:
-  //   1. Fully configured → always show status view
-  //   2. Signed out (no email) → always show login view
-  // Anything else (signed in but not yet configured) leaves the current view
-  // alone so setup can proceed uninterrupted.
+   // Keep an explicitly opened setup panel open while live status updates
+   // arrive. Otherwise a configured reader would immediately switch back to
+   // the status panel while the user is editing device settings.
 
   function renderStatus(st) {
     currentStatus = st;
     $("btnLogout").classList.toggle("hidden", !st.email);
 
-    if (st.configured) {
+     if (st.configured && view !== 'setup') {
       showView('status');
     } else if (!st.email) {
       showView('login');
@@ -232,7 +233,8 @@
       : "No reads yet";
     $("chkTest").checked = st.testMode;
     $("feibotChecklist").classList.toggle("hidden", st.hardware !== "active_transponder");
-    $("btnFeibotSettings").classList.toggle("hidden", st.hardware !== "active_transponder");
+     $("btnFeibotSettings").classList.add("hidden");
+     $("feibotManagedNotice").classList.toggle("hidden", st.hardware !== "active_transponder");
     if (st.hardware === "active_transponder") {
       const setCheck = (id, ready, text) => {
         const el = $(id); el.classList.toggle("ready", !!ready); el.querySelector("span:last-child").innerHTML = text;
@@ -365,7 +367,7 @@
     const isFeibot = hw === "active_transponder";
     $("setupTitle").textContent = isFeibot ? "Guided Feibot F2000 connection" : "RFID hardware setup";
     $("feibotSetupGuide").classList.toggle("hidden", !isFeibot);
-    $("feibotControls").classList.toggle("hidden", !isFeibot);
+    $("feibotControls").classList.add("hidden");
   });
 
   function feibotInput(syncClock) {
