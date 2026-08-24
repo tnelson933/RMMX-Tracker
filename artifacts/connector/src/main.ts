@@ -363,9 +363,14 @@ feibot.on("disconnected", () => {
   pushStatusToWindow();
 });
 feibot.on("status", () => {
-  if (testMode && testProgress === "opening_loops" && feibot.getStatus().transportReady) {
-    testProgress = "waiting_for_tag";
-    testMessage = "Feibot is identified. Both loops were asked to open; pass a PowerTag over either loop.";
+  const status = feibot.getStatus();
+  if (testMode && testProgress === "opening_loops") {
+    if (status.ready) {
+      testProgress = "waiting_for_tag";
+      testMessage = "Both enabled Feibot loops are running. Pass a PowerTag over either loop.";
+    } else if (status.transportReady) {
+      testMessage = "Feibot is identified. Waiting for it to confirm the enabled loops are running; RM Connect is retrying the open command.";
+    }
   }
   pushStatusToWindow();
 });
@@ -560,9 +565,9 @@ function registerIpc(): void {
       } else if (settings.hardware === "active_transponder") {
         if (testMode || activeMoto !== null) feibot.startReading();
         else feibot.stopReading();
-        if (testMode && feibot.getStatus().transportReady) {
+        if (testMode && feibot.getStatus().ready) {
           testProgress = "waiting_for_tag";
-          testMessage = "Both Feibot loops were asked to open. Pass a PowerTag over either loop.";
+          testMessage = "Both enabled Feibot loops are running. Pass a PowerTag over either loop.";
         }
       }
       pushStatusToWindow();

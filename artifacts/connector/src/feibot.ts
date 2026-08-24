@@ -10,6 +10,7 @@ import { EventEmitter } from "events";
 const FEIBOT_PORT = 55555;
 const CONNECT_TIMEOUT_MS = 8_000;
 const HEARTBEAT_STALE_MS = 5_000;
+const READER_OPEN_RETRY_MS = 2_000;
 
 export interface FeibotStatus {
   connected: boolean;
@@ -112,6 +113,7 @@ export class FeibotClient extends EventEmitter {
   private power = 100;
   private loopEnabled = [true, true];
   private configurationApplied = false;
+  private lastReaderOpenRequestAt = 0;
 
   getStatus(): FeibotStatus {
     const connected = !!this.socket && !this.socket.destroyed;
@@ -121,7 +123,7 @@ export class FeibotClient extends EventEmitter {
     const enabledLoops = this.loopEnabled.map((enabled, index) => !enabled || /working|running|open/i.test(state[`reader${index + 1}Working`] ?? ""));
     const readersWorking = enabledLoops.every(Boolean);
     const ready = connected && this.desiredReading && this.configurationApplied
-      && this.readerCommandMachineId === this.machineId && (readersWorking || heartbeatFresh);
+      && this.readerCommandMachineId === this.machineId && readersWorking;
     const reading = ready;
     const loop1State = state.reader1Working ?? null;
     const loop2State = state.reader2Working ?? null;
@@ -142,7 +144,7 @@ export class FeibotClient extends EventEmitter {
         : !heartbeatFresh
           ? "Waiting for a fresh F2000 heartbeat."
           : this.desiredReading && !readersWorking
-            ? "Opening loops 1 and 2; waiting for the F2000 to report their state."
+            ? "Opening enabled loops; waiting for the F2000 to confirm they are running. RM Connect will retry the open command."
             : "Feibot transport, heartbeat, and machine identification are ready.");
     return { connected, host: this.host, port: this.port, machineId: this.machineId, error: this.lastError ?? heartbeatError, lastPassingAt: this.lastPassingAt, passingCount: this.passingCount, lastHeartbeatAt: this.lastHeartbeatAt, machineState: { ...state }, activeSystemState: this.activeSystemState, reading, transportReady: connected && !!this.machineId, heartbeatFresh, loop1State, loop2State, loop1Enabled: this.loopEnabled[0], loop2Enabled: this.loopEnabled[1], configurationApplied: this.configurationApplied, ready, diagnosis, detail };
   }
@@ -175,6 +177,7 @@ export class FeibotClient extends EventEmitter {
     this.machineId = null;
     this.readerCommandMachineId = null;
     this.configurationApplied = false;
+    this.lastReaderOpenRequestAt = 0;
     this.receiveBuffer = "";
 
     return new Promise((resolve, reject) => {
@@ -218,11 +221,15 @@ export class FeibotClient extends EventEmitter {
     this.socket = null;
     this.desiredReading = false;
     this.readerCommandMachineId = null;
+    this.lastReaderOpenRequestAt = 0;
   }
 
   startReading(): void {
     this.desiredReading = true;
-    this.sendReaderCommand("readerOpen");
+    // Reapply before every fresh test or moto. A reader can have accepted the
+    // TCP connection while its loops are still stopped from a prior session.
+    this.applyConfiguration(false);
+    this.requestReaderOpen(true);
     this.emit("status");
   }
 
@@ -230,6 +237,7 @@ export class FeibotClient extends EventEmitter {
     this.desiredReading = false;
     this.sendReaderCommand("readerStop");
     this.readerCommandMachineId = null;
+    this.lastReaderOpenRequestAt = 0;
     this.emit("status");
   }
 
@@ -283,8 +291,28 @@ export class FeibotClient extends EventEmitter {
     // A reader start requested before the first device packet can now be sent.
     // V3.2 configuration always precedes opening readers on a new connection.
     if (!this.configurationApplied) this.applyConfiguration(true);
-    if (this.desiredReading && this.configurationApplied && this.readerCommandMachineId !== this.machineId) this.sendReaderCommand("readerOpen");
+    this.requestReaderOpen();
     this.emit("status");
+  }
+
+  private enabledLoopsAreRunning(): boolean {
+    return this.loopEnabled.every(
+      (enabled, index) => !enabled || /working|running|open/i.test(this.machineState[`reader${index + 1}Working`] ?? ""),
+    );
+  }
+
+  /**
+   * The F2000 does not acknowledge readerOpen. A command issued immediately
+   * after configuration can be ignored while the loops are transitioning, so
+   * retry on subsequent device packets until its telemetry confirms the loops.
+   */
+  private requestReaderOpen(force = false): void {
+    if (!this.desiredReading || !this.socket || this.socket.destroyed || !this.machineId) return;
+    if (!force && this.enabledLoopsAreRunning()) return;
+    const now = Date.now();
+    if (!force && now - this.lastReaderOpenRequestAt < READER_OPEN_RETRY_MS) return;
+    this.sendReaderCommand("readerOpen");
+    this.lastReaderOpenRequestAt = now;
   }
 
   private sendReaderCommand(command: "readerOpen" | "readerStop"): void {
@@ -308,6 +336,8 @@ export class FeibotClient extends EventEmitter {
     // A successful write plus subsequent heartbeat is the available readiness
     // signal; retain this explicitly rather than inventing response fields.
     this.configurationApplied = true;
+    this.readerCommandMachineId = null;
+    this.lastReaderOpenRequestAt = 0;
   }
 
   private sendClockCommands(): void {

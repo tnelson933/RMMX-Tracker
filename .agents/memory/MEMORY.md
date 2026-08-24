@@ -6,3 +6,4 @@
 - [VP9 MediaRecorder keyframe behavior](vp9-mediarecorder-keyframes.md) — Chrome VP9 emits only 1 keyframe; must add videoKeyFrameIntervalDuration: 2_000 for live streaming pending-queue to work.
 - [better-sqlite3 native build](better-sqlite3-build.md) — pnpm blocks build scripts by default; must add to onlyBuiltDependencies in pnpm-workspace.yaml then run `pnpm rebuild better-sqlite3`.
 - [Expo static build debugging](expo-static-build-debugging.md) — use a configurable Metro port and retain bundle HTTP diagnostics when an export fails.
+- [F2000 loop readiness](f2000-loop-readiness.md) — heartbeats alone are insufficient; confirm enabled loops before timing.

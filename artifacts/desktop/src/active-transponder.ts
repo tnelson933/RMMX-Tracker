@@ -56,6 +56,7 @@ const ACTIVE_TRANSPONDER_PORT = 55555;
 const CONNECT_TIMEOUT_MS = 8_000;
 const RECONNECT_DELAY_MS = 1_000;
 const HEARTBEAT_TIMEOUT_MS = 15_000;
+const READER_OPEN_RETRY_MS = 2_000;
 const DEFAULT_CONFIGURATION: ActiveTransponderConfiguration = {
   activeChannel: 0,
   activePower: 100,
@@ -119,6 +120,7 @@ let configuration: ActiveTransponderConfiguration = {
   loopEnabled: [...DEFAULT_CONFIGURATION.loopEnabled],
 };
 let configApplied = false;
+let lastReaderOpenRequestAt = 0;
 const intentionallyDisconnectedSockets = new WeakSet<net.Socket>();
 
 export function getActiveTransponderStatus(): ActiveTransponderStatus {
@@ -350,7 +352,7 @@ function resetConnectionState(): void {
 function clearDeviceSessionState(): void {
   machineId = null; lastPassingAt = null; passingCount = 0; lastHeartbeatAt = null;
   batteryPercent = null; totalTagsRead = null; differentTagsRead = null; reader1Working = null; reader2Working = null;
-  eventId = null; recvBuffer = ""; commandSerialNumber = 0; reader1State = "unknown"; reader2State = "unknown"; configApplied = false;
+  eventId = null; recvBuffer = ""; commandSerialNumber = 0; reader1State = "unknown"; reader2State = "unknown"; configApplied = false; lastReaderOpenRequestAt = 0;
 }
 
 function processPackets(onPassing?: ActiveTransponderPassingCallback): void {
@@ -375,6 +377,9 @@ function processPacket(packet: string, onPassing?: ActiveTransponderPassingCallb
     armHeartbeatWatch();
   }
   else if (command === "machineState") processMachineState(parameters);
+  // An F2000 can ignore readerOpen while it is applying configuration. Keep
+  // retrying after device packets until loop telemetry confirms it is working.
+  syncReaders();
   notifyStatus();
 }
 
@@ -418,15 +423,21 @@ function syncReaders(): void {
 }
 function openReaders(): void {
   if (!socket || socket.destroyed || !machineId || !configApplied) return;
-  if (configuration.loopEnabled[0] && reader1State !== "open") {
+  const shouldRetry = Date.now() - lastReaderOpenRequestAt >= READER_OPEN_RETRY_MS;
+  const needsReader1 = configuration.loopEnabled[0] && (reader1State !== "open" || !isWorking(reader1Working));
+  const needsReader2 = configuration.loopEnabled[1] && (reader2State !== "open" || !isWorking(reader2Working));
+  if (!needsReader1 && !needsReader2) return;
+  if (!shouldRetry && reader1State === "open" && reader2State === "open") return;
+  if (needsReader1) {
     sendReaderCommand("readerOpen", 1); reader1State = "open";
   }
-  if (configuration.loopEnabled[1] && reader2State !== "open") {
+  if (needsReader2) {
     sendReaderCommand("readerOpen", 2); reader2State = "open";
   }
+  lastReaderOpenRequestAt = Date.now();
 }
 function stopReaders(): void {
-  sendReaderCommand("readerStop", 1); sendReaderCommand("readerStop", 2); reader1State = "closed"; reader2State = "closed";
+  sendReaderCommand("readerStop", 1); sendReaderCommand("readerStop", 2); reader1State = "closed"; reader2State = "closed"; lastReaderOpenRequestAt = 0;
 }
 function sendReaderCommand(command: "readerOpen" | "readerStop", reader: 1 | 2): void {
   sendCommand(command, String(reader));
@@ -446,6 +457,7 @@ function applyConfiguration(): void {
   configApplied = true;
   reader1State = "closed";
   reader2State = "closed";
+  lastReaderOpenRequestAt = 0;
   syncReaders();
 }
 function validateConfiguration(config: ActiveTransponderConfiguration): void {
