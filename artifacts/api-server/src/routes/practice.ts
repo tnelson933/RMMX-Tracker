@@ -9,7 +9,7 @@ import {
   usersTable,
   clubSettingsTable,
 } from "@workspace/db";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, or } from "drizzle-orm";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
 
@@ -118,11 +118,12 @@ export async function processPracticeCrossing(
   crossingTime: Date,
 ) {
   const sessionId = session.id;
+  const tagNumber = rfidNumber.trim();
 
   const [lastCrossing] = await db.select().from(practiceCrossingsTable)
     .where(and(
       eq(practiceCrossingsTable.sessionId, sessionId),
-      eq(practiceCrossingsTable.rfidNumber, rfidNumber),
+      eq(practiceCrossingsTable.rfidNumber, tagNumber),
     ))
     .orderBy(desc(practiceCrossingsTable.crossingTime))
     .limit(1);
@@ -148,7 +149,7 @@ export async function processPracticeCrossing(
     .leftJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
     .leftJoin(eventsTable, eq(rfidAssignmentsTable.eventId, eventsTable.id))
     .where(and(
-      eq(rfidAssignmentsTable.rfidNumber, rfidNumber),
+      ilike(rfidAssignmentsTable.rfidNumber, tagNumber),
       eq(eventsTable.clubId, session.clubId),
     ))
     .limit(1);
@@ -159,10 +160,15 @@ export async function processPracticeCrossing(
     bibNumber = assignment.bibNumber ?? null;
   }
 
-  // Fallback: permanent rfidNumber on rider profile
+  // Fallback: permanent RFID sticker or active-transponder identifier on the
+  // rider profile. F2000 values are hexadecimal and may arrive in a different
+  // case than organizers entered them, so both identifiers are case-insensitive.
   if (!riderId) {
     const [directRider] = await db.select().from(ridersTable)
-      .where(eq(ridersTable.rfidNumber, rfidNumber))
+      .where(or(
+        ilike(ridersTable.rfidNumber, tagNumber),
+        ilike(ridersTable.mylapsTransponderId, tagNumber),
+      ))
       .limit(1);
     if (directRider) {
       riderId = directRider.id;
@@ -183,7 +189,7 @@ export async function processPracticeCrossing(
 
   const [crossing] = await db.insert(practiceCrossingsTable).values({
     sessionId,
-    rfidNumber,
+    rfidNumber: tagNumber,
     riderId,
     riderName,
     bibNumber,

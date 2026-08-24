@@ -12,7 +12,7 @@ import {
   practiceSessionsTable,
 } from "@workspace/db";
 import { fetchEnduoPenaltyMap } from "./enduro-scoring";
-import { eq, and, asc, desc, isNotNull, or, gt, sql, inArray } from "drizzle-orm";
+import { eq, and, asc, desc, isNotNull, or, gt, sql, inArray, ilike } from "drizzle-orm";
 import type { Response } from "express";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
@@ -340,13 +340,14 @@ async function _processCrossing(opts: {
     }
 
     // Fallback: permanent RFID or active-transponder identifier on the rider profile.
+    // F2000 transponder IDs are hexadecimal, so accept either letter case.
     if (!riderId) {
       const [directRider] = await db
         .select({ id: ridersTable.id })
         .from(ridersTable)
         .where(or(
-          eq(ridersTable.rfidNumber, rfidNumber),
-          eq(ridersTable.mylapsTransponderId, rfidNumber),
+          ilike(ridersTable.rfidNumber, rfidNumber.trim()),
+          ilike(ridersTable.mylapsTransponderId, rfidNumber.trim()),
         ))
         .limit(1);
       riderId = directRider?.id ?? null;
