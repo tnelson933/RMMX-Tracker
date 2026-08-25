@@ -76,7 +76,17 @@ function equipmentIcon(equipment: string): keyof typeof Feather.glyphMap {
 
 interface LapEntry     { lapNumber: number; lapTimeMs: number | null; crossingTime: string }
 interface LeaderboardEntry { rank: number; riderId: number | null; riderName: string; bibNumber: string | null; bestLapMs: number | null; lapCount: number; isMe: boolean }
-interface SessionItem  { key: string; label: string; status: string; myLaps: LapEntry[]; bestLapMs: number | null; leaderboard?: LeaderboardEntry[]; startedAt?: string | null }
+interface SessionItem  {
+  key: string;
+  label: string;
+  status: string;
+  riderId: number;
+  practiceSessionId?: number;
+  myLaps: LapEntry[];
+  bestLapMs: number | null;
+  leaderboard?: LeaderboardEntry[];
+  startedAt?: string | null;
+}
 interface DateGroup    { key: string; label: string; sessions: SessionItem[] }
 interface TrackItem    { key: string; label: string; sublabel: string | null; sessions: SessionItem[]; dates: DateGroup[] }
 
@@ -889,101 +899,139 @@ export default function TrainScreen() {
   }, [authLoading, planStorageKey]);
 
   const primaryProfile = activeProfiles[0] ?? null;
+  const activeProfileKey = activeProfiles.map(profile => profile.id).join(",");
 
   // ── Load track data ──────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
-    if (!primaryProfile) return;
+    if (activeProfiles.length === 0) return;
     setTrackError(null);
     setTrackLoading(true);
     try {
-      const [practiceRes, eventPracticeRes] = await Promise.all([
-        riderFetch(`/api/rider/profiles/${primaryProfile.id}/practice`),
-        riderFetch(`/api/rider/profiles/${primaryProfile.id}/event-practice`),
-      ]);
+      const responses = await Promise.all(activeProfiles.flatMap(profile => [
+        riderFetch(`/api/rider/profiles/${profile.id}/practice`),
+        riderFetch(`/api/rider/profiles/${profile.id}/event-practice`),
+      ]));
       const built: TrackItem[] = [];
-      if (eventPracticeRes.ok) {
-        const { events } = await eventPracticeRes.json();
-        for (const ev of (events ?? [])) {
-          const sessions: SessionItem[] = (ev.sessions ?? []).map((s: any) => ({
-            key: `event-moto-${s.motoId}`,
-            label: s.sessionName,
-            status: s.status,
-            myLaps: (s.myLaps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
-            bestLapMs: s.myLaps?.length ? (() => { const v = (s.myLaps as LapEntry[]).filter(l => (l.lapTimeMs ?? 0) > 0); return v.length ? Math.min(...v.map(l => l.lapTimeMs!)) : null; })() : null,
-            leaderboard: s.leaderboard ?? [],
-            startedAt: ev.eventDate ?? null,
-          }));
-          if (sessions.length === 0) continue;
-          // Events: single date group keyed by event date
-          const evDateKey = ev.eventDate ? dateKey(ev.eventDate) : "event";
-          const evDateLabel = ev.eventDate ? dateLabel(ev.eventDate) : "Event Date";
-          built.push({
-            key: `event-${ev.eventId}`,
-            label: ev.eventName,
-            sublabel: [fmtDate(ev.eventDate), ev.eventState].filter(Boolean).join(" · "),
-            sessions,
-            dates: [{ key: evDateKey, label: evDateLabel, sessions }],
-          });
-        }
-      }
-      if (practiceRes.ok) {
-        const { sessions: standaloneSessions } = await practiceRes.json();
-        if ((standaloneSessions ?? []).length > 0) {
-          // Group standalone sessions by venue name so each track gets its own chip
-          const venueMap = new Map<string, any[]>();
-          for (const s of standaloneSessions as any[]) {
-            const venue: string = s.venueName?.trim() || "Open Practice";
-            if (!venueMap.has(venue)) venueMap.set(venue, []);
-            venueMap.get(venue)!.push(s);
-          }
-          for (const [venue, venueSessions] of venueMap) {
-            const allSessions: SessionItem[] = venueSessions.map((s: any) => ({
-              key: `practice-${s.sessionId}`, label: s.sessionName, status: s.endedAt ? "completed" : "in_progress",
-              myLaps: (s.laps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
-              bestLapMs: s.bestLapMs ?? null, leaderboard: undefined,
-              startedAt: s.startedAt ?? null,
+      const isMultiProfile = activeProfiles.length > 1;
+
+      for (let profileIndex = 0; profileIndex < activeProfiles.length; profileIndex++) {
+        const profile = activeProfiles[profileIndex];
+        const riderName = `${profile.firstName} ${profile.lastName}`.trim();
+        const practiceRes = responses[profileIndex * 2];
+        const eventPracticeRes = responses[profileIndex * 2 + 1];
+
+        if (eventPracticeRes.ok) {
+          const { events } = await eventPracticeRes.json();
+          for (const ev of (events ?? [])) {
+            const sessions: SessionItem[] = (ev.sessions ?? []).map((s: any) => ({
+              key: `event-moto-${s.motoId}-rider-${profile.id}`,
+              label: s.sessionName,
+              status: s.status,
+              riderId: profile.id,
+              myLaps: (s.myLaps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
+              bestLapMs: s.myLaps?.length ? (() => { const v = (s.myLaps as LapEntry[]).filter(l => (l.lapTimeMs ?? 0) > 0); return v.length ? Math.min(...v.map(l => l.lapTimeMs!)) : null; })() : null,
+              leaderboard: s.leaderboard ?? [],
+              startedAt: ev.eventDate ?? null,
             }));
-            // Group by date (descending — newest date first)
-            const dateMap = new Map<string, SessionItem[]>();
-            for (const s of allSessions) {
-              const dk = dateKey(s.startedAt);
-              if (!dateMap.has(dk)) dateMap.set(dk, []);
-              dateMap.get(dk)!.push(s);
-            }
-            const dates: DateGroup[] = Array.from(dateMap.entries())
-              .sort(([a], [b]) => b.localeCompare(a)) // newest date first
-              .map(([dk, dateSessions]) => ({
-                key: dk,
-                label: dateLabel(dateSessions[0].startedAt),
-                sessions: dateSessions,
-              }));
+            if (sessions.length === 0) continue;
+            // Events: single date group keyed by event date
+            const evDateKey = ev.eventDate ? dateKey(ev.eventDate) : "event";
+            const evDateLabel = ev.eventDate ? dateLabel(ev.eventDate) : "Event Date";
             built.push({
-              key: `venue-${venue}`,
-              label: venue,
-              sublabel: `${venueSessions.length} session${venueSessions.length !== 1 ? "s" : ""}`,
-              sessions: allSessions,
-              dates,
+              key: `event-${ev.eventId}-rider-${profile.id}`,
+              label: ev.eventName,
+              sublabel: [isMultiProfile ? riderName : null, fmtDate(ev.eventDate), ev.eventState].filter(Boolean).join(" · "),
+              sessions,
+              dates: [{ key: evDateKey, label: evDateLabel, sessions }],
             });
           }
         }
+
+        if (practiceRes.ok) {
+          const { sessions: standaloneSessions } = await practiceRes.json();
+          if ((standaloneSessions ?? []).length > 0) {
+            // Group standalone sessions by venue name so each track gets its own chip
+            const venueMap = new Map<string, any[]>();
+            for (const s of standaloneSessions as any[]) {
+              const venue: string = s.venueName?.trim() || "Open Practice";
+              if (!venueMap.has(venue)) venueMap.set(venue, []);
+              venueMap.get(venue)!.push(s);
+            }
+            for (const [venue, venueSessions] of venueMap) {
+              const allSessions: SessionItem[] = venueSessions.map((s: any) => ({
+                key: `practice-${s.sessionId}-rider-${profile.id}`,
+                label: s.sessionName,
+                status: s.endedAt ? "completed" : "in_progress",
+                riderId: profile.id,
+                practiceSessionId: Number(s.sessionId),
+                myLaps: (s.laps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
+                bestLapMs: s.bestLapMs ?? null,
+                leaderboard: undefined,
+                startedAt: s.startedAt ?? null,
+              }));
+              // Group by date (descending — newest date first)
+              const dateMap = new Map<string, SessionItem[]>();
+              for (const s of allSessions) {
+                const dk = dateKey(s.startedAt);
+                if (!dateMap.has(dk)) dateMap.set(dk, []);
+                dateMap.get(dk)!.push(s);
+              }
+              const dates: DateGroup[] = Array.from(dateMap.entries())
+                .sort(([a], [b]) => b.localeCompare(a)) // newest date first
+                .map(([dk, dateSessions]) => ({
+                  key: dk,
+                  label: dateLabel(dateSessions[0].startedAt),
+                  sessions: dateSessions,
+                }));
+              const sessionCount = `${venueSessions.length} session${venueSessions.length !== 1 ? "s" : ""}`;
+              built.push({
+                key: `venue-${venue}-rider-${profile.id}`,
+                label: venue,
+                sublabel: [isMultiProfile ? riderName : null, sessionCount].filter(Boolean).join(" · "),
+                sessions: allSessions,
+                dates,
+              });
+            }
+          }
+        }
       }
+
+      // Put the track with the latest activity first, including when another
+      // selected rider owns the newest session.
+      built.sort((a, b) => {
+        const latest = (track: TrackItem) => track.sessions.reduce((max, session) => {
+          const time = session.startedAt ? Date.parse(session.startedAt) : 0;
+          return Number.isFinite(time) ? Math.max(max, time) : max;
+        }, 0);
+        return latest(b) - latest(a);
+      });
+
       setTracks(built);
       if (built.length > 0) {
-        setSelectedTrack(prev => prev ?? built[0].key);
-        const firstDate = built[0].dates[0] ?? null;
-        setSelectedDate(prev => prev ?? firstDate?.key ?? null);
-        if (firstDate?.sessions.length) setSelectedSession(prev => prev ?? firstDate.sessions[0].key);
+        const nextTrack = built.find(track => track.key === selectedTrack) ?? built[0];
+        const nextDate = nextTrack.dates.find(date => date.key === selectedDate) ?? nextTrack.dates[0] ?? null;
+        const nextSession = nextDate?.sessions.find(session => session.key === selectedSession)
+          ?? nextDate?.sessions[0]
+          ?? null;
+        setSelectedTrack(nextTrack.key);
+        setSelectedDate(nextDate?.key ?? null);
+        setSelectedSession(nextSession?.key ?? null);
+      } else {
+        setSelectedTrack(null);
+        setSelectedDate(null);
+        setSelectedSession(null);
       }
     } catch {
       setTrackError("Couldn't load practice data. Pull to refresh.");
     } finally {
       setTrackLoading(false);
     }
-  }, [primaryProfile?.id, riderFetch]);
+  }, [activeProfileKey, riderFetch, selectedTrack, selectedDate, selectedSession]);
 
   useEffect(() => {
     if (isAuthenticated && primaryProfile) void loadData();
-  }, [isAuthenticated, primaryProfile?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, activeProfileKey]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1054,11 +1102,10 @@ export default function TrainScreen() {
     pbAnim.setValue(0);
     if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
 
-    const isLive    = currentSession?.status === "in_progress";
-    const isPractice = currentSession?.key.startsWith("practice-");
-    if (!isLive || !isPractice || !primaryProfile) return;
-
-    const sessionId = currentSession.key.replace("practice-", "");
+    const isLive = currentSession?.status === "in_progress";
+    const sessionId = currentSession?.practiceSessionId;
+    const riderId = currentSession?.riderId;
+    if (!isLive || sessionId == null || riderId == null) return;
 
     // Baseline: best lap across all other sessions on the same track
     const otherSessions = (currentTrack?.sessions ?? []).filter(s => s.key !== currentSession.key);
@@ -1069,12 +1116,11 @@ export default function TrainScreen() {
     isFirstPollRef.current = true;
 
     async function poll() {
-      if (!primaryProfile) return;
       try {
-        const res = await riderFetch(`/api/rider/profiles/${primaryProfile.id}/practice`);
+        const res = await riderFetch(`/api/rider/profiles/${riderId}/practice`);
         if (!res.ok) return;
         const { sessions } = await res.json() as { sessions: any[] };
-        const found = sessions.find((s: any) => String(s.sessionId) === sessionId);
+        const found = sessions.find((s: any) => Number(s.sessionId) === sessionId);
         if (!found) return;
 
         const laps: LapEntry[] = ((found.laps ?? []) as LapEntry[])
@@ -1121,7 +1167,7 @@ export default function TrainScreen() {
       if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSession?.key, currentSession?.status, primaryProfile?.id]);
+  }, [currentSession?.key, currentSession?.status, currentSession?.riderId, currentSession?.practiceSessionId]);
 
   const allSessions     = tracks.flatMap(t => t.sessions);
   // Stats always span the whole track (all dates) so "Best Ever" is truly all-time at that track
