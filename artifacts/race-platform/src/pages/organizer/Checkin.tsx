@@ -92,7 +92,14 @@ function RfidInput({ riderId, eventId, onDone, isActiveTransponder, currentTag }
   const submit = () => {
     const tag = value.trim();
     if (!tag) return;
-    assignMutation.mutate({ data: { riderId, rfidNumber: tag, eventId } }, {
+    assignMutation.mutate({
+      data: {
+        riderId,
+        rfidNumber: tag,
+        eventId,
+        ...(isActiveTransponder ? { assignmentType: "active_transponder" as const } : {}),
+      },
+    }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
         queryClient.invalidateQueries({ queryKey: getGetRaceDaySummaryQueryKey(eventId) });

@@ -27,6 +27,8 @@ import {
   ridersTable,
   enduroCheckpointArrivalsTable,
   practiceSessionsTable,
+  motosTable,
+  registrationsTable,
 } from "@workspace/db/schema";
 import { eq, and, count, ilike, or } from "drizzle-orm";
 import { processCrossing } from "./timing";
@@ -41,8 +43,27 @@ const router = Router();
  * Checks event RFID assignments first, then permanent RFID and active-transponder
  * identifiers on the rider record.
  */
-async function resolveRider(rfidNumber: string, eventId: number): Promise<number | null> {
+async function resolveRider(
+  rfidNumber: string,
+  eventId: number,
+  isActiveTransponderReader: boolean,
+): Promise<number | null> {
   const tagNumber = rfidNumber.trim();
+
+  // Active IDs assigned for this event take priority over the rider's global
+  // identifier, allowing a rider to use different transponders at different
+  // events without breaking older event assignments.
+  if (isActiveTransponderReader) {
+    const [registration] = await db
+      .select({ riderId: registrationsTable.riderId })
+      .from(registrationsTable)
+      .where(and(
+        eq(registrationsTable.eventId, eventId),
+        ilike(registrationsTable.myLapsTransponderNumber, tagNumber),
+      ))
+      .limit(1);
+    if (registration) return registration.riderId;
+  }
 
   // Event-specific assignment takes priority
   const [assignment] = await db
@@ -89,18 +110,28 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
     .catch(() => {});
 
   const crossingTime = body.crossingTime ? new Date(body.crossingTime) : new Date();
+  const isActiveTransponderReader =
+    reader.type === "active_transponder" || reader.type === "mylaps";
 
-  // 3. Resolve the active event for this reader's club. A running practice has
-  // no race_day event or checkpoint assignment, so accept it here as well. This
-  // keeps token-based readers working even if an older RM Connect client does
-  // not yet retry through the facility-routing endpoint.
+  // 3. Prefer a running practice whenever the club has no moto actually in
+  // progress. An event can remain in race_day status while organizers run a
+  // practice, so event status alone must not divert the crossing away from the
+  // active practice.
   let eventId = body.eventId ?? null;
   if (!eventId) {
-    const activeEvents = await db
-      .select({ id: eventsTable.id })
-      .from(eventsTable)
-      .where(and(eq(eventsTable.clubId, reader.clubId), eq(eventsTable.status, "race_day")));
-    if (activeEvents.length === 0) {
+    const [activeMoto] = await db
+      .select({ id: motosTable.id, eventId: motosTable.eventId })
+      .from(motosTable)
+      .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
+      .where(and(
+        eq(eventsTable.clubId, reader.clubId),
+        eq(motosTable.status, "in_progress"),
+      ))
+      .limit(1);
+
+    if (activeMoto) {
+      eventId = activeMoto.eventId;
+    } else {
       const [practice] = await db
         .select()
         .from(practiceSessionsTable)
@@ -121,10 +152,28 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
         return res.json({ ok: true, message: "Practice crossing recorded" });
       }
 
-      return res.status(422).json({ ok: false, message: "No active race_day event or practice session for this club" });
+      // RM Connect intentionally forwards physical F2000 reads even when a
+      // WebSocket start command was missed, so a live practice can still time.
+      // Outside a practice, however, an unarmed active-reader tag must not fall
+      // through to a scheduled race/checkpoint and start it accidentally. New
+      // connectors include eventId whenever they have received start_moto.
+      if (isActiveTransponderReader) {
+        return res.status(409).json({
+          ok: false,
+          message: "No active practice or moto is accepting active-transponder crossings",
+        });
+      }
+
+      const activeEvents = await db
+        .select({ id: eventsTable.id })
+        .from(eventsTable)
+        .where(and(eq(eventsTable.clubId, reader.clubId), eq(eventsTable.status, "race_day")));
+      if (activeEvents.length === 0) {
+        return res.status(422).json({ ok: false, message: "No active race_day event or practice session for this club" });
+      }
+      if (activeEvents.length > 1) return res.status(422).json({ ok: false, message: "Multiple active events — include eventId in the request body" });
+      eventId = activeEvents[0].id;
     }
-    if (activeEvents.length > 1) return res.status(422).json({ ok: false, message: "Multiple active events — include eventId in the request body" });
-    eventId = activeEvents[0].id;
   }
 
   // 4. Find all checkpoint assignments for this reader + event
@@ -144,7 +193,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
   const timeCheckAssignment = assignments.find((a) => a.role === "time_check");
   if (timeCheckAssignment && assignments.length === 1) {
     if (timeCheckAssignment.timeCheckId) {
-      const riderId = await resolveRider(rfidNumber, eventId);
+      const riderId = await resolveRider(rfidNumber, eventId, isActiveTransponderReader);
       if (riderId) {
         await db
           .insert(enduroCheckpointArrivalsTable)

@@ -22,6 +22,7 @@ import path from "path";
 import { LlrpClient, impinjHostFromMac } from "./llrp";
 import { FeibotClient } from "./feibot";
 import { RecentReadDeduper } from "./recent-read-deduper";
+import { shouldForwardCrossing, type CrossingSource } from "./crossing-policy";
 import {
   CloudLink,
   cloudLogin,
@@ -46,6 +47,7 @@ import type { AggregateStatus, ConnectInput, LoginResult } from "./ipc-types";
 let tray: Tray | null = null;
 let settingsWindow: BrowserWindow | null = null;
 declare const __DEFAULT_CLOUD_URL__: string;
+declare const __CONNECTOR_PACKAGE_VERSION__: string;
 
 let settings: ConnectorSettings = loadSettings();
 if (!settings.cloudUrl && __DEFAULT_CLOUD_URL__) {
@@ -57,7 +59,7 @@ const llrp = new LlrpClient();
 const feibot = new FeibotClient();
 const cloud = new CloudLink();
 
-let activeMoto: { motoId: number; name: string } | null = null;
+let activeMoto: { motoId: number; name: string; eventId: number | null } | null = null;
 let testMode = false;
 let deviceReconnectTimer: NodeJS.Timeout | null = null;
 let hardwareWanted = false; // true while the user wants the device connected
@@ -68,6 +70,18 @@ let testMessage: string | null = null;
 
 const LOCAL_DEDUPE_MS = 1_500;
 const recentReads = new RecentReadDeduper(LOCAL_DEDUPE_MS);
+
+function getConnectorVersion(): string {
+  try {
+    const electronVersion = app.getVersion();
+    if (electronVersion) return electronVersion;
+  } catch {
+    // Fall through to the package version embedded by the connector build.
+  }
+  return typeof __CONNECTOR_PACKAGE_VERSION__ === "string" && __CONNECTOR_PACKAGE_VERSION__
+    ? __CONNECTOR_PACKAGE_VERSION__
+    : "unknown";
+}
 
 // ── Status aggregation ────────────────────────────────────────────────────────
 
@@ -121,7 +135,9 @@ function getAggregateStatus(): AggregateStatus {
       diagnosis,
       ready: active?.ready,
     },
-    activeMoto,
+    // Keep event context internal; the renderer's established status shape only
+    // exposes the moto identity and display name.
+    activeMoto: activeMoto ? { motoId: activeMoto.motoId, name: activeMoto.name } : null,
     testMode,
     testProgress,
     testMessage,
@@ -201,12 +217,17 @@ function openSettingsWindow(): void {
 
 // ── Crossing forwarding ───────────────────────────────────────────────────────
 
-function shouldForward(): boolean {
+function shouldRunPassiveReader(): boolean {
   return activeMoto !== null || testMode;
 }
 
-async function forwardCrossing(rfidNumber: string, crossingTime: Date, antennaId?: number | null): Promise<void> {
-  if (!shouldForward()) return;
+async function forwardCrossing(
+  source: CrossingSource,
+  rfidNumber: string,
+  crossingTime: Date,
+  antennaId?: number | null,
+): Promise<void> {
+  if (!shouldForwardCrossing(source, activeMoto !== null, testMode)) return;
 
   if (!recentReads.accept(rfidNumber)) return;
 
@@ -216,16 +237,19 @@ async function forwardCrossing(rfidNumber: string, crossingTime: Date, antennaId
       testMessage = "PowerTag received. Sending the crossing to RM Race…";
       pushStatusToWindow();
     }
-    const result = await cloud.postCrossing({ rfidNumber, crossingTime, antennaId, clubId: settings.clubId });
+    const result = await cloud.postCrossing({
+      rfidNumber,
+      crossingTime,
+      antennaId,
+      clubId: settings.clubId,
+      eventId: activeMoto?.eventId ?? null,
+    });
     if (testMode) {
       if (result.ok) {
         testProgress = "confirmed";
         testMessage = result.message ?? "PowerTag crossing received and confirmed by RM Race.";
         testMode = false;
-        if (!activeMoto) {
-          if (isLlrpHardware()) await llrp.stopReading().catch(() => {});
-          else feibot.stopReading();
-        }
+        if (!activeMoto && isLlrpHardware()) await llrp.stopReading().catch(() => {});
       } else {
         testProgress = "unresolved";
         testMessage = result.message ?? "PowerTag was read, but RM Race could not confirm the crossing. Check cloud connection and reader registration.";
@@ -244,7 +268,7 @@ async function forwardCrossing(rfidNumber: string, crossingTime: Date, antennaId
 }
 
 llrp.on("tag", (read) => {
-  forwardCrossing(read.epcHex, new Date(), read.antennaId).catch(() => {});
+  forwardCrossing("passive_rfid", read.epcHex, new Date(), read.antennaId).catch(() => {});
   pushStatusToWindow();
 });
 
@@ -253,7 +277,7 @@ feibot.on("tag", (tag: string, crossingTime: Date) => {
     testProgress = "sending_crossing";
     testMessage = "PowerTag received from Feibot. Confirming the cloud crossing…";
   }
-  forwardCrossing(tag, crossingTime).catch(() => {});
+  forwardCrossing("active_transponder", tag, crossingTime).catch(() => {});
   pushStatusToWindow();
 });
 
@@ -315,13 +339,15 @@ async function connectHardware(): Promise<void> {
     if (isLlrpHardware()) {
       await llrp.connect(host, { impinjExtensions: settings.hardware === "impinj" });
       // If a moto is already live (reconnect mid-race), resume reading
-      if (shouldForward()) {
+      if (shouldRunPassiveReader()) {
         await llrp.startReading().catch(() => {});
       }
     } else if (settings.hardware === "active_transponder") {
       applyFeibotSettings();
       await feibot.connect(host);
-      if (shouldForward()) feibot.startReading();
+      // Keep active timing live continuously. A dropped WebSocket start command
+      // must not prevent the F2000 from observing a physical crossing.
+      feibot.startReading();
     }
   } finally {
     hardwareConnecting = false;
@@ -381,6 +407,7 @@ feibot.on("error", pushStatusToWindow);
 cloud.setStatusProvider(() => {
   const s = getAggregateStatus();
   return {
+    connectorVersion: getConnectorVersion(),
     hardware: settings.hardware,
     connected: s.device.connected,
     detail: s.device.error ?? s.device.detail ?? null,
@@ -392,7 +419,13 @@ cloud.setStatusProvider(() => {
 
 cloud.on("command", (cmd: CloudCommand) => {
   if (cmd.type === "start_moto" && cmd.motoId) {
-    activeMoto = { motoId: cmd.motoId, name: cmd.motoName ?? `Moto ${cmd.motoId}` };
+    activeMoto = {
+      motoId: cmd.motoId,
+      name: cmd.motoName ?? `Moto ${cmd.motoId}`,
+      eventId: typeof cmd.eventId === "number" && Number.isInteger(cmd.eventId) && cmd.eventId > 0
+        ? cmd.eventId
+        : null,
+    };
     if (isLlrpHardware()) {
       llrp.startReading().catch(() => {
         // Reader not connected — reconnect loop will resume reading when back
@@ -406,8 +439,6 @@ cloud.on("command", (cmd: CloudCommand) => {
     activeMoto = null;
     if (isLlrpHardware() && !testMode) {
       llrp.stopReading().catch(() => {});
-    } else if (settings.hardware === "active_transponder" && !testMode) {
-      feibot.stopReading();
     }
   } else if (cmd.type === "set_llrp_config" && cmd.config && isLlrpHardware()) {
     llrp.applyRfConfig(cmd.config as { transmitPowerIndex: number; rfModeIndex: number; tagPopulation: number; tagTransitTime: number }).catch(() => {
@@ -563,8 +594,9 @@ function registerIpc(): void {
           await llrp.stopReading();
         }
       } else if (settings.hardware === "active_transponder") {
-        if (testMode || activeMoto !== null) feibot.startReading();
-        else feibot.stopReading();
+        // Active timing stays armed outside motos so missed cloud commands
+        // cannot create a silent gap in physical crossing delivery.
+        feibot.startReading();
         if (testMode && feibot.getStatus().ready) {
           testProgress = "waiting_for_tag";
           testMessage = "Both enabled Feibot loops are running. Pass a PowerTag over either loop.";

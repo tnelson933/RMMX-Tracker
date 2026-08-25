@@ -1,12 +1,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
-import { rm, cp } from "node:fs/promises";
+import { rm, cp, readFile } from "node:fs/promises";
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
+  const packageJson = JSON.parse(await readFile(path.resolve(artifactDir, "package.json"), "utf8"));
   await rm(distDir, { recursive: true, force: true });
 
   const shared = {
@@ -20,6 +21,7 @@ async function buildAll() {
     define: {
       // Baked in by CI from the CLOUD_URL repo variable so users never type the URL
       __DEFAULT_CLOUD_URL__: JSON.stringify(process.env.CLOUD_URL ?? ""),
+      __CONNECTOR_PACKAGE_VERSION__: JSON.stringify(packageJson.version),
     },
   };
 

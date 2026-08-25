@@ -8,6 +8,7 @@ import {
   eventsTable,
   usersTable,
   clubSettingsTable,
+  registrationsTable,
 } from "@workspace/db";
 import { eq, and, desc, asc, ilike, or } from "drizzle-orm";
 import type { Response } from "express";
@@ -158,6 +159,34 @@ export async function processPracticeCrossing(
     riderId = assignment.riderId;
     riderName = `${assignment.firstName ?? ""} ${assignment.lastName ?? ""}`.trim() || null;
     bibNumber = assignment.bibNumber ?? null;
+  }
+
+  // Active transponders may be event-specific registration values. Resolve a
+  // registration from this practice club before consulting global rider profile
+  // identifiers. Ordering makes duplicate class registrations (or conflicting
+  // legacy values) deterministic while still deduping them to one rider.
+  if (!riderId) {
+    const [clubRegistration] = await db.select({
+      riderId: registrationsTable.riderId,
+      firstName: ridersTable.firstName,
+      lastName: ridersTable.lastName,
+      bibNumber: registrationsTable.bibNumber,
+      riderBibNumber: ridersTable.bibNumber,
+    }).from(registrationsTable)
+      .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+      .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+      .where(and(
+        eq(eventsTable.clubId, session.clubId),
+        ilike(registrationsTable.myLapsTransponderNumber, tagNumber),
+      ))
+      .orderBy(asc(registrationsTable.id), asc(registrationsTable.riderId))
+      .limit(1);
+
+    if (clubRegistration?.riderId) {
+      riderId = clubRegistration.riderId;
+      riderName = `${clubRegistration.firstName ?? ""} ${clubRegistration.lastName ?? ""}`.trim() || null;
+      bibNumber = clubRegistration.bibNumber ?? clubRegistration.riderBibNumber ?? null;
+    }
   }
 
   // Fallback: permanent RFID sticker or active-transponder identifier on the

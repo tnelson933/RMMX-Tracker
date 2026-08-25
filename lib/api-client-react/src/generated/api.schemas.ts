@@ -892,10 +892,23 @@ export interface RfidAssignment {
   assignedAt?: string;
 }
 
+/**
+ * Optional assignment kind. Omitted requests retain legacy passive RFID behavior.
+ */
+export type RfidAssignmentInputAssignmentType = typeof RfidAssignmentInputAssignmentType[keyof typeof RfidAssignmentInputAssignmentType];
+
+
+export const RfidAssignmentInputAssignmentType = {
+  rfid: 'rfid',
+  active_transponder: 'active_transponder',
+} as const;
+
 export interface RfidAssignmentInput {
   riderId: number;
   rfidNumber: string;
   eventId?: number;
+  /** Optional assignment kind. Omitted requests retain legacy passive RFID behavior. */
+  assignmentType?: RfidAssignmentInputAssignmentType;
 }
 
 export type MotoType = typeof MotoType[keyof typeof MotoType];
@@ -2096,6 +2109,7 @@ export type ListEventCancellations200 = {
 
 export type ListRfidTagsParams = {
 eventId?: number;
+assignmentType?: 'rfid' | 'active_transponder';
 };
 
 export type DeleteCheckpointArrival200 = {

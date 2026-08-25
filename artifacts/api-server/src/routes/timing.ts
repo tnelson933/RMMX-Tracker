@@ -10,6 +10,7 @@ import {
   eventsTable,
   usersTable,
   practiceSessionsTable,
+  registrationsTable,
 } from "@workspace/db";
 import { fetchEnduoPenaltyMap } from "./enduro-scoring";
 import { eq, and, asc, desc, isNotNull, or, gt, sql, inArray, ilike } from "drizzle-orm";
@@ -337,6 +338,22 @@ async function _processCrossing(opts: {
         .where(eq(rfidAssignmentsTable.rfidNumber, rfidNumber))
         .limit(1);
       riderId = anyEventAssignment?.riderId ?? null;
+    }
+
+    // Active transponders can be entered per registration instead of being saved
+    // permanently on the rider profile. Prefer the registration for this event so
+    // a historical/global profile value cannot claim a tag assigned for this race.
+    if (!riderId) {
+      const [eventRegistration] = await db
+        .select({ riderId: registrationsTable.riderId })
+        .from(registrationsTable)
+        .where(and(
+          eq(registrationsTable.eventId, moto.eventId),
+          ilike(registrationsTable.myLapsTransponderNumber, rfidNumber.trim()),
+        ))
+        .orderBy(asc(registrationsTable.id), asc(registrationsTable.riderId))
+        .limit(1);
+      riderId = eventRegistration?.riderId ?? null;
     }
 
     // Fallback: permanent RFID or active-transponder identifier on the rider profile.

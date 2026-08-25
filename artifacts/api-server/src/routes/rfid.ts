@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practiceCrossingsTable, lapCrossingsTable, raceResultsTable, motosTable, registrationsTable } from "@workspace/db";
-import { eq, and, inArray, isNull, asc, or, gt, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, isNotNull, asc, or, gt, sql } from "drizzle-orm";
 import { formatLapTime } from "./timing";
 
 const router = Router();
@@ -12,7 +12,11 @@ function getStaffClubId(res: any): number | null {
 }
 
 router.get("/rfid", async (req, res) => {
-  const { eventId } = req.query;
+  const { eventId, assignmentType } = req.query;
+  const isActiveTransponder = assignmentType === "active_transponder";
+  if (assignmentType != null && assignmentType !== "rfid" && !isActiveTransponder) {
+    return res.status(400).json({ error: "Invalid assignmentType" });
+  }
   const numEventId = eventId ? parseInt(String(eventId), 10) : null;
   if (eventId && (numEventId === null || isNaN(numEventId))) {
     return res.status(400).json({ error: "Invalid eventId" });
@@ -23,6 +27,44 @@ router.get("/rfid", async (req, res) => {
     const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, numEventId));
     if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   }
+
+  // Active transponders are not passive RFID assignments. Event registrations
+  // are the dedicated event-scoped source, with the rider profile as the
+  // persistent active-transponder profile field.
+  if (isActiveTransponder) {
+    if (!numEventId) {
+      return res.status(400).json({ error: "eventId required for active transponder assignments" });
+    }
+    const activeRows = await db.select({
+      id: registrationsTable.id,
+      riderId: registrationsTable.riderId,
+      rfidNumber: registrationsTable.myLapsTransponderNumber,
+      firstName: ridersTable.firstName,
+      lastName: ridersTable.lastName,
+      assignedAt: registrationsTable.createdAt,
+    }).from(registrationsTable)
+      .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+      .where(and(
+        eq(registrationsTable.eventId, numEventId),
+        isNotNull(registrationsTable.myLapsTransponderNumber),
+      ));
+
+    // Multi-class riders have one registration per class; expose one active
+    // assignment per rider rather than duplicate rows in the organizer view.
+    const byRider = new Map<number, typeof activeRows[number]>();
+    for (const row of activeRows) {
+      if (!byRider.has(row.riderId)) byRider.set(row.riderId, row);
+    }
+    return res.json([...byRider.values()].map(a => ({
+      id: a.id,
+      riderId: a.riderId,
+      riderName: `${a.firstName ?? ""} ${a.lastName ?? ""}`.trim(),
+      rfidNumber: a.rfidNumber!,
+      eventId: numEventId,
+      assignedAt: a.assignedAt.toISOString(),
+    })));
+  }
+
   // Filter: exclude assignments whose rental expiry has passed
   const notExpired = or(isNull(rfidAssignmentsTable.expiresAt), gt(rfidAssignmentsTable.expiresAt, sql`NOW()`));
   const selectFields = {
@@ -65,8 +107,12 @@ router.get("/rfid", async (req, res) => {
 });
 
 router.post("/rfid", async (req, res) => {
-  const { riderId, rfidNumber, eventId } = req.body;
+  const { riderId, rfidNumber, eventId, assignmentType } = req.body;
   if (!riderId || !rfidNumber) return res.status(400).json({ error: "riderId and rfidNumber required" });
+  const isActiveTransponder = assignmentType === "active_transponder";
+  if (assignmentType != null && assignmentType !== "rfid" && !isActiveTransponder) {
+    return res.status(400).json({ error: "Invalid assignmentType" });
+  }
 
   const numRiderId = parseInt(String(riderId), 10);
   if (isNaN(numRiderId)) return res.status(400).json({ error: "Invalid riderId" });
@@ -80,6 +126,47 @@ router.post("/rfid", async (req, res) => {
   if (staffCId !== null && numEventId) {
     const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, numEventId));
     if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  }
+
+  if (isActiveTransponder) {
+    if (numEventId) {
+      const existing = await db.select({
+        riderId: registrationsTable.riderId,
+      }).from(registrationsTable)
+        .where(and(
+          eq(registrationsTable.eventId, numEventId),
+          eq(registrationsTable.myLapsTransponderNumber, rfidNumber),
+        ))
+        .limit(1);
+      if (existing.length > 0 && existing[0].riderId !== numRiderId) {
+        return res.status(409).json({ error: `Transponder ${rfidNumber} is already assigned to another rider for this event` });
+      }
+    }
+
+    const [rider] = await db.update(ridersTable)
+      .set({ mylapsTransponderId: rfidNumber })
+      .where(eq(ridersTable.id, numRiderId))
+      .returning();
+
+    if (numEventId) {
+      await db.update(registrationsTable)
+        .set({ myLapsTransponderNumber: rfidNumber })
+        .where(and(
+          eq(registrationsTable.eventId, numEventId),
+          eq(registrationsTable.riderId, numRiderId),
+        ));
+    }
+
+    return res.status(201).json({
+      // Active assignments intentionally have no rfid_assignments row. Keep
+      // the legacy response shape with a stable numeric identifier.
+      id: numRiderId,
+      riderId: numRiderId,
+      riderName: rider ? `${rider.firstName} ${rider.lastName}` : "",
+      rfidNumber,
+      eventId: numEventId,
+      assignedAt: new Date().toISOString(),
+    });
   }
 
   // Guard: prevent the same tag number being assigned to multiple riders in the same event.
@@ -114,10 +201,12 @@ router.post("/rfid", async (req, res) => {
     [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId: numRiderId, rfidNumber, eventId: null }).returning();
   }
 
-  // Also update rider's primary rfid
+  // Legacy callers omit assignmentType and retain the passive RFID behavior.
   await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, numRiderId));
 
-  // Update the checkin row so the check-in page reflects rfidLinked immediately
+  // Keep event-scoped registration/check-in data synchronized. Active timing
+  // is surfaced on check-in rows from the associated registration, while
+  // passive RFID continues to use the checkins RFID columns exactly as before.
   if (numEventId) {
     await db.update(checkinsTable)
       .set({ rfidNumber, rfidLinked: true })

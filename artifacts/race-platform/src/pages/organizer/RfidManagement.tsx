@@ -21,16 +21,18 @@ export default function RfidManagement() {
   const [filterEventId, setFilterEventId] = useState<string>("all");
 
   const { data: events } = useListEvents({}, { query: {} as any });
-  const { data: rfidTags, isLoading } = useListRfidTags();
-  const { data: riders } = useListRiders({}, { query: { enabled: isAssignOpen } as any });
-  
-  const assignMutation = useAssignRfid();
-
   const selectedEvent = events?.find(e => e.id.toString() === filterEventId);
   const hasEventFilter = filterEventId !== "all";
   const tech = ((selectedEvent as any)?.timingTechnology ?? "rfid") as "rfid" | "active_transponder";
   const isActiveTransponder = hasEventFilter && tech === "active_transponder";
   const isRfid = hasEventFilter && tech === "rfid";
+  const activeAssignmentParams = filterEventId !== "all" && isActiveTransponder
+    ? { eventId: Number(filterEventId), assignmentType: "active_transponder" as const }
+    : undefined;
+  const { data: rfidTags, isLoading } = useListRfidTags(activeAssignmentParams);
+  const { data: riders } = useListRiders({}, { query: { enabled: isAssignOpen } as any });
+
+  const assignMutation = useAssignRfid();
 
   const transponderLabel = isActiveTransponder ? "Active Timing Transponder #" : isRfid ? "RFID Tag #" : "Transponder #";
   const assignLabel = isActiveTransponder ? "Assign Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
@@ -48,7 +50,11 @@ export default function RfidManagement() {
     assignMutation.mutate({
       data: {
         riderId: parseInt(riderIdStr),
-        rfidNumber: rfidInput
+        rfidNumber: rfidInput,
+        ...(isActiveTransponder ? {
+          eventId: Number(filterEventId),
+          assignmentType: "active_transponder" as const,
+        } : {}),
       }
     }, {
       onSuccess: () => {

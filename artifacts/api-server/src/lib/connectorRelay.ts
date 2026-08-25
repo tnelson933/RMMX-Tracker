@@ -28,6 +28,7 @@ export interface ConnectorStatus {
   readerId: number;
   readerName: string;
     readerType: "rfid" | "active_transponder";
+  connectorVersion: string | null;
   connectedAt: string;
   /** Last hardware status reported by the connector app */
   hardware: {
@@ -156,6 +157,7 @@ export function attachConnectorWebSocket(httpServer: Server): void {
               readerId: reader.id,
               readerName: reader.name,
                readerType: reader.type === "mylaps" ? "active_transponder" : reader.type as "rfid" | "active_transponder",
+              connectorVersion: null,
               connectedAt: new Date().toISOString(),
               hardware: {
                 kind: null,
@@ -264,6 +266,9 @@ export function attachConnectorWebSocket(httpServer: Server): void {
               return;
             }
             if (msg?.type === "status") {
+              conn.status.connectorVersion = typeof msg.connectorVersion === "string"
+                ? msg.connectorVersion.slice(0, 40)
+                : conn.status.connectorVersion;
               conn.status.hardware = {
                  kind: msg.hardware === "mylaps" || msg.hardware === "active_transponder"
                    ? "active_transponder"

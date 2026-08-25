@@ -1207,6 +1207,12 @@ paths:
           in: query
           schema:
             type: integer
+        - name: assignmentType
+          in: query
+          schema:
+            type: string
+            enum: [rfid, active_transponder]
+          description: Optional assignment kind. Omitted requests retain legacy passive RFID behavior.
       responses:
         "200":
           description: RFID assignments
@@ -4223,6 +4229,10 @@ components:
           type: string
         eventId:
           type: integer
+        assignmentType:
+          type: string
+          enum: [rfid, active_transponder]
+          description: Optional assignment kind. Omitted requests retain legacy passive RFID behavior.
 
     Moto:
       type: object

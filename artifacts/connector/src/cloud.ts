@@ -68,6 +68,7 @@ function isValidActiveTimingConfig(config: unknown): boolean {
 }
 
 export interface CloudStatusReport {
+  connectorVersion: string;
   hardware: "impinj" | "zebra" | "generic" | "active_transponder" | null;
   connected: boolean;
   detail: string | null;
@@ -166,6 +167,7 @@ export class CloudLink extends EventEmitter {
     crossingTime: Date;
     antennaId?: number | null;
     clubId?: number | null;
+    eventId?: number | null;
   }): Promise<{ ok: boolean; message?: string }> {
     if (!this.cloudUrl || !this.readerToken) {
       return { ok: false, message: "Cloud link not configured" };
@@ -174,6 +176,7 @@ export class CloudLink extends EventEmitter {
       rfidNumber: input.rfidNumber,
       crossingTime: input.crossingTime.toISOString(),
       ...(input.antennaId != null ? { antennaId: input.antennaId } : {}),
+      ...(input.eventId != null ? { eventId: input.eventId } : {}),
     });
     const headers = { "Content-Type": "application/json" };
 
