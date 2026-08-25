@@ -229,7 +229,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
 
   if (sameGateMotoId) {
     // Resolve rider first so we can read crossing parity
-    const riderId = await resolveRider(rfidNumber, eventId);
+    const riderId = await resolveRider(rfidNumber, eventId, isActiveTransponderReader);
     if (!riderId) {
       return res.json({ ok: false, message: `Tag ${rfidNumber} not assigned to any rider in this event` });
     }
@@ -269,7 +269,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
 
   if (assignment.role === "time_check") {
     if (assignment.timeCheckId) {
-      const riderId = await resolveRider(rfidNumber, eventId);
+      const riderId = await resolveRider(rfidNumber, eventId, isActiveTransponderReader);
       if (riderId) {
         await db
           .insert(enduroCheckpointArrivalsTable)
@@ -297,7 +297,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
   }
 
   // Enforce role parity for dedicated start/finish readers
-  const riderId = await resolveRider(rfidNumber, eventId);
+  const riderId = await resolveRider(rfidNumber, eventId, isActiveTransponderReader);
   if (!riderId) {
     return res.json({ ok: false, message: `Tag ${rfidNumber} not assigned to any rider in this event` });
   }

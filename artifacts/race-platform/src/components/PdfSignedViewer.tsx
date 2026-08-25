@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import type { WaiverField } from "./PdfFieldEditor";
+import { loadPdfJs, PDF_JS_WORKER_URL } from "@/lib/pdfJs";
 
 const FIELD_COLORS: Record<string, string> = {
   name:      "#3b82f6",
@@ -101,9 +102,9 @@ export function PdfSignedViewer({ url, fields, signerName, signerEmail, signedAt
     pdfRef.current = null; canvasRefs.current = [];
     (async () => {
       try {
-        const lib: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs");
+        const lib: any = await loadPdfJs();
         if (!lib.GlobalWorkerOptions.workerSrc)
-          lib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
+          lib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_URL;
         const resp = await fetch(url, { credentials: "include" });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.arrayBuffer();

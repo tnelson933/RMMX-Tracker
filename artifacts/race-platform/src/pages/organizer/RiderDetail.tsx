@@ -11,8 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
+import { loadPdfJs, PDF_JS_WORKER_URL } from "@/lib/pdfJs";
 import { useToast } from "@/hooks/use-toast";
 import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ticket, Copy, Check, Trash2, Plus, Loader2, FileText, ShieldCheck, ChevronDown, Download, ExternalLink, Radio } from "lucide-react";
 import { format } from "date-fns";
@@ -58,12 +59,10 @@ interface PdfWaiverSignature {
 // ── Download helper ───────────────────────────────────────────────────────────
 
 async function downloadSignedPdf(sig: PdfWaiverSignature): Promise<void> {
-  // @ts-ignore — CDN import avoids Windows Rollup resolution issues with pdfjs-dist
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  const pdfjs = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs");
+  const pdfjs = await loadPdfJs();
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
     pdfjs.GlobalWorkerOptions.workerSrc =
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
+      PDF_JS_WORKER_URL;
   }
 
   const loadingTask = pdfjs.getDocument(sig.waiverSnapshot);

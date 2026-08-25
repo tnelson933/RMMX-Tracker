@@ -5,6 +5,13 @@ import { clubsTable } from "./clubs";
 import { discountCategoriesTable } from "./discount-categories";
 
 export type PurchaseOption = { id: string; name: string; amount: number; categoryId?: number | null };
+export type EnduroPenaltyConfig = {
+  earlySecPerMin: number;
+  lateSecPerMin: number;
+  earlyDqMinutes: number | null;
+  lateDqMinutes: number | null;
+  timezone: string | null;
+};
 
 export const eventsTable = pgTable("events", {
   id: serial("id").primaryKey(),
@@ -46,7 +53,7 @@ export const eventsTable = pgTable("events", {
   earlyBirdFee: numeric("early_bird_fee", { precision: 10, scale: 2 }),
   earlyBirdEndsAt: text("early_bird_ends_at"),
   raceStyle: text("race_style").notNull().default("motocross"),
-  enduroPenaltyConfig: jsonb("enduro_penalty_config").$type<Record<string, unknown> | null>(),
+  enduroPenaltyConfig: jsonb("enduro_penalty_config").$type<EnduroPenaltyConfig | null>(),
   quickCheckinEnabled: boolean("quick_checkin_enabled").notNull().default(false),
   trackLat: doublePrecision("track_lat"),
   trackLng: doublePrecision("track_lng"),

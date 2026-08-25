@@ -72,7 +72,17 @@ function sanitizePenaltyConfig(raw: unknown): EnduroPenaltyConfig | null {
   const lateDqMinutes = r.lateDqMinutes != null && Number.isFinite(Number(r.lateDqMinutes))
     ? Number(r.lateDqMinutes)
     : null;
-  return { earlySecPerMin, lateSecPerMin, earlyDqMinutes, lateDqMinutes };
+  const timezone = typeof r.timezone === "string" && r.timezone.trim()
+    ? r.timezone.trim()
+    : null;
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+    } catch {
+      return null;
+    }
+  }
+  return { earlySecPerMin, lateSecPerMin, earlyDqMinutes, lateDqMinutes, timezone };
 }
 
 // GET /events/:eventId/time-checks — list time checks ordered by checkNumber

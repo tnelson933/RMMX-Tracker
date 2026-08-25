@@ -235,7 +235,11 @@ type PullRegistration = {
 };
 
 type PullRider = {
-  id: number; firstName?: string | null; lastName?: string | null; rfidNumber?: string | null;
+  id: number;
+  firstName?: string | null;
+  lastName?: string | null;
+  rfidNumber?: string | null;
+  mylapsTransponderId?: string | null;
 };
 
 type PullEvent = Record<string, unknown>;

@@ -9,6 +9,7 @@ export const rfidAssignmentsTable = pgTable("rfid_assignments", {
   riderId: integer("rider_id").notNull().references(() => ridersTable.id),
   rfidNumber: text("rfid_number").notNull(),
   eventId: integer("event_id").references(() => eventsTable.id),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
 });
 

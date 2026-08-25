@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { useRoute, Link } from "wouter";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
+import { loadPdfJs, PDF_JS_WORKER_URL } from "@/lib/pdfJs";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,10 +40,10 @@ function PdfScrollViewer({ url, onScrolledToBottom }: { url: string; onScrolledT
     canvasRefs.current = [];
     (async () => {
       try {
-        const pdfjsLib: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs");
+        const pdfjsLib: any = await loadPdfJs();
         if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
           pdfjsLib.GlobalWorkerOptions.workerSrc =
-            "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
+            PDF_JS_WORKER_URL;
         }
         // Pre-fetch as ArrayBuffer so pdfjs never has to issue its own XHR
         // (avoids range-request issues behind the Replit proxy).
@@ -369,9 +370,9 @@ export default function Register() {
     if (!event?.liabilityWaiverPdfUrl || !liabilityWaiverSignerName) return;
     setLiabilityWaiverDownloading(true);
     try {
-      const lib: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs");
+      const lib: any = await loadPdfJs();
       if (!lib.GlobalWorkerOptions.workerSrc)
-        lib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
+        lib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_URL;
       const resp = await fetch(event.liabilityWaiverPdfUrl, { credentials: "include" });
       if (!resp.ok) throw new Error("Could not load waiver PDF");
       const data = await resp.arrayBuffer();

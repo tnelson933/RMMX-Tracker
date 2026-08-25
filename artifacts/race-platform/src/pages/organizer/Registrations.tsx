@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { useRoute } from "wouter";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
 import { useListRegistrations, useUpdateRegistration, useGetEvent, getListRegistrationsQueryKey } from "@workspace/api-client-react";
 import { useOfflineAwareQuery } from "@/hooks/useOfflineAwareQuery";

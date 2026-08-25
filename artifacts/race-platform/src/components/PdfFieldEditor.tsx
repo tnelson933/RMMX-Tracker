@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Save, User, Mail, Calendar, PenLine, Trash2, MousePointer } from "lucide-react";
+import { loadPdfJs, PDF_JS_WORKER_URL } from "@/lib/pdfJs";
 
 export type FieldType = "name" | "email" | "date" | "signature";
 
@@ -59,9 +60,9 @@ export function PdfFieldEditor({ url, initialFields = [], onSave, onCancel }: Pr
     pdfRef.current = null; canvasRefs.current = []; dimsRef.current = [];
     (async () => {
       try {
-        const lib: any = await import(/* @vite-ignore */ "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs");
+        const lib: any = await loadPdfJs();
         if (!lib.GlobalWorkerOptions.workerSrc)
-          lib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
+          lib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_URL;
         const resp = await fetch(url, { credentials: "include" });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.arrayBuffer();
