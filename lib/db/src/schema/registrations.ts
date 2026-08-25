@@ -29,6 +29,13 @@ export const registrationsTable = pgTable("registrations", {
   compDiscount: numeric("comp_discount", { precision: 10, scale: 2 }),
   displayFirstName: text("display_first_name"),
   displayLastName: text("display_last_name"),
+  rfidStickerPurchased: boolean("rfid_sticker_purchased").notNull().default(false),
+  transponderReturned: boolean("transponder_returned").notNull().default(false),
+  waiverAcknowledgedAt: timestamp("waiver_acknowledged_at"),
+  waiverSnapshot: text("waiver_snapshot"),
+  cancelledAt: timestamp("cancelled_at"),
+  cancellationSource: text("cancellation_source"),
+  refundVerifiedAt: timestamp("refund_verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

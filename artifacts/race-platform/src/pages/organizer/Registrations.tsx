@@ -487,7 +487,35 @@ export default function Registrations() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Registration failed");
 
-      await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
+      const registrationsQueryKey = getListRegistrationsQueryKey(eventId);
+      queryClient.setQueryData(registrationsQueryKey, (current: any[] | undefined) => {
+        const createdRegistration = {
+          id: json.id,
+          eventId,
+          riderId: json.riderId,
+          riderName: json.riderName,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          phone: data.phone || "",
+          dateOfBirth: data.dateOfBirth || "",
+          emergencyContact: data.emergencyContact || "",
+          emergencyPhone: data.emergencyPhone || "",
+          raceClass: json.raceClass,
+          status: json.status,
+          paymentStatus: json.paymentStatus,
+          amountPaid: json.amountPaid,
+          bibNumber: data.bibNumber || null,
+          myLapsTransponderNumber: data.myLapsTransponderNumber || null,
+          transponderRental: data.rentTransponder,
+          rfidNumber: null,
+          waiverAcknowledgedAt: null,
+          createdAt: json.createdAt,
+        };
+
+        return [...(current ?? []).filter(registration => registration.id !== json.id), createdRegistration];
+      });
+      await queryClient.invalidateQueries({ queryKey: registrationsQueryKey });
       setRegSuccess({ id: json.id, riderName: json.riderName, raceClass: json.raceClass });
 
       // Desktop: payment collected inline — go straight to success
