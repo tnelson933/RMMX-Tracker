@@ -1923,7 +1923,7 @@ export interface Reader {
   /** UUID used as the URL key for this reader's ingest endpoint */
   token: string;
   /**
-     * Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 3333.
+     * Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.
      * @nullable
      */
   hardwareAddress?: string | null;

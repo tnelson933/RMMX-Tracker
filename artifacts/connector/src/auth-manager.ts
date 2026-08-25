@@ -7,6 +7,7 @@
 import { safeStorage, app } from "electron";
 import path from "path";
 import fs from "fs";
+import { migrateLegacyFeibotAddress } from "./settings-migrations";
 
 const SETTINGS_FILE = () => path.join(app.getPath("userData"), "connector-settings.json");
 const PASSWORD_FILE = () => path.join(app.getPath("userData"), "credentials.enc");
@@ -51,9 +52,13 @@ export function loadSettings(): ConnectorSettings {
   try {
     if (!fs.existsSync(SETTINGS_FILE())) return { ...DEFAULT_SETTINGS };
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE(), "utf8"));
-    // The former decoder selection is protocol-incompatible. Preserve its
-    // address while migrating users to the active-transponder hardware kind.
-    const migrated = raw.hardware === "mylaps" ? { ...raw, hardware: "active_transponder" } : raw;
+    // Preserve existing installations while migrating both the former decoder
+    // hardware kind and its obsolete F2000 TCP port.
+    const hardware = raw.hardware === "mylaps" ? "active_transponder" : raw.hardware;
+    const hardwareAddress = migrateLegacyFeibotAddress(hardware, raw.hardwareAddress);
+    const migrated = hardware !== raw.hardware || hardwareAddress !== raw.hardwareAddress
+      ? { ...raw, hardware, hardwareAddress }
+      : raw;
     if (migrated !== raw) fs.writeFileSync(SETTINGS_FILE(), JSON.stringify({ ...DEFAULT_SETTINGS, ...migrated }, null, 2), "utf8");
     return { ...DEFAULT_SETTINGS, ...migrated };
   } catch {

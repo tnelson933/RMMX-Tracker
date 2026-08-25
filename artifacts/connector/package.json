@@ -1,6 +1,6 @@
 {
   "name": "@workspace/connector",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "private": true,
   "description": "RM Connect \u2014 lightweight tray app that bridges timing hardware to the cloud",
   "main": "dist/main.js",

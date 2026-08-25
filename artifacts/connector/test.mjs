@@ -10,6 +10,7 @@ import { WebSocketServer } from "ws";
 
 const outputFile = path.join(os.tmpdir(), `rm-connect-cloud-${process.pid}.cjs`);
 const policyOutputFile = path.join(os.tmpdir(), `rm-connect-policy-${process.pid}.cjs`);
+const migrationsOutputFile = path.join(os.tmpdir(), `rm-connect-settings-migrations-${process.pid}.cjs`);
 await build({
   entryPoints: [path.resolve("src/cloud.ts")],
   bundle: true,
@@ -24,10 +25,19 @@ await build({
   format: "cjs",
   outfile: policyOutputFile,
 });
+await build({
+  entryPoints: [path.resolve("src/settings-migrations.ts")],
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  outfile: migrationsOutputFile,
+});
 const cloudModule = await import(pathToFileURL(outputFile).href);
 const { CloudLink } = cloudModule.default ?? cloudModule;
 const policyModule = await import(pathToFileURL(policyOutputFile).href);
 const { shouldForwardCrossing } = policyModule.default ?? policyModule;
+const migrationsModule = await import(pathToFileURL(migrationsOutputFile).href);
+const { migrateLegacyFeibotAddress } = migrationsModule.default ?? migrationsModule;
 
 async function receiveCommand(message) {
   const server = new WebSocketServer({ port: 0 });
@@ -76,6 +86,18 @@ test("passive RFID crossings retain moto and test gating", () => {
   assert.equal(shouldForwardCrossing("passive_rfid", false, false), false);
   assert.equal(shouldForwardCrossing("passive_rfid", true, false), true);
   assert.equal(shouldForwardCrossing("passive_rfid", false, true), true);
+});
+
+test("migrates legacy Feibot port 3333 to 55555", () => {
+  assert.equal(migrateLegacyFeibotAddress("active_transponder", "192.168.1.50:3333"), "192.168.1.50:55555");
+  assert.equal(migrateLegacyFeibotAddress("mylaps", "feibot.local:3333"), "feibot.local:55555");
+  assert.equal(migrateLegacyFeibotAddress("active_transponder", "[fe80::1]:3333"), "[fe80::1]:55555");
+});
+
+test("preserves bare, custom-port, and passive reader addresses", () => {
+  assert.equal(migrateLegacyFeibotAddress("active_transponder", "192.168.1.50"), "192.168.1.50");
+  assert.equal(migrateLegacyFeibotAddress("active_transponder", "192.168.1.50:6000"), "192.168.1.50:6000");
+  assert.equal(migrateLegacyFeibotAddress("impinj", "reader.local:3333"), "reader.local:3333");
 });
 
 test("reports the connector version in cloud status", async () => {
