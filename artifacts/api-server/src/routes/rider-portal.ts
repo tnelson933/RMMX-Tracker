@@ -4,6 +4,13 @@ import { randomBytes, randomUUID } from "crypto";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { formatLapTime, buildLeaderboard } from "./timing";
+import {
+  buildTimingIdentityResolver,
+  crossingBelongsToRider,
+  normalizeTimingIdentifier,
+  resolveCrossingRiderId,
+  type TimingIdentityResolver,
+} from "../lib/riderTimingIdentity";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
 import {
@@ -31,12 +38,174 @@ import {
   enduroCheckpointArrivalsTable,
   compCodesTable,
 } from "@workspace/db";
-import { eq, desc, asc, or, and, ne, inArray, sql, ilike } from "drizzle-orm";
+import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull } from "drizzle-orm";
 
 const router = Router();
 
 function generateMobileToken(): string {
   return randomBytes(32).toString("hex");
+}
+
+async function loadTimingIdentityResolver(
+  eventIds: number[],
+  timingIdentifiers: string[],
+): Promise<TimingIdentityResolver> {
+  const normalizedIdentifiers = [...new Set(
+    timingIdentifiers
+      .map(normalizeTimingIdentifier)
+      .filter((value): value is string => value !== null),
+  )];
+  const assignmentRows = eventIds.length > 0 && normalizedIdentifiers.length > 0
+    ? await db
+      .select({
+        eventId: eventsTable.id,
+        assignmentId: rfidAssignmentsTable.id,
+        riderId: rfidAssignmentsTable.riderId,
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+        bibNumber: ridersTable.bibNumber,
+        timingIdentifier: rfidAssignmentsTable.rfidNumber,
+      })
+      .from(rfidAssignmentsTable)
+      .innerJoin(eventsTable, eq(rfidAssignmentsTable.eventId, eventsTable.id))
+      .innerJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
+      .where(and(
+        inArray(eventsTable.id, eventIds),
+        inArray(
+          sql<string>`LOWER(TRIM(${rfidAssignmentsTable.rfidNumber}))`,
+          normalizedIdentifiers,
+        ),
+      ))
+      .orderBy(asc(rfidAssignmentsTable.id), asc(rfidAssignmentsTable.riderId))
+    : [];
+  const registrationRows = eventIds.length > 0 && normalizedIdentifiers.length > 0
+    ? await db
+      .select({
+        eventId: registrationsTable.eventId,
+        registrationId: registrationsTable.id,
+        riderId: registrationsTable.riderId,
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+        registrationBibNumber: registrationsTable.bibNumber,
+        riderBibNumber: ridersTable.bibNumber,
+        registrationTransponderNumber: registrationsTable.myLapsTransponderNumber,
+        profileRfidNumber: ridersTable.rfidNumber,
+        profileActiveTransponderNumber: ridersTable.mylapsTransponderId,
+      })
+      .from(registrationsTable)
+      .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+      .where(and(
+        inArray(registrationsTable.eventId, eventIds),
+        inArray(
+          sql<string>`LOWER(TRIM(${registrationsTable.myLapsTransponderNumber}))`,
+          normalizedIdentifiers,
+        ),
+      ))
+      .orderBy(asc(registrationsTable.id), asc(registrationsTable.riderId))
+    : [];
+
+  const directRiderRows = normalizedIdentifiers.length > 0
+    ? await db
+      .select({
+        riderId: ridersTable.id,
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+        bibNumber: ridersTable.bibNumber,
+        profileRfidNumber: ridersTable.rfidNumber,
+        profileActiveTransponderNumber: ridersTable.mylapsTransponderId,
+      })
+      .from(ridersTable)
+      .where(or(
+        inArray(sql<string>`LOWER(TRIM(${ridersTable.rfidNumber}))`, normalizedIdentifiers),
+        inArray(sql<string>`LOWER(TRIM(${ridersTable.mylapsTransponderId}))`, normalizedIdentifiers),
+      ))
+      .orderBy(asc(ridersTable.id))
+    : [];
+
+  return buildTimingIdentityResolver(assignmentRows, registrationRows, directRiderRows);
+}
+
+async function loadClubTimingIdentityResolver(
+  clubIds: number[],
+  timingIdentifiers: string[],
+): Promise<TimingIdentityResolver> {
+  const normalizedIdentifiers = [...new Set(
+    timingIdentifiers
+      .map(normalizeTimingIdentifier)
+      .filter((value): value is string => value !== null),
+  )];
+  const assignmentRows = clubIds.length > 0 && normalizedIdentifiers.length > 0
+    ? await db
+      .select({
+        // The shared resolver accepts an integer scope. For standalone practice,
+        // that scope is the club instead of a specific race event.
+        eventId: eventsTable.clubId,
+        assignmentId: rfidAssignmentsTable.id,
+        riderId: rfidAssignmentsTable.riderId,
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+        bibNumber: ridersTable.bibNumber,
+        timingIdentifier: rfidAssignmentsTable.rfidNumber,
+      })
+      .from(rfidAssignmentsTable)
+      .innerJoin(eventsTable, eq(rfidAssignmentsTable.eventId, eventsTable.id))
+      .innerJoin(ridersTable, eq(rfidAssignmentsTable.riderId, ridersTable.id))
+      .where(and(
+        inArray(eventsTable.clubId, clubIds),
+        inArray(
+          sql<string>`LOWER(TRIM(${rfidAssignmentsTable.rfidNumber}))`,
+          normalizedIdentifiers,
+        ),
+      ))
+      .orderBy(asc(rfidAssignmentsTable.id), asc(rfidAssignmentsTable.riderId))
+    : [];
+  const registrationRows = clubIds.length > 0 && normalizedIdentifiers.length > 0
+    ? await db
+      .select({
+        // The shared resolver accepts an integer scope. For standalone practice,
+        // that scope is the club instead of a specific race event.
+        eventId: eventsTable.clubId,
+        registrationId: registrationsTable.id,
+        riderId: registrationsTable.riderId,
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+        registrationBibNumber: registrationsTable.bibNumber,
+        riderBibNumber: ridersTable.bibNumber,
+        registrationTransponderNumber: registrationsTable.myLapsTransponderNumber,
+        profileRfidNumber: ridersTable.rfidNumber,
+        profileActiveTransponderNumber: ridersTable.mylapsTransponderId,
+      })
+      .from(registrationsTable)
+      .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+      .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+      .where(and(
+        inArray(eventsTable.clubId, clubIds),
+        inArray(
+          sql<string>`LOWER(TRIM(${registrationsTable.myLapsTransponderNumber}))`,
+          normalizedIdentifiers,
+        ),
+      ))
+      .orderBy(asc(registrationsTable.id), asc(registrationsTable.riderId))
+    : [];
+  const directRiderRows = normalizedIdentifiers.length > 0
+    ? await db
+      .select({
+        riderId: ridersTable.id,
+        firstName: ridersTable.firstName,
+        lastName: ridersTable.lastName,
+        bibNumber: ridersTable.bibNumber,
+        profileRfidNumber: ridersTable.rfidNumber,
+        profileActiveTransponderNumber: ridersTable.mylapsTransponderId,
+      })
+      .from(ridersTable)
+      .where(or(
+        inArray(sql<string>`LOWER(TRIM(${ridersTable.rfidNumber}))`, normalizedIdentifiers),
+        inArray(sql<string>`LOWER(TRIM(${ridersTable.mylapsTransponderId}))`, normalizedIdentifiers),
+      ))
+      .orderBy(asc(ridersTable.id))
+    : [];
+
+  return buildTimingIdentityResolver(assignmentRows, registrationRows, directRiderRows);
 }
 
 export function requireRiderAuth(req: any, res: any, next: any) {
@@ -1091,15 +1260,53 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
     return res.status(403).json({ error: "Access denied" });
   }
 
-  // Find crossings by riderId. Also check by rfidNumber on the rider profile as a fallback.
+  const [registrationAssignments, rfidAssignments] = await Promise.all([
+    db
+      .select({
+        clubId: eventsTable.clubId,
+        timingIdentifier: registrationsTable.myLapsTransponderNumber,
+      })
+      .from(registrationsTable)
+      .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+      .where(eq(registrationsTable.riderId, riderId)),
+    db
+      .select({
+        clubId: eventsTable.clubId,
+        timingIdentifier: rfidAssignmentsTable.rfidNumber,
+      })
+      .from(rfidAssignmentsTable)
+      .innerJoin(eventsTable, eq(rfidAssignmentsTable.eventId, eventsTable.id))
+      .where(eq(rfidAssignmentsTable.riderId, riderId)),
+  ]);
+
+  // Fetch only exact candidate identifiers. The resolver below applies club
+  // registration precedence before deciding whether an unlinked crossing is
+  // actually this rider's; LIKE wildcards must never broaden this query.
+  const candidateIdentifiers = [...new Set(
+    [
+      rider.rfidNumber,
+      rider.mylapsTransponderId,
+      ...rfidAssignments.map(assignment => assignment.timingIdentifier),
+      ...registrationAssignments.map(assignment => assignment.timingIdentifier),
+    ]
+      .map(normalizeTimingIdentifier)
+      .filter((value): value is string => value !== null),
+  )];
   const conditions = [eq(practiceCrossingsTable.riderId, riderId)];
-  if (rider.rfidNumber) {
-    conditions.push(eq(practiceCrossingsTable.rfidNumber, rider.rfidNumber));
+  if (candidateIdentifiers.length > 0) {
+    conditions.push(and(
+      isNull(practiceCrossingsTable.riderId),
+      inArray(
+        sql<string>`LOWER(TRIM(${practiceCrossingsTable.rfidNumber}))`,
+        candidateIdentifiers,
+      ),
+    )!);
   }
 
   const crossings = await db.select({
     id: practiceCrossingsTable.id,
     sessionId: practiceCrossingsTable.sessionId,
+    riderId: practiceCrossingsTable.riderId,
     rfidNumber: practiceCrossingsTable.rfidNumber,
     lapNumber: practiceCrossingsTable.lapNumber,
     lapTimeMs: practiceCrossingsTable.lapTimeMs,
@@ -1109,11 +1316,27 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
     sessionStartedAt: practiceSessionsTable.startedAt,
     sessionEndedAt: practiceSessionsTable.endedAt,
     sessionVenueName: practiceSessionsTable.venueName,
+    sessionClubId: practiceSessionsTable.clubId,
   })
     .from(practiceCrossingsTable)
     .leftJoin(practiceSessionsTable, eq(practiceCrossingsTable.sessionId, practiceSessionsTable.id))
     .where(or(...conditions))
     .orderBy(asc(practiceCrossingsTable.sessionId), asc(practiceCrossingsTable.crossingTime));
+  const resolveTimingIdentity = await loadClubTimingIdentityResolver(
+    [...new Set(
+      crossings
+        .map(crossing => crossing.sessionClubId)
+        .filter((clubId): clubId is number => clubId !== null),
+    )],
+    crossings.map(crossing => crossing.rfidNumber),
+  );
+  const ownedCrossings = crossings.filter(crossing => crossingBelongsToRider(
+    crossing.riderId,
+    crossing.sessionClubId ?? 0,
+    crossing.rfidNumber,
+    riderId,
+    resolveTimingIdentity,
+  ));
 
   // Group by session
   const sessionMap = new Map<number, {
@@ -1126,7 +1349,7 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
     laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
   }>();
 
-  for (const c of crossings) {
+  for (const c of ownedCrossings) {
     if (!sessionMap.has(c.sessionId)) {
       sessionMap.set(c.sessionId, {
         sessionId: c.sessionId,
@@ -1220,10 +1443,23 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
     crossingsByMoto.get(c.motoId)!.push(c);
   }
 
-  // Track which practice motos this specific rider has crossings in (by riderId or RFID)
+  const resolveTimingIdentity = await loadTimingIdentityResolver(
+    eventIds,
+    crossings.map(c => c.rfidNumber),
+  );
+  const eventIdByMoto = new Map(practiceMotos.map(moto => [moto.id, moto.eventId]));
+
+  // Track which practice motos this specific rider has crossings in. Stored
+  // rider links win; only unlinked crossings use timing-identifier fallback.
   const riderCrossingMotoIds = new Set<number>(
     crossings
-      .filter(c => c.riderId === riderId || (rider.rfidNumber != null && c.rfidNumber === rider.rfidNumber))
+      .filter(c => crossingBelongsToRider(
+        c.riderId,
+        eventIdByMoto.get(c.motoId) ?? 0,
+        c.rfidNumber,
+        riderId,
+        resolveTimingIdentity,
+      ))
       .map(c => c.motoId)
   );
 
@@ -1253,7 +1489,6 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
 
       const riderMap = new Map<string, {
         riderId: number | null;
-        rfidNumber: string;
         riderName: string;
         bibNumber: string | null;
         laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
@@ -1261,21 +1496,33 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
       }>();
 
       for (const c of motoCrossings) {
-        const key = c.rfidNumber;
+        const resolvedIdentity = c.riderId === null
+          ? resolveTimingIdentity(event.id, c.rfidNumber)
+          : null;
+        const effectiveRiderId = c.riderId ?? resolvedIdentity?.riderId ?? null;
+        const normalizedIdentifier = normalizeTimingIdentifier(c.rfidNumber) ?? c.rfidNumber;
+        const key = effectiveRiderId !== null
+          ? `rider:${effectiveRiderId}`
+          : `rfid:${normalizedIdentifier}`;
         if (!riderMap.has(key)) {
           riderMap.set(key, {
-            riderId: c.riderId,
-            rfidNumber: c.rfidNumber,
-            riderName: c.firstName ? `${c.firstName} ${c.lastName ?? ""}`.trim() : c.rfidNumber,
-            bibNumber: c.bibNumber ?? null,
+            riderId: effectiveRiderId,
+            riderName: c.firstName
+              ? `${c.firstName} ${c.lastName ?? ""}`.trim()
+              : resolvedIdentity?.riderName ?? c.rfidNumber,
+            bibNumber: c.bibNumber ?? resolvedIdentity?.bibNumber ?? null,
             laps: [],
             bestLapMs: null,
           });
         }
         const entry = riderMap.get(key)!;
-        if (c.riderId && !entry.riderId) entry.riderId = c.riderId;
-        if (c.firstName && entry.riderName === c.rfidNumber) {
+        if (effectiveRiderId !== null && entry.riderId === null) entry.riderId = effectiveRiderId;
+        if (c.firstName) {
           entry.riderName = `${c.firstName} ${c.lastName ?? ""}`.trim();
+          entry.bibNumber = c.bibNumber ?? entry.bibNumber;
+        } else if (resolvedIdentity) {
+          entry.riderName = resolvedIdentity.riderName;
+          entry.bibNumber = resolvedIdentity.bibNumber ?? entry.bibNumber;
         }
         entry.laps.push({
           lapNumber: c.lapNumber ?? 0,
@@ -1302,12 +1549,10 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
         bibNumber: r.bibNumber,
         bestLapMs: r.bestLapMs,
         lapCount: r.laps.length,
-        isMe: r.riderId === riderId || (!!rider.rfidNumber && r.rfidNumber === rider.rfidNumber),
+        isMe: r.riderId === riderId,
       }));
 
-      const myEntry = [...riderMap.values()].find(
-        r => r.riderId === riderId || (!!rider.rfidNumber && r.rfidNumber === rider.rfidNumber)
-      );
+      const myEntry = [...riderMap.values()].find(r => r.riderId === riderId);
       const riderLaps = (myEntry?.laps ?? []).sort((a, b) => a.lapNumber - b.lapNumber);
 
       sessions.push({
@@ -1465,6 +1710,10 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     if (!crossingsByMoto.has(c.motoId)) crossingsByMoto.set(c.motoId, []);
     crossingsByMoto.get(c.motoId)!.push(c);
   }
+  const resolveTimingIdentity = await loadTimingIdentityResolver(
+    eventIds,
+    practiceAllCrossings.map(c => c.rfidNumber),
+  );
 
   // Build response grouped by event (one section per event regardless of how many family members)
   const results = events.map(event => {
@@ -1494,14 +1743,39 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
         // Build leaderboard from lap crossings
         const motoCrossings = crossingsByMoto.get(moto.id) ?? [];
         const validCrossings = motoCrossings.filter(c => (c.lapTimeMs ?? 0) > 0);
+        const resolvedCrossings = validCrossings.map(c => {
+          const resolvedIdentity = c.riderId === null
+            ? resolveTimingIdentity(event.id, c.rfidNumber)
+            : null;
+          return {
+            ...c,
+            effectiveRiderId: resolveCrossingRiderId(
+              c.riderId,
+              event.id,
+              c.rfidNumber,
+              resolveTimingIdentity,
+            ),
+            resolvedIdentity,
+          };
+        });
         const riderBestMap = new Map<string, { riderId: number | null; riderName: string; bestLapMs: number }>();
-        for (const c of validCrossings) {
-          const key = c.riderId != null ? `rider:${c.riderId}` : `rfid:${c.rfidNumber}`;
-          const lineupEntry = motoLineup.find(e => e.riderId === c.riderId);
-          const riderName = lineupEntry?.riderName ?? (c.riderId != null ? `Rider #${c.riderId}` : `Transponder ${c.rfidNumber}`);
+        for (const c of resolvedCrossings) {
+          const key = c.effectiveRiderId !== null
+            ? `rider:${c.effectiveRiderId}`
+            : `rfid:${normalizeTimingIdentifier(c.rfidNumber) ?? c.rfidNumber}`;
+          const lineupEntry = motoLineup.find(e => e.riderId === c.effectiveRiderId);
+          const riderName = lineupEntry?.riderName
+            ?? c.resolvedIdentity?.riderName
+            ?? (c.effectiveRiderId !== null
+              ? familyRiderMap.get(c.effectiveRiderId) ?? `Rider #${c.effectiveRiderId}`
+              : `Transponder ${c.rfidNumber}`);
           const existing = riderBestMap.get(key);
           if (!existing || c.lapTimeMs! < existing.bestLapMs) {
-            riderBestMap.set(key, { riderId: c.riderId, riderName, bestLapMs: c.lapTimeMs! });
+            riderBestMap.set(key, {
+              riderId: c.effectiveRiderId,
+              riderName,
+              bestLapMs: c.lapTimeMs!,
+            });
           }
         }
         const practiceLeaderboard = [...riderBestMap.values()]
@@ -1515,9 +1789,9 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
           }));
 
         // My lap times
-        const practiceLaps = validCrossings
-          .filter(c => c.riderId === riderId)
-          .map(c => ({ riderId: c.riderId!, lapNumber: c.lapNumber ?? 0, lapTimeMs: c.lapTimeMs }))
+        const practiceLaps = resolvedCrossings
+          .filter(c => c.effectiveRiderId === riderId)
+          .map(c => ({ riderId, lapNumber: c.lapNumber ?? 0, lapTimeMs: c.lapTimeMs }))
           .sort((a, b) => a.lapNumber - b.lapNumber);
 
         return {

@@ -1097,6 +1097,7 @@ export default function TrainScreen() {
 
   // ── Poll for live lap updates when an open-practice session is in progress ──
   useEffect(() => {
+    let cancelled = false;
     setLiveLaps(null);
     setPbFlash(false);
     pbAnim.setValue(0);
@@ -1118,8 +1119,9 @@ export default function TrainScreen() {
     async function poll() {
       try {
         const res = await riderFetch(`/api/rider/profiles/${riderId}/practice`);
-        if (!res.ok) return;
+        if (cancelled || !res.ok) return;
         const { sessions } = await res.json() as { sessions: any[] };
+        if (cancelled) return;
         const found = sessions.find((s: any) => Number(s.sessionId) === sessionId);
         if (!found) return;
 
@@ -1163,11 +1165,19 @@ export default function TrainScreen() {
     void poll();
     const interval = setInterval(() => void poll(), 3000);
     return () => {
+      cancelled = true;
       clearInterval(interval);
       if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSession?.key, currentSession?.status, currentSession?.riderId, currentSession?.practiceSessionId]);
+  }, [
+    currentSession?.key,
+    currentSession?.status,
+    currentSession?.riderId,
+    currentSession?.practiceSessionId,
+    currentTrack?.sessions,
+    riderFetch,
+    pbAnim,
+  ]);
 
   const allSessions     = tracks.flatMap(t => t.sessions);
   // Stats always span the whole track (all dates) so "Best Ever" is truly all-time at that track
