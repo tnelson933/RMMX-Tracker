@@ -15,7 +15,7 @@ jobs:
     env:
       EXPO_DEBUG: "1"
     params:
-      build_id: 10a6b622-37e8-41a7-9e5b-543478807fb6
+      build_id: d6366b33-e701-48e1-8ebc-19d9ff282fe3
     hooks:
       after_checkout:
         - name: Expose Rider App config to EAS Submit
