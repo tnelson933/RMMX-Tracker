@@ -6,3 +6,7 @@ jobs:
     type: testflight
     params:
       build_id: 10a6b622-37e8-41a7-9e5b-543478807fb6
+    hooks:
+      before_install_node_modules:
+        - name: Install pnpm 10.26.1
+          run: npm install --global pnpm@10.26.1
