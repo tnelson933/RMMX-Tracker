@@ -6,7 +6,8 @@
 - [VP9 MediaRecorder keyframe behavior](vp9-mediarecorder-keyframes.md) — Chrome VP9 emits only 1 keyframe; must add videoKeyFrameIntervalDuration: 2_000 for live streaming pending-queue to work.
 - [better-sqlite3 native build](better-sqlite3-build.md) — pnpm blocks build scripts by default; must add to onlyBuiltDependencies in pnpm-workspace.yaml then run `pnpm rebuild better-sqlite3`.
 - [Expo static build debugging](expo-static-build-debugging.md) — use a configurable Metro port and retain bundle HTTP diagnostics when an export fails.
-- [Expo cloud build image pins](expo-cloud-build-images.md) — SDK 54 production builds require Node 20 and Xcode 16.4 pins; Expo defaults selected incompatible builders.
+- [Expo cloud build image pins](expo-cloud-build-images.md) — SDK 54 production builds require Node 20 and current store-compatible build images.
+- [EAS monorepo submissions](eas-monorepo-submit.md) — pre-packaged submit jobs resolve Expo config from repository root, not a nested app working directory.
 - [F2000 loop readiness](f2000-loop-readiness.md) — heartbeats alone are insufficient; confirm enabled loops before timing.
 - [F2000 practice routing](f2000-practice-routing.md) — practice scans must bypass event-only reader routing and resolve active transponder IDs.
 - [Production schema smoke tests](production-schema-smoke-tests.md) — a successful API bundle build cannot catch Drizzle fields missing from the shared schema or production database.
