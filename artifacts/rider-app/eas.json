@@ -27,6 +27,7 @@
       },
       "android": {
         "buildType": "app-bundle",
+        "image": "sdk-54",
         "credentialsSource": "remote"
       },
       "ios": {
