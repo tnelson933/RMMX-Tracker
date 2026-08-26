@@ -42,11 +42,6 @@
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",
         "track": "production"
-      },
-      "ios": {
-        "ascApiKeyPath": "./AuthKey_XXXXXXXXXX.p8",
-        "ascApiKeyIssuerId": "REPLACE_WITH_ISSUER_ID",
-        "ascApiKeyId": "REPLACE_WITH_KEY_ID"
       }
     }
   }
