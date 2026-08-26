@@ -250,6 +250,13 @@ export const ListClubsResponseItem = zod.object({
   "description": zod.string().nullish(),
   "autoDnfEnabled": zod.boolean().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
   "autoDnfThreshold": zod.number().describe('Minimum % of leader laps required to score points (1-100)'),
+  "active": zod.boolean().describe('When false, the club is suspended and its organizers cannot log in'),
+  "organizer": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "hasPassword": zod.boolean()
+}).nullish(),
   "createdAt": zod.string().optional()
 })
 export const ListClubsResponse = zod.array(ListClubsResponseItem)
@@ -265,7 +272,9 @@ export const CreateClubBody = zod.object({
   "contactPhone": zod.string().optional(),
   "logoUrl": zod.string().optional(),
   "website": zod.string().optional(),
-  "description": zod.string().optional()
+  "description": zod.string().optional(),
+  "organizerName": zod.string().optional().describe('Name of the primary organizer — creates a club_organizer user account'),
+  "organizerEmail": zod.string().optional().describe('Email of the primary organizer — sends an invite email to set their password')
 })
 
 
@@ -287,6 +296,13 @@ export const GetClubResponse = zod.object({
   "description": zod.string().nullish(),
   "autoDnfEnabled": zod.boolean().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
   "autoDnfThreshold": zod.number().describe('Minimum % of leader laps required to score points (1-100)'),
+  "active": zod.boolean().describe('When false, the club is suspended and its organizers cannot log in'),
+  "organizer": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "hasPassword": zod.boolean()
+}).nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -307,7 +323,8 @@ export const UpdateClubBody = zod.object({
   "website": zod.string().optional(),
   "description": zod.string().optional(),
   "autoDnfEnabled": zod.boolean().optional(),
-  "autoDnfThreshold": zod.number().optional()
+  "autoDnfThreshold": zod.number().optional(),
+  "active": zod.boolean().optional().describe('Set false to suspend the club')
 })
 
 export const UpdateClubResponse = zod.object({
@@ -321,6 +338,13 @@ export const UpdateClubResponse = zod.object({
   "description": zod.string().nullish(),
   "autoDnfEnabled": zod.boolean().describe('When true, riders completing fewer than autoDnfThreshold% of leader laps score 0 points'),
   "autoDnfThreshold": zod.number().describe('Minimum % of leader laps required to score points (1-100)'),
+  "active": zod.boolean().describe('When false, the club is suspended and its organizers cannot log in'),
+  "organizer": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "hasPassword": zod.boolean()
+}).nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -334,6 +358,72 @@ export const DeleteClubParams = zod.object({
 
 
 /**
+ * @summary Get club settings (rider acknowledgement, default classes)
+ */
+export const GetClubSettingsParams = zod.object({
+  "clubId": zod.coerce.number()
+})
+
+export const GetClubSettingsResponse = zod.object({
+  "clubId": zod.number(),
+  "riderAcknowledgement": zod.string().nullable(),
+  "waiverPdfUrl": zod.string().nullish(),
+  "liabilityWaiverPdfUrl": zod.string().nullish(),
+  "liabilityWaiverFields": zod.array(zod.object({
+
+}).passthrough()).nullish(),
+  "defaultClasses": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "details": zod.string().nullish()
+})),
+  "brandContingencies": zod.array(zod.string()).nullish(),
+  "trackName": zod.string().nullish()
+})
+
+
+/**
+ * @summary Upsert club settings (rider acknowledgement, default classes)
+ */
+export const PutClubSettingsParams = zod.object({
+  "clubId": zod.coerce.number()
+})
+
+export const PutClubSettingsBody = zod.object({
+  "riderAcknowledgement": zod.string().nullish(),
+  "waiverPdfUrl": zod.string().nullish(),
+  "liabilityWaiverPdfUrl": zod.string().nullish(),
+  "liabilityWaiverFields": zod.array(zod.object({
+
+}).passthrough()).nullish(),
+  "defaultClasses": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "details": zod.string().nullish()
+})).optional(),
+  "brandContingencies": zod.array(zod.string()).nullish(),
+  "trackName": zod.string().nullish()
+})
+
+export const PutClubSettingsResponse = zod.object({
+  "clubId": zod.number(),
+  "riderAcknowledgement": zod.string().nullable(),
+  "waiverPdfUrl": zod.string().nullish(),
+  "liabilityWaiverPdfUrl": zod.string().nullish(),
+  "liabilityWaiverFields": zod.array(zod.object({
+
+}).passthrough()).nullish(),
+  "defaultClasses": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "details": zod.string().nullish()
+})),
+  "brandContingencies": zod.array(zod.string()).nullish(),
+  "trackName": zod.string().nullish()
+})
+
+
+/**
  * @summary List events (public, filterable by state/club/status)
  */
 export const ListEventsQueryParams = zod.object({
@@ -343,8 +433,11 @@ export const ListEventsQueryParams = zod.object({
 })
 
 export const listEventsResponseTimingTechnologyDefault = `rfid`;
+export const listEventsResponseRaceStyleDefault = `motocross`;
+export const listEventsResponseQuickCheckinEnabledDefault = false;
 
 export const ListEventsResponseItem = zod.object({
+  "published": zod.boolean().optional().describe('Whether results are published to the public'),
   "id": zod.number(),
   "clubId": zod.number(),
   "name": zod.string(),
@@ -360,15 +453,19 @@ export const ListEventsResponseItem = zod.object({
   "paymentEnabled": zod.boolean().optional(),
   "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().nullish(),
+  "earlyBirdFee": zod.number().nullish().describe('Discounted entry fee during the early sign-up incentive period (before earlyBirdEndsAt)'),
+  "earlyBirdEndsAt": zod.coerce.date().nullish().describe('Last day (YYYY-MM-DD inclusive) of the early-bird pricing period; fee reverts to entryFee the following day'),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(listEventsResponseTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(listEventsResponseTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
+  "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
@@ -379,6 +476,24 @@ export const ListEventsResponseItem = zod.object({
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
+  "endDate": zod.coerce.date().nullish().describe('End date for multi-day events (YYYY-MM-DD). Null for single-day events.'),
+  "raceClassSeriesMap": zod.record(zod.string(), zod.array(zod.number())).optional().describe('Maps each race class name to an array of series IDs that should award points for that class.'),
+  "raceClassDetails": zod.record(zod.string(), zod.string()).optional().describe('Maps each race class name to a rules\/details paragraph shown to riders.'),
+  "raceStyle": zod.enum(['motocross', 'enduro', 'cross_country']).default(listEventsResponseRaceStyleDefault).describe('Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)'),
+  "enduroPenaltyConfig": zod.union([zod.object({
+  "earlySecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives early'),
+  "lateSecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives late'),
+  "earlyDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes early (null = disabled)'),
+  "lateDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes late (null = disabled)'),
+  "timezone": zod.string().nullish().describe('IANA timezone identifier used when comparing RFID arrival times against expected times (e.g. \"America\/Denver\"). Defaults to server local time if omitted.')
+}),zod.null()]).optional(),
+  "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
+  "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
+  "quickCheckinEnabled": zod.boolean().default(listEventsResponseQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "trackLat": zod.number().nullish().describe('Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
+  "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
+  "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
+  "zip": zod.string().nullish().describe('ZIP code of the track venue.'),
   "createdAt": zod.string().optional()
 })
 export const ListEventsResponse = zod.array(ListEventsResponseItem)
@@ -388,6 +503,8 @@ export const ListEventsResponse = zod.array(ListEventsResponseItem)
  * @summary Create a race event
  */
 export const createEventBodyTimingTechnologyDefault = `rfid`;
+export const createEventBodyRaceStyleDefault = `motocross`;
+export const createEventBodyQuickCheckinEnabledDefault = false;
 
 export const CreateEventBody = zod.object({
   "clubId": zod.number(),
@@ -403,13 +520,17 @@ export const CreateEventBody = zod.object({
   "paymentEnabled": zod.boolean().optional(),
   "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().optional(),
+  "earlyBirdFee": zod.number().optional(),
+  "earlyBirdEndsAt": zod.coerce.date().optional(),
   "maxRiders": zod.number().optional(),
   "imageUrl": zod.string().optional(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(createEventBodyTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(createEventBodyTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().optional(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
+  "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
@@ -419,7 +540,13 @@ export const CreateEventBody = zod.object({
   "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
-  "defaultGateConfigId": zod.string().optional().describe('ID of the gate configuration to pre-select when generating lineups')
+  "defaultGateConfigId": zod.string().optional().describe('ID of the gate configuration to pre-select when generating lineups'),
+  "endDate": zod.coerce.date().nullish().describe('End date for multi-day events (YYYY-MM-DD). Null for single-day events.'),
+  "raceClassSeriesMap": zod.record(zod.string(), zod.array(zod.number())).optional().describe('Maps each race class name to an array of series IDs that should award points for that class.'),
+  "raceStyle": zod.enum(['motocross', 'enduro', 'cross_country']).default(createEventBodyRaceStyleDefault).describe('Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)'),
+  "quickCheckinEnabled": zod.boolean().default(createEventBodyQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "streetAddress": zod.string().optional().describe('Street address of the track venue.'),
+  "zip": zod.string().optional().describe('ZIP code of the track venue.')
 })
 
 
@@ -431,8 +558,11 @@ export const GetEventParams = zod.object({
 })
 
 export const getEventResponseTimingTechnologyDefault = `rfid`;
+export const getEventResponseRaceStyleDefault = `motocross`;
+export const getEventResponseQuickCheckinEnabledDefault = false;
 
 export const GetEventResponse = zod.object({
+  "published": zod.boolean().optional().describe('Whether results are published to the public'),
   "id": zod.number(),
   "clubId": zod.number(),
   "name": zod.string(),
@@ -448,15 +578,19 @@ export const GetEventResponse = zod.object({
   "paymentEnabled": zod.boolean().optional(),
   "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().nullish(),
+  "earlyBirdFee": zod.number().nullish().describe('Discounted entry fee during the early sign-up incentive period (before earlyBirdEndsAt)'),
+  "earlyBirdEndsAt": zod.coerce.date().nullish().describe('Last day (YYYY-MM-DD inclusive) of the early-bird pricing period; fee reverts to entryFee the following day'),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getEventResponseTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(getEventResponseTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
+  "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
@@ -467,6 +601,24 @@ export const GetEventResponse = zod.object({
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
+  "endDate": zod.coerce.date().nullish().describe('End date for multi-day events (YYYY-MM-DD). Null for single-day events.'),
+  "raceClassSeriesMap": zod.record(zod.string(), zod.array(zod.number())).optional().describe('Maps each race class name to an array of series IDs that should award points for that class.'),
+  "raceClassDetails": zod.record(zod.string(), zod.string()).optional().describe('Maps each race class name to a rules\/details paragraph shown to riders.'),
+  "raceStyle": zod.enum(['motocross', 'enduro', 'cross_country']).default(getEventResponseRaceStyleDefault).describe('Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)'),
+  "enduroPenaltyConfig": zod.union([zod.object({
+  "earlySecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives early'),
+  "lateSecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives late'),
+  "earlyDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes early (null = disabled)'),
+  "lateDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes late (null = disabled)'),
+  "timezone": zod.string().nullish().describe('IANA timezone identifier used when comparing RFID arrival times against expected times (e.g. \"America\/Denver\"). Defaults to server local time if omitted.')
+}),zod.null()]).optional(),
+  "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
+  "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
+  "quickCheckinEnabled": zod.boolean().default(getEventResponseQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "trackLat": zod.number().nullish().describe('Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
+  "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
+  "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
+  "zip": zod.string().nullish().describe('ZIP code of the track venue.'),
   "createdAt": zod.string().optional()
 })
 
@@ -494,13 +646,17 @@ export const UpdateEventBody = zod.object({
   "paymentEnabled": zod.boolean().optional(),
   "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().optional(),
+  "earlyBirdFee": zod.number().optional(),
+  "earlyBirdEndsAt": zod.coerce.date().optional(),
   "maxRiders": zod.number().optional(),
   "imageUrl": zod.string().optional(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventBodyTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(updateEventBodyTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().optional(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
+  "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
@@ -510,12 +666,31 @@ export const UpdateEventBody = zod.object({
   "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
-  "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups')
+  "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
+  "endDate": zod.coerce.date().nullish().describe('End date for multi-day events (YYYY-MM-DD). Null for single-day events.'),
+  "raceClassSeriesMap": zod.record(zod.string(), zod.array(zod.number())).optional().describe('Maps each race class name to an array of series IDs that should award points for that class.'),
+  "raceClassDetails": zod.record(zod.string(), zod.string()).optional().describe('Maps each race class name to a rules\/details paragraph shown to riders.'),
+  "raceStyle": zod.enum(['motocross', 'enduro', 'cross_country']).optional().describe('Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)'),
+  "enduroPenaltyConfig": zod.union([zod.object({
+  "earlySecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives early'),
+  "lateSecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives late'),
+  "earlyDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes early (null = disabled)'),
+  "lateDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes late (null = disabled)'),
+  "timezone": zod.string().nullish().describe('IANA timezone identifier used when comparing RFID arrival times against expected times (e.g. \"America\/Denver\"). Defaults to server local time if omitted.')
+}),zod.null()]).optional(),
+  "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
+  "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
+  "quickCheckinEnabled": zod.boolean().optional().describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
+  "zip": zod.string().nullish().describe('ZIP code of the track venue.')
 })
 
 export const updateEventResponseTimingTechnologyDefault = `rfid`;
+export const updateEventResponseRaceStyleDefault = `motocross`;
+export const updateEventResponseQuickCheckinEnabledDefault = false;
 
 export const UpdateEventResponse = zod.object({
+  "published": zod.boolean().optional().describe('Whether results are published to the public'),
   "id": zod.number(),
   "clubId": zod.number(),
   "name": zod.string(),
@@ -531,15 +706,19 @@ export const UpdateEventResponse = zod.object({
   "paymentEnabled": zod.boolean().optional(),
   "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().nullish(),
+  "earlyBirdFee": zod.number().nullish().describe('Discounted entry fee during the early sign-up incentive period (before earlyBirdEndsAt)'),
+  "earlyBirdEndsAt": zod.coerce.date().nullish().describe('Last day (YYYY-MM-DD inclusive) of the early-bird pricing period; fee reverts to entryFee the following day'),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(updateEventResponseTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(updateEventResponseTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
+  "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
@@ -550,6 +729,24 @@ export const UpdateEventResponse = zod.object({
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
+  "endDate": zod.coerce.date().nullish().describe('End date for multi-day events (YYYY-MM-DD). Null for single-day events.'),
+  "raceClassSeriesMap": zod.record(zod.string(), zod.array(zod.number())).optional().describe('Maps each race class name to an array of series IDs that should award points for that class.'),
+  "raceClassDetails": zod.record(zod.string(), zod.string()).optional().describe('Maps each race class name to a rules\/details paragraph shown to riders.'),
+  "raceStyle": zod.enum(['motocross', 'enduro', 'cross_country']).default(updateEventResponseRaceStyleDefault).describe('Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)'),
+  "enduroPenaltyConfig": zod.union([zod.object({
+  "earlySecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives early'),
+  "lateSecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives late'),
+  "earlyDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes early (null = disabled)'),
+  "lateDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes late (null = disabled)'),
+  "timezone": zod.string().nullish().describe('IANA timezone identifier used when comparing RFID arrival times against expected times (e.g. \"America\/Denver\"). Defaults to server local time if omitted.')
+}),zod.null()]).optional(),
+  "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
+  "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
+  "quickCheckinEnabled": zod.boolean().default(updateEventResponseQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "trackLat": zod.number().nullish().describe('Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
+  "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
+  "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
+  "zip": zod.string().nullish().describe('ZIP code of the track venue.'),
   "createdAt": zod.string().optional()
 })
 
@@ -559,6 +756,97 @@ export const UpdateEventResponse = zod.object({
  */
 export const DeleteEventParams = zod.object({
   "eventId": zod.coerce.number()
+})
+
+
+/**
+ * @summary List all readers registered to the caller's club
+ */
+export const ListReadersResponseItem = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number(),
+  "name": zod.string(),
+  "type": zod.enum(['rfid', 'active_transponder']),
+  "token": zod.string().describe('UUID used as the URL key for this reader\'s ingest endpoint'),
+  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.'),
+  "lastSeenAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const ListReadersResponse = zod.array(ListReadersResponseItem)
+
+
+/**
+ * @summary Register a new reader for the club
+ */
+export const CreateReaderBody = zod.object({
+  "name": zod.string(),
+  "type": zod.enum(['rfid', 'active_transponder']),
+  "hardwareAddress": zod.string().optional().describe('Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address')
+})
+
+
+/**
+ * @summary Live RM Connect app connections for the caller's club
+ */
+export const GetConnectorStatusResponseItem = zod.object({
+  "readerId": zod.number(),
+  "readerName": zod.string(),
+  "readerType": zod.string(),
+  "connectedAt": zod.coerce.date(),
+  "hardware": zod.object({
+  "kind": zod.union([zod.literal('impinj'),zod.literal('zebra'),zod.literal('generic'),zod.literal('active_transponder'),zod.literal(null)]).nullable(),
+  "connected": zod.boolean(),
+  "detail": zod.string().nullish(),
+  "lastReadAt": zod.coerce.date().nullish(),
+  "readCount": zod.number()
+})
+})
+export const GetConnectorStatusResponse = zod.array(GetConnectorStatusResponseItem)
+
+
+/**
+ * @summary Tags recently seen by this club's readers (live tag scanner)
+ */
+export const GetRecentTagsResponseItem = zod.object({
+  "rfidNumber": zod.string(),
+  "count": zod.number().describe('Number of reads since first seen'),
+  "firstSeenAt": zod.coerce.date(),
+  "lastSeenAt": zod.coerce.date(),
+  "riderId": zod.number().nullish().describe('Rider whose profile has this tag assigned, if any'),
+  "riderName": zod.string().nullish()
+})
+export const GetRecentTagsResponse = zod.array(GetRecentTagsResponseItem)
+
+
+/**
+ * @summary Rename a registered reader
+ */
+export const UpdateReaderParams = zod.object({
+  "readerId": zod.coerce.number()
+})
+
+export const UpdateReaderBody = zod.object({
+  "name": zod.string(),
+  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address')
+})
+
+export const UpdateReaderResponse = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number(),
+  "name": zod.string(),
+  "type": zod.enum(['rfid', 'active_transponder']),
+  "token": zod.string().describe('UUID used as the URL key for this reader\'s ingest endpoint'),
+  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.'),
+  "lastSeenAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Remove a registered reader
+ */
+export const DeleteReaderParams = zod.object({
+  "readerId": zod.coerce.number()
 })
 
 
@@ -590,6 +878,8 @@ export const ListRidersResponseItem = zod.object({
   "homeState": zod.string().nullish(),
   "zip": zod.string().nullish(),
   "clubIdNumber": zod.string().nullish().describe('Most recent club membership ID from the rider\'s registrations'),
+  "skillLevel": zod.string().nullish(),
+  "raceTypes": zod.array(zod.string()).optional().describe('Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert)'),
   "createdAt": zod.string().optional()
 })
 export const ListRidersResponse = zod.array(ListRidersResponseItem)
@@ -645,6 +935,8 @@ export const GetRiderResponse = zod.object({
   "city": zod.string().nullish(),
   "homeState": zod.string().nullish(),
   "zip": zod.string().nullish(),
+  "skillLevel": zod.string().nullish(),
+  "raceTypes": zod.array(zod.string()).optional().describe('Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert)'),
   "recentResults": zod.array(zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -690,7 +982,9 @@ export const UpdateRiderBody = zod.object({
   "streetAddress": zod.string().optional(),
   "city": zod.string().optional(),
   "homeState": zod.string().optional(),
-  "zip": zod.string().optional()
+  "zip": zod.string().optional(),
+  "skillLevel": zod.string().optional(),
+  "raceTypes": zod.array(zod.string()).optional().describe('Race disciplines the rider competes in')
 })
 
 export const UpdateRiderResponse = zod.object({
@@ -713,6 +1007,8 @@ export const UpdateRiderResponse = zod.object({
   "homeState": zod.string().nullish(),
   "zip": zod.string().nullish(),
   "clubIdNumber": zod.string().nullish().describe('Most recent club membership ID from the rider\'s registrations'),
+  "skillLevel": zod.string().nullish(),
+  "raceTypes": zod.array(zod.string()).optional().describe('Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert)'),
   "createdAt": zod.string().optional()
 })
 
@@ -789,6 +1085,11 @@ export const ListRegistrationsResponseItem = zod.object({
   "amount": zod.number(),
   "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
+  "waiverAcknowledgedAt": zod.string().nullish().describe('ISO timestamp of when the rider accepted the club waiver, or null if not required\/accepted'),
+  "waiverSnapshot": zod.string().nullish().describe('Full text of the club waiver at the time of acceptance'),
+  "cancelledAt": zod.string().nullish(),
+  "cancellationSource": zod.string().nullish(),
+  "refundVerifiedAt": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 export const ListRegistrationsResponse = zod.array(ListRegistrationsResponseItem)
@@ -812,6 +1113,70 @@ export const CreateRegistrationBody = zod.object({
   "amount": zod.number(),
   "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional()
+})
+
+
+/**
+ * @summary Cancel one or more of the authenticated rider's registrations for an event
+ */
+export const CancelMyRegistrationsParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const CancelMyRegistrationsBody = zod.object({
+  "registrationIds": zod.array(zod.number())
+})
+
+export const CancelMyRegistrationsResponse = zod.object({
+  "cancelled": zod.number().optional()
+})
+
+
+/**
+ * @summary List rider-initiated cancellations for an event (organizer)
+ */
+export const ListEventCancellationsParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const ListEventCancellationsResponse = zod.object({
+  "unverifiedCount": zod.number(),
+  "cancellations": zod.array(zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "raceClass": zod.string(),
+  "bibNumber": zod.string().nullish(),
+  "amountPaid": zod.number().nullish(),
+  "paymentMethod": zod.string().nullish(),
+  "paymentStatus": zod.string().nullish(),
+  "cancelledAt": zod.string(),
+  "refundVerifiedAt": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Mark a cancellation refund as verified (organizer)
+ */
+export const VerifyCancellationRefundParams = zod.object({
+  "eventId": zod.coerce.number(),
+  "registrationId": zod.coerce.number()
+})
+
+export const VerifyCancellationRefundResponse = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "raceClass": zod.string(),
+  "bibNumber": zod.string().nullish(),
+  "amountPaid": zod.number().nullish(),
+  "paymentMethod": zod.string().nullish(),
+  "paymentStatus": zod.string().nullish(),
+  "cancelledAt": zod.string(),
+  "refundVerifiedAt": zod.string().nullish()
 })
 
 
@@ -848,6 +1213,11 @@ export const UpdateRegistrationResponse = zod.object({
   "amount": zod.number(),
   "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
 })).optional(),
+  "waiverAcknowledgedAt": zod.string().nullish().describe('ISO timestamp of when the rider accepted the club waiver, or null if not required\/accepted'),
+  "waiverSnapshot": zod.string().nullish().describe('Full text of the club waiver at the time of acceptance'),
+  "cancelledAt": zod.string().nullish(),
+  "cancellationSource": zod.string().nullish(),
+  "refundVerifiedAt": zod.string().nullish(),
   "createdAt": zod.string().optional()
 })
 
@@ -915,7 +1285,8 @@ export const CheckinRiderResponse = zod.object({
  * @summary List RFID transponder assignments
  */
 export const ListRfidTagsQueryParams = zod.object({
-  "eventId": zod.coerce.number().optional()
+  "eventId": zod.coerce.number().optional(),
+  "assignmentType": zod.enum(['rfid', 'active_transponder']).optional().describe('Optional assignment kind. Omitted requests retain legacy passive RFID behavior.')
 })
 
 export const ListRfidTagsResponseItem = zod.object({
@@ -935,7 +1306,8 @@ export const ListRfidTagsResponse = zod.array(ListRfidTagsResponseItem)
 export const AssignRfidBody = zod.object({
   "riderId": zod.number(),
   "rfidNumber": zod.string(),
-  "eventId": zod.number().optional()
+  "eventId": zod.number().optional(),
+  "assignmentType": zod.enum(['rfid', 'active_transponder']).optional().describe('Optional assignment kind. Omitted requests retain legacy passive RFID behavior.')
 })
 
 
@@ -950,13 +1322,15 @@ export const ListMotosResponseItem = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
   "name": zod.string(),
-  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto']),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
   "raceClass": zod.string().optional(),
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
@@ -969,8 +1343,12 @@ export const ListMotosResponseItem = zod.object({
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
   "completedAt": zod.coerce.date().nullish(),
-  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
-  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
+  "pausedAt": zod.coerce.date().nullish().describe('Set when the moto is paused; null when running or completed'),
+  "totalPausedMs": zod.number().optional().describe('Total accumulated paused duration in milliseconds across all pause\/resume cycles'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
+  "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
+  "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 export const ListMotosResponse = zod.array(ListMotosResponseItem)
 
@@ -984,16 +1362,18 @@ export const CreateMotoParams = zod.object({
 
 export const CreateMotoBody = zod.object({
   "name": zod.string(),
-  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto']),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
   "raceClass": zod.string(),
   "raceClasses": zod.array(zod.string()).optional().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "motoNumber": zod.number(),
   "lapCount": zod.number().optional().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().optional().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "plusLaps": zod.number().optional().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format)'),
   "practiceMode": zod.enum(['lap_count', 'countdown']).optional().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().optional().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().optional(),
-  "lineup": zod.array(zod.number()).optional()
+  "lineup": zod.array(zod.number()).optional(),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
 
@@ -1006,16 +1386,295 @@ export const DeleteAllMotosParams = zod.object({
 
 
 /**
+ * @summary List enduro time checks for an event
+ */
+export const ListEnduroTimeChecksParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const ListEnduroTimeChecksResponseItem = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "checkNumber": zod.number().describe('1-based order through the day'),
+  "name": zod.string(),
+  "targets": zod.array(zod.object({
+  "raceClass": zod.string(),
+  "durationMs": zod.number().describe('Expected duration (ms from the rider\'s start) for this class to reach the check')
+})),
+  "createdAt": zod.coerce.date().nullish()
+})
+export const ListEnduroTimeChecksResponse = zod.array(ListEnduroTimeChecksResponseItem)
+
+
+/**
+ * @summary Replace all enduro time checks for an event
+ */
+export const SetEnduroTimeChecksParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const SetEnduroTimeChecksBody = zod.object({
+  "timeChecks": zod.array(zod.object({
+  "checkNumber": zod.number(),
+  "name": zod.string(),
+  "targets": zod.array(zod.object({
+  "raceClass": zod.string(),
+  "durationMs": zod.number().describe('Expected duration (ms from the rider\'s start) for this class to reach the check')
+}))
+})),
+  "penaltyConfig": zod.union([zod.object({
+  "earlySecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives early'),
+  "lateSecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives late'),
+  "earlyDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes early (null = disabled)'),
+  "lateDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes late (null = disabled)'),
+  "timezone": zod.string().nullish().describe('IANA timezone identifier used when comparing RFID arrival times against expected times (e.g. \"America\/Denver\"). Defaults to server local time if omitted.')
+}),zod.null()]).optional()
+})
+
+export const SetEnduroTimeChecksResponseItem = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "checkNumber": zod.number().describe('1-based order through the day'),
+  "name": zod.string(),
+  "targets": zod.array(zod.object({
+  "raceClass": zod.string(),
+  "durationMs": zod.number().describe('Expected duration (ms from the rider\'s start) for this class to reach the check')
+})),
+  "createdAt": zod.coerce.date().nullish()
+})
+export const SetEnduroTimeChecksResponse = zod.array(SetEnduroTimeChecksResponseItem)
+
+
+/**
+ * @summary List recorded checkpoint arrivals for a specific time check
+ */
+export const ListCheckpointArrivalsParams = zod.object({
+  "eventId": zod.coerce.number(),
+  "checkId": zod.coerce.number()
+})
+
+export const ListCheckpointArrivalsResponseItem = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "timeCheckId": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string().nullish(),
+  "arrivalTime": zod.coerce.date(),
+  "recordedBy": zod.enum(['rfid', 'manual']),
+  "createdAt": zod.coerce.date().nullish()
+})
+export const ListCheckpointArrivalsResponse = zod.array(ListCheckpointArrivalsResponseItem)
+
+
+/**
+ * @summary Record or overwrite a rider's manual arrival at a checkpoint
+ */
+export const RecordCheckpointArrivalParams = zod.object({
+  "eventId": zod.coerce.number(),
+  "checkId": zod.coerce.number()
+})
+
+export const RecordCheckpointArrivalBody = zod.object({
+  "riderId": zod.number(),
+  "arrivalTime": zod.coerce.date()
+})
+
+export const RecordCheckpointArrivalResponse = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "timeCheckId": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string().nullish(),
+  "arrivalTime": zod.coerce.date(),
+  "recordedBy": zod.enum(['rfid', 'manual']),
+  "createdAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Remove a rider's recorded arrival at a checkpoint
+ */
+export const DeleteCheckpointArrivalParams = zod.object({
+  "eventId": zod.coerce.number(),
+  "checkId": zod.coerce.number(),
+  "riderId": zod.coerce.number()
+})
+
+export const DeleteCheckpointArrivalResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Compute per-rider penalty totals and DQ flags for an enduro event
+ */
+export const GetEnduroPenaltySummaryParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const GetEnduroPenaltySummaryResponseItem = zod.object({
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "raceClass": zod.string().nullable(),
+  "totalPenaltySeconds": zod.number().describe('Total extra seconds added to this rider\'s time across all checkpoints'),
+  "disqualified": zod.boolean().describe('True if the rider exceeded any DQ threshold at any checkpoint'),
+  "checkDetails": zod.array(zod.object({
+  "checkId": zod.number(),
+  "checkName": zod.string(),
+  "diffMinutes": zod.number().describe('Positive = late, negative = early'),
+  "penaltySeconds": zod.number(),
+  "disqualified": zod.boolean(),
+  "hasArrival": zod.boolean().optional()
+})).optional()
+})
+export const GetEnduroPenaltySummaryResponse = zod.array(GetEnduroPenaltySummaryResponseItem)
+
+
+/**
+ * @summary List reader-to-checkpoint assignments for an event
+ */
+export const ListEventReaderAssignmentsParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const ListEventReaderAssignmentsResponseItem = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "readerId": zod.number(),
+  "antennaId": zod.number().nullish().describe('Specific antenna port (1-4), or null for any antenna on this reader'),
+  "role": zod.enum(['start', 'finish', 'time_check']),
+  "motoId": zod.number().nullish().describe('For start\/finish roles — the specific test moto this reader covers'),
+  "timeCheckId": zod.number().nullish().describe('For time_check role — the enduro_time_check this reader is positioned at'),
+  "createdAt": zod.coerce.date().optional()
+})
+export const ListEventReaderAssignmentsResponse = zod.array(ListEventReaderAssignmentsResponseItem)
+
+
+/**
+ * @summary Replace all reader assignments for an event
+ */
+export const SetEventReaderAssignmentsParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const SetEventReaderAssignmentsBody = zod.object({
+  "assignments": zod.array(zod.object({
+  "readerId": zod.number(),
+  "antennaId": zod.number().nullish(),
+  "role": zod.enum(['start', 'finish', 'time_check']),
+  "motoId": zod.number().nullish(),
+  "timeCheckId": zod.number().nullish()
+}))
+})
+
+export const SetEventReaderAssignmentsResponseItem = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "readerId": zod.number(),
+  "antennaId": zod.number().nullish().describe('Specific antenna port (1-4), or null for any antenna on this reader'),
+  "role": zod.enum(['start', 'finish', 'time_check']),
+  "motoId": zod.number().nullish().describe('For start\/finish roles — the specific test moto this reader covers'),
+  "timeCheckId": zod.number().nullish().describe('For time_check role — the enduro_time_check this reader is positioned at'),
+  "createdAt": zod.coerce.date().optional()
+})
+export const SetEventReaderAssignmentsResponse = zod.array(SetEventReaderAssignmentsResponseItem)
+
+
+/**
  * @summary Link two motos as a staggered start pair
  */
 export const LinkStaggerParams = zod.object({
   "eventId": zod.coerce.number()
 })
 
+export const linkStaggerBodyOrderedMotoIdsMin = 2;
+
+
+
 export const LinkStaggerBody = zod.object({
-  "motoId1": zod.number(),
-  "motoId2": zod.number(),
-  "firstMotoId": zod.number().describe('Which of the two motos starts first')
+  "orderedMotoIds": zod.array(zod.number()).min(linkStaggerBodyOrderedMotoIdsMin).describe('Ordered list of moto IDs — first element starts first, last starts last')
+})
+
+
+/**
+ * @summary Pause an in-progress moto (freeze the clock without ending it)
+ */
+export const PauseMotoParams = zod.object({
+  "motoId": zod.coerce.number()
+})
+
+export const PauseMotoResponse = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "name": zod.string(),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
+  "raceClass": zod.string().optional(),
+  "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
+  "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
+  "motoNumber": zod.number().optional(),
+  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
+  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
+  "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
+  "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
+  "scheduledTime": zod.string().nullish(),
+  "lineup": zod.array(zod.object({
+  "position": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "bibNumber": zod.string().nullish(),
+  "rfidNumber": zod.string().nullish()
+})).optional(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish(),
+  "pausedAt": zod.coerce.date().nullish().describe('Set when the moto is paused; null when running or completed'),
+  "totalPausedMs": zod.number().optional().describe('Total accumulated paused duration in milliseconds across all pause\/resume cycles'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
+  "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
+  "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
+})
+
+
+/**
+ * @summary Resume a paused moto (restart the clock from where it stopped)
+ */
+export const ResumeMotoParams = zod.object({
+  "motoId": zod.coerce.number()
+})
+
+export const ResumeMotoResponse = zod.object({
+  "id": zod.number(),
+  "eventId": zod.number(),
+  "name": zod.string(),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
+  "raceClass": zod.string().optional(),
+  "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
+  "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
+  "motoNumber": zod.number().optional(),
+  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
+  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
+  "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
+  "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
+  "scheduledTime": zod.string().nullish(),
+  "lineup": zod.array(zod.object({
+  "position": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "bibNumber": zod.string().nullish(),
+  "rfidNumber": zod.string().nullish()
+})).optional(),
+  "startedAt": zod.coerce.date().nullish(),
+  "completedAt": zod.coerce.date().nullish(),
+  "pausedAt": zod.coerce.date().nullish().describe('Set when the moto is paused; null when running or completed'),
+  "totalPausedMs": zod.number().optional().describe('Total accumulated paused duration in milliseconds across all pause\/resume cycles'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
+  "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
+  "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
 
@@ -1040,23 +1699,28 @@ export const UpdateMotoBody = zod.object({
   "scheduledTime": zod.string().optional(),
   "lapCount": zod.number().nullish(),
   "timeLimitMs": zod.number().nullish(),
+  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires; null to clear'),
+  "timeExpiredAt": zod.coerce.date().nullish().describe('ISO timestamp; set when the race timer expires; pass null to clear'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish(),
   "countdownSeconds": zod.number().nullish(),
   "motoNumber": zod.number().optional(),
-  "name": zod.string().optional()
+  "name": zod.string().optional(),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
 export const UpdateMotoResponse = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
   "name": zod.string(),
-  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto']),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
   "raceClass": zod.string().optional(),
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
@@ -1069,8 +1733,12 @@ export const UpdateMotoResponse = zod.object({
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
   "completedAt": zod.coerce.date().nullish(),
-  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
-  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
+  "pausedAt": zod.coerce.date().nullish().describe('Set when the moto is paused; null when running or completed'),
+  "totalPausedMs": zod.number().optional().describe('Total accumulated paused duration in milliseconds across all pause\/resume cycles'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
+  "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
+  "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
 
@@ -1097,13 +1765,15 @@ export const ReorderMotosResponseItem = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
   "name": zod.string(),
-  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto']),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
   "raceClass": zod.string().optional(),
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
@@ -1116,8 +1786,12 @@ export const ReorderMotosResponseItem = zod.object({
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
   "completedAt": zod.coerce.date().nullish(),
-  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
-  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
+  "pausedAt": zod.coerce.date().nullish().describe('Set when the moto is paused; null when running or completed'),
+  "totalPausedMs": zod.number().optional().describe('Total accumulated paused duration in milliseconds across all pause\/resume cycles'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
+  "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
+  "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 export const ReorderMotosResponse = zod.array(ReorderMotosResponseItem)
 
@@ -1141,21 +1815,26 @@ export const GenerateLineupsBody = zod.object({
   "gateSeedingMethod": zod.enum(['random', 'practice_fastest_lap', 'previous_round']).optional().describe('Controls how riders are ordered into gate positions. random = shuffle randomly (default); practice_fastest_lap = sort by best practice lap time (fastest gets best pick); previous_round = sort by finish position in the most recently completed round, tiebroken by fastest lap time in that round. When omitted, defaults to random (preserving backward compatibility).\n'),
   "rounds": zod.array(zod.number()).optional().describe('If provided, only generate motos for these round numbers (1-indexed). Omit or leave empty to regenerate all rounds. Motos from unspecified rounds are left untouched.\n'),
   "gatePickMethod": zod.enum(['random', 'practice', 'prior_round_finish', 'first_registered']).optional().describe('Controls gate number assignment. random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first; first_registered = sort by registration timestamp, earliest registered gets first gate pick. Supersedes gateSeedingMethod when both are present.\n'),
+  "timeLimitMs": zod.number().optional().describe('Race time limit in milliseconds. When set, the race runs until this duration expires, then plusLaps additional laps are counted before the moto ends. Mutually exclusive with lapCount (time-based vs laps-based).\n'),
+  "plusLaps": zod.number().optional().describe('Number of additional laps riders complete after the time limit expires. Defaults to 1 (classic \"time + 1 lap\" motocross format). Only meaningful when timeLimitMs is also set.\n'),
   "lapCount": zod.number().optional().describe('Number of laps for each generated moto. When set, indicates this is a laps-based race (first to reach this many laps wins) and the value is stored on every created moto for display and timing purposes.\n'),
-  "minRacesBetween": zod.number().min(1).max(generateLineupsBodyMinRacesBetweenMax).optional().describe('Minimum number of races that must separate a rider\'s consecutive motos when they are entered in multiple classes. The scheduler will try to reorder classes in the run order to satisfy this constraint. If it cannot fully satisfy the constraint, motos are still created and the remaining conflicts are surfaced in the response header.\n')
+  "minRacesBetween": zod.number().min(1).max(generateLineupsBodyMinRacesBetweenMax).optional().describe('Minimum number of races that must separate a rider\'s consecutive motos when they are entered in multiple classes. The scheduler will try to reorder classes in the run order to satisfy this constraint. If it cannot fully satisfy the constraint, motos are still created and the remaining conflicts are surfaced in the response header.\n'),
+  "useRegistrations": zod.boolean().optional().describe('When true, generate lineup slots for all registered riders (not only those who have checked in). Riders who have not yet checked in appear in the lineup with checkedIn: false. When a rider later checks in, their slot is automatically updated to checkedIn: true.\n')
 })
 
 export const GenerateLineupsResponseItem = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
   "name": zod.string(),
-  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto']),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
   "raceClass": zod.string().optional(),
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
@@ -1168,8 +1847,12 @@ export const GenerateLineupsResponseItem = zod.object({
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
   "completedAt": zod.coerce.date().nullish(),
-  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
-  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
+  "pausedAt": zod.coerce.date().nullish().describe('Set when the moto is paused; null when running or completed'),
+  "totalPausedMs": zod.number().optional().describe('Total accumulated paused duration in milliseconds across all pause\/resume cycles'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
+  "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
+  "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 export const GenerateLineupsResponse = zod.array(GenerateLineupsResponseItem)
 
@@ -1190,13 +1873,15 @@ export const GenerateMotoLineupResponse = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
   "name": zod.string(),
-  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto']),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
   "raceClass": zod.string().optional(),
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
@@ -1209,8 +1894,12 @@ export const GenerateMotoLineupResponse = zod.object({
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
   "completedAt": zod.coerce.date().nullish(),
-  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
-  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
+  "pausedAt": zod.coerce.date().nullish().describe('Set when the moto is paused; null when running or completed'),
+  "totalPausedMs": zod.number().optional().describe('Total accumulated paused duration in milliseconds across all pause\/resume cycles'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
+  "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
+  "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
 
@@ -1270,7 +1959,9 @@ export const SubmitResultsBody = zod.object({
   "totalTime": zod.string().optional(),
   "lapTimes": zod.array(zod.string()).optional(),
   "dnf": zod.boolean().optional(),
-  "dns": zod.boolean().optional()
+  "dns": zod.boolean().optional(),
+  "bibNumber": zod.string().optional(),
+  "riderName": zod.string().optional()
 }))
 })
 
@@ -1414,13 +2105,15 @@ export const AdvanceToMainResponse = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
   "name": zod.string(),
-  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto']),
+  "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
   "raceClass": zod.string().optional(),
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
   "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
   "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
+  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().nullish(),
@@ -1433,8 +2126,12 @@ export const AdvanceToMainResponse = zod.object({
 })).optional(),
   "startedAt": zod.coerce.date().nullish(),
   "completedAt": zod.coerce.date().nullish(),
-  "staggeredWithMotoId": zod.number().nullish().describe('ID of the paired moto in a staggered start'),
-  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2 = starts second in a staggered pair')
+  "pausedAt": zod.coerce.date().nullish().describe('Set when the moto is paused; null when running or completed'),
+  "totalPausedMs": zod.number().optional().describe('Total accumulated paused duration in milliseconds across all pause\/resume cycles'),
+  "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
+  "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
+  "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
 
@@ -1561,6 +2258,86 @@ export const DeletePointsTableParams = zod.object({
 
 
 /**
+ * @summary List open-practice sessions for the organizer's club
+ */
+export const ListPracticeSessionsResponseItem = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['idle', 'active', 'ended']),
+  "debounceMs": zod.number(),
+  "venueName": zod.string().nullish().describe('Track\/venue name snapshotted from club settings at session creation time'),
+  "startedAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+export const ListPracticeSessionsResponse = zod.array(ListPracticeSessionsResponseItem)
+
+
+/**
+ * @summary Create a new open-practice session (snapshots the club's track name)
+ */
+export const CreatePracticeSessionBody = zod.object({
+  "name": zod.string(),
+  "debounceMs": zod.number().optional()
+})
+
+
+/**
+ * @summary Get a single practice session by ID
+ */
+export const GetPracticeSessionParams = zod.object({
+  "sessionId": zod.coerce.number()
+})
+
+export const GetPracticeSessionResponse = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['idle', 'active', 'ended']),
+  "debounceMs": zod.number(),
+  "venueName": zod.string().nullish().describe('Track\/venue name snapshotted from club settings at session creation time'),
+  "startedAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Update a practice session (start, end, rename)
+ */
+export const UpdatePracticeSessionParams = zod.object({
+  "sessionId": zod.coerce.number()
+})
+
+export const UpdatePracticeSessionBody = zod.object({
+  "name": zod.string().optional(),
+  "status": zod.enum(['idle', 'active', 'ended']).optional(),
+  "debounceMs": zod.number().optional()
+})
+
+export const UpdatePracticeSessionResponse = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number(),
+  "name": zod.string(),
+  "status": zod.enum(['idle', 'active', 'ended']),
+  "debounceMs": zod.number(),
+  "venueName": zod.string().nullish().describe('Track\/venue name snapshotted from club settings at session creation time'),
+  "startedAt": zod.string().nullish(),
+  "endedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Delete a practice session and all its crossings
+ */
+export const DeletePracticeSessionParams = zod.object({
+  "sessionId": zod.coerce.number()
+})
+
+
+/**
  * @summary Club dashboard summary — upcoming events, recent check-ins, total riders
  */
 export const GetClubDashboardParams = zod.object({
@@ -1568,6 +2345,8 @@ export const GetClubDashboardParams = zod.object({
 })
 
 export const getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault = `rfid`;
+export const getClubDashboardResponseUpcomingEventListItemRaceStyleDefault = `motocross`;
+export const getClubDashboardResponseUpcomingEventListItemQuickCheckinEnabledDefault = false;
 
 export const GetClubDashboardResponse = zod.object({
   "totalEvents": zod.number(),
@@ -1582,6 +2361,7 @@ export const GetClubDashboardResponse = zod.object({
   "timestamp": zod.string()
 })),
   "upcomingEventList": zod.array(zod.object({
+  "published": zod.boolean().optional().describe('Whether results are published to the public'),
   "id": zod.number(),
   "clubId": zod.number(),
   "name": zod.string(),
@@ -1597,15 +2377,19 @@ export const GetClubDashboardResponse = zod.object({
   "paymentEnabled": zod.boolean().optional(),
   "requireAma": zod.boolean().optional(),
   "entryFee": zod.number().nullish(),
+  "earlyBirdFee": zod.number().nullish().describe('Discounted entry fee during the early sign-up incentive period (before earlyBirdEndsAt)'),
+  "earlyBirdEndsAt": zod.coerce.date().nullish().describe('Last day (YYYY-MM-DD inclusive) of the early-bird pricing period; fee reverts to entryFee the following day'),
   "maxRiders": zod.number().nullish(),
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
-  "timingTechnology": zod.enum(['rfid', 'mylaps']).default(getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
   "requireClubId": zod.boolean().optional(),
+  "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
+  "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
@@ -1616,6 +2400,24 @@ export const GetClubDashboardResponse = zod.object({
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
+  "endDate": zod.coerce.date().nullish().describe('End date for multi-day events (YYYY-MM-DD). Null for single-day events.'),
+  "raceClassSeriesMap": zod.record(zod.string(), zod.array(zod.number())).optional().describe('Maps each race class name to an array of series IDs that should award points for that class.'),
+  "raceClassDetails": zod.record(zod.string(), zod.string()).optional().describe('Maps each race class name to a rules\/details paragraph shown to riders.'),
+  "raceStyle": zod.enum(['motocross', 'enduro', 'cross_country']).default(getClubDashboardResponseUpcomingEventListItemRaceStyleDefault).describe('Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)'),
+  "enduroPenaltyConfig": zod.union([zod.object({
+  "earlySecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives early'),
+  "lateSecPerMin": zod.number().describe('Seconds added to overall time per whole minute a rider arrives late'),
+  "earlyDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes early (null = disabled)'),
+  "lateDqMinutes": zod.number().nullish().describe('Disqualify rider if more than this many minutes late (null = disabled)'),
+  "timezone": zod.string().nullish().describe('IANA timezone identifier used when comparing RFID arrival times against expected times (e.g. \"America\/Denver\"). Defaults to server local time if omitted.')
+}),zod.null()]).optional(),
+  "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
+  "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
+  "quickCheckinEnabled": zod.boolean().default(getClubDashboardResponseUpcomingEventListItemQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "trackLat": zod.number().nullish().describe('Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
+  "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
+  "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
+  "zip": zod.string().nullish().describe('ZIP code of the track venue.'),
   "createdAt": zod.string().optional()
 })).optional()
 })
@@ -1681,6 +2483,136 @@ export const ListPublicSeriesResponse = zod.array(ListPublicSeriesResponseItem)
 
 
 /**
+ * @summary Public series standings — top riders per class with AMA# and bike brand
+ */
+export const GetPublicSeriesStandingsParams = zod.object({
+  "seriesId": zod.coerce.number()
+})
+
+export const GetPublicSeriesStandingsResponseItem = zod.object({
+  "position": zod.number(),
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "raceClass": zod.string(),
+  "totalScore": zod.number(),
+  "eventsEntered": zod.number(),
+  "amaNumber": zod.string().nullish(),
+  "bikeBrand": zod.string().nullish(),
+  "events": zod.array(zod.object({
+  "eventId": zod.number(),
+  "eventName": zod.string(),
+  "eventScore": zod.number().describe('Sum of positions for this event\'s motos'),
+  "attended": zod.boolean(),
+  "motos": zod.array(zod.number()).optional().describe('Per-moto finish positions (penalty applied for missed motos)')
+})).optional()
+})
+export const GetPublicSeriesStandingsResponse = zod.array(GetPublicSeriesStandingsResponseItem)
+
+
+/**
+ * @summary List all maintenance history records for a rider, newest first
+ */
+export const GetRiderMaintenanceHistoryParams = zod.object({
+  "riderId": zod.coerce.number()
+})
+
+export const GetRiderMaintenanceHistoryResponseItem = zod.object({
+  "id": zod.number(),
+  "riderId": zod.number(),
+  "itemKey": zod.string(),
+  "itemName": zod.string(),
+  "servicedAt": zod.string(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const GetRiderMaintenanceHistoryResponse = zod.array(GetRiderMaintenanceHistoryResponseItem)
+
+
+/**
+ * @summary List all series the authenticated rider is enrolled in, with their points and position
+ */
+export const GetRiderSeriesResponseItem = zod.object({
+  "seriesId": zod.number(),
+  "seriesName": zod.string(),
+  "raceClass": zod.string(),
+  "totalPoints": zod.number(),
+  "position": zod.number()
+})
+export const GetRiderSeriesResponse = zod.array(GetRiderSeriesResponseItem)
+
+
+/**
+ * @summary List all clubs the authenticated rider has ever registered with, with notification prefs
+ */
+export const GetRiderOrganizationsResponseItem = zod.object({
+  "clubId": zod.number(),
+  "clubName": zod.string(),
+  "state": zod.string(),
+  "logoUrl": zod.string().nullish(),
+  "notificationsEnabled": zod.boolean()
+})
+export const GetRiderOrganizationsResponse = zod.array(GetRiderOrganizationsResponseItem)
+
+
+/**
+ * @summary Update notification preference for a specific club
+ */
+export const UpdateRiderOrganizationNotificationsParams = zod.object({
+  "clubId": zod.coerce.number()
+})
+
+export const UpdateRiderOrganizationNotificationsBody = zod.object({
+  "enabled": zod.boolean()
+})
+
+export const UpdateRiderOrganizationNotificationsResponse = zod.object({
+  "clubId": zod.number(),
+  "notificationsEnabled": zod.boolean()
+})
+
+
+/**
+ * @summary List events eligible for quick check-in today for the authenticated rider
+ */
+export const GetRiderQuickCheckinEventsResponseItem = zod.object({
+  "eventId": zod.number(),
+  "eventName": zod.string(),
+  "eventDate": zod.string(),
+  "location": zod.string().nullish(),
+  "state": zod.string(),
+  "trackName": zod.string().nullish(),
+  "trackLat": zod.number().nullish(),
+  "trackLng": zod.number().nullish(),
+  "riderId": zod.number(),
+  "riderName": zod.string(),
+  "registrationId": zod.number(),
+  "raceClass": zod.string().nullish(),
+  "eligible": zod.boolean(),
+  "checkedIn": zod.boolean(),
+  "ineligibleReason": zod.union([zod.literal('missing_rfid'),zod.literal('missing_transponder'),zod.literal('missing_waiver'),zod.literal(null)]).nullish()
+})
+export const GetRiderQuickCheckinEventsResponse = zod.array(GetRiderQuickCheckinEventsResponseItem)
+
+
+/**
+ * @summary Self-service check-in for the authenticated rider at a quick-checkin event
+ */
+export const PostEventQuickCheckinParams = zod.object({
+  "eventId": zod.coerce.number()
+})
+
+export const PostEventQuickCheckinBody = zod.object({
+  "riderId": zod.number().optional().describe('Specific rider ID to check in (for family accounts; defaults to first rider)'),
+  "registrationId": zod.number().optional().describe('Specific registration to check in (checks in that registration\'s rider and class)')
+})
+
+export const PostEventQuickCheckinResponse = zod.object({
+  "ok": zod.boolean().optional(),
+  "alreadyCheckedIn": zod.boolean().optional()
+})
+
+
+/**
  * @summary List all US states that have published events
  */
 export const ListStatesResponseItem = zod.object({
@@ -1698,6 +2630,7 @@ export const ListUpcomingEventsResponseItem = zod.object({
   "name": zod.string(),
   "state": zod.string(),
   "date": zod.string(),
+  "endDate": zod.coerce.date().nullish().describe('End date for multi-day events (YYYY-MM-DD). Null for single-day events.'),
   "location": zod.string().optional(),
   "trackName": zod.string().optional(),
   "status": zod.string(),
@@ -1721,7 +2654,9 @@ export const ListRecentResultsResponseItem = zod.object({
   "date": zod.string(),
   "topRider": zod.string(),
   "raceClass": zod.string(),
-  "clubName": zod.string().optional()
+  "clubName": zod.string().optional(),
+  "location": zod.string().optional(),
+  "trackName": zod.string().optional()
 })
 export const ListRecentResultsResponse = zod.array(ListRecentResultsResponseItem)
 
@@ -2060,6 +2995,54 @@ export const SendAnthropicMessageParams = zod.object({
 
 export const SendAnthropicMessageBody = zod.object({
   "content": zod.string()
+})
+
+
+/**
+ * @summary Get recipient count for a notification audience
+ */
+export const GetNotificationAudienceCountQueryParams = zod.object({
+  "audience": zod.enum(['all', 'event']),
+  "eventId": zod.coerce.number().optional()
+})
+
+export const GetNotificationAudienceCountResponse = zod.object({
+  "count": zod.number()
+})
+
+
+/**
+ * @summary Get recent notification send history
+ */
+export const GetNotificationHistoryResponseItem = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "audienceType": zod.string(),
+  "eventId": zod.number().nullish(),
+  "sentCount": zod.number(),
+  "sentAt": zod.coerce.date()
+})
+export const GetNotificationHistoryResponse = zod.array(GetNotificationHistoryResponseItem)
+
+
+/**
+ * @summary Ingest a crossing from a named reader (identified by its unique token)
+ */
+export const ReaderCrossingParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const ReaderCrossingBody = zod.object({
+  "rfidNumber": zod.string().optional().describe('RFID tag EPC or Active Timing transponder number'),
+  "crossingTime": zod.coerce.date().optional().describe('ISO timestamp of the crossing; defaults to server time if omitted'),
+  "antennaId": zod.number().optional().describe('Antenna port number (used to disambiguate multi-antenna readers)'),
+  "eventId": zod.number().optional().describe('Optional — if omitted the server resolves the active race_day event for this reader\'s club')
+})
+
+export const ReaderCrossingResponse = zod.object({
+  "ok": zod.boolean(),
+  "message": zod.string().optional()
 })
 
 

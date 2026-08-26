@@ -14,4 +14,6 @@ export interface RecentResultItem {
   topRider: string;
   raceClass: string;
   clubName?: string;
+  location?: string;
+  trackName?: string;
 }

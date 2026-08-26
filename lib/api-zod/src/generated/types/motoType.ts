@@ -15,4 +15,5 @@ export const MotoType = {
   main: 'main',
   practice: 'practice',
   moto: 'moto',
+  enduro_test: 'enduro_test',
 } as const;

@@ -24,6 +24,12 @@ export interface LineupGenerateInput {
   /** Controls gate number assignment. random = riders shuffled randomly, gates assigned in configured priority order; practice = sort by best practice lap time (fastest gets first gate pick); prior_round_finish = sort by prior round finish position, best finisher picks first; first_registered = sort by registration timestamp, earliest registered gets first gate pick. Supersedes gateSeedingMethod when both are present.
    */
   gatePickMethod?: LineupGenerateInputGatePickMethod;
+  /** Race time limit in milliseconds. When set, the race runs until this duration expires, then plusLaps additional laps are counted before the moto ends. Mutually exclusive with lapCount (time-based vs laps-based).
+   */
+  timeLimitMs?: number;
+  /** Number of additional laps riders complete after the time limit expires. Defaults to 1 (classic "time + 1 lap" motocross format). Only meaningful when timeLimitMs is also set.
+   */
+  plusLaps?: number;
   /** Number of laps for each generated moto. When set, indicates this is a laps-based race (first to reach this many laps wins) and the value is stored on every created moto for display and timing purposes.
    */
   lapCount?: number;
@@ -34,4 +40,7 @@ export interface LineupGenerateInput {
      * @maximum 3
      */
   minRacesBetween?: number;
+  /** When true, generate lineup slots for all registered riders (not only those who have checked in). Riders who have not yet checked in appear in the lineup with checkedIn: false. When a rider later checks in, their slot is automatically updated to checkedIn: true.
+   */
+  useRegistrations?: boolean;
 }

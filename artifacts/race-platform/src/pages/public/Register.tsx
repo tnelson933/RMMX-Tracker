@@ -720,17 +720,6 @@ export default function Register() {
       setSubmitError("You must sign the liability waiver before registering.");
       return;
     }
-    // Active transponder events require a transponder number or rental when required.
-    if (event?.timingTechnology === "active_transponder" && event.requireTransponder) {
-      const hasNumber = !!data.myLapsTransponderNumber?.trim();
-      const hasRental = !!data.rentTransponder;
-      if (!hasNumber && !hasRental) {
-        form.setError("myLapsTransponderNumber", {
-          message: "Enter your active transponder number, or select a rental below.",
-        });
-        return;
-      }
-    }
     setSubmitting(true);
     setSubmitError(null);
     setPaymentCancelled(false);

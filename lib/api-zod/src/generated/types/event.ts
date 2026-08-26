@@ -5,12 +5,18 @@
  * RM Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { EnduroPenaltyConfig } from './enduroPenaltyConfig';
+import type { EventRaceClassDetails } from './eventRaceClassDetails';
 import type { EventRaceClassLimits } from './eventRaceClassLimits';
+import type { EventRaceClassSeriesMap } from './eventRaceClassSeriesMap';
+import type { EventRaceStyle } from './eventRaceStyle';
 import type { EventStatus } from './eventStatus';
 import type { EventTimingTechnology } from './eventTimingTechnology';
 import type { PurchaseOption } from './purchaseOption';
 
 export interface Event {
+  /** Whether results are published to the public */
+  published?: boolean;
   id: number;
   clubId: number;
   name: string;
@@ -31,6 +37,16 @@ export interface Event {
   requireAma?: boolean;
   /** @nullable */
   entryFee?: number | null;
+  /**
+     * Discounted entry fee during the early sign-up incentive period (before earlyBirdEndsAt)
+     * @nullable
+     */
+  earlyBirdFee?: number | null;
+  /**
+     * Last day (YYYY-MM-DD inclusive) of the early-bird pricing period; fee reverts to entryFee the following day
+     * @nullable
+     */
+  earlyBirdEndsAt?: Date | null;
   /** @nullable */
   maxRiders?: number | null;
   /** @nullable */
@@ -45,6 +61,10 @@ export interface Event {
   transponderRentalFee?: number | null;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, active-timing registrations require a personal transponder or an available rental */
+  requireTransponder?: boolean;
+  /** When true, riders must read and accept the club waiver before completing registration */
+  requireWaiver?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
   /**
@@ -63,5 +83,43 @@ export interface Event {
      * @nullable
      */
   defaultGateConfigId?: string | null;
+  /**
+     * End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+     * @nullable
+     */
+  endDate?: Date | null;
+  /** Maps each race class name to an array of series IDs that should award points for that class. */
+  raceClassSeriesMap?: EventRaceClassSeriesMap;
+  /** Maps each race class name to a rules/details paragraph shown to riders. */
+  raceClassDetails?: EventRaceClassDetails;
+  /** Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time) */
+  raceStyle?: EventRaceStyle;
+  enduroPenaltyConfig?: EnduroPenaltyConfig | null;
+  /** Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first. */
+  classOrder?: string[] | null;
+  /** Brands selected for contingency sponsorships at this event. */
+  contingencyBrands?: string[] | null;
+  /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
+  quickCheckinEnabled?: boolean;
+  /**
+     * Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.
+     * @nullable
+     */
+  trackLat?: number | null;
+  /**
+     * Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.
+     * @nullable
+     */
+  trackLng?: number | null;
+  /**
+     * Street address of the track venue.
+     * @nullable
+     */
+  streetAddress?: string | null;
+  /**
+     * ZIP code of the track venue.
+     * @nullable
+     */
+  zip?: string | null;
   createdAt?: string;
 }

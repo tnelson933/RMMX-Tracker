@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EventInputRaceClassLimits } from './eventInputRaceClassLimits';
+import type { EventInputRaceClassSeriesMap } from './eventInputRaceClassSeriesMap';
+import type { EventInputRaceStyle } from './eventInputRaceStyle';
 import type { EventInputTimingTechnology } from './eventInputTimingTechnology';
 import type { PurchaseOption } from './purchaseOption';
 
@@ -23,6 +25,8 @@ export interface EventInput {
   paymentEnabled?: boolean;
   requireAma?: boolean;
   entryFee?: number;
+  earlyBirdFee?: number;
+  earlyBirdEndsAt?: Date;
   maxRiders?: number;
   imageUrl?: string;
   timingTechnology?: EventInputTimingTechnology;
@@ -30,6 +34,10 @@ export interface EventInput {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, active-timing registrations require a personal transponder or an available rental */
+  requireTransponder?: boolean;
+  /** When true, riders must read and accept the club waiver before completing registration */
+  requireWaiver?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
   /**
@@ -45,4 +53,19 @@ export interface EventInput {
   minLapMs?: number | null;
   /** ID of the gate configuration to pre-select when generating lineups */
   defaultGateConfigId?: string;
+  /**
+     * End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+     * @nullable
+     */
+  endDate?: Date | null;
+  /** Maps each race class name to an array of series IDs that should award points for that class. */
+  raceClassSeriesMap?: EventInputRaceClassSeriesMap;
+  /** Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time) */
+  raceStyle?: EventInputRaceStyle;
+  /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
+  quickCheckinEnabled?: boolean;
+  /** Street address of the track venue. */
+  streetAddress?: string;
+  /** ZIP code of the track venue. */
+  zip?: string;
 }

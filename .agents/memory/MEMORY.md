@@ -11,3 +11,4 @@
 - [F2000 loop readiness](f2000-loop-readiness.md) — heartbeats alone are insufficient; confirm enabled loops before timing.
 - [F2000 practice routing](f2000-practice-routing.md) — practice scans must bypass event-only reader routing and resolve active transponder IDs.
 - [Production schema smoke tests](production-schema-smoke-tests.md) — a successful API bundle build cannot catch Drizzle fields missing from the shared schema or production database.
+- [Active transponder source of truth](active-transponder-source-of-truth.md) — enforce required registration fields from fresh event data and keep check-in display state synchronized.

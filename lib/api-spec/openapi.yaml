@@ -3511,6 +3511,9 @@ components:
           type: boolean
         requireClubId:
           type: boolean
+        requireTransponder:
+          type: boolean
+          description: When true, active-timing registrations require a personal transponder or an available rental
         requireWaiver:
           type: boolean
           description: When true, riders must read and accept the club waiver before completing registration
@@ -3640,6 +3643,9 @@ components:
           type: boolean
         requireClubId:
           type: boolean
+        requireTransponder:
+          type: boolean
+          description: When true, active-timing registrations require a personal transponder or an available rental
         requireWaiver:
           type: boolean
           description: When true, riders must read and accept the club waiver before completing registration
@@ -3739,6 +3745,9 @@ components:
           type: boolean
         requireClubId:
           type: boolean
+        requireTransponder:
+          type: boolean
+          description: When true, active-timing registrations require a personal transponder or an available rental
         requireWaiver:
           type: boolean
           description: When true, riders must read and accept the club waiver before completing registration

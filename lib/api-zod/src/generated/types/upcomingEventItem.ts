@@ -11,6 +11,11 @@ export interface UpcomingEventItem {
   name: string;
   state: string;
   date: string;
+  /**
+     * End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+     * @nullable
+     */
+  endDate?: Date | null;
   location?: string;
   trackName?: string;
   status: string;

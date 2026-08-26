@@ -311,6 +311,8 @@ export interface Event {
   transponderRentalFee?: number | null;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, active-timing registrations require a personal transponder or an available rental */
+  requireTransponder?: boolean;
   /** When true, riders must read and accept the club waiver before completing registration */
   requireWaiver?: boolean;
   /** @nullable */
@@ -422,6 +424,8 @@ export interface EventInput {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, active-timing registrations require a personal transponder or an available rental */
+  requireTransponder?: boolean;
   /** When true, riders must read and accept the club waiver before completing registration */
   requireWaiver?: boolean;
   /** @nullable */
@@ -511,6 +515,8 @@ export interface EventUpdate {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, active-timing registrations require a personal transponder or an available rental */
+  requireTransponder?: boolean;
   /** When true, riders must read and accept the club waiver before completing registration */
   requireWaiver?: boolean;
   /** @nullable */
@@ -2057,7 +2063,7 @@ export interface SetEventReaderAssignmentsInput {
 }
 
 export interface ReaderCrossingInput {
-  /** RFID tag EPC or MyLaps transponder number */
+  /** RFID tag EPC or Active Timing transponder number */
   rfidNumber?: string;
   /** ISO timestamp of the crossing; defaults to server time if omitted */
   crossingTime?: string;
@@ -2109,8 +2115,19 @@ export type ListEventCancellations200 = {
 
 export type ListRfidTagsParams = {
 eventId?: number;
-assignmentType?: 'rfid' | 'active_transponder';
+/**
+ * Optional assignment kind. Omitted requests retain legacy passive RFID behavior.
+ */
+assignmentType?: ListRfidTagsAssignmentType;
 };
+
+export type ListRfidTagsAssignmentType = typeof ListRfidTagsAssignmentType[keyof typeof ListRfidTagsAssignmentType];
+
+
+export const ListRfidTagsAssignmentType = {
+  rfid: 'rfid',
+  active_transponder: 'active_transponder',
+} as const;
 
 export type DeleteCheckpointArrival200 = {
   ok?: boolean;

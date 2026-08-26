@@ -5,6 +5,7 @@ import { eq, and, sql, desc, asc, ne, isNull, inArray } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
+import { isRegistrationTransponderRequirementSatisfied } from "../lib/registrationTransponderRequirement";
 
 const router = Router();
 
@@ -215,6 +216,16 @@ router.post("/events/:eventId/registrations", async (req, res) => {
 
   if (!raceClass) return res.status(400).json({ error: "raceClass required" });
 
+  const [eventData] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!isRegistrationTransponderRequirementSatisfied(
+    eventData,
+    { transponderNumber: myLapsTransponderNumber, rentTransponder },
+  )) {
+    return res.status(400).json({
+      error: "Enter the rider's active transponder number, or select an available rental.",
+    });
+  }
+
   let resolvedRiderId: number;
 
   if (riderId) {
@@ -240,7 +251,6 @@ router.post("/events/:eventId/registrations", async (req, res) => {
   }
 
   // Determine if payment is required — on-site registrations start pending when the event has a fee
-  const [eventData] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   const needsPayment = !!(eventData?.paymentEnabled && eventData?.entryFee);
   const wantsRental = !!(rentTransponder && eventData?.transponderRentalEnabled && eventData?.transponderRentalFee);
 
@@ -867,6 +877,14 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // Confirm event exists and is open for registration
   const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!events[0]) return res.status(404).json({ error: "Event not found" });
+  if (!isRegistrationTransponderRequirementSatisfied(
+    events[0],
+    { transponderNumber: myLapsTransponderNumber, rentTransponder },
+  )) {
+    return res.status(400).json({
+      error: "Enter your active transponder number, or select an available rental.",
+    });
+  }
   if (events[0].requireAma && !amaNumber) {
     return res.status(400).json({ error: "AMA # is required for this event" });
   }

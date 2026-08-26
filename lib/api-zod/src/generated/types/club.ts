@@ -5,6 +5,7 @@
  * RM Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { ClubOrganizer } from './clubOrganizer';
 
 export interface Club {
   id: number;
@@ -24,5 +25,8 @@ export interface Club {
   autoDnfEnabled: boolean;
   /** Minimum % of leader laps required to score points (1-100) */
   autoDnfThreshold: number;
+  /** When false, the club is suspended and its organizers cannot log in */
+  active: boolean;
+  organizer?: ClubOrganizer | null;
   createdAt?: string;
 }

@@ -7,8 +7,9 @@
  */
 
 export interface StaggerLinkInput {
-  motoId1: number;
-  motoId2: number;
-  /** Which of the two motos starts first */
-  firstMotoId: number;
+  /**
+     * Ordered list of moto IDs — first element starts first, last starts last
+     * @minItems 2
+     */
+  orderedMotoIds: number[];
 }

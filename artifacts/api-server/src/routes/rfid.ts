@@ -163,6 +163,13 @@ router.post("/rfid", async (req, res) => {
           eq(registrationsTable.eventId, numEventId),
           eq(registrationsTable.riderId, numRiderId),
         ));
+
+      await db.update(checkinsTable)
+        .set({ rfidNumber: activeTransponderNumber, rfidLinked: true })
+        .where(and(
+          eq(checkinsTable.eventId, numEventId),
+          eq(checkinsTable.riderId, numRiderId),
+        ));
     }
 
     return res.status(201).json({

@@ -5,7 +5,11 @@
  * RM Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { EnduroPenaltyConfig } from './enduroPenaltyConfig';
+import type { EventUpdateRaceClassDetails } from './eventUpdateRaceClassDetails';
 import type { EventUpdateRaceClassLimits } from './eventUpdateRaceClassLimits';
+import type { EventUpdateRaceClassSeriesMap } from './eventUpdateRaceClassSeriesMap';
+import type { EventUpdateRaceStyle } from './eventUpdateRaceStyle';
 import type { EventUpdateTimingTechnology } from './eventUpdateTimingTechnology';
 import type { PurchaseOption } from './purchaseOption';
 
@@ -23,6 +27,8 @@ export interface EventUpdate {
   paymentEnabled?: boolean;
   requireAma?: boolean;
   entryFee?: number;
+  earlyBirdFee?: number;
+  earlyBirdEndsAt?: Date;
   maxRiders?: number;
   imageUrl?: string;
   timingTechnology?: EventUpdateTimingTechnology;
@@ -30,6 +36,10 @@ export interface EventUpdate {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, active-timing registrations require a personal transponder or an available rental */
+  requireTransponder?: boolean;
+  /** When true, riders must read and accept the club waiver before completing registration */
+  requireWaiver?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
   /**
@@ -48,4 +58,32 @@ export interface EventUpdate {
      * @nullable
      */
   defaultGateConfigId?: string | null;
+  /**
+     * End date for multi-day events (YYYY-MM-DD). Null for single-day events.
+     * @nullable
+     */
+  endDate?: Date | null;
+  /** Maps each race class name to an array of series IDs that should award points for that class. */
+  raceClassSeriesMap?: EventUpdateRaceClassSeriesMap;
+  /** Maps each race class name to a rules/details paragraph shown to riders. */
+  raceClassDetails?: EventUpdateRaceClassDetails;
+  /** Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time) */
+  raceStyle?: EventUpdateRaceStyle;
+  enduroPenaltyConfig?: EnduroPenaltyConfig | null;
+  /** Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first. */
+  classOrder?: string[] | null;
+  /** Brands selected for contingency sponsorships at this event. */
+  contingencyBrands?: string[] | null;
+  /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
+  quickCheckinEnabled?: boolean;
+  /**
+     * Street address of the track venue.
+     * @nullable
+     */
+  streetAddress?: string | null;
+  /**
+     * ZIP code of the track venue.
+     * @nullable
+     */
+  zip?: string | null;
 }

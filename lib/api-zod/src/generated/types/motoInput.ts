@@ -19,10 +19,14 @@ export interface MotoInput {
   lapCount?: number;
   /** Time limit in milliseconds (practice sessions only, optional) */
   timeLimitMs?: number;
+  /** Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format) */
+  plusLaps?: number;
   /** Timer mode for practice motos — lap_count (default) or countdown */
   practiceMode?: MotoInputPracticeMode;
   /** Duration in seconds for countdown mode (practice motos only) */
   countdownSeconds?: number;
   scheduledTime?: string;
   lineup?: number[];
+  /** Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock */
+  enduroHasRfidStart?: boolean;
 }

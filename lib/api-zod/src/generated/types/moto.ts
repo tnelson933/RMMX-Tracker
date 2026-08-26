@@ -31,6 +31,16 @@ export interface Moto {
      */
   timeLimitMs?: number | null;
   /**
+     * Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag
+     * @nullable
+     */
+  plusLaps?: number | null;
+  /**
+     * Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps
+     * @nullable
+     */
+  timeExpiredAt?: Date | null;
+  /**
      * Timer mode for practice motos — lap_count (default) or countdown
      * @nullable
      */
@@ -48,13 +58,24 @@ export interface Moto {
   /** @nullable */
   completedAt?: Date | null;
   /**
-     * ID of the paired moto in a staggered start
+     * Set when the moto is paused; null when running or completed
      * @nullable
      */
-  staggeredWithMotoId?: number | null;
+  pausedAt?: Date | null;
+  /** Total accumulated paused duration in milliseconds across all pause/resume cycles */
+  totalPausedMs?: number;
   /**
-     * 1 = starts first, 2 = starts second in a staggered pair
+     * 1 = starts first, 2+ = subsequent start positions in a staggered group
      * @nullable
      */
   staggeredOrder?: number | null;
+  /**
+     * Shared group identifier for all motos in a staggered start group
+     * @nullable
+     */
+  staggeredGroupId?: number | null;
+  /** Ordered list of moto IDs in the staggered group (sorted by staggeredOrder) */
+  staggeredGroupMembers?: number[] | null;
+  /** Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock */
+  enduroHasRfidStart?: boolean;
 }

@@ -436,16 +436,6 @@ export default function Registrations() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreate = async (data: OnSiteRegForm) => {
-    if (isActiveTransponder && !!(event as any)?.requireTransponder) {
-      const hasNumber = !!data.myLapsTransponderNumber?.trim();
-      const hasRental = !!data.rentTransponder;
-      if (!hasNumber && !hasRental) {
-        form.setError("myLapsTransponderNumber", {
-          message: "Enter the rider's active transponder number, or select a rental.",
-        });
-        return;
-      }
-    }
     setSubmitting(true);
     setSubmitError(null);
     try {

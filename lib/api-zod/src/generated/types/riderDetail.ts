@@ -41,6 +41,10 @@ export interface RiderDetail {
   homeState?: string | null;
   /** @nullable */
   zip?: string | null;
+  /** @nullable */
+  skillLevel?: string | null;
+  /** Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert) */
+  raceTypes?: string[];
   recentResults?: RaceResult[];
   totalEvents?: number;
   createdAt?: string;

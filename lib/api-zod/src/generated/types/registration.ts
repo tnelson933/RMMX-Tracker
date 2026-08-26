@@ -28,5 +28,21 @@ export interface Registration {
   /** @nullable */
   bikeBrand?: string | null;
   selectedPurchaseOptions?: PurchaseOption[];
+  /**
+     * ISO timestamp of when the rider accepted the club waiver, or null if not required/accepted
+     * @nullable
+     */
+  waiverAcknowledgedAt?: string | null;
+  /**
+     * Full text of the club waiver at the time of acceptance
+     * @nullable
+     */
+  waiverSnapshot?: string | null;
+  /** @nullable */
+  cancelledAt?: string | null;
+  /** @nullable */
+  cancellationSource?: string | null;
+  /** @nullable */
+  refundVerifiedAt?: string | null;
   createdAt?: string;
 }

@@ -14,4 +14,8 @@ export interface ClubInput {
   logoUrl?: string;
   website?: string;
   description?: string;
+  /** Name of the primary organizer — creates a club_organizer user account */
+  organizerName?: string;
+  /** Email of the primary organizer — sends an invite email to set their password */
+  organizerEmail?: string;
 }
