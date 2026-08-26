@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, index } from "drizzle-orm/pg-core";
 import { eventsTable } from "./events";
 import { motosTable } from "./motos";
 import { ridersTable } from "./riders";
@@ -15,6 +15,11 @@ export const lapCrossingsTable = pgTable("lap_crossings", {
   readerId: text("reader_id"),
   antennaId: integer("antenna_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("lap_crossings_moto_rider_lap_time_idx")
+    .on(table.motoId, table.riderId, table.lapTimeMs),
+  index("lap_crossings_moto_lap_crossing_idx")
+    .on(table.motoId, table.lapNumber, table.crossingTime, table.id),
+]);
 
 export type LapCrossing = typeof lapCrossingsTable.$inferSelect;

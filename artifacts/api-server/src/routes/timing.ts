@@ -175,6 +175,216 @@ function normalizeLapMs(val: unknown): number {
   return 0;
 }
 
+function buildPositionMaps(
+  crossings: Array<{ riderId: number | null; lapNumber: number | null }>,
+  eligibleRiderIds: Set<number>,
+): Map<number, Map<number, number>> {
+  const positionsByLap = new Map<number, Map<number, number>>();
+
+  for (const crossing of crossings) {
+    if (
+      crossing.riderId == null
+      || !eligibleRiderIds.has(crossing.riderId)
+      || crossing.lapNumber == null
+      || crossing.lapNumber < 1
+    ) continue;
+    const lapPositions = positionsByLap.get(crossing.lapNumber) ?? new Map<number, number>();
+    // A corrected/replayed crossing should not create a second position for the
+    // same rider in one lap. The first crossing remains the order at the line.
+    if (!lapPositions.has(crossing.riderId)) {
+      lapPositions.set(crossing.riderId, lapPositions.size + 1);
+    }
+    positionsByLap.set(crossing.lapNumber, lapPositions);
+  }
+
+  return positionsByLap;
+}
+
+async function buildRaceAnalytics(
+  motoId: number,
+  leaderboard: Array<{
+    position: number | null;
+    riderId: number;
+    riderName: string;
+    bibNumber: string | null;
+    laps: number;
+    dnf: boolean;
+    dns: boolean;
+  }>,
+) {
+  const activeEntries = leaderboard.filter(entry => !entry.dnf && !entry.dns);
+  const activeRiderIds = new Set(activeEntries.map(entry => entry.riderId));
+  const fieldCompletedLaps = activeEntries.length > 0
+    ? Math.min(...activeEntries.map(entry => entry.laps))
+    : 0;
+  const requestedLapNumbers = [...new Set([
+    1,
+    fieldCompletedLaps > 1 ? fieldCompletedLaps - 1 : null,
+    fieldCompletedLaps > 0 ? fieldCompletedLaps : null,
+  ].filter((lap): lap is number => lap != null))];
+
+  const [crossings, fastestLapRows] = await Promise.all([
+    requestedLapNumbers.length > 0
+      ? db
+        .select({
+          riderId: lapCrossingsTable.riderId,
+          lapNumber: lapCrossingsTable.lapNumber,
+        })
+        .from(lapCrossingsTable)
+        .where(and(
+          eq(lapCrossingsTable.motoId, motoId),
+          inArray(lapCrossingsTable.lapNumber, requestedLapNumbers),
+        ))
+        .orderBy(asc(lapCrossingsTable.crossingTime), asc(lapCrossingsTable.id))
+      : Promise.resolve([]),
+    db
+      .select({
+        riderId: lapCrossingsTable.riderId,
+        bestLapMs: sql<number | null>`min(${lapCrossingsTable.lapTimeMs})`,
+      })
+      .from(lapCrossingsTable)
+      .where(and(
+        eq(lapCrossingsTable.motoId, motoId),
+        isNotNull(lapCrossingsTable.riderId),
+        gt(lapCrossingsTable.lapTimeMs, 0),
+      ))
+      .groupBy(lapCrossingsTable.riderId),
+  ]);
+
+  const positionsByLap = buildPositionMaps(crossings, activeRiderIds);
+  const isCompleteFieldLap = (positions: Map<number, number> | undefined) =>
+    !!positions
+    && activeRiderIds.size > 0
+    && activeRiderIds.size === positions.size
+    && [...activeRiderIds].every(riderId => positions.has(riderId));
+  const firstLapCandidate = positionsByLap.get(1);
+  const firstLapPositions = isCompleteFieldLap(firstLapCandidate) ? firstLapCandidate! : null;
+  const latestLapCandidate = fieldCompletedLaps > 0 ? positionsByLap.get(fieldCompletedLaps) : undefined;
+  // "Last full lap" means every active rider has a unique crossing in that lap.
+  // This protects the callout from inconsistent result rows or a partial field.
+  const lastCompletedLap = isCompleteFieldLap(latestLapCandidate) ? fieldCompletedLaps : null;
+  const previousLapPositions = lastCompletedLap && lastCompletedLap > 1
+    ? positionsByLap.get(lastCompletedLap - 1) ?? null
+    : null;
+  const latestLapPositions = lastCompletedLap ? latestLapCandidate ?? null : null;
+  const currentPositions = new Map(
+    leaderboard
+      .filter(entry => !entry.dnf && !entry.dns && entry.position != null)
+      .map(entry => [entry.riderId, entry.position as number]),
+  );
+  const entryByRiderId = new Map(leaderboard.map(entry => [entry.riderId, entry]));
+
+  const describeRider = (riderId: number) => {
+    const entry = entryByRiderId.get(riderId);
+    return entry ? {
+      riderId: entry.riderId,
+      riderName: entry.riderName,
+      bibNumber: entry.bibNumber,
+    } : null;
+  };
+
+  let movingUp: {
+    riderId: number;
+    riderName: string;
+    bibNumber: string | null;
+    positionsGained: number;
+    fromPosition: number;
+    toPosition: number;
+    lapNumber: number;
+  } | null = null;
+  if (
+    previousLapPositions
+    && latestLapPositions
+    && lastCompletedLap
+    && isCompleteFieldLap(previousLapPositions)
+  ) {
+    for (const [riderId, fromPosition] of previousLapPositions) {
+      const toPosition = latestLapPositions.get(riderId);
+      const rider = describeRider(riderId);
+      if (!rider || toPosition == null) continue;
+      const positionsGained = fromPosition - toPosition;
+      if (positionsGained > (movingUp?.positionsGained ?? 0)) {
+        movingUp = { ...rider, positionsGained, fromPosition, toPosition, lapNumber: lastCompletedLap };
+      }
+    }
+  }
+
+  let mostPasses: {
+    riderId: number;
+    riderName: string;
+    bibNumber: string | null;
+    positionsGained: number;
+    startPosition: number;
+    currentPosition: number;
+  } | null = null;
+  let fallingBack: {
+    riderId: number;
+    riderName: string;
+    bibNumber: string | null;
+    positionsLost: number;
+    startPosition: number;
+    currentPosition: number;
+  } | null = null;
+  if (firstLapPositions) {
+    for (const [riderId, startPosition] of firstLapPositions) {
+      const currentPosition = currentPositions.get(riderId);
+      const rider = describeRider(riderId);
+      if (!rider || currentPosition == null) continue;
+      const positionDelta = startPosition - currentPosition;
+      if (positionDelta > (mostPasses?.positionsGained ?? 0)) {
+        mostPasses = { ...rider, positionsGained: positionDelta, startPosition, currentPosition };
+      }
+      const positionsLost = currentPosition - startPosition;
+      if (positionsLost > (fallingBack?.positionsLost ?? 0)) {
+        fallingBack = { ...rider, positionsLost, startPosition, currentPosition };
+      }
+    }
+  }
+
+  const bestLapByRiderId = new Map(
+    fastestLapRows
+      .filter(row => row.riderId != null && row.bestLapMs != null && row.bestLapMs > 0)
+      .map(row => [row.riderId as number, Number(row.bestLapMs)]),
+  );
+  const fastestLaps = leaderboard
+    .filter(entry => !entry.dnf && !entry.dns)
+    .sort((a, b) => {
+      const aBest = bestLapByRiderId.get(a.riderId) ?? null;
+      const bBest = bestLapByRiderId.get(b.riderId) ?? null;
+      if (aBest == null && bBest == null) return (a.position ?? 9999) - (b.position ?? 9999);
+      if (aBest == null) return 1;
+      if (bBest == null) return -1;
+      return aBest - bBest;
+    })
+    .map(entry => {
+      const bestLapMs = bestLapByRiderId.get(entry.riderId) ?? null;
+      return {
+        riderId: entry.riderId,
+        riderName: entry.riderName,
+        bibNumber: entry.bibNumber,
+        bestLapMs,
+        bestLap: bestLapMs != null ? formatLapTime(bestLapMs) : null,
+      };
+    });
+  const timedFastestLaps = fastestLaps.filter(entry => entry.bestLapMs != null);
+  const fastest = timedFastestLaps[0] ?? null;
+  const nextFastest = timedFastestLaps[1] ?? null;
+
+  return {
+    lastCompletedLap,
+    movingUp,
+    mostPasses,
+    fallingBack,
+    fastestLap: fastest ? {
+      ...fastest,
+      marginMs: nextFastest ? (nextFastest.bestLapMs as number) - (fastest.bestLapMs as number) : null,
+      margin: nextFastest ? formatLapTime((nextFastest.bestLapMs as number) - (fastest.bestLapMs as number)) : null,
+      nextRiderName: nextFastest?.riderName ?? null,
+    } : null,
+    fastestLaps,
+  };
+}
+
 // ── Leaderboard snapshot from current race_results ─────────────────────────────
 export async function buildLeaderboard(motoId: number) {
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
@@ -244,6 +454,7 @@ export async function buildLeaderboard(motoId: number) {
       gap: entry.totalMs > 0 && leader.totalMs > 0 ? `+${formatLapTime(entry.totalMs - leader.totalMs)}` : "—",
     };
   });
+  const analytics = await buildRaceAnalytics(motoId, withGaps);
 
   return {
     motoId,
@@ -256,6 +467,7 @@ export async function buildLeaderboard(motoId: number) {
     plusLaps: moto.plusLaps ?? null,
     timeExpiredAt: moto.timeExpiredAt?.toISOString() ?? null,
     leaderboard: withGaps,
+    analytics,
     updatedAt: new Date().toISOString(),
   };
 }
