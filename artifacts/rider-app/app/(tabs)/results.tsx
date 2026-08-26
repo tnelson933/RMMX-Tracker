@@ -76,6 +76,40 @@ interface PublicLeaderEntry {
   dns: boolean | null;
 }
 
+interface AnalyticsRider {
+  riderId: number;
+  riderName: string;
+  bibNumber: string | null;
+  bestLapMs: number | null;
+  bestLap: string | null;
+}
+
+interface PositionMover {
+  riderId: number;
+  riderName: string;
+  bibNumber: string | null;
+  positionsGained?: number;
+  positionsLost?: number;
+  startPosition?: number;
+  currentPosition?: number;
+  fromPosition?: number;
+  toPosition?: number;
+  lapNumber?: number;
+}
+
+interface RaceAnalytics {
+  lastCompletedLap: number | null;
+  movingUp: PositionMover | null;
+  mostPasses: PositionMover | null;
+  fallingBack: PositionMover | null;
+  fastestLap: (AnalyticsRider & {
+    marginMs: number | null;
+    margin: string | null;
+    nextRiderName: string | null;
+  }) | null;
+  fastestLaps: AnalyticsRider[];
+}
+
 interface PublicMotoDetail {
   motoId: number;
   motoName: string;
@@ -83,6 +117,7 @@ interface PublicMotoDetail {
   status: string;
   leaderboard: PublicLeaderEntry[];
   lineup: PublicLineupEntry[];
+  analytics?: RaceAnalytics;
 }
 
 // ─── Series Types ─────────────────────────────────────────────────────────────
@@ -308,6 +343,184 @@ function PublicRiderLapSheet({
   );
 }
 
+type LiveMotoView = "timing" | "analytics" | "fastest";
+
+function LiveMotoTabs({
+  activeView,
+  onChange,
+  colors,
+}: {
+  activeView: LiveMotoView;
+  onChange: (view: LiveMotoView) => void;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const tabs: Array<{ key: LiveMotoView; label: string; icon: React.ComponentProps<typeof Feather>["name"] }> = [
+    { key: "timing", label: "Live Timing", icon: "radio" },
+    { key: "analytics", label: "Quick Analytics", icon: "bar-chart-2" },
+    { key: "fastest", label: "Fastest Lap", icon: "clock" },
+  ];
+
+  return (
+    <View style={{ flexDirection: "row", borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.muted + "55" }}>
+      {tabs.map(tab => {
+        const active = activeView === tab.key;
+        return (
+          <Pressable
+            key={tab.key}
+            onPress={() => onChange(tab.key)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            style={({ pressed }) => ({
+              flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center",
+              gap: 4, borderBottomWidth: 2,
+              borderBottomColor: active ? colors.primary : "transparent",
+              backgroundColor: active ? colors.primary + "12" : "transparent",
+              opacity: pressed ? 0.65 : 1,
+            })}
+          >
+            <Feather name={tab.icon} size={15} color={active ? colors.primary : colors.mutedForeground} />
+            <Text style={{
+              fontSize: 10, fontWeight: "700", color: active ? colors.primary : colors.mutedForeground,
+              fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.2,
+            }}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function LiveAnalyticsView({
+  analytics,
+  colors,
+}: {
+  analytics?: RaceAnalytics;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const cards: Array<{
+    label: string;
+    icon: React.ComponentProps<typeof Feather>["name"];
+    color: string;
+    rider: PositionMover | null | undefined;
+    detail: (rider: PositionMover) => string;
+  }> = [
+    {
+      label: "Moving Up",
+      icon: "trending-up",
+      color: colors.secondary,
+      rider: analytics?.movingUp,
+      detail: rider => `+${rider.positionsGained ?? 0} positions`,
+    },
+    {
+      label: "Most Passes",
+      icon: "bar-chart-2",
+      color: colors.primary,
+      rider: analytics?.mostPasses,
+      detail: rider => `${rider.positionsGained ?? 0} positions gained`,
+    },
+    {
+      label: "Falling Back",
+      icon: "trending-down",
+      color: colors.destructive,
+      rider: analytics?.fallingBack,
+      detail: rider => `-${rider.positionsLost ?? 0} positions`,
+    },
+    {
+      label: "Fastest Lap",
+      icon: "zap",
+      color: colors.primary,
+      rider: analytics?.fastestLap,
+      detail: rider => analytics?.fastestLap?.bestLap ?? "No lap yet",
+    },
+  ];
+
+  return (
+    <View style={{ padding: 16, gap: 10 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+        {cards.map(card => (
+          <View key={card.label} style={{
+            width: "47%", minHeight: 112, borderRadius: 12, borderWidth: 1,
+            borderColor: colors.border, backgroundColor: colors.card, padding: 12,
+          }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 10 }}>
+              <Feather name={card.icon} size={14} color={card.color} />
+              <Text style={{ fontSize: 10, fontWeight: "700", color: card.color, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                {card.label}
+              </Text>
+            </View>
+            {card.rider ? (
+              <>
+                <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                  {card.rider.riderName}
+                </Text>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 4, marginTop: 6 }}>
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>#{card.rider.bibNumber ?? "—"}</Text>
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{card.detail(card.rider)}</Text>
+                </View>
+              </>
+            ) : (
+              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 17 }}>
+                Waiting for a complete lap
+              </Text>
+            )}
+          </View>
+        ))}
+      </View>
+      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+        {analytics?.lastCompletedLap
+          ? `Based on completed lap ${analytics.lastCompletedLap}`
+          : "Analytics will appear after the first complete lap"}
+      </Text>
+    </View>
+  );
+}
+
+function LiveFastestLapsView({
+  analytics,
+  colors,
+}: {
+  analytics?: RaceAnalytics;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const fastestLaps = analytics?.fastestLaps ?? [];
+  return fastestLaps.length > 0 ? (
+    <View>
+      <View style={{ flexDirection: "row", paddingHorizontal: 20, paddingVertical: 9, backgroundColor: colors.muted + "55", borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        <Text style={{ width: 34, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase" }}>Pos</Text>
+        <Text style={{ flex: 1, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase" }}>Rider</Text>
+        <Text style={{ width: 80, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", textAlign: "right" }}>Best Lap</Text>
+      </View>
+      {fastestLaps.map((entry, index) => (
+        <View key={entry.riderId} style={{
+          flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 13,
+          borderBottomWidth: 1, borderBottomColor: colors.border + "55",
+          backgroundColor: index === 0 ? colors.primary + "0e" : "transparent",
+        }}>
+          <Text style={{ width: 34, fontSize: 15, fontWeight: "800", color: index === 0 ? colors.primary : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
+            {index + 1}
+          </Text>
+          <View style={{ flex: 1 }}>
+            <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>{entry.riderName}</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>#{entry.bibNumber ?? "—"}</Text>
+          </View>
+          <Text style={{ width: 80, fontSize: 14, fontWeight: "700", color: index === 0 ? colors.primary : colors.foreground, fontFamily: "Inter_700Bold", textAlign: "right" }}>
+            {entry.bestLap ?? "—"}
+          </Text>
+        </View>
+      ))}
+    </View>
+  ) : (
+    <View style={{ paddingVertical: 48, paddingHorizontal: 24, alignItems: "center" }}>
+      <Feather name="clock" size={28} color={colors.mutedForeground} />
+      <Text style={{ marginTop: 10, fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+        Fastest laps will appear as timing data arrives.
+      </Text>
+    </View>
+  );
+}
+
 function PublicMotoSheet({
   moto,
   onClose,
@@ -322,6 +535,8 @@ function PublicMotoSheet({
   const [detail, setDetail] = useState<PublicMotoDetail | null>(null);
   const [fetching, setFetching] = useState(true);
   const [selectedLeader, setSelectedLeader] = useState<PublicLeaderEntry | null>(null);
+  const [liveView, setLiveView] = useState<LiveMotoView>("timing");
+  const { top: topInset } = useSafeAreaInsets();
   const isLive      = moto.status === "in_progress";
   const isScheduled = moto.status === "scheduled";
   const chip        = chipFor(moto.status);
@@ -362,18 +577,24 @@ function PublicMotoSheet({
   }
 
   return (
-    <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" }}>
-      <Pressable style={{ flex: 1 }} onPress={onClose} />
+    <View style={{
+      flex: 1,
+      justifyContent: isLive ? "flex-start" : "flex-end",
+      backgroundColor: isLive ? colors.background : "rgba(0,0,0,0.58)",
+    }}>
+      {!isLive && <Pressable style={{ flex: 1 }} onPress={onClose} />}
       <View style={{
         backgroundColor: colors.card,
-        borderTopLeftRadius: 22, borderTopRightRadius: 22,
-        maxHeight: "82%",
-        paddingBottom: bottomInset + 8,
+        ...(isLive
+          ? { flex: 1, width: "100%", paddingTop: topInset }
+          : { borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: "82%", paddingBottom: bottomInset + 8 }),
       }}>
         {/* Drag handle */}
-        <View style={{ alignItems: "center", paddingTop: 12, paddingBottom: 6 }}>
-          <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
-        </View>
+        {!isLive && (
+          <View style={{ alignItems: "center", paddingTop: 12, paddingBottom: 6 }}>
+            <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+          </View>
+        )}
 
         {/* Header */}
         <View style={{
@@ -403,7 +624,15 @@ function PublicMotoSheet({
           </View>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false}>
+        {isLive && (
+          <LiveMotoTabs activeView={liveView} onChange={setLiveView} colors={colors} />
+        )}
+
+        <ScrollView
+          style={isLive ? { flex: 1 } : undefined}
+          contentContainerStyle={isLive ? { paddingBottom: bottomInset + 28 } : undefined}
+          showsVerticalScrollIndicator={false}
+        >
           {fetching && (
             <View style={{ paddingVertical: 44, alignItems: "center" }}>
               <ActivityIndicator color={colors.primary} />
@@ -489,6 +718,10 @@ function PublicMotoSheet({
                     {isLive ? "Waiting for riders to start…" : "Results not yet posted"}
                   </Text>
                 </View>
+              ) : isLive && liveView === "analytics" ? (
+                <LiveAnalyticsView analytics={detail.analytics} colors={colors} />
+              ) : isLive && liveView === "fastest" ? (
+                <LiveFastestLapsView analytics={detail.analytics} colors={colors} />
               ) : (
                 detail.leaderboard.map((entry, i) => {
                   const isDNF = !!entry.dnf;

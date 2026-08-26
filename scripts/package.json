@@ -11,6 +11,7 @@
     "migrate:entry-fee-category": "tsx ./src/migrate-entry-fee-category.ts",
     "check:github-sync": "tsx ./src/check-github-sync.ts",
     "validate:registration-schema": "tsx ./src/validate-registration-schema.ts",
+    "benchmark:live-timing": "tsx ./src/benchmark-live-timing.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

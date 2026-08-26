@@ -953,22 +953,28 @@ export default function TrainScreen() {
             // Group standalone sessions by venue name so each track gets its own chip
             const venueMap = new Map<string, any[]>();
             for (const s of standaloneSessions as any[]) {
-              const venue: string = s.venueName?.trim() || "Open Practice";
+              const venue: string = s.venueName?.trim() || "Unknown Track";
               if (!venueMap.has(venue)) venueMap.set(venue, []);
               venueMap.get(venue)!.push(s);
             }
             for (const [venue, venueSessions] of venueMap) {
-              const allSessions: SessionItem[] = venueSessions.map((s: any) => ({
-                key: `practice-${s.sessionId}-rider-${profile.id}`,
-                label: s.sessionName,
-                status: s.endedAt ? "completed" : "in_progress",
-                riderId: profile.id,
-                practiceSessionId: Number(s.sessionId),
-                myLaps: (s.laps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
-                bestLapMs: s.bestLapMs ?? null,
-                leaderboard: undefined,
-                startedAt: s.startedAt ?? null,
-              }));
+              const allSessions: SessionItem[] = venueSessions
+                .map((s: any) => ({
+                  key: `practice-${s.sessionId}-rider-${profile.id}`,
+                  label: s.sessionName,
+                  status: s.endedAt ? "completed" : "in_progress",
+                  riderId: profile.id,
+                  practiceSessionId: Number(s.sessionId),
+                  myLaps: (s.laps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
+                  bestLapMs: s.bestLapMs ?? null,
+                  leaderboard: undefined,
+                  startedAt: s.startedAt ?? null,
+                }))
+                .sort((a, b) => {
+                  const aTime = a.startedAt ? Date.parse(a.startedAt) : 0;
+                  const bTime = b.startedAt ? Date.parse(b.startedAt) : 0;
+                  return bTime - aTime;
+                });
               // Group by date (descending — newest date first)
               const dateMap = new Map<string, SessionItem[]>();
               for (const s of allSessions) {
@@ -1003,7 +1009,7 @@ export default function TrainScreen() {
           const time = session.startedAt ? Date.parse(session.startedAt) : 0;
           return Number.isFinite(time) ? Math.max(max, time) : max;
         }, 0);
-        return latest(b) - latest(a);
+        return latest(b) - latest(a) || a.label.localeCompare(b.label);
       });
 
       setTracks(built);
@@ -1179,9 +1185,8 @@ export default function TrainScreen() {
     pbAnim,
   ]);
 
-  const allSessions     = tracks.flatMap(t => t.sessions);
   // Stats always span the whole track (all dates) so "Best Ever" is truly all-time at that track
-  const displaySessions = currentTrack?.sessions ?? allSessions;
+  const displaySessions = currentTrack?.sessions ?? [];
   const totalLaps       = displaySessions.reduce((n, s) => n + s.myLaps.filter(l => (l.lapTimeMs ?? 0) > 0).length, 0);
   const allBests        = displaySessions.map(s => s.bestLapMs).filter((ms): ms is number => ms != null && ms > 0);
   const overallBest     = allBests.length ? Math.min(...allBests) : null;

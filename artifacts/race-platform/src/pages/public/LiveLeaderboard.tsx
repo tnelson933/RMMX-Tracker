@@ -1,6 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useRoute, Link } from "wouter";
-import { Flag, Clock, WifiOff, ChevronLeft, Radio, AlertTriangle, TrendingUp } from "lucide-react";
+import {
+  Flag, Clock, WifiOff, ChevronLeft, Radio, AlertTriangle, TrendingUp,
+  ArrowDown, ArrowUp, BarChart3, Repeat2, Timer, Zap,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface LeaderboardEntry {
@@ -15,6 +18,42 @@ interface LeaderboardEntry {
   gap: string;
   dnf: boolean;
   dns: boolean;
+  bestLapMs: number | null;
+  bestLap: string | null;
+}
+
+interface RiderIdentity {
+  riderId: number;
+  riderName: string;
+  bibNumber: string | null;
+}
+
+interface AnalyticsRider extends RiderIdentity {
+  bestLapMs: number | null;
+  bestLap: string | null;
+}
+
+interface PositionMover extends RiderIdentity {
+  startPosition?: number;
+  currentPosition?: number;
+  positionsGained?: number;
+  positionsLost?: number;
+  fromPosition?: number;
+  toPosition?: number;
+  lapNumber?: number;
+}
+
+interface RaceAnalytics {
+  lastCompletedLap: number | null;
+  movingUp: PositionMover | null;
+  mostPasses: PositionMover | null;
+  fallingBack: PositionMover | null;
+  fastestLap: (AnalyticsRider & {
+    marginMs: number | null;
+    margin: string | null;
+    nextRiderName: string | null;
+  }) | null;
+  fastestLaps: AnalyticsRider[];
 }
 
 interface LeaderboardData {
@@ -30,6 +69,7 @@ interface LeaderboardData {
   leaderboard: LeaderboardEntry[];
   updatedAt: string;
   correction?: boolean;
+  analytics?: RaceAnalytics;
 }
 
 function ElapsedClock({ startedAt }: { startedAt: string }) {
@@ -74,6 +114,367 @@ function CountdownClock({ startedAt, timeLimitMs }: { startedAt: string; timeLim
   );
 }
 
+type LiveView = "timing" | "analytics" | "fastest";
+
+function ViewTab({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`relative flex min-w-max items-center justify-center gap-2 px-4 py-3 text-xs font-heading font-bold uppercase tracking-wider transition-colors sm:px-7 sm:text-sm ${
+        active ? "text-white" : "text-white/45 hover:text-white/80"
+      }`}
+    >
+      {icon}
+      {label}
+      {active && (
+        <motion.span
+          layoutId="live-view-active-tab"
+          className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary"
+        />
+      )}
+    </button>
+  );
+}
+
+function EmptyInsight({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-h-28 items-center justify-center rounded-lg border border-dashed border-white/10 bg-black/10 px-5 text-center text-sm text-white/35">
+      {children}
+    </div>
+  );
+}
+
+function InsightCard({
+  icon,
+  title,
+  description,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <article className="rounded-xl border border-white/10 bg-white/[0.035] p-5 shadow-lg shadow-black/10">
+      <div className="mb-5 flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+          {icon}
+        </div>
+        <div>
+          <h2 className="font-heading text-lg font-bold uppercase tracking-wide text-white">{title}</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-white/40">{description}</p>
+        </div>
+      </div>
+      {children}
+    </article>
+  );
+}
+
+function RiderInsight({
+  riderName,
+  bibNumber,
+  metric,
+  detail,
+}: {
+  riderName: string;
+  bibNumber: string | null;
+  metric: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/15 p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-heading text-xl font-bold text-white">{riderName}</span>
+            {bibNumber && (
+              <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 font-mono text-[11px] text-white/50">
+                #{bibNumber}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 text-sm text-white/45">{detail}</div>
+        </div>
+        <div className="shrink-0 text-right font-mono text-lg font-bold tabular-nums text-primary">{metric}</div>
+      </div>
+    </div>
+  );
+}
+
+function QuickAnalytics({ analytics }: { analytics?: RaceAnalytics }) {
+  const movingUp = analytics?.movingUp;
+  const mostPasses = analytics?.mostPasses;
+  const fallingBack = analytics?.fallingBack;
+  const fastestLap = analytics?.fastestLap;
+
+  return (
+    <div className="mx-auto grid w-full max-w-6xl gap-4 p-4 sm:p-6 lg:grid-cols-2 lg:gap-5 lg:p-8">
+      <InsightCard
+        icon={<ArrowUp size={20} />}
+        title="Moving Up"
+        description="Most positions gained during the latest completed lap."
+      >
+        {movingUp ? (
+          <RiderInsight
+            riderName={movingUp.riderName}
+            bibNumber={movingUp.bibNumber}
+            metric={`+${movingUp.positionsGained ?? 0}`}
+            detail={`Lap ${movingUp.lapNumber}: #${movingUp.fromPosition} → #${movingUp.toPosition}`}
+          />
+        ) : (
+          <EmptyInsight>Waiting for a rider to gain a position during a completed lap.</EmptyInsight>
+        )}
+      </InsightCard>
+
+      <InsightCard
+        icon={<Repeat2 size={20} />}
+        title="Most Passes"
+        description="Biggest position gain from the end of lap 1 to the current order."
+      >
+        {mostPasses ? (
+          <RiderInsight
+            riderName={mostPasses.riderName}
+            bibNumber={mostPasses.bibNumber}
+            metric={`${mostPasses.positionsGained ?? 0} pass${mostPasses.positionsGained === 1 ? "" : "es"}`}
+            detail={`Started #${mostPasses.startPosition} after lap 1 · Now #${mostPasses.currentPosition}`}
+          />
+        ) : (
+          <EmptyInsight>No net position gains have been recorded since lap 1.</EmptyInsight>
+        )}
+      </InsightCard>
+
+      <InsightCard
+        icon={<ArrowDown size={20} />}
+        title="Falling Back"
+        description="Largest position loss from the end of lap 1 to the current order."
+      >
+        {fallingBack ? (
+          <RiderInsight
+            riderName={fallingBack.riderName}
+            bibNumber={fallingBack.bibNumber}
+            metric={`-${fallingBack.positionsLost ?? 0}`}
+            detail={`Started #${fallingBack.startPosition} after lap 1 · Now #${fallingBack.currentPosition}`}
+          />
+        ) : (
+          <EmptyInsight>No rider has lost a net position since lap 1.</EmptyInsight>
+        )}
+      </InsightCard>
+
+      <InsightCard
+        icon={<Zap size={20} />}
+        title="Fastest Lap"
+        description="Best single lap of the race compared with the next-fastest rider."
+      >
+        {fastestLap ? (
+          <RiderInsight
+            riderName={fastestLap.riderName}
+            bibNumber={fastestLap.bibNumber}
+            metric={fastestLap.bestLap ?? "—"}
+            detail={fastestLap.margin && fastestLap.nextRiderName
+              ? `${fastestLap.margin} faster than ${fastestLap.nextRiderName}`
+              : "No second timed rider available for comparison yet"}
+          />
+        ) : (
+          <EmptyInsight>Waiting for the first completed timed lap.</EmptyInsight>
+        )}
+      </InsightCard>
+    </div>
+  );
+}
+
+function FastestLapRanking({ data }: { data: LeaderboardData }) {
+  const fastestLaps = data.analytics?.fastestLaps ?? [...data.leaderboard]
+    .sort((a, b) => {
+      if (a.bestLapMs == null && b.bestLapMs == null) return a.position - b.position;
+      if (a.bestLapMs == null) return 1;
+      if (b.bestLapMs == null) return -1;
+      return a.bestLapMs - b.bestLapMs;
+    })
+    .map(entry => ({
+      riderId: entry.riderId,
+      riderName: entry.riderName,
+      bibNumber: entry.bibNumber,
+      bestLapMs: entry.bestLapMs,
+      bestLap: entry.bestLap,
+    }));
+  const leaderTime = fastestLaps.find(entry => entry.bestLapMs != null)?.bestLapMs ?? null;
+
+  if (fastestLaps.length === 0) {
+    return (
+      <div className="flex min-h-full items-center justify-center p-8 text-center text-white/35">
+        <div>
+          <Timer size={36} className="mx-auto mb-3 opacity-40" />
+          Waiting for timed laps…
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-5xl p-4 sm:p-6 lg:p-8">
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.025]">
+        <div className="border-b border-white/10 px-4 py-4 sm:px-6">
+          <h2 className="font-heading text-xl font-bold uppercase tracking-wide text-white">Fastest laps</h2>
+          <p className="mt-1 text-sm text-white/40">Each rider’s quickest completed lap, fastest to slowest.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-white/30">
+                <th className="w-14 px-3 py-3 text-center font-bold">Rank</th>
+                <th className="px-3 py-3 text-left font-bold">Rider</th>
+                <th className="hidden w-20 px-3 py-3 text-center font-bold sm:table-cell">#</th>
+                <th className="px-3 py-3 text-right font-bold">Best lap</th>
+                <th className="hidden w-32 px-3 py-3 text-right font-bold md:table-cell">Off fastest</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fastestLaps.map((entry, index) => {
+                const gapMs = leaderTime != null && entry.bestLapMs != null ? entry.bestLapMs - leaderTime : null;
+                return (
+                  <tr key={entry.riderId} className={`border-b border-white/5 last:border-0 ${index === 0 ? "bg-yellow-400/[0.06]" : ""}`}>
+                    <td className={`px-3 py-4 text-center font-heading text-lg font-bold ${index === 0 ? "text-yellow-400" : "text-white/45"}`}>
+                      {entry.bestLapMs != null ? index + 1 : "—"}
+                    </td>
+                    <td className="px-3 py-4 font-heading text-base font-bold text-white">{entry.riderName}</td>
+                    <td className="hidden px-3 py-4 text-center font-mono text-xs text-white/45 sm:table-cell">{entry.bibNumber ?? "—"}</td>
+                    <td className="px-3 py-4 text-right font-mono font-bold tabular-nums text-white">{entry.bestLap ?? "Waiting"}</td>
+                    <td className="hidden px-3 py-4 text-right font-mono tabular-nums text-white/40 md:table-cell">
+                      {gapMs == null ? "—" : gapMs === 0 ? "Fastest" : `+${(gapMs / 1000).toFixed(2)}s`}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveTimingTable({
+  data,
+  positionGains,
+}: {
+  data: LeaderboardData;
+  positionGains: Set<number>;
+}) {
+  if (data.leaderboard.length === 0) {
+    return (
+      <div className="flex min-h-full items-center justify-center py-16 text-center text-sm text-white/30">
+        <div>
+          <Radio size={32} className="mx-auto mb-3 opacity-30" />
+          Waiting for first tag crossing…
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10 bg-sidebar/95 backdrop-blur">
+          <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-white/30">
+            <th className="w-12 px-3 py-3 text-center font-bold">Pos</th>
+            <th className="px-3 py-3 text-left font-bold">Rider</th>
+            <th className="hidden w-16 px-2 py-3 text-center font-bold sm:table-cell">#</th>
+            <th className="w-16 px-2 py-3 text-center font-bold">Laps</th>
+            <th className="px-3 py-3 text-right font-bold">Total</th>
+            <th className="hidden px-3 py-3 text-right font-bold md:table-cell">Last Lap</th>
+            <th className="hidden w-24 px-3 py-3 text-right font-bold lg:table-cell">Gap</th>
+          </tr>
+        </thead>
+        <tbody>
+          <AnimatePresence initial={false}>
+            {data.leaderboard.map((entry) => {
+              const justGained = positionGains.has(entry.riderId);
+              return (
+                <motion.tr
+                  key={entry.riderId}
+                  layout
+                  layoutId={`rider-${entry.riderId}`}
+                  initial={{ opacity: 0, y: -12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ layout: { type: "spring", stiffness: 400, damping: 35 }, duration: 0.3 }}
+                  className={`border-b border-white/5 ${
+                    entry.position === 1 ? "bg-white/5" : ""
+                  } ${entry.dnf || entry.dns ? "opacity-40" : ""}`}
+                >
+                  <td className="w-12 px-3 py-3 text-center">
+                    <motion.span
+                      layout
+                      className={`font-heading text-lg font-bold ${
+                        entry.position === 1 ? "text-yellow-400" :
+                        entry.position === 2 ? "text-slate-300" :
+                        entry.position === 3 ? "text-amber-600" :
+                        "text-white/50"
+                      }`}
+                    >
+                      {entry.dnf ? "DNF" : entry.dns ? "DNS" : entry.position}
+                    </motion.span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <motion.div
+                      animate={justGained
+                        ? { scale: 1.18, color: "#4ade80" }
+                        : { scale: 1, color: "#ffffff" }
+                      }
+                      transition={{ type: "spring", stiffness: 300, damping: 22 }}
+                      style={{ originX: 0 }}
+                      className="flex items-center gap-2 font-heading text-base font-bold"
+                    >
+                      <AnimatePresence>
+                        {justGained && (
+                          <motion.span
+                            key="gain-arrow"
+                            initial={{ opacity: 0, x: -6, scale: 0.7 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: -6, scale: 0.7 }}
+                            transition={{ duration: 0.2 }}
+                            className="inline-flex items-center"
+                          >
+                            <TrendingUp size={16} className="shrink-0 text-green-400" />
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                      {entry.riderName}
+                    </motion.div>
+                  </td>
+                  <td className="hidden px-2 py-3 text-center sm:table-cell">
+                    <span className="font-mono text-xs text-white/50">{entry.bibNumber ?? "—"}</span>
+                  </td>
+                  <td className="px-2 py-3 text-center">
+                    <span className="font-heading font-bold text-white">{entry.laps}</span>
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-sm tabular-nums">{entry.totalTime ?? "—"}</td>
+                  <td className="hidden px-3 py-3 text-right font-mono text-sm tabular-nums text-white/50 md:table-cell">{entry.lastLap ?? "—"}</td>
+                  <td className="hidden px-3 py-3 text-right text-sm text-white/40 lg:table-cell">{entry.gap}</td>
+                </motion.tr>
+              );
+            })}
+          </AnimatePresence>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function LiveLeaderboard() {
   const [, params] = useRoute("/live/:motoId");
   const motoId = params?.motoId;
@@ -81,6 +482,7 @@ export default function LiveLeaderboard() {
   const [data, setData] = useState<LeaderboardData | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<LiveView>("timing");
   const [correctionVisible, setCorrectionVisible] = useState(false);
   const correctionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const esRef = useRef<EventSource | null>(null);
@@ -174,7 +576,7 @@ export default function LiveLeaderboard() {
   const isLive = data?.status === "in_progress";
 
   return (
-    <div className="min-h-screen bg-sidebar text-sidebar-foreground">
+    <main className="fixed inset-0 z-40 flex h-[100dvh] flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
       {/* Correction notice banner */}
       <AnimatePresence>
         {correctionVisible && (
@@ -193,12 +595,12 @@ export default function LiveLeaderboard() {
       </AnimatePresence>
 
       {/* Header bar */}
-      <div className="border-b border-white/10 px-4 py-3 flex items-center justify-between">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
         <Link href="/" className="flex items-center gap-2 text-white/50 hover:text-white text-sm transition-colors">
           <ChevronLeft size={16} /> Home
         </Link>
 
-        <div className="flex items-center gap-3 text-sm">
+        <div className="flex items-center gap-3 text-sm" aria-live="polite">
           {connected ? (
             <span className="flex items-center gap-1.5 text-green-400">
               <span className="relative flex h-2 w-2">
@@ -216,23 +618,23 @@ export default function LiveLeaderboard() {
       </div>
 
       {error ? (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4 p-8 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center space-y-4 p-8 text-center">
           <Radio size={48} className="text-white/20" />
           <h2 className="text-2xl font-heading font-bold uppercase">{error}</h2>
           <p className="text-white/50 text-sm">Check the moto ID or wait for the race to start.</p>
           <Link href="/"><button className="text-sm text-primary hover:underline">← Back to Home</button></Link>
         </div>
       ) : !data ? (
-        <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-1 items-center justify-center">
           <div className="font-heading text-lg uppercase tracking-widest text-white/40 animate-pulse">Connecting to timing system…</div>
         </div>
       ) : (
         <>
           {/* Moto header */}
-          <div className="px-4 py-6 text-center border-b border-white/10">
+          <div className="shrink-0 border-b border-white/10 px-4 py-4 text-center sm:py-5">
             <div className="text-white/40 text-xs font-bold uppercase tracking-widest mb-1">{data.raceClass}</div>
-            <h1 className="text-3xl font-heading font-bold uppercase tracking-tight">{data.motoName}</h1>
-            <div className="mt-3 flex items-center justify-center gap-4 flex-wrap">
+            <h1 className="font-heading text-2xl font-bold uppercase tracking-tight sm:text-3xl">{data.motoName}</h1>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-3 sm:mt-3 sm:gap-4">
               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
                 isLive ? "bg-primary text-white" :
                 data.status === "completed" ? "bg-secondary/30 text-secondary border border-secondary/30" :
@@ -279,116 +681,62 @@ export default function LiveLeaderboard() {
             </div>
           </div>
 
-          {/* Leaderboard table */}
-          {data.leaderboard.length === 0 ? (
-            <div className="text-center py-16 text-white/30 text-sm">
-              <Radio size={32} className="mx-auto mb-3 opacity-30" />
-              Waiting for first tag crossing…
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-white/30 text-xs uppercase tracking-widest border-b border-white/10">
-                    <th className="text-center w-12 py-3 px-3 font-bold">Pos</th>
-                    <th className="text-left py-3 px-3 font-bold">Rider</th>
-                    <th className="text-center w-16 py-3 px-2 font-bold hidden sm:table-cell">#</th>
-                    <th className="text-center w-16 py-3 px-2 font-bold">Laps</th>
-                    <th className="text-right py-3 px-3 font-bold">Total</th>
-                    <th className="text-right py-3 px-3 font-bold hidden md:table-cell">Last Lap</th>
-                    <th className="text-right w-24 py-3 px-3 font-bold hidden lg:table-cell">Gap</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <AnimatePresence initial={false}>
-                    {data.leaderboard.map((entry) => {
-                      const justGained = positionGains.has(entry.riderId);
-                      return (
-                        <motion.tr
-                          key={entry.riderId}
-                          layout
-                          layoutId={`rider-${entry.riderId}`}
-                          initial={{ opacity: 0, y: -12 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ layout: { type: "spring", stiffness: 400, damping: 35 }, duration: 0.3 }}
-                          className={`border-b border-white/5 ${
-                            entry.position === 1 ? "bg-white/5" : ""
-                          } ${entry.dnf || entry.dns ? "opacity-40" : ""}`}
-                        >
-                          <td className="text-center py-3 px-3 w-12">
-                            <motion.span
-                              layout
-                              className={`font-heading font-bold text-lg ${
-                                entry.position === 1 ? "text-yellow-400" :
-                                entry.position === 2 ? "text-slate-300" :
-                                entry.position === 3 ? "text-amber-600" :
-                                "text-white/50"
-                              }`}
-                            >
-                              {entry.dnf ? "DNF" : entry.dns ? "DNS" : entry.position}
-                            </motion.span>
-                          </td>
-
-                          {/* Rider name — enlarges for 2s on position gain */}
-                          <td className="py-2 px-3">
-                            <motion.div
-                              animate={justGained
-                                ? { scale: 1.18, color: "#4ade80" }
-                                : { scale: 1, color: "#ffffff" }
-                              }
-                              transition={{ type: "spring", stiffness: 300, damping: 22 }}
-                              style={{ originX: 0 }}
-                              className="font-heading font-bold text-base flex items-center gap-2"
-                            >
-                              <AnimatePresence>
-                                {justGained && (
-                                  <motion.span
-                                    key="gain-arrow"
-                                    initial={{ opacity: 0, x: -6, scale: 0.7 }}
-                                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                                    exit={{ opacity: 0, x: -6, scale: 0.7 }}
-                                    transition={{ duration: 0.2 }}
-                                    className="inline-flex items-center"
-                                  >
-                                    <TrendingUp size={16} className="text-green-400 shrink-0" />
-                                  </motion.span>
-                                )}
-                              </AnimatePresence>
-                              {entry.riderName}
-                            </motion.div>
-                          </td>
-
-                          <td className="text-center py-3 px-2 hidden sm:table-cell">
-                            <span className="font-mono text-white/50 text-xs">{entry.bibNumber ?? "—"}</span>
-                          </td>
-                          <td className="text-center py-3 px-2">
-                            <span className="font-heading font-bold text-white">{entry.laps}</span>
-                          </td>
-                          <td className="text-right py-3 px-3 font-mono text-sm tabular-nums">
-                            {entry.totalTime ?? "—"}
-                          </td>
-                          <td className="text-right py-3 px-3 font-mono text-sm text-white/50 tabular-nums hidden md:table-cell">
-                            {entry.lastLap ?? "—"}
-                          </td>
-                          <td className="text-right py-3 px-3 text-sm text-white/40 hidden lg:table-cell">
-                            {entry.gap}
-                          </td>
-                        </motion.tr>
-                      );
-                    })}
-                  </AnimatePresence>
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Footer */}
-          <div className="p-4 text-center text-white/20 text-xs">
-            Powered by RM Tracker · Updates live
+          <div
+            role="tablist"
+            aria-label="Live race views"
+            className="flex shrink-0 justify-start overflow-x-auto border-b border-white/10 bg-black/10 sm:justify-center"
+          >
+            <ViewTab
+              active={activeView === "timing"}
+              icon={<Radio size={16} />}
+              label="Live Timing"
+              onClick={() => setActiveView("timing")}
+            />
+            <ViewTab
+              active={activeView === "analytics"}
+              icon={<BarChart3 size={16} />}
+              label="Quick Analytics"
+              onClick={() => setActiveView("analytics")}
+            />
+            <ViewTab
+              active={activeView === "fastest"}
+              icon={<Timer size={16} />}
+              label="Fastest Lap"
+              onClick={() => setActiveView("fastest")}
+            />
           </div>
+
+          <section
+            role="tabpanel"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={activeView}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.16 }}
+                className="min-h-full"
+              >
+                {activeView === "timing" && (
+                  <LiveTimingTable data={data} positionGains={positionGains} />
+                )}
+                {activeView === "analytics" && (
+                  <QuickAnalytics analytics={data.analytics} />
+                )}
+                {activeView === "fastest" && (
+                  <FastestLapRanking data={data} />
+                )}
+              </motion.div>
+            </AnimatePresence>
+
+            <footer className="p-4 text-center text-xs text-white/20">
+              Powered by RM Tracker · Updates live
+            </footer>
+          </section>
         </>
       )}
-    </div>
+    </main>
   );
 }

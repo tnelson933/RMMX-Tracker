@@ -57,33 +57,6 @@ interface UpcomingEvent {
   isRegistered?: boolean;
 }
 
-// ─── Stat box ─────────────────────────────────────────────────────────────────
-
-function StatBox({ label, value, onPress, colors }: {
-  label: string;
-  value: string;
-  onPress?: () => void;
-  colors: ReturnType<typeof useColors>;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flex: 1, backgroundColor: colors.card, borderRadius: 12, padding: 14,
-        alignItems: "center", borderWidth: 1, borderColor: colors.border,
-        opacity: pressed ? 0.7 : 1,
-        transform: [{ scale: pressed ? 0.97 : 1 }],
-      })}
-    >
-      <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>{label}</Text>
-      <Text style={{ fontSize: 22, fontWeight: "800", color: ACCENT, fontFamily: "Inter_700Bold", letterSpacing: -0.5 }}>{value}</Text>
-      {onPress && (
-        <Feather name="chevron-right" size={10} color={colors.mutedForeground + "80"} style={{ position: "absolute", right: 8, top: "50%", marginTop: -5 }} />
-      )}
-    </Pressable>
-  );
-}
-
 // ─── Upcoming event card ──────────────────────────────────────────────────────
 
 function UpcomingEventCard({ event, colors, onPress }: { event: UpcomingEvent; colors: ReturnType<typeof useColors>; onPress: () => void }) {
@@ -325,30 +298,6 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [loadData]);
 
-  // ── Stat box tap handlers ────────────────────────────────────────────────────
-
-  function handleTapEvents() {
-    pushView({ type: "events" });
-  }
-
-  function handleTapPoints() {
-    pushView({ type: "points" });
-  }
-
-  function handleTapBestFinish() {
-    const bestPos = combinedBestPosition;
-    if (bestPos == null || allHistory.length === 0) {
-      pushView({ type: "events" });
-      return;
-    }
-    const sorted = [...allHistory].sort((a, b) =>
-      new Date(b.eventDate ?? 0).getTime() - new Date(a.eventDate ?? 0).getTime()
-    );
-    const best = sorted.find(e => e.bestPosition === bestPos);
-    if (best) pushView({ type: "event_detail", event: best });
-    else      pushView({ type: "events" });
-  }
-
   // ── Sub-screen rendering ─────────────────────────────────────────────────────
 
   if (currentView) {
@@ -446,36 +395,10 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Stats row — only show if logged in with a profile */}
-          {primaryProfile && (
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 18 }}>
-              <StatBox
-                label="Events"
-                value={String(combinedEventsRaced)}
-                onPress={handleTapEvents}
-                colors={colors}
-              />
-              <StatBox
-                label="Points"
-                value={String(combinedTotalPoints)}
-                onPress={handleTapPoints}
-                colors={colors}
-              />
-              <StatBox
-                label="Best Finish"
-                value={combinedBestPosition != null ? `P${combinedBestPosition}` : "—"}
-                onPress={handleTapBestFinish}
-                colors={colors}
-              />
-            </View>
-          )}
         </View>
 
         {/* ── No profile warning ── */}
         {!hasProfile && <NoProfileCard colors={colors} />}
-
-        {/* ── Rocky inline chat ── */}
-        <RockyHomeWidget />
 
         {/* ── Upcoming events ── */}
         {hasProfile && (
@@ -521,6 +444,9 @@ export default function HomeScreen() {
             )}
           </>
         )}
+
+        {/* ── Rocky inline chat ── */}
+        <RockyHomeWidget />
 
         {/* Footer */}
         <View style={{ height: insets.bottom + 40 }} />
