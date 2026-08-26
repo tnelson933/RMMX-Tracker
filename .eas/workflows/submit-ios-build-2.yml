@@ -4,6 +4,7 @@ jobs:
   submit_ios:
     name: Submit iOS build to TestFlight
     type: testflight
+    working_directory: artifacts/rider-app
     env:
       EXPO_DEBUG: "1"
     params:
