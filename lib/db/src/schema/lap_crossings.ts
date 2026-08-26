@@ -20,6 +20,8 @@ export const lapCrossingsTable = pgTable("lap_crossings", {
     .on(table.motoId, table.riderId, table.lapTimeMs),
   index("lap_crossings_moto_lap_crossing_idx")
     .on(table.motoId, table.lapNumber, table.crossingTime, table.id),
+  index("lap_crossings_moto_rfid_crossing_idx")
+    .on(table.motoId, table.rfidNumber, table.crossingTime),
 ]);
 
 export type LapCrossing = typeof lapCrossingsTable.$inferSelect;

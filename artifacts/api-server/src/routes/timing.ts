@@ -496,6 +496,20 @@ function withMotoLock<T>(motoId: number, fn: () => Promise<T>): Promise<T> {
   return prev.then(() => fn()).finally(unlock);
 }
 
+async function updateRaceResultPositions(sorted: Array<{ id: number }>) {
+  if (sorted.length === 0) return;
+  const positionCases = sql.join(
+    sorted.map((result, index) => sql`when ${raceResultsTable.id} = ${result.id} then ${index + 1}`),
+    sql` `,
+  );
+  await db
+    .update(raceResultsTable)
+    .set({
+      position: sql<number>`case ${positionCases} else ${raceResultsTable.position} end`,
+    })
+    .where(inArray(raceResultsTable.id, sorted.map(result => result.id)));
+}
+
 // ── Core crossing processor (runs inside per-moto lock) ───────────────────────
 async function _processCrossing(opts: {
   rfidNumber: string;
@@ -712,12 +726,7 @@ async function _processCrossing(opts: {
         // Sort by best pass time + penalty seconds converted to ms
         return (a.bestMs + a.pen.penaltySeconds * 1_000) - (b.bestMs + b.pen.penaltySeconds * 1_000);
       });
-    for (let i = 0; i < enduroSorted.length; i++) {
-      await db
-        .update(raceResultsTable)
-        .set({ position: i + 1 })
-        .where(eq(raceResultsTable.id, enduroSorted[i].id));
-    }
+    await updateRaceResultPositions(enduroSorted);
 
     const enduroSnapshot = await buildLeaderboard(motoId);
     if (enduroSnapshot) {
@@ -828,12 +837,7 @@ async function _processCrossing(opts: {
       })
       .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
 
-    for (let i = 0; i < sorted.length; i++) {
-      await db
-        .update(raceResultsTable)
-        .set({ position: i + 1 })
-        .where(eq(raceResultsTable.id, sorted[i].id));
-    }
+    await updateRaceResultPositions(sorted);
   }
 
   // 7. Build & broadcast leaderboard (JSON SSE for the live scoreboard widget)
