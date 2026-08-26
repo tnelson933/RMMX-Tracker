@@ -28,7 +28,9 @@ import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrat
 import { useToast } from "@/hooks/use-toast";
 
 function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber }: { registrationId: number; eventId: number; onDone: () => void; currentNumber?: string }) {
-  const [value, setValue] = useState(currentNumber ?? "");
+  const [value, setValue] = useState(
+    () => normalizeActiveTransponderIdentifier(currentNumber) ?? "",
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -90,7 +92,11 @@ function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber
 }
 
 function RfidInput({ riderId, eventId, onDone, isActiveTransponder, currentTag }: { riderId: number; eventId: number; onDone: () => void; isActiveTransponder?: boolean; currentTag?: string }) {
-  const [value, setValue] = useState(currentTag ?? "");
+  const [value, setValue] = useState(() =>
+    isActiveTransponder
+      ? normalizeActiveTransponderIdentifier(currentTag) ?? ""
+      : currentTag ?? "",
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
