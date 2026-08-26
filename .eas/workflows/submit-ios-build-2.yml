@@ -20,5 +20,5 @@ jobs:
       after_checkout:
         - name: Expose Rider App config to EAS Submit
           run: |
-            node -e 'require("fs").writeFileSync("../../app.json", JSON.stringify({expo:{name:"RM Tracker",slug:"rider-app",owner:"tnelson933",ios:{bundleIdentifier:"com.rockymountain.riderapp"},extra:{eas:{projectId:"97b8d6d6-ed00-43d6-8c64-128a8c2b6800"}}}}))'
-            cp eas.json ../../eas.json
+            node -e 'require("fs").writeFileSync("app.json", JSON.stringify({expo:{name:"RM Tracker",slug:"rider-app",owner:"tnelson933",ios:{bundleIdentifier:"com.rockymountain.riderapp"},extra:{eas:{projectId:"97b8d6d6-ed00-43d6-8c64-128a8c2b6800"}}}}))'
+            cp artifacts/rider-app/eas.json eas.json
