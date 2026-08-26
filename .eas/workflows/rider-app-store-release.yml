@@ -1,6 +1,6 @@
-# iOS is built and submitted in one run. Android intentionally stops after
-# producing an .aab until a Google Play service-account key is available.
-name: Release Rider App (iOS submit + Android bundle)
+# Build and submit both store releases in one run. Store credentials are managed
+# remotely by EAS and are never checked into this repository.
+name: Release Rider App to App Store and Google Play
 
 defaults:
   tools:
@@ -32,8 +32,22 @@ jobs:
             cp artifacts/rider-app/eas.json eas.json
 
   build_android:
-    name: Build Android bundle for manual Play upload
+    name: Build Android for Google Play
     type: build
     params:
       platform: android
       profile: production
+
+  submit_android:
+    name: Submit Android to Google Play
+    needs:
+      - build_android
+    type: submit
+    params:
+      build_id: ${{ needs.build_android.outputs.build_id }}
+    hooks:
+      after_checkout:
+        - name: Expose Rider App config to EAS Submit
+          run: |
+            node -e 'require("fs").writeFileSync("app.json", JSON.stringify({expo:{name:"RM Tracker",slug:"rider-app",owner:"tnelson933",android:{package:"com.rockymountain.riderapp"},extra:{eas:{projectId:"97b8d6d6-ed00-43d6-8c64-128a8c2b6800"}}}}))'
+            cp artifacts/rider-app/eas.json eas.json
