@@ -728,6 +728,36 @@ export function initDb() {
     }
   }
 
+  // Track names were historically stored locally but omitted from desktop sync.
+  // Requeue each locally named practice session once so the cloud copy — and
+  // therefore Rider App history — receives its venue_name.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS _local_data_migrations (
+      name       TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    INSERT INTO _write_queue (table_name, record_id, operation)
+    SELECT 'practice_sessions', ps.id, 'upsert'
+    FROM practice_sessions ps
+    WHERE TRIM(COALESCE(ps.venue_name, '')) <> ''
+      AND NOT EXISTS (
+        SELECT 1
+        FROM _write_queue q
+        WHERE q.table_name = 'practice_sessions'
+          AND q.record_id = ps.id
+          AND q.synced_at IS NULL
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM _local_data_migrations m
+        WHERE m.name = 'requeue-practice-session-track-names'
+      );
+
+    INSERT OR IGNORE INTO _local_data_migrations (name)
+    VALUES ('requeue-practice-session-track-names');
+  `);
+
   // Seed autoincrement sequences so desktop-created rows start at a high ID range
   // and never collide with cloud-assigned sequential IDs (1, 2, 3...).
   // ON CONFLICT DO UPDATE uses MAX so an already-elevated sequence is never lowered.

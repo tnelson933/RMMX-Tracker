@@ -370,6 +370,11 @@ router.patch("/practice/:id", async (req, res) => {
 
   const updates: Record<string, unknown> = {};
   if (req.body.name !== undefined) updates.name = req.body.name;
+  if (req.body.venueName !== undefined) {
+    const venueName = String(req.body.venueName).trim();
+    if (!venueName) return res.status(400).json({ error: "Track name is required" });
+    updates.venueName = venueName;
+  }
   if (req.body.debounceMs !== undefined) updates.debounceMs = Number(req.body.debounceMs);
   if (req.body.status !== undefined) {
     updates.status = req.body.status;

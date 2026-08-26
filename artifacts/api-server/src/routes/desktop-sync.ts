@@ -822,6 +822,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         const updateSet: Record<string, unknown> = {};
         if (s.status      != null) updateSet.status     = String(s.status);
         if (s.name        != null) updateSet.name        = String(s.name);
+        if (s.venue_name  != null) updateSet.venueName   = String(s.venue_name).trim() || null;
         if (s.debounce_ms != null) updateSet.debounceMs  = Number(s.debounce_ms);
         if (s.started_at  != null) updateSet.startedAt   = toDate(s.started_at);
         if (s.ended_at    != null) updateSet.endedAt     = toDate(s.ended_at);
@@ -835,6 +836,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           id:         sessionId,
           clubId,
           name:       s.name        != null ? String(s.name)        : "Practice",
+          venueName:  s.venue_name  != null ? String(s.venue_name).trim() || null : null,
           status:     s.status      != null ? String(s.status)      : "idle",
           debounceMs: s.debounce_ms != null ? Number(s.debounce_ms) : 10000,
           startedAt:  toDate(s.started_at),
