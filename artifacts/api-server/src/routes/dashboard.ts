@@ -17,7 +17,10 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
 
   const [eventsCount] = await db.select({ count: count() }).from(eventsTable).where(eq(eventsTable.clubId, clubId));
   const [upcomingCount] = await db.select({ count: count() }).from(eventsTable).where(
-    and(eq(eventsTable.clubId, clubId), sql`${eventsTable.status} IN ('draft','registration_open','registration_closed','race_day')`)
+    and(
+      eq(eventsTable.clubId, clubId),
+      sql`SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')`,
+    )
   );
 
   const clubEvents = await db.select({ id: eventsTable.id }).from(eventsTable).where(eq(eventsTable.clubId, clubId));
@@ -72,7 +75,10 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     endDate: eventsTable.endDate,
     createdAt: eventsTable.createdAt,
   }).from(eventsTable)
-    .where(and(eq(eventsTable.clubId, clubId), sql`${eventsTable.status} != 'completed'`))
+    .where(and(
+      eq(eventsTable.clubId, clubId),
+      sql`SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')`,
+    ))
     .orderBy(eventsTable.date)
     .limit(5);
 
