@@ -16,3 +16,9 @@ jobs:
       EXPO_DEBUG: "1"
     params:
       build_id: 10a6b622-37e8-41a7-9e5b-543478807fb6
+    hooks:
+      after_checkout:
+        - name: Expose Rider App config to EAS Submit
+          run: |
+            node -e 'require("fs").writeFileSync("../../app.json", JSON.stringify({expo:{name:"RM Tracker",slug:"rider-app",owner:"tnelson933",ios:{bundleIdentifier:"com.rockymountain.riderapp"},extra:{eas:{projectId:"97b8d6d6-ed00-43d6-8c64-128a8c2b6800"}}}}))'
+            cp eas.json ../../eas.json
