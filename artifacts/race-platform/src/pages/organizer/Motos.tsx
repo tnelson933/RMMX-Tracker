@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2, Pencil, X, Pause, ArrowDown, ArrowUp, BarChart3 } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2, Pencil, X, Pause } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -65,41 +65,6 @@ type LeaderboardSnapshot = {
   status: string;
   leaderboard: LeaderboardEntry[];
   updatedAt: string;
-  analytics?: RaceAnalytics;
-};
-
-type AnalyticsRider = {
-  riderId: number;
-  riderName: string;
-  bibNumber: string | null;
-  bestLapMs: number | null;
-  bestLap: string | null;
-};
-
-type PositionMover = {
-  riderId: number;
-  riderName: string;
-  bibNumber: string | null;
-  positionsGained?: number;
-  positionsLost?: number;
-  startPosition?: number;
-  currentPosition?: number;
-  fromPosition?: number;
-  toPosition?: number;
-  lapNumber?: number;
-};
-
-type RaceAnalytics = {
-  lastCompletedLap: number | null;
-  movingUp: PositionMover | null;
-  mostPasses: PositionMover | null;
-  fallingBack: PositionMover | null;
-  fastestLap: (AnalyticsRider & {
-    marginMs: number | null;
-    margin: string | null;
-    nextRiderName: string | null;
-  }) | null;
-  fastestLaps: AnalyticsRider[];
 };
 
 const POLL_INTERVAL_MS = 3000;
@@ -156,100 +121,9 @@ async function playRfidPing(count: number) {
   // Context stays open and warm for the next crossing.
 }
 
-function InlineAnalyticsView({ analytics }: { analytics?: RaceAnalytics }) {
-  const cards = [
-    {
-      label: "Moving Up",
-      icon: ArrowUp,
-      color: "text-green-600 dark:text-green-400",
-      mover: analytics?.movingUp,
-      detail: (mover: PositionMover) => `+${mover.positionsGained ?? 0} positions`,
-    },
-    {
-      label: "Most Passes",
-      icon: BarChart3,
-      color: "text-blue-600 dark:text-blue-400",
-      mover: analytics?.mostPasses,
-      detail: (mover: PositionMover) => `${mover.positionsGained ?? 0} positions gained`,
-    },
-    {
-      label: "Falling Back",
-      icon: ArrowDown,
-      color: "text-red-600 dark:text-red-400",
-      mover: analytics?.fallingBack,
-      detail: (mover: PositionMover) => `-${mover.positionsLost ?? 0} positions`,
-    },
-    {
-      label: "Fastest Lap",
-      icon: Timer,
-      color: "text-amber-600 dark:text-amber-400",
-      mover: analytics?.fastestLap,
-      detail: (mover: PositionMover & { bestLap?: string | null }) => mover.bestLap ?? "No lap yet",
-    },
-  ];
-
-  return (
-    <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
-      {cards.map(({ label, icon: Icon, color, mover, detail }) => (
-        <div key={label} className="rounded-md border bg-background/60 p-3">
-          <div className={`mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest ${color}`}>
-            <Icon size={13} /> {label}
-          </div>
-          {mover ? (
-            <>
-              <div className="truncate text-sm font-bold">{mover.riderName}</div>
-              <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-                <span>#{mover.bibNumber ?? "—"}</span>
-                <span>{detail(mover)}</span>
-              </div>
-            </>
-          ) : (
-            <div className="py-1 text-xs text-muted-foreground">Waiting for a complete lap</div>
-          )}
-        </div>
-      ))}
-      <div className="col-span-full text-[10px] text-muted-foreground">
-        {analytics?.lastCompletedLap ? `Based on completed lap ${analytics.lastCompletedLap}` : "Analytics will appear after the first complete lap"}
-      </div>
-    </div>
-  );
-}
-
-function InlineFastestLapView({ analytics }: { analytics?: RaceAnalytics }) {
-  const fastestLaps = analytics?.fastestLaps ?? [];
-  return fastestLaps.length > 0 ? (
-    <div className="max-h-64 overflow-y-auto">
-      <Table>
-        <TableHeader className="sticky top-0 z-10 bg-muted/40">
-          <TableRow>
-            <TableHead className="w-10 py-2 text-center text-[10px]">P</TableHead>
-            <TableHead className="py-2 text-[10px]">Rider</TableHead>
-            <TableHead className="w-24 py-2 text-right text-[10px]">Best Lap</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {fastestLaps.map((entry, index) => (
-            <TableRow key={entry.riderId} className={index === 0 ? "bg-secondary/10" : ""}>
-              <TableCell className={`py-2 text-center text-xs font-bold ${index === 0 ? "text-secondary" : "text-muted-foreground"}`}>{index + 1}</TableCell>
-              <TableCell className="py-2 text-xs font-medium">
-                {entry.riderName}
-                <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">#{entry.bibNumber ?? "—"}</span>
-              </TableCell>
-              <TableCell className="py-2 text-right font-mono text-xs font-bold tabular-nums">{entry.bestLap ?? "—"}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  ) : (
-    <div className="px-3 py-8 text-center text-xs text-muted-foreground">Fastest laps will appear as timing data arrives.</div>
-  );
-}
-
 function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penaltyMap, onMotoCompleted }: { motoId: number; isElapsedTimeSport?: boolean; isEnduro?: boolean; lapCount?: number | null; penaltyMap?: Record<number, { totalPenaltySeconds: number; disqualified: boolean }>; onMotoCompleted?: () => void }) {
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeView, setActiveView] = useState<"timing" | "analytics" | "fastest">("timing");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const esRef = useRef<EventSource | null>(null);
   // Track total laps across all riders so we know when a new crossing arrives.
@@ -316,35 +190,11 @@ function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penal
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-secondary" />
           </span>
-          <span className="text-xs font-bold uppercase tracking-widest text-secondary">Live Leaderboard</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-secondary">Live Order</span>
         </div>
         <span className="text-xs text-muted-foreground">
           {lastUpdated ? `${format(lastUpdated, "h:mm:ss a")}` : "Waiting…"}
         </span>
-      </div>
-
-      <div className="grid grid-cols-3 border-b bg-muted/20" role="tablist" aria-label="Live race views">
-        {([
-          ["timing", "Live Timing", Radio],
-          ["analytics", "Quick Analytics", BarChart3],
-          ["fastest", "Fastest Lap", Timer],
-        ] as const).map(([view, label, Icon]) => (
-          <button
-            key={view}
-            type="button"
-            role="tab"
-            aria-selected={activeView === view}
-            onClick={() => setActiveView(view)}
-            className={`flex min-h-10 items-center justify-center gap-1 border-b-2 px-1 py-2 text-[9px] font-bold uppercase tracking-wide transition-colors sm:text-[10px] ${
-              activeView === view
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-            }`}
-          >
-            <Icon size={12} className="shrink-0" />
-            <span>{label}</span>
-          </button>
-        ))}
       </div>
 
       {loading ? (
@@ -356,10 +206,6 @@ function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penal
           <Trophy size={16} className="text-muted-foreground/40" />
           No results yet
         </div>
-      ) : activeView === "analytics" ? (
-        <InlineAnalyticsView analytics={snapshot.analytics} />
-      ) : activeView === "fastest" ? (
-        <InlineFastestLapView analytics={snapshot.analytics} />
       ) : (
         <div className="max-h-44 overflow-y-auto">
           <Table>
@@ -3136,10 +2982,6 @@ export default function Motos() {
                       <TableRow
                         key={moto.id}
                         onClick={() => {
-                          if (moto.status === "in_progress") {
-                            window.location.assign(`/live/${moto.id}`);
-                            return;
-                          }
                           setViewMode("grid");
                           setClassFilter(moto.raceClass ?? "schedule");
                           setExpandedMotoId(moto.id);
@@ -3391,15 +3233,9 @@ export default function Motos() {
                     </button>
                   )}
                   <button
-                    onClick={() => {
-                      if (moto.status === "in_progress") {
-                        window.location.assign(`/live/${moto.id}`);
-                        return;
-                      }
-                      setExpandedMotoId(moto.id);
-                    }}
+                    onClick={() => setExpandedMotoId(moto.id)}
                     className="text-sidebar-foreground/50 hover:text-sidebar-foreground transition-colors p-1 rounded hover:bg-white/10"
-                    title={moto.status === "in_progress" ? "Open full-screen live race" : "Expand view"}
+                    title="Expand view"
                   >
                     <Maximize2 size={14} />
                   </button>
@@ -3772,7 +3608,7 @@ export default function Motos() {
         if (!moto) return null;
         return (
           <Dialog open={true} onOpenChange={open => { if (!open) setExpandedMotoId(null); }}>
-            <DialogContent className="h-[100dvh] max-h-[100dvh] w-screen max-w-none gap-0 overflow-hidden rounded-none border-0 p-0 sm:rounded-none flex flex-col">
+            <DialogContent className="max-w-3xl w-full p-0 overflow-hidden gap-0 h-[95vh] flex flex-col">
               {/* Header */}
               <div className="bg-sidebar text-sidebar-foreground px-5 py-4 border-b flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
