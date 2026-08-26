@@ -4,6 +4,8 @@ jobs:
   submit_ios:
     name: Submit iOS build to TestFlight
     type: testflight
+    env:
+      EXPO_DEBUG: "1"
     params:
       build_id: 10a6b622-37e8-41a7-9e5b-543478807fb6
     hooks:
