@@ -1,15 +1,18 @@
 name: Submit existing iOS build
 
+defaults:
+  tools:
+    node: "20.19.4"
+    pnpm: "10.26.1"
+
 jobs:
   submit_ios:
     name: Submit iOS build to TestFlight
     type: testflight
-    working_directory: artifacts/rider-app
+    defaults:
+      run:
+        working_directory: ./artifacts/rider-app
     env:
       EXPO_DEBUG: "1"
     params:
       build_id: 10a6b622-37e8-41a7-9e5b-543478807fb6
-    hooks:
-      before_install_node_modules:
-        - name: Install pnpm 10.26.1
-          run: npm install --global pnpm@10.26.1
