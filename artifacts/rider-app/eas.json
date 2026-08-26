@@ -5,6 +5,7 @@
   },
   "build": {
     "preview": {
+      "pnpm": "10.26.1",
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "rmmx-tracker.replit.app"
@@ -19,6 +20,7 @@
       }
     },
     "production": {
+      "pnpm": "10.26.1",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "rmmx-tracker.replit.app"
       },
@@ -27,6 +29,7 @@
         "credentialsSource": "remote"
       },
       "ios": {
+        "autoIncrement": true,
         "credentialsSource": "remote"
       }
     }

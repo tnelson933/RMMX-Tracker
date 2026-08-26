@@ -1,9 +1,11 @@
-import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, integer, boolean, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { clubsTable } from "./clubs";
 
 export const ridersTable = pgTable("riders", {
   id: serial("id").primaryKey(),
+  clubId: integer("club_id").references(() => clubsTable.id),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   email: text("email"),
@@ -26,6 +28,8 @@ export const ridersTable = pgTable("riders", {
   amaNumber: text("ama_number"),
   mylapsTransponderId: text("mylaps_transponder_id"),
   skillLevel: text("skill_level"),
+  raceTypes: json("race_types").$type<string[] | null>(),
+  aiMaintenanceSuggestions: boolean("ai_maintenance_suggestions").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

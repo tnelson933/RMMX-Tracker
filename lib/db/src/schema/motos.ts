@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { eventsTable } from "./events";
@@ -22,6 +22,12 @@ export const motosTable = pgTable("motos", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
   staggeredWithMotoId: integer("staggered_with_moto_id"),
   staggeredOrder: integer("staggered_order"), // 1 = starts first, 2 = starts second
+  staggeredGroupId: integer("staggered_group_id"),
+  enduroHasRfidStart: boolean("enduro_has_rfid_start").notNull().default(false),
+  pausedAt: timestamp("paused_at", { withTimezone: true }),
+  totalPausedMs: integer("total_paused_ms").notNull().default(0),
+  plusLaps: integer("plus_laps"),
+  timeExpiredAt: timestamp("time_expired_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

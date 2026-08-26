@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import {

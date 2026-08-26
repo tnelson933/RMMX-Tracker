@@ -14,7 +14,7 @@ export const readersTable = pgTable("readers", {
   id: serial("id").primaryKey(),
   clubId: integer("club_id").notNull().references(() => clubsTable.id),
   name: text("name").notNull(),
-  type: text("type", { enum: ["rfid", "mylaps"] }).notNull().default("rfid"),
+  type: text("type", { enum: ["rfid", "mylaps", "active_transponder"] }).notNull().default("rfid"),
   token: text("token").notNull().unique(),
   hardwareAddress: text("hardware_address"),
   /** Race-critical F2000 configuration managed by the organizer portal. */

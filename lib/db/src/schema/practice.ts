@@ -6,6 +6,7 @@ export const practiceSessionsTable = pgTable("practice_sessions", {
   id: serial("id").primaryKey(),
   clubId: integer("club_id").notNull().references(() => clubsTable.id),
   name: text("name").notNull(),
+  venueName: text("venue_name"),
   status: text("status").notNull().default("idle"), // idle | active | ended
   debounceMs: integer("debounce_ms").notNull().default(10000),
   startedAt: timestamp("started_at", { withTimezone: true }),

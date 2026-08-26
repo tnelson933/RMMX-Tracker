@@ -1,4 +1,5 @@
 const fs = require("fs");
+const net = require("net");
 const path = require("path");
 const { spawn } = require("child_process");
 const { Readable } = require("stream");
@@ -21,8 +22,55 @@ function findWorkspaceRoot(startDir) {
 
 const workspaceRoot = findWorkspaceRoot(projectRoot);
 const basePath = (process.env.BASE_PATH || "/").replace(/\/+$/, "");
-const metroPort = Number(process.env.METRO_PORT || 8081);
-const metroUrl = `http://localhost:${metroPort}`;
+let metroPort = null;
+let metroUrl = null;
+
+function validatePort(rawPort) {
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid METRO_PORT value: "${rawPort}"`);
+  }
+  return port;
+}
+
+function findAvailablePort(preferredPort) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(
+      { host: "127.0.0.1", port: preferredPort ?? 0 },
+      () => {
+        const address = server.address();
+        const port = typeof address === "object" && address ? address.port : null;
+        server.close((error) => {
+          if (error) {
+            reject(error);
+          } else if (!port) {
+            reject(new Error("Could not determine an available Metro port"));
+          } else {
+            resolve(port);
+          }
+        });
+      },
+    );
+  });
+}
+
+async function selectMetroPort() {
+  if (process.env.METRO_PORT) {
+    const preferredPort = validatePort(process.env.METRO_PORT);
+    try {
+      return await findAvailablePort(preferredPort);
+    } catch (error) {
+      throw new Error(
+        `METRO_PORT ${preferredPort} is already in use. Choose another port or unset METRO_PORT.`,
+        { cause: error },
+      );
+    }
+  }
+  return findAvailablePort();
+}
 
 function exitWithError(message) {
   console.error(message);
@@ -515,6 +563,10 @@ async function main() {
   console.log("Building static Expo Go deployment...");
 
   setupSignalHandlers();
+
+  metroPort = await selectMetroPort();
+  metroUrl = `http://localhost:${metroPort}`;
+  console.log(`Using Metro port ${metroPort}`);
 
   const domain = getDeploymentDomain();
   const expoPublicReplId = getExpoPublicReplId();
