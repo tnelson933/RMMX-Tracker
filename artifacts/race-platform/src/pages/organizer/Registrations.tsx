@@ -436,7 +436,7 @@ export default function Registrations() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreate = async (data: OnSiteRegForm) => {
-    if (isActiveTransponder) {
+    if (isActiveTransponder && !!(event as any)?.requireTransponder) {
       const hasNumber = !!data.myLapsTransponderNumber?.trim();
       const hasRental = !!data.rentTransponder;
       if (!hasNumber && !hasRental) {

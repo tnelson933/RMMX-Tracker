@@ -92,6 +92,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       location: eventsTable.location,
       state: eventsTable.state,
       trackName: eventsTable.trackName,
+       requireTransponder: eventsTable.requireTransponder,
     })
     .from(registrationsTable)
     .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
@@ -184,7 +185,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     }
 
     // Active transponder events must have a registration-level or rider-level number.
-    if (eligible && ["active_transponder", "mylaps"].includes(r.timingTechnology)) {
+    if (eligible && r.requireTransponder && ["active_transponder", "mylaps"].includes(r.timingTechnology)) {
       const hasRegTransponder = !!r.myLapsTransponderNumber;
       const hasRiderTransponder = !!transponderByRiderId.get(r.riderId);
       if (!hasRegTransponder && !hasRiderTransponder) {

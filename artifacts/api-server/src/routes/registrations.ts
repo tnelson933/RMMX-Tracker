@@ -74,6 +74,7 @@ router.get("/public/riders/lookup", async (req, res) => {
     bikeYear: registrationsTable.bikeYear,
     bibNumber: registrationsTable.bibNumber,
     sponsors: registrationsTable.sponsors,
+    myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
     createdAt: registrationsTable.createdAt,
   }).from(registrationsTable)
     .where(inArray(registrationsTable.riderId, riderIds))
@@ -107,6 +108,7 @@ router.get("/public/riders/lookup", async (req, res) => {
       bikeYear: lastReg?.bikeYear ?? rider.bikeYear ?? "",
       bibNumber: lastReg?.bibNumber?.toString() ?? rider.bibNumber ?? "",
       sponsors: lastReg?.sponsors ?? rider.sponsors ?? "",
+      myLapsTransponderNumber: lastReg?.myLapsTransponderNumber ?? rider.mylapsTransponderId ?? "",
     };
   });
 
@@ -1050,6 +1052,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         and(
           eq(ridersTable.id, parsed),
           sql`lower(${ridersTable.email}) = ${normEmail}`,
+          sql`lower(${ridersTable.firstName}) = ${normFirst}`,
+          sql`lower(${ridersTable.lastName}) = ${normLast}`,
         )
       );
       existingById = rows[0];
@@ -1071,16 +1075,21 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     // that profile edits made via the rider app or a re-registration are reflected
     // in the organizer portal immediately.
     const updateFields: Record<string, string | null> = {};
-    if (phone) updateFields.phone = phone.trim();
-    if (dateOfBirth) updateFields.dateOfBirth = dateOfBirth.trim();
-    if (emergencyContact) updateFields.emergencyContact = emergencyContact.trim();
-    if (emergencyPhone) updateFields.emergencyPhone = emergencyPhone.trim();
-    if (streetAddress) updateFields.streetAddress = streetAddress.trim();
-    if (city) updateFields.city = city.trim();
-    if (homeState) updateFields.homeState = homeState.trim();
-    if (zip) updateFields.zip = zip.trim();
-    if (hometown) updateFields.hometown = hometown.trim();
-    if (amaNumber) updateFields.amaNumber = amaNumber.trim();
+    const updateProfileField = (key: string, value: unknown) => {
+      if (typeof value !== "string") return;
+      const trimmed = value.trim();
+      if (existingById || trimmed) updateFields[key] = trimmed || null;
+    };
+    updateProfileField("phone", phone);
+    updateProfileField("dateOfBirth", dateOfBirth);
+    updateProfileField("emergencyContact", emergencyContact);
+    updateProfileField("emergencyPhone", emergencyPhone);
+    updateProfileField("streetAddress", streetAddress);
+    updateProfileField("city", city);
+    updateProfileField("homeState", homeState);
+    updateProfileField("zip", zip);
+    updateProfileField("hometown", hometown);
+    updateProfileField("amaNumber", amaNumber);
     if (Object.keys(updateFields).length > 0) {
       const [updated] = await db.update(ridersTable).set(updateFields).where(eq(ridersTable.id, existing[0].id)).returning();
       rider = updated;

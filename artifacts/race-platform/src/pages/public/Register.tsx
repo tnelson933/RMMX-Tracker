@@ -230,6 +230,7 @@ interface RiderOption {
   bikeYear: string;
   bibNumber: string;
   sponsors: string;
+  myLapsTransponderNumber: string;
 }
 
 const DESKTOP_CLOUD_URL = import.meta.env.VITE_CLOUD_URL as string | undefined;
@@ -639,23 +640,27 @@ export default function Register() {
 
   const populateFromRider = (rider: RiderOption) => {
     setSelectedRiderId(rider.id ?? null);
-    form.setValue("firstName", rider.firstName, { shouldDirty: false });
-    form.setValue("lastName", rider.lastName, { shouldDirty: false });
-    form.setValue("phone", rider.phone, { shouldDirty: false });
-    form.setValue("dateOfBirth", rider.dateOfBirth, { shouldDirty: false });
-    form.setValue("emergencyContact", rider.emergencyContact, { shouldDirty: false });
-    form.setValue("emergencyPhone", rider.emergencyPhone, { shouldDirty: false });
-    if (rider.streetAddress) form.setValue("streetAddress", rider.streetAddress, { shouldDirty: false });
-    if (rider.city) form.setValue("city", rider.city, { shouldDirty: false });
-    if (rider.homeState) form.setValue("homeState", rider.homeState, { shouldDirty: false });
-    if (rider.zip) form.setValue("zip", rider.zip, { shouldDirty: false });
-    if (rider.amaNumber) form.setValue("amaNumber", rider.amaNumber, { shouldDirty: false });
-    if (rider.clubIdNumber) form.setValue("clubIdNumber", rider.clubIdNumber, { shouldDirty: false });
-    if (rider.bikeBrand) form.setValue("bikeBrand", rider.bikeBrand, { shouldDirty: false });
-    if (rider.bikeModel) form.setValue("bikeModel", rider.bikeModel, { shouldDirty: false });
-    if (rider.bikeYear) form.setValue("bikeYear", rider.bikeYear, { shouldDirty: false });
-    if (rider.bibNumber) form.setValue("bibNumber", rider.bibNumber, { shouldDirty: false });
-    if (rider.sponsors) form.setValue("sponsors", rider.sponsors, { shouldDirty: false });
+    form.reset({
+      ...form.getValues(),
+      firstName: rider.firstName ?? "",
+      lastName: rider.lastName ?? "",
+      phone: rider.phone ?? "",
+      dateOfBirth: rider.dateOfBirth ?? "",
+      emergencyContact: rider.emergencyContact ?? "",
+      emergencyPhone: rider.emergencyPhone ?? "",
+      streetAddress: rider.streetAddress ?? "",
+      city: rider.city ?? "",
+      homeState: rider.homeState ?? "",
+      zip: rider.zip ?? "",
+      amaNumber: rider.amaNumber ?? "",
+      clubIdNumber: rider.clubIdNumber ?? "",
+      bikeBrand: rider.bikeBrand ?? "",
+      bikeModel: rider.bikeModel ?? "",
+      bikeYear: rider.bikeYear ?? "",
+      bibNumber: rider.bibNumber ?? "",
+      sponsors: rider.sponsors ?? "",
+      myLapsTransponderNumber: rider.myLapsTransponderNumber ?? "",
+    });
     setLookedUpName(`${rider.firstName} ${rider.lastName}`);
     setLookupState("found");
     setRiderOptions(null);
@@ -1078,6 +1083,11 @@ export default function Register() {
                             type="email"
                             placeholder="rider@example.com"
                             {...field}
+                           onChange={e => {
+                             setSelectedRiderId(null);
+                             setLookupState("idle");
+                             field.onChange(e);
+                           }}
                             onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
                           />
                         </FormControl>
@@ -1137,14 +1147,32 @@ export default function Register() {
                       <FormField control={form.control} name="firstName" render={({ field }) => (
                         <FormItem>
                           <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="Jake" {...field} /></FormControl>
+                          <FormControl>
+                            <Input
+                              placeholder="Jake"
+                              {...field}
+                              onChange={e => {
+                                setSelectedRiderId(null);
+                                field.onChange(e);
+                              }}
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <FormField control={form.control} name="lastName" render={({ field }) => (
                         <FormItem>
                           <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="Morrison" {...field} /></FormControl>
+                          <FormControl>
+                            <Input
+                              placeholder="Morrison"
+                              {...field}
+                              onChange={e => {
+                                setSelectedRiderId(null);
+                                field.onChange(e);
+                              }}
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
