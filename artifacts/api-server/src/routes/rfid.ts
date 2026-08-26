@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practiceCrossingsTable, lapCrossingsTable, raceResultsTable, motosTable, registrationsTable } from "@workspace/db";
 import { eq, and, inArray, isNull, isNotNull, asc, or, gt, sql } from "drizzle-orm";
 import { formatLapTime } from "./timing";
+import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
 
 const router = Router();
 
@@ -129,28 +130,35 @@ router.post("/rfid", async (req, res) => {
   }
 
   if (isActiveTransponder) {
+    const activeTransponderNumber = normalizeActiveTransponderIdentifier(rfidNumber);
+    if (!activeTransponderNumber) {
+      return res.status(400).json({
+        error: "rfidNumber must be a 1–9 character hexadecimal active transponder ID",
+      });
+    }
+
     if (numEventId) {
       const existing = await db.select({
         riderId: registrationsTable.riderId,
       }).from(registrationsTable)
         .where(and(
           eq(registrationsTable.eventId, numEventId),
-          eq(registrationsTable.myLapsTransponderNumber, rfidNumber),
+          sql`lower(trim(${registrationsTable.myLapsTransponderNumber})) = ${activeTransponderNumber}`,
         ))
         .limit(1);
       if (existing.length > 0 && existing[0].riderId !== numRiderId) {
-        return res.status(409).json({ error: `Transponder ${rfidNumber} is already assigned to another rider for this event` });
+        return res.status(409).json({ error: `Transponder ${activeTransponderNumber} is already assigned to another rider for this event` });
       }
     }
 
     const [rider] = await db.update(ridersTable)
-      .set({ mylapsTransponderId: rfidNumber })
+      .set({ mylapsTransponderId: activeTransponderNumber })
       .where(eq(ridersTable.id, numRiderId))
       .returning();
 
     if (numEventId) {
       await db.update(registrationsTable)
-        .set({ myLapsTransponderNumber: rfidNumber })
+        .set({ myLapsTransponderNumber: activeTransponderNumber })
         .where(and(
           eq(registrationsTable.eventId, numEventId),
           eq(registrationsTable.riderId, numRiderId),
@@ -163,7 +171,7 @@ router.post("/rfid", async (req, res) => {
       id: numRiderId,
       riderId: numRiderId,
       riderName: rider ? `${rider.firstName} ${rider.lastName}` : "",
-      rfidNumber,
+      rfidNumber: activeTransponderNumber,
       eventId: numEventId,
       assignedAt: new Date().toISOString(),
     });

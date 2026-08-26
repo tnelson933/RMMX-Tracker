@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   buildTimingIdentityResolver,
   crossingBelongsToRider,
+  isValidActiveTransponderIdentifier,
+  normalizeActiveTransponderIdentifier,
   normalizeTimingIdentifier,
   resolveCrossingRiderId,
   type TimingAssignmentIdentityRow,
@@ -97,6 +99,22 @@ const riders: TimingRiderIdentityRow[] = [
 test("normalizes active timing identifiers case-insensitively", () => {
   assert.equal(normalizeTimingIdentifier(" 1A42006F "), "1a42006f");
   assert.equal(normalizeTimingIdentifier("  "), null);
+});
+
+test("accepts Feibot hexadecimal and legacy numeric active identifiers", () => {
+  assert.equal(normalizeActiveTransponderIdentifier(" 1a420074 "), "1a420074");
+  assert.equal(normalizeActiveTransponderIdentifier("1A420074"), "1a420074");
+  assert.equal(normalizeActiveTransponderIdentifier("401234567"), "401234567");
+  assert.equal(isValidActiveTransponderIdentifier("abcdef"), true);
+});
+
+test("rejects empty and malformed active identifiers", () => {
+  for (const value of ["", "   ", "1a42007g", "1a-420074", "1234567890"]) {
+    assert.equal(isValidActiveTransponderIdentifier(value), false, value);
+    assert.equal(normalizeActiveTransponderIdentifier(value), null, value);
+  }
+  assert.equal(isValidActiveTransponderIdentifier(null), false);
+  assert.equal(isValidActiveTransponderIdentifier(undefined), false);
 });
 
 test("matches timing processor precedence across assignments, registrations, and profiles", () => {

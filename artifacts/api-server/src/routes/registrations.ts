@@ -4,6 +4,7 @@ import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable
 import { eq, and, sql, desc, asc, ne, isNull, inArray } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
+import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
 
 const router = Router();
 
@@ -1466,10 +1467,12 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
   if (!await checkEventOwnership(eventId, staffCId, res)) return;
 
   const { transponderNumber } = req.body;
-  if (!transponderNumber || typeof transponderNumber !== "string" || !/^\d{1,9}$/.test(transponderNumber.trim())) {
-    return res.status(400).json({ error: "transponderNumber must be 1–9 digits" });
+  const tag = normalizeActiveTransponderIdentifier(transponderNumber);
+  if (!tag) {
+    return res.status(400).json({
+      error: "transponderNumber must be a 1–9 character hexadecimal active transponder ID",
+    });
   }
-  const tag = transponderNumber.trim();
 
   const [reg] = await db.select({
     id: registrationsTable.id,
@@ -1490,7 +1493,10 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
   // Guard: transponder must not be assigned to a different rider in this event
   const conflict = await db.select({ riderId: rfidAssignmentsTable.riderId })
     .from(rfidAssignmentsTable)
-    .where(and(eq(rfidAssignmentsTable.rfidNumber, tag), eq(rfidAssignmentsTable.eventId, eventId)));
+    .where(and(
+      sql`lower(trim(${rfidAssignmentsTable.rfidNumber})) = ${tag}`,
+      eq(rfidAssignmentsTable.eventId, eventId),
+    ));
   if (conflict.length > 0 && conflict[0].riderId !== reg.riderId) {
     return res.status(409).json({ error: `Transponder ${tag} is already assigned to another rider for this event` });
   }

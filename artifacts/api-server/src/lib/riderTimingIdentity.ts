@@ -1,3 +1,8 @@
+export {
+  isValidActiveTransponderIdentifier,
+  normalizeActiveTransponderIdentifier,
+} from "@workspace/api-zod";
+
 export interface TimingIdentity {
   riderId: number;
   riderName: string;
