@@ -20,6 +20,7 @@
       }
     },
     "production": {
+      "node": "20.19.4",
       "pnpm": "10.26.1",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "rmmx-tracker.replit.app"
