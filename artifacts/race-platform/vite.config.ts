@@ -67,6 +67,7 @@ export default defineConfig(async ({ command }) => {
         ],
       },
       workbox: {
+        importScripts: ["sw-auto-reload.js"],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
         navigateFallback: "index.html",
