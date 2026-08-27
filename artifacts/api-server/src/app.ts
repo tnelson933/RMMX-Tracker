@@ -39,6 +39,12 @@ app.use(cors({
   credentials: true,
 }));
 
+// Artifact workflow readiness probes the service root. Keep it lightweight so
+// the API remains routable to the website after restarts and publishes.
+app.get("/", (_req, res) => {
+  res.status(200).json({ status: "ok", service: "race-platform-api" });
+});
+
 // Stripe webhook — must be registered BEFORE express.json() to receive raw Buffer
 app.post(
   "/api/stripe/webhook",

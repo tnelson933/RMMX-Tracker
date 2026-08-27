@@ -501,10 +501,12 @@ export function useLiveRaceStream(motoId: number | string | null | undefined) {
     let source: EventSource | null = null;
 
     const connect = () => {
+      reconnectTimer.current = null;
       if (disposed) return;
-      source = new EventSource(`/api/timing/live/${motoId}`);
-      source.onopen = () => setConnected(true);
-      source.onmessage = event => {
+      const nextSource = new EventSource(`/api/timing/live/${motoId}`);
+      source = nextSource;
+      nextSource.onopen = () => setConnected(true);
+      nextSource.onmessage = event => {
         try {
           const payload = JSON.parse(event.data) as LeaderboardData & { error?: string };
           if (payload.error) {
@@ -544,10 +546,13 @@ export function useLiveRaceStream(motoId: number | string | null | undefined) {
           setError("Live timing sent an unreadable update.");
         }
       };
-      source.onerror = () => {
+      nextSource.onerror = () => {
+        if (disposed || source !== nextSource) return;
         setConnected(false);
-        source?.close();
-        reconnectTimer.current = setTimeout(connect, 3_000);
+        nextSource.close();
+        if (reconnectTimer.current == null) {
+          reconnectTimer.current = setTimeout(connect, 3_000);
+        }
       };
     };
 
@@ -687,6 +692,7 @@ function LegacyLiveLeaderboard() {
   const [activeView, setActiveView] = useState<LiveView>("timing");
   const [correctionVisible, setCorrectionVisible] = useState(false);
   const correctionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   // Track previous state for change detection
@@ -699,8 +705,11 @@ function LegacyLiveLeaderboard() {
 
   useEffect(() => {
     if (!motoId) return;
+    let disposed = false;
 
     function connect() {
+      reconnectTimerRef.current = null;
+      if (disposed) return;
       const es = new EventSource(`/api/timing/live/${motoId}`);
       esRef.current = es;
 
@@ -761,15 +770,20 @@ function LegacyLiveLeaderboard() {
       };
 
       es.onerror = () => {
+        if (disposed || esRef.current !== es) return;
         setConnected(false);
         es.close();
-        setTimeout(connect, 3000);
+        if (reconnectTimerRef.current == null) {
+          reconnectTimerRef.current = setTimeout(connect, 3000);
+        }
       };
     }
 
     connect();
     return () => {
+      disposed = true;
       esRef.current?.close();
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
       gainTimersRef.current.forEach(t => clearTimeout(t));
     };
