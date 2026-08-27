@@ -406,6 +406,8 @@ function LiveTimingTable({
               return (
                 <motion.tr
                   key={entry.riderId}
+                  data-rider-id={entry.riderId}
+                  data-position-gain={justGained ? "true" : undefined}
                   layout
                   layoutId={`rider-${entry.riderId}`}
                   initial={{ opacity: 0, y: -12 }}

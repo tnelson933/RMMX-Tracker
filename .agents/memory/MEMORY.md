@@ -13,3 +13,4 @@
 - [Production schema smoke tests](production-schema-smoke-tests.md) — a successful API bundle build cannot catch Drizzle fields missing from the shared schema or production database.
 - [Active transponder source of truth](active-transponder-source-of-truth.md) — enforce required registration fields from fresh event data and keep check-in display state synchronized.
 - [Live timing SSE handoff](live-timing-sse-handoff.md) — serialize each initial leaderboard baseline with subscription to avoid lost or double-counted crossings.
+- [Playwright on Nix](playwright-nix-chromium.md) — use system Chromium for browser tests; Playwright's downloaded Linux binary lacks required Nix libraries.

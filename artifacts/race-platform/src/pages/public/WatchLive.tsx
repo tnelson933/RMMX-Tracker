@@ -1088,7 +1088,10 @@ export default function WatchLive() {
 
         {/* ── Video and live race views (right side) ── */}
         <div className="relative flex min-h-[34rem] min-w-0 flex-1 flex-col bg-black md:min-h-0">
-        <div className="relative flex min-h-[18rem] flex-1 items-center justify-center bg-black md:min-h-0">
+        <div
+          data-viewer-state={viewerState}
+          className="relative flex min-h-[18rem] flex-1 items-center justify-center bg-black md:min-h-0"
+        >
           {/* 360 split view: front + back lenses side-by-side via canvas */}
           {is360 && <SplitView360 videoRef={videoRef} />}
 
