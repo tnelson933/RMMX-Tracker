@@ -16,6 +16,7 @@ import {
   type SharedAnnouncement,
 } from "@/lib/sharedAnnouncer";
 import { LiveRaceViews, type LeaderboardData } from "./LiveLeaderboard";
+import { isPlaybackStalled, isVideoQueueOverLimit } from "@/lib/videoPlaybackPolicy";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
@@ -68,6 +69,8 @@ export default function WatchLive() {
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [announcerOn, setAnnouncerOn] = useState(true);
   const [announcerLabel, setAnnouncerLabel] = useState<string | null>(null);
+  const [announcerConnected, setAnnouncerConnected] = useState(false);
+  const [announcerError, setAnnouncerError] = useState(false);
   const [sseLeaderboard, setSseLeaderboard] = useState<LeaderboardEntry[] | null>(null);
   const [liveSnapshot, setLiveSnapshot] = useState<LeaderboardData | null>(null);
   const [timingConnected, setTimingConnected] = useState(false);
@@ -82,6 +85,7 @@ export default function WatchLive() {
   const msRef = useRef<MediaSource | null>(null);
   const sbRef = useRef<SourceBuffer | null>(null);
   const queueRef = useRef<ArrayBuffer[]>([]);
+  const queuedBytesRef = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastTimeRef = useRef<number>(-1);
@@ -210,9 +214,20 @@ export default function WatchLive() {
       if (!shouldQueueAnnouncementAudio(announcerOnRef.current)) return;
       try {
         setAnnouncerLabel(announcement.label);
-        const res = await fetch(announcement.audioUrl);
-        if (!res.ok) return;
-        const blob = await res.blob();
+        setAnnouncerError(false);
+        let blob: Blob | null = null;
+        for (let attempt = 0; attempt < 3 && !blob; attempt++) {
+          if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 500 * 2 ** attempt));
+          const res = await fetch(announcement.audioUrl).catch(() => null);
+          if (res?.ok) blob = await res.blob();
+        }
+        if (!blob) {
+          if (isCurrentAnnouncementGeneration(announcementGenerationRef.current, generation)) {
+            setAnnouncerError(true);
+            setAnnouncerLabel(null);
+          }
+          return;
+        }
         if (!isCurrentAnnouncementGeneration(announcementGenerationRef.current, generation)) return;
         enqueueAudio(blob, announcementStartOffsetSeconds(announcement));
         setTimeout(() => setAnnouncerLabel(null), 6_000);
@@ -244,6 +259,8 @@ export default function WatchLive() {
       setSseLeaderboard(null);
       setLiveSnapshot(null);
       setTimingConnected(false);
+      setAnnouncerConnected(false);
+      setAnnouncerError(false);
       setTimingCorrectionVisible(false);
       if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
       return;
@@ -262,6 +279,14 @@ export default function WatchLive() {
     es.onerror = () => setTimingConnected(false);
     const announcerEs = new EventSource(`/api/timing/announcer-live/${motoId}`);
     announcerEsRef.current = announcerEs;
+    announcerEs.onopen = () => {
+      if (announcementGenerationRef.current === generation) {
+        setAnnouncerConnected(true);
+      }
+    };
+    announcerEs.onerror = () => {
+      if (announcementGenerationRef.current === generation) setAnnouncerConnected(false);
+    };
 
     es.onmessage = (evt) => {
       try {
@@ -321,6 +346,7 @@ export default function WatchLive() {
     msRef.current = null;
     sbRef.current = null;
     queueRef.current = [];
+    queuedBytesRef.current = 0;
     // Only reset video.src when there was an active MediaSource to detach.
     // Skipping this on a fresh connection (hadMs = false) avoids spurious
     // load events that can interfere with a pending MSE initialisation.
@@ -328,6 +354,13 @@ export default function WatchLive() {
       videoRef.current.src = "";   // triggers sourceclose on the old MediaSource (ignored since ref is null)
       videoRef.current.load();     // reset decoder state
     }
+  }
+
+  function recoverMediaPipeline(reason: string) {
+    if (cleaningUpRef.current) return;
+    logEvent(`${reason} — requesting clean live boundary`);
+    teardownMSE();
+    wsRef.current?.close();
   }
 
   function cleanup() {
@@ -408,10 +441,13 @@ export default function WatchLive() {
           if (sbRef.current !== sb || msRef.current?.readyState !== "open") return;
           if (queueRef.current.length > 0 && !sb.updating) {
             const next = queueRef.current.shift()!;
+            queuedBytesRef.current -= next.byteLength;
             try {
               sb.appendBuffer(next);
             } catch (err) {
               logEvent(`appendBuffer(queue): ${err instanceof Error ? err.message : String(err)}`);
+              recoverMediaPipeline("queued append failed");
+              return;
             }
           }
           tryPlay();
@@ -420,6 +456,7 @@ export default function WatchLive() {
         // Flush first queued chunk (should be the WebM init segment)
         if (queueRef.current.length > 0 && !sb.updating) {
           const next = queueRef.current.shift()!;
+          queuedBytesRef.current -= next.byteLength;
           // Log first 4 bytes so we can confirm it's a WebM EBML header (1A 45 DF A3)
           const hdr = new Uint8Array(next, 0, Math.min(4, next.byteLength));
           const hex = Array.from(hdr).map(b => b.toString(16).padStart(2, "0")).join(" ");
@@ -428,6 +465,8 @@ export default function WatchLive() {
             sb.appendBuffer(next);
           } catch (err) {
             logEvent(`appendBuffer(init): ${err instanceof Error ? err.message : String(err)}`);
+            recoverMediaPipeline("initial append failed");
+            return;
           }
         } else {
           logEvent("sourceopen: queue empty — no init segment!");
@@ -495,11 +534,11 @@ export default function WatchLive() {
     const sb = sbRef.current;
     // Guard: if there's no SourceBuffer or the parent MediaSource isn't open, queue the chunk
     if (!sb || msRef.current?.readyState !== "open") {
-      queueRef.current.push(data);
+      enqueueChunk(data);
       return;
     }
     if (sb.updating || queueRef.current.length > 0) {
-      queueRef.current.push(data);
+      enqueueChunk(data);
     } else {
       try {
         sb.appendBuffer(data);
@@ -514,8 +553,18 @@ export default function WatchLive() {
             }
           }
         } catch {}
-        queueRef.current.push(data);
+        recoverMediaPipeline("live append failed");
       }
+    }
+  }
+
+  function enqueueChunk(data: ArrayBuffer) {
+    queueRef.current.push(data);
+    queuedBytesRef.current += data.byteLength;
+    if (isVideoQueueOverLimit(queueRef.current.length, queuedBytesRef.current)) {
+      logEvent(`client queue overflow (${queueRef.current.length} chunks) — reconnecting`);
+      teardownMSE();
+      wsRef.current?.close();
     }
   }
 
@@ -561,6 +610,7 @@ export default function WatchLive() {
     ws.addEventListener("close", () => clearInterval(keepAliveId), { once: true });
 
     ws.onmessage = (e) => {
+      if (wsRef.current !== ws) return;
       // The Replit proxy converts text WebSocket frames into binary frames.
       // Detect JSON messages by checking for the '{' magic byte (0x7b) so we
       // handle them correctly regardless of whether they arrive as string or ArrayBuffer.
@@ -651,7 +701,7 @@ export default function WatchLive() {
           // black frame.  If autoplay is blocked the user would see a black
           // screen with the Live badge but no video — exactly the symptom.
           initMSE(mimeTypeRef.current);
-          queueRef.current.push(e.data as ArrayBuffer);
+          enqueueChunk(e.data as ArrayBuffer);
         } else {
           // Subsequent binary chunks — MSE is initialising or already open.
           // Don't set "playing" here either; sourceopen is the single source
@@ -671,7 +721,7 @@ export default function WatchLive() {
       const video = videoRef.current;
       if (!video || viewerStateRef.current !== "playing") return;
       const t = video.currentTime;
-      if (t === lastTimeRef.current && !video.paused) {
+      if (isPlaybackStalled(viewerStateRef.current, video.paused, t, lastTimeRef.current)) {
         logEvent("stall detected — reconnecting");
         clearInterval(stallTimerRef.current!);
         stallTimerRef.current = null;
@@ -681,9 +731,12 @@ export default function WatchLive() {
       }
     }, 4000);
 
-    ws.onerror = () => { setViewerStateSynced("error"); };
+    ws.onerror = () => {
+      if (wsRef.current === ws) setViewerStateSynced("error");
+    };
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return;
       if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
       if (!cleaningUpRef.current) {
         // Capture state BEFORE overwriting so the "ended" delay check is accurate.
@@ -827,6 +880,18 @@ export default function WatchLive() {
                 <div className="px-3 py-1 border-b border-white/5 shrink-0 flex items-center gap-1 text-primary/60 text-[10px]">
                   <Volume2 size={9} />
                   {announcerLabel}
+                </div>
+              )}
+              {announcerOn && activeMoto.status === "in_progress" && !announcerConnected && (
+                <div className="px-3 py-1 border-b border-white/5 shrink-0 flex items-center gap-1 text-yellow-400/70 text-[10px]">
+                  <Volume2 size={9} />
+                  Announcer reconnecting…
+                </div>
+              )}
+              {announcerOn && announcerError && (
+                <div className="px-3 py-1 border-b border-white/5 shrink-0 flex items-center gap-1 text-red-400/70 text-[10px]">
+                  <VolumeX size={9} />
+                  Announcer audio unavailable
                 </div>
               )}
 

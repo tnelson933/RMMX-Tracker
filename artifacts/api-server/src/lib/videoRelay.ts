@@ -25,9 +25,19 @@ interface StreamState {
   startedAt: Date | null;
   is360: boolean;
   isDualFisheye: boolean;
+  eventId: number;
+  chunksSinceKeyframe: number;
+  keyframeRefreshRequested: boolean;
 }
 
 const streams = new Map<number, StreamState>();
+export const MAX_VIEWER_BUFFERED_BYTES = 2 * 1024 * 1024;
+export const MAX_GOP_TAIL_BYTES = 1024 * 1024;
+const MAX_GOP_TAIL_FRAMES = 60;
+
+export function canRelayToViewer(bufferedAmount: number, nextBytes: number): boolean {
+  return bufferedAmount + nextBytes <= MAX_VIEWER_BUFFERED_BYTES;
+}
 
 /**
  * Detect whether a WebM buffer from Chrome MediaRecorder contains a VP8/VP9
@@ -153,6 +163,9 @@ function getOrCreate(eventId: number): StreamState {
       startedAt: null,
       is360: false,
       isDualFisheye: false,
+      eventId,
+      chunksSinceKeyframe: 0,
+      keyframeRefreshRequested: false,
     });
   }
   return streams.get(eventId)!;
@@ -219,6 +232,12 @@ function flushPendingViewers(state: StreamState, keyframeChunk: Buffer): Set<Web
     // Skip this send if keyframeChunk IS the initSegment (i.e. the very first
     // broadcast chunk, which is both the EBML init AND the first keyframe) —
     // we'd otherwise send the same buffer twice.
+    const burstBytes = (state.initSegment && state.initSegment !== keyframeChunk ? state.initSegment.length : 0)
+      + keyframeChunk.length;
+    if (!canRelayToViewer(pending.bufferedAmount, burstBytes)) {
+      pending.close(1013, "Viewer too slow");
+      continue;
+    }
     if (state.initSegment && state.initSegment !== keyframeChunk) {
       pending.send(state.initSegment, { binary: true });
     }
@@ -233,7 +252,7 @@ function flushPendingViewers(state: StreamState, keyframeChunk: Buffer): Set<Web
 
   state.pendingViewers.clear();
   if (graduated.size > 0) {
-    logger.info({ eventId: (state as any).eventId, count: graduated.size }, "Pending viewers graduated via keyframe");
+    logger.info({ eventId: state.eventId, count: graduated.size }, "Pending viewers graduated via keyframe");
   }
   // NOTE: do NOT call state.viewers.add() here.  The caller must add them
   // AFTER the live-forward loop so this keyframe isn't forwarded a second time.
@@ -263,6 +282,7 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
   }, 1_000);
 
   ws.on("message", (data: Buffer | string, isBinary: boolean) => {
+    if (state.broadcasterWs !== ws) return;
     const chunk: Buffer = typeof data === "string"
       ? Buffer.from(data, "utf8")
       : (Buffer.isBuffer(data) ? data : Buffer.from(data as unknown as ArrayBuffer));
@@ -277,6 +297,8 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
           state.initSegment = null;
           state.lastKeyframeChunk = null;
           state.gopTail = [];
+          state.chunksSinceKeyframe = 0;
+          state.keyframeRefreshRequested = false;
           // Notify active viewers of format change
           const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye });
           for (const viewer of state.viewers) {
@@ -303,6 +325,8 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
       state.initSegment = chunk;
       state.lastKeyframeChunk = chunk;
       state.gopTail = [];
+      state.chunksSinceKeyframe = 0;
+      state.keyframeRefreshRequested = false;
       // Flush any viewers who joined before the stream started.
       // keyframeChunk === initSegment here, so flushPendingViewers sends it once.
       justGraduated = flushPendingViewers(state, chunk);
@@ -311,6 +335,8 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
       const prevTailLen = state.gopTail.length;
       state.lastKeyframeChunk = chunk;
       state.gopTail = [];
+      state.chunksSinceKeyframe = 0;
+      state.keyframeRefreshRequested = false;
       logger.info({ eventId, chunkSize: chunk.length, prevGopTailFrames: prevTailLen }, "Periodic keyframe detected — GOP boundary");
       // Flush pending viewers exactly at this keyframe boundary — their
       // decoder will have initSegment (codec setup) + this I-frame, and
@@ -318,11 +344,23 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
       justGraduated = flushPendingViewers(state, chunk);
     } else {
       state.gopTail.push(chunk);
+      state.chunksSinceKeyframe++;
       // Keep enough P-frames to cover up to ~30 s at 500 ms timeslices.
       // With videoKeyFrameIntervalDuration: 2_000 the tail should stay at 4 frames,
       // but a larger cap protects against missed keyframe detection.
-      if (state.gopTail.length > 60) {
-        state.gopTail.shift();
+      let tailBytes = state.gopTail.reduce((sum, frame) => sum + frame.length, 0);
+      while (state.gopTail.length > MAX_GOP_TAIL_FRAMES || tailBytes > MAX_GOP_TAIL_BYTES) {
+        tailBytes -= state.gopTail.shift()!.length;
+      }
+      // Some browsers ignore MediaRecorder's keyframe interval option. Ask the
+      // broadcaster to rotate its recorder before the GOP dependency chain can
+      // grow beyond a practical late-join/recovery window.
+      if (state.chunksSinceKeyframe >= 20 && !state.keyframeRefreshRequested) {
+        state.keyframeRefreshRequested = true;
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "request-keyframe" }));
+          logger.warn({ eventId, chunksSinceKeyframe: state.chunksSinceKeyframe }, "Requested broadcaster keyframe refresh");
+        }
       }
     }
 
@@ -330,7 +368,13 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
     // justGraduated are NOT in state.viewers yet, so they don't receive this chunk again.
     for (const viewer of state.viewers) {
       if (viewer.readyState === WebSocket.OPEN) {
-        viewer.send(chunk, { binary: true });
+        if (!canRelayToViewer(viewer.bufferedAmount, chunk.length)) {
+          logger.warn({ eventId, bufferedBytes: viewer.bufferedAmount }, "Evicting slow video viewer");
+          state.viewers.delete(viewer);
+          viewer.close(1013, "Viewer too slow");
+        } else {
+          viewer.send(chunk, { binary: true });
+        }
       }
     }
 
@@ -345,6 +389,10 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
 
   ws.on("close", () => {
     clearInterval(broadcasterHeartbeat);
+    if (state.broadcasterWs !== ws) {
+      logger.info({ eventId }, "Superseded broadcaster disconnected (ignored)");
+      return;
+    }
     state.live = false;
     state.broadcasterWs = null;
     logger.info({ eventId }, "Broadcaster disconnected — stream ended");
@@ -362,7 +410,7 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
 
   ws.on("error", (err) => {
     clearInterval(broadcasterHeartbeat);
-    logger.error({ eventId, err: err.message }, "Broadcaster WebSocket error");
+    logger.error({ eventId, current: state.broadcasterWs === ws, err: err.message }, "Broadcaster WebSocket error");
   });
 }
 
@@ -426,6 +474,15 @@ function handleViewer(ws: WebSocket, eventId: number) {
         // The gopTail brings the decoder to the same state as the broadcaster, so the
         // very next live P-frame is decodable.
         try {
+          const replayBytes = (state.initSegment !== state.lastKeyframeChunk ? state.initSegment.length : 0)
+            + (state.lastKeyframeChunk?.length ?? 0)
+            + state.gopTail.reduce((sum, frame) => sum + frame.length, 0);
+          if (!canRelayToViewer(ws.bufferedAmount, replayBytes)) {
+            state.pendingViewers.add(ws);
+            schedulePendingFlush();
+            startHeartbeat();
+            return;
+          }
           if (state.initSegment !== state.lastKeyframeChunk) {
             ws.send(state.initSegment, { binary: true });
           }
@@ -472,6 +529,15 @@ function handleViewer(ws: WebSocket, eventId: number) {
           return;
         }
         if (state.initSegment) {
+          const replayBytes = state.initSegment.length
+            + (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment ? state.lastKeyframeChunk.length : 0)
+            + state.gopTail.reduce((sum, frame) => sum + frame.length, 0);
+          if (!canRelayToViewer(ws.bufferedAmount, replayBytes)) {
+            logger.warn({ eventId, bufferedBytes: ws.bufferedAmount }, "Evicting stalled pending viewer");
+            state.pendingViewers.delete(ws);
+            ws.close(1013, "Viewer too slow");
+            return;
+          }
           ws.send(state.initSegment, { binary: true });
           if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment) {
             ws.send(state.lastKeyframeChunk, { binary: true });

@@ -37,3 +37,11 @@ After that, the very next live P-frame is decodable because the decoder's LAST s
 **gopTail cap:** Keep at least 60 frames (30 s at 500 ms timeslices). With periodic keyframes every 2 s the tail normally stays at ≤4 frames, but a larger cap protects against missed keyframe detection.
 
 **Why:** Without gopTail, video shows 0-1 decoded frames then freezes permanently. With it, video plays continuously from the join point forward.
+
+## Broadcaster reconnect boundary
+
+Never reuse an already-running MediaRecorder across a relay reconnect after sending a new stream-init control message. Stop and recreate the recorder, suppress its retiring final chunk, and send relay init immediately before the new recorder starts.
+
+**Why:** Resetting relay state and then forwarding a mid-GOP cluster makes that cluster look like the initialization segment. It has no EBML/Tracks metadata, so viewers cannot decode the recovered broadcast.
+
+**How to apply:** Any broadcaster socket replacement or forced-keyframe recovery must establish a fresh recorder boundary. If the socket drops during rotation, keep capture alive, then rotate again after the next socket opens.
