@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, gt, and, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { sseBroadcast, buildLeaderboard } from "./timing";
+import { sseBroadcast, buildLeaderboard, formatLapTime } from "./timing";
 import {
   usersTable,
   eventsTable,
@@ -24,6 +24,7 @@ import {
   riderPushTokensTable,
   eventPublicationTable,
 } from "@workspace/db";
+import { canonicalizeCrossingTimestamp } from "../lib/crossingTimestamp";
 
 const router = Router();
 
@@ -59,6 +60,13 @@ function toDate(v: unknown): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function firstDefined(source: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (source[key] !== undefined) return source[key];
+  }
+  return undefined;
+}
+
 // ─── POST /clubs/:clubId/desktop-push ────────────────────────────────────────
 // Receives batched writes from the Electron desktop app's write queue.
 
@@ -85,6 +93,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       moto_id: unknown;
       rfid_number: unknown;
       crossing_time: unknown;
+      created_at?: unknown;
       lap_number: unknown;
       lap_time_ms: unknown;
       rider_id?: unknown;
@@ -93,7 +102,15 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     }>;
 
     let crossingsUpserted = 0;
-    for (const c of crossings) {
+    const previousImportedCrossing = new Map<string, Date>();
+    const repairedImportedLaps = new Map<string, number[]>();
+    const skewedImportedRiders = new Set<string>();
+    const orderedCrossings = [...crossings].sort((a, b) =>
+      Number(a.moto_id) - Number(b.moto_id)
+      || String(a.rfid_number ?? "").localeCompare(String(b.rfid_number ?? ""))
+      || Number(a.lap_number) - Number(b.lap_number)
+      || Number(a.id ?? 0) - Number(b.id ?? 0));
+    for (const c of orderedCrossings) {
       const eventId = Number(c.event_id);
       const motoId  = Number(c.moto_id);
       if (!eventId || !motoId) continue;
@@ -119,13 +136,50 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           ),
         );
 
-      const crossingTime = toDate(c.crossing_time) ?? new Date();
+      const cloudReceivedAt = new Date();
+      const localReceivedAt = toDate(c.created_at);
+      const sourceReceivedAt = localReceivedAt
+        && localReceivedAt.getTime() <= cloudReceivedAt.getTime() + 5 * 60 * 1000
+        ? localReceivedAt
+        : cloudReceivedAt;
+      const suppliedCrossingTime = toDate(c.crossing_time);
+      const hadFutureClockSkew = !suppliedCrossingTime
+        || suppliedCrossingTime.getTime() > sourceReceivedAt.getTime() + 5 * 60 * 1000;
+      const crossingTime = canonicalizeCrossingTimestamp(c.crossing_time, sourceReceivedAt, {
+        source: "desktop_sync",
+        motoId,
+        rfidNumber,
+      });
+      const crossingKey = `${motoId}:${rfidNumber}`;
+      let importedLapTimeMs = Number(c.lap_time_ms);
+      if (hadFutureClockSkew) {
+        let previousTime = previousImportedCrossing.get(crossingKey);
+        if (!previousTime && lapNumber === 1) {
+          const [moto] = await tx
+            .select({ startedAt: motosTable.startedAt })
+            .from(motosTable)
+            .where(eq(motosTable.id, motoId));
+          previousTime = moto?.startedAt ?? undefined;
+        }
+        if (previousTime) {
+          const delta = crossingTime.getTime() - previousTime.getTime();
+          if (Number.isFinite(delta) && delta >= 0) importedLapTimeMs = delta;
+        }
+      }
+      previousImportedCrossing.set(crossingKey, crossingTime);
+      if (c.rider_id != null) {
+        const riderKey = `${motoId}:${Number(c.rider_id)}`;
+        const riderLaps = repairedImportedLaps.get(riderKey) ?? [];
+        riderLaps.push(importedLapTimeMs);
+        repairedImportedLaps.set(riderKey, riderLaps);
+        if (hadFutureClockSkew) skewedImportedRiders.add(riderKey);
+      }
 
       if (existing) {
         await tx
           .update(lapCrossingsTable)
           .set({
-            lapTimeMs:   Number(c.lap_time_ms),
+            lapTimeMs:   importedLapTimeMs,
             crossingTime,
             // Always carry riderId forward so a re-sync of a manual crossing
             // does not lose the rider association (rider name would show as the
@@ -143,7 +197,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           rfidNumber,
           crossingTime,
           lapNumber,
-          lapTimeMs:    Number(c.lap_time_ms),
+          lapTimeMs:    importedLapTimeMs,
           readerId:     c.reader_id  != null ? String(c.reader_id)  : null,
           antennaId:    c.antenna_id != null ? Number(c.antenna_id) : null,
         });
@@ -196,6 +250,14 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       try {
         lapTimes = JSON.parse(String(r.lap_times ?? "[]")) as number[];
       } catch { /* ignore */ }
+      const repairedKey = `${motoId}:${riderId}`;
+      if (skewedImportedRiders.has(repairedKey)) {
+        const repaired = repairedImportedLaps.get(repairedKey) ?? [];
+        if (repaired.length && repaired.every(value => Number.isFinite(value) && value >= 0)) {
+          lapTimes = repaired;
+          r.total_time = formatLapTime(repaired.reduce((sum, value) => sum + value, 0));
+        }
+      }
 
       if (existing) {
         await tx
@@ -234,23 +296,39 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     const motos = (payload["motos"] ?? []) as Array<{
       id?: unknown;
       event_id?: unknown;
+      eventId?: unknown;
       name?: unknown;
       type?: unknown;
       race_class?: unknown;
+      raceClass?: unknown;
       moto_number?: unknown;
+      motoNumber?: unknown;
       status?: unknown;
       started_at?: unknown;
+      startedAt?: unknown;
       completed_at?: unknown;
+      completedAt?: unknown;
       lineup?: unknown;
       lap_count?: unknown;
+      lapCount?: unknown;
+      time_limit_ms?: unknown;
+      timeLimitMs?: unknown;
+      plus_laps?: unknown;
+      plusLaps?: unknown;
+      time_expired_at?: unknown;
+      timeExpiredAt?: unknown;
       scheduled_time?: unknown;
+      scheduledTime?: unknown;
       staggered_group_id?: unknown;
+      staggeredGroupId?: unknown;
       staggered_order?: unknown;
+      staggeredOrder?: unknown;
     }>;
 
     let motosUpserted = 0;
     for (const m of motos) {
-      const eventId  = Number(m.event_id);
+      const rawMoto = m as Record<string, unknown>;
+      const eventId  = Number(firstDefined(rawMoto, "event_id", "eventId"));
       const clientId = m.id != null && Number(m.id) > 0 ? Number(m.id) : undefined;
       if (!eventId) continue;
 
@@ -260,51 +338,130 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         .where(eq(eventsTable.id, eventId));
       if (!event || event.clubId !== clubId) continue;
 
-      const motoNumber  = m.moto_number != null ? Number(m.moto_number) : 0;
-      const status      = String(m.status ?? "scheduled") as "scheduled" | "in_progress" | "completed";
-      const startedAt   = toDate(m.started_at);
-      const completedAt = toDate(m.completed_at);
+      const rawMotoNumber = firstDefined(rawMoto, "moto_number", "motoNumber");
+      const motoNumber  = rawMotoNumber != null ? Number(rawMotoNumber) : 0;
+      const rawStartedAt = firstDefined(rawMoto, "started_at", "startedAt");
+      const rawCompletedAt = firstDefined(rawMoto, "completed_at", "completedAt");
+      const rawLapCount = firstDefined(rawMoto, "lap_count", "lapCount");
+      const rawTimeLimitMs = firstDefined(rawMoto, "time_limit_ms", "timeLimitMs");
+      const rawPlusLaps = firstDefined(rawMoto, "plus_laps", "plusLaps");
+      const rawTimeExpiredAt = firstDefined(rawMoto, "time_expired_at", "timeExpiredAt");
+      const rawScheduledTime = firstDefined(rawMoto, "scheduled_time", "scheduledTime");
+      const rawStaggeredGroupId = firstDefined(rawMoto, "staggered_group_id", "staggeredGroupId");
+      const rawStaggeredOrder = firstDefined(rawMoto, "staggered_order", "staggeredOrder");
+      const requestedLapCount = rawLapCount === undefined ? undefined : (rawLapCount === null ? null : Number(rawLapCount));
+      const requestedTimeLimitMs = rawTimeLimitMs === undefined ? undefined : (rawTimeLimitMs === null ? null : Number(rawTimeLimitMs));
+      const requestedPlusLaps = rawPlusLaps === undefined ? undefined : (rawPlusLaps === null ? null : Number(rawPlusLaps));
+
+      let timingError: string | null = null;
+      if (requestedLapCount !== undefined && requestedLapCount !== null && (!Number.isInteger(requestedLapCount) || requestedLapCount <= 0)) {
+        timingError = "lapCount must be a positive integer";
+      } else if (requestedTimeLimitMs !== undefined && requestedTimeLimitMs !== null && (!Number.isInteger(requestedTimeLimitMs) || requestedTimeLimitMs <= 0)) {
+        timingError = "timeLimitMs must be a positive integer";
+      } else if (requestedLapCount != null && requestedTimeLimitMs != null) {
+        timingError = "lapCount and timeLimitMs are mutually exclusive";
+      } else if (requestedPlusLaps !== undefined && requestedPlusLaps !== null && (!Number.isInteger(requestedPlusLaps) || requestedPlusLaps < 0)) {
+        timingError = "plusLaps must be a nonnegative integer for a timed race";
+      }
+
+      const timeExpiredAt = rawTimeExpiredAt === undefined || rawTimeExpiredAt === null
+        ? rawTimeExpiredAt
+        : toDate(rawTimeExpiredAt);
+      if (rawTimeExpiredAt !== undefined && rawTimeExpiredAt !== null && timeExpiredAt === null) {
+        timingError = "timeExpiredAt must be a valid date";
+      }
+      if (timingError) {
+        req.log.warn({ clubId, motoId: clientId, error: timingError }, "desktop-push skipped invalid moto");
+        continue;
+      }
 
       // Prefer lookup by id — this is stable across drag-and-drop reorders.
       // Falling back to (eventId, motoNumber) when there is no client id is
       // safe for legacy payloads; it must NOT be used when clientId is present
       // because after a reorder the moto_number has changed on desktop but the
       // cloud still holds the old value, so the lookup would find the wrong row.
-      let existingId: number | undefined;
+      let existing: {
+        id: number;
+        lapCount: number | null;
+        timeLimitMs: number | null;
+        plusLaps: number | null;
+      } | undefined;
       if (clientId) {
-        const [row] = await tx
-          .select({ id: motosTable.id })
+        [existing] = await tx
+          .select({
+            id: motosTable.id,
+            lapCount: motosTable.lapCount,
+            timeLimitMs: motosTable.timeLimitMs,
+            plusLaps: motosTable.plusLaps,
+          })
           .from(motosTable)
           .where(eq(motosTable.id, clientId));
-        existingId = row?.id;
       } else {
-        const [row] = await tx
-          .select({ id: motosTable.id })
+        [existing] = await tx
+          .select({
+            id: motosTable.id,
+            lapCount: motosTable.lapCount,
+            timeLimitMs: motosTable.timeLimitMs,
+            plusLaps: motosTable.plusLaps,
+          })
           .from(motosTable)
           .where(and(eq(motosTable.eventId, eventId), eq(motosTable.motoNumber, motoNumber)));
-        existingId = row?.id;
       }
 
-      if (existingId) {
+      let resultingLapCount = requestedLapCount === undefined ? existing?.lapCount ?? null : requestedLapCount;
+      let resultingTimeLimitMs = requestedTimeLimitMs === undefined ? existing?.timeLimitMs ?? null : requestedTimeLimitMs;
+      if (requestedLapCount != null) resultingTimeLimitMs = null;
+      if (requestedTimeLimitMs != null) resultingLapCount = null;
+      const resultingPlusLaps = resultingTimeLimitMs !== null
+        ? (requestedPlusLaps === undefined
+            ? (requestedTimeLimitMs != null ? 1 : existing?.plusLaps ?? 1)
+            : requestedPlusLaps ?? 1)
+        : null;
+      if (resultingPlusLaps !== null && (!Number.isInteger(resultingPlusLaps) || resultingPlusLaps < 0)) {
+        req.log.warn(
+          { clubId, motoId: clientId, error: "plusLaps must be a nonnegative integer for a timed race" },
+          "desktop-push skipped invalid moto",
+        );
+        continue;
+      }
+      if (requestedPlusLaps != null && resultingTimeLimitMs === null) {
+        req.log.warn(
+          { clubId, motoId: clientId, error: "plusLaps is only valid when timeLimitMs is set" },
+          "desktop-push skipped invalid moto",
+        );
+        continue;
+      }
+
+      if (existing) {
         let lineup: number[] | undefined;
         if (m.lineup !== undefined) {
           try { lineup = JSON.parse(String(m.lineup)) as number[]; } catch { lineup = []; }
         }
-        const updateSet: Record<string, unknown> = { status, startedAt, completedAt };
-        if (m.moto_number         != null)  updateSet.motoNumber        = motoNumber;
+        const updateSet: Record<string, unknown> = {};
+        if (m.status              !== undefined) updateSet.status       = String(m.status);
+        if (rawStartedAt          !== undefined) updateSet.startedAt    = rawStartedAt === null ? null : toDate(rawStartedAt);
+        if (rawCompletedAt        !== undefined) updateSet.completedAt  = rawCompletedAt === null ? null : toDate(rawCompletedAt);
+        if (rawMotoNumber         != null)  updateSet.motoNumber        = motoNumber;
         if (m.name                != null)  updateSet.name              = String(m.name);
-        if (m.lap_count           != null)  updateSet.lapCount          = Number(m.lap_count);
-        if (m.scheduled_time      != null)  updateSet.scheduledTime     = String(m.scheduled_time);
+        if (rawLapCount !== undefined || rawTimeLimitMs !== undefined || rawPlusLaps !== undefined) {
+          updateSet.lapCount = resultingLapCount;
+          updateSet.timeLimitMs = resultingTimeLimitMs;
+          updateSet.plusLaps = resultingPlusLaps;
+        }
+        if (rawTimeExpiredAt      !== undefined) updateSet.timeExpiredAt = timeExpiredAt;
+        if (rawScheduledTime      !== undefined) updateSet.scheduledTime = rawScheduledTime === null ? null : String(rawScheduledTime);
         if (lineup !== undefined)           updateSet.lineup            = lineup;
-        if (m.staggered_group_id  != null)  updateSet.staggeredGroupId  = Number(m.staggered_group_id);
-        else if (m.staggered_group_id === null) updateSet.staggeredGroupId = null;
-        if (m.staggered_order     != null)  updateSet.staggeredOrder    = Number(m.staggered_order);
-        else if (m.staggered_order === null)    updateSet.staggeredOrder = null;
-        await tx
-          .update(motosTable)
-          .set(updateSet as any)
-          .where(eq(motosTable.id, existingId));
-        affectedMotoIds.add(existingId);
+        if (rawStaggeredGroupId   != null)  updateSet.staggeredGroupId  = Number(rawStaggeredGroupId);
+        else if (rawStaggeredGroupId === null) updateSet.staggeredGroupId = null;
+        if (rawStaggeredOrder     != null)  updateSet.staggeredOrder    = Number(rawStaggeredOrder);
+        else if (rawStaggeredOrder === null)    updateSet.staggeredOrder = null;
+        if (Object.keys(updateSet).length > 0) {
+          await tx
+            .update(motosTable)
+            .set(updateSet as any)
+            .where(eq(motosTable.id, existing.id));
+        }
+        affectedMotoIds.add(existing.id);
       } else {
         let lineup: number[] = [];
         try { lineup = JSON.parse(String(m.lineup ?? "[]")) as number[]; } catch { /* ignore */ }
@@ -314,16 +471,19 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           eventId,
           name:             m.name != null ? String(m.name) : "",
           type:             m.type != null ? String(m.type) : "moto",
-          raceClass:        m.race_class != null ? String(m.race_class) : "",
+          raceClass:        firstDefined(rawMoto, "race_class", "raceClass") != null ? String(firstDefined(rawMoto, "race_class", "raceClass")) : "",
           motoNumber,
-          scheduledTime:    m.scheduled_time != null ? String(m.scheduled_time) : null,
+          scheduledTime:    rawScheduledTime != null ? String(rawScheduledTime) : null,
           lineup,
-          lapCount:         m.lap_count != null ? Number(m.lap_count) : null,
-          status,
-          startedAt,
-          completedAt,
-          staggeredGroupId: m.staggered_group_id != null ? Number(m.staggered_group_id) : null,
-          staggeredOrder:   m.staggered_order    != null ? Number(m.staggered_order)    : null,
+          lapCount:         resultingLapCount,
+          timeLimitMs:      resultingTimeLimitMs,
+          plusLaps:         resultingPlusLaps,
+          timeExpiredAt:    timeExpiredAt === undefined ? null : timeExpiredAt,
+          status:           String(m.status ?? "scheduled"),
+          startedAt:        rawStartedAt == null ? null : toDate(rawStartedAt),
+          completedAt:      rawCompletedAt == null ? null : toDate(rawCompletedAt),
+          staggeredGroupId: rawStaggeredGroupId != null ? Number(rawStaggeredGroupId) : null,
+          staggeredOrder:   rawStaggeredOrder    != null ? Number(rawStaggeredOrder)    : null,
         });
         if (clientId) affectedMotoIds.add(clientId);
       }
@@ -949,8 +1109,9 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
 // that edits to existing rows made via the web portal are always applied to the
 // desktop (club tables have `created_at` only, no `updated_at`).
 // All queries are scoped to events owned by this club — no cross-club leaks.
-// Riders are filtered to those with a registration for a club event and return
-// only id/firstName/lastName/rfidNumber (no email/phone PII).
+// Riders are filtered to those with a registration for a club event. Their
+// complete registration/profile lookup data is returned to the club's own
+// desktop, including contact details needed for on-site registration.
 // The client sends `lastPulledAt` per table for future server-side optimisation;
 // the server currently ignores it and always returns the full set.
 
@@ -1068,8 +1229,9 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     ),
   ]);
 
-  // Riders: only return riders who have a registration for a club event.
-  // Return minimal fields (no email/phone) to avoid cross-club PII exposure.
+  // Riders: return only riders who have a registration for a club event. This
+  // remains club-scoped while supplying the complete profile used by desktop
+  // registration lookup and rider population.
   const regRiderIds = [...new Set(registrations.map((r) => r.riderId))];
   const ridersWithEmail =
     regRiderIds.length > 0
@@ -1081,12 +1243,26 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
             rfidNumber: ridersTable.rfidNumber,
             mylapsTransponderId: ridersTable.mylapsTransponderId,
             email:      ridersTable.email,
+            phone: ridersTable.phone,
+            dateOfBirth: ridersTable.dateOfBirth,
+            emergencyContact: ridersTable.emergencyContact,
+            emergencyPhone: ridersTable.emergencyPhone,
+            streetAddress: ridersTable.streetAddress,
+            city: ridersTable.city,
+            homeState: ridersTable.homeState,
+            zip: ridersTable.zip,
+            bibNumber: ridersTable.bibNumber,
+            amaNumber: ridersTable.amaNumber,
+            bikeManufacturer: ridersTable.bikeManufacturer,
+            bikeModel: ridersTable.bikeModel,
+            bikeYear: ridersTable.bikeYear,
+            sponsors: ridersTable.sponsors,
           })
           .from(ridersTable)
           .where(inArray(ridersTable.id, regRiderIds))
       : [];
 
-  const riders = ridersWithEmail.map(({ email: _email, ...rest }) => rest);
+  const riders = ridersWithEmail;
 
   // Push tokens: resolve rider emails → rider_accounts → rider_push_tokens
   // so the desktop can send notifications without round-tripping to the cloud.

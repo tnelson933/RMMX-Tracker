@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
+import { resolveRegistrationRider } from "../registration-rider";
+import { markRiderFieldsDirty } from "../rider-profile-dirty";
 
 const router = Router();
 
@@ -314,6 +316,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     firstName, lastName, email, phone, dateOfBirth,
     emergencyContact, emergencyPhone, streetAddress, city, homeState, zip,
     raceClass, bibNumber, amaNumber, clubIdNumber, bikeBrand, bikeModel, bikeYear,
+    sponsors,
     transponderNumber, rentTransponder, selectedPurchaseOptions,
     paymentMethod, amountPaid, status,
     riderId: explicitRiderId,
@@ -334,45 +337,14 @@ router.post("/events/:eventId/registrations", (req, res) => {
     });
   }
 
-  let riderId: number;
-
-  if (explicitRiderId) {
-    riderId = Number(explicitRiderId);
-  } else {
-    if (!firstName || !lastName) return res.status(400).json({ error: "firstName and lastName are required" });
-
-    const existing = email
-      ? (db.prepare("SELECT id FROM riders WHERE LOWER(email) = LOWER(?)").get(String(email)) as any)
-      : null;
-
-    if (existing) {
-      riderId = existing.id;
-      if (firstName || lastName || phone) {
-        db.prepare(
-          "UPDATE riders SET first_name = ?, last_name = ?, email = ?, phone = ? WHERE id = ?"
-        ).run(
-          String(firstName).trim(), String(lastName).trim(),
-          email ? String(email).trim() : null,
-          phone ? String(phone).trim() : null,
-          riderId,
-        );
-      }
-    } else {
-      const rr = db.prepare(
-        `INSERT INTO riders (first_name, last_name, email, phone, date_of_birth,
-           emergency_contact, emergency_phone, street_address, city, home_state, zip, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
-      ).run(
-        String(firstName).trim(), String(lastName).trim(),
-        email ? String(email).trim() : null,
-        phone ? String(phone).trim() : null,
-        dateOfBirth ?? null,
-        emergencyContact ?? null, emergencyPhone ?? null,
-        streetAddress ?? null, city ?? null, homeState ?? null, zip ?? null,
-      );
-      riderId = Number(rr.lastInsertRowid);
-    }
+  const resolution = resolveRegistrationRider(db, {
+    ...req.body,
+    riderId: explicitRiderId,
+  });
+  if ("error" in resolution) {
+    return res.status(resolution.status).json({ error: resolution.error });
   }
+  const { riderId } = resolution;
 
   const resolvedStatus = status ?? "confirmed";
   // An explicit payment method means the organizer collected payment on-site (cash / waived / other)
@@ -380,15 +352,16 @@ router.post("/events/:eventId/registrations", (req, res) => {
 
   const result = db.prepare(
     `INSERT INTO registrations (event_id, rider_id, race_class, bib_number, ama_number, club_id_number,
-       bike_brand, bike_model, bike_year, mylaps_transponder_number, transponder_rental,
-       payment_method, amount_paid, payment_status, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+       bike_brand, bike_model, bike_year, sponsors, mylaps_transponder_number, transponder_rental,
+       selected_purchase_options, payment_method, amount_paid, payment_status, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
   ).run(
     eventId, riderId, String(raceClass),
     bibNumber ?? null, amaNumber ?? null, clubIdNumber ?? null,
-    bikeBrand ?? null, bikeModel ?? null, bikeYear ?? null,
+    bikeBrand ?? null, bikeModel ?? null, bikeYear ?? null, sponsors ?? null,
     normalizedTransponderNumber,
     rentTransponder ? 1 : 0,
+    JSON.stringify(selectedPurchaseOptions || []),
     paymentMethod ?? null,
     amountPaid ?? null,
     resolvedPaymentStatus,
@@ -400,6 +373,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     db.prepare(
       "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
     ).run(normalizedTransponderNumber, riderId);
+    markRiderFieldsDirty(db, riderId, ["mylapsTransponderId"]);
   }
   const rider = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(riderId) as any;
   const riderName = rider ? `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim() : "";

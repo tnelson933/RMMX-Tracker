@@ -11,6 +11,7 @@ import { WebSocketServer } from "ws";
 const outputFile = path.join(os.tmpdir(), `rm-connect-cloud-${process.pid}.cjs`);
 const policyOutputFile = path.join(os.tmpdir(), `rm-connect-policy-${process.pid}.cjs`);
 const migrationsOutputFile = path.join(os.tmpdir(), `rm-connect-settings-migrations-${process.pid}.cjs`);
+const activeReaderOutputFile = path.join(os.tmpdir(), `rm-connect-active-reader-${process.pid}.cjs`);
 await build({
   entryPoints: [path.resolve("src/cloud.ts")],
   bundle: true,
@@ -32,12 +33,41 @@ await build({
   format: "cjs",
   outfile: migrationsOutputFile,
 });
+await build({
+  entryPoints: [path.resolve("src/active-transponder-client.ts")],
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  outfile: activeReaderOutputFile,
+});
 const cloudModule = await import(pathToFileURL(outputFile).href);
 const { CloudLink } = cloudModule.default ?? cloudModule;
 const policyModule = await import(pathToFileURL(policyOutputFile).href);
 const { shouldForwardCrossing } = policyModule.default ?? policyModule;
 const migrationsModule = await import(pathToFileURL(migrationsOutputFile).href);
 const { migrateLegacyActiveTransponderAddress } = migrationsModule.default ?? migrationsModule;
+const activeReaderModule = await import(pathToFileURL(activeReaderOutputFile).href);
+const { parseTimestamp } = activeReaderModule.default ?? activeReaderModule;
+
+test("replaces a device timestamp two hours ahead with receive time", () => {
+  const receivedAt = new Date(2026, 7, 27, 15, 29, 18, 123);
+  assert.equal(
+    parseTimestamp("2026-8-27_17:29:18.000", receivedAt).getTime(),
+    receivedAt.getTime(),
+  );
+});
+
+test("preserves normal and delayed device timestamps", () => {
+  const receivedAt = new Date(2026, 7, 27, 15, 29, 18, 123);
+  assert.equal(
+    parseTimestamp("2026-8-27_15:29:17.900", receivedAt).getTime(),
+    new Date(2026, 7, 27, 15, 29, 17, 900).getTime(),
+  );
+  assert.equal(
+    parseTimestamp("2026-8-26_12:00:00.000", receivedAt).getTime(),
+    new Date(2026, 7, 26, 12, 0, 0, 0).getTime(),
+  );
+});
 
 async function receiveCommand(message) {
   const server = new WebSocketServer({ port: 0 });

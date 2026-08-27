@@ -11,12 +11,21 @@ export interface MotoUpdate {
   status?: string;
   lineup?: number[];
   scheduledTime?: string;
-  /** @nullable */
+  /**
+     * Positive lap target; setting it clears timeLimitMs and plusLaps
+     * @minimum 1
+     * @nullable
+     */
   lapCount?: number | null;
-  /** @nullable */
+  /**
+     * Positive timed-race duration in milliseconds; setting it clears lapCount
+     * @minimum 1
+     * @nullable
+     */
   timeLimitMs?: number | null;
   /**
      * Extra laps after the time limit expires; null to clear
+     * @minimum 0
      * @nullable
      */
   plusLaps?: number | null;

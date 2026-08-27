@@ -13,6 +13,7 @@ import {
 import { eq, and, desc, asc, ilike, or } from "drizzle-orm";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
+import { canonicalizeCrossingTimestamp } from "../lib/crossingTimestamp";
 
 type CallerInfo = { clubId: number | null; isSuperAdmin: boolean };
 
@@ -118,6 +119,10 @@ export async function processPracticeCrossing(
   rfidNumber: string,
   crossingTime: Date,
 ) {
+  crossingTime = canonicalizeCrossingTimestamp(crossingTime, new Date(), {
+    source: "processPracticeCrossing",
+    practiceSessionId: session.id,
+  });
   const sessionId = session.id;
   const tagNumber = rfidNumber.trim();
 
@@ -255,10 +260,11 @@ router.post("/practice/active/crossing", async (req, res) => {
   // Accept hardware timestamp in any common field name
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
-  const crossingTime = rawTime ? new Date(rawTime) : new Date();
-  if (isNaN(crossingTime.getTime())) {
-    return res.status(400).json({ error: "Invalid crossingTime — must be ISO 8601" });
-  }
+  const receivedAt = new Date();
+  const crossingTime = canonicalizeCrossingTimestamp(rawTime ?? receivedAt, receivedAt, {
+    source: "active_practice_ingest",
+    clubId,
+  });
 
   // Find the active session for this club (most recently started)
   const [session] = await db.select().from(practiceSessionsTable)
@@ -462,7 +468,11 @@ router.post("/practice/:id/crossing", async (req, res) => {
 
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp;
-  const crossingTime = rawTime ? new Date(rawTime) : new Date();
+  const receivedAt = new Date();
+  const crossingTime = canonicalizeCrossingTimestamp(rawTime ?? receivedAt, receivedAt, {
+    source: "practice_session_ingest",
+    practiceSessionId: sessionId,
+  });
 
   const result = await processPracticeCrossing(session, String(rfidNumber), crossingTime);
   if ("skipped" in result) {

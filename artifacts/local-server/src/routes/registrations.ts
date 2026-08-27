@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb, parseBool, parseJsonArr } from "../db";
+import { resolveRegistrationRider } from "../registration-rider";
+import { markRiderFieldsDirty } from "../rider-profile-dirty";
 
 const router = Router();
 
@@ -70,13 +72,15 @@ router.post("/events/:eventId/registrations", (req, res) => {
   const {
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
     streetAddress, city, homeState, zip,
-    raceClass, bibNumber, clubIdNumber, bikeBrand, rentTransponder,
+    raceClass, bibNumber, amaNumber, clubIdNumber, bikeBrand, bikeModel, bikeYear,
+    sponsors, rentTransponder,
     transponderNumber, selectedPurchaseOptions,
     paymentMethod, amountPaid, status: reqStatus,
+    riderId: explicitRiderId,
   } = req.body;
 
-  if (!firstName || !lastName || !email || !raceClass) {
-    return res.status(400).json({ error: "firstName, lastName, email, raceClass required" });
+  if (!raceClass) {
+    return res.status(400).json({ error: "raceClass required" });
   }
   const rawTransponderNumber =
     transponderNumber ?? req.body.myLapsTransponderNumber;
@@ -94,41 +98,14 @@ router.post("/events/:eventId/registrations", (req, res) => {
 
   const db = getDb();
 
-  // Find or create rider by email
-  let rider = db
-    .prepare("SELECT * FROM riders WHERE email = ? LIMIT 1")
-    .get(email) as Record<string, unknown> | undefined;
-
-  if (!rider) {
-    const r = db
-      .prepare(
-        `INSERT INTO riders (first_name, last_name, email, phone, date_of_birth,
-           emergency_contact, emergency_phone, street_address, city, home_state, zip)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        firstName, lastName, email,
-        phone || null, dateOfBirth || null, emergencyContact || null, emergencyPhone || null,
-        streetAddress || null, city || null, homeState || null, zip || null,
-      );
-    rider = db
-      .prepare("SELECT * FROM riders WHERE id = ?")
-      .get(r.lastInsertRowid) as Record<string, unknown>;
-  } else {
-    db.prepare(
-      `UPDATE riders SET first_name = ?, last_name = ?,
-         phone = COALESCE(?, phone), date_of_birth = COALESCE(?, date_of_birth),
-         emergency_contact = COALESCE(?, emergency_contact),
-         emergency_phone = COALESCE(?, emergency_phone)
-       WHERE id = ?`,
-    ).run(
-      firstName, lastName,
-      phone || null, dateOfBirth || null, emergencyContact || null, emergencyPhone || null,
-      rider.id,
-    );
+  const resolution = resolveRegistrationRider(db, {
+    ...req.body,
+    riderId: explicitRiderId,
+  });
+  if ("error" in resolution) {
+    return res.status(resolution.status).json({ error: resolution.error });
   }
-
-  const riderId = rider!.id as number;
+  const { riderId, rider } = resolution;
   const finalStatus = reqStatus || "confirmed";
   const hasPaid =
     paymentMethod && amountPaid != null && parseFloat(String(amountPaid)) >= 0;
@@ -138,15 +115,17 @@ router.post("/events/:eventId/registrations", (req, res) => {
     .prepare(
       `INSERT INTO registrations
          (event_id, rider_id, race_class, status, payment_status, payment_method, amount_paid,
-          bib_number, club_id_number, bike_brand, transponder_rental, mylaps_transponder_number,
+           bib_number, ama_number, club_id_number, bike_brand, bike_model, bike_year, sponsors,
+           transponder_rental, mylaps_transponder_number,
           selected_purchase_options, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
     )
     .run(
       eventId, riderId, raceClass, finalStatus, finalPaymentStatus,
       paymentMethod || null,
       hasPaid ? String(amountPaid) : null,
-      bibNumber || null, clubIdNumber || null, bikeBrand || null,
+      bibNumber || null, amaNumber || null, clubIdNumber || null, bikeBrand || null,
+      bikeModel || null, bikeYear || null, sponsors || null,
       rentTransponder ? 1 : 0,
       normalizedTransponderNumber,
       JSON.stringify(selectedPurchaseOptions || []),
@@ -157,6 +136,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     db.prepare(
       "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
     ).run(normalizedTransponderNumber, riderId);
+    markRiderFieldsDirty(db, riderId, ["mylapsTransponderId"]);
   }
 
   // Auto-create checkin for confirmed registrations
@@ -178,11 +158,11 @@ router.post("/events/:eventId/registrations", (req, res) => {
 
   return res.status(201).json({
     ...deserializeReg(reg),
-    riderName: `${firstName} ${lastName}`.trim(),
-    firstName,
-    lastName,
-    email,
-    phone: phone || null,
+    riderName: `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim(),
+    firstName: rider.first_name,
+    lastName: rider.last_name,
+    email: rider.email,
+    phone: rider.phone ?? null,
   });
 });
 
@@ -256,6 +236,7 @@ router.patch("/registrations/:registrationId", (req, res) => {
     db.prepare(
       "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
     ).run(normalizedTransponderNumber, updated.rider_id);
+    markRiderFieldsDirty(db, Number(updated.rider_id), ["mylapsTransponderId"]);
   }
 
   // Create a checkin record if the registration is now confirmed and one doesn't exist yet
@@ -280,38 +261,59 @@ router.get("/public/riders/lookup", (req, res) => {
   if (!email) return res.status(400).json({ error: "email required" });
 
   const db = getDb();
-  const rider = db
-    .prepare("SELECT * FROM riders WHERE lower(email) = ? LIMIT 1")
-    .get(email) as Record<string, unknown> | undefined;
+  const riders = db
+    .prepare("SELECT * FROM riders WHERE lower(trim(email)) = ? ORDER BY id ASC")
+    .all(email) as Record<string, unknown>[];
 
-  if (!rider) return res.json({ found: false });
+  if (!riders.length) {
+    return res.json({ found: false, count: 0, riders: [] });
+  }
 
-  const lastReg = db
+  const latestRegistration = db
     .prepare(
-      `SELECT ama_number, club_id_number, bike_brand, bike_model, bike_year, bib_number, sponsors
-       FROM registrations WHERE rider_id = ? ORDER BY created_at DESC LIMIT 1`,
-    )
-    .get(rider.id) as Record<string, unknown> | undefined;
+      `SELECT ama_number, club_id_number, bike_brand, bike_model, bike_year,
+              bib_number, sponsors, mylaps_transponder_number
+       FROM registrations
+       WHERE rider_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+    );
+
+  const result = riders.map((rider) => {
+    const lastReg = latestRegistration.get(rider.id) as
+      | Record<string, unknown>
+      | undefined;
+    return {
+      id: rider.id,
+      firstName: rider.first_name ?? "",
+      lastName: rider.last_name ?? "",
+      phone: rider.phone ?? "",
+      dateOfBirth: rider.date_of_birth ?? "",
+      emergencyContact: rider.emergency_contact ?? "",
+      emergencyPhone: rider.emergency_phone ?? "",
+      streetAddress: rider.street_address ?? "",
+      city: rider.city ?? "",
+      homeState: rider.home_state ?? "",
+      zip: rider.zip ?? "",
+      amaNumber: lastReg?.ama_number ?? rider.ama_number ?? "",
+      clubIdNumber: lastReg?.club_id_number ?? "",
+      bikeBrand: lastReg?.bike_brand ?? rider.bike_manufacturer ?? "",
+      bikeModel: lastReg?.bike_model ?? rider.bike_model ?? "",
+      bikeYear: lastReg?.bike_year ?? rider.bike_year ?? "",
+      bibNumber:
+        lastReg?.bib_number != null
+          ? String(lastReg.bib_number)
+          : rider.bib_number ?? "",
+      sponsors: lastReg?.sponsors ?? rider.sponsors ?? "",
+      myLapsTransponderNumber:
+        lastReg?.mylaps_transponder_number ?? rider.mylaps_transponder_id ?? "",
+    };
+  });
 
   return res.json({
     found: true,
-    firstName: rider.first_name ?? "",
-    lastName: rider.last_name ?? "",
-    phone: rider.phone ?? "",
-    dateOfBirth: rider.date_of_birth ?? "",
-    emergencyContact: rider.emergency_contact ?? "",
-    emergencyPhone: rider.emergency_phone ?? "",
-    streetAddress: rider.street_address ?? "",
-    city: rider.city ?? "",
-    homeState: rider.home_state ?? "",
-    zip: rider.zip ?? "",
-    amaNumber: lastReg?.ama_number ?? "",
-    clubIdNumber: lastReg?.club_id_number ?? "",
-    bikeBrand: lastReg?.bike_brand ?? "",
-    bikeModel: lastReg?.bike_model ?? "",
-    bikeYear: lastReg?.bike_year ?? "",
-    bibNumber: lastReg?.bib_number ? String(lastReg.bib_number) : "",
-    sponsors: lastReg?.sponsors ?? "",
+    count: result.length,
+    riders: result,
   });
 });
 

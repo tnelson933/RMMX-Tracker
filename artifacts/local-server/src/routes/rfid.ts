@@ -2,6 +2,7 @@ import { Router } from "express";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb, parseJsonArr } from "../db";
 import { formatLapTime } from "./timing";
+import { markRiderFieldsDirty } from "../rider-profile-dirty";
 
 const router = Router();
 
@@ -136,6 +137,7 @@ router.post("/rfid", (req, res) => {
     db.prepare(
       "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
     ).run(activeTransponderNumber, numRiderId);
+    markRiderFieldsDirty(db, numRiderId, ["mylapsTransponderId"]);
 
     if (numEventId) {
       db.prepare(
@@ -195,6 +197,7 @@ router.post("/rfid", (req, res) => {
   }
 
   db.prepare("UPDATE riders SET rfid_number = ? WHERE id = ?").run(rfidNumber, numRiderId);
+  markRiderFieldsDirty(db, numRiderId, ["rfidNumber"]);
 
   if (numEventId) {
     db.prepare(
@@ -363,6 +366,7 @@ router.post("/rfid/assign", (req, res) => {
   }
 
   db.prepare("UPDATE riders SET rfid_number = ? WHERE id = ?").run(rfidNumber, numRiderId);
+  markRiderFieldsDirty(db, numRiderId, ["rfidNumber"]);
   return res.json({ ok: true, riderId: numRiderId, rfidNumber, eventId: numEventId });
 });
 

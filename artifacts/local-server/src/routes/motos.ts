@@ -4,6 +4,35 @@ import { sseBroadcast, buildLeaderboard } from "./timing";
 
 const router = Router();
 
+export type NormalizedMotoTiming =
+  | { lapCount: number | null; timeLimitMs: number | null; plusLaps: number | null; error?: never }
+  | { error: string; lapCount?: never; timeLimitMs?: never; plusLaps?: never };
+
+/** Shared create/generate boundary normalization; kept exported for focused route tests. */
+export function normalizeMotoTiming(lapCount: unknown, timeLimitMs: unknown, plusLaps: unknown): NormalizedMotoTiming {
+  const normalizedLapCount = lapCount == null ? null : Number(lapCount);
+  const normalizedTimeLimitMs = timeLimitMs == null ? null : Number(timeLimitMs);
+  if (normalizedLapCount !== null && (!Number.isInteger(normalizedLapCount) || normalizedLapCount <= 0)) {
+    return { error: "lapCount must be a positive integer" };
+  }
+  if (normalizedTimeLimitMs !== null && (!Number.isInteger(normalizedTimeLimitMs) || normalizedTimeLimitMs <= 0)) {
+    return { error: "timeLimitMs must be a positive integer" };
+  }
+  if (normalizedLapCount !== null && normalizedTimeLimitMs !== null) {
+    return { error: "lapCount and timeLimitMs are mutually exclusive" };
+  }
+  if (plusLaps != null && normalizedTimeLimitMs === null) {
+    return { error: "plusLaps is only valid when timeLimitMs is set" };
+  }
+  const normalizedPlusLaps = normalizedTimeLimitMs !== null
+    ? (plusLaps == null ? 1 : Number(plusLaps))
+    : null;
+  if (normalizedPlusLaps !== null && (!Number.isInteger(normalizedPlusLaps) || normalizedPlusLaps < 0)) {
+    return { error: "plusLaps must be a nonnegative integer for a timed race" };
+  }
+  return { lapCount: normalizedLapCount, timeLimitMs: normalizedTimeLimitMs, plusLaps: normalizedPlusLaps };
+}
+
 function serializeMoto(m: any, groupMembersMap?: Map<number, number[]>) {
   const groupId: number | null = m.staggered_group_id ?? null;
   return {
@@ -18,8 +47,10 @@ function serializeMoto(m: any, groupMembersMap?: Map<number, number[]>) {
     lineup: parseJsonArr(m.lineup),
     lapCount: m.lap_count ?? null,
     timeLimitMs: m.time_limit_ms ?? null,
+    plusLaps: m.plus_laps ?? null,
     status: m.status,
     startedAt: m.started_at ?? null,
+    timeExpiredAt: m.time_expired_at ?? null,
     completedAt: m.completed_at ?? null,
     staggeredOrder: m.staggered_order ?? null,
     staggeredGroupId: groupId,
@@ -60,17 +91,19 @@ router.post("/events/:eventId/motos", (req, res) => {
   if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
   const db = getDb();
   const eventId = Number(req.params.eventId);
-  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, countdownSeconds } =
+  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, plusLaps, countdownSeconds } =
     req.body;
   if (!name || !type || !raceClass || motoNumber === undefined) {
     return res
       .status(400)
       .json({ error: "name, type, raceClass, motoNumber required" });
   }
+  const timing = normalizeMotoTiming(lapCount, timeLimitMs, plusLaps);
+  if ("error" in timing) return res.status(400).json({ error: timing.error });
   const result = db
     .prepare(
-      `INSERT INTO motos (event_id, name, type, race_class, race_classes, moto_number, scheduled_time, lineup, lap_count, time_limit_ms, countdown_seconds, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', datetime('now'))`,
+      `INSERT INTO motos (event_id, name, type, race_class, race_classes, moto_number, scheduled_time, lineup, lap_count, time_limit_ms, plus_laps, countdown_seconds, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', datetime('now'))`,
     )
     .run(
       eventId,
@@ -81,8 +114,9 @@ router.post("/events/:eventId/motos", (req, res) => {
       Number(motoNumber),
       scheduledTime ?? null,
       JSON.stringify(lineup ?? []),
-      lapCount ? Number(lapCount) : null,
-      timeLimitMs ? Number(timeLimitMs) : null,
+      timing.lapCount,
+      timing.timeLimitMs,
+      timing.plusLaps,
       countdownSeconds ? Number(countdownSeconds) : null,
     );
   const moto = db
@@ -100,17 +134,75 @@ router.patch("/motos/:motoId", (req, res) => {
 
   const fields: string[] = [];
   const values: unknown[] = [];
+  const existingFormat = db
+    .prepare("SELECT lap_count, time_limit_ms, plus_laps, started_at FROM motos WHERE id = ?")
+    .get(id) as any;
+  if (!existingFormat) return res.status(404).json({ error: "Not found" });
 
+  const requestedLapCount = req.body.lapCount === undefined ? undefined : (req.body.lapCount === null ? null : Number(req.body.lapCount));
+  const requestedTimeLimitMs = req.body.timeLimitMs === undefined ? undefined : (req.body.timeLimitMs === null ? null : Number(req.body.timeLimitMs));
+  if (requestedLapCount !== undefined && requestedLapCount !== null && (!Number.isInteger(requestedLapCount) || requestedLapCount <= 0)) {
+    return res.status(400).json({ error: "lapCount must be a positive integer" });
+  }
+  if (requestedTimeLimitMs !== undefined && requestedTimeLimitMs !== null && (!Number.isInteger(requestedTimeLimitMs) || requestedTimeLimitMs <= 0)) {
+    return res.status(400).json({ error: "timeLimitMs must be a positive integer" });
+  }
+  if (requestedLapCount != null && requestedTimeLimitMs != null) {
+    return res.status(400).json({ error: "lapCount and timeLimitMs are mutually exclusive" });
+  }
+  let resultingLapCount = requestedLapCount === undefined ? existingFormat.lap_count : requestedLapCount;
+  let resultingTimeLimitMs = requestedTimeLimitMs === undefined ? existingFormat.time_limit_ms : requestedTimeLimitMs;
+  if (requestedLapCount != null) resultingTimeLimitMs = null;
+  if (requestedTimeLimitMs != null) resultingLapCount = null;
+  const requestedPlusLaps = req.body.plusLaps === undefined ? undefined : (req.body.plusLaps === null ? null : Number(req.body.plusLaps));
+  const resultingPlusLaps = resultingTimeLimitMs !== null
+    ? (requestedPlusLaps === undefined ? (requestedTimeLimitMs != null ? 1 : existingFormat.plus_laps ?? 1) : requestedPlusLaps ?? 1)
+    : null;
+  if (resultingPlusLaps !== null && (!Number.isInteger(resultingPlusLaps) || resultingPlusLaps < 0)) {
+    return res.status(400).json({ error: "plusLaps must be a nonnegative integer for a timed race" });
+  }
+  if (requestedPlusLaps != null && resultingTimeLimitMs === null) {
+    return res.status(400).json({ error: "plusLaps is only valid when timeLimitMs is set" });
+  }
+  if (req.body.lapCount !== undefined || req.body.timeLimitMs !== undefined || req.body.plusLaps !== undefined) {
+    fields.push("lap_count = ?", "time_limit_ms = ?", "plus_laps = ?");
+    values.push(resultingLapCount, resultingTimeLimitMs, resultingPlusLaps);
+  }
+
+  let completedOnTimeExpiry = false;
   if (req.body.status !== undefined) {
     fields.push("status = ?");
     values.push(req.body.status);
-    if (req.body.status === "in_progress") {
+    if (req.body.status === "in_progress" && !existingFormat.started_at) {
+      // Do not reset the timing anchor if an in-progress update is re-issued.
       fields.push("started_at = ?");
       values.push(new Date().toISOString());
     }
     if (req.body.status === "completed") {
       fields.push("completed_at = ?");
       values.push(new Date().toISOString());
+    }
+  }
+  if (req.body.timeExpiredAt !== undefined) {
+    const timeExpiredAt = req.body.timeExpiredAt;
+    if (timeExpiredAt !== null && Number.isNaN(new Date(timeExpiredAt).getTime())) {
+      return res.status(400).json({ error: "timeExpiredAt must be a valid date" });
+    }
+    fields.push("time_expired_at = ?");
+    values.push(timeExpiredAt === null ? null : new Date(timeExpiredAt).toISOString());
+
+    // The shared UI normally PATCHes status=completed directly for a timed
+    // race with +0 laps. Keep that checkered behavior if it sends the expiry
+    // marker itself, rather than leaving a zero-extra-lap race in progress.
+    if (
+      timeExpiredAt !== null &&
+      resultingTimeLimitMs !== null &&
+      resultingPlusLaps === 0 &&
+      req.body.status === undefined
+    ) {
+      fields.push("status = ?", "completed_at = ?");
+      values.push("completed", new Date().toISOString());
+      completedOnTimeExpiry = true;
     }
   }
   if (req.body.lineup !== undefined) {
@@ -120,16 +212,6 @@ router.patch("/motos/:motoId", (req, res) => {
   if (req.body.scheduledTime !== undefined) {
     fields.push("scheduled_time = ?");
     values.push(req.body.scheduledTime);
-  }
-  if (req.body.lapCount !== undefined) {
-    fields.push("lap_count = ?");
-    values.push(req.body.lapCount !== null ? Number(req.body.lapCount) : null);
-  }
-  if (req.body.timeLimitMs !== undefined) {
-    fields.push("time_limit_ms = ?");
-    values.push(
-      req.body.timeLimitMs !== null ? Number(req.body.timeLimitMs) : null,
-    );
   }
   if (req.body.motoNumber !== undefined) {
     fields.push("moto_number = ?");
@@ -162,7 +244,7 @@ router.patch("/motos/:motoId", (req, res) => {
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
   if (!moto) return res.status(404).json({ error: "Not found" });
 
-  if (req.body.status !== undefined) {
+  if (req.body.status !== undefined || completedOnTimeExpiry) {
     const snapshot = buildLeaderboard(id);
     if (snapshot) sseBroadcast(id, snapshot);
   }
@@ -232,7 +314,10 @@ router.post("/motos/:motoId/restart", (req, res) => {
     "UPDATE race_results SET lap_times = '[]', total_time = NULL WHERE moto_id = ?",
   ).run(id);
   db.prepare(
-    "UPDATE motos SET status = 'scheduled', started_at = NULL WHERE id = ?",
+    `UPDATE motos
+     SET status = 'scheduled', started_at = NULL, time_expired_at = NULL,
+         completed_at = NULL
+     WHERE id = ?`,
   ).run(id);
 
   const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
@@ -469,6 +554,8 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
     gatePickMethod,
     rounds: roundsFilter,
     lapCount,
+    timeLimitMs,
+    plusLaps,
     minRacesBetween,
   } = req.body;
 
@@ -476,8 +563,9 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
     minRacesBetween && Number(minRacesBetween) >= 1
       ? Math.min(3, Number(minRacesBetween))
       : 0;
-  const motoLapCount: number | null =
-    lapCount != null && Number(lapCount) > 0 ? Number(lapCount) : null;
+  const timing = normalizeMotoTiming(lapCount, timeLimitMs, plusLaps);
+  if ("error" in timing) return res.status(400).json({ error: timing.error });
+  const { lapCount: motoLapCount, timeLimitMs: motoTimeLimitMs, plusLaps: motoPlusLaps } = timing;
 
   let seedingMethod:
     | "random"
@@ -885,8 +973,8 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
   }
 
   const insertMoto = db.prepare(
-    `INSERT INTO motos (event_id, name, type, race_class, moto_number, status, lineup, lap_count, created_at)
-     VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, datetime('now'))`,
+    `INSERT INTO motos (event_id, name, type, race_class, moto_number, status, lineup, lap_count, time_limit_ms, plus_laps, created_at)
+     VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, datetime('now'))`,
   );
 
   const insertedMotos: any[] = [];
@@ -900,7 +988,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
           const lineup = buildLineup(groups[h], []);
           const r = insertMoto.run(
             eventId, heatName, "heat", cls,
-            motoNumber++, JSON.stringify(lineup), motoLapCount,
+            motoNumber++, JSON.stringify(lineup), motoLapCount, motoTimeLimitMs, motoPlusLaps,
           );
           insertedMotos.push(Number(r.lastInsertRowid));
         }
@@ -908,7 +996,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
       for (const { cls } of allClassGroups) {
         const r = insertMoto.run(
           eventId, `${cls} Main Event`, "main", cls,
-          motoNumber++, "[]", motoLapCount,
+          motoNumber++, "[]", motoLapCount, motoTimeLimitMs, motoPlusLaps,
         );
         insertedMotos.push(Number(r.lastInsertRowid));
       }
@@ -1015,7 +1103,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
         const lineup = buildLineup(task.riders, []);
         const r = insertMoto.run(
           eventId, task.name, "moto", task.cls,
-          motoNumber++, JSON.stringify(lineup), motoLapCount,
+          motoNumber++, JSON.stringify(lineup), motoLapCount, motoTimeLimitMs, motoPlusLaps,
         );
         insertedMotos.push(Number(r.lastInsertRowid));
       }

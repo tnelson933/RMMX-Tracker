@@ -18,8 +18,18 @@ import type { Response } from "express";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
 import { recordTagSeen } from "../lib/recentTags";
+import {
+  canonicalizeCrossingTimestamp,
+  deriveClockSkewRepair,
+  isImplausiblyFutureCrossing,
+} from "../lib/crossingTimestamp";
 
 const router = Router();
+
+function ingestCrossingTime(value: unknown, source: string): Date {
+  const receivedAt = new Date();
+  return canonicalizeCrossingTimestamp(value ?? receivedAt, receivedAt, { source });
+}
 
 function getStaffClubId(res: any): number | null {
   const v = res.locals?.staffClubId;
@@ -390,6 +400,44 @@ export async function buildLeaderboard(motoId: number) {
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
   if (!moto) return null;
 
+  // Repair the distinctive failure mode produced by a reader clock running in
+  // the future. lapNumber plus insertion id is the logical order; absolute
+  // crossing_time cannot be trusted in this case. Delayed (past) uploads are
+  // deliberately left untouched.
+  if (moto.startedAt) {
+    const crossings = await db
+      .select()
+      .from(lapCrossingsTable)
+      .where(eq(lapCrossingsTable.motoId, motoId))
+      .orderBy(asc(lapCrossingsTable.lapNumber), asc(lapCrossingsTable.id));
+    const byRider = new Map<number, typeof crossings>();
+    for (const crossing of crossings) {
+      if (crossing.riderId == null) continue;
+      const group = byRider.get(crossing.riderId) ?? [];
+      group.push(crossing);
+      byRider.set(crossing.riderId, group);
+    }
+    for (const [riderId, riderCrossings] of byRider) {
+      const repaired = deriveClockSkewRepair(moto.startedAt, riderCrossings);
+      if (!repaired?.length) continue;
+      await db.transaction(async tx => {
+        for (const crossing of repaired) {
+          await tx.update(lapCrossingsTable)
+            .set({ crossingTime: crossing.crossingTime, lapTimeMs: crossing.lapTimeMs })
+            .where(eq(lapCrossingsTable.id, crossing.id));
+        }
+        const lapTimes = repaired.map(c => c.lapTimeMs);
+        const totalMs = lapTimes.reduce((sum, value) => sum + value, 0);
+        await tx.update(raceResultsTable)
+          .set({ lapTimes, totalTime: formatLapTime(totalMs) })
+          .where(and(
+            eq(raceResultsTable.motoId, motoId),
+            eq(raceResultsTable.riderId, riderId),
+          ));
+      });
+    }
+  }
+
   const results = await db
     .select({
       id: raceResultsTable.id,
@@ -520,7 +568,13 @@ async function _processCrossing(opts: {
   bypassDebounce?: boolean;
   overrideRiderId?: number | null;
 }) {
-  const { rfidNumber, motoId, crossingTime, readerId, antennaId, bypassDebounce, overrideRiderId } = opts;
+  const { rfidNumber, motoId, readerId, antennaId, bypassDebounce, overrideRiderId } = opts;
+  // Last line of defence for internal callers that bypass an HTTP ingest route.
+  const crossingTime = canonicalizeCrossingTimestamp(opts.crossingTime, new Date(), {
+    source: "processCrossing",
+    motoId,
+    readerId,
+  });
 
   // 1. Load moto
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
@@ -624,7 +678,10 @@ async function _processCrossing(opts: {
     // finish is never swallowed but a lingering tag at the line cannot self-finish.
     if (!bypassDebounce && riderCrossings.length > 0) {
       const last = riderCrossings[riderCrossings.length - 1];
-      const gapMs = crossingTime.getTime() - new Date(last.crossingTime).getTime();
+      const lastTime = isImplausiblyFutureCrossing(last.crossingTime, last.createdAt)
+        ? last.createdAt
+        : last.crossingTime;
+      const gapMs = crossingTime.getTime() - lastTime.getTime();
       if (gapMs < debounceMs) {
         return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
       }
@@ -748,13 +805,16 @@ async function _processCrossing(opts: {
     .select()
     .from(lapCrossingsTable)
     .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.rfidNumber, rfidNumber)))
-    .orderBy(asc(lapCrossingsTable.crossingTime));
+    .orderBy(asc(lapCrossingsTable.lapNumber), asc(lapCrossingsTable.id));
 
   // ── Debounce: reject burst reads from the same antenna pass ─────────────────
   // Skipped for manual crossings (organizer is intentionally pressing a button).
   if (!bypassDebounce && prevCrossings.length > 0) {
     const lastCrossing = prevCrossings[prevCrossings.length - 1];
-    const gapMs = crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime();
+    const lastTime = isImplausiblyFutureCrossing(lastCrossing.crossingTime, lastCrossing.createdAt)
+      ? lastCrossing.createdAt
+      : lastCrossing.crossingTime;
+    const gapMs = crossingTime.getTime() - lastTime.getTime();
     if (gapMs < debounceMs) {
       // Silent accept — not an error, just a duplicate burst read
       return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
@@ -764,9 +824,17 @@ async function _processCrossing(opts: {
   const lapNumber = prevCrossings.length + 1;
   const prevTime =
     prevCrossings.length > 0
-      ? prevCrossings[prevCrossings.length - 1].crossingTime
+      ? (isImplausiblyFutureCrossing(
+          prevCrossings[prevCrossings.length - 1].crossingTime,
+          prevCrossings[prevCrossings.length - 1].createdAt,
+        )
+          ? prevCrossings[prevCrossings.length - 1].createdAt
+          : prevCrossings[prevCrossings.length - 1].crossingTime)
       : moto.startedAt;
   const lapTimeMs = crossingTime.getTime() - new Date(prevTime).getTime();
+  if (!Number.isFinite(lapTimeMs) || lapTimeMs < 0) {
+    throw new Error("Crossing time precedes the moto start or previous lap");
+  }
 
   // 4. Store crossing
   const [crossing] = await db
@@ -896,10 +964,7 @@ router.post("/timing/crossing", async (req, res) => {
     return res.status(400).json({ error: "rfidNumber and motoId are required" });
   }
 
-  const time = crossingTime ? new Date(crossingTime) : new Date();
-  if (isNaN(time.getTime())) {
-    return res.status(400).json({ error: "Invalid crossingTime" });
-  }
+  const time = ingestCrossingTime(crossingTime, "direct_crossing_ingest");
 
   const antenna = antennaId !== undefined ? Number(antennaId) : undefined;
 
@@ -1023,7 +1088,7 @@ router.post("/timing/active/crossing", async (req, res) => {
       const results: unknown[] = [];
       for (const tag of tagEvents) {
         const rfidNumber = tag.epcHex.toUpperCase();
-        const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
+        const crossingTime = ingestCrossingTime(tag.firstSeenTime, "active_ingest_impinj_practice");
         if (isNaN(crossingTime.getTime())) { results.push({ rfidNumber, error: "Invalid firstSeenTime" }); continue; }
         try {
           const r = await processPracticeCrossing(session, rfidNumber, crossingTime);
@@ -1035,7 +1100,7 @@ router.post("/timing/active/crossing", async (req, res) => {
     const results: unknown[] = [];
     for (const tag of tagEvents) {
       const rfidNumber = tag.epcHex.toUpperCase();
-      const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
+      const crossingTime = ingestCrossingTime(tag.firstSeenTime, "active_ingest_impinj");
       if (isNaN(crossingTime.getTime())) { results.push({ rfidNumber, error: "Invalid firstSeenTime" }); continue; }
       try {
         const r = await processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "impinj-r700", antennaId: tag.antennaPort });
@@ -1071,7 +1136,7 @@ router.post("/timing/active/crossing", async (req, res) => {
       }
       const results: unknown[] = [];
       for (const tag of tagEvents) {
-        const crossingTime = tag.timestamp ? new Date(tag.timestamp) : new Date();
+        const crossingTime = ingestCrossingTime(tag.timestamp, "active_ingest_tag_practice");
         try {
           const r = await processPracticeCrossing(session, tag.epcHex, crossingTime);
           const outcome = "skipped" in r ? `skipped(${r.reason})` : `recorded(crossing=${r.crossing?.id})`;
@@ -1083,7 +1148,7 @@ router.post("/timing/active/crossing", async (req, res) => {
     }
     const results: unknown[] = [];
     for (const tag of tagEvents) {
-      const crossingTime = tag.timestamp ? new Date(tag.timestamp) : new Date();
+      const crossingTime = ingestCrossingTime(tag.timestamp, "active_ingest_tag");
       try {
         const r = await processCrossing({ rfidNumber: tag.epcHex, motoId: moto.id, crossingTime, readerId: "impinj-r700-fw10", antennaId: tag.antennaPort });
         results.push(r.debounced ? { rfidNumber: tag.epcHex, debounced: true } : { rfidNumber: tag.epcHex, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
@@ -1106,7 +1171,7 @@ router.post("/timing/active/crossing", async (req, res) => {
       for (const tag of zebraTags) {
         const rfidNumber = ((tag.idHex || tag.epc) as string | undefined ?? "").toUpperCase();
         if (!rfidNumber) { results.push({ error: "Tag missing idHex/epc field" }); continue; }
-        const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
+        const crossingTime = ingestCrossingTime(tag.firstSeenTimestamp, "active_ingest_zebra_practice");
         try {
           const r = await processPracticeCrossing(session, rfidNumber, crossingTime);
           results.push("skipped" in r ? { rfidNumber, skipped: true } : { rfidNumber, crossingId: r.crossing?.id });
@@ -1118,7 +1183,7 @@ router.post("/timing/active/crossing", async (req, res) => {
     for (const tag of zebraTags) {
       const rfidNumber = ((tag.idHex || tag.epc) as string | undefined ?? "").toUpperCase();
       if (!rfidNumber) { results.push({ error: "Tag missing idHex/epc field" }); continue; }
-      const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
+      const crossingTime = ingestCrossingTime(tag.firstSeenTimestamp, "active_ingest_zebra");
       try {
         const r = await processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "zebra-fx7500", antennaId: tag.antennaPort });
         results.push(r.debounced ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
@@ -1137,10 +1202,7 @@ router.post("/timing/active/crossing", async (req, res) => {
   }
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
-  const crossingTime = rawTime ? new Date(rawTime) : new Date();
-  if (isNaN(crossingTime.getTime())) {
-    return res.status(400).json({ error: "Invalid crossing time — must be ISO 8601" });
-  }
+  const crossingTime = ingestCrossingTime(rawTime, "active_ingest_generic");
   recordTagSeen(clubId, String(rfidNumber).toUpperCase());
 
   const moto = await getActiveMotoForClub(clubId);
@@ -1257,7 +1319,7 @@ router.post("/timing/impinj-crossing", async (req, res) => {
   const results: unknown[] = [];
   for (const tag of tagEvents) {
     const rfidNumber = tag.epcHex.toUpperCase();
-    const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
+    const crossingTime = ingestCrossingTime(tag.firstSeenTime, "legacy_impinj_ingest");
     if (isNaN(crossingTime.getTime())) {
       results.push({ rfidNumber, error: "Invalid firstSeenTime" });
       continue;
@@ -1321,7 +1383,7 @@ router.post("/timing/zebra-crossing", async (req, res) => {
       results.push({ error: "Tag missing idHex/epc field" });
       continue;
     }
-    const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
+    const crossingTime = ingestCrossingTime(tag.firstSeenTimestamp, "legacy_zebra_ingest");
     if (isNaN(crossingTime.getTime())) {
       results.push({ rfidNumber, error: "Invalid firstSeenTimestamp" });
       continue;
@@ -1377,10 +1439,7 @@ router.post("/timing/mylaps-crossing", async (req, res) => {
   const rawTime: string | undefined =
     body?.passingTime ?? body?.crossingTime ?? body?.timestamp ?? body?.passTime;
 
-  const crossingTime = rawTime ? new Date(rawTime) : new Date();
-  if (isNaN(crossingTime.getTime())) {
-    return res.status(400).json({ error: "Invalid passingTime — must be ISO 8601" });
-  }
+  const crossingTime = ingestCrossingTime(rawTime, "legacy_active_ingest");
 
   const moto = await getActiveMotoForEvent(eventId);
   if (!moto) {

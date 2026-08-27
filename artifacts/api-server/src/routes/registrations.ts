@@ -49,6 +49,86 @@ function getStaffClubId(res: any): number | null {
   return typeof v === "number" ? v : null;
 }
 
+type RiderRow = typeof ridersTable.$inferSelect;
+
+type RiderResolution =
+  | { rider: RiderRow | null }
+  | { status: number; error: string };
+
+async function resolveRegistrationRider(
+  email: string | null,
+  riderId: unknown,
+): Promise<RiderResolution> {
+  const normalizedEmail = email?.trim().toLowerCase() || null;
+
+  if (riderId !== undefined && riderId !== null && riderId !== "") {
+    const parsedRiderId = Number(riderId);
+    if (!Number.isInteger(parsedRiderId) || parsedRiderId <= 0) {
+      return { status: 400, error: "riderId must be a positive integer" };
+    }
+    if (!normalizedEmail) {
+      return { status: 400, error: "email is required when riderId is supplied" };
+    }
+    const [selected] = await db.select().from(ridersTable).where(eq(ridersTable.id, parsedRiderId));
+    if (!selected) {
+      return { status: 404, error: "Rider profile not found" };
+    }
+    if ((selected.email ?? "").trim().toLowerCase() !== normalizedEmail) {
+      return { status: 409, error: "The selected rider profile does not match the supplied email" };
+    }
+    return { rider: selected };
+  }
+
+  if (!normalizedEmail) {
+    return { status: 400, error: "email is required" };
+  }
+  const emailMatches = await db.select().from(ridersTable)
+    .where(sql`lower(${ridersTable.email}) = ${normalizedEmail}`)
+    .orderBy(asc(ridersTable.id));
+  if (emailMatches.length === 0) return { rider: null };
+  if (emailMatches.length === 1) return { rider: emailMatches[0] };
+
+  return {
+    status: 409,
+    error: "profile-selection-required: Multiple rider profiles use this email. Select the correct rider profile before registering.",
+  };
+}
+
+function submittedRiderProfile(
+  body: Record<string, unknown>,
+  normalizedTransponderNumber: string | null,
+): Partial<typeof ridersTable.$inferInsert> {
+  const profile: Record<string, string | null> = {};
+  const copy = (source: string, destination = source) => {
+    if (!Object.prototype.hasOwnProperty.call(body, source)) return;
+    const value = body[source];
+    if (typeof value === "string") profile[destination] = value.trim() || null;
+  };
+
+  copy("firstName");
+  copy("lastName");
+  copy("email");
+  copy("phone");
+  copy("dateOfBirth");
+  copy("emergencyContact");
+  copy("emergencyPhone");
+  copy("streetAddress");
+  copy("city");
+  copy("homeState");
+  copy("zip");
+  copy("bibNumber");
+  copy("amaNumber");
+  copy("bikeBrand", "bikeManufacturer");
+  copy("bikeModel");
+  copy("bikeYear");
+  copy("sponsors");
+  if (Object.prototype.hasOwnProperty.call(body, "myLapsTransponderNumber")) {
+    profile.mylapsTransponderId = normalizedTransponderNumber;
+  }
+
+  return profile;
+}
+
 async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
   if (staffCId === null) return true;
   const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
@@ -64,7 +144,7 @@ router.get("/public/riders/lookup", async (req, res) => {
     .where(sql`lower(${ridersTable.email}) = ${email}`)
     .orderBy(asc(ridersTable.id));
 
-  if (!riders.length) return res.json({ found: false });
+  if (!riders.length) return res.json({ found: false, count: 0, riders: [] });
 
   const riderIds = riders.map(r => r.id);
 
@@ -79,9 +159,10 @@ router.get("/public/riders/lookup", async (req, res) => {
     sponsors: registrationsTable.sponsors,
     myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
     createdAt: registrationsTable.createdAt,
+    id: registrationsTable.id,
   }).from(registrationsTable)
     .where(inArray(registrationsTable.riderId, riderIds))
-    .orderBy(desc(registrationsTable.createdAt));
+    .orderBy(desc(registrationsTable.createdAt), desc(registrationsTable.id));
 
   const lastRegByRider = new Map<number, typeof allLastRegs[0]>();
   for (const reg of allLastRegs) {
@@ -96,6 +177,7 @@ router.get("/public/riders/lookup", async (req, res) => {
       id: rider.id,
       firstName: rider.firstName ?? "",
       lastName: rider.lastName ?? "",
+      email: rider.email ?? "",
       phone: rider.phone ?? "",
       dateOfBirth: rider.dateOfBirth ?? "",
       emergencyContact: rider.emergencyContact ?? "",
@@ -210,6 +292,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     riderId, raceClass, bibNumber, bikeBrand, bikeModel, bikeYear, clubIdNumber,
     // Full on-site rider info (alternative to riderId)
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
+    streetAddress, city, homeState, zip, amaNumber, sponsors,
     // Active transponder fields (legacy API property retained for compatibility)
     rentTransponder, myLapsTransponderNumber,
     // Purchase options
@@ -239,23 +322,37 @@ router.post("/events/:eventId/registrations", async (req, res) => {
   }
 
   let resolvedRiderId: number;
+  let rider: RiderRow;
 
-  if (riderId) {
-    resolvedRiderId = Number(riderId);
-  } else if (firstName && lastName && email) {
-    // Find or create rider by email
-    const existing = await db.select().from(ridersTable).where(eq(ridersTable.email, email));
-    if (existing[0]) {
-      resolvedRiderId = existing[0].id;
+  if (email || riderId) {
+    const resolution = await resolveRegistrationRider(
+      email == null ? null : String(email),
+      riderId,
+    );
+    if ("error" in resolution) return res.status(resolution.status).json({ error: resolution.error });
+    const profileFields = submittedRiderProfile(req.body, normalizedTransponderNumber);
+    if (resolution.rider) {
+      if (Object.keys(profileFields).length > 0) {
+        const [updated] = await db.update(ridersTable)
+          .set(profileFields)
+          .where(eq(ridersTable.id, resolution.rider.id))
+          .returning();
+        rider = updated;
+      } else {
+        rider = resolution.rider;
+      }
+      resolvedRiderId = rider.id;
     } else {
+      if (!firstName || !lastName) {
+        return res.status(400).json({ error: "firstName and lastName are required to create a rider" });
+      }
       const [created] = await db.insert(ridersTable).values({
-        firstName, lastName, email,
-        phone: phone || null,
-        dateOfBirth: dateOfBirth || null,
-        emergencyContact: emergencyContact || null,
-        emergencyPhone: emergencyPhone || null,
-        bibNumber: bibNumber || null,
+        ...profileFields,
+        firstName: String(firstName).trim(),
+        lastName: String(lastName).trim(),
+        email: String(email).trim(),
       }).returning();
+      rider = created;
       resolvedRiderId = created.id;
     }
   } else {
@@ -294,7 +391,9 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     bikeBrand: bikeBrand || null,
     bikeModel: bikeModel || null,
     bikeYear: bikeYear || null,
+    amaNumber: amaNumber || null,
     clubIdNumber: clubIdNumber || null,
+    sponsors: sponsors || null,
     status: needsPayment ? "pending" : "confirmed",
     paymentStatus: "unpaid",
     transponderRental: wantsRental,
@@ -318,9 +417,6 @@ router.post("/events/:eventId/registrations", async (req, res) => {
       });
     }
   }
-
-  const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, resolvedRiderId));
-  const rider = riders[0];
 
   return res.status(201).json({
     ...reg,
@@ -960,6 +1056,17 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     }
   }
 
+  // Resolve identity before duplicate-bib checks. A selected profile is authoritative
+  // as long as its email matches; typed names are profile edits, not identity checks.
+  const riderResolution = await resolveRegistrationRider(
+    String(email),
+    hintedRiderId,
+  );
+  if ("error" in riderResolution) {
+    return res.status(riderResolution.status).json({ error: riderResolution.error });
+  }
+  const resolvedExistingRider = riderResolution.rider;
+
   // Enforce per-class rider limits for each selected class
   const limits = (events[0].raceClassLimits ?? {}) as Record<string, number | null>;
   for (const cls of raceClassList) {
@@ -977,11 +1084,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // Enforce unique bib numbers if the event requires it
   // Exclude the registering rider — same rider registering for multiple classes can keep the same bib
   if (events[0].noDuplicateBibs && bibNumber) {
-    // Quick rider lookup by email so we can exclude their existing registrations
-    const existingRiderRows = email
-      ? await db.select({ id: ridersTable.id }).from(ridersTable).where(sql`lower(${ridersTable.email}) = ${String(email).toLowerCase()}`).limit(1)
-      : [];
-    const riderIdForBibCheck = existingRiderRows[0]?.id ?? null;
+    const riderIdForBibCheck = resolvedExistingRider?.id ?? null;
 
     const bibConditions: Parameters<typeof and>[0][] = [
       eq(registrationsTable.eventId, eventId),
@@ -1073,86 +1176,23 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     validatedCompCode = codeRow.code;
   }
 
-  // Find or create rider.
-  // Priority: if the frontend passed back the riderId it picked from the email-lookup
-  // picker, use that directly — it's always more accurate than name+email matching
-  // (avoids creating duplicates when the user's stored name differs slightly from what
-  // they type, and ensures address/contact fields are always updated on the right record).
-  // Fallback: match by email + full name as before.
-  let rider;
-  const normFirst = firstName.trim().toLowerCase();
-  const normLast  = lastName.trim().toLowerCase();
-  const normEmail = email.trim().toLowerCase();
-
-  let existingById: typeof ridersTable.$inferSelect | undefined;
-  if (hintedRiderId) {
-    const parsed = Number(hintedRiderId);
-    if (!isNaN(parsed)) {
-      const rows = await db.select().from(ridersTable).where(
-        and(
-          eq(ridersTable.id, parsed),
-          sql`lower(${ridersTable.email}) = ${normEmail}`,
-          sql`lower(${ridersTable.firstName}) = ${normFirst}`,
-          sql`lower(${ridersTable.lastName}) = ${normLast}`,
-        )
-      );
-      existingById = rows[0];
-    }
-  }
-
-  const existing = existingById
-    ? [existingById]
-    : await db.select().from(ridersTable).where(
-        and(
-          sql`lower(${ridersTable.email}) = ${normEmail}`,
-          sql`lower(${ridersTable.firstName}) = ${normFirst}`,
-          sql`lower(${ridersTable.lastName}) = ${normLast}`,
-        )
-      );
-
-  if (existing[0]) {
-    // Update contact/address fields from the latest registration submission so
-    // that profile edits made via the rider app or a re-registration are reflected
-    // in the organizer portal immediately.
-    const updateFields: Record<string, string | null> = {};
-    const updateProfileField = (key: string, value: unknown) => {
-      if (typeof value !== "string") return;
-      const trimmed = value.trim();
-      if (existingById || trimmed) updateFields[key] = trimmed || null;
-    };
-    updateProfileField("phone", phone);
-    updateProfileField("dateOfBirth", dateOfBirth);
-    updateProfileField("emergencyContact", emergencyContact);
-    updateProfileField("emergencyPhone", emergencyPhone);
-    updateProfileField("streetAddress", streetAddress);
-    updateProfileField("city", city);
-    updateProfileField("homeState", homeState);
-    updateProfileField("zip", zip);
-    updateProfileField("hometown", hometown);
-    updateProfileField("amaNumber", amaNumber);
-    if (Object.keys(updateFields).length > 0) {
-      const [updated] = await db.update(ridersTable).set(updateFields).where(eq(ridersTable.id, existing[0].id)).returning();
-      rider = updated;
-    } else {
-      rider = existing[0];
-    }
+  // Persist every submitted profile field, including blanks, so edits replace the
+  // selected rider's saved values rather than merely filling missing data.
+  let rider: RiderRow;
+  const profileFields = submittedRiderProfile(req.body, normalizedTransponderNumber);
+  if (resolvedExistingRider) {
+    const [updated] = await db.update(ridersTable)
+      .set(profileFields)
+      .where(eq(ridersTable.id, resolvedExistingRider.id))
+      .returning();
+    rider = updated;
   } else {
     const [created] = await db.insert(ridersTable).values({
+      ...profileFields,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim(),
-      phone: phone || null,
-      dateOfBirth: dateOfBirth || null,
-      emergencyContact: emergencyContact || null,
-      emergencyPhone: emergencyPhone || null,
-      bibNumber: bibNumber || null,
-      hometown: hometown || null,
-      homeState: homeState || null,
-      streetAddress: streetAddress || null,
-      city: city || null,
-      zip: zip || null,
-      amaNumber: amaNumber || null,
-    } as any).returning();
+    }).returning();
     rider = created;
   }
 

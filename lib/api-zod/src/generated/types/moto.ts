@@ -21,17 +21,20 @@ export interface Moto {
   status: MotoStatus;
   motoNumber?: number;
   /**
-     * Number of laps in this moto
+     * Positive lap target for a lap-count race; mutually exclusive with timeLimitMs
+     * @minimum 1
      * @nullable
      */
   lapCount?: number | null;
   /**
-     * Time limit in milliseconds (practice sessions only, optional)
+     * Positive duration in milliseconds for a timed race; mutually exclusive with lapCount
+     * @minimum 1
      * @nullable
      */
   timeLimitMs?: number | null;
   /**
      * Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag
+     * @minimum 0
      * @nullable
      */
   plusLaps?: number | null;

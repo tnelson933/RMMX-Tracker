@@ -35,6 +35,7 @@ import { processCrossing } from "./timing";
 import { processPracticeCrossing } from "./practice";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { recordTagSeen } from "../lib/recentTags";
+import { canonicalizeCrossingTimestamp } from "../lib/crossingTimestamp";
 
 const router = Router();
 
@@ -109,7 +110,11 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
     .where(eq(readersTable.id, reader.id))
     .catch(() => {});
 
-  const crossingTime = body.crossingTime ? new Date(body.crossingTime) : new Date();
+  const receivedAt = new Date();
+  const crossingTime = canonicalizeCrossingTimestamp(body.crossingTime ?? receivedAt, receivedAt, {
+    source: "reader_token_ingest",
+    readerId: reader.id,
+  });
   const isActiveTransponderReader =
     reader.type === "active_transponder" || reader.type === "mylaps";
 

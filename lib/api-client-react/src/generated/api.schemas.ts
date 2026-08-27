@@ -972,17 +972,20 @@ export interface Moto {
   status: MotoStatus;
   motoNumber?: number;
   /**
-     * Number of laps in this moto
+     * Positive lap target for a lap-count race; mutually exclusive with timeLimitMs
+     * @minimum 1
      * @nullable
      */
   lapCount?: number | null;
   /**
-     * Time limit in milliseconds (practice sessions only, optional)
+     * Positive duration in milliseconds for a timed race; mutually exclusive with lapCount
+     * @minimum 1
      * @nullable
      */
   timeLimitMs?: number | null;
   /**
      * Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag
+     * @minimum 0
      * @nullable
      */
   plusLaps?: number | null;
@@ -1061,12 +1064,24 @@ export interface MotoInput {
   /** For multi-class practice motos; when set overrides raceClass for display */
   raceClasses?: string[];
   motoNumber: number;
-  /** Number of laps in this moto */
-  lapCount?: number;
-  /** Time limit in milliseconds (practice sessions only, optional) */
-  timeLimitMs?: number;
-  /** Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format) */
-  plusLaps?: number;
+  /**
+     * Positive lap target for a lap-count race; mutually exclusive with timeLimitMs. Send null for a timed race.
+     * @minimum 1
+     * @nullable
+     */
+  lapCount?: number | null;
+  /**
+     * Positive duration in milliseconds for a timed race; mutually exclusive with lapCount. Send null for a lap-count race.
+     * @minimum 1
+     * @nullable
+     */
+  timeLimitMs?: number | null;
+  /**
+     * Extra laps after the time limit expires; defaults to 1 for timed races and is cleared for lap-count races
+     * @minimum 0
+     * @nullable
+     */
+  plusLaps?: number | null;
   /** Timer mode for practice motos — lap_count (default) or countdown */
   practiceMode?: MotoInputPracticeMode;
   /** Duration in seconds for countdown mode (practice motos only) */
@@ -1092,12 +1107,21 @@ export interface MotoUpdate {
   status?: string;
   lineup?: number[];
   scheduledTime?: string;
-  /** @nullable */
+  /**
+     * Positive lap target; setting it clears timeLimitMs and plusLaps
+     * @minimum 1
+     * @nullable
+     */
   lapCount?: number | null;
-  /** @nullable */
+  /**
+     * Positive timed-race duration in milliseconds; setting it clears lapCount
+     * @minimum 1
+     * @nullable
+     */
   timeLimitMs?: number | null;
   /**
      * Extra laps after the time limit expires; null to clear
+     * @minimum 0
      * @nullable
      */
   plusLaps?: number | null;

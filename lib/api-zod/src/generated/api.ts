@@ -1318,6 +1318,12 @@ export const ListMotosParams = zod.object({
   "eventId": zod.coerce.number()
 })
 
+
+
+export const listMotosResponsePlusLapsMin = 0;
+
+
+
 export const ListMotosResponseItem = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -1327,9 +1333,9 @@ export const ListMotosResponseItem = zod.object({
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
-  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
-  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
-  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target for a lap-count race; mutually exclusive with timeLimitMs'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive duration in milliseconds for a timed race; mutually exclusive with lapCount'),
+  "plusLaps": zod.number().min(listMotosResponsePlusLapsMin).nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
   "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
@@ -1360,15 +1366,21 @@ export const CreateMotoParams = zod.object({
   "eventId": zod.coerce.number()
 })
 
+
+
+export const createMotoBodyPlusLapsMin = 0;
+
+
+
 export const CreateMotoBody = zod.object({
   "name": zod.string(),
   "type": zod.enum(['heat', 'lcq', 'main', 'practice', 'moto', 'enduro_test']),
   "raceClass": zod.string(),
   "raceClasses": zod.array(zod.string()).optional().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "motoNumber": zod.number(),
-  "lapCount": zod.number().optional().describe('Number of laps in this moto'),
-  "timeLimitMs": zod.number().optional().describe('Time limit in milliseconds (practice sessions only, optional)'),
-  "plusLaps": zod.number().optional().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format)'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target for a lap-count race; mutually exclusive with timeLimitMs. Send null for a timed race.'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive duration in milliseconds for a timed race; mutually exclusive with lapCount. Send null for a lap-count race.'),
+  "plusLaps": zod.number().min(createMotoBodyPlusLapsMin).nullish().describe('Extra laps after the time limit expires; defaults to 1 for timed races and is cleared for lap-count races'),
   "practiceMode": zod.enum(['lap_count', 'countdown']).optional().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().optional().describe('Duration in seconds for countdown mode (practice motos only)'),
   "scheduledTime": zod.string().optional(),
@@ -1603,6 +1615,12 @@ export const PauseMotoParams = zod.object({
   "motoId": zod.coerce.number()
 })
 
+
+
+export const pauseMotoResponsePlusLapsMin = 0;
+
+
+
 export const PauseMotoResponse = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -1612,9 +1630,9 @@ export const PauseMotoResponse = zod.object({
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
-  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
-  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
-  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target for a lap-count race; mutually exclusive with timeLimitMs'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive duration in milliseconds for a timed race; mutually exclusive with lapCount'),
+  "plusLaps": zod.number().min(pauseMotoResponsePlusLapsMin).nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
   "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
@@ -1644,6 +1662,12 @@ export const ResumeMotoParams = zod.object({
   "motoId": zod.coerce.number()
 })
 
+
+
+export const resumeMotoResponsePlusLapsMin = 0;
+
+
+
 export const ResumeMotoResponse = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -1653,9 +1677,9 @@ export const ResumeMotoResponse = zod.object({
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
-  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
-  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
-  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target for a lap-count race; mutually exclusive with timeLimitMs'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive duration in milliseconds for a timed race; mutually exclusive with lapCount'),
+  "plusLaps": zod.number().min(resumeMotoResponsePlusLapsMin).nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
   "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
@@ -1693,13 +1717,19 @@ export const UpdateMotoParams = zod.object({
   "motoId": zod.coerce.number()
 })
 
+
+
+export const updateMotoBodyPlusLapsMin = 0;
+
+
+
 export const UpdateMotoBody = zod.object({
   "status": zod.string().optional(),
   "lineup": zod.array(zod.number()).optional(),
   "scheduledTime": zod.string().optional(),
-  "lapCount": zod.number().nullish(),
-  "timeLimitMs": zod.number().nullish(),
-  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires; null to clear'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target; setting it clears timeLimitMs and plusLaps'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive timed-race duration in milliseconds; setting it clears lapCount'),
+  "plusLaps": zod.number().min(updateMotoBodyPlusLapsMin).nullish().describe('Extra laps after the time limit expires; null to clear'),
   "timeExpiredAt": zod.coerce.date().nullish().describe('ISO timestamp; set when the race timer expires; pass null to clear'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish(),
   "countdownSeconds": zod.number().nullish(),
@@ -1707,6 +1737,12 @@ export const UpdateMotoBody = zod.object({
   "name": zod.string().optional(),
   "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
+
+
+
+export const updateMotoResponsePlusLapsMin = 0;
+
+
 
 export const UpdateMotoResponse = zod.object({
   "id": zod.number(),
@@ -1717,9 +1753,9 @@ export const UpdateMotoResponse = zod.object({
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
-  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
-  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
-  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target for a lap-count race; mutually exclusive with timeLimitMs'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive duration in milliseconds for a timed race; mutually exclusive with lapCount'),
+  "plusLaps": zod.number().min(updateMotoResponsePlusLapsMin).nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
   "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
@@ -1761,6 +1797,12 @@ export const ReorderMotosBody = zod.object({
   "motoIds": zod.array(zod.number()).describe('Ordered array of moto IDs; index+1 becomes the new motoNumber')
 })
 
+
+
+export const reorderMotosResponsePlusLapsMin = 0;
+
+
+
 export const ReorderMotosResponseItem = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -1770,9 +1812,9 @@ export const ReorderMotosResponseItem = zod.object({
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
-  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
-  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
-  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target for a lap-count race; mutually exclusive with timeLimitMs'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive duration in milliseconds for a timed race; mutually exclusive with lapCount'),
+  "plusLaps": zod.number().min(reorderMotosResponsePlusLapsMin).nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
   "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
@@ -1822,6 +1864,12 @@ export const GenerateLineupsBody = zod.object({
   "useRegistrations": zod.boolean().optional().describe('When true, generate lineup slots for all registered riders (not only those who have checked in). Riders who have not yet checked in appear in the lineup with checkedIn: false. When a rider later checks in, their slot is automatically updated to checkedIn: true.\n')
 })
 
+
+
+export const generateLineupsResponsePlusLapsMin = 0;
+
+
+
 export const GenerateLineupsResponseItem = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -1831,9 +1879,9 @@ export const GenerateLineupsResponseItem = zod.object({
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
-  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
-  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
-  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target for a lap-count race; mutually exclusive with timeLimitMs'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive duration in milliseconds for a timed race; mutually exclusive with lapCount'),
+  "plusLaps": zod.number().min(generateLineupsResponsePlusLapsMin).nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
   "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
@@ -1869,6 +1917,12 @@ export const GenerateMotoLineupBody = zod.object({
   "gatePickMethod": zod.enum(['random', 'practice', 'prior_round_finish', 'first_registered']).optional().describe('Gate pick method for this specific moto. random = random gate draw; practice = by practice lap time; prior_round_finish = by prior round finish position; first_registered = earliest registered rider gets first gate pick.\n')
 })
 
+
+
+export const generateMotoLineupResponsePlusLapsMin = 0;
+
+
+
 export const GenerateMotoLineupResponse = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -1878,9 +1932,9 @@ export const GenerateMotoLineupResponse = zod.object({
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
-  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
-  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
-  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target for a lap-count race; mutually exclusive with timeLimitMs'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive duration in milliseconds for a timed race; mutually exclusive with lapCount'),
+  "plusLaps": zod.number().min(generateMotoLineupResponsePlusLapsMin).nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
   "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),
@@ -2101,6 +2155,12 @@ export const AdvanceToMainBody = zod.object({
   "topPerHeat": zod.number().optional()
 })
 
+
+
+export const advanceToMainResponsePlusLapsMin = 0;
+
+
+
 export const AdvanceToMainResponse = zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
@@ -2110,9 +2170,9 @@ export const AdvanceToMainResponse = zod.object({
   "raceClasses": zod.array(zod.string()).nullish().describe('For multi-class practice motos; when set overrides raceClass for display'),
   "status": zod.enum(['scheduled', 'in_progress', 'completed', 'cancelled']),
   "motoNumber": zod.number().optional(),
-  "lapCount": zod.number().nullish().describe('Number of laps in this moto'),
-  "timeLimitMs": zod.number().nullish().describe('Time limit in milliseconds (practice sessions only, optional)'),
-  "plusLaps": zod.number().nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
+  "lapCount": zod.number().min(1).nullish().describe('Positive lap target for a lap-count race; mutually exclusive with timeLimitMs'),
+  "timeLimitMs": zod.number().min(1).nullish().describe('Positive duration in milliseconds for a timed race; mutually exclusive with lapCount'),
+  "plusLaps": zod.number().min(advanceToMainResponsePlusLapsMin).nullish().describe('Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag'),
   "timeExpiredAt": zod.coerce.date().nullish().describe('Set when the race timer expires and plusLaps > 0; null until then; server auto-completes the moto when the leader finishes their plus-laps'),
   "practiceMode": zod.union([zod.literal('lap_count'),zod.literal('countdown'),zod.literal(null)]).nullish().describe('Timer mode for practice motos — lap_count (default) or countdown'),
   "countdownSeconds": zod.number().nullish().describe('Duration in seconds for countdown mode (practice motos only)'),

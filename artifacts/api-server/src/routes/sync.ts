@@ -8,6 +8,7 @@ import {
   rfidAssignmentsTable,
   registrationsTable,
   ridersTable,
+  offlineRiderIdentitiesTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -45,7 +46,28 @@ interface SyncRegistration {
 
 interface SyncRider {
   id: number;
+  localRiderId?: number;
+  cloudRiderId?: number;
+  clientIdentity?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  dateOfBirth?: string | null;
+  emergencyContact?: string | null;
+  emergencyPhone?: string | null;
   rfidNumber?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  homeState?: string | null;
+  zip?: string | null;
+  bibNumber?: string | null;
+  amaNumber?: string | null;
+  bikeManufacturer?: string | null;
+  bikeModel?: string | null;
+  bikeYear?: string | null;
+  sponsors?: string | null;
+  mylapsTransponderId?: string | null;
 }
 
 interface SyncWatermarks {
@@ -112,6 +134,7 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
     ridersUpdated:         0,
     skipped:               0,
   };
+  const riderIdMap: Record<string, number> = {};
 
   // Verify all event IDs in the payload belong to this club
   const allEventIds = [
@@ -139,12 +162,77 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
   const checkinWatermark      = watermarks["checkins"]          ?? 0;
   const rfidWatermark         = watermarks["rfid_assignments"]   ?? 0;
   const registrationWatermark = watermarks["registrations"]      ?? 0;
-  const riderWatermark        = watermarks["riders"]             ?? 0;
 
   await db.transaction(async (tx) => {
+    // ── Riders first: establish local-ID -> cloud-ID translation before any
+    // dependent registration/check-in is interpreted. Never resolve by email:
+    // a selected profile is represented by its stable clientIdentity.
+    const resolvedRiderIds = new Map<number, number>();
+    const riderFields = [
+      "firstName", "lastName", "email", "phone", "dateOfBirth", "emergencyContact",
+      "emergencyPhone", "rfidNumber", "streetAddress", "city", "homeState", "zip",
+      "bibNumber", "amaNumber", "bikeManufacturer", "bikeModel", "bikeYear",
+      "sponsors", "mylapsTransponderId",
+    ] as const;
+    for (const r of riders) {
+      const localId = Number(r.localRiderId ?? r.id);
+      if (!localId || !r.clientIdentity) { results.skipped++; continue; }
+
+      const [identity] = await tx.select({ riderId: offlineRiderIdentitiesTable.riderId })
+        .from(offlineRiderIdentitiesTable)
+        .where(and(
+          eq(offlineRiderIdentitiesTable.clubId, clubId),
+          eq(offlineRiderIdentitiesTable.clientIdentity, r.clientIdentity),
+        ));
+      let cloudId = identity?.riderId;
+      if (!cloudId) {
+        // Legacy cloud-origin rider: an ID is valid only when it is already on
+        // this club's roster. A numeric collision is never trusted.
+        const assertedCloudId = Number(r.cloudRiderId);
+        if (assertedCloudId) {
+          const [roster] = await tx.select({ id: registrationsTable.riderId })
+            .from(registrationsTable)
+            .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+            .where(and(eq(registrationsTable.riderId, assertedCloudId), eq(eventsTable.clubId, clubId)));
+          cloudId = roster?.id;
+        }
+      }
+
+      const supplied: Record<string, unknown> = {};
+      for (const field of riderFields) {
+        // Rider names are NOT NULL in the cloud schema. Empty strings are valid
+        // explicit blanks; null cannot be represented for these two fields.
+        if (r[field] !== undefined && !((field === "firstName" || field === "lastName") && r[field] === null)) {
+          supplied[field] = r[field];
+        }
+      }
+      if (cloudId) {
+        // Empty strings and nulls are intentional profile edits; only omitted
+        // fields are excluded from the update.
+        if (Object.keys(supplied).length) {
+          await tx.update(ridersTable).set(supplied as any).where(eq(ridersTable.id, cloudId));
+        }
+      } else {
+        const [created] = await tx.insert(ridersTable).values({
+          clubId,
+          firstName: r.firstName ?? "",
+          lastName: r.lastName ?? "",
+          ...Object.fromEntries(Object.entries(supplied).filter(([key]) => key !== "firstName" && key !== "lastName")),
+        }).returning({ id: ridersTable.id });
+        cloudId = created.id;
+      }
+      await tx.insert(offlineRiderIdentitiesTable).values({
+        clubId, clientIdentity: r.clientIdentity, riderId: cloudId,
+      }).onConflictDoNothing();
+      resolvedRiderIds.set(localId, cloudId);
+      riderIdMap[String(localId)] = cloudId;
+      results.ridersUpdated++;
+    }
+    const cloudRiderId = (id: number) => resolvedRiderIds.get(id) ?? id;
 
     // ── Checkins ──────────────────────────────────────────────────────────────
     for (const c of checkins) {
+      c.riderId = cloudRiderId(Number(c.riderId));
       const checkedIn  = Boolean(c.checkedIn);
       const rfidLinked = Boolean(c.rfidLinked);
       const checkedInAt = c.checkedInAt ? new Date(c.checkedInAt) : null;
@@ -205,6 +293,7 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
     // ── RFID Assignments ──────────────────────────────────────────────────────
     // Always upsert by natural key (rider_id, event_id) — avoids ID conflicts
     for (const r of rfidAssignments) {
+      r.riderId = cloudRiderId(Number(r.riderId));
       if (r.id <= rfidWatermark) {
         // Cloud-originated — UPDATE rfid_number by id
         await tx
@@ -245,6 +334,7 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
 
     // ── Registrations ─────────────────────────────────────────────────────────
     for (const r of registrations) {
+      r.riderId = cloudRiderId(Number(r.riderId));
       if (r.id <= registrationWatermark) {
         // Cloud-originated — UPDATE only race-day fields (bib + status)
         await tx
@@ -290,30 +380,13 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
       }
     }
 
-    // ── Riders ────────────────────────────────────────────────────────────────
-    // Only update rfid_number for cloud-originated riders (no local rider creation)
-    for (const r of riders) {
-      if (r.id > riderWatermark) {
-        results.skipped++;
-        continue;
-      }
-      if (r.rfidNumber !== undefined) {
-        await tx
-          .update(ridersTable)
-          .set({ rfidNumber: r.rfidNumber ?? null })
-          .where(eq(ridersTable.id, r.id));
-        results.ridersUpdated++;
-      } else {
-        results.skipped++;
-      }
-    }
   });
 
   const syncedAt = new Date().toISOString();
 
   req.log.info({ clubId, results }, "local-mode sync complete");
 
-  return res.json({ ok: true, syncedAt, results });
+  return res.json({ ok: true, syncedAt, results, riderIdMap });
 });
 
 export default router;

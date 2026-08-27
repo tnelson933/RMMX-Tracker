@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getDb, parseBool } from "../db";
+import { markRiderFieldsDirty } from "../rider-profile-dirty";
 
 const router = Router();
 
@@ -151,6 +152,7 @@ router.post("/events/:eventId/checkins", (req, res) => {
       rfidNumber,
       Number(riderId),
     );
+    markRiderFieldsDirty(db, Number(riderId), ["rfidNumber"]);
   }
 
   const bibToSync = checkin.bib_number as string | null;

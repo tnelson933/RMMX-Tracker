@@ -3,6 +3,7 @@ export * from "./users";
 export * from "./discount-categories";
 export * from "./events";
 export * from "./riders";
+export * from "./offline_rider_identities";
 export * from "./registrations";
 export * from "./checkins";
 export * from "./rfid";

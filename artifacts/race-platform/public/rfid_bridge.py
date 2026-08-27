@@ -416,9 +416,16 @@ def _parse_amb_crossing(record: bytes):
     now_utc = datetime.now(timezone.utc)
     midnight = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
     crossing_time = midnight + timedelta(seconds=centiseconds / 100.0)
-    # Guard against day-boundary wrap (decoder clock slightly behind wall clock)
+    # A decoder clock ahead of the receiving machine is not a trustworthy event
+    # time. Past values remain intact so queued/delayed crossings are preserved.
     if crossing_time > now_utc + timedelta(minutes=5):
-        crossing_time -= timedelta(days=1)
+        log.warning(
+            "Active Timing: future decoder timestamp replaced with receive time "
+            "(decoder=%s receive=%s)",
+            crossing_time.isoformat(),
+            now_utc.isoformat(),
+        )
+        crossing_time = now_utc
 
     return transponder_id, crossing_time
 

@@ -61,7 +61,7 @@ function parseAddress(address: string): { host: string; port: number } {
   return { host: value, port: F2000_PORT };
 }
 
-function parseTimestamp(value: string): Date | null {
+export function parseTimestamp(value: string, receivedAt = new Date()): Date | null {
   const match = value.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})_(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
   if (!match) return null;
   const [, year, month, day, hour, minute, second, millis = "0"] = match;
@@ -75,7 +75,7 @@ function parseTimestamp(value: string): Date | null {
     || date.getMinutes() !== Number(minute)
     || date.getSeconds() !== Number(second)
   ) return null;
-  return date;
+  return date.getTime() > receivedAt.getTime() + 5 * 60 * 1000 ? receivedAt : date;
 }
 
 function stateFields(parameters: string): Record<string, string> {

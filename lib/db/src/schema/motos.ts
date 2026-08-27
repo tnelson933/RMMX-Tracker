@@ -15,7 +15,7 @@ export const motosTable = pgTable("motos", {
   scheduledTime: text("scheduled_time"),
   lineup: jsonb("lineup").notNull().default([]),
   lapCount: integer("lap_count"),
-  timeLimitMs: integer("time_limit_ms"),
+  timeLimitMs: integer("time_limit_ms"), // positive race duration; mutually exclusive with lapCount
   practiceMode: text("practice_mode").default("lap_count"), // lap_count | countdown (practice motos only)
   countdownSeconds: integer("countdown_seconds"), // duration in seconds for countdown mode
   startedAt: timestamp("started_at", { withTimezone: true }),

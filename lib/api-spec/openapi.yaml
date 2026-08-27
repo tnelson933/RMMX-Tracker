@@ -4271,12 +4271,15 @@ components:
           type: integer
         lapCount:
           type: ["integer", "null"]
-          description: Number of laps in this moto
+          minimum: 1
+          description: Positive lap target for a lap-count race; mutually exclusive with timeLimitMs
         timeLimitMs:
           type: ["integer", "null"]
-          description: Time limit in milliseconds (practice sessions only, optional)
+          minimum: 1
+          description: Positive duration in milliseconds for a timed race; mutually exclusive with lapCount
         plusLaps:
           type: ["integer", "null"]
+          minimum: 0
           description: Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag
         timeExpiredAt:
           type: ["string", "null"]
@@ -4343,14 +4346,17 @@ components:
         motoNumber:
           type: integer
         lapCount:
-          type: integer
-          description: Number of laps in this moto
+          type: ["integer", "null"]
+          minimum: 1
+          description: Positive lap target for a lap-count race; mutually exclusive with timeLimitMs. Send null for a timed race.
         timeLimitMs:
-          type: integer
-          description: Time limit in milliseconds (practice sessions only, optional)
+          type: ["integer", "null"]
+          minimum: 1
+          description: Positive duration in milliseconds for a timed race; mutually exclusive with lapCount. Send null for a lap-count race.
         plusLaps:
-          type: integer
-          description: Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format)
+          type: ["integer", "null"]
+          minimum: 0
+          description: Extra laps after the time limit expires; defaults to 1 for timed races and is cleared for lap-count races
         practiceMode:
           type: string
           enum: [lap_count, countdown]
@@ -4381,10 +4387,15 @@ components:
           type: string
         lapCount:
           type: ["integer", "null"]
+          minimum: 1
+          description: Positive lap target; setting it clears timeLimitMs and plusLaps
         timeLimitMs:
           type: ["integer", "null"]
+          minimum: 1
+          description: Positive timed-race duration in milliseconds; setting it clears lapCount
         plusLaps:
           type: ["integer", "null"]
+          minimum: 0
           description: Extra laps after the time limit expires; null to clear
         timeExpiredAt:
           type: ["string", "null"]

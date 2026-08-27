@@ -125,7 +125,8 @@ function formatRaceFormat(moto: Moto): string | null {
   const plusLaps    = (moto as any).plusLaps    as number | null | undefined;
   const lapCount    = moto.lapCount;
   if (timeLimitMs) {
-    const mins = Math.round(timeLimitMs / 60_000);
+    const rawMins = timeLimitMs / 60_000;
+    const mins = Number.isInteger(rawMins) ? String(rawMins) : rawMins.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
     const pl   = plusLaps != null && plusLaps > 0 ? plusLaps : null;
     return pl != null
       ? `${mins} min + ${pl} lap${pl > 1 ? "s" : ""}`
@@ -1255,6 +1256,7 @@ export default function EventSchedule() {
   const [generateLapCount, setGenerateLapCount] = useState("");
   const [generateTimeLimitMins, setGenerateTimeLimitMins] = useState("");
   const [generatePlusLaps, setGeneratePlusLaps] = useState("1");
+  const [generateTimingFormat, setGenerateTimingFormat] = useState<"none" | "laps" | "timed">("none");
   const [generateGateMethod, setGenerateGateMethod] = useState<"random" | "practice" | "prior_round_finish" | "first_registered" | "series_points">("random");
   const [generateSelectedRounds, setGenerateSelectedRounds] = useState<number[]>([]);
   const [generateMinRacesBetween, setGenerateMinRacesBetween] = useState<number>(0);
@@ -1323,7 +1325,10 @@ export default function EventSchedule() {
     name: "",
     raceClass: "",
     type: "heat" as typeof MOTO_TYPES[number],
+    raceFormat: "lap_count" as "lap_count" | "timed",
     lapCount: "",
+    durationMinutes: "",
+    plusLaps: "1",
     enduroHasRfidStart: false,
   });
   const [addSelectedRiders, setAddSelectedRiders] = useState<number[]>([]);
@@ -2141,9 +2146,32 @@ export default function EventSchedule() {
       : allClasses;
     const classesToUse = generateClass === "all" ? orderedAllClasses : [generateClass];
     const ridersPerHeatVal = ridersPerHeat.trim() ? parseInt(ridersPerHeat, 10) : undefined;
-    const lapCountVal = generateLapCount.trim() ? parseInt(generateLapCount, 10) : undefined;
-    const timeLimitMsVal = generateTimeLimitMins.trim() ? Math.round(parseFloat(generateTimeLimitMins) * 60 * 1000) : undefined;
-    const plusLapsVal = timeLimitMsVal != null ? (generatePlusLaps.trim() ? parseInt(generatePlusLaps, 10) : 1) : undefined;
+    let lapCountVal: number | undefined;
+    let timeLimitMsVal: number | undefined;
+    let plusLapsVal: number | undefined;
+    if (generateTimingFormat === "laps") {
+      lapCountVal = Number(generateLapCount);
+      if (!Number.isInteger(lapCountVal) || lapCountVal <= 0) {
+        toast({ title: "Enter a valid lap count", description: "Laps per race must be a positive whole number.", variant: "destructive" });
+        return;
+      }
+    } else if (generateTimingFormat === "timed") {
+      const minutes = Number(generateTimeLimitMins);
+      plusLapsVal = generatePlusLaps.trim() === "" ? 1 : Number(generatePlusLaps);
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        toast({ title: "Enter a valid time limit", description: "Race minutes must be greater than zero.", variant: "destructive" });
+        return;
+      }
+      timeLimitMsVal = Math.round(minutes * 60 * 1000);
+      if (!Number.isInteger(timeLimitMsVal) || timeLimitMsVal <= 0) {
+        toast({ title: "Enter a valid time limit", description: "Race minutes must resolve to a positive whole number of milliseconds.", variant: "destructive" });
+        return;
+      }
+      if (!Number.isInteger(plusLapsVal) || plusLapsVal < 0) {
+        toast({ title: "Enter valid extra laps", description: "Extra laps must be zero or a positive whole number.", variant: "destructive" });
+        return;
+      }
+    }
     const divCount = generateFormat === "three_moto" ? 3 : generateFormat === "two_moto" ? 2 : 1;
     const roundsToSend = generateSelectedRounds.length > 0 && generateSelectedRounds.length < divCount
       ? generateSelectedRounds
@@ -2156,7 +2184,7 @@ export default function EventSchedule() {
           raceFormat: generateFormat,
           classes: classesToUse,
           ridersPerHeat: ridersPerHeatVal,
-          lapCount: lapCountVal,
+          ...(lapCountVal != null ? { lapCount: lapCountVal } : {}),
           ...(timeLimitMsVal != null ? { timeLimitMs: timeLimitMsVal, plusLaps: plusLapsVal } : {}),
           gatePickMethod: generateGateMethod,
           rounds: roundsToSend,
@@ -2272,6 +2300,22 @@ export default function EventSchedule() {
 
   // ── Add moto ──
   function handleAddMoto() {
+    const lapCount = Number(addForm.lapCount);
+    const durationMinutes = Number(addForm.durationMinutes);
+    const plusLaps = Number(addForm.plusLaps);
+    if (!isEnduro && addForm.raceFormat === "lap_count" && (!Number.isInteger(lapCount) || lapCount <= 0)) {
+      toast({ title: "Enter a valid lap count", description: "Lap count must be a positive whole number.", variant: "destructive" });
+      return;
+    }
+    if (!isEnduro && addForm.raceFormat === "timed" && (!Number.isFinite(durationMinutes) || durationMinutes <= 0)) {
+      toast({ title: "Enter a valid race duration", description: "Duration must be greater than zero minutes.", variant: "destructive" });
+      return;
+    }
+    if (!isEnduro && addForm.raceFormat === "timed" && (addForm.plusLaps.trim() === "" || !Number.isInteger(plusLaps) || plusLaps < 0)) {
+      toast({ title: "Enter valid laps after time expires", description: "Laps after time expires must be a nonnegative whole number.", variant: "destructive" });
+      return;
+    }
+
     const motoNumber = (rawMotos.length > 0
       ? Math.max(...rawMotos.map(m => m.motoNumber ?? 0))
       : 0) + 1;
@@ -2294,7 +2338,9 @@ export default function EventSchedule() {
           type: effectiveType as typeof MOTO_TYPES[number],
           raceClass: addForm.raceClass,
           motoNumber,
-          lapCount: addForm.lapCount ? parseInt(addForm.lapCount) : undefined,
+          lapCount: isEnduro ? (addForm.lapCount ? parseInt(addForm.lapCount, 10) : null) : addForm.raceFormat === "lap_count" ? lapCount : null,
+          timeLimitMs: !isEnduro && addForm.raceFormat === "timed" ? Math.round(durationMinutes * 60_000) : null,
+          plusLaps: !isEnduro && addForm.raceFormat === "timed" ? plusLaps : null,
           lineup: lineup.length > 0 ? (lineup as any) : undefined,
           enduroHasRfidStart: isEnduro ? addForm.enduroHasRfidStart : undefined,
         },
@@ -2303,12 +2349,16 @@ export default function EventSchedule() {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           setShowAddDialog(false);
-          setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "", enduroHasRfidStart: false });
+          setAddForm({ name: "", raceClass: "", type: "heat", raceFormat: "lap_count", lapCount: "", durationMinutes: "", plusLaps: "1", enduroHasRfidStart: false });
           setAddSelectedRiders([]);
           toast({ title: isEnduro ? "Test added" : "Moto added" });
         },
-        onError: () => {
-          toast({ title: isEnduro ? "Failed to add test" : "Failed to add moto", variant: "destructive" });
+        onError: (error) => {
+          toast({
+            title: isEnduro ? "Failed to add test" : "Failed to add moto",
+            description: (error as Error).message,
+            variant: "destructive",
+          });
         },
       }
     );
@@ -2550,9 +2600,17 @@ export default function EventSchedule() {
 
               {/* Add moto / Add Test */}
               <Button size="sm" onClick={() => {
-                if (isEnduro) {
-                  setAddForm(f => ({ ...f, type: "enduro_test" as typeof MOTO_TYPES[number] }));
-                }
+                setAddForm({
+                  name: "",
+                  raceClass: "",
+                  type: isEnduro ? "enduro_test" : "heat",
+                  raceFormat: "lap_count",
+                  lapCount: "",
+                  durationMinutes: "",
+                  plusLaps: "1",
+                  enduroHasRfidStart: false,
+                });
+                setAddSelectedRiders([]);
                 setShowAddDialog(true);
               }}>
                 <Plus size={15} className="mr-1" /> {isEnduro ? "Add Test" : "Add Moto"}
@@ -3943,55 +4001,79 @@ export default function EventSchedule() {
               </p>
             </div>
 
-            {/* Time + Laps */}
+            {/* Race timing format */}
             <div className="space-y-2">
-              <Label>
-                Time + Laps{" "}
-                <span className="text-muted-foreground font-normal">(optional)</span>
-              </Label>
-              <div className="flex items-center gap-2">
+              <Label>Race Timing Format</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  ["none", "Not set"],
+                  ["laps", "Fixed laps"],
+                  ["timed", "Timed + laps"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setGenerateTimingFormat(value)}
+                    className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
+                      generateTimingFormat === value
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {generateTimingFormat === "timed" && (
+              <div className="space-y-2">
+                <Label>Time + Laps</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0.01}
+                    step="any"
+                    value={generateTimeLimitMins}
+                    onChange={e => setGenerateTimeLimitMins(e.target.value)}
+                    placeholder="Minutes"
+                    className="h-9 flex-1"
+                  />
+                  <span className="text-sm text-muted-foreground shrink-0">min +</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={generatePlusLaps}
+                    onChange={e => setGeneratePlusLaps(e.target.value)}
+                    placeholder="1"
+                    className="h-9 w-20 shrink-0"
+                  />
+                  <span className="text-sm text-muted-foreground shrink-0">lap(s)</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Race runs for the set minutes, then riders complete the remaining lap(s).
+                </p>
+              </div>
+            )}
+
+            {generateTimingFormat === "laps" && (
+              <div className="space-y-2">
+                <Label>Laps per Race</Label>
                 <Input
                   type="number"
                   min={1}
-                  value={generateTimeLimitMins}
-                  onChange={e => setGenerateTimeLimitMins(e.target.value)}
-                  placeholder="Minutes"
-                  className="h-9 flex-1"
+                  step={1}
+                  value={generateLapCount}
+                  onChange={e => setGenerateLapCount(e.target.value)}
+                  placeholder="e.g. 6"
+                  className="h-9"
                 />
-                <span className="text-sm text-muted-foreground shrink-0">min +</span>
-                <Input
-                  type="number"
-                  min={0}
-                  value={generatePlusLaps}
-                  onChange={e => setGeneratePlusLaps(e.target.value)}
-                  placeholder="1"
-                  className="h-9 w-20 shrink-0"
-                />
-                <span className="text-sm text-muted-foreground shrink-0">lap(s)</span>
+                <p className="text-xs text-muted-foreground">
+                  Sets the target lap count on every moto — shown to the timer and displayed on the race card.
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Classic timed format — race runs for the set minutes, then riders complete the remaining lap(s). Leave minutes blank to skip.
-              </p>
-            </div>
-
-            {/* Lap count */}
-            <div className="space-y-2">
-              <Label>
-                Laps per Race{" "}
-                <span className="text-muted-foreground font-normal">(optional)</span>
-              </Label>
-              <Input
-                type="number"
-                min={1}
-                value={generateLapCount}
-                onChange={e => setGenerateLapCount(e.target.value)}
-                placeholder="e.g. 6"
-                className="h-9"
-              />
-              <p className="text-xs text-muted-foreground">
-                For laps-based races. Sets the target lap count on every moto — shown to the timer and displayed on the race card.
-              </p>
-            </div>
+            )}
 
             {/* Multi-class spacing */}
             <div className="space-y-2">
@@ -4306,7 +4388,7 @@ export default function EventSchedule() {
       {/* ── Add Moto dialog ── */}
       <Dialog open={showAddDialog} onOpenChange={open => {
         setShowAddDialog(open);
-        if (!open) { setAddForm({ name: "", raceClass: "", type: "heat", lapCount: "", enduroHasRfidStart: false }); setAddSelectedRiders([]); }
+        if (!open) { setAddForm({ name: "", raceClass: "", type: "heat", raceFormat: "lap_count", lapCount: "", durationMinutes: "", plusLaps: "1", enduroHasRfidStart: false }); setAddSelectedRiders([]); }
       }}>
         <DialogContent className="sm:max-w-lg flex flex-col max-h-[90vh]">
           <DialogHeader className="shrink-0">
@@ -4385,17 +4467,75 @@ export default function EventSchedule() {
                   onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
                 />
               </div>
+              {isEnduro ? (
+                <div className="space-y-1.5">
+                  <Label>Lap Count <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    placeholder="e.g. 5"
+                    value={addForm.lapCount}
+                    onChange={e => setAddForm(f => ({ ...f, lapCount: e.target.value }))}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label>Race Format</Label>
+                  <Select
+                    value={addForm.raceFormat}
+                    onValueChange={v => setAddForm(f => ({ ...f, raceFormat: v as "lap_count" | "timed" }))}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lap_count">Lap Count</SelectItem>
+                      <SelectItem value="timed">Timed Race</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            {!isEnduro && addForm.raceFormat === "lap_count" && (
               <div className="space-y-1.5">
-                <Label>Lap Count <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                <Label>Lap Count</Label>
                 <Input
                   type="number"
                   min={1}
+                  step={1}
                   placeholder="e.g. 5"
                   value={addForm.lapCount}
                   onChange={e => setAddForm(f => ({ ...f, lapCount: e.target.value }))}
                 />
               </div>
-            </div>
+            )}
+
+            {!isEnduro && addForm.raceFormat === "timed" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Duration (minutes)</Label>
+                  <Input
+                    type="number"
+                    min={0.01}
+                    step="any"
+                    placeholder="e.g. 15"
+                    value={addForm.durationMinutes}
+                    onChange={e => setAddForm(f => ({ ...f, durationMinutes: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Laps after time expires</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={addForm.plusLaps}
+                    onChange={e => setAddForm(f => ({ ...f, plusLaps: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">1 is standard motocross timed-plus-one-lap.</p>
+                </div>
+              </div>
+            )}
 
             {/* ── Enduro start mode ── */}
             {isEnduro && (

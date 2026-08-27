@@ -268,6 +268,8 @@ export default function Register() {
   const [lookedUpName, setLookedUpName] = useState<string>("");
   const [riderOptions, setRiderOptions] = useState<RiderOption[] | null>(null);
   const autoLookupFiredRef = useRef(false);
+  const lookupRequestRef = useRef(0);
+  const riderClassesRequestRef = useRef(0);
   const [alreadyRegisteredClasses, setAlreadyRegisteredClasses] = useState<Set<string>>(new Set());
 
   const [compCodeInput, setCompCodeInput] = useState("");
@@ -639,9 +641,7 @@ export default function Register() {
   }, [pendingPayment?.sessionId, pendingPayment?.registrationId, !!success]);
 
   const populateFromRider = (rider: RiderOption) => {
-    setSelectedRiderId(rider.id ?? null);
-    form.reset({
-      ...form.getValues(),
+    const profileValues: Partial<RegisterForm> = {
       firstName: rider.firstName ?? "",
       lastName: rider.lastName ?? "",
       phone: rider.phone ?? "",
@@ -660,18 +660,25 @@ export default function Register() {
       bibNumber: rider.bibNumber ?? "",
       sponsors: rider.sponsors ?? "",
       myLapsTransponderNumber: rider.myLapsTransponderNumber ?? "",
-    });
+    };
+    for (const [name, value] of Object.entries(profileValues) as Array<[keyof RegisterForm, RegisterForm[keyof RegisterForm]]>) {
+      if (!form.getFieldState(name).isDirty) {
+        form.setValue(name, value, { shouldDirty: false });
+      }
+    }
+    setSelectedRiderId(rider.id ?? null);
     setLookedUpName(`${rider.firstName} ${rider.lastName}`);
     setLookupState("found");
     setRiderOptions(null);
+    setAlreadyRegisteredClasses(new Set());
+    const classesRequest = ++riderClassesRequestRef.current;
     // Fetch which classes this rider is already registered for at this event
     if (eventId && rider.id) {
       fetch(`/api/public/events/${eventId}/rider-classes?riderId=${rider.id}`)
         .then(r => r.json())
         .then((d: { registeredClasses?: string[] }) => {
-          if (d.registeredClasses?.length) {
-            setAlreadyRegisteredClasses(new Set(d.registeredClasses));
-          }
+          if (classesRequest !== riderClassesRequestRef.current) return;
+          setAlreadyRegisteredClasses(new Set(d.registeredClasses ?? []));
         })
         .catch(() => {});
     }
@@ -681,12 +688,14 @@ export default function Register() {
     const trimmed = email.trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmed)) return;
+    const request = ++lookupRequestRef.current;
     setLookupState("loading");
     setLookedUpName("");
     setRiderOptions(null);
     try {
       const res = await fetch(`/api/public/riders/lookup?email=${encodeURIComponent(trimmed)}`);
       const data = await res.json();
+      if (request !== lookupRequestRef.current || form.getValues("email").trim().toLowerCase() !== trimmed.toLowerCase()) return;
       if (!data.found) {
         setLookupState("not_found");
         return;
@@ -698,11 +707,16 @@ export default function Register() {
         setLookupState("pick");
       }
     } catch {
+      if (request !== lookupRequestRef.current) return;
       setLookupState("not_found");
     }
   };
 
   const onSubmit = async (data: RegisterForm) => {
+    if (lookupState === "pick" || (riderOptions !== null && selectedRiderId === null)) {
+      setSubmitError("Select the correct rider profile for this email before registering.");
+      return;
+    }
     // Client-side enforcement of event-level required fields
     if (event?.requireAma && !data.amaNumber?.trim()) {
       form.setError("amaNumber", { message: "AMA # is required for this event" });
@@ -1072,11 +1086,16 @@ export default function Register() {
                             type="email"
                             placeholder="rider@example.com"
                             {...field}
-                           onChange={e => {
-                             setSelectedRiderId(null);
-                             setLookupState("idle");
-                             field.onChange(e);
-                           }}
+                            onChange={e => {
+                              lookupRequestRef.current++;
+                              riderClassesRequestRef.current++;
+                              setSelectedRiderId(null);
+                              setAlreadyRegisteredClasses(new Set());
+                              setRiderOptions(null);
+                              setLookedUpName("");
+                              setLookupState("idle");
+                              field.onChange(e);
+                            }}
                             onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
                           />
                         </FormControl>
@@ -1110,12 +1129,14 @@ export default function Register() {
                               className="w-full text-left rounded-lg border border-border bg-background px-4 py-3 hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
                             >
                               <div className="font-semibold text-sm">{rider.firstName} {rider.lastName}</div>
-                              {(rider.city || rider.homeState) && (
-                                <div className="text-xs text-muted-foreground mt-0.5">
-                                  {[rider.city, rider.homeState].filter(Boolean).join(", ")}
-                                  {rider.bibNumber ? ` · #${rider.bibNumber}` : ""}
-                                </div>
-                              )}
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {[
+                                  rider.dateOfBirth ? `DOB ${rider.dateOfBirth}` : "",
+                                  rider.phone,
+                                  [rider.city, rider.homeState].filter(Boolean).join(", "),
+                                  rider.bibNumber ? `#${rider.bibNumber}` : "",
+                                ].filter(Boolean).join(" · ") || `Profile ID ${rider.id}`}
+                              </div>
                             </button>
                           ))}
                         </div>
@@ -1140,10 +1161,7 @@ export default function Register() {
                             <Input
                               placeholder="Jake"
                               {...field}
-                              onChange={e => {
-                                setSelectedRiderId(null);
-                                field.onChange(e);
-                              }}
+                              onChange={field.onChange}
                             />
                           </FormControl>
                           <FormMessage />
@@ -1156,10 +1174,7 @@ export default function Register() {
                             <Input
                               placeholder="Morrison"
                               {...field}
-                              onChange={e => {
-                                setSelectedRiderId(null);
-                                field.onChange(e);
-                              }}
+                              onChange={field.onChange}
                             />
                           </FormControl>
                           <FormMessage />
@@ -1852,7 +1867,7 @@ export default function Register() {
 
                 <Button
                   type="submit"
-                  disabled={submitting || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted) || (event.requireLiabilityWaiver && !liabilityWaiverAccepted)}
+                  disabled={submitting || lookupState === "pick" || (riderOptions !== null && selectedRiderId === null) || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted) || (event.requireLiabilityWaiver && !liabilityWaiverAccepted)}
                   className="w-full font-heading uppercase tracking-wider text-base h-12"
                 >
                   {submitting ? (

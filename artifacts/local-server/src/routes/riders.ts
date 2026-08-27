@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
+import { markNewRiderDirty, markRiderFieldsDirty } from "../rider-profile-dirty";
 
 const router = Router();
 
@@ -165,6 +166,7 @@ router.post("/riders", (req, res) => {
   const rider = db
     .prepare("SELECT * FROM riders WHERE id = ?")
     .get(Number(result.lastInsertRowid)) as any;
+  markNewRiderDirty(db, Number(result.lastInsertRowid));
   return res.status(201).json(serializeRider(rider));
 });
 
@@ -245,6 +247,7 @@ router.patch("/riders/:riderId", (req, res) => {
 
   const rider = db.prepare("SELECT * FROM riders WHERE id = ?").get(id) as any;
   if (!rider) return res.status(404).json({ error: "Not found" });
+  markRiderFieldsDirty(db, id, fields.map((field) => field.split(" ")[0]));
   return res.json(serializeRider(rider));
 });
 
