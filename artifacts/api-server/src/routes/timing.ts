@@ -164,6 +164,30 @@ function announcerUnsubscribe(motoId: number, res: Response) {
   announcerClients.get(motoId)?.delete(res);
 }
 
+function broadcastCrossingAccepted(input: {
+  motoId: number;
+  crossingId: number;
+  lapNumber: number;
+  lapTimeMs: number;
+  crossingTime: Date;
+  readerId?: string;
+  readerReceivedAt?: string;
+  ingestStartedAt: string;
+}) {
+  sseBroadcast(input.motoId, {
+    type: "crossing_accepted",
+    motoId: input.motoId,
+    crossingId: input.crossingId,
+    lapNumber: input.lapNumber,
+    lapTimeMs: input.lapTimeMs,
+    crossingTime: input.crossingTime.toISOString(),
+    readerReceivedAt: input.readerReceivedAt ?? null,
+    ingestStartedAt: input.ingestStartedAt,
+    acknowledgedAt: new Date().toISOString(),
+    readerId: input.readerId ?? null,
+  });
+}
+
 // ── RMonitor SSE registry: eventId → bridge connections ───────────────────────
 // Each entry is a bridge running rfid_bridge.py with --rmonitor enabled.
 // Messages are RMonitor protocol lines (\r\n terminated) wrapped as JSON arrays.
@@ -663,8 +687,10 @@ async function _processCrossing(opts: {
   antennaId?: number;
   bypassDebounce?: boolean;
   overrideRiderId?: number | null;
+  readerReceivedAt?: string;
 }) {
-  const { rfidNumber, motoId, readerId, antennaId, bypassDebounce, overrideRiderId } = opts;
+  const ingestStartedAt = new Date().toISOString();
+  const { rfidNumber, motoId, readerId, antennaId, bypassDebounce, overrideRiderId, readerReceivedAt } = opts;
   // Last line of defence for internal callers that bypass an HTTP ingest route.
   const crossingTime = canonicalizeCrossingTimestamp(opts.crossingTime, new Date(), {
     source: "processCrossing",
@@ -807,6 +833,7 @@ async function _processCrossing(opts: {
       .insert(lapCrossingsTable)
       .values({ eventId: moto.eventId, motoId, riderId, rfidNumber, crossingTime, lapNumber, lapTimeMs: elapsedMs, readerId: readerId ?? null, antennaId: antennaId ?? null })
       .returning();
+    broadcastCrossingAccepted({ motoId, crossingId: crossing.id, lapNumber, lapTimeMs: elapsedMs, crossingTime, readerId, readerReceivedAt, ingestStartedAt });
 
     // Upsert race_result: running riders carry lapTimes [] (totalTime null → "—"),
     // finished riders carry a single elapsed entry used by the leaderboard.
@@ -937,6 +964,7 @@ async function _processCrossing(opts: {
     .insert(lapCrossingsTable)
     .values({ eventId: moto.eventId, motoId, riderId, rfidNumber, crossingTime, lapNumber, lapTimeMs, readerId: readerId ?? null, antennaId: antennaId ?? null })
     .returning();
+  broadcastCrossingAccepted({ motoId, crossingId: crossing.id, lapNumber, lapTimeMs, crossingTime, readerId, readerReceivedAt, ingestStartedAt });
 
   // 5. Upsert race_results for this rider
   if (riderId) {
@@ -1320,7 +1348,7 @@ router.post("/timing/active/crossing", async (req, res) => {
   const readerId: string = body?.loopId ?? body?.readerId ?? body?.readername ?? "rfid";
 
   try {
-    const result = await processCrossing({ rfidNumber: String(rfidNumber), motoId: moto.id, crossingTime, readerId });
+    const result = await processCrossing({ rfidNumber: String(rfidNumber), motoId: moto.id, crossingTime, readerId, readerReceivedAt: body?.readerReceivedAt });
     if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });
     return res.json({
       ok: true, motoId: moto.id,
@@ -1612,6 +1640,7 @@ router.post("/timing/manual-crossing", async (req, res) => {
       readerId: "MANUAL",
       bypassDebounce: true,
       overrideRiderId: Number(riderId),
+      readerReceivedAt: undefined,
     });
     return res.json({
       ok: true,
@@ -1634,22 +1663,30 @@ router.get("/timing/live/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
   const staffCId = getStaffClubId(res);
   if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+  const sock = (req as any).socket;
+  sock?.setNoDelay?.(true);
+  sock?.setTimeout?.(0);
+  sock?.setKeepAlive?.(true, 1_000);
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("X-Accel-Buffering", "no");
   (res as any).flushHeaders?.();
 
-  // Send initial state immediately
-  const snapshot = await buildLeaderboard(motoId);
-  if (snapshot) {
-    (res as any).write(`data: ${JSON.stringify(snapshot)}\n\n`);
-  } else {
-    (res as any).write(`data: ${JSON.stringify({ error: "Moto not found" })}\n\n`);
-  }
-
-  sseSubscribe(motoId, res);
+  // Serialize the baseline/subscription handoff with crossing ingestion. A
+  // crossing is therefore either represented in this historical baseline or
+  // delivered live after subscription, never both and never neither.
+  await withMotoLock(motoId, async () => {
+    const snapshot = await buildLeaderboard(motoId);
+    if (snapshot) {
+      (res as any).write(`data: ${JSON.stringify(snapshot)}\n\n`);
+    } else {
+      (res as any).write(`data: ${JSON.stringify({ error: "Moto not found" })}\n\n`);
+    }
+    sseSubscribe(motoId, res);
+  });
 
   // Heartbeat every 20s to prevent proxy timeouts
   const heartbeat = setInterval(() => {

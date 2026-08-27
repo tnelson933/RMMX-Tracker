@@ -14,6 +14,7 @@ const outputFile = path.join(os.tmpdir(), `rm-connect-cloud-${process.pid}.cjs`)
 const policyOutputFile = path.join(os.tmpdir(), `rm-connect-policy-${process.pid}.cjs`);
 const migrationsOutputFile = path.join(os.tmpdir(), `rm-connect-settings-migrations-${process.pid}.cjs`);
 const activeReaderOutputFile = path.join(os.tmpdir(), `rm-connect-active-reader-${process.pid}.cjs`);
+const deduperOutputFile = path.join(os.tmpdir(), `rm-connect-deduper-${process.pid}.cjs`);
 await build({
   entryPoints: [path.resolve("src/cloud.ts")],
   bundle: true,
@@ -42,6 +43,13 @@ await build({
   format: "cjs",
   outfile: activeReaderOutputFile,
 });
+await build({
+  entryPoints: [path.resolve("src/recent-read-deduper.ts")],
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  outfile: deduperOutputFile,
+});
 const cloudModule = await import(pathToFileURL(outputFile).href);
 const { CloudLink } = cloudModule.default ?? cloudModule;
 const policyModule = await import(pathToFileURL(policyOutputFile).href);
@@ -54,6 +62,8 @@ const {
   formatLocalClockCommands,
   parseTimestamp,
 } = activeReaderModule.default ?? activeReaderModule;
+const deduperModule = await import(pathToFileURL(deduperOutputFile).href);
+const { RecentReadDeduper } = deduperModule.default ?? deduperModule;
 
 function commandsFromWire(messages) {
   return messages.join("").split(";").filter(Boolean).map(packet => packet.split("@")[1]);
@@ -346,6 +356,15 @@ test("includes original receipt and timing metadata", async () => {
   });
   assert.equal(payload.receivedAt, "2025-01-02T03:04:06.000Z");
   assert.equal(payload.receivedAtUtc, "2025-01-02T03:04:06.000Z");
+  assert.equal(payload.readerReceivedAt, "2025-01-02T03:04:06.000Z");
   assert.equal(payload.deviceTimezone, "Asia/Kathmandu");
   assert.equal(payload.timeSource, "connector_live_tcp");
+});
+
+test("suppresses duplicate reader callbacks inside the local debounce window", () => {
+  const deduper = new RecentReadDeduper(1_500);
+  assert.equal(deduper.accept("ABC123", 10_000), true);
+  assert.equal(deduper.accept("ABC123", 10_100), false);
+  assert.equal(deduper.accept("OTHER", 10_100), true);
+  assert.equal(deduper.accept("ABC123", 11_501), true);
 });

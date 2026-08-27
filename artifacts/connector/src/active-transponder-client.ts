@@ -237,6 +237,8 @@ export class ActiveTransponderClient extends EventEmitter {
         if (!settled) { settled = true; reject(error); }
       };
       socket.once("connect", () => {
+        socket.setNoDelay(true);
+        socket.setKeepAlive(true, 1_000);
         socket.setTimeout(0);
         this.socket = socket;
         settled = true;

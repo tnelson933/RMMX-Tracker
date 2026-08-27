@@ -133,6 +133,26 @@ export function sseBroadcast(motoId: number, data: object) {
   }
 }
 
+function broadcastCrossingAccepted(motoId: number, result: {
+  crossing: { id: number } | null;
+  lapNumber: number | null;
+  lapTimeMs: number | null;
+}, crossingTime: Date, readerId?: string, readerReceivedAt?: string, ingestStartedAt = new Date().toISOString()) {
+  if (!result.crossing) return;
+  sseBroadcast(motoId, {
+    type: "crossing_accepted",
+    motoId,
+    crossingId: result.crossing.id,
+    lapNumber: result.lapNumber,
+    lapTimeMs: result.lapTimeMs,
+    crossingTime: crossingTime.toISOString(),
+    readerReceivedAt: readerReceivedAt ?? null,
+    ingestStartedAt,
+    acknowledgedAt: new Date().toISOString(),
+    readerId: readerId ?? null,
+  });
+}
+
 // ── Build leaderboard snapshot from SQLite ────────────────────────────────────
 export function buildLeaderboard(motoId: number) {
   const db = getDb();
@@ -239,17 +259,30 @@ function processCrossing(opts: {
   antennaId?: number;
   bypassDebounce?: boolean;
   overrideRiderId?: number | null;
+  onAccepted?: (result: {
+    crossing: { id: number };
+    lapNumber: number;
+    lapTimeMs: number;
+  }) => void;
 }) {
   const db = getDb();
-  const { rfidNumber, motoId, readerId, antennaId, bypassDebounce, overrideRiderId } = opts;
+  const { rfidNumber, motoId, readerId, antennaId, bypassDebounce, overrideRiderId, onAccepted } = opts;
   const crossingTime = canonicalizeCrossingTimestamp(opts.crossingTime, new Date(), "processCrossing");
   const tagNumber = rfidNumber.trim();
 
   type CrossingResult =
     | { debounced: true; crossing: null; lapNumber: null; lapTimeMs: null }
-    | { debounced: false; crossing: { id: number }; lapNumber: number; lapTimeMs: number };
+    | {
+      debounced: false;
+      crossing: { id: number };
+      lapNumber: number;
+      lapTimeMs: number;
+      moto: any;
+      riderId: number | null;
+      tagNumber: string;
+    };
 
-  const result = db.transaction((): CrossingResult => {
+  const accepted = db.transaction((): CrossingResult => {
     const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
     if (!moto) throw new Error("Moto not found");
     if (moto.status !== "in_progress") throw new Error("Moto is not in progress");
@@ -334,6 +367,17 @@ function processCrossing(opts: {
     );
     const crossing = { id: Number(insResult.lastInsertRowid) };
 
+    return { debounced: false, crossing, lapNumber, lapTimeMs, moto, riderId, tagNumber };
+  })();
+
+  if (accepted.debounced) return accepted;
+
+  const { crossing, lapNumber, lapTimeMs, moto, riderId } = accepted;
+  // The insert transaction has committed. Emit the lightweight acknowledgement
+  // before rebuilding race results, positions, or the leaderboard snapshot.
+  onAccepted?.({ crossing, lapNumber, lapTimeMs });
+
+  db.transaction(() => {
     // Upsert race_results for this rider
     if (riderId) {
       const checkin = (db
@@ -413,10 +457,9 @@ function processCrossing(opts: {
       }
     }
 
-    return { debounced: false, crossing, lapNumber, lapTimeMs };
   })();
 
-  return result;
+  return { debounced: false as const, crossing, lapNumber, lapTimeMs };
 }
 
 // ── Helpers: find active moto ─────────────────────────────────────────────────
@@ -540,14 +583,22 @@ router.get("/timing/reader-state", (_req, res) => {
 
 // POST /timing/crossing — direct motoId crossing (hardware or simulation)
 router.post("/timing/crossing", (req, res) => {
-  const { rfidNumber, motoId, crossingTime, readerId, antennaId } = req.body;
+  const ingestStartedAt = new Date().toISOString();
+  const { rfidNumber, motoId, crossingTime, readerId, antennaId, readerReceivedAt } = req.body;
   if (!rfidNumber || !motoId) {
     return res.status(400).json({ error: "rfidNumber and motoId are required" });
   }
   const time = canonicalizeCrossingTimestamp(crossingTime ?? new Date(), new Date(), "direct_crossing_ingest");
   const antenna = antennaId !== undefined ? Number(antennaId) : undefined;
   try {
-    const result = processCrossing({ rfidNumber, motoId: Number(motoId), crossingTime: time, readerId, antennaId: antenna });
+    const result = processCrossing({
+      rfidNumber,
+      motoId: Number(motoId),
+      crossingTime: time,
+      readerId,
+      antennaId: antenna,
+      onAccepted: accepted => broadcastCrossingAccepted(Number(motoId), accepted, time, readerId, readerReceivedAt, ingestStartedAt),
+    });
     if (result.debounced) return res.json({ ok: true, debounced: true });
     const snapshot = buildLeaderboard(Number(motoId));
     if (snapshot) sseBroadcast(Number(motoId), snapshot);
@@ -561,6 +612,7 @@ router.post("/timing/crossing", (req, res) => {
 // Accepts all hardware formats: Generic/RFID bridge, AMBrc, Impinj R700, Zebra FX7500
 // In the local server, clubId is accepted for compatibility but ignored (only one club).
 router.post("/timing/active/crossing", (req, res) => {
+  const ingestStartedAt = new Date().toISOString();
   const body = req.body as any;
 
   // Impinj R700 native IoT Connector format
@@ -638,7 +690,13 @@ router.post("/timing/active/crossing", (req, res) => {
 
   if (moto) {
     try {
-      const result = processCrossing({ rfidNumber: String(rfidNumber), motoId: moto.id, crossingTime, readerId });
+      const result = processCrossing({
+        rfidNumber: String(rfidNumber),
+        motoId: moto.id,
+        crossingTime,
+        readerId,
+        onAccepted: accepted => broadcastCrossingAccepted(moto.id, accepted, crossingTime, readerId, body?.readerReceivedAt, ingestStartedAt),
+      });
       if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });
       const snapshot = buildLeaderboard(moto.id);
       if (snapshot) sseBroadcast(moto.id, snapshot);
@@ -658,6 +716,7 @@ router.post("/timing/active/crossing", (req, res) => {
 // POST /timing/transponder-crossing?eventId=N — AMBrc timing-decoder format.
 // The former endpoint remains available as a compatibility alias.
 router.post(["/timing/transponder-crossing", "/timing/mylaps-crossing"], (req, res) => {
+  const ingestStartedAt = new Date().toISOString();
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) return res.status(400).json({ error: "eventId query param is required" });
   const body = req.body as any;
@@ -669,7 +728,13 @@ router.post(["/timing/transponder-crossing", "/timing/mylaps-crossing"], (req, r
   if (!moto) return res.status(409).json({ error: "No moto currently in progress for this event" });
   const readerId: string = body?.loopId ?? body?.readerId ?? "active-transponder";
   try {
-    const result = processCrossing({ rfidNumber: String(transponder), motoId: moto.id, crossingTime, readerId });
+    const result = processCrossing({
+      rfidNumber: String(transponder),
+      motoId: moto.id,
+      crossingTime,
+      readerId,
+      onAccepted: accepted => broadcastCrossingAccepted(moto.id, accepted, crossingTime, readerId, body?.readerReceivedAt, ingestStartedAt),
+    });
     if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });
     const snapshot = buildLeaderboard(moto.id);
     if (snapshot) sseBroadcast(moto.id, snapshot);
@@ -742,7 +807,16 @@ router.post("/timing/manual-crossing", (req, res) => {
     .get(Number(riderId), moto.event_id) as any;
   const rfidNumber = assignment?.rfid_number ?? `MANUAL-${riderId}`;
   try {
-    const result = processCrossing({ rfidNumber, motoId: Number(motoId), crossingTime: new Date(), readerId: "MANUAL", bypassDebounce: true, overrideRiderId: Number(riderId) });
+    const manualCrossingTime = new Date();
+    const result = processCrossing({
+      rfidNumber,
+      motoId: Number(motoId),
+      crossingTime: manualCrossingTime,
+      readerId: "MANUAL",
+      bypassDebounce: true,
+      overrideRiderId: Number(riderId),
+      onAccepted: accepted => broadcastCrossingAccepted(Number(motoId), accepted, manualCrossingTime, "MANUAL"),
+    });
     const snapshot = buildLeaderboard(Number(motoId));
     if (snapshot) sseBroadcast(Number(motoId), snapshot);
     return res.json({ ok: true, crossingId: result.crossing?.id ?? null, lapNumber: result.lapNumber, lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null, lapTimeMs: result.lapTimeMs });
@@ -773,14 +847,14 @@ router.get("/timing/live/:motoId", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   (res as any).flushHeaders?.();
 
+  sseSubscribe(motoId, res);
+
   const snapshot = buildLeaderboard(motoId);
   if (snapshot) {
     (res as any).write(`data: ${JSON.stringify(snapshot)}\n\n`);
   } else {
     (res as any).write(`data: ${JSON.stringify({ error: "Moto not found" })}\n\n`);
   }
-
-  sseSubscribe(motoId, res);
 
   const heartbeat = setInterval(() => {
     try { (res as any).write(": heartbeat\n\n"); }

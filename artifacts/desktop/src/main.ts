@@ -46,6 +46,7 @@ import {
 const LOCAL_PORT = 9090;
 const STARTUP_TIMEOUT_MS = 15_000;
 const WINDOW_TITLE = "RM Tracker";
+const LOCAL_TIMING_HTTP_AGENT = new http.Agent({ keepAlive: true, maxSockets: 4 });
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -786,6 +787,7 @@ export function buildLocalCrossingPayload(opts: {
     crossingTime: (crossingTime ?? new Date()).toISOString(),
   };
   if (receivedAtUtc) payload.receivedAtUtc = receivedAtUtc;
+  if (receivedAtUtc) payload.readerReceivedAt = receivedAtUtc;
   if (deviceTimezone) payload.deviceTimezone = deviceTimezone;
   if (source) payload.source = source;
   if (timeSource) payload.timeSource = timeSource;
@@ -808,6 +810,7 @@ function postCrossingToLocalServer(opts: {
       port: LOCAL_PORT,
       path: "/api/timing/active/crossing",
       method: "POST",
+      agent: LOCAL_TIMING_HTTP_AGENT,
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
@@ -836,6 +839,7 @@ function postCrossingToLocalServer(opts: {
       }
     },
   );
+  req.on("socket", (socket) => socket.setNoDelay(true));
 
   req.on("error", (err) => {
     console.error(`[rfid] failed to post crossing: ${err.message}`);

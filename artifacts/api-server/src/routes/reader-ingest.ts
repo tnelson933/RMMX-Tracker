@@ -97,6 +97,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
     deviceTimezone?: string;
     timeSource?: string;
     source?: string;
+    readerReceivedAt?: string;
   };
 
   if (!body.rfidNumber) return res.status(400).json({ ok: false, message: "rfidNumber is required" });
@@ -269,6 +270,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
         crossingTime,
         readerId: `reader:${reader.id}`,
         antennaId: incomingAntenna ?? undefined,
+        readerReceivedAt: body.readerReceivedAt ?? originalReceipt?.toISOString(),
       });
       const action = (result as any)?.enduroAction ?? (isEven ? "started" : "finished");
       return res.json({ ok: true, message: `Rider ${action} on moto ${sameGateMotoId}` });
@@ -345,6 +347,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
       crossingTime,
       readerId: `reader:${reader.id}`,
       antennaId: incomingAntenna ?? undefined,
+      readerReceivedAt: body.readerReceivedAt ?? originalReceipt?.toISOString(),
     });
     const action = (result as any)?.enduroAction ?? (isEven ? "started" : "finished");
     return res.json({ ok: true, message: `Rider ${action} on moto ${assignment.motoId}` });

@@ -288,6 +288,8 @@ function createConnection(host: string, port: number, epoch: number, reportIniti
       connected = true; settled = true;
       if (connectingSocket === connection) connectingSocket = null;
       socket = connection;
+      connection.setNoDelay(true);
+      connection.setKeepAlive(true, 1_000);
       connection.setTimeout(0);
       connectError = null;
       reconnectAttempt = 0;

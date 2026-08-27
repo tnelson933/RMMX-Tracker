@@ -30,6 +30,14 @@ import { useToast } from "@/hooks/use-toast";
 import { LiveBroadcast } from "./LiveBroadcast";
 import { ActiveTransponderConnectionStatus } from "@/components/organizer/ActiveTransponderConnectionStatus";
 import { format } from "date-fns";
+import {
+  consumeSnapshotFallback,
+  consumeManualOptimisticPings,
+  discardManualOptimisticPing,
+  markManualOptimisticPing,
+  registerAcceptedCrossing,
+  shouldPlayAcceptedCrossing,
+} from "@/lib/liveTimingAudio";
 
 type RawCrossing = {
   id: number;
@@ -67,6 +75,16 @@ type LeaderboardSnapshot = {
   updatedAt: string;
 };
 
+type CrossingAcceptedEvent = {
+  type: "crossing_accepted";
+  crossingId: number;
+  readerId: string | null;
+  crossingTime: string;
+  readerReceivedAt: string | null;
+  ingestStartedAt: string;
+  acknowledgedAt: string;
+};
+
 const POLL_INTERVAL_MS = 3000;
 
 // ── AudioContext singleton ─────────────────────────────────────────────────────
@@ -86,10 +104,6 @@ function getAudioCtx(): AudioContext | null {
     return null;
   }
 }
-
-// Guard: timestamp of the last manual-lap optimistic ping.
-// Prevents the SSE handler from double-pinging when a manual lap was just clicked.
-let _lastManualPingAt = 0;
 
 async function playRfidPing(count: number) {
   const ctx = getAudioCtx();
@@ -131,32 +145,80 @@ function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penal
   const prevLapTotalRef = useRef<number>(-1);
   // Fire onMotoCompleted exactly once when the SSE snapshot status becomes "completed".
   const completedFiredRef = useRef<boolean>(false);
+  const fastAckIdsRef = useRef<Set<number>>(new Set());
+  const pendingFastAckTimesRef = useRef<number[]>([]);
+  const lastFastAckAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setSnapshot(null);
     prevLapTotalRef.current = -1;
     completedFiredRef.current = false;
+    fastAckIdsRef.current.clear();
+    pendingFastAckTimesRef.current = [];
+    lastFastAckAtRef.current = null;
 
     const es = new EventSource(`/api/timing/live/${motoId}`);
     esRef.current = es;
 
     es.onmessage = (evt) => {
       try {
-        const data: LeaderboardSnapshot = JSON.parse(evt.data);
-        if (!("error" in data)) {
+        const data: LeaderboardSnapshot | CrossingAcceptedEvent = JSON.parse(evt.data);
+        if ("type" in data && data.type === "crossing_accepted") {
+          if (!registerAcceptedCrossing(fastAckIdsRef.current, data.crossingId)) return;
+          const browserReceivedAt = Date.now();
+          pendingFastAckTimesRef.current.push(browserReceivedAt);
+          lastFastAckAtRef.current = browserReceivedAt;
+          const audioReceivedAt = performance.now();
+          if (data.readerId === "MANUAL") {
+            consumeManualOptimisticPings(motoId, 1, browserReceivedAt);
+          }
+          if (shouldPlayAcceptedCrossing(data.readerId)) {
+            void playRfidPing(1);
+          }
+          if (import.meta.env.DEV) {
+            console.debug("[timing-latency] crossing accepted", {
+              crossingId: data.crossingId,
+              deviceToReaderMs: data.readerReceivedAt ? new Date(data.readerReceivedAt).getTime() - new Date(data.crossingTime).getTime() : null,
+              readerToServerMs: data.readerReceivedAt ? new Date(data.ingestStartedAt).getTime() - new Date(data.readerReceivedAt).getTime() : null,
+              ingestToAckMs: new Date(data.acknowledgedAt).getTime() - new Date(data.ingestStartedAt).getTime(),
+              ackToBrowserMs: Date.now() - new Date(data.acknowledgedAt).getTime(),
+              browserAudioScheduledMonotonicMs: audioReceivedAt,
+            });
+          }
+          return;
+        }
+        if ("leaderboard" in data) {
           // Sound fires here — driven by SSE, not the polling loop.
           // This fires the instant the server broadcasts the crossing update.
           const totalLaps = data.leaderboard.reduce((s, e) => s + e.laps, 0);
           const prev = prevLapTotalRef.current;
           if (prev >= 0 && totalLaps > prev) {
-            // Suppress if a manual lap button was just clicked (≤1.5 s ago)
-            // to avoid double-pinging alongside the optimistic click sound.
-            if (Date.now() - _lastManualPingAt > 1500) {
-              void playRfidPing(totalLaps - prev);
+            const fallback = consumeSnapshotFallback(
+              totalLaps - prev,
+              pendingFastAckTimesRef.current,
+              Date.now(),
+            );
+            pendingFastAckTimesRef.current = fallback.pendingFastAckTimes;
+            const manualOptimisticCount = consumeManualOptimisticPings(
+              motoId,
+              fallback.fallbackCount,
+              Date.now(),
+            );
+            const physicalFallbackCount = fallback.fallbackCount - manualOptimisticCount;
+            if (physicalFallbackCount > 0) {
+              void playRfidPing(physicalFallbackCount);
             }
           }
           prevLapTotalRef.current = totalLaps;
+          if (import.meta.env.DEV && lastFastAckAtRef.current !== null) {
+            console.debug("[timing-latency] leaderboard snapshot", {
+              ackToSnapshotBrowserMs: Date.now() - lastFastAckAtRef.current,
+              snapshotGeneratedAt: data.updatedAt,
+              snapshotToBrowserMs: Date.now() - new Date(data.updatedAt).getTime(),
+            });
+            lastFastAckAtRef.current = null;
+          }
           setSnapshot(data);
           setLastUpdated(new Date());
           setLoading(false);
@@ -2004,8 +2066,7 @@ export default function Motos() {
   const handleManualLap = async (riderId: number, motoId: number) => {
     const key = `${motoId}-${riderId}`;
     // Play the ping immediately on click — no waiting for the network round-trip.
-    // Set the guard so the SSE handler doesn't double-ping within 1.5s.
-    _lastManualPingAt = Date.now();
+    markManualOptimisticPing(motoId);
     void playRfidPing(1);
     setManualLapCooldown(prev => new Set(prev).add(key));
     try {
@@ -2016,6 +2077,7 @@ export default function Motos() {
       });
       const data = await res.json();
       if (!res.ok) {
+        discardManualOptimisticPing(motoId);
         toast({ title: "Failed to record lap", description: data.error ?? "Unknown error", variant: "destructive" });
       } else if (data.enduroAction === "started") {
         toast({ title: `🟢 Pass ${data.lapNumber} started`, description: "Clock running — enter the same # again to finish." });
@@ -2028,6 +2090,7 @@ export default function Motos() {
         });
       }
     } catch (err: unknown) {
+      discardManualOptimisticPing(motoId);
       const msg = err instanceof Error ? err.message : "Could not reach server";
       toast({ title: "Failed to record lap", description: msg, variant: "destructive" });
     } finally {
