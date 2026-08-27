@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-interface LeaderboardEntry {
+export interface LeaderboardEntry {
   position: number;
   riderId: number;
   riderName: string;
@@ -56,7 +56,7 @@ interface RaceAnalytics {
   fastestLaps: AnalyticsRider[];
 }
 
-interface LeaderboardData {
+export interface LeaderboardData {
   motoId: number;
   motoName: string;
   raceClass: string;
@@ -475,7 +475,207 @@ function LiveTimingTable({
   );
 }
 
-export default function LiveLeaderboard() {
+export function useLiveRaceStream(motoId: number | string | null | undefined) {
+  const [data, setData] = useState<LeaderboardData | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [correctionVisible, setCorrectionVisible] = useState(false);
+  const [positionGains, setPositionGains] = useState<Set<number>>(new Set());
+  const previousPositions = useRef<Map<number, number>>(new Map());
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const correctionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gainTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  useEffect(() => {
+    setData(null);
+    setError(null);
+    setConnected(false);
+    setCorrectionVisible(false);
+    setPositionGains(new Set());
+    previousPositions.current = new Map();
+    if (motoId == null) return;
+
+    let disposed = false;
+    let source: EventSource | null = null;
+
+    const connect = () => {
+      if (disposed) return;
+      source = new EventSource(`/api/timing/live/${motoId}`);
+      source.onopen = () => setConnected(true);
+      source.onmessage = event => {
+        try {
+          const payload = JSON.parse(event.data) as LeaderboardData & { error?: string };
+          if (payload.error) {
+            setError(payload.error);
+            return;
+          }
+          if (payload.correction) {
+            setCorrectionVisible(true);
+            if (correctionTimer.current) clearTimeout(correctionTimer.current);
+            correctionTimer.current = setTimeout(() => setCorrectionVisible(false), 5_000);
+          }
+          const gainers = payload.leaderboard
+            .filter(entry => !entry.dnf && !entry.dns)
+            .filter(entry => {
+              const oldPosition = previousPositions.current.get(entry.riderId);
+              return oldPosition != null && entry.position < oldPosition;
+            })
+            .map(entry => entry.riderId);
+          payload.leaderboard.forEach(entry => previousPositions.current.set(entry.riderId, entry.position));
+          if (gainers.length) {
+            setPositionGains(current => new Set([...current, ...gainers]));
+            gainers.forEach(riderId => {
+              const existing = gainTimers.current.get(riderId);
+              if (existing) clearTimeout(existing);
+              gainTimers.current.set(riderId, setTimeout(() => {
+                setPositionGains(current => {
+                  const next = new Set(current);
+                  next.delete(riderId);
+                  return next;
+                });
+              }, 2_000));
+            });
+          }
+          setData(payload);
+          setError(null);
+        } catch {
+          setError("Live timing sent an unreadable update.");
+        }
+      };
+      source.onerror = () => {
+        setConnected(false);
+        source?.close();
+        reconnectTimer.current = setTimeout(connect, 3_000);
+      };
+    };
+
+    connect();
+    return () => {
+      disposed = true;
+      source?.close();
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      if (correctionTimer.current) clearTimeout(correctionTimer.current);
+      gainTimers.current.forEach(clearTimeout);
+      gainTimers.current.clear();
+    };
+  }, [motoId]);
+
+  return { data, connected, error, correctionVisible, positionGains };
+}
+
+export function LiveRaceViews({
+  data,
+  connected,
+  error,
+  correctionVisible = false,
+  positionGains = new Set<number>(),
+  compact = false,
+  showRaceStatus = false,
+}: {
+  data: LeaderboardData | null;
+  connected: boolean;
+  error?: string | null;
+  correctionVisible?: boolean;
+  positionGains?: Set<number>;
+  compact?: boolean;
+  showRaceStatus?: boolean;
+}) {
+  const [activeView, setActiveView] = useState<LiveView>("timing");
+  const isLive = data?.status === "in_progress";
+  return (
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+      <AnimatePresence>
+        {correctionVisible && (
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            className="z-20 flex items-center justify-center gap-2 bg-amber-500 px-3 py-2 text-center text-xs font-bold text-black"
+          >
+            <AlertTriangle size={14} /> Results corrected — a timing entry was removed by the organizer
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <div className={`flex items-center justify-between border-b border-white/10 ${compact ? "px-3 py-2" : "px-4 py-3"}`}>
+        <div className="min-w-0">
+          <div className="truncate font-heading text-sm font-bold uppercase text-white">{data?.motoName ?? "Live race"}</div>
+          {data?.raceClass && <div className="truncate text-[10px] uppercase tracking-wider text-white/35">{data.raceClass}</div>}
+        </div>
+        <span className={`ml-3 flex shrink-0 items-center gap-1.5 text-xs ${connected ? "text-green-400" : "text-yellow-400"}`}>
+          {connected ? <Radio size={13} /> : <WifiOff size={13} />}
+          {connected ? "Live" : "Reconnecting…"}
+        </span>
+      </div>
+      {showRaceStatus && data && (
+        <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 border-b border-white/10 px-4 py-3">
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${
+            isLive ? "bg-primary text-white" :
+            data.status === "completed" ? "border border-secondary/30 bg-secondary/30 text-secondary" :
+            "bg-white/10 text-white/60"
+          }`}>
+            {isLive && (
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+              </span>
+            )}
+            {data.status.replace("_", " ")}
+          </span>
+          {isLive && data.startedAt && data.timeLimitMs && !data.timeExpiredAt && (
+            <span className="flex items-center gap-1.5 text-sm text-white/70">
+              <Clock size={13} />
+              <CountdownClock startedAt={data.startedAt} timeLimitMs={data.timeLimitMs} />
+              {data.plusLaps != null && data.plusLaps > 0 && (
+                <span className="text-xs text-white/40">+{data.plusLaps} lap{data.plusLaps > 1 ? "s" : ""}</span>
+              )}
+            </span>
+          )}
+          {isLive && data.startedAt && data.timeLimitMs && data.timeExpiredAt && (
+            <span className="flex items-center gap-1.5 rounded-full bg-orange-500/20 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-orange-400 animate-pulse">
+              <Flag size={11} />
+              Time Expired{data.plusLaps != null && data.plusLaps > 0 ? ` — +${data.plusLaps} Lap${data.plusLaps > 1 ? "s" : ""}` : ""}
+            </span>
+          )}
+          {isLive && data.startedAt && !data.timeLimitMs && (
+            <span className="flex items-center gap-1.5 text-sm text-white/50">
+              <Clock size={13} />
+              <ElapsedClock startedAt={data.startedAt} />
+            </span>
+          )}
+          {data.status === "completed" && (
+            <span className="flex items-center gap-1.5 text-sm text-white/50">
+              <Flag size={13} /> Race finished
+            </span>
+          )}
+        </div>
+      )}
+      <div role="tablist" aria-label="Live race views" className="flex shrink-0 justify-start overflow-x-auto border-b border-white/10 bg-black/10">
+        <ViewTab active={activeView === "timing"} icon={<Radio size={15} />} label="Live Timing" onClick={() => setActiveView("timing")} />
+        <ViewTab active={activeView === "analytics"} icon={<BarChart3 size={15} />} label="Quick Analytics" onClick={() => setActiveView("analytics")} />
+        <ViewTab active={activeView === "fastest"} icon={<Timer size={15} />} label="Fastest Lap" onClick={() => setActiveView("fastest")} />
+      </div>
+      <section role="tabpanel" className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${compact ? "text-xs" : ""}`}>
+        {error ? (
+          <div className="flex min-h-40 items-center justify-center p-6 text-center text-sm text-white/45">{error}</div>
+        ) : !data ? (
+          <div className="flex min-h-40 items-center justify-center p-6 text-center font-heading text-sm uppercase tracking-widest text-white/35 animate-pulse">
+            Connecting to timing system…
+          </div>
+        ) : (
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div key={activeView} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="min-h-full">
+              {activeView === "timing" && <LiveTimingTable data={data} positionGains={positionGains} />}
+              {activeView === "analytics" && <QuickAnalytics analytics={data.analytics} />}
+              {activeView === "fastest" && <FastestLapRanking data={data} />}
+            </motion.div>
+          </AnimatePresence>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function LegacyLiveLeaderboard() {
   const [, params] = useRoute("/live/:motoId");
   const motoId = params?.motoId;
 
@@ -737,6 +937,22 @@ export default function LiveLeaderboard() {
           </section>
         </>
       )}
+    </main>
+  );
+}
+
+export default function LiveLeaderboard() {
+  const [, params] = useRoute("/live/:motoId");
+  const stream = useLiveRaceStream(params?.motoId);
+  return (
+    <main className="fixed inset-0 z-40 flex h-[100dvh] flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
+        <Link href="/" className="flex items-center gap-2 text-sm text-white/50 transition-colors hover:text-white">
+          <ChevronLeft size={16} /> Home
+        </Link>
+        <span className="text-xs uppercase tracking-wider text-white/35">RM Tracker Live</span>
+      </div>
+      <LiveRaceViews {...stream} showRaceStatus />
     </main>
   );
 }

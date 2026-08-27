@@ -15,6 +15,7 @@ import {
   shouldQueueAnnouncementAudio,
   type SharedAnnouncement,
 } from "@/lib/sharedAnnouncer";
+import { LiveRaceViews, type LeaderboardData } from "./LiveLeaderboard";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
@@ -48,17 +49,7 @@ function getWsUrl(eventId: number): string {
   return `${proto}//${host}/api/video/watch/${eventId}`;
 }
 
-interface LeaderboardEntry {
-  position: number;
-  riderId: number;
-  riderName: string;
-  bibNumber: string | null;
-  laps: number;
-  lastLap: string | null;
-  gap: string;
-  dnf: boolean;
-  dns: boolean;
-}
+type LeaderboardEntry = LeaderboardData["leaderboard"][number];
 
 export default function WatchLive() {
   const [, params] = useRoute("/watch/:eventId");
@@ -78,6 +69,10 @@ export default function WatchLive() {
   const [announcerOn, setAnnouncerOn] = useState(true);
   const [announcerLabel, setAnnouncerLabel] = useState<string | null>(null);
   const [sseLeaderboard, setSseLeaderboard] = useState<LeaderboardEntry[] | null>(null);
+  const [liveSnapshot, setLiveSnapshot] = useState<LeaderboardData | null>(null);
+  const [timingConnected, setTimingConnected] = useState(false);
+  const [timingCorrectionVisible, setTimingCorrectionVisible] = useState(false);
+  const correctionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioUnlockedRef = useRef(false);
   // Once a 360 format is confirmed, lock it so MSE reconnects can't reset the detection.
   const formatLockedRef = useRef(false);
@@ -247,6 +242,10 @@ export default function WatchLive() {
       activeMotoIdRef.current = null;
       prevSseStatusRef.current = null;
       setSseLeaderboard(null);
+      setLiveSnapshot(null);
+      setTimingConnected(false);
+      setTimingCorrectionVisible(false);
+      if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
       return;
     }
     if (activeMotoIdRef.current === motoId) return; // already connected
@@ -255,9 +254,12 @@ export default function WatchLive() {
     activeMotoIdRef.current = motoId;
     prevSseStatusRef.current = null;
     lastAnnouncementSequenceRef.current = 0;
+    setTimingCorrectionVisible(false);
 
     const es = new EventSource(`/api/timing/live/${motoId}`);
     esRef.current = es;
+    es.onopen = () => setTimingConnected(true);
+    es.onerror = () => setTimingConnected(false);
     const announcerEs = new EventSource(`/api/timing/announcer-live/${motoId}`);
     announcerEsRef.current = announcerEs;
 
@@ -266,6 +268,12 @@ export default function WatchLive() {
         const payload = JSON.parse(evt.data);
         if (payload.error) return;
         const leaderboard = payload.leaderboard as LeaderboardEntry[];
+        setLiveSnapshot(payload as LeaderboardData);
+        if (payload.correction) {
+          setTimingCorrectionVisible(true);
+          if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
+          correctionTimerRef.current = setTimeout(() => setTimingCorrectionVisible(false), 5_000);
+        }
         prevSseStatusRef.current = payload.status;
         setSseLeaderboard(leaderboard);
       } catch { /* ignore parse errors */ }
@@ -283,6 +291,8 @@ export default function WatchLive() {
       }
       es.close();
       announcerEs.close();
+      setTimingConnected(false);
+      if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
       if (announcerEsRef.current === announcerEs) announcerEsRef.current = null;
       if (esRef.current === es) { esRef.current = null; activeMotoIdRef.current = null; }
     };
@@ -763,10 +773,10 @@ export default function WatchLive() {
       </div>
 
       {/* Main content: sidebar + video */}
-      <div className="flex-1 flex min-h-0">
+      <div className="flex flex-1 flex-col overflow-y-auto md:min-h-0 md:flex-row md:overflow-hidden">
 
         {/* ── Left sidebar: current moto + leaderboard ── */}
-        <div className="w-64 shrink-0 border-r border-white/10 flex flex-col overflow-hidden">
+        <div className="h-44 w-full shrink-0 border-b border-white/10 flex flex-col overflow-hidden md:h-auto md:w-64 md:border-b-0 md:border-r">
           {activeMoto ? (
             <>
               {/* Moto header */}
@@ -1011,8 +1021,9 @@ export default function WatchLive() {
           )}
         </div>
 
-        {/* ── Video (right side) ── */}
-        <div className="flex-1 flex items-center justify-center relative bg-black">
+        {/* ── Video and live race views (right side) ── */}
+        <div className="relative flex min-h-[34rem] min-w-0 flex-1 flex-col bg-black md:min-h-0">
+        <div className="relative flex min-h-[18rem] flex-1 items-center justify-center bg-black md:min-h-0">
           {/* 360 split view: front + back lenses side-by-side via canvas */}
           {is360 && <SplitView360 videoRef={videoRef} />}
 
@@ -1147,6 +1158,17 @@ export default function WatchLive() {
           </div>
         )}
         </div>{/* end video panel */}
+        {activeMoto?.status === "in_progress" && (
+          <div className="h-64 shrink-0 border-t border-white/10 md:h-[19rem] md:max-h-[42vh]">
+            <LiveRaceViews
+              data={liveSnapshot}
+              connected={timingConnected}
+              correctionVisible={timingCorrectionVisible}
+              compact
+            />
+          </div>
+        )}
+        </div>{/* end video and analytics column */}
       </div>{/* end sidebar+video flex row */}
 
       {/* Footer */}

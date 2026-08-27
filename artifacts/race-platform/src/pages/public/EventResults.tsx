@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { LiveRaceViews, useLiveRaceStream } from "./LiveLeaderboard";
 
 // ─── Lap time formatter ───────────────────────────────────────────────────────
 function formatLapTime(ms: number): string {
@@ -421,6 +422,7 @@ export default function EventResults() {
   }, [eventId]);
 
   const activeMoto = motos?.find(m => m.status === "in_progress");
+  const liveRace = useLiveRaceStream(activeMoto?.id);
 
   if (event && !activeClass && event.raceClasses && event.raceClasses.length > 0) {
     setActiveClass(event.raceClasses[0]);
@@ -604,6 +606,11 @@ export default function EventResults() {
 
             {/* Live Standings tab */}
             <TabsContent value="standings" className="m-0 bg-card border rounded-b-lg shadow-sm">
+              {activeMoto && (
+                <div className="h-[32rem] max-h-[70vh] overflow-hidden border-b bg-sidebar">
+                  <LiveRaceViews {...liveRace} />
+                </div>
+              )}
               <div className="p-6 md:p-8">
                 {event.raceClasses && event.raceClasses.length > 0 ? (
                   <>
