@@ -72,6 +72,14 @@ export interface LeaderboardData {
   analytics?: RaceAnalytics;
 }
 
+function isLeaderboardData(payload: unknown): payload is LeaderboardData {
+  if (!payload || typeof payload !== "object") return false;
+  const candidate = payload as Partial<LeaderboardData>;
+  return Array.isArray(candidate.leaderboard)
+    && typeof candidate.motoId === "number"
+    && typeof candidate.status === "string";
+}
+
 function ElapsedClock({ startedAt }: { startedAt: string }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -508,11 +516,15 @@ export function useLiveRaceStream(motoId: number | string | null | undefined) {
       nextSource.onopen = () => setConnected(true);
       nextSource.onmessage = event => {
         try {
-          const payload = JSON.parse(event.data) as LeaderboardData & { error?: string };
-          if (payload.error) {
-            setError(payload.error);
+          const payload = JSON.parse(event.data) as unknown;
+          if (payload && typeof payload === "object" && "error" in payload) {
+            setError(String((payload as { error: unknown }).error));
             return;
           }
+          // The shared timing stream also carries lightweight events such as
+          // crossing_accepted. They acknowledge ingestion but are not renderable
+          // leaderboard snapshots, so wait for the snapshot that follows.
+          if (!isLeaderboardData(payload)) return;
           if (payload.correction) {
             setCorrectionVisible(true);
             if (correctionTimer.current) clearTimeout(correctionTimer.current);
@@ -717,8 +729,12 @@ function LegacyLiveLeaderboard() {
 
       es.onmessage = (e) => {
         try {
-          const payload = JSON.parse(e.data) as LeaderboardData;
-          if ((payload as any).error) { setError((payload as any).error); return; }
+          const payload = JSON.parse(e.data) as unknown;
+          if (payload && typeof payload === "object" && "error" in payload) {
+            setError(String((payload as { error: unknown }).error));
+            return;
+          }
+          if (!isLeaderboardData(payload)) return;
 
           // Show correction banner
           if (payload.correction) {

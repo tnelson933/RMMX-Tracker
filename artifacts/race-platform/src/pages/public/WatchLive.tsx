@@ -292,6 +292,10 @@ export default function WatchLive() {
       try {
         const payload = JSON.parse(evt.data);
         if (payload.error) return;
+        // crossing_accepted acknowledgements share this stream with complete
+        // leaderboard snapshots. Ignore non-snapshot messages; the updated
+        // leaderboard arrives immediately afterward.
+        if (!Array.isArray(payload.leaderboard)) return;
         const leaderboard = payload.leaderboard as LeaderboardEntry[];
         setLiveSnapshot(payload as LeaderboardData);
         if (payload.correction) {

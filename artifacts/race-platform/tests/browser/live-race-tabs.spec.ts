@@ -336,6 +336,17 @@ test("Watch keeps one timing stream while announcements and tabs update", async 
   await expect.poll(() => streamAction(page, "count", "/timing/live/101")).toBe(1);
   await expect.poll(() => streamAction(page, "count", "/timing/announcer-live/101")).toBe(1);
   await streamAction(page, "open", "/timing/live/101");
+  const pageErrors: string[] = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
+  await streamAction(page, "message", "/timing/live/101", {
+    type: "crossing_accepted",
+    motoId: 101,
+    crossingId: 501,
+    lapNumber: 1,
+    lapTimeMs: 59_000,
+    crossingTime: new Date().toISOString(),
+  });
+  await expect(page.locator('[data-viewer-state="playing"]')).toBeVisible();
   await streamAction(page, "message", "/timing/live/101", snapshot(101, "Heat 1"));
   await streamAction(page, "message", "/timing/announcer-live/101", {
     announcement: { sequence: 1, label: "Blake takes the lead", audioUrl: "/api/test-audio" },
@@ -348,4 +359,26 @@ test("Watch keeps one timing stream while announcements and tabs update", async 
   await expect(video).toBeVisible();
   const box = await video.boundingBox();
   expect(box?.height ?? 0).toBeGreaterThan(100);
+  expect(pageErrors).toEqual([]);
+});
+
+test("standalone leaderboard ignores crossing acknowledgements until the next snapshot", async ({ page }) => {
+  await installRealtimeFakes(page);
+  await mockCommonApi(page);
+  const pageErrors: string[] = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
+  await page.goto("/live/101");
+  await streamAction(page, "open", "/timing/live/101");
+  await streamAction(page, "message", "/timing/live/101", snapshot(101, "Heat 1"));
+  await streamAction(page, "message", "/timing/live/101", {
+    type: "crossing_accepted",
+    motoId: 101,
+    crossingId: 502,
+    lapNumber: 2,
+    lapTimeMs: 58_500,
+    crossingTime: new Date().toISOString(),
+  });
+  await expect(page.getByText("Heat 1")).toBeVisible();
+  await expect(page.locator('[data-rider-id="11"]')).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });
