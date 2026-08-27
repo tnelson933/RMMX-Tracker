@@ -5,9 +5,35 @@ import { getDb, parseJsonArr, parseJson } from "../db";
 const router = Router();
 const MAX_CROSSING_FUTURE_MS = 5 * 60 * 1000;
 
-function canonicalizeCrossingTimestamp(value: unknown, receivedAt = new Date(), source = "local_timing"): Date {
+// Must match the direct active provenance emitted by RM Connect, RM Tracker,
+// and the Python live TCP bridge. Generic/passive facility payloads are not
+// included because an old timestamp may be a valid delayed upload.
+export const TRUSTED_DIRECT_ACTIVE_TIMING_SOURCES = [
+  "connector_live_tcp",
+  "f2000_tcp",
+  "f2000_device",
+  "bridge_live_tcp",
+] as const;
+
+export function isTrustedDirectActiveTimingSource(...values: unknown[]): boolean {
+  const trusted = new Set<string>(TRUSTED_DIRECT_ACTIVE_TIMING_SOURCES);
+  return values.some(value =>
+    typeof value === "string" && trusted.has(value.trim().toLowerCase()),
+  );
+}
+
+function canonicalizeCrossingTimestamp(
+  value: unknown,
+  receivedAt = new Date(),
+  source = "local_timing",
+  rejectPastSkew = false,
+): Date {
   const candidate = value instanceof Date ? value : new Date(value as string | number);
-  if (!Number.isFinite(candidate.getTime()) || candidate.getTime() > receivedAt.getTime() + MAX_CROSSING_FUTURE_MS) {
+  if (
+    !Number.isFinite(candidate.getTime())
+    || candidate.getTime() > receivedAt.getTime() + MAX_CROSSING_FUTURE_MS
+    || (rejectPastSkew && candidate.getTime() < receivedAt.getTime() - MAX_CROSSING_FUTURE_MS)
+  ) {
     console.warn(JSON.stringify({
       event: "crossing_timestamp_canonicalized",
       source,
@@ -19,8 +45,58 @@ function canonicalizeCrossingTimestamp(value: unknown, receivedAt = new Date(), 
   return candidate;
 }
 
-function isFutureCrossing(crossingTime: Date, createdAt: Date): boolean {
-  return crossingTime.getTime() > createdAt.getTime() + MAX_CROSSING_FUTURE_MS;
+export function canonicalizeDirectActiveTimestamp(value: unknown, body: Record<string, unknown>, source: string): Date {
+  const serverReceivedAt = new Date();
+  const rawReceipt = body.receivedAtUtc ?? body.receivedAt;
+  const suppliedReceipt = rawReceipt == null ? null : new Date(rawReceipt as string | number);
+  const trustworthyReceipt = suppliedReceipt
+    && Number.isFinite(suppliedReceipt.getTime())
+    && suppliedReceipt.getTime() <= serverReceivedAt.getTime() + MAX_CROSSING_FUTURE_MS
+      ? suppliedReceipt
+      : null;
+  const receivedAt = trustworthyReceipt ?? serverReceivedAt;
+  return canonicalizeCrossingTimestamp(
+    value ?? receivedAt,
+    receivedAt,
+    source,
+    trustworthyReceipt !== null && isTrustedDirectActiveTimingSource(body.source, body.timeSource),
+  );
+}
+
+function deriveClockSkewRepair(
+  startedAt: Date,
+  crossings: Array<{ id: number; crossing_time: string; created_at: string }>,
+): Array<{ id: number; time: Date; lapMs: number }> | null {
+  // Historical SQLite rows lack durable original receipt/source metadata. A
+  // stable past offset can be a legitimate delayed or retried batch, so only
+  // repair the known reader-clock-ahead failure mode. Direct active ingress
+  // applies trusted receipt-backed skew correction in both directions.
+  if (crossings.length < 2) return null;
+  const offsets = crossings.map(c => new Date(c.crossing_time).getTime() - new Date(c.created_at).getTime());
+  if (offsets.some(offset => !Number.isFinite(offset))) return null;
+  const sorted = [...offsets].sort((a, b) => a - b);
+  const median = sorted.length % 2
+    ? sorted[(sorted.length - 1) / 2]
+    : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+  const spread = sorted[sorted.length - 1] - sorted[0];
+  const quarterHourMs = 15 * 60 * 1000;
+  const timezoneDistance = Math.abs(Math.abs(median) - Math.round(Math.abs(median) / quarterHourMs) * quarterHourMs);
+  if (
+    median <= MAX_CROSSING_FUTURE_MS
+    || spread > 2 * 60 * 1000
+    || !offsets.every(offset => Math.sign(offset) === Math.sign(median))
+    || timezoneDistance > 2 * 60 * 1000
+  ) return null;
+  let previousMs = startedAt.getTime();
+  const repaired: Array<{ id: number; time: Date; lapMs: number }> = [];
+  for (const crossing of crossings) {
+    const time = new Date(crossing.created_at);
+    const lapMs = time.getTime() - previousMs;
+    if (!Number.isFinite(lapMs) || lapMs < 0) return null;
+    repaired.push({ id: crossing.id, time, lapMs });
+    previousMs = time.getTime();
+  }
+  return repaired;
 }
 
 // ── Utility: format milliseconds → "M:SS.mm" ─────────────────────────────────
@@ -64,8 +140,8 @@ export function buildLeaderboard(motoId: number) {
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
   if (!moto) return null;
 
-  // Self-heal reader-clock corruption using logical lap/insertion order. This
-  // runs before reading race_results so the same snapshot reflects the repair.
+  // Self-heal stable timezone-labelled reader clocks using logical
+  // lap/insertion order. Delayed uploads are intentionally not repaired.
   if (moto.started_at) {
     const crossings = db.prepare(`
       SELECT * FROM lap_crossings
@@ -80,24 +156,8 @@ export function buildLeaderboard(motoId: number) {
     }
     const repair = db.transaction(() => {
       for (const [riderId, riderCrossings] of byRider) {
-        const hasClockSkew = riderCrossings.some(c =>
-          isFutureCrossing(new Date(c.crossing_time), new Date(c.created_at)));
-        if (!hasClockSkew) continue;
-        let previousMs = new Date(moto.started_at).getTime();
-        const repaired: Array<{ id: number; time: Date; lapMs: number }> = [];
-        for (const crossing of riderCrossings) {
-          const crossingDate = new Date(crossing.crossing_time);
-          const createdDate = new Date(crossing.created_at);
-          const effective = isFutureCrossing(crossingDate, createdDate) ? createdDate : crossingDate;
-          const lapMs = effective.getTime() - previousMs;
-          if (!Number.isFinite(lapMs) || lapMs < 0) {
-            repaired.length = 0;
-            break;
-          }
-          repaired.push({ id: crossing.id, time: effective, lapMs });
-          previousMs = effective.getTime();
-        }
-        if (!repaired.length) continue;
+        const repaired = deriveClockSkewRepair(new Date(moto.started_at), riderCrossings);
+        if (!repaired?.length) continue;
         const updateCrossing = db.prepare(
           "UPDATE lap_crossings SET crossing_time = ?, lap_time_ms = ? WHERE id = ?",
         );
@@ -239,7 +299,7 @@ function processCrossing(opts: {
       const lastCrossing = prevCrossings[prevCrossings.length - 1];
       const rawLastTime = new Date(lastCrossing.crossing_time);
       const createdAt = new Date(lastCrossing.created_at);
-      const lastTime = isFutureCrossing(rawLastTime, createdAt) ? createdAt : rawLastTime;
+      const lastTime = rawLastTime.getTime() > createdAt.getTime() + MAX_CROSSING_FUTURE_MS ? createdAt : rawLastTime;
       const gapMs = crossingTime.getTime() - lastTime.getTime();
       if (gapMs < debounceMs) {
         return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
@@ -253,7 +313,7 @@ function processCrossing(opts: {
             const previous = prevCrossings[prevCrossings.length - 1];
             const rawTime = new Date(previous.crossing_time);
             const createdAt = new Date(previous.created_at);
-            return isFutureCrossing(rawTime, createdAt) ? createdAt : rawTime;
+            return rawTime.getTime() > createdAt.getTime() + MAX_CROSSING_FUTURE_MS ? createdAt : rawTime;
           })()
         : new Date(moto.started_at);
     const lapTimeMs = crossingTime.getTime() - prevTime.getTime();
@@ -569,7 +629,7 @@ router.post("/timing/active/crossing", (req, res) => {
     return res.status(400).json({ error: "Cannot extract tag/transponder ID — expected rfidNumber, transponder, transponderId, Impinj events[], or Zebra tags[]" });
   }
   const rawTime = body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
-  const crossingTime = canonicalizeCrossingTimestamp(rawTime ?? new Date(), new Date(), "active_generic_ingest");
+  const crossingTime = canonicalizeDirectActiveTimestamp(rawTime, body, "active_generic_ingest");
 
   const moto = getActiveMotoForAnyEvent();
   const practiceGeneric = !moto ? getActivePracticeSession() : null;
@@ -604,7 +664,7 @@ router.post(["/timing/transponder-crossing", "/timing/mylaps-crossing"], (req, r
   const transponder: string | undefined = body?.transponder ?? body?.rfidNumber ?? body?.transponderId ?? body?.id;
   if (!transponder) return res.status(400).json({ error: "Missing transponder field — expected 'transponder', 'rfidNumber', or 'transponderId'" });
   const rawTime = body?.passingTime ?? body?.crossingTime ?? body?.timestamp ?? body?.passTime;
-  const crossingTime = canonicalizeCrossingTimestamp(rawTime ?? new Date(), new Date(), "legacy_active_ingest");
+  const crossingTime = canonicalizeDirectActiveTimestamp(rawTime, body, "legacy_active_ingest");
   const moto = getActiveMotoForEvent(eventId);
   if (!moto) return res.status(409).json({ error: "No moto currently in progress for this event" });
   const readerId: string = body?.loopId ?? body?.readerId ?? "active-transponder";

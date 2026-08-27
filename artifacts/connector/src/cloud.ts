@@ -75,6 +75,8 @@ export interface CloudStatusReport {
   lastReadAt: string | null;
   readCount: number;
   antennaIds: number[];
+  hostTimezone?: string | null;
+  utcOffsetMinutes?: number;
 }
 
 export interface CloudLinkStatus {
@@ -168,6 +170,9 @@ export class CloudLink extends EventEmitter {
     antennaId?: number | null;
     clubId?: number | null;
     eventId?: number | null;
+    receivedAtUtc?: Date;
+    deviceTimezone?: string | null;
+    source?: string;
   }): Promise<{ ok: boolean; message?: string }> {
     if (!this.cloudUrl || !this.readerToken) {
       return { ok: false, message: "Cloud link not configured" };
@@ -175,6 +180,9 @@ export class CloudLink extends EventEmitter {
     const payload = JSON.stringify({
       rfidNumber: input.rfidNumber,
       crossingTime: input.crossingTime.toISOString(),
+      ...(input.receivedAtUtc ? { receivedAtUtc: input.receivedAtUtc.toISOString(), receivedAt: input.receivedAtUtc.toISOString() } : {}),
+      ...(input.deviceTimezone ? { deviceTimezone: input.deviceTimezone } : {}),
+      ...(input.source ? { source: input.source, timeSource: input.source } : {}),
       ...(input.antennaId != null ? { antennaId: input.antennaId } : {}),
       ...(input.eventId != null ? { eventId: input.eventId } : {}),
     });

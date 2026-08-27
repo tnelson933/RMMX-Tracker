@@ -20,7 +20,7 @@ import {
 } from "electron";
 import path from "path";
 import { LlrpClient, impinjHostFromMac } from "./llrp";
-import { ActiveTransponderClient } from "./active-transponder-client";
+import { ActiveTransponderClient, type ActiveTimingReceiptMetadata } from "./active-transponder-client";
 import { RecentReadDeduper } from "./recent-read-deduper";
 import { shouldForwardCrossing, type CrossingSource } from "./crossing-policy";
 import {
@@ -134,6 +134,8 @@ function getAggregateStatus(): AggregateStatus {
       loop2State: active?.loop2State,
       diagnosis,
       ready: active?.ready,
+      hostTimezone: active?.hostTimezone,
+      utcOffsetMinutes: active?.utcOffsetMinutes,
     },
     // Keep event context internal; the renderer's established status shape only
     // exposes the moto identity and display name.
@@ -226,6 +228,7 @@ async function forwardCrossing(
   rfidNumber: string,
   crossingTime: Date,
   antennaId?: number | null,
+  receipt?: ActiveTimingReceiptMetadata,
 ): Promise<void> {
   if (!shouldForwardCrossing(source, activeMoto !== null, testMode)) return;
 
@@ -243,6 +246,9 @@ async function forwardCrossing(
       antennaId,
       clubId: settings.clubId,
       eventId: activeMoto?.eventId ?? null,
+      receivedAtUtc: receipt?.receivedAt,
+      deviceTimezone: receipt?.deviceTimezone,
+      source: receipt?.source,
     });
     if (testMode) {
       if (result.ok) {
@@ -272,12 +278,12 @@ llrp.on("tag", (read) => {
   pushStatusToWindow();
 });
 
-activeTransponder.on("tag", (tag: string, crossingTime: Date) => {
+activeTransponder.on("tag", (tag: string, crossingTime: Date, receipt: ActiveTimingReceiptMetadata) => {
   if (testMode) {
     testProgress = "sending_crossing";
     testMessage = "PowerTag received from active timing. Confirming the cloud crossing…";
   }
-  forwardCrossing("active_transponder", tag, crossingTime).catch(() => {});
+  forwardCrossing("active_transponder", tag, crossingTime, undefined, receipt).catch(() => {});
   pushStatusToWindow();
 });
 
@@ -414,6 +420,8 @@ cloud.setStatusProvider(() => {
     lastReadAt: s.device.lastReadAt,
     readCount: s.device.readCount,
     antennaIds: s.device.antennaIds,
+    hostTimezone: s.device.hostTimezone,
+    utcOffsetMinutes: s.device.utcOffsetMinutes,
   };
 });
 

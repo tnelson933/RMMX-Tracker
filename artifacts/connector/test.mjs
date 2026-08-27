@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
+import net from "node:net";
 import test from "node:test";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { WebSocketServer } from "ws";
@@ -47,7 +49,108 @@ const { shouldForwardCrossing } = policyModule.default ?? policyModule;
 const migrationsModule = await import(pathToFileURL(migrationsOutputFile).href);
 const { migrateLegacyActiveTransponderAddress } = migrationsModule.default ?? migrationsModule;
 const activeReaderModule = await import(pathToFileURL(activeReaderOutputFile).href);
-const { parseTimestamp } = activeReaderModule.default ?? activeReaderModule;
+const {
+  ActiveTransponderClient,
+  formatLocalClockCommands,
+  parseTimestamp,
+} = activeReaderModule.default ?? activeReaderModule;
+
+function commandsFromWire(messages) {
+  return messages.join("").split(";").filter(Boolean).map(packet => packet.split("@")[1]);
+}
+
+async function waitFor(predicate) {
+  const deadline = Date.now() + 1_000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for fake reader traffic");
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+}
+
+test("initialization writes precede reader open and a first-packet crossing", async () => {
+  const sessions = [];
+  const peers = [];
+  const server = net.createServer(peer => {
+    const messages = [];
+    sessions.push(messages);
+    peers.push(peer);
+    peer.on("data", chunk => messages.push(chunk.toString("utf8")));
+    peer.on("error", () => {});
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const client = new ActiveTransponderClient();
+  client.configure({ channel: 2, power: 65, loop1Enabled: true, loop2Enabled: false });
+  const crossing = new Promise(resolve => client.once("tag", (...args) => resolve(args)));
+  try {
+    await client.connect(`127.0.0.1:${server.address().port}`);
+    client.startReading();
+    peers[0].write("unit-1@epc@0001@2025-01-15_10:00:00.120,ABC123;");
+    const [, , receipt] = await crossing;
+    await waitFor(() => commandsFromWire(sessions[0]).length >= 7);
+    const commandsAtCrossing = commandsFromWire(sessions[0]);
+    assert.deepEqual(commandsAtCrossing.slice(0, 6), [
+      "setDate", "setTime", "loopEnable", "loopDisable", "setActiveChannel", "setActivePower",
+    ]);
+    assert.equal(commandsAtCrossing[6], "readerOpen");
+    assert.equal(commandsAtCrossing.includes("setTimezone"), false);
+    assert.equal(commandsAtCrossing.includes("setOffset"), false);
+    assert.ok(receipt.receivedAt instanceof Date);
+  } finally {
+    client.disconnect();
+    for (const peer of peers) peer.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test("a reconnect resends local date, time, and configuration", async () => {
+  const sessions = [];
+  const peers = [];
+  const server = net.createServer(peer => {
+    const messages = [];
+    sessions.push(messages);
+    peers.push(peer);
+    peer.on("data", chunk => messages.push(chunk.toString("utf8")));
+    peer.on("error", () => {});
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = `127.0.0.1:${server.address().port}`;
+  const client = new ActiveTransponderClient();
+  client.configure({ channel: 1, power: 80, loop1Enabled: true, loop2Enabled: true });
+  try {
+    await client.connect(address);
+    peers[0].write("unit-1@heartBeat@0001@;");
+    await waitFor(() => commandsFromWire(sessions[0]).length >= 6);
+    await client.connect(address);
+    await waitFor(() => peers.length >= 2);
+    peers[1].write("unit-1@heartBeat@0002@;");
+    await waitFor(() => commandsFromWire(sessions[1]).length >= 6);
+    for (const session of sessions) {
+      assert.deepEqual(commandsFromWire(session).slice(0, 6), [
+        "setDate", "setTime", "loopEnable", "loopEnable", "setActiveChannel", "setActivePower",
+      ]);
+    }
+  } finally {
+    client.disconnect();
+    for (const peer of peers) peer.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+for (const [zone, expected] of [
+  ["America/Denver", { date: "2025-01-15", time: "10:04:05.67" }],
+  ["Asia/Kathmandu", { date: "2025-01-15", time: "22:49:05.67" }],
+]) {
+  test(`formats clock synchronization in local timezone ${zone}`, () => {
+    const script = `const {formatLocalClockCommands}=require(${JSON.stringify(activeReaderOutputFile)});`
+      + `process.stdout.write(JSON.stringify(formatLocalClockCommands(new Date("2025-01-15T17:04:05.678Z"))))`;
+    assert.deepEqual(JSON.parse(execFileSync(process.execPath, ["-e", script], {
+      env: { ...process.env, TZ: zone },
+      encoding: "utf8",
+    })), expected);
+  });
+}
 
 test("replaces a device timestamp two hours ahead with receive time", () => {
   const receivedAt = new Date(2026, 7, 27, 15, 29, 18, 123);
@@ -57,7 +160,7 @@ test("replaces a device timestamp two hours ahead with receive time", () => {
   );
 });
 
-test("preserves normal and delayed device timestamps", () => {
+test("preserves normal timestamps and rejects clocks six hours behind", () => {
   const receivedAt = new Date(2026, 7, 27, 15, 29, 18, 123);
   assert.equal(
     parseTimestamp("2026-8-27_15:29:17.900", receivedAt).getTime(),
@@ -65,8 +168,35 @@ test("preserves normal and delayed device timestamps", () => {
   );
   assert.equal(
     parseTimestamp("2026-8-26_12:00:00.000", receivedAt).getTime(),
-    new Date(2026, 7, 26, 12, 0, 0, 0).getTime(),
+    receivedAt.getTime(),
   );
+});
+
+for (const [zone, wall, receipt] of [
+  ["America/Denver", "2025-01-15_10:00:00.120", "2025-01-15T17:00:00.120Z"],
+  ["America/New_York", "2025-01-15_10:00:00.120", "2025-01-15T15:00:00.120Z"],
+  ["America/Los_Angeles", "2025-01-15_10:00:00.120", "2025-01-15T18:00:00.120Z"],
+  ["UTC", "2025-01-15_10:00:00.120", "2025-01-15T10:00:00.120Z"],
+  ["Asia/Kathmandu", "2025-01-15_10:00:00.120", "2025-01-15T04:15:00.120Z"],
+  ["Australia/Eucla", "2025-01-15_10:00:00.120", "2025-01-15T01:15:00.120Z"],
+]) {
+  test(`interprets device calendar fields in host timezone ${zone}`, () => {
+    const script = `const {parseTimestamp}=require(${JSON.stringify(activeReaderOutputFile)});`
+      + `process.stdout.write(parseTimestamp(${JSON.stringify(wall)},new Date(${JSON.stringify(receipt)})).toISOString())`;
+    assert.equal(execFileSync(process.execPath, ["-e", script], {
+      env: { ...process.env, TZ: zone },
+      encoding: "utf8",
+    }), receipt);
+  });
+}
+
+test("uses receipt proximity for fall ambiguity and spring nonexistent time", () => {
+  const parseInNewYork = (wall, receipt) => execFileSync(process.execPath, ["-e",
+    `const {parseTimestamp}=require(${JSON.stringify(activeReaderOutputFile)});`
+      + `process.stdout.write(parseTimestamp(${JSON.stringify(wall)},new Date(${JSON.stringify(receipt)})).toISOString())`,
+  ], { env: { ...process.env, TZ: "America/New_York" }, encoding: "utf8" });
+  assert.equal(parseInNewYork("2025-11-02_01:30:00.000", "2025-11-02T06:30:00.000Z"), "2025-11-02T06:30:00.000Z");
+  assert.equal(parseInNewYork("2025-03-09_02:30:00.000", "2025-03-09T07:30:00.000Z"), "2025-03-09T07:30:00.000Z");
 });
 
 async function receiveCommand(message) {
@@ -160,7 +290,7 @@ test("reports the connector version in cloud status", async () => {
   }
 });
 
-async function captureCrossingPayload(eventId) {
+async function captureCrossingPayload(eventId, metadata = {}) {
   let resolvePayload;
   const payload = new Promise(resolve => { resolvePayload = resolve; });
   const server = createServer((request, response) => {
@@ -188,6 +318,7 @@ async function captureCrossingPayload(eventId) {
       rfidNumber: "12345",
       crossingTime: new Date("2025-01-02T03:04:05.000Z"),
       eventId,
+      ...metadata,
     });
     return await payload;
   } finally {
@@ -205,4 +336,16 @@ test("includes armed event context in the token crossing payload", async () => {
 test("omits event context from an unarmed crossing payload", async () => {
   const payload = await captureCrossingPayload(null);
   assert.equal(Object.hasOwn(payload, "eventId"), false);
+});
+
+test("includes original receipt and timing metadata", async () => {
+  const payload = await captureCrossingPayload(42, {
+    receivedAtUtc: new Date("2025-01-02T03:04:06.000Z"),
+    deviceTimezone: "Asia/Kathmandu",
+    source: "connector_live_tcp",
+  });
+  assert.equal(payload.receivedAt, "2025-01-02T03:04:06.000Z");
+  assert.equal(payload.receivedAtUtc, "2025-01-02T03:04:06.000Z");
+  assert.equal(payload.deviceTimezone, "Asia/Kathmandu");
+  assert.equal(payload.timeSource, "connector_live_tcp");
 });

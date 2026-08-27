@@ -13,7 +13,11 @@ import {
 import { eq, and, desc, asc, ilike, or } from "drizzle-orm";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
-import { canonicalizeCrossingTimestamp } from "../lib/crossingTimestamp";
+import {
+  canonicalizeCrossingTimestamp,
+  isTrustedDirectActiveTimingSource,
+  parseTrustworthyReceivedAt,
+} from "../lib/crossingTimestamp";
 
 type CallerInfo = { clubId: number | null; isSuperAdmin: boolean };
 
@@ -260,11 +264,18 @@ router.post("/practice/active/crossing", async (req, res) => {
   // Accept hardware timestamp in any common field name
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
-  const receivedAt = new Date();
+  const serverReceivedAt = new Date();
+  const originalReceipt = parseTrustworthyReceivedAt(
+    body?.receivedAtUtc ?? body?.receivedAt,
+    serverReceivedAt,
+  );
+  const receivedAt = originalReceipt ?? serverReceivedAt;
   const crossingTime = canonicalizeCrossingTimestamp(rawTime ?? receivedAt, receivedAt, {
     source: "active_practice_ingest",
     clubId,
-  });
+    deviceTimezone: body?.deviceTimezone,
+    timeSource: body?.timeSource ?? body?.source,
+  }, originalReceipt !== null && isTrustedDirectActiveTimingSource(body?.source, body?.timeSource));
 
   // Find the active session for this club (most recently started)
   const [session] = await db.select().from(practiceSessionsTable)

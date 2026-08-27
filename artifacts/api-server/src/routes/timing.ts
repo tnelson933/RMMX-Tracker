@@ -21,7 +21,9 @@ import { recordTagSeen } from "../lib/recentTags";
 import {
   canonicalizeCrossingTimestamp,
   deriveClockSkewRepair,
+  isTrustedDirectActiveTimingSource,
   isImplausiblyFutureCrossing,
+  parseTrustworthyReceivedAt,
 } from "../lib/crossingTimestamp";
 
 const router = Router();
@@ -29,6 +31,20 @@ const router = Router();
 function ingestCrossingTime(value: unknown, source: string): Date {
   const receivedAt = new Date();
   return canonicalizeCrossingTimestamp(value ?? receivedAt, receivedAt, { source });
+}
+
+function ingestDirectActiveCrossingTime(value: unknown, body: Record<string, unknown>, source: string): Date {
+  const serverReceivedAt = new Date();
+  const originalReceipt = parseTrustworthyReceivedAt(
+    body.receivedAtUtc ?? body.receivedAt,
+    serverReceivedAt,
+  );
+  const receivedAt = originalReceipt ?? serverReceivedAt;
+  return canonicalizeCrossingTimestamp(value ?? receivedAt, receivedAt, {
+    source,
+    deviceTimezone: body.deviceTimezone,
+    timeSource: body.timeSource ?? body.source,
+  }, originalReceipt !== null && isTrustedDirectActiveTimingSource(body.source, body.timeSource));
 }
 
 function getStaffClubId(res: any): number | null {
@@ -1202,7 +1218,7 @@ router.post("/timing/active/crossing", async (req, res) => {
   }
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
-  const crossingTime = ingestCrossingTime(rawTime, "active_ingest_generic");
+  const crossingTime = ingestDirectActiveCrossingTime(rawTime, body, "active_ingest_generic");
   recordTagSeen(clubId, String(rfidNumber).toUpperCase());
 
   const moto = await getActiveMotoForClub(clubId);
@@ -1439,7 +1455,7 @@ router.post("/timing/mylaps-crossing", async (req, res) => {
   const rawTime: string | undefined =
     body?.passingTime ?? body?.crossingTime ?? body?.timestamp ?? body?.passTime;
 
-  const crossingTime = ingestCrossingTime(rawTime, "legacy_active_ingest");
+  const crossingTime = ingestDirectActiveCrossingTime(rawTime, body, "legacy_active_ingest");
 
   const moto = await getActiveMotoForEvent(eventId);
   if (!moto) {

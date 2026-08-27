@@ -511,9 +511,9 @@ function registerIpcHandlers(): void {
     if (savedSettings.configuration) configureActiveTransponder(savedSettings.configuration);
     await connectActiveTransponder(
       requestedAddress,
-      (epc, crossingTime) => {
+      (epc, crossingTime, metadata) => {
         postCrossingToLocalServer(
-          { tag: epc, fieldName: "transponder", crossingTime },
+          { tag: epc, fieldName: "transponder", crossingTime, ...metadata },
           (error) => error && reportActiveTransponderError(error),
         );
       },
@@ -771,13 +771,37 @@ function registerIpcHandlers(): void {
 
 // ── Forward tag reads to local server ─────────────────────────────────────────
 
+export function buildLocalCrossingPayload(opts: {
+  tag: string;
+  fieldName?: "rfidNumber" | "transponder";
+  crossingTime?: Date;
+  receivedAtUtc?: string;
+  deviceTimezone?: string | null;
+  source?: string;
+  timeSource?: string;
+}): Record<string, string> {
+  const { tag, fieldName = "rfidNumber", crossingTime, receivedAtUtc, deviceTimezone, source, timeSource } = opts;
+  const payload: Record<string, string> = {
+    [fieldName]: tag,
+    crossingTime: (crossingTime ?? new Date()).toISOString(),
+  };
+  if (receivedAtUtc) payload.receivedAtUtc = receivedAtUtc;
+  if (deviceTimezone) payload.deviceTimezone = deviceTimezone;
+  if (source) payload.source = source;
+  if (timeSource) payload.timeSource = timeSource;
+  return payload;
+}
+
 function postCrossingToLocalServer(opts: {
   tag: string;
   fieldName?: "rfidNumber" | "transponder";
   crossingTime?: Date;
+  receivedAtUtc?: string;
+  deviceTimezone?: string | null;
+  source?: string;
+  timeSource?: string;
 }, onFailure?: (message: string) => void): void {
-  const { tag, fieldName = "rfidNumber", crossingTime } = opts;
-  const body = JSON.stringify({ [fieldName]: tag, crossingTime: (crossingTime ?? new Date()).toISOString() });
+  const body = JSON.stringify(buildLocalCrossingPayload(opts));
   const req = http.request(
     {
       host: "127.0.0.1",

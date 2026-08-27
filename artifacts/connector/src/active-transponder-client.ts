@@ -11,6 +11,34 @@ const F2000_PORT = 55555;
 const CONNECT_TIMEOUT_MS = 8_000;
 const HEARTBEAT_STALE_MS = 5_000;
 const READER_OPEN_RETRY_MS = 2_000;
+export const MAX_DIRECT_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+export interface ActiveTimingReceiptMetadata {
+  receivedAt: Date;
+  deviceTimezone: string | null;
+  source: "connector_live_tcp";
+}
+
+export function getHostTimezone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
+
+export function getCurrentUtcOffsetMinutes(now = new Date()): number {
+  return -now.getTimezoneOffset();
+}
+
+export function formatLocalClockCommands(now = new Date()): { date: string; time: string } {
+  const two = (value: number) => String(value).padStart(2, "0");
+  const hundredths = two(Math.floor(now.getMilliseconds() / 10));
+  return {
+    date: `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`,
+    time: `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}.${hundredths}`,
+  };
+}
 
 export interface ActiveTransponderStatus {
   connected: boolean;
@@ -34,6 +62,8 @@ export interface ActiveTransponderStatus {
   ready: boolean;
   diagnosis: string | null;
   detail: string | null;
+  hostTimezone: string | null;
+  utcOffsetMinutes: number;
 }
 
 function friendlyConnectionError(error: Error, host: string, port: number): string {
@@ -65,17 +95,32 @@ export function parseTimestamp(value: string, receivedAt = new Date()): Date | n
   const match = value.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})_(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
   if (!match) return null;
   const [, year, month, day, hour, minute, second, millis = "0"] = match;
-  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second), Number(millis.padEnd(3, "0")));
-  if (
-    Number.isNaN(date.getTime())
-    || date.getFullYear() !== Number(year)
-    || date.getMonth() !== Number(month) - 1
-    || date.getDate() !== Number(day)
-    || date.getHours() !== Number(hour)
-    || date.getMinutes() !== Number(minute)
-    || date.getSeconds() !== Number(second)
-  ) return null;
-  return date.getTime() > receivedAt.getTime() + 5 * 60 * 1000 ? receivedAt : date;
+  const expected = [Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)];
+  const date = new Date(...expected as [number, number, number, number, number, number], Number(millis.padEnd(3, "0")));
+  const matchesWallTime = (candidate: Date) =>
+    !Number.isNaN(candidate.getTime())
+    && candidate.getFullYear() === expected[0]
+    && candidate.getMonth() === expected[1]
+    && candidate.getDate() === expected[2]
+    && candidate.getHours() === expected[3]
+    && candidate.getMinutes() === expected[4]
+    && candidate.getSeconds() === expected[5];
+  // A spring-forward wall time does not exist. For a fall-back wall time Node
+  // chooses one occurrence; check nearby offsets and choose the one nearest the
+  // socket receipt so either side of the transition is handled safely.
+  if (!matchesWallTime(date)) return receivedAt;
+  const candidates = [date];
+  for (const offset of [-2, -1, 1, 2]) {
+    const alternative = new Date(date.getTime() + offset * 60 * 60 * 1000);
+    if (matchesWallTime(alternative)) candidates.push(alternative);
+  }
+  const nearest = candidates.reduce((best, candidate) =>
+    Math.abs(candidate.getTime() - receivedAt.getTime()) < Math.abs(best.getTime() - receivedAt.getTime())
+      ? candidate
+      : best);
+  return Math.abs(nearest.getTime() - receivedAt.getTime()) > MAX_DIRECT_CLOCK_SKEW_MS
+    ? receivedAt
+    : nearest;
 }
 
 function stateFields(parameters: string): Record<string, string> {
@@ -148,7 +193,8 @@ export class ActiveTransponderClient extends EventEmitter {
       reading: ready, transportReady: connected && !!this.machineId, heartbeatFresh,
       loop1State, loop2State, loop1Enabled: this.loopEnabled[0],
       loop2Enabled: this.loopEnabled[1], configurationApplied: this.configurationApplied,
-      ready, diagnosis, detail,
+      ready, diagnosis, detail, hostTimezone: getHostTimezone(),
+      utcOffsetMinutes: getCurrentUtcOffsetMinutes(),
     };
   }
 
@@ -159,7 +205,7 @@ export class ActiveTransponderClient extends EventEmitter {
     this.power = input.power;
     this.loopEnabled = [input.loop1Enabled, input.loop2Enabled];
     this.configurationApplied = false;
-    this.applyConfiguration(false);
+    this.applyConfiguration(true);
     this.emit("status");
   }
 
@@ -202,7 +248,7 @@ export class ActiveTransponderClient extends EventEmitter {
         fail(error);
         socket.destroy();
       });
-      socket.on("data", (chunk: Buffer) => this.receive(chunk.toString("utf8")));
+      socket.on("data", (chunk: Buffer) => this.receive(chunk.toString("utf8"), new Date()));
       socket.on("error", (error) => fail(error));
       socket.on("close", () => {
         if (this.socket !== socket) return;
@@ -238,25 +284,36 @@ export class ActiveTransponderClient extends EventEmitter {
     this.emit("status");
   }
 
-  private receive(data: string): void {
+  private receive(data: string, receivedAt: Date): void {
     this.receiveBuffer += data;
     if (this.receiveBuffer.length > 64 * 1024) this.receiveBuffer = this.receiveBuffer.slice(-4096);
     let end: number;
     while ((end = this.receiveBuffer.indexOf(";")) >= 0) {
       const packet = this.receiveBuffer.slice(0, end).trim();
       this.receiveBuffer = this.receiveBuffer.slice(end + 1);
-      if (packet) this.handlePacket(packet);
+      if (packet) this.handlePacket(packet, receivedAt);
     }
   }
 
-  private handlePacket(packet: string): void {
+  private handlePacket(packet: string, receivedAt: Date): void {
     const fields = packet.split("@");
     if (fields.length < 3) return;
     const [machineId, command, , ...parameterParts] = fields;
     const parameters = parameterParts.join("@");
     if (!machineId || !command) return;
+    const requiresInitialization = this.machineId !== machineId;
     this.machineId = machineId;
     this.lastError = null;
+    if (requiresInitialization) {
+      this.configurationApplied = false;
+      this.readerCommandMachineId = null;
+      this.lastReaderOpenRequestAt = 0;
+      // Queue local wall-clock synchronization and all saved settings before
+      // handling this packet. In particular, a first-packet crossing must not
+      // escape before the initialization writes and reader-open request.
+      this.applyConfiguration(true);
+      this.requestReaderOpen(true);
+    }
 
     switch (command) {
       case "heartBeat":
@@ -264,12 +321,16 @@ export class ActiveTransponderClient extends EventEmitter {
         break;
       case "epc": {
         const comma = parameters.indexOf(",");
-        const time = parseTimestamp(comma >= 0 ? parameters.slice(0, comma) : "");
+        const time = parseTimestamp(comma >= 0 ? parameters.slice(0, comma) : "", receivedAt);
         const tag = (comma >= 0 ? parameters.slice(comma + 1) : parameters).trim();
         if (tag && time) {
           this.lastPassingAt = time.toISOString();
           this.passingCount++;
-          this.emit("tag", tag, time);
+          this.emit("tag", tag, time, {
+            receivedAt,
+            deviceTimezone: getHostTimezone(),
+            source: "connector_live_tcp",
+          } satisfies ActiveTimingReceiptMetadata);
         }
         break;
       }
@@ -325,10 +386,7 @@ export class ActiveTransponderClient extends EventEmitter {
   }
 
   private sendClockCommands(): void {
-    const now = new Date();
-    const date = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
-    const hundredths = String(Math.floor(now.getMilliseconds() / 10)).padStart(2, "0");
-    const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}.${hundredths}`;
+    const { date, time } = formatLocalClockCommands();
     this.sendCommand("setDate", date);
     this.sendCommand("setTime", time);
   }
