@@ -13,7 +13,7 @@ import {
   registrationsTable,
 } from "@workspace/db";
 import { fetchEnduoPenaltyMap } from "./enduro-scoring";
-import { eq, and, asc, desc, isNotNull, or, gt, sql, inArray, ilike } from "drizzle-orm";
+import { eq, and, asc, desc, isNotNull, isNull, or, gt, lt, sql, inArray, ilike } from "drizzle-orm";
 import type { Response } from "express";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
@@ -25,6 +25,12 @@ import {
   isImplausiblyFutureCrossing,
   parseTrustworthyReceivedAt,
 } from "../lib/crossingTimestamp";
+import {
+  advanceAnnouncerLifecycle,
+  createAnnouncerLifecycleState,
+  hydrateAnnouncerLifecycle,
+  type AnnouncerLifecycleState,
+} from "../lib/announcerLifecycle";
 
 const router = Router();
 
@@ -69,6 +75,49 @@ async function checkEventClubAccess(eventId: number, staffCId: number | null): P
 // ── SSE registry: motoId → connected Response objects ─────────────────────────
 const sseClients = new Map<number, Set<Response>>();
 
+type AnnouncerEvent = {
+  id: string;
+  sequence: number;
+  kind: "start" | "lap" | "finish";
+  lap: number;
+  createdAt: string;
+  audioUrl: string;
+  label: string;
+};
+
+type AnnouncerState = {
+  sequence: number;
+  lifecycle: AnnouncerLifecycleState;
+  currentEvent: AnnouncerEvent | null;
+  pending: Promise<void>;
+  retrySnapshot: LeaderboardSnapshot | null;
+};
+
+const announcerStates = new Map<number, AnnouncerState>();
+const announcerAudio = new Map<string, { buffer: Buffer; createdAt: number }>();
+const ANNOUNCER_CLIP_WINDOW_MS = 20_000;
+
+function getAnnouncerState(motoId: number): AnnouncerState {
+  let state = announcerStates.get(motoId);
+  if (!state) {
+    state = {
+      sequence: 0,
+      lifecycle: createAnnouncerLifecycleState(),
+      currentEvent: null,
+      pending: Promise.resolve(),
+      retrySnapshot: null,
+    };
+    announcerStates.set(motoId, state);
+  }
+  return state;
+}
+
+function activeAnnouncement(state: AnnouncerState): AnnouncerEvent | null {
+  if (!state.currentEvent) return null;
+  const ageMs = Date.now() - new Date(state.currentEvent.createdAt).getTime();
+  return ageMs <= ANNOUNCER_CLIP_WINDOW_MS ? state.currentEvent : null;
+}
+
 function sseSubscribe(motoId: number, res: Response) {
   if (!sseClients.has(motoId)) sseClients.set(motoId, new Set());
   sseClients.get(motoId)!.add(res);
@@ -89,6 +138,30 @@ export function sseBroadcast(motoId: number, data: object) {
       clients.delete(client);
     }
   }
+}
+
+function broadcastAnnouncement(motoId: number, announcement: AnnouncerEvent) {
+  const clients = announcerClients.get(motoId);
+  if (!clients?.size) return;
+  const payload = `data: ${JSON.stringify({ type: "announcement", announcement })}\n\n`;
+  for (const client of [...clients]) {
+    try {
+      (client as any).write(payload);
+    } catch {
+      clients.delete(client);
+    }
+  }
+}
+
+const announcerClients = new Map<number, Set<Response>>();
+
+function announcerSubscribe(motoId: number, res: Response) {
+  if (!announcerClients.has(motoId)) announcerClients.set(motoId, new Set());
+  announcerClients.get(motoId)!.add(res);
+}
+
+function announcerUnsubscribe(motoId: number, res: Response) {
+  announcerClients.get(motoId)?.delete(res);
 }
 
 // ── RMonitor SSE registry: eventId → bridge connections ───────────────────────
@@ -524,17 +597,24 @@ export async function buildLeaderboard(motoId: number) {
     motoId,
     motoName: moto.name,
     raceClass: moto.raceClass,
+    motoType: moto.type,
+    fieldSize: Array.isArray(moto.lineup) ? moto.lineup.length : 0,
     status: moto.status,
     startedAt: moto.startedAt?.toISOString() ?? null,
     completedAt: moto.completedAt?.toISOString() ?? null,
     timeLimitMs: moto.timeLimitMs ?? null,
     plusLaps: moto.plusLaps ?? null,
     timeExpiredAt: moto.timeExpiredAt?.toISOString() ?? null,
+    announcerStartedAt: moto.announcerStartedAt?.toISOString() ?? null,
+    announcerLastLap: moto.announcerLastLap ?? 0,
+    announcerFinishedAt: moto.announcerFinishedAt?.toISOString() ?? null,
     leaderboard: withGaps,
     analytics,
     updatedAt: new Date().toISOString(),
   };
 }
+
+type LeaderboardSnapshot = NonNullable<Awaited<ReturnType<typeof buildLeaderboard>>>;
 
 // Default minimum milliseconds between two valid crossings for the same tag in the same moto.
 // Rejects burst duplicates from the same antenna pass (a single tag read triggers
@@ -803,7 +883,7 @@ async function _processCrossing(opts: {
 
     const enduroSnapshot = await buildLeaderboard(motoId);
     if (enduroSnapshot) {
-      sseBroadcast(motoId, enduroSnapshot);
+      publishTimingSnapshot(enduroSnapshot);
       const rmonLines = buildRMonitorLines(enduroSnapshot, {
         riderId,
         bibNumber: enduroSnapshot.leaderboard.find((e) => e.riderId === riderId)?.bibNumber ?? null,
@@ -927,7 +1007,7 @@ async function _processCrossing(opts: {
   // 7. Build & broadcast leaderboard (JSON SSE for the live scoreboard widget)
   const snapshot = await buildLeaderboard(motoId);
   if (snapshot) {
-    sseBroadcast(motoId, snapshot);
+    publishTimingSnapshot(snapshot);
     // Also push RMonitor lines to any bridge clients subscribed to this event
     const rmonLines = buildRMonitorLines(snapshot, {
       riderId,
@@ -956,7 +1036,7 @@ async function _processCrossing(opts: {
           .set({ status: "completed", completedAt: new Date() })
           .where(eq(motosTable.id, motoId));
         const completedSnapshot = await buildLeaderboard(motoId);
-        if (completedSnapshot) sseBroadcast(motoId, completedSnapshot);
+        if (completedSnapshot) publishTimingSnapshot(completedSnapshot);
       }
     }
   }
@@ -1588,6 +1668,47 @@ router.get("/timing/live/:motoId", async (req, res) => {
   return;
 });
 
+router.get("/timing/announcer-live/:motoId", async (req, res) => {
+  const motoId = Number(req.params.motoId);
+  const staffCId = getStaffClubId(res);
+  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  (res as any).flushHeaders?.();
+
+  const state = getAnnouncerState(motoId);
+  (res as any).write(`data: ${JSON.stringify({
+    type: "announcement-state",
+    announcement: activeAnnouncement(state),
+    sequence: state.sequence,
+  })}\n\n`);
+  announcerSubscribe(motoId, res);
+
+  const heartbeat = setInterval(() => {
+    try {
+      (res as any).write(": heartbeat\n\n");
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 20_000);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    announcerUnsubscribe(motoId, res);
+  });
+  return;
+});
+
+router.get("/timing/announcer-audio/:eventId", (req, res) => {
+  const audio = announcerAudio.get(req.params.eventId);
+  if (!audio) return res.status(404).json({ error: "Announcement audio expired" });
+  res.setHeader("Content-Type", "audio/mpeg");
+  res.setHeader("Cache-Control", "public, max-age=300, immutable");
+  return res.send(audio.buffer);
+});
+
 // GET /timing/crossings/:motoId — all raw crossings (debug / replay)
 router.get("/timing/crossings/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
@@ -1973,6 +2094,24 @@ function buildStartScript(opts: {
   return parts.join(" ");
 }
 
+function buildRaceUnderwayScript(opts: {
+  typeLabel: string;
+  raceClass: string | null;
+  motoName: string | null;
+}): string {
+  const raceClass = expandAbbrev(opts.raceClass);
+  const motoName = expandAbbrev(opts.motoName);
+  return [
+    pick([
+      "The gate has dropped — we are racing!",
+      "And they are off — this race is underway!",
+      "Here we go — racing is live on track!",
+    ]),
+    raceClass ? `${raceClass}, ${opts.typeLabel} is underway.` : `The ${opts.typeLabel} is underway.`,
+    motoName ? `This is ${motoName}.` : null,
+  ].filter(Boolean).join(" ");
+}
+
 // ── Announcement script builder (pure code — no LLM needed) ───────────────────
 
 interface Top5Entry {
@@ -2132,6 +2271,170 @@ function buildAnnouncementScript(opts: {
   }
 
   return parts.join(" ");
+}
+
+async function createSharedAnnouncement(
+  motoId: number,
+  state: AnnouncerState,
+  kind: AnnouncerEvent["kind"],
+  lap: number,
+  script: string,
+  label: string,
+  persistMarker?: () => Promise<boolean>,
+) {
+  const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
+  if (persistMarker && !await persistMarker()) return;
+  const sequence = ++state.sequence;
+  const id = `${motoId}-${Date.now()}-${sequence}`;
+  announcerAudio.set(id, { buffer: audioBuffer, createdAt: Date.now() });
+  const announcement: AnnouncerEvent = {
+    id,
+    sequence,
+    kind,
+    lap,
+    createdAt: new Date().toISOString(),
+    audioUrl: `/api/timing/announcer-audio/${id}`,
+    label,
+  };
+  state.currentEvent = announcement;
+  broadcastAnnouncement(motoId, announcement);
+  setTimeout(() => announcerAudio.delete(id), 10 * 60_000).unref?.();
+}
+
+async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<void> {
+  const state = getAnnouncerState(snapshot.motoId);
+  const active = snapshot.leaderboard.filter(r => !r.dnf && !r.dns);
+  hydrateAnnouncerLifecycle(state.lifecycle, {
+    started: !!snapshot.announcerStartedAt,
+    finished: !!snapshot.announcerFinishedAt,
+    lastAnnouncedLap: snapshot.announcerLastLap,
+  });
+  if (state.lifecycle.previousPositions.size === 0 && state.lifecycle.lastAnnouncedLap > 0) {
+    state.lifecycle.previousPositions = new Map(
+      active.map(rider => [rider.riderId, rider.position ?? 9999]),
+    );
+  }
+  const nextLifecycle: AnnouncerLifecycleState = {
+    ...state.lifecycle,
+    previousPositions: new Map(state.lifecycle.previousPositions),
+  };
+  const action = advanceAnnouncerLifecycle(
+    nextLifecycle,
+    snapshot.status,
+    snapshot.leaderboard,
+    snapshot.fieldSize,
+  );
+  if (action.kind === "start") {
+    const typeLabel =
+      snapshot.motoType === "heat" ? "heat race" :
+      snapshot.motoType === "main" ? "main event" :
+      snapshot.motoType === "practice" ? "practice session" :
+      snapshot.motoType === "lcq" ? "last chance qualifier" :
+      "race";
+    const script = buildRaceUnderwayScript({
+      typeLabel,
+      raceClass: snapshot.raceClass,
+      motoName: snapshot.motoName,
+    });
+    await createSharedAnnouncement(
+      snapshot.motoId,
+      state,
+      "start",
+      0,
+      script,
+      "Race starting!",
+      async () => {
+        const claimed = await db.update(motosTable)
+          .set({ announcerStartedAt: new Date() })
+          .where(and(
+            eq(motosTable.id, snapshot.motoId),
+            isNull(motosTable.announcerStartedAt),
+          ))
+          .returning({ id: motosTable.id });
+        return claimed.length > 0;
+      },
+    );
+    state.lifecycle = nextLifecycle;
+    return;
+  }
+  if (action.kind === "none") {
+    state.lifecycle = nextLifecycle;
+    return;
+  }
+  const script = buildAnnouncementScript({
+    lapCompleted: action.lap,
+    top5: active.slice(0, 5) as Top5Entry[],
+    positionChanges: action.kind === "lap" ? action.positionChanges : [],
+    isComplete: action.kind === "finish",
+  });
+  await createSharedAnnouncement(
+    snapshot.motoId,
+    state,
+    action.kind,
+    action.lap,
+    script,
+    action.kind === "finish" ? "Race complete!" : `Lap ${action.lap} announced`,
+    action.kind === "finish"
+      ? async () => {
+          const claimed = await db.update(motosTable)
+            .set({ announcerFinishedAt: new Date() })
+            .where(and(
+              eq(motosTable.id, snapshot.motoId),
+              isNull(motosTable.announcerFinishedAt),
+            ))
+            .returning({ id: motosTable.id });
+          return claimed.length > 0;
+        }
+      : async () => {
+          const claimed = await db.update(motosTable)
+            .set({ announcerLastLap: action.lap })
+            .where(and(
+              eq(motosTable.id, snapshot.motoId),
+              lt(motosTable.announcerLastLap, action.lap),
+            ))
+            .returning({ id: motosTable.id });
+          return claimed.length > 0;
+        },
+  );
+  state.lifecycle = nextLifecycle;
+}
+
+export function updateSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<void> {
+  const state = getAnnouncerState(snapshot.motoId);
+  state.pending = state.pending.catch(() => {}).then(async () => {
+    if (state.retrySnapshot) {
+      const retry = state.retrySnapshot;
+      await processSharedAnnouncer(retry);
+      state.retrySnapshot = null;
+    }
+    try {
+      await processSharedAnnouncer(snapshot);
+    } catch (error) {
+      state.retrySnapshot ??= snapshot;
+      throw error;
+    }
+  });
+  return state.pending;
+}
+
+export function startSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<void> {
+  return updateSharedAnnouncer({
+    ...snapshot,
+    status: "in_progress",
+    leaderboard: snapshot.leaderboard.map(rider => ({ ...rider, laps: 0 })),
+  });
+}
+
+export function publishTimingSnapshot(snapshot: LeaderboardSnapshot) {
+  sseBroadcast(snapshot.motoId, snapshot);
+  void updateSharedAnnouncer(snapshot).catch(() => {});
+}
+
+export async function resetSharedAnnouncer(motoId: number) {
+  announcerStates.delete(motoId);
+  await db.update(motosTable)
+    .set({ announcerStartedAt: null, announcerLastLap: 0, announcerFinishedAt: null })
+    .where(eq(motosTable.id, motoId));
 }
 
 // POST /timing/announce-moto-start — hype intro when organizer starts a moto

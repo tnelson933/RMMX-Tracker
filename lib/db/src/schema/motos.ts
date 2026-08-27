@@ -28,6 +28,9 @@ export const motosTable = pgTable("motos", {
   totalPausedMs: integer("total_paused_ms").notNull().default(0),
   plusLaps: integer("plus_laps"),
   timeExpiredAt: timestamp("time_expired_at", { withTimezone: true }),
+  announcerStartedAt: timestamp("announcer_started_at", { withTimezone: true }),
+  announcerLastLap: integer("announcer_last_lap").notNull().default(0),
+  announcerFinishedAt: timestamp("announcer_finished_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

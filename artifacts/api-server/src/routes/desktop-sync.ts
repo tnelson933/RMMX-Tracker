@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, gt, and, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { sseBroadcast, buildLeaderboard, formatLapTime } from "./timing";
+import { buildLeaderboard, formatLapTime, publishTimingSnapshot, startSharedAnnouncer } from "./timing";
 import {
   usersTable,
   eventsTable,
@@ -83,6 +83,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   const results: Record<string, number> = {};
   let total = 0;
   const affectedMotoIds = new Set<number>();
+  const startedMotoIds = new Set<number>();
   const eventIdRemaps: Array<{ localId: number; cloudId: number }> = [];
 
   await db.transaction(async (tx) => {
@@ -340,6 +341,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
 
       const rawMotoNumber = firstDefined(rawMoto, "moto_number", "motoNumber");
       const motoNumber  = rawMotoNumber != null ? Number(rawMotoNumber) : 0;
+      const incomingStatus = m.status !== undefined ? String(m.status) : undefined;
       const rawStartedAt = firstDefined(rawMoto, "started_at", "startedAt");
       const rawCompletedAt = firstDefined(rawMoto, "completed_at", "completedAt");
       const rawLapCount = firstDefined(rawMoto, "lap_count", "lapCount");
@@ -382,6 +384,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       // cloud still holds the old value, so the lookup would find the wrong row.
       let existing: {
         id: number;
+        status: string;
         lapCount: number | null;
         timeLimitMs: number | null;
         plusLaps: number | null;
@@ -390,6 +393,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         [existing] = await tx
           .select({
             id: motosTable.id,
+            status: motosTable.status,
             lapCount: motosTable.lapCount,
             timeLimitMs: motosTable.timeLimitMs,
             plusLaps: motosTable.plusLaps,
@@ -400,6 +404,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         [existing] = await tx
           .select({
             id: motosTable.id,
+            status: motosTable.status,
             lapCount: motosTable.lapCount,
             timeLimitMs: motosTable.timeLimitMs,
             plusLaps: motosTable.plusLaps,
@@ -433,6 +438,9 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       }
 
       if (existing) {
+        if (existing.status !== "in_progress" && incomingStatus === "in_progress") {
+          startedMotoIds.add(existing.id);
+        }
         let lineup: number[] | undefined;
         if (m.lineup !== undefined) {
           try { lineup = JSON.parse(String(m.lineup)) as number[]; } catch { lineup = []; }
@@ -466,7 +474,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         let lineup: number[] = [];
         try { lineup = JSON.parse(String(m.lineup ?? "[]")) as number[]; } catch { /* ignore */ }
 
-        await tx.insert(motosTable).values({
+        const [inserted] = await tx.insert(motosTable).values({
           ...(clientId ? { id: clientId } : {}),
           eventId,
           name:             m.name != null ? String(m.name) : "",
@@ -484,8 +492,11 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           completedAt:      rawCompletedAt == null ? null : toDate(rawCompletedAt),
           staggeredGroupId: rawStaggeredGroupId != null ? Number(rawStaggeredGroupId) : null,
           staggeredOrder:   rawStaggeredOrder    != null ? Number(rawStaggeredOrder)    : null,
-        });
-        if (clientId) affectedMotoIds.add(clientId);
+        }).returning({ id: motosTable.id });
+        if (inserted) {
+          affectedMotoIds.add(inserted.id);
+          if (incomingStatus === "in_progress") startedMotoIds.add(inserted.id);
+        }
       }
       motosUpserted++;
     }
@@ -1093,7 +1104,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
               }
             }
             const snapshot = await buildLeaderboard(motoId);
-            if (snapshot) sseBroadcast(motoId, snapshot);
+            if (snapshot) {
+              if (startedMotoIds.has(motoId)) await startSharedAnnouncer(snapshot);
+              publishTimingSnapshot(snapshot);
+            }
           } catch { /* ignore — broadcast is best-effort */ }
         }
       })();

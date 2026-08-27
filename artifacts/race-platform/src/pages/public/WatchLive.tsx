@@ -6,6 +6,15 @@ import { useListMotos, useListResults } from "@workspace/api-client-react";
 import { SplitView360 } from "@/components/SplitView360";
 import { StackedSplitView } from "@/components/StackedSplitView";
 import { getPublicOrigin } from "@/lib/publicOrigin";
+import {
+  announcementStartOffsetSeconds,
+  appendAnnouncementTask,
+  isCurrentAnnouncementGeneration,
+  sharedAnnouncerMotoId,
+  shouldAcceptAnnouncement,
+  shouldQueueAnnouncementAudio,
+  type SharedAnnouncement,
+} from "@/lib/sharedAnnouncer";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
@@ -91,16 +100,13 @@ export default function WatchLive() {
 
   // Announcer refs
   const announcerOnRef = useRef(true);
-  const audioQueueRef = useRef<string[]>([]);
+  const audioQueueRef = useRef<Array<{ url: string; offsetSeconds: number }>>([]);
   const annPlayingRef = useRef(false);
-  const prevLapsRef = useRef<Map<number, number>>(new Map());
-  const prevPositionsRef = useRef<Map<number, number>>(new Map());
-  // Tracks the last lap number that actually triggered an announcement.
-  // Separate from prevLapsRef (which updates on every SSE message) so the
-  // "wait for 3 riders" threshold can still fire after prevLapsRef has
-  // already advanced past the leader's crossing.
-  const lastAnnouncedLapRef = useRef<number>(0);
+  const lastAnnouncementSequenceRef = useRef(0);
+  const announcementFetchRef = useRef<Promise<void>>(Promise.resolve());
+  const announcementGenerationRef = useRef(0);
   const esRef = useRef<EventSource | null>(null);
+  const announcerEsRef = useRef<EventSource | null>(null);
   const activeMotoIdRef = useRef<number | null>(null);
   const prevSseStatusRef = useRef<string | null>(null);
 
@@ -116,6 +122,7 @@ export default function WatchLive() {
   const activeMoto =
     motos?.find(m => m.status === "in_progress") ??
     [...(motos ?? [])].filter(m => m.status === "completed").pop();
+  const announcerMotoId = sharedAnnouncerMotoId(activeMoto);
 
   // All motos sorted for the schedule panel
   const scheduleMotos = [...(motos ?? [])]
@@ -160,7 +167,7 @@ export default function WatchLive() {
       }
       annPlayingRef.current = false;
       // Revoke and discard all queued URLs
-      for (const url of audioQueueRef.current) URL.revokeObjectURL(url);
+      for (const item of audioQueueRef.current) URL.revokeObjectURL(item.url);
       audioQueueRef.current = [];
     }
   }, [announcerOn]);
@@ -169,7 +176,7 @@ export default function WatchLive() {
   const drainQueue = useCallback(() => {
     if (annPlayingRef.current || audioQueueRef.current.length === 0) return;
     if (!announcerOnRef.current) { audioQueueRef.current = []; return; }
-    const url = audioQueueRef.current.shift()!;
+    const { url, offsetSeconds } = audioQueueRef.current.shift()!;
     annPlayingRef.current = true;
     const audio = new Audio(url);
     currentAudioRef.current = audio;
@@ -181,71 +188,61 @@ export default function WatchLive() {
     };
     audio.onended = cleanup;
     audio.onerror = cleanup;
+    audio.onloadedmetadata = () => {
+      if (offsetSeconds > 0 && Number.isFinite(audio.duration) && offsetSeconds < audio.duration) {
+        audio.currentTime = offsetSeconds;
+      }
+    };
     audio.play().catch(() => { annPlayingRef.current = false; drainQueue(); });
   }, []);
 
-  const enqueueAudio = useCallback((blob: Blob) => {
+  const enqueueAudio = useCallback((blob: Blob, offsetSeconds = 0) => {
     if (!announcerOnRef.current) return;   // discard if muted after fetch resolved
     const url = URL.createObjectURL(blob);
-    audioQueueRef.current.push(url);
+    audioQueueRef.current.push({ url, offsetSeconds });
     drainQueue();
   }, [drainQueue]);
 
-  // ── Moto-start hype intro ────────────────────────────────────────────────
-  const triggerStartAnnouncement = useCallback(async (moto: typeof activeMoto) => {
-    if (!announcerOnRef.current || !moto) return;
-    try {
-      setAnnouncerLabel("Race starting!");
-      const res = await fetch("/api/timing/announce-moto-start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          motoName: moto.name,
-          motoType: moto.type,
-          raceClass: moto.raceClass ?? null,
-          lineup: ((moto.lineup ?? []) as Array<{ bibNumber?: string | null; riderName?: string | null }>)
-            .map(r => ({ bibNumber: r.bibNumber ?? null, riderName: r.riderName ?? null })),
-        }),
-      });
-      if (!res.ok) { setAnnouncerLabel(null); return; }
-      enqueueAudio(await res.blob());
-      setTimeout(() => setAnnouncerLabel(null), 6_000);
-    } catch { setAnnouncerLabel(null); }
-  }, [enqueueAudio]);
-
-  // ── Full AI TTS announcement (OpenAI voice — used for race-complete only) ────
-  const triggerAnnouncement = useCallback(async (
-    lapCompleted: number,
-    top5: LeaderboardEntry[],
-    positionChanges: Array<{ riderName: string; from: number; to: number }>,
-    isComplete: boolean
+  const receiveAnnouncement = useCallback((
+    announcement: SharedAnnouncement | null | undefined,
+    generation: number,
   ) => {
-    if (!announcerOnRef.current) return;
-    try {
-      setAnnouncerLabel(isComplete ? "Race complete!" : `Lap ${lapCompleted} announced`);
-      const res = await fetch("/api/timing/announce", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lapCompleted,
-          top5: top5.slice(0, 5).map(e => ({
-            position: e.position, riderName: e.riderName, laps: e.laps,
-            lastLap: e.lastLap, gap: e.gap, dnf: e.dnf, dns: e.dns,
-          })),
-          positionChanges,
-          isComplete,
-        }),
-      });
-      if (!res.ok) return;
-      enqueueAudio(await res.blob());
-    } catch { /* skip silently */ }
+    if (!shouldAcceptAnnouncement(lastAnnouncementSequenceRef.current, announcement)) return;
+    if (!announcement) return;
+    lastAnnouncementSequenceRef.current = announcement.sequence;
+    announcementFetchRef.current = appendAnnouncementTask(announcementFetchRef.current, async () => {
+      if (!isCurrentAnnouncementGeneration(announcementGenerationRef.current, generation)) return;
+      if (!shouldQueueAnnouncementAudio(announcerOnRef.current)) return;
+      try {
+        setAnnouncerLabel(announcement.label);
+        const res = await fetch(announcement.audioUrl);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (!isCurrentAnnouncementGeneration(announcementGenerationRef.current, generation)) return;
+        enqueueAudio(blob, announcementStartOffsetSeconds(announcement));
+        setTimeout(() => setAnnouncerLabel(null), 6_000);
+      } catch { setAnnouncerLabel(null); }
+    });
   }, [enqueueAudio]);
 
   // ── SSE: real-time timing data + announcer ────────────────────────────────
   useEffect(() => {
-    const motoId = activeMoto?.status === "in_progress" ? activeMoto.id : null;
+    const motoId = announcerMotoId;
+    const generation = ++announcementGenerationRef.current;
+    announcementFetchRef.current = Promise.resolve();
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.src = "";
+      currentAudioRef.current = null;
+    }
+    annPlayingRef.current = false;
+    for (const item of audioQueueRef.current) URL.revokeObjectURL(item.url);
+    audioQueueRef.current = [];
+    setAnnouncerLabel(null);
     if (!motoId) {
       esRef.current?.close();
+      announcerEsRef.current?.close();
+      announcerEsRef.current = null;
       esRef.current = null;
       activeMotoIdRef.current = null;
       prevSseStatusRef.current = null;
@@ -256,81 +253,40 @@ export default function WatchLive() {
 
     esRef.current?.close();
     activeMotoIdRef.current = motoId;
-    prevLapsRef.current = new Map();
-    prevPositionsRef.current = new Map();
     prevSseStatusRef.current = null;
-
-    // Fire the race-start hype intro whenever we connect to a new in_progress moto.
-    triggerStartAnnouncement(activeMoto);
+    lastAnnouncementSequenceRef.current = 0;
 
     const es = new EventSource(`/api/timing/live/${motoId}`);
     esRef.current = es;
+    const announcerEs = new EventSource(`/api/timing/announcer-live/${motoId}`);
+    announcerEsRef.current = announcerEs;
 
     es.onmessage = (evt) => {
       try {
         const payload = JSON.parse(evt.data);
         if (payload.error) return;
-
         const leaderboard = payload.leaderboard as LeaderboardEntry[];
-        const isComplete = payload.status === "completed";
-        const wasInProgress = prevSseStatusRef.current === "in_progress";
-
-        // Skip announcements on the very first SSE message (initial snapshot) —
-        // prevLapsRef is empty so every rider would look like a new crossing.
-        const isFirstMessage = prevLapsRef.current.size === 0;
-
-        if (!isFirstMessage) {
-          // Detect position changes across all riders
-          const positionChanges: Array<{ riderName: string; from: number; to: number }> = [];
-          for (const entry of leaderboard) {
-            const prevPos = prevPositionsRef.current.get(entry.riderId);
-            if (prevPos !== undefined && prevPos !== entry.position) {
-              positionChanges.push({ riderName: entry.riderName, from: prevPos, to: entry.position });
-            }
-          }
-
-          if (isComplete && wasInProgress) {
-            // Race complete — full podium recap
-            const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
-            triggerAnnouncement(top5[0]?.laps ?? 0, top5, [], true);
-          } else if (!isComplete) {
-            // Announce when enough riders have completed the leader's current
-            // lap.  We gate on ≥3 riders to avoid premature callouts in the
-            // opening seconds when only 1–2 riders have crossed.
-            //
-            // We use lastAnnouncedLapRef (not prevLapsRef) for the "new lap"
-            // check.  prevLapsRef is updated on every SSE message, so it
-            // advances to N the moment the leader crosses; subsequent SSE
-            // messages (P2, P3 crossing) would see leader.laps === prevLapsRef
-            // and never fire.  lastAnnouncedLapRef only advances when we
-            // actually speak — so the gate stays open until 3 riders are on
-            // the same lap, at which point the gaps are time-based, not laps.
-            const leader = leaderboard[0];
-            if (leader && leader.laps > lastAnnouncedLapRef.current) {
-              const ridersOnLeaderLap = leaderboard.filter(r => r.laps >= leader.laps && !r.dnf && !r.dns).length;
-              if (ridersOnLeaderLap >= 5) {
-                const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
-                triggerAnnouncement(leader.laps, top5, positionChanges, false);
-                lastAnnouncedLapRef.current = leader.laps;
-              }
-            }
-          }
-        }
-
-        for (const entry of leaderboard) {
-          prevLapsRef.current.set(entry.riderId, entry.laps);
-          prevPositionsRef.current.set(entry.riderId, entry.position);
-        }
         prevSseStatusRef.current = payload.status;
         setSseLeaderboard(leaderboard);
       } catch { /* ignore parse errors */ }
     };
+    announcerEs.onmessage = (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        receiveAnnouncement(payload.announcement, generation);
+      } catch { /* ignore parse errors */ }
+    };
 
     return () => {
+      if (announcementGenerationRef.current === generation) {
+        announcementGenerationRef.current++;
+      }
       es.close();
+      announcerEs.close();
+      if (announcerEsRef.current === announcerEs) announcerEsRef.current = null;
       if (esRef.current === es) { esRef.current = null; activeMotoIdRef.current = null; }
     };
-  }, [activeMoto?.id, activeMoto?.status, triggerAnnouncement, triggerStartAnnouncement]);
+  }, [announcerMotoId, receiveAnnouncement]);
 
   useEffect(() => {
     if (!eventId) return;

@@ -2,7 +2,7 @@ import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
 import { eq, and, inArray, min, ne, gt, asc } from "drizzle-orm";
-import { sseBroadcast, buildLeaderboard } from "./timing";
+import { sseBroadcast, buildLeaderboard, publishTimingSnapshot, resetSharedAnnouncer } from "./timing";
 import { sendPushNotifications } from "../lib/push";
 import { sendConnectorCommand } from "../lib/connectorRelay";
 
@@ -392,7 +392,7 @@ router.patch("/motos/:motoId", async (req, res) => {
 
   if (req.body.status !== undefined) {
     buildLeaderboard(id).then(snapshot => {
-      if (snapshot) sseBroadcast(id, snapshot);
+      if (snapshot) publishTimingSnapshot(snapshot);
     }).catch(() => {});
   }
 
@@ -460,6 +460,7 @@ router.post("/motos/:motoId/restart", async (req, res) => {
     .set({ status: "scheduled", startedAt: null, pausedAt: null, totalPausedMs: 0 })
     .where(eq(motosTable.id, id))
     .returning();
+  await resetSharedAnnouncer(id);
   buildLeaderboard(id).then(snap => { if (snap) sseBroadcast(id, snap); }).catch(() => {});
   return res.json({ ok: true, moto: updated });
 });
