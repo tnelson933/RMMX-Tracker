@@ -154,6 +154,10 @@ export class ActiveTransponderClient extends EventEmitter {
   private loopEnabled = [true, true];
   private configurationApplied = false;
   private lastReaderOpenRequestAt = 0;
+  private readerOpenRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private readerOpenRetryCount = 0;
+  private lastReaderOpenRetryAt: string | null = null;
+  private socketEpoch = 0;
 
   getStatus(): ActiveTransponderStatus {
     const connected = !!this.socket && !this.socket.destroyed;
@@ -162,7 +166,7 @@ export class ActiveTransponderClient extends EventEmitter {
     const state = this.machineState;
     const enabledLoops = this.loopEnabled.map((enabled, index) => !enabled || /working|running|open/i.test(state[`reader${index + 1}Working`] ?? ""));
     const readersWorking = enabledLoops.every(Boolean);
-    const ready = connected && this.desiredReading && this.configurationApplied
+    const ready = connected && heartbeatFresh && this.desiredReading && this.configurationApplied
       && this.readerCommandMachineId === this.machineId && readersWorking;
     const loop1State = state.reader1Working ?? null;
     const loop2State = state.reader2Working ?? null;
@@ -183,7 +187,9 @@ export class ActiveTransponderClient extends EventEmitter {
         : !heartbeatFresh
           ? "Waiting for a fresh F2000 heartbeat."
           : this.desiredReading && !readersWorking
-            ? "Opening enabled loops; waiting for the F2000 to confirm they are running. RM Connect will retry the open command."
+            ? `Opening enabled loops; waiting for F2000 telemetry to confirm they are running.${this.readerOpenRetryCount
+              ? ` Retry ${this.readerOpenRetryCount} was last sent ${this.lastReaderOpenRetryAt ?? "recently"}.`
+              : " The open command has been sent and will be retried if needed."}`
             : "F2000 transport, heartbeat, and machine identification are ready.");
     return {
       connected, host: this.host, port: this.port, machineId: this.machineId,
@@ -206,6 +212,8 @@ export class ActiveTransponderClient extends EventEmitter {
     this.loopEnabled = [input.loop1Enabled, input.loop2Enabled];
     this.configurationApplied = false;
     this.applyConfiguration(true);
+    if (this.desiredReading) this.requestReaderOpen(true);
+    this.ensureReaderOpenRetry();
     this.emit("status");
   }
 
@@ -217,6 +225,7 @@ export class ActiveTransponderClient extends EventEmitter {
 
   connect(address: string): Promise<void> {
     this.disconnect();
+    const socketEpoch = ++this.socketEpoch;
     const { host, port } = parseAddress(address);
     if (!host) return Promise.reject(new Error("Enter an F2000 IP address or hostname."));
     this.intentionalClose = false;
@@ -227,16 +236,23 @@ export class ActiveTransponderClient extends EventEmitter {
     this.readerCommandMachineId = null;
     this.configurationApplied = false;
     this.lastReaderOpenRequestAt = 0;
+    this.readerOpenRetryCount = 0;
+    this.lastReaderOpenRetryAt = null;
     this.receiveBuffer = "";
 
     return new Promise((resolve, reject) => {
       const socket = net.createConnection({ host, port, timeout: CONNECT_TIMEOUT_MS });
       let settled = false;
       const fail = (error: Error) => {
+        if (socketEpoch !== this.socketEpoch) return;
         this.lastError = friendlyConnectionError(error, host, port);
         if (!settled) { settled = true; reject(error); }
       };
       socket.once("connect", () => {
+        if (socketEpoch !== this.socketEpoch) {
+          socket.destroy();
+          return;
+        }
         socket.setNoDelay(true);
         socket.setKeepAlive(true, 1_000);
         socket.setTimeout(0);
@@ -250,10 +266,13 @@ export class ActiveTransponderClient extends EventEmitter {
         fail(error);
         socket.destroy();
       });
-      socket.on("data", (chunk: Buffer) => this.receive(chunk.toString("utf8"), new Date()));
+      socket.on("data", (chunk: Buffer) => {
+        if (this.socket === socket && socketEpoch === this.socketEpoch) this.receive(chunk.toString("utf8"), new Date());
+      });
       socket.on("error", (error) => fail(error));
       socket.on("close", () => {
         if (this.socket !== socket) return;
+        this.clearReaderOpenRetry();
         this.socket = null;
         if (!this.intentionalClose && settled) this.emit("disconnected", this.lastError ?? "F2000 connection closed");
         this.emit("status");
@@ -263,26 +282,34 @@ export class ActiveTransponderClient extends EventEmitter {
 
   disconnect(): void {
     this.intentionalClose = true;
+    this.socketEpoch++;
+    this.clearReaderOpenRetry();
     if (this.desiredReading) this.sendReaderCommand("readerStop");
     if (this.socket && !this.socket.destroyed) this.socket.destroy();
     this.socket = null;
     this.desiredReading = false;
     this.readerCommandMachineId = null;
     this.lastReaderOpenRequestAt = 0;
+    this.readerOpenRetryCount = 0;
+    this.lastReaderOpenRetryAt = null;
   }
 
   startReading(): void {
     this.desiredReading = true;
     this.applyConfiguration(false);
     this.requestReaderOpen(true);
+    this.ensureReaderOpenRetry();
     this.emit("status");
   }
 
   stopReading(): void {
     this.desiredReading = false;
+    this.clearReaderOpenRetry();
     this.sendReaderCommand("readerStop");
     this.readerCommandMachineId = null;
     this.lastReaderOpenRequestAt = 0;
+    this.readerOpenRetryCount = 0;
+    this.lastReaderOpenRetryAt = null;
     this.emit("status");
   }
 
@@ -310,6 +337,8 @@ export class ActiveTransponderClient extends EventEmitter {
       this.configurationApplied = false;
       this.readerCommandMachineId = null;
       this.lastReaderOpenRequestAt = 0;
+      this.readerOpenRetryCount = 0;
+      this.lastReaderOpenRetryAt = null;
       // Queue local wall-clock synchronization and all saved settings before
       // handling this packet. In particular, a first-packet crossing must not
       // escape before the initialization writes and reader-open request.
@@ -348,6 +377,7 @@ export class ActiveTransponderClient extends EventEmitter {
     }
     if (!this.configurationApplied) this.applyConfiguration(true);
     this.requestReaderOpen();
+    this.ensureReaderOpenRetry();
     this.emit("status");
   }
 
@@ -366,6 +396,43 @@ export class ActiveTransponderClient extends EventEmitter {
     this.lastReaderOpenRequestAt = now;
   }
 
+  /**
+   * The protocol has no acknowledgement for readerOpen. Keep one socket-owned
+   * retry pending until machineState telemetry, not a write, confirms every
+   * enabled loop is running.
+   */
+  private ensureReaderOpenRetry(): void {
+    if (!this.desiredReading || !this.socket || this.socket.destroyed || !this.machineId || this.enabledLoopsAreRunning()) {
+      this.clearReaderOpenRetry();
+      return;
+    }
+    if (this.readerOpenRetryTimer) return;
+    const socket = this.socket;
+    const epoch = this.socketEpoch;
+    this.readerOpenRetryTimer = setTimeout(() => {
+      this.readerOpenRetryTimer = null;
+      if (this.socket !== socket || epoch !== this.socketEpoch || !this.desiredReading || socket.destroyed || !this.machineId) return;
+      if (this.enabledLoopsAreRunning()) {
+        this.clearReaderOpenRetry();
+        this.emit("status");
+        return;
+      }
+      // RF settings can reset loop state, so preserve the desktop ordering:
+      // settings first, followed by the desired loop enable/disable commands.
+      this.applyConfiguration(false);
+      this.readerOpenRetryCount++;
+      this.lastReaderOpenRetryAt = new Date().toISOString();
+      this.requestReaderOpen(true);
+      this.ensureReaderOpenRetry();
+      this.emit("status");
+    }, READER_OPEN_RETRY_MS);
+  }
+
+  private clearReaderOpenRetry(): void {
+    if (this.readerOpenRetryTimer) clearTimeout(this.readerOpenRetryTimer);
+    this.readerOpenRetryTimer = null;
+  }
+
   private sendReaderCommand(command: "readerOpen" | "readerStop"): void {
     if (!this.socket || this.socket.destroyed || !this.machineId) return;
     for (const reader of ["1", "2"]) {
@@ -378,10 +445,10 @@ export class ActiveTransponderClient extends EventEmitter {
   private applyConfiguration(includeClock: boolean): void {
     if (!this.socket || this.socket.destroyed || !this.machineId) return;
     if (includeClock) this.sendClockCommands();
-    this.sendCommand(this.loopEnabled[0] ? "loopEnable" : "loopDisable", "1");
-    this.sendCommand(this.loopEnabled[1] ? "loopEnable" : "loopDisable", "2");
     this.sendCommand("setActiveChannel", String(this.channel));
     this.sendCommand("setActivePower", String(this.power));
+    this.sendCommand(this.loopEnabled[0] ? "loopEnable" : "loopDisable", "1");
+    this.sendCommand(this.loopEnabled[1] ? "loopEnable" : "loopDisable", "2");
     this.configurationApplied = true;
     this.readerCommandMachineId = null;
     this.lastReaderOpenRequestAt = 0;

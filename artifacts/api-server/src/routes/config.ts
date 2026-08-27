@@ -62,7 +62,7 @@ router.get("/config/connector-release", async (_req, res) => {
     connectorCache = { ...info, fetchedAt: Date.now() };
     return res.json(info);
   } catch {
-    const info = buildConnectorFromTag("connector-v1.0.13");
+    const info = buildConnectorFromTag("connector-v1.0.14");
     return res.json(info);
   }
 });

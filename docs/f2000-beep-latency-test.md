@@ -1,6 +1,6 @@
 # F2000 beep latency test
 
-Use this procedure with a real F2000/Feibot reader after connecting it through either RM Tracker Desktop or RM Connect.
+Use this procedure with a real F2000 active timing reader after connecting it through either RM Tracker Desktop or RM Connect.
 
 1. Synchronize the F2000 clock, start a moto, and leave the organizer Motos page open.
 2. Open the browser developer console. In development builds, filter for `timing-latency`.

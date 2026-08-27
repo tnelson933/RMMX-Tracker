@@ -516,9 +516,9 @@ export default function ReaderSetup() {
     } as any,
   });
   const [connectorDl, setConnectorDl] = useState({
-    macArm:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.11/RM-Connect-arm64.dmg",
-    macX64:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.11/RM-Connect-x64.dmg",
-    windows: "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.11/RM-Connect-Setup.exe",
+    macArm:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.14/RM-Connect-arm64.dmg",
+    macX64:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.14/RM-Connect-x64.dmg",
+    windows: "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.14/RM-Connect-Setup.exe",
   });
   useEffect(() => {
     fetch("/api/config/connector-release")

@@ -69,8 +69,15 @@ function commandsFromWire(messages) {
   return messages.join("").split(";").filter(Boolean).map(packet => packet.split("@")[1]);
 }
 
-async function waitFor(predicate) {
-  const deadline = Date.now() + 1_000;
+function commandPackets(messages) {
+  return messages.join("").split(";").filter(Boolean).map(packet => {
+    const [machineId, command, sequence, parameters] = packet.split("@");
+    return { machineId, command, sequence, parameters };
+  });
+}
+
+async function waitFor(predicate, timeout = 1_000) {
+  const deadline = Date.now() + timeout;
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("Timed out waiting for fake reader traffic");
     await new Promise(resolve => setTimeout(resolve, 5));
@@ -100,9 +107,12 @@ test("initialization writes precede reader open and a first-packet crossing", as
     await waitFor(() => commandsFromWire(sessions[0]).length >= 7);
     const commandsAtCrossing = commandsFromWire(sessions[0]);
     assert.deepEqual(commandsAtCrossing.slice(0, 6), [
-      "setDate", "setTime", "loopEnable", "loopDisable", "setActiveChannel", "setActivePower",
+      "setDate", "setTime", "setActiveChannel", "setActivePower", "loopEnable", "loopDisable",
     ]);
     assert.equal(commandsAtCrossing[6], "readerOpen");
+    assert.deepEqual(commandPackets(sessions[0]).slice(2, 7).map(({ command, parameters }) => [command, parameters]), [
+      ["setActiveChannel", "2"], ["setActivePower", "65"], ["loopEnable", "1"], ["loopDisable", "2"], ["readerOpen", "1"],
+    ]);
     assert.equal(commandsAtCrossing.includes("setTimezone"), false);
     assert.equal(commandsAtCrossing.includes("setOffset"), false);
     assert.ok(receipt.receivedAt instanceof Date);
@@ -138,12 +148,74 @@ test("a reconnect resends local date, time, and configuration", async () => {
     await waitFor(() => commandsFromWire(sessions[1]).length >= 6);
     for (const session of sessions) {
       assert.deepEqual(commandsFromWire(session).slice(0, 6), [
-        "setDate", "setTime", "loopEnable", "loopEnable", "setActiveChannel", "setActivePower",
+        "setDate", "setTime", "setActiveChannel", "setActivePower", "loopEnable", "loopEnable",
+      ]);
+      assert.deepEqual(commandPackets(session).slice(2, 6).map(({ command, parameters }) => [command, parameters]), [
+        ["setActiveChannel", "1"], ["setActivePower", "80"], ["loopEnable", "1"], ["loopEnable", "2"],
       ]);
     }
   } finally {
     client.disconnect();
     for (const peer of peers) peer.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test("retries stopped loop telemetry on its owned timer and stops after working telemetry", async () => {
+  const messages = [];
+  let peer;
+  const server = net.createServer(connection => {
+    peer = connection;
+    connection.on("data", chunk => messages.push(chunk.toString("utf8")));
+    connection.on("error", () => {});
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const client = new ActiveTransponderClient();
+  client.configure({ channel: 3, power: 70, loop1Enabled: true, loop2Enabled: false });
+  try {
+    await client.connect(`127.0.0.1:${server.address().port}`);
+    client.startReading();
+    peer.write("unit-1@machineState@0001@reader1Working=stopped,reader2Working=stopped;");
+    await waitFor(() => commandsFromWire(messages).filter(command => command === "readerOpen").length >= 2, 3_000);
+    const retried = commandPackets(messages);
+    assert.deepEqual(retried.slice(-5).map(({ command, parameters }) => [command, parameters]), [
+      ["setActiveChannel", "3"], ["setActivePower", "70"], ["loopEnable", "1"], ["loopDisable", "2"], ["readerOpen", "1"],
+    ]);
+    peer.write("unit-1@machineState@0002@reader1Working=working,reader2Working=stopped;");
+    await new Promise(resolve => setTimeout(resolve, 2_100));
+    assert.equal(commandsFromWire(messages).filter(command => command === "readerOpen").length, 2);
+  } finally {
+    client.disconnect();
+    peer?.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test("a disabled loop does not prevent a fresh-heartbeat reader from becoming ready", async () => {
+  const messages = [];
+  let peer;
+  const server = net.createServer(connection => {
+    peer = connection;
+    connection.on("data", chunk => messages.push(chunk.toString("utf8")));
+    connection.on("error", () => {});
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const client = new ActiveTransponderClient();
+  client.configure({ channel: 0, power: 100, loop1Enabled: true, loop2Enabled: false });
+  try {
+    await client.connect(`127.0.0.1:${server.address().port}`);
+    client.startReading();
+    peer.write("unit-1@heartBeat@0001@;unit-1@machineState@0002@reader1Working=running,reader2Working=stopped;");
+    await waitFor(() => client.getStatus().ready);
+    assert.equal(client.getStatus().heartbeatFresh, true);
+    const opens = commandPackets(messages).filter(({ command }) => command === "readerOpen");
+    assert.ok(opens.length > 0);
+    assert.equal(opens.every(({ parameters }) => parameters === "1"), true);
+  } finally {
+    client.disconnect();
+    peer?.destroy();
     await new Promise(resolve => server.close(resolve));
   }
 });
