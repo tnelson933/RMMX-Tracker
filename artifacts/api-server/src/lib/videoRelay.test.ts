@@ -83,3 +83,47 @@ test("sustained chunks continue reaching a normal viewer", async () => {
   server.close();
   await once(server, "close");
 });
+
+test("same-format recorder rotation does not reset active viewer media", async () => {
+  const server = createServer();
+  attachVideoWebSocket(server);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const url = `ws://127.0.0.1:${address.port}`;
+  const eventId = 94003;
+  const broadcaster = await openSocket(`${url}/api/video/broadcast/${eventId}`);
+  const initMessage = JSON.stringify({ type: "init", mimeType: "video/webm", is360: false });
+  broadcaster.send(initMessage);
+  broadcaster.send(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3]));
+
+  const viewer = await openSocket(`${url}/api/video/watch/${eventId}`);
+  const controlMessages: string[] = [];
+  let binaryFrames = 0;
+  viewer.on("message", (data, isBinary) => {
+    if (isBinary) binaryFrames++;
+    else controlMessages.push(data.toString());
+  });
+  viewer.send(JSON.stringify({ type: "hello" }));
+  await new Promise(resolve => setTimeout(resolve, 250));
+  controlMessages.length = 0;
+  binaryFrames = 0;
+
+  broadcaster.send(initMessage);
+  broadcaster.send(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 4, 5, 6]));
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  assert.equal(
+    controlMessages.some(message => JSON.parse(message).type === "init"),
+    false,
+    "same-format rotation must not tell active viewers to rebuild their MediaSource",
+  );
+  assert.equal(binaryFrames, 1, "active viewer should receive the rotated recorder initialization segment");
+
+  viewer.close();
+  broadcaster.close();
+  await Promise.all([once(viewer, "close"), once(broadcaster, "close")]);
+  server.close();
+  await once(server, "close");
+});

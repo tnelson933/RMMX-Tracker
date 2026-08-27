@@ -291,6 +291,9 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
       try {
         const msg = JSON.parse(chunk.toString("utf8")) as Record<string, unknown>;
         if (msg.type === "init" && typeof msg.mimeType === "string") {
+          const formatChanged = state.mimeType !== msg.mimeType
+            || state.is360 !== (msg.is360 === true)
+            || state.isDualFisheye !== (msg.isDualFisheye === true);
           state.mimeType = msg.mimeType;
           state.is360 = msg.is360 === true;
           state.isDualFisheye = msg.isDualFisheye === true;
@@ -299,12 +302,19 @@ function handleBroadcaster(ws: WebSocket, eventId: number) {
           state.gopTail = [];
           state.chunksSinceKeyframe = 0;
           state.keyframeRefreshRequested = false;
-          // Notify active viewers of format change
-          const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye });
-          for (const viewer of state.viewers) {
-            if (viewer.readyState === WebSocket.OPEN) viewer.send(initMsg);
+          // A recorder rotation uses the same format and its next binary chunk is
+          // a valid WebM initialization segment. Let active SourceBuffers append
+          // that segment in-place instead of making every viewer rebuild MSE,
+          // which causes a visible black flash at each forced keyframe refresh.
+          if (formatChanged) {
+            const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye });
+            for (const viewer of state.viewers) {
+              if (viewer.readyState === WebSocket.OPEN) viewer.send(initMsg);
+            }
           }
-          // Also re-send to pending viewers so they have the updated mimeType
+          // Pending viewers have not started playback, so re-sending init is safe
+          // and ensures they have the current format before their first frame.
+          const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye });
           for (const pending of state.pendingViewers) {
             if (pending.readyState === WebSocket.OPEN) pending.send(initMsg);
           }

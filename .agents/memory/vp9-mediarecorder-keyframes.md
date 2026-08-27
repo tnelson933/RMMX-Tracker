@@ -45,3 +45,11 @@ Never reuse an already-running MediaRecorder across a relay reconnect after send
 **Why:** Resetting relay state and then forwarding a mid-GOP cluster makes that cluster look like the initialization segment. It has no EBML/Tracks metadata, so viewers cannot decode the recovered broadcast.
 
 **How to apply:** Any broadcaster socket replacement or forced-keyframe recovery must establish a fresh recorder boundary. If the socket drops during rotation, keep capture alive, then rotate again after the next socket opens.
+
+## Seamless same-format recorder rotation
+
+Do not send active viewers a playback-reset control message when a recorder rotates without changing its MIME type or projection flags. Forward the new WebM initialization segment into the existing SourceBuffer instead.
+
+**Why:** Rebuilding each viewer's MediaSource at every forced keyframe refresh creates a brief black flash even though the stream remains healthy. MSE supports appending a replacement initialization segment for the same format.
+
+**How to apply:** Reset relay-side GOP state at every recorder boundary, but notify active viewers to rebuild playback only when the codec or format flags actually change. Pending viewers may always receive the latest init metadata.
