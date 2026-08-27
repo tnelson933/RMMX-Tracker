@@ -325,6 +325,7 @@ function buildPositionMaps(
 
 async function buildRaceAnalytics(
   motoId: number,
+  raceStyle: string | null | undefined,
   leaderboard: Array<{
     position: number | null;
     riderId: number;
@@ -369,7 +370,7 @@ async function buildRaceAnalytics(
       .where(and(
         eq(lapCrossingsTable.motoId, motoId),
         isNotNull(lapCrossingsTable.riderId),
-        gt(lapCrossingsTable.lapNumber, 1),
+        gt(lapCrossingsTable.lapNumber, raceStyle === "motocross" ? 1 : 0),
         gt(lapCrossingsTable.lapTimeMs, 0),
       ))
       .groupBy(lapCrossingsTable.riderId),
@@ -513,6 +514,11 @@ async function buildRaceAnalytics(
 export async function buildLeaderboard(motoId: number) {
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
   if (!moto) return null;
+  const [event] = await db
+    .select({ raceStyle: eventsTable.raceStyle })
+    .from(eventsTable)
+    .where(eq(eventsTable.id, moto.eventId));
+  const excludeFirstLapFromBest = event?.raceStyle === "motocross";
 
   // Repair the distinctive failure mode produced by a reader clock running in
   // the future. lapNumber plus insertion id is the logical order; absolute
@@ -576,7 +582,7 @@ export async function buildLeaderboard(motoId: number) {
     const lapMs = raw.map(normalizeLapMs).filter(t => t > 0);
     const eligibleLapMs = raw
       .map(normalizeLapMs)
-      .filter((t, index) => index >= 1 && t > 0);
+      .filter((t, index) => (!excludeFirstLapFromBest || index >= 1) && t > 0);
     // Always prefer stored totalTime (matches web platform exactly — covers manually entered
     // results, RFID results, and results that were RFID-timed then manually corrected).
     // Fall back to summing RFID laps only when no stored value (live/in-progress moto).
@@ -618,7 +624,7 @@ export async function buildLeaderboard(motoId: number) {
       gap: entry.totalMs > 0 && leader.totalMs > 0 ? `+${formatLapTime(entry.totalMs - leader.totalMs)}` : "—",
     };
   });
-  const analytics = await buildRaceAnalytics(motoId, withGaps);
+  const analytics = await buildRaceAnalytics(motoId, event?.raceStyle, withGaps);
 
   return {
     motoId,
@@ -895,7 +901,7 @@ async function _processCrossing(opts: {
     const enduroSorted = enduroResults
       .map((r) => {
         const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-        const eligibleLaps = laps.slice(1).filter(lap => lap > 0);
+        const eligibleLaps = laps.filter(lap => lap > 0);
         const bestMs = eligibleLaps.length > 0 ? Math.min(...eligibleLaps) : null;
         const pen = penaltyMap.get(r.riderId) ?? { penaltySeconds: 0, disqualified: false };
         return { id: r.id, bestMs, pen };

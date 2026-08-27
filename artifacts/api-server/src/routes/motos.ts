@@ -667,9 +667,14 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
 
   // Guard: do not allow generating motos after the race date has passed.
   const [eventDateRow] = await db
-    .select({ date: eventsTable.date, endDate: eventsTable.endDate })
+    .select({
+      date: eventsTable.date,
+      endDate: eventsTable.endDate,
+      raceStyle: eventsTable.raceStyle,
+    })
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
+  const eligibleLapNumberFloor = eventDateRow?.raceStyle === "motocross" ? 2 : 1;
   if (eventDateRow) {
     const effectiveDate = (eventDateRow.endDate ?? eventDateRow.date).substring(0, 10);
     const todayStr = new Date().toISOString().substring(0, 10);
@@ -810,7 +815,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
           .from(practiceCrossingsTable)
           .where(and(
             inArray(practiceCrossingsTable.sessionId, sessionIds),
-            gt(practiceCrossingsTable.lapNumber, 1),
+            gt(practiceCrossingsTable.lapNumber, eligibleLapNumberFloor - 1),
             gt(practiceCrossingsTable.lapTimeMs, 0),
           ))
           .groupBy(practiceCrossingsTable.riderId);
@@ -890,7 +895,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         .from(lapCrossingsTable)
         .where(and(
           inArray(lapCrossingsTable.motoId, prevRoundMotoIds),
-          gt(lapCrossingsTable.lapNumber, 1),
+          gt(lapCrossingsTable.lapNumber, eligibleLapNumberFloor - 1),
           gt(lapCrossingsTable.lapTimeMs, 0),
         ))
         .groupBy(lapCrossingsTable.motoId, lapCrossingsTable.riderId);
@@ -1468,6 +1473,11 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
   if (!moto) return res.status(404).json({ error: "Moto not found" });
   if (moto.status === "completed") return res.status(409).json({ error: "Moto is completed — lineup is locked" });
   if (!moto.raceClass) return res.status(400).json({ error: "Moto has no race class" });
+  const [event] = await db
+    .select({ raceStyle: eventsTable.raceStyle })
+    .from(eventsTable)
+    .where(eq(eventsTable.id, eventId));
+  const eligibleLapNumberFloor = event?.raceStyle === "motocross" ? 2 : 1;
 
   const raceClass = moto.raceClass;
   const seedingMethod: "random" | "practice_fastest_lap" | "previous_round" | "registration_order" =
@@ -1525,7 +1535,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
         }).from(practiceCrossingsTable)
           .where(and(
             inArray(practiceCrossingsTable.sessionId, sessionIds),
-            gt(practiceCrossingsTable.lapNumber, 1),
+            gt(practiceCrossingsTable.lapNumber, eligibleLapNumberFloor - 1),
             gt(practiceCrossingsTable.lapTimeMs, 0),
           ))
           .groupBy(practiceCrossingsTable.riderId);
@@ -1569,7 +1579,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
       }).from(lapCrossingsTable)
         .where(and(
           inArray(lapCrossingsTable.motoId, prevRoundMotoIds),
-          gt(lapCrossingsTable.lapNumber, 1),
+          gt(lapCrossingsTable.lapNumber, eligibleLapNumberFloor - 1),
           gt(lapCrossingsTable.lapTimeMs, 0),
         ))
         .groupBy(lapCrossingsTable.riderId);

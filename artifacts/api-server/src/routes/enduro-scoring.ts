@@ -155,7 +155,7 @@ export async function recomputeEnduroPositionsForEvent(eventId: number): Promise
     const sorted = results
       .map((r) => {
         const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-        const eligibleLaps = laps.slice(1).filter(lap => lap > 0);
+        const eligibleLaps = laps.filter(lap => lap > 0);
         const bestMs = eligibleLaps.length > 0 ? Math.min(...eligibleLaps) : null;
         const pen = penaltyMap.get(r.riderId) ?? { penaltySeconds: 0, disqualified: false };
         return { id: r.id, bestMs, pen };

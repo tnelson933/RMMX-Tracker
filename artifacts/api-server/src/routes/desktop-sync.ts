@@ -963,6 +963,9 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (e.min_lap_ms != null) updateSet.minLapMs = Number(e.min_lap_ms) || null;
       if (e.image_url  != null) updateSet.imageUrl  = String(e.image_url);
       if (e.ama_event_id != null) updateSet.amaEventId = String(e.ama_event_id);
+      if (e.race_style !== undefined) {
+        updateSet.raceStyle = e.race_style === null ? null : String(e.race_style);
+      }
 
       if (Object.keys(updateSet).length === 0) continue;
 

@@ -69,6 +69,7 @@ export interface EventHistory {
   eventState: string;
   eventLocation: string | null;
   timingTechnology: string | null;
+  raceStyle?: string | null;
   raceClass: string;
   motos: MotoResult[];
   totalPoints: number;
@@ -186,6 +187,7 @@ export interface EventPracticeEvent {
   eventDate: string | null;
   eventState: string | null;
   raceClass: string | null;
+  raceStyle?: string | null;
   sessions: EventPracticeSession[];
 }
 

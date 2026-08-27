@@ -33,7 +33,7 @@ export function initDb() {
         "timing_technology", "transponder_rental_enabled",
         "transponder_rental_fee", "no_duplicate_bibs", "require_club_id",
         "scoring_table_id", "entry_fee_category_id", "min_lap_ms",
-        "ama_event_id", "end_date", "created_at", "image_sync_attempts",
+        "ama_event_id", "race_style", "end_date", "created_at", "image_sync_attempts",
       ];
       const colsToCopy = newCols.filter((c) => existingCols.includes(c));
       const colList = colsToCopy.join(", ");
@@ -72,6 +72,7 @@ export function initDb() {
             entry_fee_category_id      INTEGER,
             min_lap_ms                 INTEGER,
             ama_event_id               TEXT,
+            race_style                 TEXT,
             end_date                   TEXT,
             created_at                 TEXT NOT NULL DEFAULT (datetime('now')),
             image_sync_attempts        INTEGER NOT NULL DEFAULT 0
@@ -141,6 +142,7 @@ export function initDb() {
       entry_fee_category_id      INTEGER,
       min_lap_ms                 INTEGER,
       ama_event_id               TEXT,
+      race_style                 TEXT,
       end_date                   TEXT,
       created_at                 TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -648,6 +650,7 @@ export function initDb() {
     // keep legacy column name for backward compat (old rows may reference it)
     ["events", "min_lap_times              TEXT NOT NULL DEFAULT '{}'"],
     ["events", "ama_event_id               TEXT"],
+    ["events", "race_style                 TEXT"],
     // users
     ["users", "tour_completed INTEGER NOT NULL DEFAULT 0"],
     ["users", "name           TEXT NOT NULL DEFAULT ''"],

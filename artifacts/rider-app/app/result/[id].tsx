@@ -60,6 +60,7 @@ interface EventResult {
   eventState: string;
   eventLocation: string | null;
   raceClass: string;
+  raceStyle?: string | null;
   motos: MotoResult[];
   bestPosition: number | null;
   totalPoints: number;
@@ -216,12 +217,13 @@ export default function ResultDetailScreen() {
             {ev.motos.map(moto => {
               const hasTimes = moto.lapTimes.length > 0;
               const lapMsArr = hasTimes ? moto.lapTimes.map(parseLapMs) : [];
-              const trueLaps = moto.lapTimes
-                .slice(1)
+              const trueLaps = (ev.raceStyle === "motocross" ? moto.lapTimes.slice(1) : moto.lapTimes)
                 .map(parseLapMs)
                 .filter(ms => Number.isFinite(ms) && ms > 0);
               const bestMs = trueLaps.length > 0 ? Math.min(...trueLaps) : Infinity;
-              const fastestIdx = bestMs < Infinity ? lapMsArr.findIndex((ms, i) => i > 0 && ms === bestMs) : -1;
+              const fastestIdx = bestMs < Infinity
+                ? lapMsArr.findIndex((ms, i) => (ev.raceStyle !== "motocross" || i > 0) && ms === bestMs)
+                : -1;
 
               return (
                 <View key={moto.motoId} style={{

@@ -56,6 +56,7 @@ function serializeEvent(e: any) {
     scoringTableId: e.scoring_table_id ?? null,
     minLapMs: e.min_lap_ms ?? null,
     amaEventId: e.ama_event_id ?? null,
+    raceStyle: e.race_style ?? null,
     endDate: e.end_date ?? null,
     createdAt: e.created_at,
   };
@@ -117,7 +118,7 @@ router.post("/events", (req, res) => {
     registrationOpen, registrationClose, paymentEnabled,
     requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, raceClassLimits, purchaseOptions,
     timingTechnology, transponderRentalEnabled, transponderRentalFee,
-    noDuplicateBibs, requireClubId, scoringTableId, minLapMs, amaEventId, endDate,
+    noDuplicateBibs, requireClubId, scoringTableId, minLapMs, amaEventId, raceStyle, endDate,
   } = req.body;
 
   if (!name || !date) {
@@ -138,8 +139,8 @@ router.post("/events", (req, res) => {
           race_class_limits, purchase_options,
           timing_technology, transponder_rental_enabled, transponder_rental_fee,
           no_duplicate_bibs, require_club_id, scoring_table_id, min_lap_ms,
-          ama_event_id, end_date, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
+          ama_event_id, race_style, end_date, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
     )
     .run(
       user.club_id, String(name), cleanDate,
@@ -157,7 +158,7 @@ router.post("/events", (req, res) => {
       transponderRentalEnabled ? 1 : 0,
       transponderRentalFee ?? null,
       noDuplicateBibs ? 1 : 0, requireClubId ? 1 : 0,
-      scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null, cleanEndDate ?? null,
+      scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null, raceStyle ?? "motocross", cleanEndDate ?? null,
     );
 
   const newEventId = Number(result.lastInsertRowid);
@@ -224,6 +225,7 @@ router.patch("/events/:eventId", (req, res) => {
     minLapMs: "min_lap_ms",
     imageUrl: "image_url",
     amaEventId: "ama_event_id",
+    raceStyle: "race_style",
     endDate: "end_date",
   };
 

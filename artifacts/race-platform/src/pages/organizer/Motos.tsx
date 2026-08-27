@@ -1291,7 +1291,7 @@ export default function Motos() {
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const eventScoringTable = (pointsTables ?? []).find(t => t.id === (event as any)?.scoringTableId);
   const isSupercrossFormat = eventScoringTable?.mainEventOnly === true;
-  const raceStyle: "motocross" | "enduro" | "cross_country" = (event as any)?.raceStyle ?? "motocross";
+  const raceStyle = (event as any)?.raceStyle as "motocross" | "enduro" | "cross_country" | undefined;
   const isElapsedTimeSport = raceStyle === "cross_country" || raceStyle === "enduro";
   const isEnduro = raceStyle === "enduro";
 
@@ -1315,11 +1315,13 @@ export default function Motos() {
     if (!results || !minLapMs) return set;
     for (const r of results) {
       const laps = Array.isArray((r as any).lapTimes) ? (r as any).lapTimes as number[] : [];
-      // Skip laps[0] — it's the start-gate crossing (not a full lap).
-      if (laps.slice(1).some(t => t > 0 && t < minLapMs)) set.add(`${(r as any).motoId}-${(r as any).riderId}`);
+      const eligibleLaps = raceStyle === "motocross" ? laps.slice(1) : laps;
+      if (eligibleLaps.some(t => t > 0 && t < minLapMs)) {
+        set.add(`${(r as any).motoId}-${(r as any).riderId}`);
+      }
     }
     return set;
-  }, [results, minLapMs]);
+  }, [results, minLapMs, raceStyle]);
 
   // Checked-in riders for the currently selected class in the create dialog
   const classCheckins = (checkins ?? []).filter(c => c.checkedIn && (isEnduro || c.raceClass === newMotoClass));

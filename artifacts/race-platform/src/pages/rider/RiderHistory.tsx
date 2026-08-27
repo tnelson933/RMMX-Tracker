@@ -72,6 +72,10 @@ function parseLapMs(value: unknown): number | null {
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
 }
 
+function isLapEligible(lapNumber: number, raceStyle?: string | null): boolean {
+  return raceStyle !== "motocross" || lapNumber > 1;
+}
+
 // ─── RFID editor ────────────────────────────────────────────────────────────
 
 function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: string | null }) {
@@ -527,7 +531,7 @@ function GarageCard({ riderId }: { riderId: number }) {
 
 // ─── Race history components ────────────────────────────────────────────────
 
-function MotoRow({ moto }: { moto: MotoResult }) {
+function MotoRow({ moto, raceStyle }: { moto: MotoResult; raceStyle?: string | null }) {
   const [lapOpen, setLapOpen] = useState(false);
   const [gapMode, setGapMode] = useState<"best" | "leader" | "ahead">("best");
   const hasTimes = moto.lapTimes && moto.lapTimes.length > 0;
@@ -537,13 +541,15 @@ function MotoRow({ moto }: { moto: MotoResult }) {
     return parseLapMs(s) ?? NaN;
   };
   const lapMsArr = hasTimes ? moto.lapTimes.map(parseLapMsLocal) : [];
-  const trueLapMs = lapMsArr.slice(1).filter(ms => Number.isFinite(ms) && ms > 0);
+  const trueLapMs = lapMsArr.filter((ms, i) =>
+    isLapEligible(i + 1, raceStyle) && Number.isFinite(ms) && ms > 0
+  );
   const bestMs = trueLapMs.length ? Math.min(...trueLapMs) : Infinity;
   const gapMsStr = (ms: number) => `+${(ms / 1000).toFixed(3)}s`;
 
   const gapLabel = (i: number): { text: string; highlight: boolean } | null => {
     if (gapMode === "best") {
-      if (i > 0 && lapMsArr[i] === bestMs) return { text: "BEST", highlight: true };
+      if (isLapEligible(i + 1, raceStyle) && lapMsArr[i] === bestMs) return { text: "BEST", highlight: true };
       const d = lapMsArr[i] - bestMs;
       return isFinite(d) && d > 0 ? { text: gapMsStr(d), highlight: false } : null;
     }
@@ -703,7 +709,7 @@ function EventCard({ event }: { event: EventHistory }) {
       {open && (
         <CardContent className="pt-0 space-y-2">
           {event.motos.map((moto) => (
-            <MotoRow key={moto.motoId} moto={moto} />
+            <MotoRow key={moto.motoId} moto={moto} raceStyle={event.raceStyle} />
           ))}
         </CardContent>
       )}
@@ -713,7 +719,15 @@ function EventCard({ event }: { event: EventHistory }) {
 
 // ─── Event practice components ────────────────────────────────────────────────
 
-function EventPracticeSessionCard({ session, riderId }: { session: EventPracticeSession; riderId: number }) {
+function EventPracticeSessionCard({
+  session,
+  riderId,
+  raceStyle,
+}: {
+  session: EventPracticeSession;
+  riderId: number;
+  raceStyle?: string | null;
+}) {
   const [showMyLaps, setShowMyLaps] = useState(false);
   const [liveLeaderboard, setLiveLeaderboard] = useState<EventPracticeLeaderboardEntry[] | null>(null);
   const [sseConnected, setSseConnected] = useState(false);
@@ -731,7 +745,10 @@ function EventPracticeSessionCard({ session, riderId }: { session: EventPractice
         // Re-rank by fastest single lap — this is gate pick order
         const withEligibleBests = data.leaderboard.map((r: any) => {
           const eligibleLapMs = Array.isArray(r.lapTimes)
-            ? r.lapTimes.slice(1).map(parseLapMs).filter((ms: number | null): ms is number => ms !== null)
+            ? r.lapTimes
+                .filter((_: unknown, i: number) => isLapEligible(i + 1, raceStyle))
+                .map(parseLapMs)
+                .filter((ms: number | null): ms is number => ms !== null)
             : [];
           return {
             ...r,
@@ -762,10 +779,10 @@ function EventPracticeSessionCard({ session, riderId }: { session: EventPractice
       es.close();
       setSseConnected(false);
     };
-  }, [session.motoId, isLive, riderId]);
+  }, [session.motoId, isLive, riderId, raceStyle]);
 
   const myLapsWithTime = session.myLaps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
-  const myEligibleLaps = myLapsWithTime.filter(l => l.lapNumber >= 2);
+  const myEligibleLaps = myLapsWithTime.filter(l => isLapEligible(l.lapNumber, raceStyle));
   const myBestLapMs = myEligibleLaps.length > 0
     ? Math.min(...myEligibleLaps.map(l => l.lapTimeMs!))
     : null;
@@ -868,7 +885,7 @@ function EventPracticeSessionCard({ session, riderId }: { session: EventPractice
             {showMyLaps && (
               <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                 {myLapsWithTime.map((lap) => {
-                  const isBest = lap.lapNumber >= 2 && lap.lapTimeMs === myBestLapMs;
+                  const isBest = isLapEligible(lap.lapNumber, raceStyle) && lap.lapTimeMs === myBestLapMs;
                   return (
                     <div
                       key={lap.lapNumber}
@@ -948,7 +965,12 @@ function EventPracticePanel({
           </div>
           <div className="space-y-3">
             {event.sessions.map(session => (
-              <EventPracticeSessionCard key={session.motoId} session={session} riderId={riderId} />
+              <EventPracticeSessionCard
+                key={session.motoId}
+                session={session}
+                riderId={riderId}
+                raceStyle={event.raceStyle}
+              />
             ))}
           </div>
         </div>
@@ -1045,9 +1067,7 @@ function PracticeSessionCard({
           const newLaps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[] = myRider.laps ?? [];
           setLiveLaps(newLaps);
 
-          const eligibleLaps = newLaps.filter(l =>
-            l.lapNumber >= 2 && l.lapTimeMs !== null && l.lapTimeMs > 0
-          );
+          const eligibleLaps = newLaps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
           const myBestMs: number | null = eligibleLaps.length > 0
             ? Math.min(...eligibleLaps.map(l => l.lapTimeMs!))
             : null;
@@ -1113,7 +1133,7 @@ function PracticeSessionCard({
   // Merge live laps into display (live overrides static when connected)
   const displayLaps = (liveLaps ?? session.laps).filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
   const displayLapCount = liveLaps != null ? liveLaps.length : session.lapCount;
-  const eligibleDisplayLaps = displayLaps.filter(l => l.lapNumber >= 2);
+  const eligibleDisplayLaps = displayLaps;
   const displayBestMs = eligibleDisplayLaps.length > 0
     ? Math.min(...eligibleDisplayLaps.map(l => l.lapTimeMs!))
     : null;
@@ -1201,7 +1221,7 @@ function PracticeSessionCard({
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
               {displayLaps.map((lap) => {
-                const isSessionBest = lap.lapNumber >= 2 && lap.lapTimeMs === displayBestMs;
+                const isSessionBest = lap.lapTimeMs === displayBestMs;
                 const isVenuePb = isSessionBest && (venueBestBeforeSessionMs == null || (lap.lapTimeMs != null && lap.lapTimeMs < venueBestBeforeSessionMs));
                 return (
                   <div
@@ -1522,7 +1542,17 @@ function motoTypeLabel(type: string) {
   return type;
 }
 
-function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isNowUp?: boolean; isUpNext?: boolean }) {
+function ScheduleMotoCard({
+  moto,
+  isNowUp,
+  isUpNext,
+  raceStyle,
+}: {
+  moto: ScheduleMoto;
+  isNowUp?: boolean;
+  isUpNext?: boolean;
+  raceStyle?: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const isLive = moto.status === "in_progress";
   const isDone = moto.status === "completed";
@@ -1666,7 +1696,9 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
                 {moto.familyGates.map(fg => {
                   const myEntry = (moto.practiceLeaderboard ?? []).find(e => e.isMe && e.riderId === fg.riderId);
                   const eligibleLaps = (moto.practiceLaps ?? []).filter(l =>
-                    l.riderId === fg.riderId && l.lapNumber >= 2 && (l.lapTimeMs ?? 0) > 0
+                    l.riderId === fg.riderId &&
+                    isLapEligible(l.lapNumber, raceStyle) &&
+                    (l.lapTimeMs ?? 0) > 0
                   );
                   const myBestLapMs = eligibleLaps.length > 0
                     ? Math.min(...eligibleLaps.map(l => l.lapTimeMs!))
@@ -1720,7 +1752,9 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
           {/* My lap times */}
           {(moto.practiceLaps?.length ?? 0) > 0 && (() => {
             const laps = moto.practiceLaps!;
-            const eligibleLaps = laps.filter(l => l.lapNumber >= 2 && (l.lapTimeMs ?? 0) > 0);
+            const eligibleLaps = laps.filter(l =>
+              isLapEligible(l.lapNumber, raceStyle) && (l.lapTimeMs ?? 0) > 0
+            );
             const bestMs = eligibleLaps.length > 0
               ? Math.min(...eligibleLaps.map(l => l.lapTimeMs!))
               : null;
@@ -1729,7 +1763,8 @@ function ScheduleMotoCard({ moto, isNowUp, isUpNext }: { moto: ScheduleMoto; isN
                 <div className="text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground mb-2">Lap Times</div>
                 <div className="flex flex-wrap gap-2">
                   {laps.map((lap, i) => {
-                    const isPB = lap.lapNumber >= 2 && bestMs != null && lap.lapTimeMs === bestMs;
+                    const isPB = isLapEligible(lap.lapNumber, raceStyle) &&
+                      bestMs != null && lap.lapTimeMs === bestMs;
                     return (
                       <div key={i} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs border ${
                         isPB
@@ -2234,6 +2269,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                   moto={moto}
                   isNowUp={moto.motoId === nowUpMotoId}
                   isUpNext={moto.motoId === upNextMotoId}
+                  raceStyle={event.raceStyle}
                 />
               ))}
               {finished.length > 0 && upcoming.length > 0 && (
@@ -2250,6 +2286,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                   key={moto.motoId}
                   moto={moto}
                   isUpNext={false}
+                  raceStyle={event.raceStyle}
                 />
               ))}
             </div>
@@ -2370,7 +2407,7 @@ export default function RiderHistory() {
 
   const totalPracticeLaps = filteredPracticeSessions.reduce((s, sess) => s + sess.lapCount, 0);
   const allPracticeTimes = filteredPracticeSessions.flatMap(s => s.laps.filter(l =>
-    l.lapNumber >= 2 && l.lapTimeMs !== null && l.lapTimeMs > 0
+    l.lapTimeMs !== null && l.lapTimeMs > 0
   ).map(l => l.lapTimeMs!));
   const overallBestPracticeMs = allPracticeTimes.length > 0 ? Math.min(...allPracticeTimes) : null;
 
@@ -2378,7 +2415,7 @@ export default function RiderHistory() {
   for (const sess of practiceSessions) {
     if (!sess.venueName) continue;
     for (const lap of sess.laps) {
-      if (lap.lapNumber < 2 || lap.lapTimeMs == null || lap.lapTimeMs <= 0) continue;
+      if (lap.lapTimeMs == null || lap.lapTimeMs <= 0) continue;
       const cur = venueBestLapMs.get(sess.venueName);
       if (cur == null || lap.lapTimeMs < cur) venueBestLapMs.set(sess.venueName, lap.lapTimeMs);
     }
@@ -2878,8 +2915,8 @@ export default function RiderHistory() {
                       </Card>
                     ) : (
                       [...filteredPracticeSessions].sort((a, b) => {
-                        const aEligible = a.laps.filter(l => l.lapNumber >= 2 && l.lapTimeMs != null && l.lapTimeMs > 0);
-                        const bEligible = b.laps.filter(l => l.lapNumber >= 2 && l.lapTimeMs != null && l.lapTimeMs > 0);
+                        const aEligible = a.laps.filter(l => l.lapTimeMs != null && l.lapTimeMs > 0);
+                        const bEligible = b.laps.filter(l => l.lapTimeMs != null && l.lapTimeMs > 0);
                         const aBest = aEligible.length > 0 ? Math.min(...aEligible.map(l => l.lapTimeMs!)) : null;
                         const bBest = bEligible.length > 0 ? Math.min(...bEligible.map(l => l.lapTimeMs!)) : null;
                         if (aBest == null && bBest == null) return 0;
@@ -2893,7 +2930,7 @@ export default function RiderHistory() {
                               const otherLaps = practiceSessions
                                 .filter(s => s.sessionId !== session.sessionId && s.venueName === session.venueName)
                                 .flatMap(s => s.laps.filter(l =>
-                                  l.lapNumber >= 2 && l.lapTimeMs != null && l.lapTimeMs > 0
+                                  l.lapTimeMs != null && l.lapTimeMs > 0
                                 ).map(l => l.lapTimeMs!));
                               return otherLaps.length > 0 ? Math.min(...otherLaps) : null;
                             })()

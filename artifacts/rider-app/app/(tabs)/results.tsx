@@ -204,6 +204,7 @@ function PublicRiderLapSheet({
   onClose,
   colors,
   bottomInset,
+  raceStyle,
 }: {
   motoId: number;
   riderId: number;
@@ -212,6 +213,7 @@ function PublicRiderLapSheet({
   onClose: () => void;
   colors: ReturnType<typeof useColors>;
   bottomInset: number;
+  raceStyle?: string | null;
 }) {
   const [laps, setLaps] = useState<LapRow[]>([]);
   const [leaderLapMap, setLeaderLapMap] = useState<Map<number, number>>(new Map());
@@ -240,7 +242,7 @@ function PublicRiderLapSheet({
   }, [motoId, riderId, leaderRiderId]);
 
   const eligibleTimes = laps
-    .filter(lap => lap.lapNumber >= 2 && lap.lapTimeMs > 0)
+    .filter(lap => (raceStyle !== "motocross" || lap.lapNumber > 1) && lap.lapTimeMs > 0)
     .map(lap => lap.lapTimeMs);
   const bestMs = eligibleTimes.length > 0 ? Math.min(...eligibleTimes) : null;
   const hasLeaderData = isLeader || leaderLapMap.size > 0;
@@ -295,7 +297,8 @@ function PublicRiderLapSheet({
                 </Text>
               </View>
               {laps.map((lap, i) => {
-                const isBest = lap.lapNumber >= 2 && bestMs !== null && lap.lapTimeMs === bestMs;
+                const isBest = (raceStyle !== "motocross" || lap.lapNumber > 1) &&
+                  bestMs !== null && lap.lapTimeMs === bestMs;
                 let gapDisplay: string;
                 if (isLeader) {
                   gapDisplay = "P1";
@@ -527,11 +530,13 @@ function PublicMotoSheet({
   onClose,
   colors,
   bottomInset,
+  raceStyle,
 }: {
   moto: PublicMoto;
   onClose: () => void;
   colors: ReturnType<typeof useColors>;
   bottomInset: number;
+  raceStyle?: string | null;
 }) {
   const [detail, setDetail] = useState<PublicMotoDetail | null>(null);
   const [fetching, setFetching] = useState(true);
@@ -573,6 +578,7 @@ function PublicMotoSheet({
         onClose={() => setSelectedLeader(null)}
         colors={colors}
         bottomInset={bottomInset}
+        raceStyle={raceStyle}
       />
     );
   }
@@ -1009,6 +1015,7 @@ function EventScheduleScreen({
             onClose={() => setSelectedMoto(null)}
             colors={colors}
             bottomInset={bottomInset}
+            raceStyle={detail?.raceStyle}
           />
         )}
       </Modal>

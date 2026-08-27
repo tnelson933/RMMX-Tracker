@@ -670,7 +670,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
   let bestLapByRider = new Map<number, number>();
   if (seedingMethod === "practice_fastest_lap") {
     const eventRow = db
-      .prepare("SELECT club_id FROM events WHERE id = ?")
+      .prepare("SELECT club_id, race_style FROM events WHERE id = ?")
       .get(eventId) as any;
     if (eventRow?.club_id) {
       const sessions = db
@@ -685,7 +685,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
           .prepare(
             `SELECT rider_id, MIN(lap_time_ms) as best_lap
              FROM practice_crossings
-             WHERE session_id IN (${ph}) AND lap_number >= 2 AND lap_time_ms > 0
+             WHERE session_id IN (${ph}) AND lap_number >= ${eventRow.race_style === "motocross" ? 2 : 1} AND lap_time_ms > 0
              GROUP BY rider_id`,
           )
           .all(...sessionIds) as any[];
@@ -740,6 +740,9 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
     }
 
     if (prevRoundMotoIds.length > 0) {
+      const eventRow = db
+        .prepare("SELECT race_style FROM events WHERE id = ?")
+        .get(eventId) as any;
       const ph = prevRoundMotoIds.map(() => "?").join(",");
       const results = db
         .prepare(
@@ -752,7 +755,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
         .prepare(
           `SELECT moto_id, rider_id, MIN(lap_time_ms) as best_lap
            FROM lap_crossings
-           WHERE moto_id IN (${ph}) AND lap_number >= 2 AND lap_time_ms > 0
+           WHERE moto_id IN (${ph}) AND lap_number >= ${eventRow?.race_style === "motocross" ? 2 : 1} AND lap_time_ms > 0
            GROUP BY moto_id, rider_id`,
         )
         .all(...prevRoundMotoIds) as any[];
@@ -1175,7 +1178,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", (req, res) => {
     );
   } else if (seedingMethod === "practice_fastest_lap") {
     const eventRow = db
-      .prepare("SELECT club_id FROM events WHERE id = ?")
+      .prepare("SELECT club_id, race_style FROM events WHERE id = ?")
       .get(eventId) as any;
     let bestLap = new Map<number, number>();
     if (eventRow?.club_id) {
@@ -1187,7 +1190,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", (req, res) => {
         const rows = db
           .prepare(
             `SELECT rider_id, MIN(lap_time_ms) as best FROM practice_crossings
-             WHERE session_id IN (${ph}) AND lap_number >= 2 AND lap_time_ms > 0 GROUP BY rider_id`,
+             WHERE session_id IN (${ph}) AND lap_number >= ${eventRow.race_style === "motocross" ? 2 : 1} AND lap_time_ms > 0 GROUP BY rider_id`,
           )
           .all(...sessions.map((s: any) => s.id)) as any[];
         for (const r of rows) {

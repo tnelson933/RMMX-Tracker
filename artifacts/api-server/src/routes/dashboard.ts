@@ -530,7 +530,7 @@ router.get("/public/events/:eventId/schedule", async (req, res) => {
     location: event.location ?? "",
     trackName: event.trackName ?? "",
     status: event.status,
-    raceStyle: event.raceStyle ?? "motocross",
+    raceStyle: event.raceStyle ?? null,
     motos: motos
       .filter(m => m.type !== "practice")
       .map(m => ({

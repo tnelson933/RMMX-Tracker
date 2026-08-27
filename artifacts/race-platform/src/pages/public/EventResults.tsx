@@ -34,17 +34,18 @@ function formatLapTime(ms: number): string {
 // ─── LapTimesModal ────────────────────────────────────────────────────────────
 function LapTimesModal({
   result,
+  raceStyle,
   onClose,
 }: {
   result: RaceResult | null;
+  raceStyle?: string | null;
   onClose: () => void;
 }) {
   if (!result) return null;
 
   const lapTimes = result.lapTimes ?? [];
   const parsedLaps = lapTimes.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n > 0);
-  const trueParsedLaps = lapTimes
-    .slice(1)
+  const trueParsedLaps = (raceStyle === "motocross" ? lapTimes.slice(1) : lapTimes)
     .map(t => parseInt(t, 10))
     .filter(n => !isNaN(n) && n > 0);
   const bestLapMs = trueParsedLaps.length > 0 ? Math.min(...trueParsedLaps) : null;
@@ -76,7 +77,7 @@ function LapTimesModal({
             </div>
             <div className="space-y-0.5 max-h-72 overflow-y-auto">
               {parsedLaps.map((lapMs, idx) => {
-                const isBest = idx > 0 && lapMs === bestLapMs;
+                const isBest = (raceStyle !== "motocross" || idx > 0) && lapMs === bestLapMs;
                 return (
                   <div
                     key={idx}
@@ -867,7 +868,11 @@ export default function EventResults() {
       </div>
 
       {/* Shared lap times modal — driven by selectedResult across both tabs */}
-      <LapTimesModal result={selectedResult} onClose={() => setSelectedResult(null)} />
+      <LapTimesModal
+        result={selectedResult}
+        raceStyle={event.raceStyle}
+        onClose={() => setSelectedResult(null)}
+      />
 
       {/* Image lightbox */}
       {imageLightboxOpen && (event as any).imageUrl && (
