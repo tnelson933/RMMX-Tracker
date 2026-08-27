@@ -62,12 +62,12 @@
 
   <!-- STATUS -->
   <div class="card" id="statusCard">
-     <h2>Feibot connection &amp; timing status</h2>
+     <h2>Active timing connection &amp; status</h2>
     <div class="status-line"><span class="dot" id="dotCloud"></span><span id="txtCloud">Cloud: —</span></div>
     <div class="status-line"><span class="dot" id="dotDevice"></span><span id="txtDevice">Hardware: —</span></div>
     <div class="status-line"><span class="dot" id="dotMoto"></span><span id="txtMoto">Idle — waiting for a moto to start</span></div>
     <div class="muted" id="txtReads"></div>
-     <div class="checklist" id="feibotChecklist">
+     <div class="checklist" id="activeTimingChecklist">
        <div class="check" id="checkTransport"><span class="mark">●</span><span><b>Network transport</b> — connect to the F2000 on TCP 55555</span></div>
        <div class="check" id="checkMachine"><span class="mark">●</span><span><b>Machine &amp; heartbeat</b> — waiting for F2000 identification</span></div>
        <div class="check" id="checkLoops"><span class="mark">●</span><span><b>Finish-gate loops 1 / 2</b> — idle until a moto, practice, or test starts</span></div>
@@ -81,10 +81,10 @@
       <button id="btnDisconnect" class="secondary">Disconnect</button>
       <button id="btnReconnect">Reconnect</button>
     </div>
-      <div id="feibotManagedNotice" class="hidden muted" style="margin-top:10px; line-height:1.45;">
+      <div id="activeTimingManagedNotice" class="hidden muted" style="margin-top:10px; line-height:1.45;">
         F2000 channel, power, loop, and clock settings are managed from Reader Setup in RM Race and sync here automatically.
       </div>
-      <button id="btnFeibotSettings" class="secondary hidden" style="width:100%">Feibot device settings…</button>
+      <button id="btnActiveTimingSettings" class="secondary hidden" style="width:100%">F2000 device settings…</button>
     <div class="err" id="errStatus"></div>
     <!-- Reader picker — shown when reader is missing or user clicks "Change reader" -->
     <div id="readerPickerWrap" class="hidden" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
@@ -127,28 +127,28 @@
       <option value="impinj">Impinj R700 (RFID)</option>
       <option value="zebra">Zebra FX7500 / FX9600 (RFID)</option>
       <option value="generic">Other LLRP reader (RFID)</option>
-      <option value="active_transponder">Feibot F2000 active transponder</option>
+      <option value="active_transponder">F2000 active transponder</option>
     </select>
     <label id="lblAddress">Last 6 of reader MAC address</label>
     <input id="inAddress" placeholder="e.g. 16-25-B2" />
     <div class="muted" id="hintAddress">Printed on the reader label — we connect via impinj-XX-XX-XX.local</div>
-     <div class="checklist hidden" id="feibotSetupGuide">
+     <div class="checklist hidden" id="activeTimingSetupGuide">
         <div class="check ready"><span class="mark">●</span><span><b>1. Register</b> — select the F2000 reader created in RM Race.</span></div>
         <div class="check"><span class="mark">●</span><span><b>2. Sync</b> — F2000 address and device settings come from Reader Setup in RM Race.</span></div>
         <div class="check"><span class="mark">●</span><span><b>3. Verify</b> — connect, then run a PowerTag test through either loop.</span></div>
      </div>
-     <div class="hidden" id="feibotControls">
+     <div class="hidden" id="activeTimingControls">
        <label>Active channel <span class="muted">(0–5)</span></label>
-       <select id="selFeibotChannel"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+       <select id="selActiveTimingChannel"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
        <label>Active power <span class="muted">(0–100)</span></label>
-       <input id="inFeibotPower" type="number" min="0" max="100" value="100" />
+       <input id="inActiveTimingPower" type="number" min="0" max="100" value="100" />
        <div class="switch"><span>Enable loop 1</span><input id="chkLoop1" type="checkbox" checked style="width:auto" /></div>
        <div class="switch"><span>Enable loop 2</span><input id="chkLoop2" type="checkbox" checked style="width:auto" /></div>
        <div class="row">
-         <button id="btnApplyFeibot" class="secondary" type="button">Apply settings</button>
+         <button id="btnApplyActiveTiming" class="secondary" type="button">Apply settings</button>
          <button id="btnSyncClock" class="secondary" type="button">Sync device clock</button>
        </div>
-       <div class="err" id="errFeibot"></div>
+       <div class="err" id="errActiveTiming"></div>
      </div>
     <button id="btnConnect">Save &amp; Connect</button>
     <div class="err" id="errSetup"></div>
@@ -210,7 +210,7 @@
     const hwName = st.hardware === "impinj" ? "Impinj R700"
       : st.hardware === "zebra" ? "Zebra reader"
       : st.hardware === "generic" ? "LLRP reader"
-      : "Feibot F2000";
+      : "F2000 active timing";
     const deviceDetail = st.device.detail ? " — " + st.device.detail : "";
     let stateLabel = {
       connecting: "connecting", reconnecting: "reconnecting" + (st.reconnect.secondsUntilAttempt !== null ? " (retry in " + st.reconnect.secondsUntilAttempt + "s)" : ""),
@@ -232,9 +232,9 @@
       ? st.device.readCount + " reads · last " + fmtAgo(st.device.lastReadAt)
       : "No reads yet";
     $("chkTest").checked = st.testMode;
-    $("feibotChecklist").classList.toggle("hidden", st.hardware !== "active_transponder");
-     $("btnFeibotSettings").classList.add("hidden");
-     $("feibotManagedNotice").classList.toggle("hidden", st.hardware !== "active_transponder");
+    $("activeTimingChecklist").classList.toggle("hidden", st.hardware !== "active_transponder");
+     $("btnActiveTimingSettings").classList.add("hidden");
+     $("activeTimingManagedNotice").classList.toggle("hidden", st.hardware !== "active_transponder");
     if (st.hardware === "active_transponder") {
       const setCheck = (id, ready, text) => {
         const el = $(id); el.classList.toggle("ready", !!ready); el.querySelector("span:last-child").innerHTML = text;
@@ -360,34 +360,34 @@
       $("inAddress").placeholder = "e.g. 192.168.1.50";
       $("hintAddress").textContent = "Find it in your router's device list — the reader must have LLRP enabled";
     } else {
-      $("lblAddress").textContent = "Feibot F2000 IP address (or IP:port)";
+      $("lblAddress").textContent = "F2000 IP address (or IP:port)";
       $("inAddress").placeholder = "e.g. 192.168.1.50 or 192.168.1.50:55555";
-      $("hintAddress").textContent = "Enter the Feibot F2000 network address. TCP port 55555 is used by default; enter IP:port only if your device uses a different port.";
+      $("hintAddress").textContent = "Enter the F2000 network address. TCP port 55555 is used by default; enter IP:port only if your device uses a different port.";
     }
-    const isFeibot = hw === "active_transponder";
-    $("setupTitle").textContent = isFeibot ? "Guided Feibot F2000 connection" : "RFID hardware setup";
-    $("feibotSetupGuide").classList.toggle("hidden", !isFeibot);
-    $("feibotControls").classList.add("hidden");
+    const isActiveTiming = hw === "active_transponder";
+    $("setupTitle").textContent = isActiveTiming ? "Guided F2000 active timing connection" : "RFID hardware setup";
+    $("activeTimingSetupGuide").classList.toggle("hidden", !isActiveTiming);
+    $("activeTimingControls").classList.add("hidden");
   });
 
-  function feibotInput(syncClock) {
+  function activeTimingInput(syncClock) {
     return {
-      channel: parseInt($("selFeibotChannel").value, 10),
-      power: parseInt($("inFeibotPower").value, 10),
+      channel: parseInt($("selActiveTimingChannel").value, 10),
+      power: parseInt($("inActiveTimingPower").value, 10),
       loop1Enabled: $("chkLoop1").checked,
       loop2Enabled: $("chkLoop2").checked,
       syncClock: !!syncClock,
     };
   }
 
-  async function applyFeibot(syncClock) {
-    $("errFeibot").textContent = "";
-    const res = await api.configureHardware(feibotInput(syncClock));
-    if (!res.ok) $("errFeibot").textContent = res.error || "Unable to apply Feibot settings";
+  async function applyActiveTiming(syncClock) {
+    $("errActiveTiming").textContent = "";
+    const res = await api.configureHardware(activeTimingInput(syncClock));
+    if (!res.ok) $("errActiveTiming").textContent = res.error || "Unable to apply active timing settings";
     else refresh();
   }
-  $("btnApplyFeibot").addEventListener("click", () => applyFeibot(false));
-  $("btnSyncClock").addEventListener("click", () => applyFeibot(true));
+  $("btnApplyActiveTiming").addEventListener("click", () => applyActiveTiming(false));
+  $("btnSyncClock").addEventListener("click", () => applyActiveTiming(true));
 
   // ── Button handlers ─────────────────────────────────────────────────────────
 
@@ -432,24 +432,24 @@
     if (res.ok) populateReaders(res.readers || [], s.readerId);
     if (s.hardware) $("selHardware").value = s.hardware;
     if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
-     $("selFeibotChannel").value = String(s.feibotChannel ?? 0);
-     $("inFeibotPower").value = String(s.feibotPower ?? 100);
-     $("chkLoop1").checked = s.feibotLoop1Enabled !== false;
-     $("chkLoop2").checked = s.feibotLoop2Enabled !== false;
+     $("selActiveTimingChannel").value = String(s.activeTimingChannel ?? 0);
+     $("inActiveTimingPower").value = String(s.activeTimingPower ?? 100);
+     $("chkLoop1").checked = s.activeTimingLoop1Enabled !== false;
+     $("chkLoop2").checked = s.activeTimingLoop2Enabled !== false;
     $("selHardware").dispatchEvent(new Event("change"));
     showView('setup');
   });
 
-  $("btnFeibotSettings").addEventListener("click", async () => {
+  $("btnActiveTimingSettings").addEventListener("click", async () => {
     const s = await api.getSettings();
     const res = await api.listReaders();
     if (res.ok) populateReaders(res.readers || [], s.readerId);
     if (s.hardware) $("selHardware").value = s.hardware;
     if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
-    $("selFeibotChannel").value = String(s.feibotChannel ?? 0);
-    $("inFeibotPower").value = String(s.feibotPower ?? 100);
-    $("chkLoop1").checked = s.feibotLoop1Enabled !== false;
-    $("chkLoop2").checked = s.feibotLoop2Enabled !== false;
+    $("selActiveTimingChannel").value = String(s.activeTimingChannel ?? 0);
+    $("inActiveTimingPower").value = String(s.activeTimingPower ?? 100);
+    $("chkLoop1").checked = s.activeTimingLoop1Enabled !== false;
+    $("chkLoop2").checked = s.activeTimingLoop2Enabled !== false;
     $("selHardware").dispatchEvent(new Event("change"));
     showView("setup");
   });
@@ -501,10 +501,10 @@
         populateReaders(res.readers || [], s.readerId);
         if (s.hardware) $("selHardware").value = s.hardware;
         if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
-         $("selFeibotChannel").value = String(s.feibotChannel ?? 0);
-         $("inFeibotPower").value = String(s.feibotPower ?? 100);
-         $("chkLoop1").checked = s.feibotLoop1Enabled !== false;
-         $("chkLoop2").checked = s.feibotLoop2Enabled !== false;
+         $("selActiveTimingChannel").value = String(s.activeTimingChannel ?? 0);
+         $("inActiveTimingPower").value = String(s.activeTimingPower ?? 100);
+         $("chkLoop1").checked = s.activeTimingLoop1Enabled !== false;
+         $("chkLoop2").checked = s.activeTimingLoop2Enabled !== false;
         $("selHardware").dispatchEvent(new Event("change"));
       }
     }

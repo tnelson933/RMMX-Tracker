@@ -1,6 +1,6 @@
 import net from "net";
 
-// Feibot F2000 TCP protocol (v3.2). Packets are:
+// F2000 TCP protocol (v3.2). Packets are:
 // machineId@cmd@cmdSN@parameters; (normally TCP port 55555).
 
 export type ActiveTransponderConnectionState =
@@ -65,19 +65,19 @@ const DEFAULT_CONFIGURATION: ActiveTransponderConfiguration = {
 
 export function normalizeActiveTransponderAddress(address: string): { host: string; port: number; address: string } {
   const value = address.trim();
-  if (!value) throw new Error("Enter a Feibot F2000 IP address or hostname.");
+  if (!value) throw new Error("Enter an F2000 IP address or hostname.");
   // Bracketed IPv6 is accepted; unbracketed IPv6 uses the default port.
   const bracketed = /^\[([^\]]+)\](?::(.+))?$/.exec(value);
   const colon = value.lastIndexOf(":");
   const hasSingleColonPort = colon > 0 && value.indexOf(":") === colon;
   const host = bracketed ? bracketed[1] : hasSingleColonPort ? value.slice(0, colon) : value;
   const portText = bracketed ? bracketed[2] : hasSingleColonPort ? value.slice(colon + 1) : undefined;
-  if (!host) throw new Error("Enter a Feibot F2000 IP address or hostname.");
+  if (!host) throw new Error("Enter an F2000 IP address or hostname.");
   if (portText !== undefined) {
-    if (!/^\d+$/.test(portText)) throw new Error("Feibot F2000 port must be a number between 1 and 65535.");
+    if (!/^\d+$/.test(portText)) throw new Error("F2000 port must be a number between 1 and 65535.");
     const port = Number(portText);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error("Feibot F2000 port must be between 1 and 65535.");
+      throw new Error("F2000 port must be between 1 and 65535.");
     }
     return { host, port, address: host.includes(":") ? `[${host}]:${port}` : `${host}:${port}` };
   }
@@ -223,7 +223,7 @@ export function configureActiveTransponder(config: ActiveTransponderConfiguratio
 /** Synchronizes the F2000's local clock using separate V3.2 date/time commands. */
 export function syncActiveTransponderClock(): void {
   if (!socket || socket.destroyed || !machineId) {
-    throw new Error("Connect to the Feibot F2000 and wait for its machine ID before syncing its clock.");
+    throw new Error("Connect to the F2000 and wait for its machine ID before syncing its clock.");
   }
   const now = new Date();
   const two = (value: number) => String(value).padStart(2, "0");
@@ -234,7 +234,7 @@ export function syncActiveTransponderClock(): void {
 
 /** Opens both loops for a hardware test. A crossing is only reported when the F2000 actually sends one. */
 export function startActiveTransponderTest(): void {
-  if (!desiredConnected) throw new Error("Connect to the Feibot F2000 before starting a loop test.");
+  if (!desiredConnected) throw new Error("Connect to the F2000 before starting a loop test.");
   testActive = true;
   connectError = null;
   syncReaders();
@@ -386,7 +386,7 @@ function processPacket(packet: string, onPassing?: ActiveTransponderPassingCallb
 function processEpc(parameters: string, onPassing?: ActiveTransponderPassingCallback): void {
   const commaIndex = parameters.indexOf(",");
   if (commaIndex < 1) return;
-  const timestamp = parseFeibotTimestamp(parameters.slice(0, commaIndex).trim());
+  const timestamp = parseF2000Timestamp(parameters.slice(0, commaIndex).trim());
   const epc = parameters.slice(commaIndex + 1).trim();
   if (!timestamp || !epc) return;
   lastPassingAt = timestamp.toISOString(); passingCount++; connectError = null;
@@ -408,7 +408,7 @@ function parseOptionalNumber(value: string | undefined): number | null {
   return value === undefined || value === "" || !Number.isFinite(parsed) ? null : parsed;
 }
 
-function parseFeibotTimestamp(value: string): Date | null {
+function parseF2000Timestamp(value: string): Date | null {
   const match = /^(\d{4})-(\d{1,2})-(\d{1,2})_(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/.exec(value);
   if (!match) return null;
   const [, y, mo, d, h, mi, s, ms = "0"] = match;

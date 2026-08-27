@@ -12,12 +12,8 @@ import { useOfflineAwareQuery } from "@/hooks/useOfflineAwareQuery";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
 import { useSyncQueue } from "@/hooks/useSyncQueue";
 import { CacheStatusBadge } from "@/components/CacheStatusBadge";
-import { isValidActiveTransponderIdentifier, normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
-
-// Empty means "not assigned" and is handled by the No Transponder state.
-function isInvalidTransponder(val: string | null | undefined): boolean {
-  return Boolean(val?.trim()) && !isValidActiveTransponderIdentifier(val);
-}
+import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
+import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 
 // RFID tags: alphanumeric + dashes, 1–32 characters.
 function isInvalidRfid(val: string | null | undefined): boolean {
@@ -753,7 +749,7 @@ export default function Checkin() {
                 ? (checkin as any).myLapsTransponderNumber as string | null
                 : checkin.rfidNumber ?? null;
               const isTagInvalid = isActiveTransponder
-                ? isInvalidTransponder(tagVal)
+                ? isInvalidAssignedActiveTransponderIdentifier(tagVal)
                 : isInvalidRfid(tagVal);
               return (
               <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : pendingRiderIds.has(checkin.riderId) ? 'border-amber-500 bg-amber-500/5' : 'hover:border-primary/50'}`}>

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
 
 const router = Router();
@@ -319,6 +320,19 @@ router.post("/events/:eventId/registrations", (req, res) => {
   } = req.body;
 
   if (!raceClass) return res.status(400).json({ error: "raceClass is required" });
+  const rawTransponderNumber =
+    transponderNumber ?? req.body.myLapsTransponderNumber;
+  const normalizedTransponderNumber =
+    normalizeActiveTransponderIdentifier(rawTransponderNumber);
+  const hasNonblankTransponder =
+    rawTransponderNumber != null &&
+    (typeof rawTransponderNumber !== "string" ||
+      rawTransponderNumber.trim() !== "");
+  if (hasNonblankTransponder && !normalizedTransponderNumber) {
+    return res.status(400).json({
+      error: "Active transponder number must be 1–9 hexadecimal characters",
+    });
+  }
 
   let riderId: number;
 
@@ -373,7 +387,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     eventId, riderId, String(raceClass),
     bibNumber ?? null, amaNumber ?? null, clubIdNumber ?? null,
     bikeBrand ?? null, bikeModel ?? null, bikeYear ?? null,
-    (transponderNumber ?? req.body.myLapsTransponderNumber) ?? null,
+    normalizedTransponderNumber,
     rentTransponder ? 1 : 0,
     paymentMethod ?? null,
     amountPaid ?? null,
@@ -382,6 +396,11 @@ router.post("/events/:eventId/registrations", (req, res) => {
   );
 
   const reg = db.prepare("SELECT * FROM registrations WHERE id = ?").get(Number(result.lastInsertRowid)) as any;
+  if (normalizedTransponderNumber) {
+    db.prepare(
+      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
+    ).run(normalizedTransponderNumber, riderId);
+  }
   const rider = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(riderId) as any;
   const riderName = rider ? `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim() : "";
 

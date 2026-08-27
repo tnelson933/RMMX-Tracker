@@ -13,12 +13,14 @@ const router = Router();
 // Saves it to the rider's permanent profile and creates an rfid_assignment so
 // the check-in screen shows the transponder already linked — no manual entry needed.
 async function autoLinkTransponder(riderId: number, eventId: number, transponderNumber: string) {
-  const trimmed = transponderNumber.trim();
-  if (!trimmed) return;
+  const normalized = normalizeActiveTransponderIdentifier(transponderNumber);
+  if (!normalized) {
+    throw new Error("Cannot auto-link an invalid active transponder identifier");
+  }
 
   // 1. Store on the rider's permanent profile so it pre-fills next time
   await db.update(ridersTable)
-    .set({ mylapsTransponderId: trimmed })
+    .set({ mylapsTransponderId: normalized })
     .where(eq(ridersTable.id, riderId));
 
   // 2. Create an rfid_assignment for this event if one doesn't exist yet
@@ -30,12 +32,12 @@ async function autoLinkTransponder(riderId: number, eventId: number, transponder
     ))
     .limit(1);
   if (!existing.length) {
-    await db.insert(rfidAssignmentsTable).values({ riderId, eventId, rfidNumber: trimmed });
+    await db.insert(rfidAssignmentsTable).values({ riderId, eventId, rfidNumber: normalized });
   }
 
   // 3. Mark the check-in row as transponder-linked
   await db.update(checkinsTable)
-    .set({ rfidNumber: trimmed, rfidLinked: true })
+    .set({ rfidNumber: normalized, rfidLinked: true })
     .where(and(
       eq(checkinsTable.riderId, riderId),
       eq(checkinsTable.eventId, eventId),
@@ -217,9 +219,19 @@ router.post("/events/:eventId/registrations", async (req, res) => {
   if (!raceClass) return res.status(400).json({ error: "raceClass required" });
 
   const [eventData] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+  const normalizedTransponderNumber =
+    normalizeActiveTransponderIdentifier(myLapsTransponderNumber);
+  const hasNonblankTransponder =
+    myLapsTransponderNumber != null &&
+    (typeof myLapsTransponderNumber !== "string" || myLapsTransponderNumber.trim() !== "");
+  if (hasNonblankTransponder && !normalizedTransponderNumber) {
+    return res.status(400).json({
+      error: "Active transponder number must be 1–9 hexadecimal characters",
+    });
+  }
   if (!isRegistrationTransponderRequirementSatisfied(
     eventData,
-    { transponderNumber: myLapsTransponderNumber, rentTransponder },
+    { transponderNumber: normalizedTransponderNumber, rentTransponder },
   )) {
     return res.status(400).json({
       error: "Enter the rider's active transponder number, or select an available rental.",
@@ -286,7 +298,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     status: needsPayment ? "pending" : "confirmed",
     paymentStatus: "unpaid",
     transponderRental: wantsRental,
-    myLapsTransponderNumber: myLapsTransponderNumber?.trim() || null,
+    myLapsTransponderNumber: normalizedTransponderNumber,
     selectedPurchaseOptions: Array.isArray(selectedPurchaseOptions) ? selectedPurchaseOptions : [],
   }).returning();
 
@@ -877,9 +889,19 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // Confirm event exists and is open for registration
   const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!events[0]) return res.status(404).json({ error: "Event not found" });
+  const normalizedTransponderNumber =
+    normalizeActiveTransponderIdentifier(myLapsTransponderNumber);
+  const hasNonblankTransponder =
+    myLapsTransponderNumber != null &&
+    (typeof myLapsTransponderNumber !== "string" || myLapsTransponderNumber.trim() !== "");
+  if (hasNonblankTransponder && !normalizedTransponderNumber) {
+    return res.status(400).json({
+      error: "Active transponder number must be 1–9 hexadecimal characters",
+    });
+  }
   if (!isRegistrationTransponderRequirementSatisfied(
     events[0],
-    { transponderNumber: myLapsTransponderNumber, rentTransponder },
+    { transponderNumber: normalizedTransponderNumber, rentTransponder },
   )) {
     return res.status(400).json({
       error: "Enter your active transponder number, or select an available rental.",
@@ -1174,7 +1196,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     statsEmailOptIn: !!statsEmailOptIn,
     transponderRental: wantsRental,
     rfidStickerPurchased: wantsRfidSticker,
-    myLapsTransponderNumber: myLapsTransponderNumber?.trim() || null,
+    myLapsTransponderNumber: normalizedTransponderNumber,
     compCode: validatedCompCode,
     compDiscount: compDiscount > 0 ? String(compDiscount) : null,
     waiverAcknowledgedAt: waiverAcknowledgedAt ? new Date(waiverAcknowledgedAt) : null,
@@ -1219,8 +1241,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       });
     }
     // Auto-link transponder if the rider entered their own (not a rental)
-    if (!wantsRental && myLapsTransponderNumber?.trim()) {
-      await autoLinkTransponder(rider.id, eventId, myLapsTransponderNumber);
+    if (!wantsRental && normalizedTransponderNumber) {
+      await autoLinkTransponder(rider.id, eventId, normalizedTransponderNumber);
     }
   }
 

@@ -5748,7 +5748,7 @@ components:
           description: UUID used as the URL key for this reader's ingest endpoint
         hardwareAddress:
           type: ["string", "null"]
-          description: Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.
+          description: Last 6 of MAC address for Impinj R700, or the F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.
         lastSeenAt:
           type: ["string", "null"]
           format: date-time
@@ -5767,7 +5767,7 @@ components:
           enum: [rfid, active_transponder]
         hardwareAddress:
           type: string
-          description: Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address
+          description: Last 6 of MAC address for Impinj R700, or the F2000 IP address
 
     ReaderUpdateInput:
       type: object
@@ -5777,7 +5777,7 @@ components:
           type: string
         hardwareAddress:
           type: ["string", "null"]
-          description: Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address
+          description: Last 6 of MAC address for Impinj R700, or the F2000 IP address
 
     ConnectorStatus:
       type: object

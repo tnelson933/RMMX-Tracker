@@ -1,8 +1,7 @@
 const ACTIVE_TRANSPONDER_ID_PATTERN = /^[0-9a-f]{1,9}$/;
 
 /**
- * Active timing transponder identifiers support Feibot's hexadecimal IDs while
- * retaining the legacy MyLaps range of one to nine numeric characters.
+ * Active transponder identifiers are one to nine hexadecimal characters.
  */
 export function normalizeActiveTransponderIdentifier(
   value: string | null | undefined,

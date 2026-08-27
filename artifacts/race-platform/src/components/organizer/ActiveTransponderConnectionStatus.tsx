@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
-import { CheckCircle2, XCircle, Loader2, Radio, Activity, Battery, AlertCircle, Settings } from "lucide-react";
+import { CheckCircle2, XCircle, Radio, Activity, Battery, AlertCircle, Settings } from "lucide-react";
 import { useGetConnectorStatus } from "@workspace/api-client-react";
-import { Badge } from "@/components/ui/badge";
 
 interface ActiveTransponderStatus {
   connected: boolean;
@@ -17,7 +16,7 @@ interface ActiveTransponderStatus {
   reader2Working: string | null;
 }
 
-export function FeibotConnectionStatus({ className = "" }: { className?: string }) {
+export function ActiveTransponderConnectionStatus({ className = "" }: { className?: string }) {
   const isDesktop = typeof (window as any).electronAPI !== "undefined";
   const [activeStatus, setActiveStatus] = useState<ActiveTransponderStatus | null>(null);
 
@@ -41,7 +40,6 @@ export function FeibotConnectionStatus({ className = "" }: { className?: string 
   let isConnected = false;
   let hasError = false;
   let readCount = 0;
-  let heartbeat: string | null = null;
   let loops: { l1: boolean; l2: boolean } | null = null;
   let battery: number | null = null;
 
@@ -49,7 +47,6 @@ export function FeibotConnectionStatus({ className = "" }: { className?: string 
     isConnected = activeStatus.connected;
     hasError = !!activeStatus.error;
     readCount = activeStatus.passingCount;
-    heartbeat = activeStatus.lastHeartbeatAt;
     battery = activeStatus.batteryPercent;
     if (activeStatus.reader1Working != null) {
       loops = {
@@ -63,7 +60,6 @@ export function FeibotConnectionStatus({ className = "" }: { className?: string 
     try {
       if (activeConnector.hardware.detail) {
         const detail = JSON.parse(activeConnector.hardware.detail);
-        if (detail.lastHeartbeatAt) heartbeat = detail.lastHeartbeatAt;
         if (detail.batteryPercent != null) battery = detail.batteryPercent;
         if (detail.reader1Working != null) {
           loops = {
@@ -82,7 +78,7 @@ export function FeibotConnectionStatus({ className = "" }: { className?: string 
     return (
       <Link href="/rfid/setup" className={`inline-flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-500/20 transition-colors ${className}`}>
         <AlertCircle size={14} className="shrink-0" />
-        <span className="font-medium">Feibot Disconnected</span>
+        <span className="font-medium">Active Timing Reader Disconnected</span>
         <Settings size={12} className="ml-1 opacity-70" />
       </Link>
     );
@@ -92,7 +88,7 @@ export function FeibotConnectionStatus({ className = "" }: { className?: string 
     <Link href="/rfid/setup" className={`inline-flex items-center gap-3 rounded-md border px-3 py-1.5 text-xs transition-colors hover:bg-muted/50 ${isConnected ? (hasError ? "border-amber-500/30 bg-amber-500/5 text-amber-700" : "border-green-500/30 bg-green-500/5 text-green-700") : "border-red-500/30 bg-red-500/5 text-red-700"} ${className}`}>
       <div className="flex items-center gap-1.5 font-medium">
         {isConnected ? <CheckCircle2 size={14} className={hasError ? "text-amber-500" : "text-green-500"} /> : <XCircle size={14} className="text-red-500" />}
-        <span>{isConnected ? "Feibot F2000" : "Feibot Disconnected"}</span>
+        <span>{isConnected ? "F2000" : "Active Timing Reader Disconnected"}</span>
       </div>
 
       {isConnected && (

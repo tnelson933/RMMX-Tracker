@@ -84,7 +84,7 @@ const MiniStep = ({ n }: { n: number }) => (
   </div>
 );
 
-function FeibotGuidedSetup({
+function ActiveTransponderGuidedSetup({
   isDesktop,
   connectorStatuses,
   readers,
@@ -141,7 +141,7 @@ function FeibotGuidedSetup({
       await (window as any).electronAPI.activeTransponder.connect(finalAddress);
       setActiveStatus(await (window as any).electronAPI.activeTransponder.getStatus());
     } catch (error) {
-      setConnectError(error instanceof Error ? error.message : "Could not connect to the Feibot F2000.");
+      setConnectError(error instanceof Error ? error.message : "Could not connect to the F2000.");
     } finally {
       setConnecting(false);
     }
@@ -283,7 +283,7 @@ function FeibotGuidedSetup({
         <div className="px-5 py-4 bg-primary/5 border-b border-primary/10 flex items-center gap-3">
           <Activity className="text-primary shrink-0" size={24} />
           <div>
-            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">Feibot F2000 Setup</h3>
+            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">F2000 Setup</h3>
             <p className="text-xs text-muted-foreground mt-0.5">Guided pre-flight checklist for Active Timing Reader setup.</p>
           </div>
         </div>
@@ -771,7 +771,7 @@ export default function ReaderSetup() {
       await (window as any).electronAPI.activeTransponder.connect(address);
       setActiveStatus(await (window as any).electronAPI.activeTransponder.getStatus());
     } catch (error) {
-      setActiveConnectError(error instanceof Error ? error.message : "Could not connect to the Feibot F2000.");
+      setActiveConnectError(error instanceof Error ? error.message : "Could not connect to the F2000.");
     } finally {
       setActiveConnecting(false);
     }
@@ -957,7 +957,7 @@ export default function ReaderSetup() {
             <Timer size={22} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
             <div>
               <p className="font-semibold">Active Timing Reader</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Feibot F2000 reader with PowerTag transponders.</p>
+              <p className="text-xs text-muted-foreground mt-0.5">F2000 reader with PowerTag transponders.</p>
             </div>
           </button>
         </div>
@@ -1115,7 +1115,7 @@ export default function ReaderSetup() {
                                 value={editAddress}
                                 onChange={e => setEditAddress(e.target.value)}
                                 className="h-8 flex-1 font-mono text-xs"
-                                placeholder={reader.type === "active_transponder" ? "Feibot F2000 IP address" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
+                                placeholder={reader.type === "active_transponder" ? "F2000 IP address" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
                                 onKeyDown={e => {
                                   if (e.key === "Enter") handleSaveReader(reader.id);
                                   if (e.key === "Escape") setEditingId(null);
@@ -1202,7 +1202,7 @@ export default function ReaderSetup() {
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               RM Connect runs in the laptop's system tray at the track. It connects directly to your{" "}
-              {tech === "rfid" ? "RFID reader and streams tag reads" : "Feibot F2000 and streams PowerTag crossings"}{" "}
+              {tech === "rfid" ? "RFID reader and streams tag reads" : "F2000 and streams PowerTag crossings"}{" "}
               to the cloud. Leave it running on race day; readers start and stop automatically with each moto.
               {tech === "active_transponder" && " Your saved IP address is used automatically—no channel, power, loop, or clock setup is needed for normal use."}
             </p>
@@ -1217,7 +1217,7 @@ export default function ReaderSetup() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{c.readerName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "zebra" ? "Zebra reader" : c.hardware?.kind === "generic" ? "LLRP reader" : c.hardware?.kind === "active_transponder" ? "Feibot F2000" : "Hardware"}
+                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "zebra" ? "Zebra reader" : c.hardware?.kind === "generic" ? "LLRP reader" : c.hardware?.kind === "active_transponder" ? "F2000" : "Hardware"}
                     {" — "}
                     {c.hardware?.connected ? "connected" : (c.hardware?.detail || "not connected")}
                     {c.hardware?.readCount > 0 && ` · ${c.hardware.readCount} reads`}
@@ -1256,7 +1256,7 @@ export default function ReaderSetup() {
 
         <div className="space-y-2 text-sm">
           <div className="flex gap-2"><MiniStep n={1} /><p>Download and install RM Connect on the laptop you bring to the track.</p></div>
-          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, choose your hardware (Impinj R700, Zebra FX7500/FX9600, other LLRP reader, or Feibot F2000), and enter its address (Impinj: last 6 of the MAC on the label · Zebra/other: IP address · Feibot: IP address).</p></div>
+          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, choose your hardware (Impinj R700, Zebra FX7500/FX9600, other LLRP reader, or F2000), and enter its address (Impinj: last 6 of the MAC on the label · Zebra/other/F2000: IP address).</p></div>
           <div className="flex gap-2"><MiniStep n={3} /><p>That's it — leave it running in the tray. When you press <strong>Start Moto</strong> here, the reader starts reading automatically.</p></div>
         </div>
 
@@ -1489,7 +1489,7 @@ export default function ReaderSetup() {
                 </div>
               </summary>
               <div className="border-t px-5 pb-5">
-                <FeibotGuidedSetup
+                <ActiveTransponderGuidedSetup
                   isDesktop={isDesktop}
                   connectorStatuses={connectorStatuses}
                   readers={readers}

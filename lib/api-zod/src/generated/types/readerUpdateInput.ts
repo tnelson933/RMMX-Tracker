@@ -9,7 +9,7 @@
 export interface ReaderUpdateInput {
   name: string;
   /**
-     * Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address
+     * Last 6 of MAC address for Impinj R700, or the F2000 IP address
      * @nullable
      */
   hardwareAddress?: string | null;

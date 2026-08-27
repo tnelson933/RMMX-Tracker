@@ -1,18 +1,18 @@
 /**
- * Feibot F2000 active-transponder client.
+ * F2000 active-transponder client.
  *
- * The F2000 socket protocol is UTF-8 text framed by semicolons:
- *   machineId@cmd@cmdSN@parameters;
+ * The V3.2 socket protocol is UTF-8 text framed by semicolons:
+ * machineId@cmd@cmdSN@parameters;
  */
 import net from "net";
 import { EventEmitter } from "events";
 
-const FEIBOT_PORT = 55555;
+const F2000_PORT = 55555;
 const CONNECT_TIMEOUT_MS = 8_000;
 const HEARTBEAT_STALE_MS = 5_000;
 const READER_OPEN_RETRY_MS = 2_000;
 
-export interface FeibotStatus {
+export interface ActiveTransponderStatus {
   connected: boolean;
   host: string | null;
   port: number | null;
@@ -38,47 +38,42 @@ export interface FeibotStatus {
 
 function friendlyConnectionError(error: Error, host: string, port: number): string {
   const code = (error as NodeJS.ErrnoException).code;
-  if (code === "ECONNREFUSED") return `The Feibot at ${host}:${port} refused the connection. Confirm its IP address and that TCP port ${port} is enabled.`;
+  if (code === "ECONNREFUSED") return `The F2000 at ${host}:${port} refused the connection. Confirm its IP address and that TCP port ${port} is enabled.`;
   if (code === "ETIMEDOUT" || code === "EHOSTUNREACH" || code === "ENETUNREACH") {
-    return `Cannot reach the Feibot at ${host}:${port}. Check that this computer and reader are on the same network and TCP port ${port} is reachable.`;
+    return `Cannot reach the F2000 at ${host}:${port}. Check that this computer and reader are on the same network and TCP port ${port} is reachable.`;
   }
-  if (code === "ENOTFOUND") return `The Feibot address "${host}" was not found. Check the IP address or hostname.`;
-  return error.message || `Unable to connect to Feibot at ${host}:${port}.`;
+  if (code === "ENOTFOUND") return `The F2000 address "${host}" was not found. Check the IP address or hostname.`;
+  return error.message || `Unable to connect to F2000 at ${host}:${port}.`;
 }
 
 function parseAddress(address: string): { host: string; port: number } {
   const value = address.trim();
-  // Bracketed IPv6 is the unambiguous host:port form.
   const bracketed = value.match(/^\[([^\]]+)\](?::(\d+))?$/);
   if (bracketed) {
-    const port = Number(bracketed[2] ?? FEIBOT_PORT);
-    return { host: bracketed[1], port: Number.isInteger(port) && port > 0 && port < 65536 ? port : FEIBOT_PORT };
+    const port = Number(bracketed[2] ?? F2000_PORT);
+    return { host: bracketed[1], port: Number.isInteger(port) && port > 0 && port < 65536 ? port : F2000_PORT };
   }
   const colon = value.lastIndexOf(":");
   if (colon > 0 && value.indexOf(":") === colon) {
     const port = Number(value.slice(colon + 1));
-    if (Number.isInteger(port) && port > 0 && port < 65536) {
-      return { host: value.slice(0, colon), port };
-    }
+    if (Number.isInteger(port) && port > 0 && port < 65536) return { host: value.slice(0, colon), port };
   }
-  return { host: value, port: FEIBOT_PORT };
+  return { host: value, port: F2000_PORT };
 }
 
 function parseTimestamp(value: string): Date | null {
-  // Device format: YYYY-M-D_HH:mm:ss.SSS. Construct locally to avoid
-  // implementation-dependent parsing of non-zero-padded date strings.
   const match = value.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})_(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
   if (!match) return null;
   const [, year, month, day, hour, minute, second, millis = "0"] = match;
   const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second), Number(millis.padEnd(3, "0")));
   if (
-    Number.isNaN(date.getTime()) ||
-    date.getFullYear() !== Number(year) ||
-    date.getMonth() !== Number(month) - 1 ||
-    date.getDate() !== Number(day) ||
-    date.getHours() !== Number(hour) ||
-    date.getMinutes() !== Number(minute) ||
-    date.getSeconds() !== Number(second)
+    Number.isNaN(date.getTime())
+    || date.getFullYear() !== Number(year)
+    || date.getMonth() !== Number(month) - 1
+    || date.getDate() !== Number(day)
+    || date.getHours() !== Number(hour)
+    || date.getMinutes() !== Number(minute)
+    || date.getSeconds() !== Number(second)
   ) return null;
   return date;
 }
@@ -93,7 +88,7 @@ function stateFields(parameters: string): Record<string, string> {
 }
 
 /** Events: tag(tag, time), connected, disconnected(reason), status. */
-export class FeibotClient extends EventEmitter {
+export class ActiveTransponderClient extends EventEmitter {
   private socket: net.Socket | null = null;
   private host: string | null = null;
   private port: number | null = null;
@@ -115,7 +110,7 @@ export class FeibotClient extends EventEmitter {
   private configurationApplied = false;
   private lastReaderOpenRequestAt = 0;
 
-  getStatus(): FeibotStatus {
+  getStatus(): ActiveTransponderStatus {
     const connected = !!this.socket && !this.socket.destroyed;
     const heartbeatAge = this.lastHeartbeatAt ? Date.now() - new Date(this.lastHeartbeatAt).getTime() : null;
     const heartbeatFresh = heartbeatAge !== null && heartbeatAge <= HEARTBEAT_STALE_MS;
@@ -124,7 +119,6 @@ export class FeibotClient extends EventEmitter {
     const readersWorking = enabledLoops.every(Boolean);
     const ready = connected && this.desiredReading && this.configurationApplied
       && this.readerCommandMachineId === this.machineId && readersWorking;
-    const reading = ready;
     const loop1State = state.reader1Working ?? null;
     const loop2State = state.reader2Working ?? null;
     const machineSummary = ["batteryPercent", "reader1Working", "reader2Working"]
@@ -133,25 +127,34 @@ export class FeibotClient extends EventEmitter {
       .join(", ");
     const detail = this.machineId
       ? `${this.machineId}${this.activeSystemState ? ` · ${this.activeSystemState}` : ""}${machineSummary ? ` · ${machineSummary}` : ""}`
-      : connected ? "Connected — waiting for Feibot machine identification" : null;
+      : connected ? "Connected — waiting for F2000 machine identification" : null;
     const heartbeatError = connected && heartbeatAge !== null && !heartbeatFresh
-      ? "Feibot heartbeat stopped — check the reader and network connection."
+      ? "F2000 heartbeat stopped — check the reader and network connection."
       : null;
     const diagnosis = this.lastError ?? heartbeatError ?? (!connected
-      ? "Connect the Feibot on the same network using its IP address and TCP port 55555."
+      ? "Connect the F2000 on the same network using its IP address and TCP port 55555."
       : !this.machineId
         ? "Transport is connected. Waiting for the F2000 machine identification and heartbeat."
         : !heartbeatFresh
           ? "Waiting for a fresh F2000 heartbeat."
           : this.desiredReading && !readersWorking
             ? "Opening enabled loops; waiting for the F2000 to confirm they are running. RM Connect will retry the open command."
-            : "Feibot transport, heartbeat, and machine identification are ready.");
-    return { connected, host: this.host, port: this.port, machineId: this.machineId, error: this.lastError ?? heartbeatError, lastPassingAt: this.lastPassingAt, passingCount: this.passingCount, lastHeartbeatAt: this.lastHeartbeatAt, machineState: { ...state }, activeSystemState: this.activeSystemState, reading, transportReady: connected && !!this.machineId, heartbeatFresh, loop1State, loop2State, loop1Enabled: this.loopEnabled[0], loop2Enabled: this.loopEnabled[1], configurationApplied: this.configurationApplied, ready, diagnosis, detail };
+            : "F2000 transport, heartbeat, and machine identification are ready.");
+    return {
+      connected, host: this.host, port: this.port, machineId: this.machineId,
+      error: this.lastError ?? heartbeatError, lastPassingAt: this.lastPassingAt,
+      passingCount: this.passingCount, lastHeartbeatAt: this.lastHeartbeatAt,
+      machineState: { ...state }, activeSystemState: this.activeSystemState,
+      reading: ready, transportReady: connected && !!this.machineId, heartbeatFresh,
+      loop1State, loop2State, loop1Enabled: this.loopEnabled[0],
+      loop2Enabled: this.loopEnabled[1], configurationApplied: this.configurationApplied,
+      ready, diagnosis, detail,
+    };
   }
 
   configure(input: { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean }): void {
-    if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("Feibot active channel must be between 0 and 5.");
-    if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("Feibot active power must be between 0 and 100.");
+    if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("F2000 active channel must be between 0 and 5.");
+    if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("F2000 active power must be between 0 and 100.");
     this.channel = input.channel;
     this.power = input.power;
     this.loopEnabled = [input.loop1Enabled, input.loop2Enabled];
@@ -161,7 +164,7 @@ export class FeibotClient extends EventEmitter {
   }
 
   syncClock(): void {
-    if (!this.machineId) throw new Error("Feibot is not identified yet. Connect it before syncing its clock.");
+    if (!this.machineId) throw new Error("F2000 is not identified yet. Connect it before syncing its clock.");
     this.sendClockCommands();
     this.emit("status");
   }
@@ -169,7 +172,7 @@ export class FeibotClient extends EventEmitter {
   connect(address: string): Promise<void> {
     this.disconnect();
     const { host, port } = parseAddress(address);
-    if (!host) return Promise.reject(new Error("Enter a Feibot IP address or hostname."));
+    if (!host) return Promise.reject(new Error("Enter an F2000 IP address or hostname."));
     this.intentionalClose = false;
     this.lastError = null;
     this.host = host;
@@ -195,18 +198,16 @@ export class FeibotClient extends EventEmitter {
         resolve();
       });
       socket.once("timeout", () => {
-        const error = new Error(`Cannot reach the Feibot at ${host}:${port}. Check the IP address, same network, and TCP port ${port}.`);
+        const error = new Error(`Cannot reach the F2000 at ${host}:${port}. Check the IP address, same network, and TCP port ${port}.`);
         fail(error);
         socket.destroy();
       });
       socket.on("data", (chunk: Buffer) => this.receive(chunk.toString("utf8")));
       socket.on("error", (error) => fail(error));
       socket.on("close", () => {
-        // A socket deliberately superseded by a reconnect must not announce a
-        // stale disconnect for the newer connection attempt.
         if (this.socket !== socket) return;
         this.socket = null;
-        if (!this.intentionalClose && settled) this.emit("disconnected", this.lastError ?? "Feibot connection closed");
+        if (!this.intentionalClose && settled) this.emit("disconnected", this.lastError ?? "F2000 connection closed");
         this.emit("status");
       });
     });
@@ -214,8 +215,6 @@ export class FeibotClient extends EventEmitter {
 
   disconnect(): void {
     this.intentionalClose = true;
-    // Best effort: tell both F2000 loops to stop before the transport goes
-    // away. This also runs during app shutdown.
     if (this.desiredReading) this.sendReaderCommand("readerStop");
     if (this.socket && !this.socket.destroyed) this.socket.destroy();
     this.socket = null;
@@ -226,8 +225,6 @@ export class FeibotClient extends EventEmitter {
 
   startReading(): void {
     this.desiredReading = true;
-    // Reapply before every fresh test or moto. A reader can have accepted the
-    // TCP connection while its loops are still stopped from a prior session.
     this.applyConfiguration(false);
     this.requestReaderOpen(true);
     this.emit("status");
@@ -243,8 +240,6 @@ export class FeibotClient extends EventEmitter {
 
   private receive(data: string): void {
     this.receiveBuffer += data;
-    // Keep a malformed stream from growing unboundedly while preserving a
-    // possible partial packet at the tail.
     if (this.receiveBuffer.length > 64 * 1024) this.receiveBuffer = this.receiveBuffer.slice(-4096);
     let end: number;
     while ((end = this.receiveBuffer.indexOf(";")) >= 0) {
@@ -288,8 +283,6 @@ export class FeibotClient extends EventEmitter {
         if (/^failed/i.test(parameters)) this.lastError = parameters;
         break;
     }
-    // A reader start requested before the first device packet can now be sent.
-    // V3.2 configuration always precedes opening readers on a new connection.
     if (!this.configurationApplied) this.applyConfiguration(true);
     this.requestReaderOpen();
     this.emit("status");
@@ -301,11 +294,6 @@ export class FeibotClient extends EventEmitter {
     );
   }
 
-  /**
-   * The F2000 does not acknowledge readerOpen. A command issued immediately
-   * after configuration can be ignored while the loops are transitioning, so
-   * retry on subsequent device packets until its telemetry confirms the loops.
-   */
   private requestReaderOpen(force = false): void {
     if (!this.desiredReading || !this.socket || this.socket.destroyed || !this.machineId) return;
     if (!force && this.enabledLoopsAreRunning()) return;
@@ -317,7 +305,6 @@ export class FeibotClient extends EventEmitter {
 
   private sendReaderCommand(command: "readerOpen" | "readerStop"): void {
     if (!this.socket || this.socket.destroyed || !this.machineId) return;
-    // F2000 commands operate on one reader at a time. Use both available loops.
     for (const reader of ["1", "2"]) {
       if (command === "readerOpen" && !this.loopEnabled[Number(reader) - 1]) continue;
       this.sendCommand(command, reader);
@@ -332,9 +319,6 @@ export class FeibotClient extends EventEmitter {
     this.sendCommand(this.loopEnabled[1] ? "loopEnable" : "loopDisable", "2");
     this.sendCommand("setActiveChannel", String(this.channel));
     this.sendCommand("setActivePower", String(this.power));
-    // The V3.2 protocol does not provide a configuration acknowledgement.
-    // A successful write plus subsequent heartbeat is the available readiness
-    // signal; retain this explicitly rather than inventing response fields.
     this.configurationApplied = true;
     this.readerCommandMachineId = null;
     this.lastReaderOpenRequestAt = 0;
@@ -355,7 +339,7 @@ export class FeibotClient extends EventEmitter {
     try {
       this.socket.write(`${this.machineId}@${command}@${sequence}@${parameters};`);
     } catch (error) {
-      this.lastError = error instanceof Error ? error.message : "Unable to send command to Feibot";
+      this.lastError = error instanceof Error ? error.message : "Unable to send command to F2000";
     }
   }
 }

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { ridersTable, raceResultsTable, motosTable, eventsTable, registrationsTable } from "@workspace/db";
 import { eq, ilike, or, desc, and, inArray, sql } from "drizzle-orm";
+import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 
 const router = Router();
 
@@ -97,6 +98,16 @@ router.get("/riders", async (req, res) => {
 router.post("/riders", async (req, res) => {
   const { firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact, emergencyPhone, rfidNumber, bikeManufacturer, bikeModel, bikeYear, sponsors, amaNumber, mylapsTransponderId, streetAddress, city, homeState, zip } = req.body;
   if (!firstName || !lastName) return res.status(400).json({ error: "firstName and lastName required" });
+  const normalizedTransponderId =
+    normalizeActiveTransponderIdentifier(mylapsTransponderId);
+  const hasNonblankTransponder =
+    mylapsTransponderId != null &&
+    (typeof mylapsTransponderId !== "string" || mylapsTransponderId.trim() !== "");
+  if (hasNonblankTransponder && !normalizedTransponderId) {
+    return res.status(400).json({
+      error: "Active transponder ID must be 1–9 hexadecimal characters",
+    });
+  }
 
   // Tag the rider with the organizer's club so they remain visible in that club's rider list
   const orgCId = getOrganizerClubId(res);
@@ -104,7 +115,7 @@ router.post("/riders", async (req, res) => {
   const [rider] = await db.insert(ridersTable).values({
     firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact,
     emergencyPhone, rfidNumber, bikeManufacturer, bikeModel, bikeYear, sponsors,
-    amaNumber, mylapsTransponderId, streetAddress, city, homeState, zip,
+    amaNumber, mylapsTransponderId: normalizedTransponderId, streetAddress, city, homeState, zip,
     ...(orgCId != null ? { clubId: orgCId } : {}),
   }).returning();
   return res.status(201).json({ ...rider, createdAt: rider.createdAt.toISOString() });
@@ -182,6 +193,20 @@ router.patch("/riders/:riderId", async (req, res) => {
   const updates: Record<string, unknown> = {};
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
+  }
+  if (req.body.mylapsTransponderId !== undefined) {
+    const rawTransponderId = req.body.mylapsTransponderId;
+    const normalizedTransponderId =
+      normalizeActiveTransponderIdentifier(rawTransponderId);
+    const hasNonblankTransponder =
+      rawTransponderId != null &&
+      (typeof rawTransponderId !== "string" || rawTransponderId.trim() !== "");
+    if (hasNonblankTransponder && !normalizedTransponderId) {
+      return res.status(400).json({
+        error: "Active transponder ID must be 1–9 hexadecimal characters",
+      });
+    }
+    updates.mylapsTransponderId = normalizedTransponderId;
   }
   const [rider] = await db.update(ridersTable).set(updates as any).where(eq(ridersTable.id, id)).returning();
   if (!rider) return res.status(404).json({ error: "Not found" });

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb, parseBool, parseJsonArr } from "../db";
 
 const router = Router();
@@ -77,6 +78,19 @@ router.post("/events/:eventId/registrations", (req, res) => {
   if (!firstName || !lastName || !email || !raceClass) {
     return res.status(400).json({ error: "firstName, lastName, email, raceClass required" });
   }
+  const rawTransponderNumber =
+    transponderNumber ?? req.body.myLapsTransponderNumber;
+  const normalizedTransponderNumber =
+    normalizeActiveTransponderIdentifier(rawTransponderNumber);
+  const hasNonblankTransponder =
+    rawTransponderNumber != null &&
+    (typeof rawTransponderNumber !== "string" ||
+      rawTransponderNumber.trim() !== "");
+  if (hasNonblankTransponder && !normalizedTransponderNumber) {
+    return res.status(400).json({
+      error: "Active transponder number must be 1–9 hexadecimal characters",
+    });
+  }
 
   const db = getDb();
 
@@ -134,11 +148,16 @@ router.post("/events/:eventId/registrations", (req, res) => {
       hasPaid ? String(amountPaid) : null,
       bibNumber || null, clubIdNumber || null, bikeBrand || null,
       rentTransponder ? 1 : 0,
-      (transponderNumber ?? req.body.myLapsTransponderNumber) || null,
+      normalizedTransponderNumber,
       JSON.stringify(selectedPurchaseOptions || []),
     );
 
   const regId = regResult.lastInsertRowid as number;
+  if (normalizedTransponderNumber) {
+    db.prepare(
+      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
+    ).run(normalizedTransponderNumber, riderId);
+  }
 
   // Auto-create checkin for confirmed registrations
   if (finalStatus === "confirmed") {
@@ -172,7 +191,28 @@ router.patch("/registrations/:registrationId", (req, res) => {
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
   const id = Number(req.params.registrationId);
-  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod, riderId, displayFirstName, displayLastName } = req.body;
+  const {
+    status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod,
+    riderId, displayFirstName, displayLastName,
+  } = req.body;
+  const hasTransponderUpdate =
+    req.body.transponderNumber !== undefined ||
+    req.body.myLapsTransponderNumber !== undefined;
+  const rawTransponderNumber =
+    req.body.transponderNumber !== undefined
+      ? req.body.transponderNumber
+      : req.body.myLapsTransponderNumber;
+  const normalizedTransponderNumber =
+    normalizeActiveTransponderIdentifier(rawTransponderNumber);
+  const hasNonblankTransponder =
+    rawTransponderNumber != null &&
+    (typeof rawTransponderNumber !== "string" ||
+      rawTransponderNumber.trim() !== "");
+  if (hasTransponderUpdate && hasNonblankTransponder && !normalizedTransponderNumber) {
+    return res.status(400).json({
+      error: "Active transponder number must be 1–9 hexadecimal characters",
+    });
+  }
 
   const updates: string[] = [];
   const params: unknown[] = [];
@@ -194,6 +234,10 @@ router.patch("/registrations/:registrationId", (req, res) => {
   if (riderId !== undefined) { updates.push("rider_id = ?"); params.push(Number(riderId)); }
   if (displayFirstName !== undefined) { updates.push("display_first_name = ?"); params.push(displayFirstName || null); }
   if (displayLastName !== undefined) { updates.push("display_last_name = ?"); params.push(displayLastName || null); }
+  if (hasTransponderUpdate) {
+    updates.push("mylaps_transponder_number = ?");
+    params.push(normalizedTransponderNumber);
+  }
 
   if (updates.length === 0) {
     return res.status(400).json({ error: "No fields to update" });
@@ -208,6 +252,11 @@ router.patch("/registrations/:registrationId", (req, res) => {
     .get(id) as Record<string, unknown> | undefined;
 
   if (!updated) return res.status(404).json({ error: "Not found" });
+  if (normalizedTransponderNumber) {
+    db.prepare(
+      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
+    ).run(normalizedTransponderNumber, updated.rider_id);
+  }
 
   // Create a checkin record if the registration is now confirmed and one doesn't exist yet
   if (updated.status === "confirmed") {

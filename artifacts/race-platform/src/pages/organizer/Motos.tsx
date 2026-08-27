@@ -28,7 +28,7 @@ import {
 } from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { LiveBroadcast } from "./LiveBroadcast";
-import { FeibotConnectionStatus } from "@/components/organizer/FeibotConnectionStatus";
+import { ActiveTransponderConnectionStatus } from "@/components/organizer/ActiveTransponderConnectionStatus";
 import { format } from "date-fns";
 
 type RawCrossing = {
@@ -2069,7 +2069,7 @@ export default function Motos() {
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <FeibotConnectionStatus />
+          <ActiveTransponderConnectionStatus />
         </div>
 
         <div className="flex items-center gap-2">

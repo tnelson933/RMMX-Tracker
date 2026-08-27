@@ -768,7 +768,7 @@ export const ListReadersResponseItem = zod.object({
   "name": zod.string(),
   "type": zod.enum(['rfid', 'active_transponder']),
   "token": zod.string().describe('UUID used as the URL key for this reader\'s ingest endpoint'),
-  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.'),
+  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.'),
   "lastSeenAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })
@@ -781,7 +781,7 @@ export const ListReadersResponse = zod.array(ListReadersResponseItem)
 export const CreateReaderBody = zod.object({
   "name": zod.string(),
   "type": zod.enum(['rfid', 'active_transponder']),
-  "hardwareAddress": zod.string().optional().describe('Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address')
+  "hardwareAddress": zod.string().optional().describe('Last 6 of MAC address for Impinj R700, or the F2000 IP address')
 })
 
 
@@ -827,7 +827,7 @@ export const UpdateReaderParams = zod.object({
 
 export const UpdateReaderBody = zod.object({
   "name": zod.string(),
-  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address')
+  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the F2000 IP address')
 })
 
 export const UpdateReaderResponse = zod.object({
@@ -836,7 +836,7 @@ export const UpdateReaderResponse = zod.object({
   "name": zod.string(),
   "type": zod.enum(['rfid', 'active_transponder']),
   "token": zod.string().describe('UUID used as the URL key for this reader\'s ingest endpoint'),
-  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.'),
+  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.'),
   "lastSeenAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 })

@@ -987,7 +987,7 @@ async function getActivePracticeSessionForClub(clubId: number) {
 //
 // Accepts ALL hardware payload formats:
 //   • Generic:           { rfidNumber, crossingTime? }
-//   • Feibot F2000 Active Transponder Timing: { transponder, passingTime? }
+//   • F2000 Active Transponder Timing: { transponder, passingTime? }
 //   • Impinj R700:       { events: [{ type:"tagInventoryEvent", tagInventoryEvent:{epcHex,firstSeenTime} }] }
 //   • Zebra FX7500:      { data: { tags: [{idHex, firstSeenTimestamp}] } } or { tags:[...] }
 router.post("/timing/active/crossing", async (req, res) => {

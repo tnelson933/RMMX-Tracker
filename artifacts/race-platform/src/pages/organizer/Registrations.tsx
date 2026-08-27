@@ -25,13 +25,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
-
-// Active transponder numbers are purely numeric, 1–9 digits.
-// Anything else (letters, dashes, spaces, >9 digits) is a format error.
-function isInvalidTransponder(val: string | null | undefined): boolean {
-  if (!val || !val.trim()) return false;
-  return !/^\d{1,9}$/.test(val.trim());
-}
+import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 
 // RFID tags are alphanumeric + dashes, 1–32 characters.
 // Spaces, special chars, or extreme lengths are invalid.
@@ -424,10 +418,10 @@ export default function Registrations() {
   // Float registrations with invalid transponder/RFID numbers to the top.
   const sortedRegs = [...filteredRegs].sort((a, b) => {
     const aInvalid = isActiveTransponder
-      ? isInvalidTransponder((a as any).myLapsTransponderNumber)
+      ? isInvalidAssignedActiveTransponderIdentifier((a as any).myLapsTransponderNumber)
       : isInvalidRfid((a as any).rfidNumber);
     const bInvalid = isActiveTransponder
-      ? isInvalidTransponder((b as any).myLapsTransponderNumber)
+      ? isInvalidAssignedActiveTransponderIdentifier((b as any).myLapsTransponderNumber)
       : isInvalidRfid((b as any).rfidNumber);
     if (aInvalid && !bInvalid) return -1;
     if (!aInvalid && bInvalid) return 1;
@@ -1657,7 +1651,7 @@ export default function Registrations() {
                   const isEditing = editingBibId === reg.id;
                   const transponderVal = (reg as any).myLapsTransponderNumber as string | null;
                   const transponderIsRental = !!(reg as any).transponderRental;
-                  const hasInvalidTransponder = isActiveTransponder && isInvalidTransponder(transponderVal);
+                  const hasInvalidTransponder = isActiveTransponder && isInvalidAssignedActiveTransponderIdentifier(transponderVal);
                   const rfidVal = !isActiveTransponder ? (reg as any).rfidNumber as string | null : null;
                   const hasInvalidRfid = !isActiveTransponder && isInvalidRfid(rfidVal);
 

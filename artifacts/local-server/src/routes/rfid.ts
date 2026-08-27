@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb, parseJsonArr } from "../db";
 import { formatLapTime } from "./timing";
 
@@ -14,7 +15,46 @@ router.get("/rfid", (req, res) => {
     .get(userId) as { club_id: number } | undefined;
   if (!user) return res.status(401).json({ error: "Not authenticated" });
 
-  const { eventId, riderId } = req.query;
+  const { eventId, riderId, assignmentType } = req.query;
+  const isActiveTransponder = assignmentType === "active_transponder";
+  if (assignmentType != null && assignmentType !== "rfid" && !isActiveTransponder) {
+    return res.status(400).json({ error: "Invalid assignmentType" });
+  }
+
+  if (isActiveTransponder) {
+    if (!eventId) {
+      return res.status(400).json({
+        error: "eventId required for active transponder assignments",
+      });
+    }
+    const activeRows = db
+      .prepare(
+        `SELECT reg.id, reg.rider_id, reg.mylaps_transponder_number,
+                reg.created_at, r.first_name, r.last_name
+         FROM registrations reg
+         LEFT JOIN riders r ON r.id = reg.rider_id
+         INNER JOIN events e ON e.id = reg.event_id
+         WHERE reg.event_id = ? AND e.club_id = ?
+           AND reg.mylaps_transponder_number IS NOT NULL
+         ORDER BY reg.id`,
+      )
+      .all(Number(eventId), user.club_id) as Record<string, unknown>[];
+    const byRider = new Map<number, Record<string, unknown>>();
+    for (const row of activeRows) {
+      const activeRiderId = Number(row.rider_id);
+      if (!byRider.has(activeRiderId)) byRider.set(activeRiderId, row);
+    }
+    return res.json(
+      [...byRider.values()].map((row) => ({
+        id: row.id,
+        riderId: row.rider_id,
+        riderName: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
+        rfidNumber: row.mylaps_transponder_number,
+        eventId: Number(eventId),
+        assignedAt: row.created_at ?? null,
+      })),
+    );
+  }
 
   let sql =
     "SELECT ra.id, ra.rider_id, ra.event_id, ra.rfid_number, ra.assigned_at, " +
@@ -52,14 +92,78 @@ router.post("/rfid", (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
-  const { riderId, rfidNumber, eventId } = req.body;
+  const { riderId, rfidNumber, eventId, assignmentType } = req.body;
   if (!riderId || !rfidNumber) {
     return res.status(400).json({ error: "riderId and rfidNumber required" });
+  }
+  const isActiveTransponder = assignmentType === "active_transponder";
+  if (assignmentType != null && assignmentType !== "rfid" && !isActiveTransponder) {
+    return res.status(400).json({ error: "Invalid assignmentType" });
   }
 
   const db = getDb();
   const numRiderId = Number(riderId);
   const numEventId = eventId ? Number(eventId) : null;
+
+  if (isActiveTransponder) {
+    const activeTransponderNumber =
+      normalizeActiveTransponderIdentifier(rfidNumber);
+    if (!activeTransponderNumber) {
+      return res.status(400).json({
+        error: "rfidNumber must be a 1–9 character hexadecimal active transponder ID",
+      });
+    }
+
+    if (numEventId) {
+      const conflict = db
+        .prepare(
+          `SELECT rider_id FROM registrations
+           WHERE event_id = ?
+             AND lower(trim(mylaps_transponder_number)) = ?
+             AND rider_id != ?
+           LIMIT 1`,
+        )
+        .get(numEventId, activeTransponderNumber, numRiderId) as
+        | { rider_id: number }
+        | undefined;
+      if (conflict) {
+        return res.status(409).json({
+          error: `Transponder ${activeTransponderNumber} is already assigned to another rider for this event`,
+        });
+      }
+    }
+
+    db.prepare(
+      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
+    ).run(activeTransponderNumber, numRiderId);
+
+    if (numEventId) {
+      db.prepare(
+        `UPDATE registrations SET mylaps_transponder_number = ?
+         WHERE event_id = ? AND rider_id = ?`,
+      ).run(activeTransponderNumber, numEventId, numRiderId);
+      db.prepare(
+        `UPDATE checkins SET rfid_number = ?, rfid_linked = 1
+         WHERE event_id = ? AND rider_id = ?`,
+      ).run(activeTransponderNumber, numEventId, numRiderId);
+    }
+
+    const rider = db
+      .prepare("SELECT first_name, last_name FROM riders WHERE id = ?")
+      .get(numRiderId) as
+      | { first_name: string; last_name: string }
+      | undefined;
+    return res.status(201).json({
+      id: numRiderId,
+      riderId: numRiderId,
+      riderName: rider
+        ? `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim()
+        : "",
+      rfidNumber: activeTransponderNumber,
+      eventId: numEventId,
+      assignedAt: new Date().toISOString(),
+    });
+  }
 
   if (numEventId) {
     const conflict = db

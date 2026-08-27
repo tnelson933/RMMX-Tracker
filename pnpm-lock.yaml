@@ -344,6 +344,9 @@ importers:
 
   artifacts/local-server:
     dependencies:
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../../lib/api-zod
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
 
 const router = Router();
@@ -130,6 +131,17 @@ router.post("/riders", (req, res) => {
   if (!firstName || !lastName) {
     return res.status(400).json({ error: "firstName and lastName are required" });
   }
+  const rawTransponderId = transponderId ?? req.body.mylapsTransponderId;
+  const normalizedTransponderId =
+    normalizeActiveTransponderIdentifier(rawTransponderId);
+  const hasNonblankTransponder =
+    rawTransponderId != null &&
+    (typeof rawTransponderId !== "string" || rawTransponderId.trim() !== "");
+  if (hasNonblankTransponder && !normalizedTransponderId) {
+    return res.status(400).json({
+      error: "Active transponder ID must be 1–9 hexadecimal characters",
+    });
+  }
 
   const result = db
     .prepare(
@@ -146,7 +158,7 @@ router.post("/riders", (req, res) => {
       dateOfBirth ?? null, emergencyContact ?? null, emergencyPhone ?? null,
       rfidNumber ?? null, bikeManufacturer ?? null, bikeModel ?? null,
       bikeYear ?? null, sponsors ?? null, amaNumber ?? null,
-      (transponderId ?? req.body.mylapsTransponderId) ?? null, streetAddress ?? null, city ?? null,
+      normalizedTransponderId, streetAddress ?? null, city ?? null,
       homeState ?? null, zip ?? null,
     );
 
@@ -188,17 +200,38 @@ router.patch("/riders/:riderId", (req, res) => {
 
   const fields: string[] = [];
   const values: unknown[] = [];
+  const hasTransponderUpdate =
+    req.body.transponderId !== undefined ||
+    req.body.mylapsTransponderId !== undefined;
+  const rawTransponderId =
+    req.body.transponderId !== undefined
+      ? req.body.transponderId
+      : req.body.mylapsTransponderId;
+  const normalizedTransponderId =
+    normalizeActiveTransponderIdentifier(rawTransponderId);
+  const hasNonblankTransponder =
+    rawTransponderId != null &&
+    (typeof rawTransponderId !== "string" || rawTransponderId.trim() !== "");
+  if (hasTransponderUpdate && hasNonblankTransponder && !normalizedTransponderId) {
+    return res.status(400).json({
+      error: "Active transponder ID must be 1–9 hexadecimal characters",
+    });
+  }
 
   for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
     if (req.body[jsKey] !== undefined) {
       fields.push(`${dbCol} = ?`);
-      values.push(req.body[jsKey]);
+      values.push(
+        jsKey === "transponderId"
+          ? normalizedTransponderId
+          : req.body[jsKey],
+      );
     }
   }
   // Accept the former API alias while storing it in the unchanged legacy column.
   if (req.body.mylapsTransponderId !== undefined && req.body.transponderId === undefined) {
     fields.push("mylaps_transponder_id = ?");
-    values.push(req.body.mylapsTransponderId);
+    values.push(normalizedTransponderId);
   }
 
   if (fields.length === 0) {

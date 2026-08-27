@@ -10,6 +10,6 @@ import type { ReaderInputType } from './readerInputType';
 export interface ReaderInput {
   name: string;
   type: ReaderInputType;
-  /** Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address */
+  /** Last 6 of MAC address for Impinj R700, or the F2000 IP address */
   hardwareAddress?: string;
 }
