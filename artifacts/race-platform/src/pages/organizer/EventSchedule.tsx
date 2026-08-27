@@ -1008,6 +1008,7 @@ function StaticMotoCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 type ViewMode = "run-order" | "by-class";
+const EMPTY_MOTOS: Moto[] = [];
 const MOTO_TYPES = ["practice", "heat", "lcq", "main", "moto", "enduro_test"] as const;
 
 // Time-check durations are entered as "h:mm" or plain minutes; stored as ms.
@@ -1208,9 +1209,10 @@ export default function EventSchedule() {
   const queryClient = useQueryClient();
 
   // ── Data ──
-  const { data: rawMotos = [], isLoading } = useListMotos(eventId, {
+  const { data: motosData, isLoading } = useListMotos(eventId, {
     query: { enabled: !!eventId } as any,
   });
+  const rawMotos = motosData ?? EMPTY_MOTOS;
   const { data: checkins = [] } = useListCheckins(eventId, {
     query: { enabled: !!eventId } as any,
   });
@@ -1559,10 +1561,14 @@ export default function EventSchedule() {
   useEffect(() => {
     setTopPerHeatByClass(prev => {
       const next = { ...prev };
+      let changed = false;
       for (const [cls, val] of Object.entries(defaultTopPerHeat)) {
-        if (next[cls] === undefined) next[cls] = val;
+        if (next[cls] === undefined) {
+          next[cls] = val;
+          changed = true;
+        }
       }
-      return next;
+      return changed ? next : prev;
     });
   }, [defaultTopPerHeat]);
 
