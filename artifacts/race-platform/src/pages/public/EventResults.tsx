@@ -43,7 +43,10 @@ function LapTimesModal({
 
   const lapTimes = result.lapTimes ?? [];
   const parsedLaps = lapTimes.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n > 0);
-  const trueParsedLaps = parsedLaps.slice(1); // exclude lap 1 (gate-to-line partial lap)
+  const trueParsedLaps = lapTimes
+    .slice(1)
+    .map(t => parseInt(t, 10))
+    .filter(n => !isNaN(n) && n > 0);
   const bestLapMs = trueParsedLaps.length > 0 ? Math.min(...trueParsedLaps) : null;
 
   return (

@@ -1376,7 +1376,9 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
       return bTime.localeCompare(aTime);
     })
     .map(s => {
-      const lapTimes = s.laps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
+      const lapTimes = s.laps.filter(
+        l => l.lapNumber >= 2 && l.lapTimeMs !== null && l.lapTimeMs > 0,
+      );
       const bestLapMs = lapTimes.length > 0 ? Math.min(...lapTimes.map(l => l.lapTimeMs!)) : null;
       return {
         ...s,
@@ -1529,7 +1531,7 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
           lapTimeMs: c.lapTimeMs,
           crossingTime: c.crossingTime.toISOString(),
         });
-        if (c.lapTimeMs !== null && c.lapTimeMs > 0) {
+        if ((c.lapNumber ?? 0) >= 2 && c.lapTimeMs !== null && c.lapTimeMs > 0) {
           entry.bestLapMs = entry.bestLapMs === null ? c.lapTimeMs : Math.min(entry.bestLapMs, c.lapTimeMs);
         }
       }
@@ -1742,8 +1744,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 
         // Build leaderboard from lap crossings
         const motoCrossings = crossingsByMoto.get(moto.id) ?? [];
-        const validCrossings = motoCrossings.filter(c => (c.lapTimeMs ?? 0) > 0);
-        const resolvedCrossings = validCrossings.map(c => {
+        const resolvedCrossings = motoCrossings.map(c => {
           const resolvedIdentity = c.riderId === null
             ? resolveTimingIdentity(event.id, c.rfidNumber)
             : null;
@@ -1760,6 +1761,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
         });
         const riderBestMap = new Map<string, { riderId: number | null; riderName: string; bestLapMs: number }>();
         for (const c of resolvedCrossings) {
+          if ((c.lapNumber ?? 0) < 2 || (c.lapTimeMs ?? 0) <= 0) continue;
           const key = c.effectiveRiderId !== null
             ? `rider:${c.effectiveRiderId}`
             : `rfid:${normalizeTimingIdentifier(c.rfidNumber) ?? c.rfidNumber}`;

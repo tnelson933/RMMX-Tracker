@@ -239,9 +239,10 @@ function PublicRiderLapSheet({
     void load();
   }, [motoId, riderId, leaderRiderId]);
 
-  const times = laps.map(l => l.lapTimeMs).filter(t => t > 0);
-  const trueTimes = times.slice(1); // exclude lap 1 (gate-to-line partial lap)
-  const bestMs = trueTimes.length > 0 ? Math.min(...trueTimes) : null;
+  const eligibleTimes = laps
+    .filter(lap => lap.lapNumber >= 2 && lap.lapTimeMs > 0)
+    .map(lap => lap.lapTimeMs);
+  const bestMs = eligibleTimes.length > 0 ? Math.min(...eligibleTimes) : null;
   const hasLeaderData = isLeader || leaderLapMap.size > 0;
 
   return (
@@ -294,7 +295,7 @@ function PublicRiderLapSheet({
                 </Text>
               </View>
               {laps.map((lap, i) => {
-                const isBest = i > 0 && bestMs !== null && lap.lapTimeMs === bestMs;
+                const isBest = lap.lapNumber >= 2 && bestMs !== null && lap.lapTimeMs === bestMs;
                 let gapDisplay: string;
                 if (isLeader) {
                   gapDisplay = "P1";

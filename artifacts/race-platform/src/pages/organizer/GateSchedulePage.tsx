@@ -19,7 +19,7 @@ function parseSecs(t: string | null | undefined): number | null {
 
 function bestLap(lapTimes: string[] | null | undefined): number | null {
   if (!lapTimes?.length) return null;
-  const parsed = lapTimes.map(parseSecs).filter((x): x is number => x !== null);
+  const parsed = lapTimes.slice(1).map(parseSecs).filter((x): x is number => x !== null);
   if (!parsed.length) return null;
   return Math.min(...parsed);
 }

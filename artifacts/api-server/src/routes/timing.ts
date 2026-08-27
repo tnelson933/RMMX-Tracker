@@ -369,6 +369,7 @@ async function buildRaceAnalytics(
       .where(and(
         eq(lapCrossingsTable.motoId, motoId),
         isNotNull(lapCrossingsTable.riderId),
+        gt(lapCrossingsTable.lapNumber, 1),
         gt(lapCrossingsTable.lapTimeMs, 0),
       ))
       .groupBy(lapCrossingsTable.riderId),
@@ -573,6 +574,9 @@ export async function buildLeaderboard(motoId: number) {
   const leaderboard = results.map((r) => {
     const raw = Array.isArray(r.lapTimes) ? (r.lapTimes as unknown[]) : [];
     const lapMs = raw.map(normalizeLapMs).filter(t => t > 0);
+    const eligibleLapMs = raw
+      .map(normalizeLapMs)
+      .filter((t, index) => index >= 1 && t > 0);
     // Always prefer stored totalTime (matches web platform exactly — covers manually entered
     // results, RFID results, and results that were RFID-timed then manually corrected).
     // Fall back to summing RFID laps only when no stored value (live/in-progress moto).
@@ -580,8 +584,7 @@ export async function buildLeaderboard(motoId: number) {
     const rfidTotalMs = lapMs.length ? lapMs.reduce((s, t) => s + t, 0) : 0;
     const totalMs = storedTotalMs || rfidTotalMs;
     const lastMs = lapMs.at(-1) ?? null;
-    const validMs = lapMs.filter(t => t > 0);
-    const bestMs = validMs.length ? Math.min(...validMs) : null;
+    const bestMs = eligibleLapMs.length ? Math.min(...eligibleLapMs) : null;
     return {
       position: r.position,
       riderId: r.riderId,
@@ -892,7 +895,8 @@ async function _processCrossing(opts: {
     const enduroSorted = enduroResults
       .map((r) => {
         const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-        const bestMs = laps.length > 0 ? Math.min(...laps) : null;
+        const eligibleLaps = laps.slice(1).filter(lap => lap > 0);
+        const bestMs = eligibleLaps.length > 0 ? Math.min(...eligibleLaps) : null;
         const pen = penaltyMap.get(r.riderId) ?? { penaltySeconds: 0, disqualified: false };
         return { id: r.id, bestMs, pen };
       })

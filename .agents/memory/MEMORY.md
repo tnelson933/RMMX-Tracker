@@ -14,3 +14,4 @@
 - [Active transponder source of truth](active-transponder-source-of-truth.md) — enforce required registration fields from fresh event data and keep check-in display state synchronized.
 - [Live timing SSE handoff](live-timing-sse-handoff.md) — serialize each initial leaderboard baseline with subscription to avoid lost or double-counted crossings.
 - [Playwright on Nix](playwright-nix-chromium.md) — use system Chromium for browser tests; Playwright's downloaded Linux binary lacks required Nix libraries.
+- [Fastest-lap eligibility](fastest-lap-eligibility.md) — lap 1 is a partial gate-to-line lap; fastest/best lap comparisons begin at lap 2 everywhere.

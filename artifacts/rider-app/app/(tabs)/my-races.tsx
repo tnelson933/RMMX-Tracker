@@ -128,8 +128,11 @@ function ScheduleMotoCard({ moto, colors, isEnduro }: { moto: ScheduleMoto; colo
   const badgeBg = live ? "#ef444420" : mine ? colors.primary + "18" : colors.muted;
   const badgeFg = live ? "#ef4444"   : mine ? colors.primary        : colors.mutedForeground;
 
-  const myBestLap = isPrac && moto.practiceLaps
-    ? Math.min(...moto.practiceLaps.filter(l => (l.lapTimeMs ?? 0) > 0).map(l => l.lapTimeMs!)) || null
+  const eligiblePracticeLaps = isPrac
+    ? (moto.practiceLaps ?? []).filter(l => l.lapNumber >= 2 && (l.lapTimeMs ?? 0) > 0)
+    : [];
+  const myBestLap = eligiblePracticeLaps.length > 0
+    ? Math.min(...eligiblePracticeLaps.map(l => l.lapTimeMs!))
     : null;
   const myRank = moto.practiceLeaderboard?.find(e => e.isMe)?.rank ?? null;
 

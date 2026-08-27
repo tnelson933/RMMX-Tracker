@@ -808,7 +808,11 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
           bestLap: min(practiceCrossingsTable.lapTimeMs),
         })
           .from(practiceCrossingsTable)
-          .where(inArray(practiceCrossingsTable.sessionId, sessionIds))
+          .where(and(
+            inArray(practiceCrossingsTable.sessionId, sessionIds),
+            gt(practiceCrossingsTable.lapNumber, 1),
+            gt(practiceCrossingsTable.lapTimeMs, 0),
+          ))
           .groupBy(practiceCrossingsTable.riderId);
         for (const row of bestLaps) {
           if (row.riderId != null && row.bestLap != null && row.bestLap > 0) {
@@ -886,6 +890,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         .from(lapCrossingsTable)
         .where(and(
           inArray(lapCrossingsTable.motoId, prevRoundMotoIds),
+          gt(lapCrossingsTable.lapNumber, 1),
           gt(lapCrossingsTable.lapTimeMs, 0),
         ))
         .groupBy(lapCrossingsTable.motoId, lapCrossingsTable.riderId);
@@ -1518,7 +1523,11 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
           riderId: practiceCrossingsTable.riderId,
           bestLap: min(practiceCrossingsTable.lapTimeMs),
         }).from(practiceCrossingsTable)
-          .where(inArray(practiceCrossingsTable.sessionId, sessionIds))
+          .where(and(
+            inArray(practiceCrossingsTable.sessionId, sessionIds),
+            gt(practiceCrossingsTable.lapNumber, 1),
+            gt(practiceCrossingsTable.lapTimeMs, 0),
+          ))
           .groupBy(practiceCrossingsTable.riderId);
         for (const row of bestLaps) {
           if (row.riderId != null && row.bestLap != null && row.bestLap > 0) {
@@ -1558,7 +1567,11 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
         riderId: lapCrossingsTable.riderId,
         bestLap: min(lapCrossingsTable.lapTimeMs),
       }).from(lapCrossingsTable)
-        .where(and(inArray(lapCrossingsTable.motoId, prevRoundMotoIds), gt(lapCrossingsTable.lapTimeMs, 0)))
+        .where(and(
+          inArray(lapCrossingsTable.motoId, prevRoundMotoIds),
+          gt(lapCrossingsTable.lapNumber, 1),
+          gt(lapCrossingsTable.lapTimeMs, 0),
+        ))
         .groupBy(lapCrossingsTable.riderId);
       const bestLapInRound = new Map<number, number>();
       for (const row of bestLapsRound) {

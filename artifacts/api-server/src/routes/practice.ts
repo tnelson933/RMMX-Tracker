@@ -67,7 +67,9 @@ function buildLiveBoard(crossings: (typeof practiceCrossingsTable.$inferSelect)[
     const sorted = [...riderCrossings].sort(
       (a, b) => new Date(a.crossingTime).getTime() - new Date(b.crossingTime).getTime()
     );
-    const withLap = sorted.filter(c => c.lapTimeMs !== null && c.lapTimeMs > 0);
+    const withLap = sorted.filter(
+      c => c.lapNumber >= 2 && c.lapTimeMs !== null && c.lapTimeMs > 0,
+    );
     const bestLapMs = withLap.length > 0 ? Math.min(...withLap.map(c => c.lapTimeMs!)) : null;
     const last = sorted[sorted.length - 1];
 

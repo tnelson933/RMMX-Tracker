@@ -685,7 +685,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
           .prepare(
             `SELECT rider_id, MIN(lap_time_ms) as best_lap
              FROM practice_crossings
-             WHERE session_id IN (${ph}) AND lap_time_ms > 0
+             WHERE session_id IN (${ph}) AND lap_number >= 2 AND lap_time_ms > 0
              GROUP BY rider_id`,
           )
           .all(...sessionIds) as any[];
@@ -752,7 +752,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
         .prepare(
           `SELECT moto_id, rider_id, MIN(lap_time_ms) as best_lap
            FROM lap_crossings
-           WHERE moto_id IN (${ph}) AND lap_time_ms > 0
+           WHERE moto_id IN (${ph}) AND lap_number >= 2 AND lap_time_ms > 0
            GROUP BY moto_id, rider_id`,
         )
         .all(...prevRoundMotoIds) as any[];
@@ -1187,7 +1187,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", (req, res) => {
         const rows = db
           .prepare(
             `SELECT rider_id, MIN(lap_time_ms) as best FROM practice_crossings
-             WHERE session_id IN (${ph}) AND lap_time_ms > 0 GROUP BY rider_id`,
+             WHERE session_id IN (${ph}) AND lap_number >= 2 AND lap_time_ms > 0 GROUP BY rider_id`,
           )
           .all(...sessions.map((s: any) => s.id)) as any[];
         for (const r of rows) {

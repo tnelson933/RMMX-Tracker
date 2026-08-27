@@ -202,7 +202,8 @@ export function buildLeaderboard(motoId: number) {
     const lapMs = parseJsonArr<number>(r.lap_times);
     const totalMs = lapMs.reduce((s, t) => s + t, 0);
     const lastMs = lapMs.length > 0 ? lapMs[lapMs.length - 1] : null;
-    const bestMs = lapMs.length ? Math.min(...lapMs) : null;
+    const eligibleLapMs = lapMs.slice(1).filter(t => t > 0);
+    const bestMs = eligibleLapMs.length ? Math.min(...eligibleLapMs) : null;
     return {
       position: r.position ?? 999,
       riderId: r.rider_id,
