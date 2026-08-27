@@ -11,6 +11,7 @@ const F2000_PORT = 55555;
 const CONNECT_TIMEOUT_MS = 8_000;
 const HEARTBEAT_STALE_MS = 5_000;
 const READER_OPEN_RETRY_MS = 2_000;
+const FULL_CONFIGURATION_RETRY_INTERVAL = 5;
 export const MAX_DIRECT_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 export interface ActiveTimingReceiptMetadata {
@@ -417,12 +418,16 @@ export class ActiveTransponderClient extends EventEmitter {
         this.emit("status");
         return;
       }
-      // RF settings can reset loop state, so preserve the desktop ordering:
-      // settings first, followed by the desired loop enable/disable commands.
-      this.applyConfiguration(false);
       this.readerOpenRetryCount++;
       this.lastReaderOpenRetryAt = new Date().toISOString();
-      this.requestReaderOpen(true);
+      if (this.readerOpenRetryCount % FULL_CONFIGURATION_RETRY_INTERVAL === 0) {
+        // RF settings can reset a loop to stopped while the F2000 applies them.
+        // Reconfigure only occasionally, then let the next retry send readerOpen
+        // after the device has had a full retry interval to settle.
+        this.applyConfiguration(false);
+      } else {
+        this.requestReaderOpen(true);
+      }
       this.ensureReaderOpenRetry();
       this.emit("status");
     }, READER_OPEN_RETRY_MS);

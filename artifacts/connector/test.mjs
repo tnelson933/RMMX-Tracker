@@ -161,7 +161,7 @@ test("a reconnect resends local date, time, and configuration", async () => {
   }
 });
 
-test("retries stopped loop telemetry on its owned timer and stops after working telemetry", async () => {
+test("retries readerOpen without continuously resetting stopped loops", async () => {
   const messages = [];
   let peer;
   const server = net.createServer(connection => {
@@ -179,9 +179,12 @@ test("retries stopped loop telemetry on its owned timer and stops after working 
     peer.write("unit-1@machineState@0001@reader1Working=stopped,reader2Working=stopped;");
     await waitFor(() => commandsFromWire(messages).filter(command => command === "readerOpen").length >= 2, 3_000);
     const retried = commandPackets(messages);
-    assert.deepEqual(retried.slice(-5).map(({ command, parameters }) => [command, parameters]), [
-      ["setActiveChannel", "3"], ["setActivePower", "70"], ["loopEnable", "1"], ["loopDisable", "2"], ["readerOpen", "1"],
-    ]);
+    assert.deepEqual(
+      (({ machineId, command, parameters }) => ({ machineId, command, parameters }))(retried.at(-1)),
+      { machineId: "unit-1", command: "readerOpen", parameters: "1" },
+    );
+    assert.equal(commandsFromWire(messages).filter(command => command === "setActiveChannel").length, 1);
+    assert.equal(commandsFromWire(messages).filter(command => command === "setActivePower").length, 1);
     peer.write("unit-1@machineState@0002@reader1Working=working,reader2Working=stopped;");
     await new Promise(resolve => setTimeout(resolve, 2_100));
     assert.equal(commandsFromWire(messages).filter(command => command === "readerOpen").length, 2);
