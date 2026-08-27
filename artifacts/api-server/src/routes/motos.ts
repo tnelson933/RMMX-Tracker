@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
 import { eq, and, inArray, min, ne, gt, asc } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard, publishTimingSnapshot, resetSharedAnnouncer } from "./timing";
+import { shouldPublishAnnouncerSnapshotForMotoPatch } from "../lib/announcerLifecycle";
 import { sendPushNotifications } from "../lib/push";
 import { sendConnectorCommand } from "../lib/connectorRelay";
 
@@ -390,7 +391,7 @@ router.patch("/motos/:motoId", async (req, res) => {
   const [moto] = await db.update(motosTable).set(updates as any).where(eq(motosTable.id, id)).returning();
   if (!moto) return res.status(404).json({ error: "Not found" });
 
-  if (req.body.status !== undefined) {
+  if (shouldPublishAnnouncerSnapshotForMotoPatch(req.body)) {
     buildLeaderboard(id).then(snapshot => {
       if (snapshot) publishTimingSnapshot(snapshot);
     }).catch(() => {});
@@ -457,7 +458,14 @@ router.post("/motos/:motoId/restart", async (req, res) => {
     .where(eq(raceResultsTable.motoId, id));
   const [updated] = await db
     .update(motosTable)
-    .set({ status: "scheduled", startedAt: null, pausedAt: null, totalPausedMs: 0 })
+    .set({
+      status: "scheduled",
+      startedAt: null,
+      completedAt: null,
+      pausedAt: null,
+      totalPausedMs: 0,
+      timeExpiredAt: null,
+    })
     .where(eq(motosTable.id, id))
     .returning();
   await resetSharedAnnouncer(id);

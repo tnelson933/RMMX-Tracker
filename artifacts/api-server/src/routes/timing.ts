@@ -27,10 +27,16 @@ import {
 } from "../lib/crossingTimestamp";
 import {
   advanceAnnouncerLifecycle,
+  calculateRaceTimeRemainingMs,
   createAnnouncerLifecycleState,
   hydrateAnnouncerLifecycle,
   type AnnouncerLifecycleState,
 } from "../lib/announcerLifecycle";
+import {
+  buildAnnouncementScript as buildRaceAnnouncementScript,
+  type AnnouncerEntry,
+  type AnnouncerPositionChange,
+} from "../lib/announcerScript";
 
 const router = Router();
 
@@ -78,7 +84,7 @@ const sseClients = new Map<number, Set<Response>>();
 type AnnouncerEvent = {
   id: string;
   sequence: number;
-  kind: "start" | "lap" | "finish";
+  kind: "start" | "lap" | "time_expired" | "extra_lap" | "finish";
   lap: number;
   createdAt: string;
   audioUrl: string;
@@ -625,6 +631,13 @@ export async function buildLeaderboard(motoId: number) {
     };
   });
   const analytics = await buildRaceAnalytics(motoId, event?.raceStyle, withGaps);
+  const timeRemainingMs = calculateRaceTimeRemainingMs({
+    startedAt: moto.startedAt,
+    pausedAt: moto.pausedAt,
+    totalPausedMs: moto.totalPausedMs ?? 0,
+    timeLimitMs: moto.timeLimitMs,
+    timeExpiredAt: moto.timeExpiredAt,
+  });
 
   return {
     motoId,
@@ -635,11 +648,19 @@ export async function buildLeaderboard(motoId: number) {
     status: moto.status,
     startedAt: moto.startedAt?.toISOString() ?? null,
     completedAt: moto.completedAt?.toISOString() ?? null,
+    lapCount: moto.lapCount ?? null,
     timeLimitMs: moto.timeLimitMs ?? null,
     plusLaps: moto.plusLaps ?? null,
     timeExpiredAt: moto.timeExpiredAt?.toISOString() ?? null,
+    pausedAt: moto.pausedAt?.toISOString() ?? null,
+    totalPausedMs: moto.totalPausedMs ?? 0,
+    timeRemainingMs,
     announcerStartedAt: moto.announcerStartedAt?.toISOString() ?? null,
     announcerLastLap: moto.announcerLastLap ?? 0,
+    announcerTimeExpiredAt: moto.announcerTimeExpiredAt?.toISOString() ?? null,
+    announcerExpiryLeaderLap: moto.announcerExpiryLeaderLap ?? null,
+    announcerLastExtraLap: moto.announcerLastExtraLap ?? 0,
+    announcerSequence: moto.announcerSequence ?? 0,
     announcerFinishedAt: moto.announcerFinishedAt?.toISOString() ?? null,
     leaderboard: withGaps,
     analytics,
@@ -1727,6 +1748,11 @@ router.get("/timing/announcer-live/:motoId", async (req, res) => {
   (res as any).flushHeaders?.();
 
   const state = getAnnouncerState(motoId);
+  const [persisted] = await db
+    .select({ sequence: motosTable.announcerSequence })
+    .from(motosTable)
+    .where(eq(motosTable.id, motoId));
+  state.sequence = Math.max(state.sequence, persisted?.sequence ?? 0);
   (res as any).write(`data: ${JSON.stringify({
     type: "announcement-state",
     announcement: activeAnnouncement(state),
@@ -2166,7 +2192,6 @@ interface Top5Entry {
   riderName: string;
   laps: number;
   lastLap: string | null;
-  totalTime: string | null;
   gap: string;
   dnf?: boolean;
   dns?: boolean;
@@ -2178,21 +2203,29 @@ interface PositionChange {
   to: number;
 }
 
-function buildAnnouncementScript(opts: {
+export function buildAnnouncementScript(opts: {
   lapCompleted: number;
   top5: Top5Entry[];
   positionChanges: PositionChange[];
-  isComplete: boolean;
+  kind: "lap" | "extra_lap" | "time_expired" | "finish";
+  timeRemainingMs?: number | null;
+  lapsRemaining?: number | null;
+  extraLapsRemaining?: number;
 }): string {
-  const { lapCompleted, top5, positionChanges, isComplete } = opts;
+  const {
+    lapCompleted,
+    top5,
+    positionChanges,
+    kind,
+    timeRemainingMs = null,
+    lapsRemaining = null,
+    extraLapsRemaining,
+  } = opts;
+  const isComplete = kind === "finish";
 
   const ORDINALS = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
   const CARDINALS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
     "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
-
-  function lapWord(n: number): string {
-    return n < CARDINALS.length ? CARDINALS[n] : String(n);
-  }
 
   function posWord(n: number): string {
     return n <= 5 ? ORDINALS[n] : `${n}th`;
@@ -2218,8 +2251,9 @@ function buildAnnouncementScript(opts: {
     return `${mins} minute${mins > 1 ? "s" : ""} and ${secStr} back`;
   }
 
-  // Format total time "M:SS.cc" → natural speech
-  function totalToSpeech(t: string | null): string | null {
+  // Format one lap time "M:SS.cc" → natural speech. Never use total race time
+  // in an announcer script: the useful facts are a lap and a same-lap gap.
+  function lapToSpeech(t: string | null): string | null {
     if (!t) return null;
     const m = t.match(/^(\d+):(\d+)\.(\d+)/);
     if (!m) return null;
@@ -2232,7 +2266,52 @@ function buildAnnouncementScript(opts: {
     return `${mins} minute${mins > 1 ? "s" : ""} and ${secStr} seconds`;
   }
 
+  function numberWord(n: number): string {
+    return n >= 0 && n < CARDINALS.length ? CARDINALS[n] : String(n);
+  }
+
+  function remainingLapsSpeech(n: number): string {
+    if (n <= 0) return "No laps remain";
+    return `${numberWord(n)} lap${n === 1 ? "" : "s"} remaining`;
+  }
+
+  function remainingExtraLapsSpeech(n: number): string {
+    if (n <= 0) return "No extra laps remain";
+    return `${numberWord(n)} extra lap${n === 1 ? "" : "s"} remaining`;
+  }
+
+  function remainingTimeSpeech(ms: number): string {
+    const totalSeconds = Math.max(0, Math.round(ms / 1_000));
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    if (mins > 0) {
+      return `${mins} minute${mins === 1 ? "" : "s"}${secs ? ` and ${secs} second${secs === 1 ? "" : "s"}` : ""} remaining`;
+    }
+    return `${secs} second${secs === 1 ? "" : "s"} remaining`;
+  }
+
   const parts: string[] = [];
+
+  if (kind === "time_expired") {
+    const extra = Math.max(0, extraLapsRemaining ?? 0);
+    parts.push(pick([
+      "Time is up!",
+      "The race clock has expired!",
+      "The time limit is up!",
+    ]));
+    parts.push(`${remainingExtraLapsSpeech(extra)}.`);
+    return parts.join(" ");
+  }
+
+  if (kind === "extra_lap") {
+    const extra = Math.max(0, extraLapsRemaining ?? 0);
+    parts.push(pick([
+      "An extra lap is complete.",
+      "That's another extra lap in the books.",
+      "They have completed another extra lap.",
+    ]));
+    parts.push(`${remainingExtraLapsSpeech(extra)}.`);
+  }
 
   if (isComplete) {
     parts.push(pick([
@@ -2243,11 +2322,11 @@ function buildAnnouncementScript(opts: {
     ]));
     const winner = top5[0];
     if (winner) {
-      const timeStr = totalToSpeech(winner.totalTime);
+      const lapStr = lapToSpeech(winner.lastLap);
       parts.push(pick([
-        `${winner.riderName} takes the win${timeStr ? ` in ${timeStr}` : ""}!`,
-        `${winner.riderName} crosses the line first${timeStr ? ` — ${timeStr}` : ""}!`,
-        `It's ${winner.riderName} for the win${timeStr ? ` in ${timeStr}` : ""}!`,
+        `${winner.riderName} takes the win${lapStr ? ` after a final lap of ${lapStr}` : ""}!`,
+        `${winner.riderName} crosses the line first${lapStr ? ` with a ${lapStr} final lap` : ""}!`,
+        `It's ${winner.riderName} for the win${lapStr ? ` after a ${lapStr} lap` : ""}!`,
       ]));
     }
     if (top5[1]) parts.push(pick([
@@ -2274,24 +2353,34 @@ function buildAnnouncementScript(opts: {
       }
     }
 
-    // Lap callout
-    const lapStr = lapCompleted < CARDINALS.length ? CARDINALS[lapCompleted] : String(lapCompleted);
-    parts.push(pick([
-      `Lap ${lapStr} is complete.`,
-      `That's lap ${lapStr} in the books.`,
-      `Through lap ${lapStr} now.`,
-      `Lap ${lapStr} done.`,
-    ]));
+    if (kind === "lap") {
+      // Lap callout
+      const lapStr = lapCompleted < CARDINALS.length ? CARDINALS[lapCompleted] : String(lapCompleted);
+      parts.push(pick([
+        `Lap ${lapStr} is complete.`,
+        `That's lap ${lapStr} in the books.`,
+        `Through lap ${lapStr} now.`,
+        `Lap ${lapStr} done.`,
+      ]));
+    }
 
     // Leader
     const leader = top5[0];
     if (leader) {
-      const timeStr = totalToSpeech(leader.totalTime);
+      const lapStr = lapToSpeech(leader.lastLap);
       parts.push(pick([
-        `${leader.riderName} leads${timeStr ? `, ${timeStr} on the clock` : ""}.`,
-        `${leader.riderName} out front${timeStr ? ` — ${timeStr}` : ""}.`,
-        `${leader.riderName} in the lead${timeStr ? ` with ${timeStr} elapsed` : ""}.`,
+        `${leader.riderName} leads${lapStr ? ` with a ${lapStr} lap` : ""}.`,
+        `${leader.riderName} out front${lapStr ? ` on a ${lapStr} lap` : ""}.`,
+        `${leader.riderName} in the lead${lapStr ? ` after a ${lapStr} lap` : ""}.`,
       ]));
+    }
+
+    if (kind === "lap") {
+      if (timeRemainingMs != null) {
+        parts.push(`The clock shows ${remainingTimeSpeech(timeRemainingMs)}.`);
+      } else if (lapsRemaining != null) {
+        parts.push(`${remainingLapsSpeech(Math.max(0, lapsRemaining))}.`);
+      }
     }
 
     // P2–P5: only call out riders who are on the same lap as the leader.
@@ -2327,11 +2416,13 @@ async function createSharedAnnouncement(
   lap: number,
   script: string,
   label: string,
-  persistMarker?: () => Promise<boolean>,
+  persistMarker?: () => Promise<number | null>,
 ) {
   const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
-  if (persistMarker && !await persistMarker()) return;
-  const sequence = ++state.sequence;
+  const persistedSequence = persistMarker ? await persistMarker() : null;
+  if (persistMarker && persistedSequence == null) return;
+  const sequence = persistedSequence ?? state.sequence + 1;
+  state.sequence = Math.max(state.sequence, sequence);
   const id = `${motoId}-${Date.now()}-${sequence}`;
   announcerAudio.set(id, { buffer: audioBuffer, createdAt: Date.now() });
   const announcement: AnnouncerEvent = {
@@ -2350,11 +2441,15 @@ async function createSharedAnnouncement(
 
 async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<void> {
   const state = getAnnouncerState(snapshot.motoId);
+  state.sequence = Math.max(state.sequence, snapshot.announcerSequence);
   const active = snapshot.leaderboard.filter(r => !r.dnf && !r.dns);
   hydrateAnnouncerLifecycle(state.lifecycle, {
     started: !!snapshot.announcerStartedAt,
     finished: !!snapshot.announcerFinishedAt,
     lastAnnouncedLap: snapshot.announcerLastLap,
+    timeExpiredAnnounced: !!snapshot.announcerTimeExpiredAt,
+    expiryLeaderLap: snapshot.announcerExpiryLeaderLap,
+    lastAnnouncedExtraLap: snapshot.announcerLastExtraLap,
   });
   if (state.lifecycle.previousPositions.size === 0 && state.lifecycle.lastAnnouncedLap > 0) {
     state.lifecycle.previousPositions = new Map(
@@ -2370,6 +2465,10 @@ async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<vo
     snapshot.status,
     snapshot.leaderboard,
     snapshot.fieldSize,
+    {
+      timeExpired: !!snapshot.timeExpiredAt,
+      plusLaps: snapshot.plusLaps,
+    },
   );
   if (action.kind === "start") {
     const typeLabel =
@@ -2392,13 +2491,17 @@ async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<vo
       "Race starting!",
       async () => {
         const claimed = await db.update(motosTable)
-          .set({ announcerStartedAt: new Date() })
+          .set({
+            announcerStartedAt: new Date(),
+            announcerSequence: sql`${motosTable.announcerSequence} + 1`,
+          })
           .where(and(
             eq(motosTable.id, snapshot.motoId),
+            eq(motosTable.status, "in_progress"),
             isNull(motosTable.announcerStartedAt),
           ))
-          .returning({ id: motosTable.id });
-        return claimed.length > 0;
+          .returning({ sequence: motosTable.announcerSequence });
+        return claimed[0]?.sequence ?? null;
       },
     );
     state.lifecycle = nextLifecycle;
@@ -2408,11 +2511,21 @@ async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<vo
     state.lifecycle = nextLifecycle;
     return;
   }
-  const script = buildAnnouncementScript({
+  const script = buildRaceAnnouncementScript({
     lapCompleted: action.lap,
-    top5: active.slice(0, 5) as Top5Entry[],
+    top5: active.slice(0, 5) as AnnouncerEntry[],
     positionChanges: action.kind === "lap" ? action.positionChanges : [],
-    isComplete: action.kind === "finish",
+    kind: action.kind,
+    timeRemainingMs: action.kind === "lap" && snapshot.timeLimitMs != null && !snapshot.timeExpiredAt
+      ? snapshot.timeRemainingMs
+      : null,
+    lapsRemaining: action.kind === "lap" && snapshot.lapCount != null
+      ? Math.max(0, snapshot.lapCount - action.lap)
+      : null,
+    extraLapsRemaining:
+      action.kind === "time_expired" || action.kind === "extra_lap"
+        ? action.extraLapsRemaining
+        : undefined,
   });
   await createSharedAnnouncement(
     snapshot.motoId,
@@ -2420,28 +2533,80 @@ async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<vo
     action.kind,
     action.lap,
     script,
-    action.kind === "finish" ? "Race complete!" : `Lap ${action.lap} announced`,
+    action.kind === "finish"
+      ? "Race complete!"
+      : action.kind === "time_expired"
+        ? `Time is up — ${action.extraLapsRemaining} extra lap${action.extraLapsRemaining === 1 ? "" : "s"} remaining`
+        : action.kind === "extra_lap"
+          ? `${action.extraLapsRemaining} extra lap${action.extraLapsRemaining === 1 ? "" : "s"} remaining`
+          : `Lap ${action.lap} announced`,
     action.kind === "finish"
       ? async () => {
           const claimed = await db.update(motosTable)
-            .set({ announcerFinishedAt: new Date() })
+            .set({
+              announcerFinishedAt: new Date(),
+              announcerSequence: sql`${motosTable.announcerSequence} + 1`,
+            })
             .where(and(
               eq(motosTable.id, snapshot.motoId),
+              eq(motosTable.status, "completed"),
               isNull(motosTable.announcerFinishedAt),
             ))
-            .returning({ id: motosTable.id });
-          return claimed.length > 0;
+            .returning({ sequence: motosTable.announcerSequence });
+          return claimed[0]?.sequence ?? null;
         }
-      : async () => {
-          const claimed = await db.update(motosTable)
-            .set({ announcerLastLap: action.lap })
-            .where(and(
-              eq(motosTable.id, snapshot.motoId),
-              lt(motosTable.announcerLastLap, action.lap),
-            ))
-            .returning({ id: motosTable.id });
-          return claimed.length > 0;
-        },
+      : action.kind === "time_expired"
+        ? async () => {
+            const claimed = await db.update(motosTable)
+              .set({
+                announcerTimeExpiredAt: new Date(),
+                announcerExpiryLeaderLap: action.lap,
+                announcerLastExtraLap: 0,
+                announcerLastLap: action.lap,
+                announcerSequence: sql`${motosTable.announcerSequence} + 1`,
+              })
+              .where(and(
+                eq(motosTable.id, snapshot.motoId),
+                eq(motosTable.status, "in_progress"),
+                eq(motosTable.timeExpiredAt, new Date(snapshot.timeExpiredAt!)),
+                isNull(motosTable.announcerTimeExpiredAt),
+              ))
+              .returning({ sequence: motosTable.announcerSequence });
+            return claimed[0]?.sequence ?? null;
+          }
+        : action.kind === "extra_lap"
+          ? async () => {
+              const claimed = await db.update(motosTable)
+                .set({
+                  announcerLastExtraLap: action.extraLapsCompleted,
+                  announcerLastLap: action.lap,
+                  announcerSequence: sql`${motosTable.announcerSequence} + 1`,
+                })
+                .where(and(
+                  eq(motosTable.id, snapshot.motoId),
+                  inArray(motosTable.status, ["in_progress", "completed"]),
+                  eq(motosTable.timeExpiredAt, new Date(snapshot.timeExpiredAt!)),
+                  isNotNull(motosTable.announcerTimeExpiredAt),
+                  eq(motosTable.announcerExpiryLeaderLap, nextLifecycle.expiryLeaderLap!),
+                  lt(motosTable.announcerLastExtraLap, action.extraLapsCompleted),
+                ))
+                .returning({ sequence: motosTable.announcerSequence });
+              return claimed[0]?.sequence ?? null;
+            }
+          : async () => {
+              const claimed = await db.update(motosTable)
+                .set({
+                  announcerLastLap: action.lap,
+                  announcerSequence: sql`${motosTable.announcerSequence} + 1`,
+                })
+                .where(and(
+                  eq(motosTable.id, snapshot.motoId),
+                  eq(motosTable.status, "in_progress"),
+                  lt(motosTable.announcerLastLap, action.lap),
+                ))
+                .returning({ sequence: motosTable.announcerSequence });
+              return claimed[0]?.sequence ?? null;
+            },
   );
   state.lifecycle = nextLifecycle;
 }
@@ -2480,7 +2645,14 @@ export function publishTimingSnapshot(snapshot: LeaderboardSnapshot) {
 export async function resetSharedAnnouncer(motoId: number) {
   announcerStates.delete(motoId);
   await db.update(motosTable)
-    .set({ announcerStartedAt: null, announcerLastLap: 0, announcerFinishedAt: null })
+    .set({
+      announcerStartedAt: null,
+      announcerLastLap: 0,
+      announcerTimeExpiredAt: null,
+      announcerExpiryLeaderLap: null,
+      announcerLastExtraLap: 0,
+      announcerFinishedAt: null,
+    })
     .where(eq(motosTable.id, motoId));
 }
 
@@ -2522,18 +2694,39 @@ router.post("/timing/announce-moto-start", async (req, res) => {
 // POST /timing/announce — generate AI voice announcement for current leaderboard
 router.post("/timing/announce", async (req, res) => {
   try {
-    const { lapCompleted, top5, positionChanges = [], isComplete = false } = req.body as {
+    const {
+      lapCompleted,
+      top5,
+      positionChanges = [],
+      isComplete = false,
+      kind,
+      timeRemainingMs,
+      lapsRemaining,
+      extraLapsRemaining,
+    } = req.body as {
       lapCompleted: number;
-      top5: Top5Entry[];
-      positionChanges: PositionChange[];
+      top5: AnnouncerEntry[];
+      positionChanges: AnnouncerPositionChange[];
       isComplete: boolean;
+      kind?: "lap" | "extra_lap" | "time_expired" | "finish";
+      timeRemainingMs?: number | null;
+      lapsRemaining?: number | null;
+      extraLapsRemaining?: number;
     };
 
     if (!Array.isArray(top5) || top5.length === 0) {
       return res.status(400).json({ error: "top5 array is required" });
     }
 
-    const script = buildAnnouncementScript({ lapCompleted, top5, positionChanges, isComplete });
+    const script = buildRaceAnnouncementScript({
+      lapCompleted,
+      top5,
+      positionChanges,
+      kind: kind ?? (isComplete ? "finish" : "lap"),
+      timeRemainingMs,
+      lapsRemaining,
+      extraLapsRemaining,
+    });
     const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
 
     res.setHeader("Content-Type", "audio/mpeg");

@@ -349,9 +349,35 @@ test("Watch keeps one timing stream while announcements and tabs update", async 
   await expect(page.locator('[data-viewer-state="playing"]')).toBeVisible();
   await streamAction(page, "message", "/timing/live/101", snapshot(101, "Heat 1"));
   await streamAction(page, "message", "/timing/announcer-live/101", {
-    announcement: { sequence: 1, label: "Blake takes the lead", audioUrl: "/api/test-audio" },
+    announcement: {
+      sequence: 1,
+      kind: "lap",
+      label: "Blake takes the lead",
+      audioUrl: "/api/test-audio",
+      createdAt: new Date().toISOString(),
+    },
   });
   await expect(page.getByText("Blake takes the lead")).toBeVisible();
+  await streamAction(page, "message", "/timing/announcer-live/101", {
+    announcement: {
+      sequence: 2,
+      kind: "time_expired",
+      label: "Time is up — 2 extra laps remaining",
+      audioUrl: "/api/test-audio",
+      createdAt: new Date().toISOString(),
+    },
+  });
+  await expect(page.getByText("Time is up — 2 extra laps remaining")).toBeVisible();
+  await streamAction(page, "message", "/timing/announcer-live/101", {
+    announcement: {
+      sequence: 2,
+      kind: "time_expired",
+      label: "Duplicate time-expired call",
+      audioUrl: "/api/test-audio",
+      createdAt: new Date().toISOString(),
+    },
+  });
+  await expect(page.getByText("Duplicate time-expired call")).toHaveCount(0);
   await expectAllTabsUsable(page);
   await expect(await streamAction(page, "count", "/timing/live/101")).toBe(1);
 

@@ -3,6 +3,7 @@ export type SharedAnnouncement = {
   audioUrl: string;
   label: string;
   createdAt: string;
+  kind?: "start" | "lap" | "time_expired" | "extra_lap" | "finish";
 };
 
 export function shouldAcceptAnnouncement(

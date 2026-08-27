@@ -23,6 +23,28 @@ test("accepts each shared announcement only once across reconnect delivery", () 
   assert.equal(shouldAcceptAnnouncement(5, announcement), false);
 });
 
+test("does not replay a retained timed-race transition after reconnect", () => {
+  const timeExpired: SharedAnnouncement = {
+    ...announcement,
+    sequence: 8,
+    kind: "time_expired",
+    label: "Time is up — 2 extra laps remaining",
+  };
+  assert.equal(shouldAcceptAnnouncement(7, timeExpired), true);
+  assert.equal(shouldAcceptAnnouncement(8, timeExpired), false);
+});
+
+test("accepts a new run of the same moto when its durable sequence stays monotonic", () => {
+  const priorRunCursor = 8;
+  const restartedMotoStart: SharedAnnouncement = {
+    ...announcement,
+    sequence: 9,
+    kind: "start",
+    label: "Race starting!",
+  };
+  assert.equal(shouldAcceptAnnouncement(priorRunCursor, restartedMotoStart), true);
+});
+
 test("preserves local mute control without changing the shared event cursor", () => {
   assert.equal(shouldAcceptAnnouncement(3, announcement), true);
   assert.equal(shouldQueueAnnouncementAudio(false), false);

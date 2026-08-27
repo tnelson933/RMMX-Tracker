@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   advanceAnnouncerLifecycle,
+  calculateRaceTimeRemainingMs,
   createAnnouncerLifecycleState,
   hydrateAnnouncerLifecycle,
+  shouldPublishAnnouncerSnapshotForMotoPatch,
   type AnnouncerRider,
 // Node's built-in type-stripping test runner requires the explicit extension.
 // @ts-expect-error TypeScript's bundler resolution does not allow it by default.
@@ -78,4 +80,91 @@ test("persisted lap progress is not replayed after an API restart", () => {
   hydrateAnnouncerLifecycle(state, { started: true, finished: false, lastAnnouncedLap: 3 });
   assert.equal(advanceAnnouncerLifecycle(state, "in_progress", field(3), 5).kind, "none");
   assert.equal(advanceAnnouncerLifecycle(state, "in_progress", field(4), 5).kind, "lap");
+});
+
+test("announces timed-race expiry once and counts down leader extra laps", () => {
+  const state = createAnnouncerLifecycleState();
+  hydrateAnnouncerLifecycle(state, { started: true, finished: false, lastAnnouncedLap: 4 });
+
+  assert.deepEqual(
+    advanceAnnouncerLifecycle(state, "in_progress", field(4), 5, {
+      timeExpired: true,
+      plusLaps: 2,
+    }),
+    { kind: "time_expired", lap: 4, extraLapsRemaining: 2 },
+  );
+  assert.equal(
+    advanceAnnouncerLifecycle(state, "in_progress", field(4), 5, {
+      timeExpired: true,
+      plusLaps: 2,
+    }).kind,
+    "none",
+  );
+  assert.deepEqual(
+    advanceAnnouncerLifecycle(state, "in_progress", field(5), 5, {
+      timeExpired: true,
+      plusLaps: 2,
+    }),
+    { kind: "extra_lap", lap: 5, extraLapsCompleted: 1, extraLapsRemaining: 1 },
+  );
+  assert.deepEqual(
+    advanceAnnouncerLifecycle(state, "in_progress", field(6), 5, {
+      timeExpired: true,
+      plusLaps: 2,
+    }),
+    { kind: "extra_lap", lap: 6, extraLapsCompleted: 2, extraLapsRemaining: 0 },
+  );
+  assert.equal(
+    advanceAnnouncerLifecycle(state, "in_progress", field(7), 5, {
+      timeExpired: true,
+      plusLaps: 2,
+    }).kind,
+    "none",
+  );
+});
+
+test("persisted timed-race markers suppress expiry and extra-lap replays after restart", () => {
+  const state = createAnnouncerLifecycleState();
+  hydrateAnnouncerLifecycle(state, {
+    started: true,
+    finished: false,
+    lastAnnouncedLap: 6,
+    timeExpiredAnnounced: true,
+    expiryLeaderLap: 4,
+    lastAnnouncedExtraLap: 2,
+  });
+  assert.equal(
+    advanceAnnouncerLifecycle(state, "in_progress", field(6), 5, {
+      timeExpired: true,
+      plusLaps: 2,
+    }).kind,
+    "none",
+  );
+});
+
+test("timed-race remaining time subtracts completed pauses and freezes during an active pause", () => {
+  const startedAt = new Date("2026-08-27T12:00:00.000Z");
+  const pausedAt = new Date("2026-08-27T12:03:00.000Z");
+  assert.equal(calculateRaceTimeRemainingMs({
+    startedAt,
+    pausedAt,
+    totalPausedMs: 30_000,
+    timeLimitMs: 10 * 60_000,
+    timeExpiredAt: null,
+  }, new Date("2026-08-27T12:08:00.000Z").getTime()), 7.5 * 60_000);
+
+  assert.equal(calculateRaceTimeRemainingMs({
+    startedAt,
+    pausedAt: null,
+    totalPausedMs: 30_000,
+    timeLimitMs: 10 * 60_000,
+    timeExpiredAt: new Date("2026-08-27T12:10:30.000Z"),
+  }), 0);
+});
+
+test("an expiry-only moto update publishes an authoritative announcer snapshot", () => {
+  assert.equal(shouldPublishAnnouncerSnapshotForMotoPatch({
+    timeExpiredAt: "2026-08-27T12:10:00.000Z",
+  }), true);
+  assert.equal(shouldPublishAnnouncerSnapshotForMotoPatch({ name: "Heat 2" }), false);
 });
