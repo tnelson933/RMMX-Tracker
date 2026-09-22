@@ -216,7 +216,7 @@ export default function Dashboard() {
         {/* ── OVERVIEW TAB ─────────────────────────────────────────────── */}
         <TabsContent value="overview" className="space-y-8 mt-4">
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
             <Card className="border-sidebar-border bg-sidebar text-sidebar-foreground">
               <CardContent className="p-6 flex items-center justify-between">
                 <div>
@@ -259,17 +259,6 @@ export default function Dashboard() {
                 </div>
                 <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
                   <Mail size={24} />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-secondary bg-secondary/5">
-              <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-secondary uppercase tracking-widest mb-1">Total Checked In</p>
-                  <h2 className="text-4xl font-heading font-bold text-secondary">{dashboard?.checkedInToday || 0}</h2>
-                </div>
-                <div className="h-12 w-12 rounded-full bg-secondary/20 flex items-center justify-center text-secondary">
-                  <CheckCircle size={24} />
                 </div>
               </CardContent>
             </Card>
