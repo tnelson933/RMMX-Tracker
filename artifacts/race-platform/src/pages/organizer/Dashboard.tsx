@@ -16,11 +16,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Calendar, Users, CheckCircle, Plus, Tag, Activity,
+  Calendar, Users, CheckCircle, Plus, Tag, AlertTriangle, CreditCard, FileSignature, Radio, ArrowRight,
   Upload, ImageIcon, Loader2, X, Sparkles, Save, Building2, LayoutDashboard, Mail, Copy, ClipboardCheck,
 } from "lucide-react";
 import { Link } from "wouter";
-import { format, parseISO } from "date-fns";
+import { differenceInCalendarDays, format, parseISO } from "date-fns";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -318,32 +318,106 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-6">
-              <h2 className="text-2xl font-heading font-bold uppercase tracking-tight flex items-center gap-2">
-                <Activity className="text-primary" /> Recent Activity
-              </h2>
-              <Card>
-                <CardContent className="p-0">
-                  {dashboard?.recentActivity?.length ? (
-                    <div className="divide-y">
-                      {dashboard.recentActivity.map((activity, i) => (
-                        <div key={i} className="p-4 flex items-start gap-4">
-                          <div className="mt-1">
-                            {activity.type === 'registration' && <Tag size={16} className="text-primary" />}
-                            {activity.type === 'checkin' && <CheckCircle size={16} className="text-secondary" />}
-                            {activity.type === 'result' && <Activity size={16} className="text-sidebar-primary" />}
-                          </div>
+              <section className="space-y-3">
+                <h2 className="text-2xl font-heading font-bold uppercase tracking-tight flex items-center gap-2">
+                  <Calendar className="text-primary" /> Next Event Snapshot
+                </h2>
+                {dashboard?.nextEventSnapshot ? (
+                  <Card className="overflow-hidden border-primary/30">
+                    <CardContent className="p-0">
+                      <div className="bg-sidebar px-5 py-4 text-sidebar-foreground">
+                        <div className="flex items-start justify-between gap-4">
                           <div>
-                            <p className="text-sm font-medium">{activity.description}</p>
-                            <p className="text-xs text-muted-foreground mt-1">{new Date(activity.timestamp).toLocaleString()}</p>
+                            <p className="text-xs font-bold uppercase tracking-widest text-sidebar-foreground/60">
+                              {differenceInCalendarDays(parseISO(dashboard.nextEventSnapshot.date.substring(0, 10)), new Date()) === 0
+                                ? "Today"
+                                : `${differenceInCalendarDays(parseISO(dashboard.nextEventSnapshot.date.substring(0, 10)), new Date())} days away`}
+                            </p>
+                            <h3 className="mt-1 font-heading text-xl font-bold uppercase leading-tight">
+                              {dashboard.nextEventSnapshot.name}
+                            </h3>
+                            <p className="mt-1 text-sm text-sidebar-foreground/70">
+                              {format(parseISO(dashboard.nextEventSnapshot.date.substring(0, 10)), "EEE, MMM d")}
+                              {(dashboard.nextEventSnapshot.trackName || dashboard.nextEventSnapshot.location)
+                                ? ` · ${dashboard.nextEventSnapshot.trackName || dashboard.nextEventSnapshot.location}`
+                                : ""}
+                            </p>
+                          </div>
+                          <div className="rounded-md bg-primary px-3 py-2 text-center text-primary-foreground">
+                            <div className="font-heading text-2xl font-bold leading-none">{dashboard.nextEventSnapshot.registrationCount}</div>
+                            <div className="mt-1 text-[10px] font-bold uppercase tracking-wider">Entries</div>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-8 text-center text-muted-foreground text-sm">No recent activity to display.</div>
-                  )}
-                </CardContent>
-              </Card>
+                      </div>
+                      <div className="grid grid-cols-3 divide-x border-b">
+                        <div className="p-3 text-center">
+                          <div className="font-heading text-xl font-bold">{dashboard.nextEventSnapshot.newRegistrationsLast7Days}</div>
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">New this week</div>
+                        </div>
+                        <div className="p-3 text-center">
+                          <div className="font-heading text-xl font-bold text-green-600">{dashboard.nextEventSnapshot.paidCount}</div>
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</div>
+                        </div>
+                        <div className="p-3 text-center">
+                          <div className="font-heading text-xl font-bold">
+                            {dashboard.nextEventSnapshot.maxRiders
+                              ? `${Math.round((dashboard.nextEventSnapshot.registrationCount / dashboard.nextEventSnapshot.maxRiders) * 100)}%`
+                              : "—"}
+                          </div>
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Capacity</div>
+                        </div>
+                      </div>
+                      <Link href={`/events/${dashboard.nextEventSnapshot.id}/registrations`}>
+                        <Button variant="ghost" className="h-11 w-full justify-between rounded-none px-5 font-heading uppercase tracking-wider">
+                          Manage registrations <ArrowRight size={15} />
+                        </Button>
+                      </Link>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">Create an upcoming event to see its registration snapshot.</CardContent></Card>
+                )}
+              </section>
+
+              <section className="space-y-3">
+                <h2 className="text-2xl font-heading font-bold uppercase tracking-tight flex items-center gap-2">
+                  <AlertTriangle className="text-amber-500" /> Action Needed
+                </h2>
+                <Card>
+                  <CardContent className="p-0">
+                    {dashboard?.actionItems?.length ? (
+                      <div className="divide-y">
+                        {dashboard.actionItems.map((item) => {
+                          const Icon = item.type === "unpaid" ? CreditCard : item.type === "waiver" ? FileSignature : Radio;
+                          return (
+                            <Link key={item.type} href={item.href}>
+                              <div className="flex cursor-pointer items-center gap-3 p-4 transition-colors hover:bg-muted/60">
+                                <div className={item.severity === "urgent" ? "rounded-full bg-destructive/10 p-2 text-destructive" : "rounded-full bg-amber-500/10 p-2 text-amber-600"}>
+                                  <Icon size={16} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-semibold">{item.label}</p>
+                                  <p className="text-xs text-muted-foreground">For {dashboard.nextEventSnapshot?.name}</p>
+                                </div>
+                                <span className="font-heading text-2xl font-bold">{item.count}</span>
+                                <ArrowRight size={15} className="text-muted-foreground" />
+                              </div>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3 p-5">
+                        <div className="rounded-full bg-green-500/10 p-2 text-green-600"><CheckCircle size={17} /></div>
+                        <div>
+                          <p className="text-sm font-semibold">You&apos;re all caught up</p>
+                          <p className="text-xs text-muted-foreground">No registration issues need attention for the next event.</p>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
             </div>
           </div>
         </TabsContent>

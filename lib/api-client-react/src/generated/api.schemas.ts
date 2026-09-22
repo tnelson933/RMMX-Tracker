@@ -1322,6 +1322,51 @@ export interface ActivityItem {
   timestamp: string;
 }
 
+export interface DashboardEventSnapshot {
+  id: number;
+  name: string;
+  date: string;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  trackName?: string | null;
+  /** @nullable */
+  registrationClose?: string | null;
+  /** @nullable */
+  maxRiders?: number | null;
+  registrationCount: number;
+  newRegistrationsLast7Days: number;
+  paidCount: number;
+  unpaidCount: number;
+  missingWaiversCount: number;
+  missingTranspondersCount: number;
+}
+
+export type DashboardActionItemType = typeof DashboardActionItemType[keyof typeof DashboardActionItemType];
+
+
+export const DashboardActionItemType = {
+  unpaid: 'unpaid',
+  waiver: 'waiver',
+  transponder: 'transponder',
+} as const;
+
+export type DashboardActionItemSeverity = typeof DashboardActionItemSeverity[keyof typeof DashboardActionItemSeverity];
+
+
+export const DashboardActionItemSeverity = {
+  warning: 'warning',
+  urgent: 'urgent',
+} as const;
+
+export interface DashboardActionItem {
+  type: DashboardActionItemType;
+  label: string;
+  count: number;
+  href: string;
+  severity: DashboardActionItemSeverity;
+}
+
 export interface ClubDashboard {
   totalEvents: number;
   upcomingEvents: number;
@@ -1332,6 +1377,8 @@ export interface ClubDashboard {
   checkedInToday?: number;
   recentActivity: ActivityItem[];
   upcomingEventList?: Event[];
+  nextEventSnapshot?: DashboardEventSnapshot | null;
+  actionItems: DashboardActionItem[];
 }
 
 export type RaceDaySummaryPaymentSummary = {

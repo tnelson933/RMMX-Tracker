@@ -2479,7 +2479,29 @@ export const GetClubDashboardResponse = zod.object({
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
   "zip": zod.string().nullish().describe('ZIP code of the track venue.'),
   "createdAt": zod.string().optional()
-})).optional()
+})).optional(),
+  "nextEventSnapshot": zod.union([zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "date": zod.string(),
+  "location": zod.string().nullish(),
+  "trackName": zod.string().nullish(),
+  "registrationClose": zod.string().nullish(),
+  "maxRiders": zod.number().nullish(),
+  "registrationCount": zod.number(),
+  "newRegistrationsLast7Days": zod.number(),
+  "paidCount": zod.number(),
+  "unpaidCount": zod.number(),
+  "missingWaiversCount": zod.number(),
+  "missingTranspondersCount": zod.number()
+}),zod.null()]).optional(),
+  "actionItems": zod.array(zod.object({
+  "type": zod.enum(['unpaid', 'waiver', 'transponder']),
+  "label": zod.string(),
+  "count": zod.number(),
+  "href": zod.string(),
+  "severity": zod.enum(['warning', 'urgent'])
+}))
 })
 
 

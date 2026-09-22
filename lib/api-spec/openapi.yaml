@@ -4734,7 +4734,7 @@ components:
 
     ClubDashboard:
       type: object
-      required: [totalEvents, upcomingEvents, totalRiders, totalRegistrations, uniqueRegistrations, recentActivity]
+      required: [totalEvents, upcomingEvents, totalRiders, totalRegistrations, uniqueRegistrations, recentActivity, actionItems]
       properties:
         totalEvents:
           type: integer
@@ -4757,6 +4757,62 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Event"
+        nextEventSnapshot:
+          oneOf:
+            - $ref: "#/components/schemas/DashboardEventSnapshot"
+            - type: "null"
+        actionItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardActionItem"
+
+    DashboardEventSnapshot:
+      type: object
+      required: [id, name, date, registrationCount, newRegistrationsLast7Days, paidCount, unpaidCount, missingWaiversCount, missingTranspondersCount]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        date:
+          type: string
+        location:
+          type: ["string", "null"]
+        trackName:
+          type: ["string", "null"]
+        registrationClose:
+          type: ["string", "null"]
+        maxRiders:
+          type: ["integer", "null"]
+        registrationCount:
+          type: integer
+        newRegistrationsLast7Days:
+          type: integer
+        paidCount:
+          type: integer
+        unpaidCount:
+          type: integer
+        missingWaiversCount:
+          type: integer
+        missingTranspondersCount:
+          type: integer
+
+    DashboardActionItem:
+      type: object
+      required: [type, label, count, href, severity]
+      properties:
+        type:
+          type: string
+          enum: [unpaid, waiver, transponder]
+        label:
+          type: string
+        count:
+          type: integer
+        href:
+          type: string
+        severity:
+          type: string
+          enum: [warning, urgent]
 
     ActivityItem:
       type: object

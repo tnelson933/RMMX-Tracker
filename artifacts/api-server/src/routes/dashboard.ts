@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable, lapCrossingsTable } from "@workspace/db";
+import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable, lapCrossingsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, ne, count, countDistinct, sql, inArray, desc, asc, gt, lte } from "drizzle-orm";
 import { buildLeaderboard } from "./timing";
 
@@ -70,6 +70,9 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     registrationClose: eventsTable.registrationClose,
     status: eventsTable.status,
     paymentEnabled: eventsTable.paymentEnabled,
+    requireWaiver: eventsTable.requireWaiver,
+    requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
+    requireTransponder: eventsTable.requireTransponder,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
     endDate: eventsTable.endDate,
@@ -81,6 +84,88 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     ))
     .orderBy(eventsTable.date)
     .limit(5);
+
+  const nextEvent = upcomingEvents[0] ?? null;
+  let nextEventSnapshot = null;
+  const actionItems: Array<{
+    type: "unpaid" | "waiver" | "transponder";
+    label: string;
+    count: number;
+    href: string;
+    severity: "warning" | "urgent";
+  }> = [];
+
+  if (nextEvent) {
+    const [registrationSummary] = await db.select({
+      registrationCount: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void')`,
+      newRegistrationsLast7Days: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND ${registrationsTable.createdAt} >= NOW() - INTERVAL '7 days')`,
+      paidCount: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND ${registrationsTable.paymentStatus} = 'paid')`,
+      unpaidCount: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND ${registrationsTable.paymentStatus} = 'unpaid')`,
+      missingStandardWaivers: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND ${registrationsTable.waiverAcknowledgedAt} IS NULL)`,
+      missingTransponders: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND NULLIF(TRIM(${registrationsTable.myLapsTransponderNumber}), '') IS NULL)`,
+    }).from(registrationsTable).where(eq(registrationsTable.eventId, nextEvent.id));
+
+    const [liabilitySummary] = await db.select({
+      count: count(),
+    }).from(registrationsTable).where(and(
+      eq(registrationsTable.eventId, nextEvent.id),
+      ne(registrationsTable.status, "void"),
+      sql`NOT EXISTS (
+        SELECT 1 FROM ${liabilityWaiverSignaturesTable}
+        WHERE ${liabilityWaiverSignaturesTable.registrationId} = ${registrationsTable.id}
+      )`,
+    ));
+
+    const registrationCount = Number(registrationSummary?.registrationCount ?? 0);
+    const unpaidCount = nextEvent.paymentEnabled ? Number(registrationSummary?.unpaidCount ?? 0) : 0;
+    const missingWaiversCount = nextEvent.requireLiabilityWaiver
+      ? Number(liabilitySummary?.count ?? 0)
+      : nextEvent.requireWaiver
+        ? Number(registrationSummary?.missingStandardWaivers ?? 0)
+        : 0;
+    const missingTranspondersCount = nextEvent.requireTransponder
+      ? Number(registrationSummary?.missingTransponders ?? 0)
+      : 0;
+    const registrationsHref = `/events/${nextEvent.id}/registrations`;
+
+    if (unpaidCount > 0) actionItems.push({
+      type: "unpaid",
+      label: "Unpaid registrations",
+      count: unpaidCount,
+      href: registrationsHref,
+      severity: "urgent",
+    });
+    if (missingWaiversCount > 0) actionItems.push({
+      type: "waiver",
+      label: "Missing waivers",
+      count: missingWaiversCount,
+      href: registrationsHref,
+      severity: "urgent",
+    });
+    if (missingTranspondersCount > 0) actionItems.push({
+      type: "transponder",
+      label: "Missing transponder numbers",
+      count: missingTranspondersCount,
+      href: registrationsHref,
+      severity: "warning",
+    });
+
+    nextEventSnapshot = {
+      id: nextEvent.id,
+      name: nextEvent.name,
+      date: nextEvent.date,
+      location: nextEvent.location,
+      trackName: nextEvent.trackName,
+      registrationClose: nextEvent.registrationClose,
+      maxRiders: nextEvent.maxRiders,
+      registrationCount,
+      newRegistrationsLast7Days: Number(registrationSummary?.newRegistrationsLast7Days ?? 0),
+      paidCount: Number(registrationSummary?.paidCount ?? 0),
+      unpaidCount,
+      missingWaiversCount,
+      missingTranspondersCount,
+    };
+  }
 
   // Real recent activity: last 10 registrations + check-ins across club events
   let recentActivity: { type: string; description: string; timestamp: string }[] = [];
@@ -142,6 +227,8 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     uniqueRegistrations,
     checkedInToday,
     recentActivity,
+    nextEventSnapshot,
+    actionItems,
     upcomingEventList: upcomingEvents.map(e => ({
       ...e,
       entryFee: e.entryFee ? Number(e.entryFee) : null,
