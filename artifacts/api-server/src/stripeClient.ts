@@ -2,10 +2,11 @@ import Stripe from "stripe";
 import { StripeSync } from "stripe-replit-sync";
 
 async function getCredentials(): Promise<{ publishableKey: string; secretKey: string }> {
-  if (process.env.STRIPE_SECRET_KEY) {
+  const configuredSecretKey = process.env.STRIPE_SECRET_KEY ?? process.env.Stripe_secret_key;
+  if (configuredSecretKey) {
     return {
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
-      secretKey: process.env.STRIPE_SECRET_KEY,
+      secretKey: configuredSecretKey,
     };
   }
 
