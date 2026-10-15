@@ -1,7 +1,29 @@
 # Checks performed while preparing this handoff
 
-This record describes the current export-preparation run, not the full history
-of the app. No source application feature was changed for this packaging request.
+## Reconciliation and regenerated export
+
+The local `claude-handoff` branch now includes both the local project history
+and the last fetched GitHub main history. Application files were retained after
+reviewing the conflicting changes. See RECONCILIATION.md for the rationale.
+GitHub main was not modified. Remote delivery requires a successful push;
+the existence of this ZIP does not prove that GitHub has received the branch.
+
+Fresh checks after reconciliation:
+
+- Whole-workspace `pnpm run typecheck`: passed.
+- API/web unit tests: 61 passed, 0 failed.
+- Connector tests: 26 passed, 0 failed.
+- Registration schema check: passed for 31 fields.
+- Browser tests were not rerun; the previous failures below remain unresolved.
+- No application source files changed during reconciliation.
+
+The regenerated archive includes `export-metadata/SOURCE_REVISION.json` to
+identify its source commit and any uncommitted files present during export.
+
+## Previous export-preparation checks
+
+The remaining sections record the previous export-preparation run, not fresh
+browser or deployment verification. No application feature changed in that run.
 
 ## Passed
 

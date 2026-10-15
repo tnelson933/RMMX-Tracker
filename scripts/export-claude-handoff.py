@@ -196,6 +196,18 @@ def main() -> None:
     put("export-metadata/APPLICATION_TABLES_FROM_SOURCE.json", json_bytes(model_tables))
     put("export-metadata/EXCLUDED_FILES.json", json_bytes(exclusions))
     put("export-metadata/EXPORTED_COPY_REDACTIONS.json", json_bytes(redactions))
+    put("export-metadata/SOURCE_REVISION.json", json_bytes({
+        "commit": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
+        ).strip(),
+        "branch": subprocess.check_output(
+            ["git", "branch", "--show-current"], cwd=ROOT, text=True,
+        ).strip(),
+        "working_tree_status": subprocess.check_output(
+            ["git", "status", "--porcelain"], cwd=ROOT, text=True,
+        ).splitlines(),
+        "remote_delivery": "Not established by export; verify the remote branch separately.",
+    }))
     put("export-metadata/SOURCE_TREE.txt", ("\n".join(included_source) + "\n").encode())
     put("README-HANDOFF.md", payload["docs/claude-handoff/START_HERE.md"])
 
