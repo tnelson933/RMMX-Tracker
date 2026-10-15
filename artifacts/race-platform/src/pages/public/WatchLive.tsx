@@ -816,7 +816,7 @@ export default function WatchLive() {
             title={announcerOn ? "Mute AI announcer" : "Enable AI announcer"}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
               announcerOn
-                ? "bg-primary/20 text-primary border border-primary/40 hover:bg-primary/30"
+                ? "bg-primary text-white border border-primary hover:bg-[#8F0000]"
                 : "bg-white/5 text-white/30 border border-white/10 hover:bg-white/10"
             }`}
           >

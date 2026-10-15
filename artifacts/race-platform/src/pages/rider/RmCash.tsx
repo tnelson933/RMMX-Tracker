@@ -17,40 +17,37 @@ export default function RmCash() {
   const balance = data?.balance ?? 0;
 
   return (
-    <RiderLayout showBack backTo="/rider/portal" backLabel="My Profiles">
+    <RiderLayout
+      showBack
+      backTo="/rider/portal"
+      backLabel="My Profiles"
+      title="RM Cash"
+      subtitle="Your Rocky Mountain ATV/MC balance."
+    >
       <div className="max-w-md mx-auto flex flex-col gap-6">
-        <div className="text-center pt-4">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/30 mb-4">
-            <Zap size={28} className="text-green-600 fill-green-600" />
-          </div>
-          <h1 className="font-heading font-bold text-2xl uppercase tracking-wider">RM Cash</h1>
-          <p className="text-muted-foreground text-sm mt-1">Your Rocky Mountain ATV/MC balance</p>
-        </div>
-
-        <Card className="border-green-200 dark:border-green-800">
-          <CardContent className="pt-6 pb-6 text-center">
-            <p className="text-sm font-medium uppercase tracking-widest text-muted-foreground mb-1">Available Balance</p>
-            <p className="text-5xl font-extrabold text-green-600 tracking-tight">${balance.toFixed(2)}</p>
+        <Card className="border-2 border-[#015F2D]">
+          <CardContent className="py-8 text-center">
+            <p className="flex items-center justify-center gap-1.5 text-[13px] font-bold uppercase tracking-[2px] text-[#707070] mb-2"><Zap size={14} className="text-[#015F2D] fill-[#015F2D]" /> Available Balance</p>
+            <p className="text-5xl font-heading font-extrabold text-[#015F2D]">${balance.toFixed(2)}</p>
           </CardContent>
         </Card>
 
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Clock size={14} className="text-muted-foreground" />
-            <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Transaction History</h2>
+            <span aria-hidden className="w-[4px] h-5 bg-primary -skew-x-[18deg] shrink-0" />
+            <h2 className="m-0 font-heading font-extrabold text-lg uppercase tracking-[0.5px] text-[#242424]">Transaction History</h2>
           </div>
           <Card>
             <CardContent className="py-10 text-center">
               <Clock size={32} className="text-muted-foreground mx-auto mb-3 opacity-40" />
-              <p className="text-sm font-medium text-muted-foreground">Your RM Cash history will appear here once you've earned credits</p>
+              <p className="text-[15px] text-[#555]">Your RM Cash history will appear here once you've earned credits</p>
             </CardContent>
           </Card>
         </div>
 
         <Button
           asChild
-          className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white font-bold uppercase tracking-wider"
-          size="lg"
+          className="w-full mt-2 min-h-[52px] text-base bg-[#015F2D] border-[#015F2D] text-white hover:bg-[#017A3A]"
         >
           <a href="https://www.rockymountainatvmc.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
             Use your cash

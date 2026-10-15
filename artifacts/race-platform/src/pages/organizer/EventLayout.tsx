@@ -79,7 +79,7 @@ export default function EventLayout() {
           <h1 className="text-2xl md:text-3xl font-heading font-bold uppercase tracking-tight text-white">
             {event.name}
           </h1>
-          <span className="bg-primary/20 text-primary border border-primary/30 px-3 py-1 rounded text-xs font-bold uppercase tracking-wider">
+          <span className="bg-primary text-white border border-primary px-3 py-1 rounded text-xs font-bold uppercase tracking-wider">
             {event.status.replace('_', ' ')}
           </span>
         </div>

@@ -520,12 +520,12 @@ export default function EventResults() {
               </h1>
               <div className="flex flex-wrap gap-x-8 gap-y-3 text-sidebar-foreground/80">
                 <div className="flex items-center gap-2">
-                  <Calendar size={18} className="text-primary" />
+                  <Calendar size={18} className="text-white/70" />
                   <span className="font-medium">{formatEventDatesFull(event.date, (event as any).endDate)}</span>
                 </div>
                 {event.location && (
                   <div className="flex items-center gap-2">
-                    <MapPin size={18} className="text-primary" />
+                    <MapPin size={18} className="text-white/70" />
                     <span className="font-medium">
                       {event.trackName ? `${event.trackName}, ${event.location}` : event.location}
                     </span>
@@ -533,7 +533,7 @@ export default function EventResults() {
                 )}
                 {event.clubName && (
                   <div className="flex items-center gap-2">
-                    <Trophy size={18} className="text-primary" />
+                    <Trophy size={18} className="text-white/70" />
                     <span className="font-medium">{event.clubName}</span>
                   </div>
                 )}

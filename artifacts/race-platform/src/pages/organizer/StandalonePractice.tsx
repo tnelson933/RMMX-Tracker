@@ -301,7 +301,7 @@ export default function StandalonePractice() {
           <div className="px-4 py-4 border-b border-sidebar-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Timer size={16} className="text-primary" />
+                <Timer size={16} className="text-white" />
                 <span className="font-heading font-bold uppercase tracking-wider text-white text-sm">
                   Practice Sessions
                 </span>
@@ -381,7 +381,7 @@ export default function StandalonePractice() {
                 No sessions yet.
                 <br />
                 <button
-                  className="text-primary mt-1 hover:underline text-xs"
+                  className="text-white underline mt-1 hover:text-white/80 text-xs"
                   onClick={() => setShowNewForm(true)}
                 >
                   Create one

@@ -129,8 +129,8 @@ async function exportPDF(riders: ExportRider[]) {
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
   if (col !== sortKey) return <ArrowUpDown size={13} className="ml-1 opacity-30 shrink-0" />;
   return sortDir === "asc"
-    ? <ArrowUp size={13} className="ml-1 text-primary shrink-0" />
-    : <ArrowDown size={13} className="ml-1 text-primary shrink-0" />;
+    ? <ArrowUp size={13} className="ml-1 text-current shrink-0" />
+    : <ArrowDown size={13} className="ml-1 text-current shrink-0" />;
 }
 
 function sortRiders<T extends ExportRider>(riders: T[], key: SortKey, dir: SortDir): T[] {

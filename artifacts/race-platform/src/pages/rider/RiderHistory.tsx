@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RiderLayout } from "@/components/layout/RiderLayout";
+import { BikeBrandChips } from "@/components/BikeBrandChips";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -78,6 +79,7 @@ function isLapEligible(lapNumber: number, raceStyle?: string | null): boolean {
 
 // ─── RFID editor ────────────────────────────────────────────────────────────
 
+// Sits in the dark TitleBand, so text and icons use white/gray, never red.
 function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: string | null }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -116,41 +118,41 @@ function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: st
     return (
       <div className="flex flex-col gap-1.5 mt-2">
         <div className="flex items-center gap-2">
-          <Wifi size={13} className="text-muted-foreground shrink-0" />
+          <Wifi size={15} className="text-white/70 shrink-0" />
           <Input
             value={value}
             onChange={e => setValue(e.target.value)}
             placeholder="e.g. AB12CD34"
-            className="h-8 text-sm font-mono w-48"
+            className="h-9 text-sm font-mono w-48 bg-white text-[#333] border-white"
             autoFocus
             onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
           />
-          <Button size="sm" className="h-8 px-2" onClick={save} disabled={saving}>
+          <Button size="sm" aria-label="Save transponder" className="h-9 w-9 px-0 bg-white text-[#242424] border-white hover:bg-[#F2F2F2]" onClick={save} disabled={saving}>
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
           </Button>
-          <Button size="sm" variant="ghost" className="h-8 px-2" onClick={cancel} disabled={saving}>
+          <Button size="sm" variant="ghost" aria-label="Cancel" className="h-9 w-9 px-0 text-white hover:bg-white/10" onClick={cancel} disabled={saving}>
             <X size={13} />
           </Button>
         </div>
-        {error && <p className="text-xs text-destructive ml-5">{error}</p>}
+        {error && <p className="text-[13px] text-white bg-primary rounded px-2 py-1 ml-5 self-start">{error}</p>}
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1.5 mt-1">
-      <Wifi size={13} className="text-muted-foreground shrink-0" />
+    <div className="flex items-center gap-1.5 mt-2">
+      <Wifi size={15} className="text-white/70 shrink-0" />
       {currentRfid ? (
-        <span className="text-sm font-mono text-muted-foreground">{currentRfid}</span>
+        <span className="text-[15px] font-mono text-white/85">{currentRfid}</span>
       ) : (
-        <span className="text-sm text-muted-foreground italic">No transponder set</span>
+        <span className="text-[15px] text-white/75">No transponder set</span>
       )}
       <button
         onClick={startEdit}
-        className="ml-1 text-muted-foreground hover:text-primary transition-colors"
+        className="ml-1 inline-flex items-center gap-1 rounded-full border-2 border-white/60 px-3 min-h-[32px] text-[13px] font-bold uppercase tracking-[0.5px] text-white hover:bg-white/10 transition-colors"
         title="Edit transponder number"
       >
-        <Pencil size={11} />
+        <Pencil size={12} /> Edit
       </button>
     </div>
   );
@@ -494,25 +496,7 @@ function GarageCard({ riderId }: { riderId: number }) {
               />
             </div>
           </div>
-          <div className="grid grid-cols-4 gap-2">
-            {BIKE_BRANDS.map(brand => {
-              const selected = addForm.manufacturer === brand.name;
-              return (
-                <button
-                  key={brand.name}
-                  type="button"
-                  onClick={() => setAddForm(f => ({ ...f, manufacturer: selected ? "" : brand.name }))}
-                  className="rounded-md px-2 py-2 text-xs font-bold font-heading uppercase tracking-wide transition-all border-2"
-                  style={selected
-                    ? { backgroundColor: brand.color, color: brand.text, borderColor: brand.color }
-                    : { backgroundColor: "transparent", color: "inherit", borderColor: brand.color + "60" }
-                  }
-                >
-                  {brand.name}
-                </button>
-              );
-            })}
-          </div>
+          <BikeBrandChips brands={BIKE_BRANDS} value={addForm.manufacturer} onChange={v => setAddForm(f => ({ ...f, manufacturer: v }))} />
           {addError && <p className="text-xs text-destructive">{addError}</p>}
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => { setShowAdd(false); setAddForm({ manufacturer: "", model: "", year: "" }); setAddError(null); }}>
@@ -2423,7 +2407,28 @@ export default function RiderHistory() {
   const allTracksBestMs = venueBestLapMs.size > 0 ? Math.min(...Array.from(venueBestLapMs.values())) : null;
 
   return (
-    <RiderLayout showBack backTo="/rider/portal" backLabel="My Profiles">
+    <RiderLayout
+      showBack
+      backTo="/rider/portal"
+      backLabel="My Profiles"
+      eyebrow="Rider profile"
+      title={rider ? `${rider.firstName} ${rider.lastName}` : undefined}
+      subtitle={rider ? (
+        <span className="block">
+          {(rider.bibNumber || rider.dateOfBirth) && (
+            <span className="flex items-center gap-x-5 gap-y-1 flex-wrap text-[15px]">
+              {rider.bibNumber && (
+                <span className="flex items-center gap-1.5"><Hash size={15} className="text-white/70" /> #{rider.bibNumber}</span>
+              )}
+              {rider.dateOfBirth && (
+                <span className="flex items-center gap-1.5"><Calendar size={15} className="text-white/70" /> Born {rider.dateOfBirth}</span>
+              )}
+            </span>
+          )}
+          <RfidEditor riderId={rider.id} currentRfid={rider.rfidNumber ?? null} />
+        </span>
+      ) : undefined}
+    >
       {isLoading ? (
         <div className="space-y-4">
           <div className="h-24 bg-muted animate-pulse rounded-xl" />
@@ -2440,57 +2445,32 @@ export default function RiderHistory() {
         </Card>
       ) : rider ? (
         <div className="space-y-6">
-          {/* Rider header */}
-          <div className="flex items-start gap-4">
-            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-              <User size={24} className="text-primary" />
-            </div>
-            <div className="flex-1">
-              <h1 className="font-heading font-bold text-3xl uppercase tracking-tight">
-                {rider.firstName} {rider.lastName}
-              </h1>
-              <div className="flex items-center gap-3 mt-1 flex-wrap">
-                {rider.bibNumber && (
-                  <span className="flex items-center gap-1 text-muted-foreground text-sm">
-                    <Hash size={13} /> #{rider.bibNumber}
-                  </span>
-                )}
-                {rider.dateOfBirth && (
-                  <span className="flex items-center gap-1 text-muted-foreground text-sm">
-                    <Calendar size={13} /> Born {rider.dateOfBirth}
-                  </span>
-                )}
-              </div>
-              <RfidEditor riderId={rider.id} currentRfid={rider.rfidNumber ?? null} />
-            </div>
-          </div>
-
           {/* Summary stats */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-3 sm:gap-4">
             <Card>
-              <CardContent className="p-4 text-center">
-                <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
-                  <Calendar size={11} /> Events Raced
+              <CardContent className="p-3 sm:p-5 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1.5">
+                  <Calendar size={14} className="hidden sm:block" /> Events
                 </div>
-                <div className="font-heading font-bold text-3xl">{eventsRaced}</div>
+                <div className="font-heading font-extrabold text-3xl sm:text-4xl text-[#242424]">{eventsRaced}</div>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-4 text-center">
-                <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
-                  <Trophy size={11} /> Best Finish
+              <CardContent className="p-3 sm:p-5 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1.5">
+                  <Trophy size={14} className="hidden sm:block" /> Best
                 </div>
-                <div className="font-heading font-bold text-3xl">
+                <div className="font-heading font-extrabold text-3xl sm:text-4xl text-[#242424]">
                   {bestPosition ? `P${bestPosition}` : "—"}
                 </div>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-4 text-center">
-                <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
-                  <Star size={11} /> Total Points
+              <CardContent className="p-3 sm:p-5 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1.5">
+                  <Star size={14} className="hidden sm:block" /> Points
                 </div>
-                <div className="font-heading font-bold text-3xl text-primary">{totalPoints}</div>
+                <div className="font-heading font-extrabold text-3xl sm:text-4xl text-primary">{totalPoints}</div>
               </CardContent>
             </Card>
           </div>
@@ -2499,8 +2479,8 @@ export default function RiderHistory() {
           {venueBestLapMs.size > 0 && (
             <Card>
               <CardContent className="px-4 py-3">
-                <div className="flex items-center gap-2 mb-3 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
-                  <MapPin size={11} /> Track Records
+                <div className="flex items-center gap-2 mb-3 text-[15px] font-heading font-extrabold uppercase tracking-[0.5px] text-[#242424]">
+                  <MapPin size={15} /> Track Records
                 </div>
                 <div className="space-y-1.5">
                   {Array.from(venueBestLapMs.entries())
@@ -2517,26 +2497,26 @@ export default function RiderHistory() {
           )}
 
           {/* Tab switcher */}
-          <div className="flex gap-1 border-b border-border overflow-x-auto">
+          <div className="flex gap-1 p-1 bg-[#F2F2F2] rounded-full overflow-x-auto hide-scrollbar">
             {/* Today tab */}
             {(() => {
               const hasLive = todayEvents.some(e => e.motos.some(m => m.status === "in_progress"));
               return (
                 <button
                   onClick={() => setActiveTab("today")}
-                  className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+                  className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
                     activeTab === "today"
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
+                      ? "bg-[#242424] text-white"
+                      : "text-[#555] hover:text-[#242424] hover:bg-white"
                   }`}
                 >
                   {hasLive ? <Radio size={14} className="animate-pulse text-green-500" /> : <Flag size={14} />}
                   Today
                   {todayEvents.length > 0 && (
-                    <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
+                    <span className={`text-[13px] rounded-full px-2 py-0.5 font-sans font-bold ${
                       activeTab === "today"
-                        ? hasLive ? "bg-green-500/10 text-green-600" : "bg-primary/10 text-primary"
-                        : "bg-muted text-muted-foreground"
+                        ? hasLive ? "bg-[#1A8409] text-white" : "bg-white/20 text-white"
+                        : "bg-white text-[#333]"
                     }`}>
                       {todayEvents.length}
                     </span>
@@ -2547,17 +2527,17 @@ export default function RiderHistory() {
             {/* Upcoming tab */}
             <button
               onClick={() => setActiveTab("upcoming")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
                 activeTab === "upcoming"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+                  ? "bg-[#242424] text-white"
+                  : "text-[#555] hover:text-[#242424] hover:bg-white"
               }`}
             >
               <Calendar size={14} />
               Upcoming
               {upcomingEvents.length > 0 && (
-                <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
-                  activeTab === "upcoming" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                <span className={`text-[13px] rounded-full px-2 py-0.5 font-sans font-bold ${
+                  activeTab === "upcoming" ? "bg-white/20 text-white" : "bg-white text-[#333]"
                 }`}>
                   {upcomingEvents.length}
                 </span>
@@ -2565,10 +2545,10 @@ export default function RiderHistory() {
             </button>
             <button
               onClick={() => setActiveTab("nearby")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
                 activeTab === "nearby"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+                  ? "bg-[#242424] text-white"
+                  : "text-[#555] hover:text-[#242424] hover:bg-white"
               }`}
             >
               <MapPin size={14} />
@@ -2576,17 +2556,17 @@ export default function RiderHistory() {
             </button>
             <button
               onClick={() => setActiveTab("races")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
                 activeTab === "races"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+                  ? "bg-[#242424] text-white"
+                  : "text-[#555] hover:text-[#242424] hover:bg-white"
               }`}
             >
               <Trophy size={14} />
               Race History
               {eventsRaced > 0 && (
-                <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
-                  activeTab === "races" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                <span className={`text-[13px] rounded-full px-2 py-0.5 font-sans font-bold ${
+                  activeTab === "races" ? "bg-white/20 text-white" : "bg-white text-[#333]"
                 }`}>
                   {eventsRaced}
                 </span>
@@ -2594,17 +2574,17 @@ export default function RiderHistory() {
             </button>
             <button
               onClick={() => setActiveTab("practice")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
                 activeTab === "practice"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+                  ? "bg-[#242424] text-white"
+                  : "text-[#555] hover:text-[#242424] hover:bg-white"
               }`}
             >
               <Timer size={14} />
               Practice
               {practiceSessions.length > 0 && (
-                <span className={`text-xs rounded-full px-1.5 py-0.5 font-mono ${
-                  activeTab === "practice" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                <span className={`text-[13px] rounded-full px-2 py-0.5 font-sans font-bold ${
+                  activeTab === "practice" ? "bg-white/20 text-white" : "bg-white text-[#333]"
                 }`}>
                   {practiceSessions.length}
                 </span>
@@ -2612,10 +2592,10 @@ export default function RiderHistory() {
             </button>
             <button
               onClick={() => setActiveTab("profile")}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-heading font-bold uppercase tracking-wider transition-colors border-b-2 -mb-px shrink-0 ${
+              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
                 activeTab === "profile"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+                  ? "bg-[#242424] text-white"
+                  : "text-[#555] hover:text-[#242424] hover:bg-white"
               }`}
             >
               <Settings size={14} />

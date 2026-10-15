@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckCircle, AlertCircle, Feather } from "lucide-react";
+import { TitleBand } from "@/components/TitleBand";
 
 export default function ResetRiderPassword() {
   const [location] = useLocation();
@@ -37,38 +38,33 @@ export default function ResetRiderPassword() {
 
   if (!token) {
     return (
-      <div className="max-w-md mx-auto px-6 py-20 text-center">
-        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Invalid Link</h1>
-        <p className="text-gray-600">This password reset link is missing or malformed. Please request a new one from the app.</p>
+      <div className="max-w-md mx-auto px-4 py-20 text-center">
+        <AlertCircle className="w-12 h-12 text-primary mx-auto mb-4" />
+        <h1 className="text-[28px] font-heading font-extrabold uppercase text-[#242424] mb-2">Invalid Link</h1>
+        <p className="text-[#333] leading-[1.7]">This password reset link is missing or malformed. Please request a new one from the app.</p>
       </div>
     );
   }
 
   if (status === "success") {
     return (
-      <div className="max-w-md mx-auto px-6 py-20 text-center">
-        <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Password Updated</h1>
-        <p className="text-gray-600">Your password has been reset. Open the RM Tracker app and sign in with your new password.</p>
+      <div className="max-w-md mx-auto px-4 py-20 text-center">
+        <CheckCircle className="w-12 h-12 text-[#1A8409] mx-auto mb-4" />
+        <h1 className="text-[28px] font-heading font-extrabold uppercase text-[#242424] mb-2">Password Updated</h1>
+        <p className="text-[#333] leading-[1.7]">Your password has been reset. Open the RM Tracker app and sign in with your new password.</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-md mx-auto px-6 py-12">
-      <div className="flex items-center gap-3 mb-8">
-        <div className="w-10 h-10 rounded-xl bg-red-600 flex items-center justify-center">
-          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-          </svg>
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Reset Password</h1>
-          <p className="text-sm text-gray-500">RM Tracker</p>
-        </div>
-      </div>
-
+    <div>
+      <TitleBand
+        containerClassName="max-w-5xl"
+        eyebrow="Rider account"
+        title="Reset Password"
+        subtitle="Choose a new password for your RM Tracker rider account."
+      />
+      <div className="brand-form max-w-md mx-auto px-4 py-10">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="password">New password</Label>
@@ -80,16 +76,17 @@ export default function ResetRiderPassword() {
         </div>
 
         {status === "error" && (
-          <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-3">
+          <div className="flex items-start gap-2 text-sm text-primary bg-[#FEDEDE] rounded-[6px] p-3">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
-        <Button type="submit" className="w-full bg-red-600 hover:bg-red-700" disabled={status === "loading"}>
+        <Button type="submit" className="w-full min-h-[52px] text-base bg-[#242424] border-[#242424] text-white hover:bg-black" disabled={status === "loading"}>
           {status === "loading" ? "Updating…" : "Set New Password"}
         </Button>
       </form>
+      </div>
     </div>
   );
 }

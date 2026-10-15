@@ -89,10 +89,11 @@ export function StateSelect({
       <PopoverTrigger asChild>
         <Button
           type="button"
-          variant="outline"
+          variant="field"
+          size="field"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between font-normal h-9 px-3 text-sm shadow-sm"
+          className="w-full"
         >
           {selected ? (
             <span>
