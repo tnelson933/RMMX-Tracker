@@ -138,6 +138,23 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
   // progress. An event can remain in race_day status while organizers run a
   // practice, so event status alone must not divert the crossing away from the
   // active practice.
+  // A reader token only authorizes its own club. An eventId supplied by the
+  // caller must belong to that club, or a token from one club could route
+  // crossings into another club's event. Unknown event IDs keep their existing
+  // handling (no assignment → 422), so connectors still fall back as before.
+  // Deliberately not a 422: RM Connect retries on the facility URL when a 422
+  // message mentions "assignment" or "no active race_day event".
+  const requestedEventId = Number(body.eventId);
+  if (body.eventId != null && Number.isInteger(requestedEventId) && requestedEventId > 0) {
+    const [requestedEvent] = await db
+      .select({ clubId: eventsTable.clubId })
+      .from(eventsTable)
+      .where(eq(eventsTable.id, requestedEventId));
+    if (requestedEvent && requestedEvent.clubId !== reader.clubId) {
+      return res.status(403).json({ ok: false, message: "Event does not belong to this reader's club" });
+    }
+  }
+
   let eventId = body.eventId ?? null;
   if (!eventId) {
     const [activeMoto] = await db
