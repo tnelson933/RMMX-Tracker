@@ -10,14 +10,14 @@ title = "rider app icon"
 id = "UIMzgGNsTMdnp9SQCOatM"
 uri = "file://generated-artifacts/claude-handoff/RM-Tracker-Claude-Handoff.zip"
 type = "unspecified"
-title = "RM Tracker — Complete Claude Handoff"
-description = "Source and context package: 938 files covering web, API, mobile, desktop, offline server, RM Connect, database models/SQL, release workflows, 116 historical plans, setup instructions and verification results. No live database records or secret values."
+title = "RM Tracker — Reconciled Claude Handoff"
+description = "Updated ZIP matching local claude-handoff commit 7596fc9f. Includes application source, context, reconciliation notes, schema and verification results. GitHub upload remains blocked by authentication; main is unchanged."
 logical_id = "42018140-336d-4b10-b070-f963b9632e23"
-content_hash = "sha256:7443afc8ed8d9ee2073424adf98b60b101a4dd242f90227273edeecce2cb78e7"
-size = 8408052
-mtime_ms = 1792079240965
-storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:76412ce6-2ad8-416e-9180-da1e7426c9b9/42018140-336d-4b10-b070-f963b9632e23/4cdd314b-0fde-4cc5-96ec-e4e19f66c821"
-storage_version_token = "1792079272096741"
+content_hash = "sha256:1daf96712986fd6af269c1c0c96b973b1186034fa19ca9d1c1a0143b590154ea"
+size = 8869305
+mtime_ms = 1792084735381
+storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:76412ce6-2ad8-416e-9180-da1e7426c9b9/42018140-336d-4b10-b070-f963b9632e23/1162d7fb-709f-44bd-9d96-3a0f880da0b2"
+storage_version_token = "1792084827189230"
 content_type = "application/octet-stream"
 
 [[outputs]]
