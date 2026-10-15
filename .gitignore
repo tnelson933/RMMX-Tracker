@@ -57,3 +57,4 @@ Thumbs.db
 !.env.example
 .uploads/
 .local-pg/
+.claude/settings.local.json
