@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Downloadable handoff packages and generated export inventories
+/generated-artifacts/
