@@ -825,6 +825,34 @@ paths:
       responses:
         "204":
           description: Reader deleted
+  /readers/{readerId}/rotate-token:
+    post:
+      operationId: rotateReaderToken
+      tags: [readers]
+      summary: Issue a new token for a reader and revoke the old one
+      description: >
+        The old token stops working immediately, on the per-reader URLs, as a
+        Bearer credential, and for live RM Connect connections. Hardware and
+        RM Connect must be given the new URL or token.
+      parameters:
+        - name: readerId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The reader with its new token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reader"
+        "401":
+          description: Not authenticated
+        "403":
+          description: Reader belongs to another club
+        "404":
+          description: Reader not found
 
   # RIDERS
   /riders:
@@ -3129,6 +3157,72 @@ paths:
                   message:
                     type: string
                 required: [ok]
+  /timing/readers/{token}/active/crossing:
+    post:
+      operationId: readerActiveCrossing
+      tags: [readers]
+      summary: Per-reader facility URL; routes to the club's in-progress moto or practice
+      description: >
+        Same payload formats and routing as /timing/active/crossing (generic,
+        active transponder, and the RFID reader event formats), but the club
+        comes from the reader token. Use this URL for hardware that cannot send
+        an Authorization header.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {}
+      responses:
+        "200":
+          description: Crossing(s) processed
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          description: Unknown reader token
+        "409":
+          description: No moto or practice session is accepting crossings
+  /timing/readers/{token}/ping:
+    post:
+      operationId: readerPing
+      tags: [readers]
+      summary: Connectivity test for a per-reader URL (records nothing)
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {}
+      responses:
+        "200":
+          description: Payload received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  received:
+                    type: string
+                  clubId:
+                    type: integer
+                required: [ok]
+        "404":
+          description: Unknown reader token
 
 components:
   schemas:

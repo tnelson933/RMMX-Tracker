@@ -851,6 +851,27 @@ export const DeleteReaderParams = zod.object({
 
 
 /**
+ * The old token stops working immediately, on the per-reader URLs, as a Bearer credential, and for live RM Connect connections. Hardware and RM Connect must be given the new URL or token.
+
+ * @summary Issue a new token for a reader and revoke the old one
+ */
+export const RotateReaderTokenParams = zod.object({
+  "readerId": zod.coerce.number()
+})
+
+export const RotateReaderTokenResponse = zod.object({
+  "id": zod.number(),
+  "clubId": zod.number(),
+  "name": zod.string(),
+  "type": zod.enum(['rfid', 'active_transponder']),
+  "token": zod.string().describe('UUID used as the URL key for this reader\'s ingest endpoint'),
+  "hardwareAddress": zod.string().nullish().describe('Last 6 of MAC address for Impinj R700, or the F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.'),
+  "lastSeenAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary List riders
  */
 export const ListRidersQueryParams = zod.object({
@@ -3125,6 +3146,36 @@ export const ReaderCrossingBody = zod.object({
 export const ReaderCrossingResponse = zod.object({
   "ok": zod.boolean(),
   "message": zod.string().optional()
+})
+
+
+/**
+ * Same payload formats and routing as /timing/active/crossing (generic, active transponder, and the RFID reader event formats), but the club comes from the reader token. Use this URL for hardware that cannot send an Authorization header.
+
+ * @summary Per-reader facility URL; routes to the club's in-progress moto or practice
+ */
+export const ReaderActiveCrossingParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const ReaderActiveCrossingBody = zod.unknown()
+
+export const ReaderActiveCrossingResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
+ * @summary Connectivity test for a per-reader URL (records nothing)
+ */
+export const ReaderPingParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const ReaderPingBody = zod.unknown()
+
+export const ReaderPingResponse = zod.object({
+  "ok": zod.boolean(),
+  "received": zod.string().optional(),
+  "clubId": zod.number().optional()
 })
 
 
