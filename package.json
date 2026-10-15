@@ -11,7 +11,12 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "validate:registration-schema": "pnpm --filter @workspace/scripts run validate:registration-schema"
+    "validate:registration-schema": "pnpm --filter @workspace/scripts run validate:registration-schema",
+    "dev:api": "node scripts/dev-local.mjs api",
+    "dev:web": "node scripts/dev-local.mjs web",
+    "db:init": "node scripts/local-pg.mjs init",
+    "db:start": "node scripts/local-pg.mjs start",
+    "db:stop": "node scripts/local-pg.mjs stop"
   },
   "private": true,
   "devDependencies": {

@@ -33,6 +33,10 @@ export default defineConfig(async ({ command }) => {
 
   const basePath = rawBasePath ?? "/";
 
+  // Off Replit there is no platform router joining the web app and API on one
+  // origin, so local dev opts into a same-origin /api proxy (incl. WebSockets).
+  const devApiProxy = process.env.DEV_API_PROXY;
+
   return {
   base: basePath,
   plugins: [
@@ -111,6 +115,13 @@ export default defineConfig(async ({ command }) => {
     fs: {
       strict: false,
     },
+    ...(devApiProxy
+      ? {
+          proxy: {
+            "/api": { target: devApiProxy, changeOrigin: false, ws: true },
+          },
+        }
+      : {}),
   },
   preview: {
     ...(port !== undefined ? { port } : {}),

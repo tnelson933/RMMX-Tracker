@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/dev-local.mjs", "web"],
+      "port": 19869
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/dev-local.mjs", "api"],
+      "port": 8080
+    }
+  ]
+}
