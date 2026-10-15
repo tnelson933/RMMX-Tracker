@@ -50,3 +50,10 @@ Thumbs.db
 
 # Downloadable handoff packages and generated export inventories
 /generated-artifacts/
+
+# Local development (off Replit)
+.env
+.env.*
+!.env.example
+.uploads/
+.local-pg/

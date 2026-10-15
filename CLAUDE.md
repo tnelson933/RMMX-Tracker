@@ -52,3 +52,34 @@ and AI credentials before calling those integrations portable.
 
 Do not assume `replit.md` or historical plans are current. The code and current
 owner instructions win. See the handoff's known discrepancies.
+
+## Local development on this machine (Windows, no Replit)
+
+Production still runs on Replit (`rmmx-tracker.replit.app`); this checkout is for
+development only. All commands run from the repo root (`RM-Tracker/`).
+
+- `pnpm run db:start` / `db:stop`: portable PostgreSQL 17 (binaries in
+  `%LOCALAPPDATA%\pgsql17`, data in gitignored `.local-pg/`, localhost only, trust auth).
+  `db:init` already ran and created `rmtracker_dev`. Schema is applied with
+  `pnpm --filter @workspace/db run push` (needs `DATABASE_URL` exported in the shell).
+- `pnpm run dev:api`: builds and runs the API on 8080. `pnpm run dev:web`: Vite on 19869,
+  proxying `/api` (including WebSockets) to the API through `DEV_API_PROXY`. Open
+  http://127.0.0.1:19869. Both are launched by `scripts/dev-local.mjs`, which loads the
+  root `.env` (gitignored; template `.env.example`). AI env vars are placeholders, so
+  Rocky/AI/TTS routes fail locally until real keys are configured.
+- `node scripts/dev-bootstrap-admin.mjs [email] [club] [state]`: creates the first
+  super_admin and club in the local DB and prints a one-time `/setup-account` link.
+  It refuses to run against a non-localhost database.
+- Windows-only adaptations: `pnpm-workspace.yaml` stops excluding the win32-x64 esbuild,
+  rollup, lightningcss and tailwind-oxide binaries (Linux deploys are unaffected), and
+  `lib/db/drizzle.config.ts` uses forward slashes in the schema path.
+- `better-sqlite3` is **not built**, because no Node 24 prebuild exists for v11 and no
+  MSVC is installed. local-server, desktop and SQLite scripts won't run until Visual
+  Studio C++ Build Tools are installed and `pnpm rebuild better-sqlite3` succeeds.
+  Install with `pnpm install --ignore-scripts`, then `pnpm rebuild` the other native deps.
+- Unit tests (from the `scripts/` directory, where `tsx` is installed):
+  `./node_modules/.bin/tsx --test ../artifacts/api-server/src/lib/*.test.ts ../artifacts/race-platform/src/lib/*.test.ts`.
+  59/61 pass on Windows. The two `videoRelay` timing tests fail, and the run doesn't exit
+  on its own (open handles). Connector tests (`node test.mjs`) pass.
+- The package `dev`/`start`/`test:browser` scripts are POSIX/Replit-specific. Use the
+  root `dev:*` scripts here and leave the originals as they are for Replit.
