@@ -17,3 +17,4 @@
 - [Fastest-lap eligibility](fastest-lap-eligibility.md) — only motocross/supercross excludes partial lap 1; enduro and cross-country count it.
 - [Shared announcer sequencing](shared-announcer-sequencing.md) — announcement cursors must stay durable and monotonic across API and moto restarts.
 - [Dashboard product scope](dashboard-product-scope.md) — account overview must not use event check-in totals as an account-wide summary metric.
+- [GitHub authentication diagnosis](github-auth-diagnosis.md) — a healthy reconnected integration and successful public reads do not establish Git push access.
