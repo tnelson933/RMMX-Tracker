@@ -13,6 +13,7 @@ import {
 import { eq, and, desc, asc, ilike, or } from "drizzle-orm";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
+import { authorizeIngest } from "../lib/ingestAuth";
 import {
   canonicalizeCrossingTimestamp,
   isTrustedDirectActiveTimingSource,
@@ -278,6 +279,9 @@ router.post("/practice/active/crossing", async (req, res) => {
     deviceTimezone: body?.deviceTimezone,
     timeSource: body?.timeSource ?? body?.source,
   }, originalReceipt !== null && isTrustedDirectActiveTimingSource(body?.source, body?.timeSource));
+
+  // Checked after the receipt time is captured so authorization never shifts it.
+  if (!(await authorizeIngest(req, res, clubId, "practice_active_crossing"))) return;
 
   // Find the active session for this club (most recently started)
   const [session] = await db.select().from(practiceSessionsTable)

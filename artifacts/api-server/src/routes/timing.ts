@@ -14,7 +14,8 @@ import {
 } from "@workspace/db";
 import { fetchEnduoPenaltyMap } from "./enduro-scoring";
 import { eq, and, asc, desc, isNotNull, isNull, or, gt, lt, sql, inArray, ilike } from "drizzle-orm";
-import type { Response } from "express";
+import type { Request, Response } from "express";
+import { authorizeIngest, clubIdForEvent, clubIdForMoto } from "../lib/ingestAuth";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
 import { recordTagSeen } from "../lib/recentTags";
@@ -1123,14 +1124,8 @@ router.post("/timing/crossing", async (req, res) => {
 
   const antenna = antennaId !== undefined ? Number(antennaId) : undefined;
 
-  // Staff: verify the moto belongs to their club before accepting the crossing
-  const _staffCId = getStaffClubId(res);
-  if (_staffCId !== null) {
-    const [_motoRow] = await db.select({ eventId: motosTable.eventId }).from(motosTable).where(eq(motosTable.id, Number(motoId)));
-    if (!_motoRow) return res.status(404).json({ error: "Moto not found" });
-    const [_evtRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, _motoRow.eventId));
-    if (!_evtRow || _evtRow.clubId !== _staffCId) return res.status(403).json({ error: "Forbidden" });
-  }
+  // Reader token or session must belong to the moto's club (see lib/ingestAuth).
+  if (!(await authorizeIngest(req, res, await clubIdForMoto(motoId), "crossing"))) return;
 
   try {
     const result = await processCrossing({ rfidNumber, motoId: Number(motoId), crossingTime: time, readerId, antennaId: antenna });
@@ -1215,13 +1210,14 @@ router.post("/timing/active/crossing", async (req, res) => {
   if (!clubId || isNaN(clubId)) {
     return res.status(400).json({ error: "clubId query param is required" });
   }
+  if (!(await authorizeIngest(req, res, clubId, "active_crossing"))) return;
+  return handleFacilityCrossing(req, res, clubId);
+});
 
-  // Staff: verify the target club matches their own club
-  const _staffCId = getStaffClubId(res);
-  if (_staffCId !== null && clubId !== _staffCId) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
+// Shared by /timing/active/crossing?clubId= and the per-reader
+// /timing/readers/:token/active/crossing (club taken from the token).
+// Callers must authorize the request for clubId first.
+export async function handleFacilityCrossing(req: Request, res: Response, clubId: number) {
   const body = req.body as any;
 
   // ── Impinj R700 native IoT Connector format ─────────────────────────────────
@@ -1391,7 +1387,7 @@ router.post("/timing/active/crossing", async (req, res) => {
   } catch (err: any) {
     return res.status(409).json({ error: err.message });
   }
-});
+}
 
 // POST /timing/ping?clubId=N — connectivity test, no moto or session required
 // Accepts any tag format; just confirms the server received it.
@@ -1401,7 +1397,12 @@ router.post("/timing/ping", async (req, res) => {
   if (!clubId || isNaN(clubId)) {
     return res.status(400).json({ error: "clubId query param is required" });
   }
+  if (!(await authorizeIngest(req, res, clubId, "ping"))) return;
+  return handlePing(req, res, clubId);
+});
 
+// Shared by /timing/ping?clubId= and /timing/readers/:token/ping.
+export function handlePing(req: Request, res: Response, clubId: number) {
   const body = req.body as any;
 
   // Impinj R700 firmware 10.x — top-level array with base64url epc
@@ -1439,7 +1440,7 @@ router.post("/timing/ping", async (req, res) => {
   }
 
   return res.json({ ok: true, received: String(rfidNumber), clubId });
-});
+}
 
 // POST /timing/impinj-crossing?eventId=N — Impinj R700 native IoT Connector format
 // Body: { events: [{ type: "tagInventoryEvent", tagInventoryEvent: { epcHex, antennaPort, firstSeenTime } }] }
@@ -1449,11 +1450,7 @@ router.post("/timing/impinj-crossing", async (req, res) => {
     return res.status(400).json({ error: "eventId query param is required" });
   }
 
-  const _staffCId = getStaffClubId(res);
-  if (_staffCId !== null) {
-    const [_evtRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-    if (!_evtRow || _evtRow.clubId !== _staffCId) return res.status(403).json({ error: "Forbidden" });
-  }
+  if (!(await authorizeIngest(req, res, await clubIdForEvent(eventId), "impinj_crossing"))) return;
 
   const body = req.body as { events?: unknown[] };
   const events = Array.isArray(body.events) ? body.events : [];
@@ -1509,11 +1506,7 @@ router.post("/timing/zebra-crossing", async (req, res) => {
     return res.status(400).json({ error: "eventId query param is required" });
   }
 
-  const _staffCId = getStaffClubId(res);
-  if (_staffCId !== null) {
-    const [_evtRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-    if (!_evtRow || _evtRow.clubId !== _staffCId) return res.status(403).json({ error: "Forbidden" });
-  }
+  if (!(await authorizeIngest(req, res, await clubIdForEvent(eventId), "zebra_crossing"))) return;
 
   const body = req.body as any;
   const tags: any[] = Array.isArray(body?.data?.tags)
@@ -1573,11 +1566,7 @@ router.post("/timing/mylaps-crossing", async (req, res) => {
     return res.status(400).json({ error: "eventId query param is required" });
   }
 
-  const _staffCId = getStaffClubId(res);
-  if (_staffCId !== null) {
-    const [_evtRow] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-    if (!_evtRow || _evtRow.clubId !== _staffCId) return res.status(403).json({ error: "Forbidden" });
-  }
+  if (!(await authorizeIngest(req, res, await clubIdForEvent(eventId), "active_legacy_crossing"))) return;
 
   const body = req.body as any;
   // Accept common active-transponder field names.
