@@ -6,12 +6,14 @@ import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
 import { loadPdfJs, PDF_JS_WORKER_URL } from "@/lib/pdfJs";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { TitleBand } from "@/components/TitleBand";
+import { BikeBrandChips } from "@/components/BikeBrandChips";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, ChevronLeft, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck, Users, ZoomIn, HelpCircle } from "lucide-react";
+import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck, Users, ZoomIn, HelpCircle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
@@ -115,6 +117,18 @@ function PdfScrollViewer({ url, onScrolledToBottom }: { url: string; onScrolledT
   );
 }
 
+
+// Brand section heading: charcoal Barlow 800 with the TitleBand's skewed red slash.
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <CardHeader className="px-6 py-4 border-b-2 border-[#ECECEC]">
+      <h3 className="flex items-center gap-3 m-0 font-heading font-extrabold uppercase text-lg leading-none tracking-[0.5px] text-[#242424]">
+        <span aria-hidden className="w-[4px] h-5 bg-primary -skew-x-[18deg] shrink-0" />
+        {children}
+      </h3>
+    </CardHeader>
+  );
+}
 
 const BIKE_BRANDS = [
   { name: "KTM",       color: "#FF6600", text: "#ffffff" },
@@ -780,7 +794,7 @@ export default function Register() {
 
   if (loading || verifying) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex items-center justify-center px-4 py-24">
         <div className="font-heading text-xl uppercase tracking-widest text-muted-foreground animate-pulse">
           {verifying ? "Verifying payment..." : "Loading Event..."}
         </div>
@@ -790,7 +804,7 @@ export default function Register() {
 
   if (notFound || !event) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex items-center justify-center px-4 py-24">
         <div className="text-center space-y-4">
           <AlertCircle size={48} className="text-muted-foreground mx-auto" />
           <h2 className="text-2xl font-heading font-bold uppercase">Event Not Found</h2>
@@ -803,7 +817,7 @@ export default function Register() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="flex items-center justify-center px-4 py-16">
         <div className="max-w-md w-full text-center space-y-6">
           <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto">
             <CheckCircle2 size={40} className="text-green-600" />
@@ -851,7 +865,7 @@ export default function Register() {
   // Payment pending screen — shown after form submit when payment is required
   if (pendingPayment && pendingPayment.checkoutUrl) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="flex items-center justify-center px-4 py-16">
         <div className="max-w-md w-full space-y-6">
           <div className="text-center space-y-3">
             <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
@@ -950,76 +964,69 @@ export default function Register() {
   const isOpen = event.status === "registration_open" && !notYetOpen && !pastClose;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Event header */}
-      <div className="bg-sidebar text-sidebar-foreground pb-10 pt-8 px-4">
-        <div className="max-w-3xl mx-auto">
-          <Link href="/" className="inline-flex items-center gap-1 text-white/60 hover:text-white text-sm mb-8 transition-colors">
-            <ChevronLeft size={16} /> Back to Home
-          </Link>
-
-          {/* Logo / event image banner */}
-          {(event.clubLogoUrl || (event as any).imageUrl) && (
-            <div className="flex items-center justify-center gap-6 mb-6 flex-wrap">
-              {event.clubLogoUrl && (
-                <img
-                  src={event.clubLogoUrl}
-                  alt={event.clubName || "Club logo"}
-                  className="h-56 w-auto max-w-sm object-contain drop-shadow-lg"
-                />
-              )}
-              {(event as any).imageUrl && (
-                <button
-                  type="button"
-                  onClick={() => setImageLightboxOpen(true)}
-                  className="relative group cursor-zoom-in focus:outline-none"
-                  aria-label="Enlarge event image"
-                >
-                  <img
-                    src={(event as any).imageUrl}
-                    alt={event.name}
-                    className="h-56 w-auto max-w-sm object-contain drop-shadow-lg rounded transition-opacity group-hover:opacity-80"
-                  />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="bg-black/70 text-white text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
-                      <ZoomIn size={13} /> Click to enlarge
-                    </div>
-                  </div>
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <p className="text-white/50 text-sm font-bold uppercase tracking-widest mb-2">{event.clubName}</p>
-              <h1 className="text-4xl md:text-5xl font-heading font-bold uppercase tracking-tight leading-none">{event.name}</h1>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-4 text-white/70 text-sm">
-                <span className="flex items-center gap-1.5"><Calendar size={14} /> {formatEventDatesFull(event.date, event.endDate)}</span>
-                {event.location && <span className="flex items-center gap-1.5"><MapPin size={14} /> {event.location}, {event.state}</span>}
-                {event.trackName && <span className="flex items-center gap-1.5"><Flag size={14} /> {event.trackName}</span>}
-              </div>
-            </div>
-            {effectiveEntryFee != null && (
-              <div className="bg-primary rounded-md px-5 py-3 text-center shrink-0">
-                {earlyBirdActive && (
-                  <div className="text-yellow-300 text-[10px] font-bold uppercase tracking-widest mb-0.5">🐦 Early Bird</div>
-                )}
-                <div className="text-white/70 text-xs font-bold uppercase tracking-widest">Entry Fee</div>
-                <div className="text-white text-3xl font-heading font-bold">${effectiveEntryFee}</div>
-                {earlyBirdActive && event?.entryFee && (
-                  <div className="text-white/60 text-[10px] mt-0.5 line-through">${event.entryFee} after {event.earlyBirdEndsAt}</div>
-                )}
-                {event.raceClasses.length > 1 && (
-                  <div className="text-white/60 text-xs mt-0.5">per class</div>
-                )}
-              </div>
+    <div>
+      <TitleBand
+        containerClassName="max-w-3xl"
+        eyebrow={event.clubName}
+        title={event.name}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[15px]">
+            <span className="flex items-center gap-1.5"><Calendar size={16} className="text-white/70" /> {formatEventDatesFull(event.date, event.endDate)}</span>
+            {event.location && <span className="flex items-center gap-1.5"><MapPin size={16} className="text-white/70" /> {event.location}, {event.state}</span>}
+            {event.trackName && <span className="flex items-center gap-1.5"><Flag size={16} className="text-white/70" /> {event.trackName}</span>}
+          </span>
+        }
+      >
+        {effectiveEntryFee != null && (
+          <div className="bg-primary rounded-[14px] px-6 py-4 text-center md:min-w-[150px]">
+            {earlyBirdActive && (
+              <div className="text-white text-[13px] font-bold uppercase tracking-[2px] mb-1">Early Bird</div>
+            )}
+            <div className="text-white/80 text-[13px] font-bold uppercase tracking-[2px]">Entry Fee</div>
+            <div className="text-white text-4xl font-heading font-extrabold leading-tight">${effectiveEntryFee}</div>
+            {earlyBirdActive && event?.entryFee && (
+              <div className="text-white/80 text-[13px] line-through">${event.entryFee} after {event.earlyBirdEndsAt}</div>
+            )}
+            {event.raceClasses.length > 1 && (
+              <div className="text-white/80 text-[13px]">per class</div>
             )}
           </div>
-        </div>
-      </div>
+        )}
+      </TitleBand>
 
-      <div className="max-w-2xl mx-auto px-4 py-10">
+      <div className="brand-form max-w-2xl mx-auto px-4 py-10">
+        {/* Club logo / event image */}
+        {(event.clubLogoUrl || (event as any).imageUrl) && (
+          <div className="flex items-center justify-center gap-6 mb-8 flex-wrap">
+            {event.clubLogoUrl && (
+              <img
+                src={event.clubLogoUrl}
+                alt={event.clubName || "Club logo"}
+                className="h-40 w-auto max-w-xs object-contain"
+              />
+            )}
+            {(event as any).imageUrl && (
+              <button
+                type="button"
+                onClick={() => setImageLightboxOpen(true)}
+                className="relative group cursor-zoom-in focus:outline-none"
+                aria-label="Enlarge event image"
+              >
+                <img
+                  src={(event as any).imageUrl}
+                  alt={event.name}
+                  className="h-40 w-auto max-w-xs object-contain rounded-[14px] transition-opacity group-hover:opacity-80"
+                />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="bg-black/70 text-white text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
+                    <ZoomIn size={13} /> Click to enlarge
+                  </div>
+                </div>
+              </button>
+            )}
+          </div>
+        )}
+
         {!isOpen ? (
           <Card>
             <CardContent className="p-10 text-center space-y-4">
@@ -1047,8 +1054,8 @@ export default function Register() {
         ) : (
           <div className="space-y-6">
             <div>
-              <h2 className="text-2xl font-heading font-bold uppercase">Rider Registration</h2>
-              <p className="text-muted-foreground mt-1">
+              <h2 className="text-[28px] font-heading font-extrabold uppercase text-[#242424] leading-none">Rider Registration</h2>
+              <p className="text-[#333] mt-3 leading-[1.7]">
                 Fill out the form below to secure your spot.
                 {event.paymentEnabled && effectiveEntryFee && (
                   <> You'll be redirected to Stripe to pay the <strong>${effectiveEntryFee} entry fee</strong> after submitting.</>
@@ -1074,9 +1081,7 @@ export default function Register() {
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 {/* Email — first question, drives rider lookup */}
                 <Card>
-                  <CardHeader className="pb-2 border-b">
-                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Your Email</h3>
-                  </CardHeader>
+                  <SectionHeader>Your Email</SectionHeader>
                   <CardContent className="p-6 space-y-3">
                     <FormField control={form.control} name="email" render={({ field }) => (
                       <FormItem>
@@ -1149,9 +1154,7 @@ export default function Register() {
                 </Card>
 
                 <Card>
-                  <CardHeader className="pb-2 border-b">
-                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Rider Info</h3>
-                  </CardHeader>
+                  <SectionHeader>Rider Info</SectionHeader>
                   <CardContent className="p-6 space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <FormField control={form.control} name="firstName" render={({ field }) => (
@@ -1207,9 +1210,9 @@ export default function Register() {
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                       <FormField control={form.control} name="city" render={({ field }) => (
-                        <FormItem className="col-span-1">
+                        <FormItem className="col-span-2 sm:col-span-1">
                           <FormLabel>City</FormLabel>
                           <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
                           <FormMessage />
@@ -1273,9 +1276,7 @@ export default function Register() {
                 </Card>
 
                 <Card>
-                  <CardHeader className="pb-2 border-b">
-                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Race Class</h3>
-                  </CardHeader>
+                  <SectionHeader>Race Class</SectionHeader>
                   <CardContent className="p-6">
                     <FormField
                       control={form.control}
@@ -1287,13 +1288,13 @@ export default function Register() {
                             {" "}<span className="text-destructive">*</span>
                           </FormLabel>
                           {event.raceClasses.length > 1 && (
-                            <p className="text-xs text-muted-foreground mt-0.5 mb-2">You can enter multiple classes — each costs one entry fee.</p>
+                            <p className="text-[13px] text-muted-foreground mt-0.5 mb-2">You can enter multiple classes — each costs one entry fee.</p>
                           )}
                           <div className="space-y-2 mt-1">
                             {event.raceClasses.map(cls => {
                               const alreadyIn = alreadyRegisteredClasses.has(cls);
                               return (
-                              <div key={cls} className={`flex items-center gap-3 rounded-lg border px-4 py-3.5 ${alreadyIn ? "bg-muted/60 opacity-60 cursor-not-allowed" : "bg-background"}`}>
+                              <div key={cls} className={`flex items-center gap-3 rounded-[14px] border-2 px-4 min-h-[56px] transition-colors ${alreadyIn ? "bg-muted/60 border-[#ECECEC] opacity-60 cursor-not-allowed" : (field.value ?? []).includes(cls) ? "bg-background border-primary" : "bg-background border-[#ECECEC] hover:border-[#8C8C8C]"}`}>
                                 <FormControl>
                                   <Checkbox
                                     id={`class-${cls}`}
@@ -1311,7 +1312,7 @@ export default function Register() {
                                     className="mt-0.5"
                                   />
                                 </FormControl>
-                                <label htmlFor={`class-${cls}`} className={`text-sm font-semibold flex items-center justify-between flex-1 ${alreadyIn ? "cursor-not-allowed" : "cursor-pointer"}`}>
+                                <label htmlFor={`class-${cls}`} className={`py-3.5 font-bold text-[#242424] flex items-center justify-between flex-1 ${alreadyIn ? "cursor-not-allowed" : "cursor-pointer"}`}>
                                   <span className="flex items-center gap-1.5">
                                     {cls}
                                     {event.classDetails?.[cls] && (
@@ -1336,7 +1337,7 @@ export default function Register() {
                                       {earlyBirdActive && event.entryFee && (
                                         <span className="text-muted-foreground line-through text-sm">${event.entryFee.toFixed(2)}</span>
                                       )}
-                                      <span className="text-primary font-bold">${effectiveEntryFee.toFixed(2)}</span>
+                                      <span className="text-[#242424] font-bold">${effectiveEntryFee.toFixed(2)}</span>
                                     </span>
                                   ) : null}
                                 </label>
@@ -1352,10 +1353,8 @@ export default function Register() {
                 </Card>
 
                 {event.timingTechnology === "active_transponder" && (
-                  <Card className="border-primary/30 bg-primary/[0.03]">
-                    <CardHeader className="pb-2 border-b">
-                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Active Timing Transponder</h3>
-                    </CardHeader>
+                  <Card>
+                    <SectionHeader>Active Timing Transponder</SectionHeader>
                     <CardContent className="p-6 space-y-4">
                       {/* Own transponder number */}
                       <FormField
@@ -1429,10 +1428,8 @@ export default function Register() {
 
                 {/* RFID Sticker */}
                 {event.timingTechnology === "rfid" && event.rfidStickerFee != null && (
-                  <Card className="border-primary/30 bg-primary/[0.03]">
-                    <CardHeader className="pb-2 border-b">
-                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">RFID Sticker</h3>
-                    </CardHeader>
+                  <Card>
+                    <SectionHeader>RFID Sticker</SectionHeader>
                     <CardContent className="p-6">
                       <FormField
                         control={form.control}
@@ -1467,9 +1464,7 @@ export default function Register() {
                 {/* Purchase Options */}
                 {(event.purchaseOptions ?? []).length > 0 && (
                   <Card>
-                    <CardHeader className="pb-2 border-b">
-                      <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Add-ons</h3>
-                    </CardHeader>
+                    <SectionHeader>Add-ons</SectionHeader>
                     <CardContent className="p-6 space-y-3">
                       {(event.purchaseOptions ?? []).map(opt => (
                         <FormField
@@ -1509,9 +1504,7 @@ export default function Register() {
                 )}
 
                 <Card>
-                  <CardHeader className="pb-2 border-b">
-                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Bike</h3>
-                  </CardHeader>
+                  <SectionHeader>Bike</SectionHeader>
                   <CardContent className="p-6">
                     <FormField
                       control={form.control}
@@ -1519,31 +1512,15 @@ export default function Register() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Manufacturer</FormLabel>
-                          <div className="grid grid-cols-4 gap-2 mt-1">
-                            {BIKE_BRANDS.map(brand => {
-                              const selected = field.value === brand.name;
-                              return (
-                                <button
-                                  key={brand.name}
-                                  type="button"
-                                  onClick={() => field.onChange(selected ? "" : brand.name)}
-                                  className="rounded-md px-2 py-3 text-sm font-bold font-heading uppercase tracking-wide transition-all border-2"
-                                  style={selected
-                                    ? { backgroundColor: brand.color, color: brand.text, borderColor: brand.color }
-                                    : { backgroundColor: "transparent", color: "inherit", borderColor: brand.color + "60" }
-                                  }
-                                >
-                                  {brand.name}
-                                </button>
-                              );
-                            })}
+                          <div className="mt-1">
+                            <BikeBrandChips brands={BIKE_BRANDS} value={field.value} onChange={field.onChange} />
                           </div>
                           <input
                             type="text"
                             placeholder="Other brand (e.g. Sherco, TM, Rieju…)"
                             value={BIKE_BRANDS.some(b => b.name === field.value) ? "" : (field.value ?? "")}
                             onChange={e => field.onChange(e.target.value)}
-                            className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                            className="mt-3 w-full rounded-none border-2 border-input bg-background px-3 text-base placeholder:text-muted-foreground focus:outline-none focus:border-foreground"
                           />
                           <FormMessage />
                         </FormItem>
@@ -1569,9 +1546,7 @@ export default function Register() {
                 </Card>
 
                 <Card>
-                  <CardHeader className="pb-2 border-b">
-                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Sponsors</h3>
-                  </CardHeader>
+                  <SectionHeader>Sponsors</SectionHeader>
                   <CardContent className="p-6">
                     <FormField control={form.control} name="sponsors" render={({ field }) => (
                       <FormItem>
@@ -1587,9 +1562,7 @@ export default function Register() {
                 </Card>
 
                 <Card>
-                  <CardHeader className="pb-2 border-b">
-                    <h3 className="font-heading font-bold uppercase tracking-wide text-sm text-muted-foreground">Emergency Contact</h3>
-                  </CardHeader>
+                  <SectionHeader>Emergency Contact</SectionHeader>
                   <CardContent className="p-6 space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <FormField control={form.control} name="emergencyContact" render={({ field }) => (
@@ -1615,7 +1588,7 @@ export default function Register() {
                   name="statsEmailOptIn"
                   render={({ field }) => (
                     <FormItem>
-                      <div className="flex items-start gap-3 rounded-lg border bg-muted/40 px-4 py-3.5">
+                      <div className="flex items-start gap-3 rounded-[14px] border-2 border-[#ECECEC] bg-[#FAFAFA] px-5 py-4">
                         <FormControl>
                           <Checkbox
                             id="stats-optin"
@@ -1629,10 +1602,10 @@ export default function Register() {
                             htmlFor="stats-optin"
                             className="text-sm font-semibold cursor-pointer flex items-center gap-1.5"
                           >
-                            <Mail size={14} className="text-primary shrink-0" />
+                            <Mail size={16} className="text-[#555] shrink-0" />
                             Send me my race day stats
                           </label>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-[13px] leading-snug text-muted-foreground">
                             We'll email your results — finish position, lap times, and points — to <strong>{form.watch("email") || "your email"}</strong> once the event is complete.
                           </p>
                         </div>
@@ -1644,9 +1617,9 @@ export default function Register() {
 
                 {/* Discount Code */}
                 {event.paymentEnabled && event.entryFee && (
-                  <div className="rounded-lg border bg-muted/40 px-4 py-3.5 space-y-2">
-                    <p className="text-sm font-semibold flex items-center gap-1.5">
-                      <Tag size={14} className="text-primary shrink-0" />
+                  <div className="rounded-[14px] border-2 border-[#ECECEC] bg-[#FAFAFA] px-5 py-4 space-y-3">
+                    <p className="font-bold text-[#242424] flex items-center gap-1.5">
+                      <Tag size={16} className="text-[#555] shrink-0" />
                       Have a discount code?
                     </p>
                     {appliedComp ? (
@@ -1670,13 +1643,12 @@ export default function Register() {
                           onChange={e => { setCompCodeInput(e.target.value.toUpperCase()); setCompError(null); }}
                           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleApplyComp(); } }}
                           placeholder="Enter discount code…"
-                          className="h-9 text-sm font-mono tracking-widest flex-1"
+                          className="font-mono tracking-widest flex-1 bg-white"
                           disabled={compApplying}
                         />
                         <Button
                           type="button"
-                          size="sm"
-                          className="h-9 font-heading uppercase px-4"
+                          className="h-[52px] px-6 bg-[#242424] border-[#242424] text-white hover:bg-black"
                           onClick={handleApplyComp}
                           disabled={compApplying || !compCodeInput.trim()}
                         >
@@ -1868,7 +1840,8 @@ export default function Register() {
                 <Button
                   type="submit"
                   disabled={submitting || lookupState === "pick" || (riderOptions !== null && selectedRiderId === null) || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted) || (event.requireLiabilityWaiver && !liabilityWaiverAccepted)}
-                  className="w-full font-heading uppercase tracking-wider text-base h-12"
+                  variant="secondary"
+                  className="w-full text-base h-[52px] hover:bg-[#146806]"
                 >
                   {submitting ? (
                     <><Loader2 size={18} className="mr-2 animate-spin" /> Processing...</>
@@ -1878,7 +1851,7 @@ export default function Register() {
                     "Complete Registration →"
                   )}
                 </Button>
-                <p className="text-center text-xs text-muted-foreground">By registering you agree to the event's waiver and rules.</p>
+                <p className="text-center text-[13px] text-muted-foreground">By registering you agree to the event's waiver and rules.</p>
               </form>
             </Form>
 

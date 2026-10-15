@@ -223,7 +223,7 @@ export default function Dashboard() {
                   <p className="text-sm font-bold text-sidebar-foreground/70 uppercase tracking-widest mb-1">Upcoming Events</p>
                   <h2 className="text-4xl font-heading font-bold">{dashboard?.upcomingEvents || 0}</h2>
                 </div>
-                <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center text-primary">
+                <div className="h-12 w-12 rounded-full bg-primary flex items-center justify-center text-white">
                   <Calendar size={24} />
                 </div>
               </CardContent>

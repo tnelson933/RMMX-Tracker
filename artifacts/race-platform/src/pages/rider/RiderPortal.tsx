@@ -12,62 +12,62 @@ function ProfileCard({ profile }: { profile: RiderProfile }) {
   const [, navigate] = useLocation();
   return (
     <Card
-      className="cursor-pointer hover:border-primary/50 hover:shadow-md transition-all group"
+      className="cursor-pointer border-2 border-[#ECECEC] hover:border-[#8C8C8C] hover:shadow-[0_12px_20px_-6px_rgba(0,0,0,0.22)] transition-all group"
       onClick={() => navigate(`/rider/portal/${profile.id}`)}
     >
-      <CardContent className="p-5">
+      <CardContent className="p-5 sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-              <User size={18} className="text-primary" />
+            <div className="w-12 h-12 rounded-full bg-[#242424] flex items-center justify-center flex-shrink-0">
+              <User size={20} className="text-white" />
             </div>
             <div>
-              <h3 className="font-heading font-bold text-lg leading-tight">
+              <h3 className="font-heading font-extrabold text-[22px] uppercase leading-tight text-[#242424]">
                 {profile.firstName} {profile.lastName}
               </h3>
               {profile.bibNumber && (
-                <span className="text-sm text-muted-foreground font-mono">#{profile.bibNumber}</span>
+                <span className="text-[15px] text-[#555] font-bold">#{profile.bibNumber}</span>
               )}
               {profile.dateOfBirth && (
-                <span className="text-xs text-muted-foreground ml-2">DOB: {profile.dateOfBirth}</span>
+                <span className="text-[13px] text-muted-foreground ml-2">DOB: {profile.dateOfBirth}</span>
               )}
             </div>
           </div>
-          <ChevronRight size={18} className="text-muted-foreground group-hover:text-primary transition-colors mt-1 flex-shrink-0" />
+          <ChevronRight size={22} className="text-[#555] group-hover:text-[#242424] transition-colors mt-2 flex-shrink-0" />
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-3">
-          <div className="bg-muted/50 rounded-lg p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1">
-              <Calendar size={11} /> Events
+          <div className="bg-[#F2F2F2] rounded-[10px] p-3 text-center">
+            <div className="flex items-center justify-center gap-1 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1">
+              <Calendar size={13} className="hidden sm:block" /> Events
             </div>
-            <div className="font-heading font-bold text-xl">{profile.eventsRaced}</div>
+            <div className="font-heading font-extrabold text-2xl text-[#242424]">{profile.eventsRaced}</div>
           </div>
-          <div className="bg-muted/50 rounded-lg p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1">
-              <Trophy size={11} /> Best Finish
+          <div className="bg-[#F2F2F2] rounded-[10px] p-3 text-center">
+            <div className="flex items-center justify-center gap-1 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1">
+              <Trophy size={13} className="hidden sm:block" /> Best Finish
             </div>
-            <div className="font-heading font-bold text-xl">
+            <div className="font-heading font-extrabold text-2xl text-[#242424]">
               {profile.bestPosition ? `P${profile.bestPosition}` : "—"}
             </div>
           </div>
-          <div className="bg-muted/50 rounded-lg p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1">
-              <Star size={11} /> Points
+          <div className="bg-[#F2F2F2] rounded-[10px] p-3 text-center">
+            <div className="flex items-center justify-center gap-1 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1">
+              <Star size={13} className="hidden sm:block" /> Points
             </div>
-            <div className="font-heading font-bold text-xl text-primary">{profile.totalPoints}</div>
+            <div className="font-heading font-extrabold text-2xl text-primary">{profile.totalPoints}</div>
           </div>
         </div>
 
         {profile.lastRaced && (
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Clock size={11} />
+          <div className="mt-3 flex items-center gap-1.5 text-[13px] text-muted-foreground">
+            <Clock size={13} />
             Last raced: {new Date(profile.lastRaced).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
           </div>
         )}
 
         {profile.eventsRaced === 0 && (
-          <Badge variant="outline" className="mt-3 text-xs text-muted-foreground">No race results yet</Badge>
+          <Badge variant="outline" className="mt-3 rounded-full border-2 border-[#ECECEC] px-3 py-1 text-[13px] font-medium text-[#555]">No race results yet</Badge>
         )}
       </CardContent>
     </Card>
@@ -85,24 +85,19 @@ export default function RiderPortal() {
   } as any);
 
   return (
-    <RiderLayout>
+    <RiderLayout
+      title="My Profiles"
+      subtitle={<>All rider profiles linked to <span className="font-medium text-white">{account?.email}</span></>}
+      titleAside={
+        <Button
+          onClick={() => navigate("/rider/new-profile")}
+          className="w-full md:w-auto min-h-[52px] px-6 bg-white text-[#242424] border-white hover:bg-[#F2F2F2]"
+        >
+          <UserPlus size={16} /> Add Profile
+        </Button>
+      }
+    >
       <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="font-heading font-bold text-3xl uppercase tracking-tight">My Profiles</h1>
-            <p className="text-muted-foreground mt-1">
-              All rider profiles linked to <span className="font-medium text-foreground">{account?.email}</span>
-            </p>
-          </div>
-          <Button
-            onClick={() => navigate("/rider/new-profile")}
-            size="sm"
-            className="font-heading uppercase tracking-wider shrink-0 mt-1"
-          >
-            <UserPlus size={14} className="mr-2" /> Add Profile
-          </Button>
-        </div>
-
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2].map((i) => (
@@ -112,7 +107,7 @@ export default function RiderPortal() {
             ))}
           </div>
         ) : profiles && profiles.length > 0 ? (
-          <div className="space-y-3">
+          <div className="grid gap-4 md:grid-cols-2">
             {profiles.map((p) => (
               <ProfileCard key={p.id} profile={p} />
             ))}
@@ -129,22 +124,21 @@ export default function RiderPortal() {
               </div>
               <Button
                 onClick={() => navigate("/rider/new-profile")}
-                size="sm"
-                className="font-heading uppercase tracking-wider"
+                className="min-h-[44px] px-6 bg-[#242424] border-[#242424] text-white hover:bg-black"
               >
-                <UserPlus size={14} className="mr-2" /> Add Profile
+                <UserPlus size={16} /> Add Profile
               </Button>
             </CardContent>
           </Card>
         )}
 
-        <Card className="border-dashed">
+        <Card className="bg-[#FAFAFA] border-2 border-[#ECECEC] shadow-none">
           <CardHeader className="pb-2">
-            <CardTitle className="font-heading text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Plus size={14} /> How profiles are linked
+            <CardTitle className="font-heading font-extrabold text-base uppercase tracking-[0.5px] text-[#242424] flex items-center gap-2">
+              <Plus size={16} /> How profiles are linked
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground space-y-1.5">
+          <CardContent className="text-[15px] leading-[1.7] text-[#333] space-y-1.5">
             <p>Rider profiles are automatically linked to your account by email address.</p>
             <p>If you register a family member (e.g. a minor) using this email, their profile will also appear here as a separate entry.</p>
             <p>Contact the event organizer if you need to update the email on an existing registration.</p>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { useRiderAuth } from "@/contexts/RiderAuthContext";
 import { Button } from "@/components/ui/button";
 import { Menu, X, Timer, Flag, Trophy } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
@@ -31,6 +32,9 @@ function Lockup({ onClick }: { onClick?: () => void }) {
 
 export function PublicLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
+  const { isAuthenticated: riderSignedIn } = useRiderAuth();
+  const riderHref = riderSignedIn ? "/rider/portal" : "/rider/login";
+  const riderLabel = riderSignedIn ? "Rider Portal" : "Rider Login";
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const close = () => setMobileOpen(false);
@@ -52,9 +56,9 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                 style={{ clipPath: "polygon(32px 0, 100% 0, 100% 100%, 0 100%)" }}
               />
               {!isDesktop && (
-                <Link href="/rider/login" className="relative">
+                <Link href={riderHref} className="relative">
                   <Button variant="outline" className="border-2 border-white/80 text-white bg-transparent hover:bg-white/10">
-                    Rider Login
+                    {riderLabel}
                   </Button>
                 </Link>
               )}
@@ -116,8 +120,8 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                 </Link>
               ))}
               <div className="pt-4 pb-3 flex flex-col gap-3">
-                <Link href="/rider/login" onClick={close}>
-                  <Button variant="outline" className="w-full border-2 border-[#8C8C8C] bg-white">Rider Login</Button>
+                <Link href={riderHref} onClick={close}>
+                  <Button variant="outline" className="w-full border-2 border-[#8C8C8C] bg-white">{riderLabel}</Button>
                 </Link>
                 <Link href={isAuthenticated ? "/dashboard" : "/login"} onClick={close}>
                   <Button className="w-full">{isAuthenticated ? "Dashboard" : "Organizer Login"}</Button>

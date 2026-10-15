@@ -174,7 +174,7 @@ function Router() {
         <DeleteAccount />
       </Route>
       <Route path="/rider/reset-password">
-        <ResetRiderPassword />
+        <PublicLayout><ResetRiderPassword /></PublicLayout>
       </Route>
       <Route path="/rider-app">
         <RiderAppLanding />
@@ -198,7 +198,7 @@ function Router() {
         <PublicLayout><ForgotPassword /></PublicLayout>
       </Route>
       <Route path="/register/:eventId">
-        <Register />
+        <PublicLayout><Register /></PublicLayout>
       </Route>
       <Route path="/live/:motoId">
         <LiveLeaderboard />
@@ -215,7 +215,7 @@ function Router() {
 
       {/* ── Rider portal ── */}
       <Route path="/rider/login">
-        <RiderLogin />
+        <PublicLayout><RiderLogin /></PublicLayout>
       </Route>
       <Route path="/rider/new-profile">
         <RiderProtectedRoute><RiderCreateProfile /></RiderProtectedRoute>

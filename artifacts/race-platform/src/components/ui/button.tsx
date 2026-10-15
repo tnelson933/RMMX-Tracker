@@ -26,6 +26,10 @@ const buttonVariants = cva(
         // @replit no hover, transparent border
         ghost: "border border-transparent",
         link: "text-primary underline-offset-4 hover:underline",
+        // Brand form field (combobox / select-like triggers): square, 2px #8C8C8C
+        // border, normal-case Roboto label. Matches Input and SelectTrigger, not a pill.
+        field:
+          "rounded-none border-2 border-input bg-transparent justify-between px-3 font-normal normal-case tracking-normal text-sm text-foreground shadow-sm hover:bg-transparent focus-visible:border-foreground aria-expanded:border-foreground",
       },
       size: {
         // Brand: pill buttons, bold uppercase labels (RM ATV/MC Design System Button)
@@ -33,6 +37,8 @@ const buttonVariants = cva(
         sm: "min-h-8 px-3 text-xs",
         lg: "min-h-10 px-8",
         icon: "h-9 w-9",
+        // Field height, same as Input / SelectTrigger.
+        field: "h-9 py-1",
       },
     },
     defaultVariants: {

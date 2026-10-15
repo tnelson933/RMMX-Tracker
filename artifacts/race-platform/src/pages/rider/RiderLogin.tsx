@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mountain, Mail, Lock, UserPlus, LogIn, AlertCircle, Zap } from "lucide-react";
+import { Mail, Lock, UserPlus, LogIn, AlertCircle } from "lucide-react";
+import { TitleBand } from "@/components/TitleBand";
+import { RmCashWidget } from "@/components/layout/RiderLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,38 +64,31 @@ export default function RiderLogin() {
   });
 
   return (
-    <div className="min-h-screen h-screen overflow-y-auto hide-scrollbar bg-background flex flex-col items-center justify-center p-4">
-      {/* RM Cash — always top-right */}
-      <div className="fixed top-4 right-4 flex items-center gap-1.5 bg-muted border border-border rounded-lg px-2.5 py-1.5 select-none z-50">
-        <Zap size={11} className="text-green-600 fill-green-600" />
-        <div className="flex flex-col leading-none">
-          <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground">RM Cash</span>
-          <span className="text-sm font-extrabold text-green-600">$0.00</span>
+    <div>
+      <TitleBand
+        containerClassName="max-w-5xl"
+        eyebrow="Riders"
+        title="Rider Portal"
+        subtitle="Sign in to see your race history, results, upcoming races and RM Cash."
+      >
+        <div className="flex md:justify-end">
+          <RmCashWidget isAuthenticated={isAuthenticated} />
         </div>
-      </div>
-
-      <div className="w-full max-w-md">
-        <div className="flex items-center justify-center gap-3 mb-8">
-          <Mountain size={32} className="text-primary" />
-          <div>
-            <h1 className="font-heading font-bold text-2xl uppercase tracking-wider leading-none">RM Tracker</h1>
-            <p className="text-muted-foreground text-sm">Rider Portal</p>
-          </div>
-        </div>
-
+      </TitleBand>
+      <div className="brand-form w-full max-w-md mx-auto px-4 py-10">
         <Tabs defaultValue="login" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="login" className="font-heading uppercase tracking-wider text-xs">Sign In</TabsTrigger>
-            <TabsTrigger value="register" className="font-heading uppercase tracking-wider text-xs">Create Account</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2 mb-6 h-auto p-1 bg-[#F2F2F2] rounded-full">
+            <TabsTrigger value="login" className="min-h-[44px] rounded-full font-heading font-bold uppercase tracking-[0.5px] text-[15px] text-[#555] data-[state=active]:bg-[#242424] data-[state=active]:text-white">Sign In</TabsTrigger>
+            <TabsTrigger value="register" className="min-h-[44px] rounded-full font-heading font-bold uppercase tracking-[0.5px] text-[15px] text-[#555] data-[state=active]:bg-[#242424] data-[state=active]:text-white">Create Account</TabsTrigger>
           </TabsList>
 
           <TabsContent value="login">
             <Card>
               <CardHeader>
-                <CardTitle className="font-heading uppercase tracking-wider text-lg flex items-center gap-2">
-                  <LogIn size={18} className="text-primary" /> Sign In
+                <CardTitle className="font-heading font-extrabold uppercase text-[22px] text-[#242424] flex items-center gap-2">
+                  <LogIn size={20} /> Sign In
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-[15px] leading-[1.6]">
                   Access your race history and results
                 </CardDescription>
               </CardHeader>
@@ -105,12 +100,12 @@ export default function RiderLogin() {
                   <div className="space-y-1.5">
                     <Label htmlFor="login-email">Email address</Label>
                     <div className="relative">
-                      <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
                       <Input
                         id="login-email"
                         type="email"
                         placeholder="you@example.com"
-                        className="pl-9"
+                        className="pl-10"
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         required
@@ -120,12 +115,12 @@ export default function RiderLogin() {
                   <div className="space-y-1.5">
                     <Label htmlFor="login-password">Password</Label>
                     <div className="relative">
-                      <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
                       <Input
                         id="login-password"
                         type="password"
                         placeholder="••••••••"
-                        className="pl-9"
+                        className="pl-10"
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         required
@@ -138,7 +133,7 @@ export default function RiderLogin() {
                       {(loginMutation.error as Error).message}
                     </div>
                   )}
-                  <Button type="submit" className="w-full font-heading uppercase tracking-wider" disabled={loginMutation.isPending}>
+                  <Button type="submit" className="w-full min-h-[52px] text-base bg-[#242424] border-[#242424] text-white hover:bg-black" disabled={loginMutation.isPending}>
                     {loginMutation.isPending ? "Signing in…" : "Sign In"}
                   </Button>
                 </form>
@@ -149,10 +144,10 @@ export default function RiderLogin() {
           <TabsContent value="register">
             <Card>
               <CardHeader>
-                <CardTitle className="font-heading uppercase tracking-wider text-lg flex items-center gap-2">
-                  <UserPlus size={18} className="text-primary" /> Create Account
+                <CardTitle className="font-heading font-extrabold uppercase text-[22px] text-[#242424] flex items-center gap-2">
+                  <UserPlus size={20} /> Create Account
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-[15px] leading-[1.6]">
                   Use the same email you register for events with — your race history will link automatically
                 </CardDescription>
               </CardHeader>
@@ -164,12 +159,12 @@ export default function RiderLogin() {
                   <div className="space-y-1.5">
                     <Label htmlFor="reg-email">Email address</Label>
                     <div className="relative">
-                      <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
                       <Input
                         id="reg-email"
                         type="email"
                         placeholder="you@example.com"
-                        className="pl-9"
+                        className="pl-10"
                         value={regEmail}
                         onChange={(e) => setRegEmail(e.target.value)}
                         required
@@ -179,12 +174,12 @@ export default function RiderLogin() {
                   <div className="space-y-1.5">
                     <Label htmlFor="reg-password">Password</Label>
                     <div className="relative">
-                      <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
                       <Input
                         id="reg-password"
                         type="password"
                         placeholder="At least 8 characters"
-                        className="pl-9"
+                        className="pl-10"
                         value={regPassword}
                         onChange={(e) => setRegPassword(e.target.value)}
                         required
@@ -194,12 +189,12 @@ export default function RiderLogin() {
                   <div className="space-y-1.5">
                     <Label htmlFor="reg-confirm">Confirm password</Label>
                     <div className="relative">
-                      <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
                       <Input
                         id="reg-confirm"
                         type="password"
                         placeholder="••••••••"
-                        className="pl-9"
+                        className="pl-10"
                         value={regConfirm}
                         onChange={(e) => setRegConfirm(e.target.value)}
                         required
@@ -212,11 +207,11 @@ export default function RiderLogin() {
                       {(registerMutation.error as Error).message}
                     </div>
                   )}
-                  <Button type="submit" className="w-full font-heading uppercase tracking-wider" disabled={registerMutation.isPending}>
+                  <Button type="submit" className="w-full min-h-[52px] text-base bg-[#242424] border-[#242424] text-white hover:bg-black" disabled={registerMutation.isPending}>
                     {registerMutation.isPending ? "Creating account…" : "Create Account"}
                   </Button>
                 </form>
-                <p className="mt-4 text-xs text-muted-foreground text-center">
+                <p className="mt-4 text-[13px] text-muted-foreground text-center">
                   Already registered for an event? Just use that email address — your history will appear automatically.
                 </p>
               </CardContent>
@@ -224,9 +219,6 @@ export default function RiderLogin() {
           </TabsContent>
         </Tabs>
 
-        <p className="mt-6 text-center text-sm text-muted-foreground">
-          <a href="/" className="hover:underline">← Back to public site</a>
-        </p>
       </div>
     </div>
   );

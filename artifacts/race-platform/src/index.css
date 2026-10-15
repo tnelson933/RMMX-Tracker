@@ -348,3 +348,18 @@
     display: none;
   }
 }
+
+/* Rider-facing forms (public registration, rider portal) use the design system's
+   full-size field: 52px tall, 16px Roboto text, 16px labels. Organizer screens
+   keep the compact 36px field. Unlayered so it wins over the h-9 / md:text-sm
+   utilities baked into Input, SelectTrigger and the Button "field" variant. */
+.brand-form :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]), button[role="combobox"]) {
+  min-height: 52px;
+  font-size: 16px;
+}
+.brand-form textarea {
+  font-size: 16px;
+}
+.brand-form label {
+  font-size: 16px;
+}

@@ -1175,9 +1175,10 @@ export default function EventDetail() {
                                     <Popover>
                                       <PopoverTrigger asChild>
                                         <Button
-                                          variant="outline"
+                                          variant="field"
+                                          size="field"
                                           role="combobox"
-                                          className="w-full justify-between h-9 font-normal"
+                                          className="w-full"
                                           type="button"
                                         >
                                           <span className="truncate text-sm">{label}</span>
