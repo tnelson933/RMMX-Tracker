@@ -9,6 +9,7 @@ import { logger } from "./lib/logger";
 import { redactLogUrl } from "./lib/logRedaction";
 import { WebhookHandlers } from "./webhookHandlers";
 import { staffPermissionMiddleware } from "./middleware/staffPermissions";
+import { ingestObservationMiddleware } from "./middleware/ingestObservation";
 
 const app: Express = express();
 // The Replit/deployment proxy terminates TLS before requests reach Express.
@@ -92,6 +93,6 @@ app.use(
   })
 );
 
-app.use("/api", staffPermissionMiddleware, router);
+app.use("/api", ingestObservationMiddleware, staffPermissionMiddleware, router);
 
 export default app;
