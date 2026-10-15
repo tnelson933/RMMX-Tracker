@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap');
+/* Brand type (Rocky Mountain ATV/MC Design System): Barlow display, Roboto body. */
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@600;700;800&family=Roboto:wght@400;500;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -60,7 +61,7 @@
   --font-sans: var(--app-font-sans);
   --font-serif: var(--app-font-serif);
   --font-mono: var(--app-font-mono);
-  --font-heading: 'Rajdhani', sans-serif;
+  --font-heading: Barlow, 'Arial Narrow', Arial, sans-serif;
 
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
@@ -69,45 +70,48 @@
 }
 
 :root {
+  /* Colors map the Rocky Mountain ATV/MC Design System (tokens/colors.css):
+     red #B30000 accent, charcoal #242424 strong text/surfaces, ink #333 body,
+     muted #707070, panel #F2F2F2, divider #E0E0E0, field border #8C8C8C, green #1A8409. */
   --background: 0 0% 100%;
-  --foreground: 0 0% 9%;
-  --border: 0 0% 89.8%;
+  --foreground: 0 0% 14%;            /* #242424 */
+  --border: 0 0% 88%;                /* #E0E0E0 */
   --card: 0 0% 100%;
-  --card-foreground: 0 0% 9%;
-  --card-border: 0 0% 89.8%;
-  --sidebar: 0 0% 9%;
-  --sidebar-foreground: 0 0% 98%;
-  --sidebar-border: 0 0% 15%;
-  --sidebar-primary: 0 100% 40%;
+  --card-foreground: 0 0% 14%;
+  --card-border: 0 0% 88%;
+  --sidebar: 0 0% 14%;               /* #242424 */
+  --sidebar-foreground: 0 0% 100%;
+  --sidebar-border: 0 0% 29%;        /* #4A4A4A */
+  --sidebar-primary: 0 100% 35%;     /* #B30000 */
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 15%;
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-ring: 0 100% 40%;
+  --sidebar-accent: 0 0% 18%;        /* #2F2F2F */
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 0 100% 35%;
   --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 9%;
-  --popover-border: 0 0% 89.8%;
-  --primary: 352 82% 45%; /* #cf152d */
+  --popover-foreground: 0 0% 14%;
+  --popover-border: 0 0% 88%;
+  --primary: 0 100% 35%;             /* #B30000 */
   --primary-foreground: 0 0% 100%;
-  --secondary: 126 30% 31%; /* #38683D */
+  --secondary: 111 87% 28%;          /* #1A8409 brand green (checkout / success) */
   --secondary-foreground: 0 0% 100%;
-  --muted: 0 0% 96.1%;
-  --muted-foreground: 0 0% 45.1%;
-  --accent: 0 0% 96.1%;
-  --accent-foreground: 0 0% 9%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --input: 0 0% 89.8%;
-  --ring: 0 100% 40%;
-  --chart-1: 0 100% 40%;
-  --chart-2: 126 30% 31%;
+  --muted: 0 0% 95%;                 /* #F2F2F2 */
+  --muted-foreground: 0 0% 44%;      /* #707070 */
+  --accent: 0 0% 95%;
+  --accent-foreground: 0 0% 14%;
+  --destructive: 0 100% 35%;         /* #B30000 */
+  --destructive-foreground: 0 0% 100%;
+  --input: 0 0% 55%;                 /* #8C8C8C field border */
+  --ring: 0 0% 14%;                  /* brand focus ring is charcoal */
+  --chart-1: 0 100% 35%;
+  --chart-2: 111 87% 28%;
   --chart-3: 0 0% 20%;
-  --chart-4: 0 0% 40%;
-  --chart-5: 0 0% 60%;
+  --chart-4: 0 0% 44%;
+  --chart-5: 0 0% 55%;
 
-  --app-font-sans: system-ui, -apple-system, sans-serif;
+  --app-font-sans: Roboto, Arial, sans-serif;
   --app-font-serif: Georgia, serif;
-  --app-font-mono: Menlo, monospace;
-  --radius: 3px;
+  --app-font-mono: ui-monospace, Menlo, monospace;
+  --radius: 6px;
 }
 
 .dark {
@@ -128,9 +132,9 @@
   --popover: 0 0% 9%;
   --popover-foreground: 0 0% 98%;
   --popover-border: 0 0% 15%;
-  --primary: 352 82% 45%; /* #cf152d */
+  --primary: 0 100% 35%; /* #B30000 */
   --primary-foreground: 0 0% 100%;
-  --secondary: 126 30% 31%;
+  --secondary: 111 87% 28%;
   --secondary-foreground: 0 0% 100%;
   --muted: 0 0% 15%;
   --muted-foreground: 0 0% 63.9%;
@@ -139,7 +143,7 @@
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 0 0% 98%;
   --input: 0 0% 15%;
-  --ring: 0 100% 40%;
+  --ring: 0 0% 98%;
 }
 
 @layer base {
@@ -151,6 +155,7 @@
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading uppercase tracking-wide;
+    font-weight: 800;
   }
 }
 

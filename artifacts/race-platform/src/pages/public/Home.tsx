@@ -16,7 +16,6 @@ import {
   Download, Monitor, Apple, ChevronDown, Navigation, LocateFixed,
   Search, X,
 } from "lucide-react";
-import rmLogo from "@assets/rm-logo.png";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 import { useUserLocation } from "@/hooks/useUserLocation";
@@ -50,10 +49,10 @@ function StateChips({
     <div className="flex flex-wrap gap-2 mb-6">
       <button
         onClick={() => onSelect("all")}
-        className={`px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+        className={`min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
           selected === "all"
-            ? "bg-primary text-primary-foreground border-primary"
-            : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+            ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
+            : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
         }`}
       >
         All States
@@ -62,10 +61,10 @@ function StateChips({
         <button
           key={s}
           onClick={() => onSelect(s)}
-          className={`px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+          className={`min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
             selected === s
-              ? "bg-primary text-primary-foreground border-primary"
-              : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+              ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
+              : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
           }`}
         >
           {s}
@@ -411,33 +410,36 @@ export default function Home() {
 
   return (
     <div className="flex flex-col gap-12 pb-16">
-      {/* Hero */}
-      <section className="bg-sidebar text-sidebar-foreground py-20 relative overflow-hidden">
+      {/* Hero — brand charcoal with topo texture and red rule */}
+      <section className="relative overflow-hidden bg-[#242424] text-white border-b-[3px] border-primary">
         <div
-          className="absolute inset-0 bg-primary/10"
-          style={{
-            backgroundImage:
-              'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23cc0000\' fill-opacity=\'0.1\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-          }}
+          aria-hidden
+          className="absolute inset-0 opacity-[0.18] mix-blend-screen bg-cover bg-center"
+          style={{ backgroundImage: `url(${import.meta.env.BASE_URL}brand/topo.jpg)` }}
         />
-        <div className="container mx-auto px-4 relative z-10">
-          <div className="max-w-3xl mx-auto text-center">
-            <img src={rmLogo} alt="RM Tracker" className="w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-6 drop-shadow-2xl" />
-            <h1 className="text-4xl sm:text-5xl md:text-7xl font-heading font-bold text-white mb-4 sm:mb-6 uppercase tracking-tight leading-tight">
-              Precision Timing.<br />
-              <span style={{ color: '#cf152d' }}>Ultimate Performance.</span>
+        <div className="container mx-auto px-4 relative z-10 py-14 sm:py-20">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-3 mb-5">
+              <span className="w-[6px] self-stretch bg-primary -skew-x-[18deg]" aria-hidden />
+              <span className="font-heading font-bold text-sm uppercase tracking-[2px] text-[#BDBDBD]">
+                Race timing &middot; Results &middot; Series points
+              </span>
+            </div>
+            <h1 className="font-heading font-extrabold uppercase text-[34px] sm:text-[56px] leading-[1] tracking-normal mb-5">
+              Precision timing.<br />
+              <span className="inline-block bg-primary text-white px-3 mt-2 -skew-x-[8deg]"><span className="inline-block skew-x-[8deg]">Official results.</span></span>
             </h1>
-            <p className="text-base sm:text-xl text-sidebar-foreground/80 mb-8 sm:mb-10 max-w-2xl mx-auto px-2">
-              The high-stakes race operations platform for club organizers and riders. Live tracking, automated lineups, and instant results.
+            <p className="text-base sm:text-lg leading-[1.7] text-white/80 mb-8 max-w-2xl">
+              The race operations platform for club organizers and riders. Live tracking, automated lineups, and instant results.
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 px-4 sm:px-0">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
               <Link href="/results" className="w-full sm:w-auto">
-                <Button size="lg" className="w-full sm:w-auto h-12 sm:h-14 px-8 text-base sm:text-lg font-heading uppercase tracking-wider" style={{ backgroundColor: '#cf152d', borderColor: '#cf152d' }}>
+                <Button size="lg" className="w-full sm:w-auto min-h-[52px] px-10 text-base">
                   Browse Results
                 </Button>
               </Link>
               <Link href="/leaderboard" className="w-full sm:w-auto">
-                <Button size="lg" variant="outline" className="w-full sm:w-auto h-12 sm:h-14 px-8 text-base sm:text-lg font-heading uppercase tracking-wider bg-transparent border-sidebar-foreground/20 text-white hover:bg-sidebar-accent hover:text-white">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto min-h-[52px] px-10 text-base bg-transparent border-2 border-white/80 text-white hover:bg-white/10 hover:text-white">
                   Series Standings
                 </Button>
               </Link>
@@ -451,18 +453,18 @@ export default function Home() {
 
         {/* Search bar */}
         <div className="relative mb-5">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Search size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#333] pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search by race name, track, city or state…"
-            className="w-full pl-9 pr-9 py-2.5 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
+            className="w-full h-[52px] pl-12 pr-12 rounded-full border-2 border-[#8C8C8C] bg-white text-base text-[#333] placeholder:text-[#707070] focus:outline-none focus:border-[#242424] transition-colors"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              className="absolute right-5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
             >
               <X size={15} />
             </button>
@@ -470,15 +472,15 @@ export default function Home() {
         </div>
 
         {/* Tab bar */}
-        <div className="flex items-end gap-0 border-b mb-6 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="flex items-end gap-0 border-b-2 border-[#ECECEC] mb-6 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
           {tabs.map(tab => (
             <button
               key={tab.key}
               onClick={() => switchTab(tab.key)}
-              className={`relative shrink-0 px-4 sm:px-6 py-3 font-heading font-bold uppercase tracking-wider text-sm transition-colors flex items-center gap-2 ${
+              className={`relative shrink-0 px-4 sm:px-6 py-3 font-heading font-bold uppercase tracking-[2px] text-[15px] transition-colors flex items-center gap-2 ${
                 activeTab === tab.key
-                  ? "text-primary border-b-2 border-primary -mb-px bg-transparent"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "text-[#242424] border-b-[3px] border-primary -mb-[2px] bg-transparent"
+                  : "text-[#707070] hover:text-[#242424]"
               }`}
             >
               {tab.key === "today" && (
@@ -513,10 +515,10 @@ export default function Home() {
                 if (!nearMe && userLocation.status === "denied") userLocation.retry();
                 setNearMe(v => !v);
               }}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+              className={`flex items-center gap-1.5 min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
                 nearMe
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+                  ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
+                  : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
               }`}
             >
               <Navigation size={13} />
@@ -529,10 +531,10 @@ export default function Home() {
               <button
                 key={s}
                 onClick={() => setSelectedState(sel => sel === s ? "all" : s)}
-                className={`px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+                className={`min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
                   selectedState === s
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+                    ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
+                    : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
                 }`}
               >
                 {s}
@@ -553,10 +555,10 @@ export default function Home() {
               <button
                 key={val}
                 onClick={() => setRegFilter(val)}
-                className={`px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border transition-colors ${
+                className={`min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
                   regFilter === val
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border text-muted-foreground hover:border-primary hover:text-primary"
+                    ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
+                    : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
                 }`}
               >
                 {val === "all" ? "All" : val === "registration_open" ? "Reg. Open" : "Reg. Closed"}
@@ -687,15 +689,15 @@ export default function Home() {
 
       {/* CTA */}
       <section className="container mx-auto px-4 mt-4">
-        <div className="bg-sidebar rounded-lg p-10 flex flex-col md:flex-row items-center justify-between gap-8">
+        <div className="bg-[#1A1A1A] rounded-[12px] border-b-[3px] border-primary p-8 sm:p-10 flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="text-sidebar-foreground text-center md:text-left">
-            <h2 className="text-3xl font-heading font-bold uppercase mb-2">Are you a club organizer?</h2>
+            <h2 className="text-[26px] sm:text-3xl font-heading font-extrabold uppercase mb-2">Are you a club organizer?</h2>
             <p className="text-sidebar-foreground/70 max-w-xl">
               Access the operations portal to manage your events, riders, check-ins, and live scoring.
             </p>
           </div>
           <Link href="/login">
-            <Button size="lg" className="h-14 px-8 text-lg font-heading uppercase tracking-wider whitespace-nowrap">
+            <Button size="lg" className="min-h-[52px] px-10 text-base whitespace-nowrap">
               Organizer Login
             </Button>
           </Link>

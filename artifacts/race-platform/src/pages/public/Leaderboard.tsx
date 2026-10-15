@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useListSeriesStates, useListPublicSeries, useGetSeriesLeaderboard } from "@workspace/api-client-react";
+import { TitleBand } from "@/components/TitleBand";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trophy, Medal, Award, MapPin, ChevronRight } from "lucide-react";
@@ -60,24 +61,21 @@ export default function Leaderboard() {
   const classes = Object.keys(standingsByClass).sort();
 
   return (
-    <div className="container mx-auto px-4 py-6 sm:py-8 max-w-6xl">
+    <div>
+      <TitleBand
+        containerClassName="max-w-6xl"
+        eyebrow="Championship points"
+        title="Series Leaderboard"
+        subtitle="Championship standings from clubs across the platform."
+      />
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8 border-b pb-6">
-        <div>
-          <h1 className="text-3xl sm:text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
-            <Trophy className="text-primary shrink-0" size={32} />
-            Series Leaderboard
-          </h1>
-          <p className="text-muted-foreground mt-1.5">Championship standings from clubs across the platform.</p>
-        </div>
-      </div>
+      <div className="container mx-auto px-4 py-6 sm:py-8 max-w-6xl">
 
       {/* Step 1 — State picker */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-2">
-          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold shrink-0">1</span>
-          <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#242424] text-white text-xs font-bold shrink-0">1</span>
+          <label className="font-heading text-sm font-bold uppercase tracking-[2px] text-[#242424] flex items-center gap-1.5">
             <MapPin size={12} /> Select State
           </label>
         </div>
@@ -87,7 +85,7 @@ export default function Leaderboard() {
           <p className="text-sm text-muted-foreground">No series available yet.</p>
         ) : (
           <Select value={selectedState} onValueChange={handleStateChange}>
-            <SelectTrigger className="w-full sm:w-72 h-11 font-semibold">
+            <SelectTrigger className="w-full sm:w-72 h-[52px] rounded-full border-2 border-[#8C8C8C] bg-white px-5 text-base font-medium">
               <SelectValue placeholder="Choose a state…" />
             </SelectTrigger>
             <SelectContent>
@@ -105,8 +103,8 @@ export default function Leaderboard() {
       {selectedState && (
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-2">
-            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold shrink-0">2</span>
-            <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#242424] text-white text-xs font-bold shrink-0">2</span>
+            <label className="font-heading text-sm font-bold uppercase tracking-[2px] text-[#242424] flex items-center gap-1.5">
               <ChevronRight size={12} /> Select Series
             </label>
           </div>
@@ -116,7 +114,7 @@ export default function Leaderboard() {
             <p className="text-sm text-muted-foreground">No series found in {stateName(selectedState)}.</p>
           ) : (
             <Select value={selectedSeriesId} onValueChange={setSelectedSeriesId}>
-              <SelectTrigger className="w-full sm:w-96 h-11 font-heading font-bold uppercase tracking-wide">
+              <SelectTrigger className="w-full sm:w-96 h-[52px] rounded-full border-2 border-[#8C8C8C] bg-white px-5 font-heading font-bold uppercase tracking-[0.5px]">
                 <SelectValue placeholder="Choose a series…" />
               </SelectTrigger>
               <SelectContent>
@@ -152,27 +150,28 @@ export default function Leaderboard() {
                 const rows = standingsByClass[raceClass].sort((a, b) => a.position - b.position);
                 return (
                   <div key={raceClass}>
-                    <h3 className="inline-block text-xl sm:text-2xl font-heading font-bold uppercase bg-primary text-primary-foreground px-4 py-2 rounded-md shadow-sm mb-4">
+                    <h3 className="flex items-center gap-3 text-[22px] font-heading font-bold uppercase text-[#242424] mb-4">
+                      <span aria-hidden className="w-[5px] h-6 bg-primary -skew-x-[18deg]" />
                       {raceClass}
                     </h3>
 
                     {/* Desktop table */}
-                    <Card className="hidden sm:block overflow-hidden border-sidebar-border">
+                    <Card className="hidden sm:block overflow-hidden">
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
-                          <thead className="bg-sidebar text-sidebar-foreground">
+                          <thead className="bg-[#1A1A1A] text-white">
                             <tr>
-                              <th className="w-20 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4 px-4">Pos</th>
-                              <th className="text-left text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4 px-4">Rider</th>
-                              <th className="text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4 px-4 whitespace-nowrap">Events</th>
-                              <th className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4 px-4 whitespace-nowrap">
+                              <th className="w-20 text-center text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4 px-4">Pos</th>
+                              <th className="text-left text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4 px-4">Rider</th>
+                              <th className="text-center text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4 px-4 whitespace-nowrap">Events</th>
+                              <th className="text-right text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4 px-4 whitespace-nowrap">
                                 <span className="flex items-center justify-end gap-1.5"><Award size={15} /> Total Points</span>
                               </th>
                             </tr>
                           </thead>
                           <tbody>
                             {rows.map(standing => (
-                              <tr key={`${standing.riderId}-${standing.raceClass}`} className="border-t hover:bg-muted/50 transition-colors">
+                              <tr key={`${standing.riderId}-${standing.raceClass}`} className="border-t-2 border-[#ECECEC] hover:bg-[#F2F2F2] transition-colors">
                                 <td className="text-center py-4 px-4"><PositionBadge pos={standing.position} /></td>
                                 <td className="py-4 px-4 font-bold text-base">{standing.riderName}</td>
                                 <td className="text-center py-4 px-4 font-mono font-medium text-muted-foreground">{standing.eventsEntered || 0}</td>
@@ -189,7 +188,7 @@ export default function Leaderboard() {
                       {rows.map(standing => (
                         <Card key={`${standing.riderId}-${standing.raceClass}`} className="overflow-hidden">
                           <CardContent className="p-0 flex items-center">
-                            <div className="bg-sidebar w-14 shrink-0 self-stretch flex items-center justify-center">
+                            <div className="bg-[#242424] w-14 shrink-0 self-stretch flex items-center justify-center">
                               <PositionBadge pos={standing.position} />
                             </div>
                             <div className="px-4 py-3 flex-1 min-w-0">
@@ -223,6 +222,7 @@ export default function Leaderboard() {
           </Card>
         )
       ) : null}
+      </div>
     </div>
   );
 }

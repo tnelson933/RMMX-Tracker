@@ -77,6 +77,13 @@ development only. All commands run from the repo root (`RM-Tracker/`).
 - `node scripts/dev-bootstrap-admin.mjs [email] [club] [state]`: creates the first
   super_admin and club in the local DB and prints a one-time `/setup-account` link.
   It refuses to run against a non-localhost database.
+- `node scripts/dev-sample-data.mjs <organizer-email> <password> [clubId]`: fills the local
+  DB with 2 completed demo events, 12 riders and a series. It publishes results and
+  recalculates points through the running API. Local only, and does nothing on a second run.
+- Branding follows the claude.ai org design system "Rocky Mountain ATV/MC Design System"
+  (Barlow/Roboto, red `#B30000`, charcoal `#242424`, pill buttons). Theme tokens live in
+  `artifacts/race-platform/src/index.css`; brand assets are in `race-platform/public/brand/`.
+  The brand red is only ~2.1:1 on charcoal, so don't use it as text on dark surfaces.
 - Windows-only adaptations: `pnpm-workspace.yaml` stops excluding the win32-x64 esbuild,
   rollup, lightningcss and tailwind-oxide binaries (Linux deploys are unaffected), and
   `lib/db/drizzle.config.ts` uses forward slashes in the schema path.
