@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useListEvents, useListStates } from "@workspace/api-client-react";
+import { TitleBand } from "@/components/TitleBand";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,16 +28,16 @@ export default function Results() {
     : undefined;
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-5xl">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b pb-6">
-        <div>
-          <h1 className="text-4xl font-heading font-bold uppercase tracking-tight">Race Results</h1>
-          <p className="text-muted-foreground mt-2">Browse completed events and official race results.</p>
-        </div>
-        
+    <div>
+      <TitleBand
+        containerClassName="max-w-5xl"
+        eyebrow="Official results"
+        title="Race Results"
+        subtitle="Browse completed events and official race results."
+      >
         <div className="w-full md:w-64">
           <Select value={stateFilter} onValueChange={setStateFilter}>
-            <SelectTrigger>
+            <SelectTrigger className="h-[52px] rounded-full border-2 border-[#8C8C8C] bg-white text-[#333] px-5 text-base">
               <SelectValue placeholder="Filter by State" />
             </SelectTrigger>
             <SelectContent>
@@ -49,8 +50,9 @@ export default function Results() {
             </SelectContent>
           </Select>
         </div>
-      </div>
+      </TitleBand>
 
+      <div className="container mx-auto px-4 py-8 max-w-5xl">
       {eventsLoading ? (
         <div className="space-y-4">
           {[...Array(5)].map((_, i) => (
@@ -60,12 +62,12 @@ export default function Results() {
           ))}
         </div>
       ) : events?.length ? (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           {events.map(event => (
             <Link key={event.id} href={`/results/${event.id}`}>
               <Card className="hover-elevate cursor-pointer hover:border-primary transition-all group overflow-hidden">
                 <CardContent className="p-0 flex flex-col sm:flex-row">
-                  <div className="bg-sidebar p-6 flex flex-col justify-center items-center text-sidebar-foreground sm:w-48 shrink-0 relative overflow-hidden">
+                  <div className="bg-[#242424] p-6 flex flex-col justify-center items-center text-white sm:w-48 shrink-0 relative overflow-hidden border-b-[3px] sm:border-b-0 sm:border-r-[3px] border-primary">
                     <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="relative z-10 flex flex-col items-center text-center">
                       <span className="text-sm font-bold text-sidebar-foreground/70 uppercase tracking-widest mb-1">
@@ -87,7 +89,7 @@ export default function Results() {
                   <div className="p-6 flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider">
+                        <span className="bg-[#FDEAEA] text-primary px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-[0.5px]">
                           {event.state}
                         </span>
                         <span className="text-xs text-muted-foreground uppercase font-semibold tracking-wider flex items-center gap-1">
@@ -116,7 +118,7 @@ export default function Results() {
                     </div>
                     
                     <div className="sm:text-right shrink-0">
-                      <Button variant="ghost" className="font-heading uppercase text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all">
+                      <Button variant="outline" className="border-2 border-[#8C8C8C] text-[#333] bg-white group-hover:bg-[#242424] group-hover:border-[#242424] group-hover:text-white transition-all">
                         View Results <ChevronRight size={18} className="ml-1" />
                       </Button>
                     </div>
@@ -148,6 +150,7 @@ export default function Results() {
           </CardContent>
         </Card>
       )}
+      </div>
     </div>
   );
 }

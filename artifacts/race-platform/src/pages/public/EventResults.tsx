@@ -128,22 +128,22 @@ function ResultTable({
   const clickable = !!onRiderClick;
   const hasPenalties = !!penaltyMap && Object.keys(penaltyMap).length > 0;
   return (
-    <div className="border rounded-md overflow-hidden bg-card">
+    <div className="border rounded-[14px] overflow-hidden bg-card shadow-[0_3px_6px_rgba(0,0,0,0.16)]">
       <Table>
-        <TableHeader className="bg-sidebar text-sidebar-foreground">
-          <TableRow className="hover:bg-sidebar">
-            <TableHead className="w-16 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Pos</TableHead>
-            <TableHead className="w-24 text-center text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">#</TableHead>
-            <TableHead className="text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">Rider</TableHead>
-            <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
+        <TableHeader className="bg-[#1A1A1A] text-white">
+          <TableRow className="hover:bg-[#1A1A1A] border-0">
+            <TableHead className="w-16 text-center text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4">Pos</TableHead>
+            <TableHead className="w-24 text-center text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4">#</TableHead>
+            <TableHead className="text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4">Rider</TableHead>
+            <TableHead className="text-right text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4">
               <span className="flex items-center justify-end gap-1"><Clock size={14} /> Time</span>
             </TableHead>
             {hasPenalties && (
-              <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
+              <TableHead className="text-right text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4">
                 Penalty
               </TableHead>
             )}
-            <TableHead className="text-right text-sidebar-foreground/80 font-heading font-bold uppercase tracking-wider py-4">
+            <TableHead className="text-right text-white/80 font-heading font-bold uppercase tracking-[2px] text-[13px] py-4">
               <span className="flex items-center justify-end gap-1"><Award size={14} /> Pts</span>
             </TableHead>
           </TableRow>
@@ -477,7 +477,7 @@ export default function EventResults() {
       )}
 
       {/* Event Header */}
-      <div className="bg-sidebar text-sidebar-foreground border-b border-sidebar-border pb-8 pt-8">
+      <div className="bg-[#1A1A1A] text-white border-b-[3px] border-primary pb-8 pt-8">
         <div className="container mx-auto px-4">
           <Link href="/" className="inline-flex items-center text-sm font-medium text-sidebar-foreground/60 hover:text-white transition-colors mb-6 uppercase tracking-wider">
             <ChevronLeft size={16} className="mr-1" /> Back
@@ -592,11 +592,11 @@ export default function EventResults() {
           /* LIVE MODE: schedule + standings tabs */
           <Tabs defaultValue="standings" className="w-full">
             <div className="bg-card rounded-t-lg border-x border-t p-2 overflow-x-auto hide-scrollbar">
-              <TabsList className="inline-flex h-auto w-auto p-1 bg-muted/50 rounded-md">
-                <TabsTrigger value="standings" className="font-heading uppercase text-base px-6 py-3 rounded-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all whitespace-nowrap">
+              <TabsList className="inline-flex h-auto w-auto p-1 bg-[#F2F2F2] rounded-full">
+                <TabsTrigger value="standings" className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap">
                   <Activity size={15} className="mr-2" /> Live Standings
                 </TabsTrigger>
-                <TabsTrigger value="schedule" className="font-heading uppercase text-base px-6 py-3 rounded-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all whitespace-nowrap">
+                <TabsTrigger value="schedule" className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap">
                   <Clock size={15} className="mr-2" /> Race Schedule
                   {activeMoto && (
                     <span className="ml-2 flex h-2 w-2 relative">
@@ -750,12 +750,12 @@ export default function EventResults() {
           (event.raceClasses && event.raceClasses.length > 0) || raceMotosList.length > 0 ? (
             <Tabs value={activeClass} onValueChange={setActiveClass} className="w-full">
               <div className="bg-card rounded-t-lg border-x border-t p-2 overflow-x-auto hide-scrollbar">
-                <TabsList className="inline-flex h-auto w-auto p-1 bg-muted/50 rounded-md">
+                <TabsList className="inline-flex h-auto w-auto p-1 bg-[#F2F2F2] rounded-full">
                   {(event.raceClasses ?? []).map(cls => (
                     <TabsTrigger
                       key={cls}
                       value={cls}
-                      className="font-heading uppercase text-base px-6 py-3 rounded-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all whitespace-nowrap"
+                      className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap"
                     >
                       {cls}
                     </TabsTrigger>
@@ -763,7 +763,7 @@ export default function EventResults() {
                   {raceMotosList.length > 0 && (
                     <TabsTrigger
                       value="__schedule__"
-                      className="font-heading uppercase text-base px-6 py-3 rounded-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md transition-all whitespace-nowrap"
+                      className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap"
                     >
                       <Clock size={14} className="mr-2" /> Race Schedule
                     </TabsTrigger>

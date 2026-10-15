@@ -54,8 +54,8 @@ export default defineConfig(async ({ command }) => {
         short_name: "RM Tracker",
         description:
           "Live RFID timing, race scoring, and series points for ATV and motorcycle clubs.",
-        theme_color: "#ea580c",
-        background_color: "#020617",
+        theme_color: "#242424",
+        background_color: "#ffffff",
         display: "standalone",
         icons: [
           {
