@@ -4,6 +4,8 @@ import { classifyIngestCredential, classifyIngestRoute } from "./ingestObservati
 
 test("ingest routes are recognized only for POST", () => {
   assert.equal(classifyIngestRoute("POST", "/timing/readers/abc-123/crossing"), "reader_token_crossing");
+  assert.equal(classifyIngestRoute("POST", "/timing/readers/abc-123/active/crossing"), "reader_token_active_crossing");
+  assert.equal(classifyIngestRoute("POST", "/timing/readers/abc-123/ping"), "reader_token_ping");
   assert.equal(classifyIngestRoute("POST", "/timing/crossing"), "crossing");
   assert.equal(classifyIngestRoute("POST", "/timing/active/crossing"), "active_crossing");
   assert.equal(classifyIngestRoute("POST", "/timing/ping"), "ping");
