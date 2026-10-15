@@ -64,7 +64,14 @@ development only. All commands run from the repo root (`RM-Tracker/`).
   `pnpm --filter @workspace/db run push` (needs `DATABASE_URL` exported in the shell).
 - `pnpm run dev:api`: builds and runs the API on 8080. `pnpm run dev:web`: Vite on 19869,
   proxying `/api` (including WebSockets) to the API through `DEV_API_PROXY`. Open
-  http://127.0.0.1:19869. Both are launched by `scripts/dev-local.mjs`, which loads the
+  **http://rmtracker.localhost:19869**, not 127.0.0.1 or localhost. Some pages
+  (StripeConnect, OfflineMode, LiveBroadcast) treat those hostnames as the offline
+  desktop app. `APP_URL` in `.env` must match, because it builds Stripe return URLs.
+- Stripe: the local `.env` uses a **test-mode** restricted key. Dev Club (#1000) is
+  onboarded to Connect in test mode, and test event 1 has a paid test registration.
+  Local test organizer: `.local-pg/e2e-credentials.txt` (gitignored). Payments are
+  destination charges with no `application_fee_amount`: the club gets the full fee
+  and the platform's Stripe balance pays the processing fees. Both are launched by `scripts/dev-local.mjs`, which loads the
   root `.env` (gitignored; template `.env.example`). AI env vars are placeholders, so
   Rocky/AI/TTS routes fail locally until real keys are configured.
 - `node scripts/dev-bootstrap-admin.mjs [email] [club] [state]`: creates the first
