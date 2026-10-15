@@ -25,7 +25,13 @@ import { QRCodeSVG } from "qrcode.react";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
-import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
+
+// Active transponder numbers are purely numeric, 1–9 digits.
+// Anything else (letters, dashes, spaces, >9 digits) is a format error.
+function isInvalidTransponder(val: string | null | undefined): boolean {
+  if (!val || !val.trim()) return false;
+  return !/^\d{1,9}$/.test(val.trim());
+}
 
 // RFID tags are alphanumeric + dashes, 1–32 characters.
 // Spaces, special chars, or extreme lengths are invalid.
@@ -73,12 +79,8 @@ const onSiteRegSchema = z.object({
   zip: z.string().optional(),
   raceClass: z.string().min(1, "Race class is required"),
   bibNumber: z.string().optional(),
-  amaNumber: z.string().optional(),
   clubIdNumber: z.string().optional(),
   bikeBrand: z.string().optional(),
-  bikeModel: z.string().optional(),
-  bikeYear: z.string().optional(),
-  sponsors: z.string().optional(),
   rentTransponder: z.boolean().default(false),
   purchaseRfidSticker: z.boolean().default(false),
   myLapsTransponderNumber: z.string().optional(),
@@ -87,28 +89,6 @@ const onSiteRegSchema = z.object({
   amountPaid: z.string().optional(),
 });
 type OnSiteRegForm = z.infer<typeof onSiteRegSchema>;
-
-interface RiderOption {
-  id: number;
-  firstName: string;
-  lastName: string;
-  phone: string;
-  dateOfBirth: string;
-  emergencyContact: string;
-  emergencyPhone: string;
-  streetAddress: string;
-  city: string;
-  homeState: string;
-  zip: string;
-  amaNumber: string;
-  clubIdNumber: string;
-  bikeBrand: string;
-  bikeModel: string;
-  bikeYear: string;
-  bibNumber: string;
-  sponsors: string;
-  myLapsTransponderNumber: string;
-}
 
 // ── Dialog step state ────────────────────────────────────────────────────────
 type Step =
@@ -175,11 +155,8 @@ export default function Registrations() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found" | "pick">("idle");
+  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found">("idle");
   const [lookedUpName, setLookedUpName] = useState("");
-  const [riderOptions, setRiderOptions] = useState<RiderOption[] | null>(null);
-  const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
-  const lookupRequestRef = useRef(0);
   const [bibCheckState, setBibCheckState] = useState<"idle" | "checking" | "taken" | "available">("idle");
 
   // ── Data ─────────────────────────────────────────────────────────────────────
@@ -198,8 +175,7 @@ export default function Registrations() {
       firstName: "", lastName: "", email: "", phone: "",
       dateOfBirth: "", emergencyContact: "", emergencyPhone: "",
       streetAddress: "", city: "", homeState: "", zip: "",
-      raceClass: "", bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "",
-      bikeModel: "", bikeYear: "", sponsors: "",
+      raceClass: "", bibNumber: "", clubIdNumber: "", bikeBrand: "",
       rentTransponder: false, purchaseRfidSticker: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
       paymentMethod: "cash" as const, amountPaid: "",
     },
@@ -232,29 +208,53 @@ export default function Registrations() {
     if (!editingReg) return;
     setEditSaving(true);
     try {
-      // A registration edit always updates its existing rider profile.  In
-      // particular, changing a name must never silently create and switch to a
-      // second rider record.
-      const riderRes = await fetch(`/api/riders/${editingReg.riderId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
-          phone: data.phone || null,
-          dateOfBirth: data.dateOfBirth || null,
-          emergencyContact: data.emergencyContact || null,
-          emergencyPhone: data.emergencyPhone || null,
-        }),
-      });
-      if (!riderRes.ok) { const j = await riderRes.json(); throw new Error(j.error || "Failed to update rider"); }
+      const nameChanged =
+        data.firstName.trim().toLowerCase() !== editingReg.firstName.trim().toLowerCase() ||
+        data.lastName.trim().toLowerCase() !== editingReg.lastName.trim().toLowerCase();
 
-      // Registration-specific fields only; retain its original riderId.
+      let targetRiderId = editingReg.riderId;
+
+      if (nameChanged) {
+        // Create a new rider profile for the new name so other registrations
+        // sharing this rider (e.g. a parent who also registered a child) are not affected.
+        const newRiderRes = await fetch(`/api/riders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            firstName: data.firstName,
+            lastName: data.lastName,
+            email: data.email,
+            phone: data.phone || null,
+            dateOfBirth: data.dateOfBirth || null,
+            emergencyContact: data.emergencyContact || null,
+            emergencyPhone: data.emergencyPhone || null,
+          }),
+        });
+        if (!newRiderRes.ok) { const j = await newRiderRes.json(); throw new Error(j.error || "Failed to create rider"); }
+        const newRider = await newRiderRes.json();
+        targetRiderId = newRider.id;
+      } else {
+        // Name unchanged — just update contact info on the existing rider profile
+        const riderRes = await fetch(`/api/riders/${editingReg.riderId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: data.email,
+            phone: data.phone || null,
+            dateOfBirth: data.dateOfBirth || null,
+            emergencyContact: data.emergencyContact || null,
+            emergencyPhone: data.emergencyPhone || null,
+          }),
+        });
+        if (!riderRes.ok) { const j = await riderRes.json(); throw new Error(j.error || "Failed to update rider"); }
+      }
+
+      // Update the registration: new riderId (if name changed) + race class + clear display overrides
       const regRes = await fetch(`/api/registrations/${editingReg.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          riderId: nameChanged ? targetRiderId : undefined,
           raceClass: data.raceClass,
           displayFirstName: null,
           displayLastName: null,
@@ -296,9 +296,6 @@ export default function Registrations() {
       setPaymentError(null);
       setLookupState("idle");
       setLookedUpName("");
-      setRiderOptions(null);
-      setSelectedRiderId(null);
-      lookupRequestRef.current++;
       setBibCheckState("idle");
     }
   }, [isAddOpen]);
@@ -321,59 +318,37 @@ export default function Registrations() {
   }, [watchedBib, eventId, noDuplicateBibs]);
 
   // ── Email lookup — finds existing rider profile and pre-fills the form ────────
-  const populateFromRider = (rider: RiderOption) => {
-    const profileValues: Partial<OnSiteRegForm> = {
-      firstName: rider.firstName ?? "",
-      lastName: rider.lastName ?? "",
-      phone: rider.phone ?? "",
-      dateOfBirth: rider.dateOfBirth ?? "",
-      emergencyContact: rider.emergencyContact ?? "",
-      emergencyPhone: rider.emergencyPhone ?? "",
-      streetAddress: rider.streetAddress ?? "",
-      city: rider.city ?? "",
-      homeState: rider.homeState ?? "",
-      zip: rider.zip ?? "",
-      amaNumber: rider.amaNumber ?? "",
-      clubIdNumber: rider.clubIdNumber ?? "",
-      bikeBrand: rider.bikeBrand ?? "",
-      bikeModel: rider.bikeModel ?? "",
-      bikeYear: rider.bikeYear ?? "",
-      bibNumber: rider.bibNumber ?? "",
-      sponsors: rider.sponsors ?? "",
-      myLapsTransponderNumber: rider.myLapsTransponderNumber ?? "",
-    };
-    for (const [name, value] of Object.entries(profileValues) as Array<[keyof OnSiteRegForm, OnSiteRegForm[keyof OnSiteRegForm]]>) {
-      if (!form.getFieldState(name).isDirty) {
-        form.setValue(name, value, { shouldDirty: false });
-      }
-    }
-    setSelectedRiderId(rider.id);
-    setLookedUpName(`${rider.firstName} ${rider.lastName}`);
-    setRiderOptions(null);
-    setLookupState("found");
-  };
-
   const lookupByEmail = async (email: string) => {
     const trimmed = email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
-    const request = ++lookupRequestRef.current;
     setLookupState("loading");
     setLookedUpName("");
-    setRiderOptions(null);
     try {
       const res = await fetch(`/api/public/riders/lookup?email=${encodeURIComponent(trimmed)}`);
       const data = await res.json();
-      if (request !== lookupRequestRef.current || form.getValues("email").trim().toLowerCase() !== trimmed.toLowerCase()) return;
-      if (!data.found || data.count === 0) {
-        setLookupState("not_found");
-      } else if (data.count === 1) {
-        populateFromRider(data.riders[0]);
+      if (data.found) {
+        // Only overwrite fields the user hasn't already typed into themselves.
+        // shouldDirty:false means auto-populate doesn't mark the field dirty,
+        // so if dirtyFields[field] is true the user has typed something — leave it alone.
+        const dirty = form.formState.dirtyFields;
+        if (!dirty.firstName) form.setValue("firstName", data.firstName || "", { shouldDirty: false });
+        if (!dirty.lastName) form.setValue("lastName", data.lastName || "", { shouldDirty: false });
+        if (!dirty.phone) form.setValue("phone", data.phone || "", { shouldDirty: false });
+        if (!dirty.dateOfBirth) form.setValue("dateOfBirth", data.dateOfBirth || "", { shouldDirty: false });
+        if (!dirty.emergencyContact) form.setValue("emergencyContact", data.emergencyContact || "", { shouldDirty: false });
+        if (!dirty.emergencyPhone) form.setValue("emergencyPhone", data.emergencyPhone || "", { shouldDirty: false });
+        if (!dirty.streetAddress && data.streetAddress) form.setValue("streetAddress", data.streetAddress, { shouldDirty: false });
+        if (!dirty.city && data.city) form.setValue("city", data.city, { shouldDirty: false });
+        if (!dirty.homeState && data.homeState) form.setValue("homeState", data.homeState, { shouldDirty: false });
+        if (!dirty.zip && data.zip) form.setValue("zip", data.zip, { shouldDirty: false });
+        if (!dirty.bibNumber && data.bibNumber) form.setValue("bibNumber", data.bibNumber, { shouldDirty: false });
+        if (!dirty.bikeBrand && data.bikeBrand) form.setValue("bikeBrand", data.bikeBrand, { shouldDirty: false });
+        setLookedUpName(`${data.firstName} ${data.lastName}`);
+        setLookupState("found");
       } else {
-        setRiderOptions(data.riders);
-        setLookupState("pick");
+        setLookupState("not_found");
       }
     } catch {
-      if (request !== lookupRequestRef.current) return;
       setLookupState("not_found");
     }
   };
@@ -449,10 +424,10 @@ export default function Registrations() {
   // Float registrations with invalid transponder/RFID numbers to the top.
   const sortedRegs = [...filteredRegs].sort((a, b) => {
     const aInvalid = isActiveTransponder
-      ? isInvalidAssignedActiveTransponderIdentifier((a as any).myLapsTransponderNumber)
+      ? isInvalidTransponder((a as any).myLapsTransponderNumber)
       : isInvalidRfid((a as any).rfidNumber);
     const bInvalid = isActiveTransponder
-      ? isInvalidAssignedActiveTransponderIdentifier((b as any).myLapsTransponderNumber)
+      ? isInvalidTransponder((b as any).myLapsTransponderNumber)
       : isInvalidRfid((b as any).rfidNumber);
     if (aInvalid && !bInvalid) return -1;
     if (!aInvalid && bInvalid) return 1;
@@ -461,9 +436,15 @@ export default function Registrations() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreate = async (data: OnSiteRegForm) => {
-    if (lookupState === "pick" || (riderOptions !== null && selectedRiderId === null)) {
-      setSubmitError("Select the correct rider profile for this email before registering.");
-      return;
+    if (isActiveTransponder) {
+      const hasNumber = !!data.myLapsTransponderNumber?.trim();
+      const hasRental = !!data.rentTransponder;
+      if (!hasNumber && !hasRental) {
+        form.setError("myLapsTransponderNumber", {
+          message: "Enter the rider's active transponder number, or select a rental.",
+        });
+        return;
+      }
     }
     setSubmitting(true);
     setSubmitError(null);
@@ -472,25 +453,18 @@ export default function Registrations() {
         firstName: data.firstName,
         lastName: data.lastName,
         email: data.email,
-        // Profile fields are deliberate values, including blanks, so an
-        // organizer can clear stale data on an existing selected rider.
-        phone: data.phone,
-        dateOfBirth: data.dateOfBirth,
-        emergencyContact: data.emergencyContact,
-        emergencyPhone: data.emergencyPhone,
-        streetAddress: data.streetAddress,
-        city: data.city,
-        homeState: data.homeState,
-        zip: data.zip,
-        riderId: selectedRiderId ?? undefined,
+        phone: data.phone || undefined,
+        dateOfBirth: data.dateOfBirth || undefined,
+        emergencyContact: data.emergencyContact || undefined,
+        emergencyPhone: data.emergencyPhone || undefined,
+        streetAddress: data.streetAddress || undefined,
+        city: data.city || undefined,
+        homeState: data.homeState || undefined,
+        zip: data.zip || undefined,
         raceClass: data.raceClass,
-        bibNumber: data.bibNumber,
-        amaNumber: data.amaNumber,
+        bibNumber: data.bibNumber || undefined,
         clubIdNumber: data.clubIdNumber || undefined,
-        bikeBrand: data.bikeBrand,
-        bikeModel: data.bikeModel,
-        bikeYear: data.bikeYear,
-        sponsors: data.sponsors,
+        bikeBrand: data.bikeBrand || undefined,
         rentTransponder: data.rentTransponder || undefined,
         wantsRfidSticker: data.purchaseRfidSticker || undefined,
         myLapsTransponderNumber: data.myLapsTransponderNumber || undefined,
@@ -733,14 +707,6 @@ export default function Registrations() {
                       type="email"
                       placeholder="rider@example.com"
                       {...field}
-                      onChange={e => {
-                        lookupRequestRef.current++;
-                        setSelectedRiderId(null);
-                        setRiderOptions(null);
-                        setLookedUpName("");
-                        setLookupState("idle");
-                        field.onChange(e);
-                      }}
                       onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
                     />
                   </FormControl>
@@ -758,31 +724,6 @@ export default function Registrations() {
                 <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm">
                   <CheckCircle2 size={16} className="shrink-0 text-green-600" />
                   <span>Found <strong>{lookedUpName}</strong> — details pre-filled. Review and update anything that's changed.</span>
-                </div>
-              )}
-              {lookupState === "pick" && riderOptions && (
-                <div className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
-                  <p className="text-sm font-semibold">Multiple rider profiles use this email. Select the rider to register:</p>
-                  <div className="space-y-2">
-                    {riderOptions.map(rider => (
-                      <button
-                        key={rider.id}
-                        type="button"
-                        onClick={() => populateFromRider(rider)}
-                        className="w-full text-left rounded-lg border border-border bg-background px-4 py-3 hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
-                      >
-                        <div className="font-semibold text-sm">{rider.firstName} {rider.lastName}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {[
-                            rider.dateOfBirth ? `DOB ${rider.dateOfBirth}` : "",
-                            rider.phone,
-                            [rider.city, rider.homeState].filter(Boolean).join(", "),
-                            rider.bibNumber ? `#${rider.bibNumber}` : "",
-                          ].filter(Boolean).join(" · ") || `Profile ID ${rider.id}`}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
                 </div>
               )}
               {lookupState === "not_found" && (
@@ -997,13 +938,6 @@ export default function Registrations() {
                   </FormItem>
                 )} />
               )}
-              <FormField control={form.control} name="amaNumber" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>AMA # {(event as any)?.requireAma && <span className="text-destructive">*</span>}</FormLabel>
-                  <FormControl><Input placeholder="AMA membership number" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
               <FormField control={form.control} name="bikeBrand" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Bike Manufacturer</FormLabel>
@@ -1026,29 +960,6 @@ export default function Registrations() {
                       );
                     })}
                   </div>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <div className="grid grid-cols-2 gap-3">
-                <FormField control={form.control} name="bikeModel" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Bike Model</FormLabel>
-                    <FormControl><Input placeholder="450 SX-F" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="bikeYear" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Bike Year</FormLabel>
-                    <FormControl><Input placeholder="2024" inputMode="numeric" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </div>
-              <FormField control={form.control} name="sponsors" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Sponsors</FormLabel>
-                  <FormControl><Input placeholder="Sponsors (comma separated)" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -1160,7 +1071,7 @@ export default function Registrations() {
               </div>
             )}
 
-            <Button type="submit" disabled={submitting || lookupState === "pick" || (riderOptions !== null && selectedRiderId === null) || bibCheckState === "taken" || bibCheckState === "checking"} className="w-full font-heading uppercase tracking-wider h-11">
+            <Button type="submit" disabled={submitting || bibCheckState === "taken" || bibCheckState === "checking"} className="w-full font-heading uppercase tracking-wider h-11">
               {submitting ? <><Loader2 size={16} className="mr-2 animate-spin" /> Registering...</> : "Complete Registration →"}
             </Button>
           </form>
@@ -1181,16 +1092,7 @@ export default function Registrations() {
           </div>
           {regSuccess && <ConfirmationCard reg={regSuccess} />}
           <div className="flex gap-3">
-            <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => {
-              form.reset();
-              lookupRequestRef.current++;
-              setSelectedRiderId(null);
-              setRiderOptions(null);
-              setLookedUpName("");
-              setLookupState("idle");
-              setStep("form");
-              setRegSuccess(null);
-            }}>
+            <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => { form.reset(); setStep("form"); setRegSuccess(null); }}>
               Register Another
             </Button>
             <Button className="flex-1 font-heading uppercase" onClick={() => setIsAddOpen(false)}>Done</Button>
@@ -1221,16 +1123,7 @@ export default function Registrations() {
             />
           )}
           <div className="flex gap-3">
-            <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => {
-              form.reset();
-              lookupRequestRef.current++;
-              setSelectedRiderId(null);
-              setRiderOptions(null);
-              setLookedUpName("");
-              setLookupState("idle");
-              setStep("form");
-              setRegSuccess(null);
-            }}>
+            <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => { form.reset(); setStep("form"); setRegSuccess(null); }}>
               Register Another
             </Button>
             <Button className="flex-1 font-heading uppercase" onClick={() => setIsAddOpen(false)}>Done</Button>
@@ -1774,7 +1667,7 @@ export default function Registrations() {
                   const isEditing = editingBibId === reg.id;
                   const transponderVal = (reg as any).myLapsTransponderNumber as string | null;
                   const transponderIsRental = !!(reg as any).transponderRental;
-                  const hasInvalidTransponder = isActiveTransponder && isInvalidAssignedActiveTransponderIdentifier(transponderVal);
+                  const hasInvalidTransponder = isActiveTransponder && isInvalidTransponder(transponderVal);
                   const rfidVal = !isActiveTransponder ? (reg as any).rfidNumber as string | null : null;
                   const hasInvalidRfid = !isActiveTransponder && isInvalidRfid(rfidVal);
 

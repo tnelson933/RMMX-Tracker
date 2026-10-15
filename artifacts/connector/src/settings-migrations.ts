@@ -1,4 +1,4 @@
-export function migrateLegacyActiveTransponderAddress(
+export function migrateLegacyFeibotAddress(
   hardware: string | null,
   address: unknown,
 ): string {

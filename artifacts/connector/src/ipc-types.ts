@@ -25,8 +25,6 @@ export interface AggregateStatus {
     loop2State?: string | null;
     diagnosis?: string | null;
     ready?: boolean;
-    hostTimezone?: string | null;
-    utcOffsetMinutes?: number;
   };
   activeMoto: { motoId: number; name: string } | null;
   testMode: boolean;

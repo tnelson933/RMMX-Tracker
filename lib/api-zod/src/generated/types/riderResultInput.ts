@@ -13,6 +13,4 @@ export interface RiderResultInput {
   lapTimes?: string[];
   dnf?: boolean;
   dns?: boolean;
-  bibNumber?: string;
-  riderName?: string;
 }

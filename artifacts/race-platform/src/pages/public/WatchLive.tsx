@@ -6,17 +6,6 @@ import { useListMotos, useListResults } from "@workspace/api-client-react";
 import { SplitView360 } from "@/components/SplitView360";
 import { StackedSplitView } from "@/components/StackedSplitView";
 import { getPublicOrigin } from "@/lib/publicOrigin";
-import {
-  announcementStartOffsetSeconds,
-  appendAnnouncementTask,
-  isCurrentAnnouncementGeneration,
-  sharedAnnouncerMotoId,
-  shouldAcceptAnnouncement,
-  shouldQueueAnnouncementAudio,
-  type SharedAnnouncement,
-} from "@/lib/sharedAnnouncer";
-import { LiveRaceViews, type LeaderboardData } from "./LiveLeaderboard";
-import { isPlaybackStalled, isVideoQueueOverLimit } from "@/lib/videoPlaybackPolicy";
 
 type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
 
@@ -50,7 +39,17 @@ function getWsUrl(eventId: number): string {
   return `${proto}//${host}/api/video/watch/${eventId}`;
 }
 
-type LeaderboardEntry = LeaderboardData["leaderboard"][number];
+interface LeaderboardEntry {
+  position: number;
+  riderId: number;
+  riderName: string;
+  bibNumber: string | null;
+  laps: number;
+  lastLap: string | null;
+  gap: string;
+  dnf: boolean;
+  dns: boolean;
+}
 
 export default function WatchLive() {
   const [, params] = useRoute("/watch/:eventId");
@@ -69,13 +68,7 @@ export default function WatchLive() {
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [announcerOn, setAnnouncerOn] = useState(true);
   const [announcerLabel, setAnnouncerLabel] = useState<string | null>(null);
-  const [announcerConnected, setAnnouncerConnected] = useState(false);
-  const [announcerError, setAnnouncerError] = useState(false);
   const [sseLeaderboard, setSseLeaderboard] = useState<LeaderboardEntry[] | null>(null);
-  const [liveSnapshot, setLiveSnapshot] = useState<LeaderboardData | null>(null);
-  const [timingConnected, setTimingConnected] = useState(false);
-  const [timingCorrectionVisible, setTimingCorrectionVisible] = useState(false);
-  const correctionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioUnlockedRef = useRef(false);
   // Once a 360 format is confirmed, lock it so MSE reconnects can't reset the detection.
   const formatLockedRef = useRef(false);
@@ -85,7 +78,6 @@ export default function WatchLive() {
   const msRef = useRef<MediaSource | null>(null);
   const sbRef = useRef<SourceBuffer | null>(null);
   const queueRef = useRef<ArrayBuffer[]>([]);
-  const queuedBytesRef = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastTimeRef = useRef<number>(-1);
@@ -99,13 +91,16 @@ export default function WatchLive() {
 
   // Announcer refs
   const announcerOnRef = useRef(true);
-  const audioQueueRef = useRef<Array<{ url: string; offsetSeconds: number }>>([]);
+  const audioQueueRef = useRef<string[]>([]);
   const annPlayingRef = useRef(false);
-  const lastAnnouncementSequenceRef = useRef(0);
-  const announcementFetchRef = useRef<Promise<void>>(Promise.resolve());
-  const announcementGenerationRef = useRef(0);
+  const prevLapsRef = useRef<Map<number, number>>(new Map());
+  const prevPositionsRef = useRef<Map<number, number>>(new Map());
+  // Tracks the last lap number that actually triggered an announcement.
+  // Separate from prevLapsRef (which updates on every SSE message) so the
+  // "wait for 3 riders" threshold can still fire after prevLapsRef has
+  // already advanced past the leader's crossing.
+  const lastAnnouncedLapRef = useRef<number>(0);
   const esRef = useRef<EventSource | null>(null);
-  const announcerEsRef = useRef<EventSource | null>(null);
   const activeMotoIdRef = useRef<number | null>(null);
   const prevSseStatusRef = useRef<string | null>(null);
 
@@ -121,7 +116,6 @@ export default function WatchLive() {
   const activeMoto =
     motos?.find(m => m.status === "in_progress") ??
     [...(motos ?? [])].filter(m => m.status === "completed").pop();
-  const announcerMotoId = sharedAnnouncerMotoId(activeMoto);
 
   // All motos sorted for the schedule panel
   const scheduleMotos = [...(motos ?? [])]
@@ -166,7 +160,7 @@ export default function WatchLive() {
       }
       annPlayingRef.current = false;
       // Revoke and discard all queued URLs
-      for (const item of audioQueueRef.current) URL.revokeObjectURL(item.url);
+      for (const url of audioQueueRef.current) URL.revokeObjectURL(url);
       audioQueueRef.current = [];
     }
   }, [announcerOn]);
@@ -175,7 +169,7 @@ export default function WatchLive() {
   const drainQueue = useCallback(() => {
     if (annPlayingRef.current || audioQueueRef.current.length === 0) return;
     if (!announcerOnRef.current) { audioQueueRef.current = []; return; }
-    const { url, offsetSeconds } = audioQueueRef.current.shift()!;
+    const url = audioQueueRef.current.shift()!;
     annPlayingRef.current = true;
     const audio = new Audio(url);
     currentAudioRef.current = audio;
@@ -187,145 +181,156 @@ export default function WatchLive() {
     };
     audio.onended = cleanup;
     audio.onerror = cleanup;
-    audio.onloadedmetadata = () => {
-      if (offsetSeconds > 0 && Number.isFinite(audio.duration) && offsetSeconds < audio.duration) {
-        audio.currentTime = offsetSeconds;
-      }
-    };
     audio.play().catch(() => { annPlayingRef.current = false; drainQueue(); });
   }, []);
 
-  const enqueueAudio = useCallback((blob: Blob, offsetSeconds = 0) => {
+  const enqueueAudio = useCallback((blob: Blob) => {
     if (!announcerOnRef.current) return;   // discard if muted after fetch resolved
     const url = URL.createObjectURL(blob);
-    audioQueueRef.current.push({ url, offsetSeconds });
+    audioQueueRef.current.push(url);
     drainQueue();
   }, [drainQueue]);
 
-  const receiveAnnouncement = useCallback((
-    announcement: SharedAnnouncement | null | undefined,
-    generation: number,
+  // ── Moto-start hype intro ────────────────────────────────────────────────
+  const triggerStartAnnouncement = useCallback(async (moto: typeof activeMoto) => {
+    if (!announcerOnRef.current || !moto) return;
+    try {
+      setAnnouncerLabel("Race starting!");
+      const res = await fetch("/api/timing/announce-moto-start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          motoName: moto.name,
+          motoType: moto.type,
+          raceClass: moto.raceClass ?? null,
+          lineup: ((moto.lineup ?? []) as Array<{ bibNumber?: string | null; riderName?: string | null }>)
+            .map(r => ({ bibNumber: r.bibNumber ?? null, riderName: r.riderName ?? null })),
+        }),
+      });
+      if (!res.ok) { setAnnouncerLabel(null); return; }
+      enqueueAudio(await res.blob());
+      setTimeout(() => setAnnouncerLabel(null), 6_000);
+    } catch { setAnnouncerLabel(null); }
+  }, [enqueueAudio]);
+
+  // ── Full AI TTS announcement (OpenAI voice — used for race-complete only) ────
+  const triggerAnnouncement = useCallback(async (
+    lapCompleted: number,
+    top5: LeaderboardEntry[],
+    positionChanges: Array<{ riderName: string; from: number; to: number }>,
+    isComplete: boolean
   ) => {
-    if (!shouldAcceptAnnouncement(lastAnnouncementSequenceRef.current, announcement)) return;
-    if (!announcement) return;
-    lastAnnouncementSequenceRef.current = announcement.sequence;
-    announcementFetchRef.current = appendAnnouncementTask(announcementFetchRef.current, async () => {
-      if (!isCurrentAnnouncementGeneration(announcementGenerationRef.current, generation)) return;
-      if (!shouldQueueAnnouncementAudio(announcerOnRef.current)) return;
-      try {
-        setAnnouncerLabel(announcement.label);
-        setAnnouncerError(false);
-        let blob: Blob | null = null;
-        for (let attempt = 0; attempt < 3 && !blob; attempt++) {
-          if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 500 * 2 ** attempt));
-          const res = await fetch(announcement.audioUrl).catch(() => null);
-          if (res?.ok) blob = await res.blob();
-        }
-        if (!blob) {
-          if (isCurrentAnnouncementGeneration(announcementGenerationRef.current, generation)) {
-            setAnnouncerError(true);
-            setAnnouncerLabel(null);
-          }
-          return;
-        }
-        if (!isCurrentAnnouncementGeneration(announcementGenerationRef.current, generation)) return;
-        enqueueAudio(blob, announcementStartOffsetSeconds(announcement));
-        setTimeout(() => setAnnouncerLabel(null), 6_000);
-      } catch { setAnnouncerLabel(null); }
-    });
+    if (!announcerOnRef.current) return;
+    try {
+      setAnnouncerLabel(isComplete ? "Race complete!" : `Lap ${lapCompleted} announced`);
+      const res = await fetch("/api/timing/announce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lapCompleted,
+          top5: top5.slice(0, 5).map(e => ({
+            position: e.position, riderName: e.riderName, laps: e.laps,
+            lastLap: e.lastLap, gap: e.gap, dnf: e.dnf, dns: e.dns,
+          })),
+          positionChanges,
+          isComplete,
+        }),
+      });
+      if (!res.ok) return;
+      enqueueAudio(await res.blob());
+    } catch { /* skip silently */ }
   }, [enqueueAudio]);
 
   // ── SSE: real-time timing data + announcer ────────────────────────────────
   useEffect(() => {
-    const motoId = announcerMotoId;
-    const generation = ++announcementGenerationRef.current;
-    announcementFetchRef.current = Promise.resolve();
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current.src = "";
-      currentAudioRef.current = null;
-    }
-    annPlayingRef.current = false;
-    for (const item of audioQueueRef.current) URL.revokeObjectURL(item.url);
-    audioQueueRef.current = [];
-    setAnnouncerLabel(null);
+    const motoId = activeMoto?.status === "in_progress" ? activeMoto.id : null;
     if (!motoId) {
       esRef.current?.close();
-      announcerEsRef.current?.close();
-      announcerEsRef.current = null;
       esRef.current = null;
       activeMotoIdRef.current = null;
       prevSseStatusRef.current = null;
       setSseLeaderboard(null);
-      setLiveSnapshot(null);
-      setTimingConnected(false);
-      setAnnouncerConnected(false);
-      setAnnouncerError(false);
-      setTimingCorrectionVisible(false);
-      if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
       return;
     }
     if (activeMotoIdRef.current === motoId) return; // already connected
 
     esRef.current?.close();
     activeMotoIdRef.current = motoId;
+    prevLapsRef.current = new Map();
+    prevPositionsRef.current = new Map();
     prevSseStatusRef.current = null;
-    lastAnnouncementSequenceRef.current = 0;
-    setTimingCorrectionVisible(false);
+
+    // Fire the race-start hype intro whenever we connect to a new in_progress moto.
+    triggerStartAnnouncement(activeMoto);
 
     const es = new EventSource(`/api/timing/live/${motoId}`);
     esRef.current = es;
-    es.onopen = () => setTimingConnected(true);
-    es.onerror = () => setTimingConnected(false);
-    const announcerEs = new EventSource(`/api/timing/announcer-live/${motoId}`);
-    announcerEsRef.current = announcerEs;
-    announcerEs.onopen = () => {
-      if (announcementGenerationRef.current === generation) {
-        setAnnouncerConnected(true);
-      }
-    };
-    announcerEs.onerror = () => {
-      if (announcementGenerationRef.current === generation) setAnnouncerConnected(false);
-    };
 
     es.onmessage = (evt) => {
       try {
         const payload = JSON.parse(evt.data);
         if (payload.error) return;
-        // crossing_accepted acknowledgements share this stream with complete
-        // leaderboard snapshots. Ignore non-snapshot messages; the updated
-        // leaderboard arrives immediately afterward.
-        if (!Array.isArray(payload.leaderboard)) return;
+
         const leaderboard = payload.leaderboard as LeaderboardEntry[];
-        setLiveSnapshot(payload as LeaderboardData);
-        if (payload.correction) {
-          setTimingCorrectionVisible(true);
-          if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
-          correctionTimerRef.current = setTimeout(() => setTimingCorrectionVisible(false), 5_000);
+        const isComplete = payload.status === "completed";
+        const wasInProgress = prevSseStatusRef.current === "in_progress";
+
+        // Skip announcements on the very first SSE message (initial snapshot) —
+        // prevLapsRef is empty so every rider would look like a new crossing.
+        const isFirstMessage = prevLapsRef.current.size === 0;
+
+        if (!isFirstMessage) {
+          // Detect position changes across all riders
+          const positionChanges: Array<{ riderName: string; from: number; to: number }> = [];
+          for (const entry of leaderboard) {
+            const prevPos = prevPositionsRef.current.get(entry.riderId);
+            if (prevPos !== undefined && prevPos !== entry.position) {
+              positionChanges.push({ riderName: entry.riderName, from: prevPos, to: entry.position });
+            }
+          }
+
+          if (isComplete && wasInProgress) {
+            // Race complete — full podium recap
+            const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
+            triggerAnnouncement(top5[0]?.laps ?? 0, top5, [], true);
+          } else if (!isComplete) {
+            // Announce when enough riders have completed the leader's current
+            // lap.  We gate on ≥3 riders to avoid premature callouts in the
+            // opening seconds when only 1–2 riders have crossed.
+            //
+            // We use lastAnnouncedLapRef (not prevLapsRef) for the "new lap"
+            // check.  prevLapsRef is updated on every SSE message, so it
+            // advances to N the moment the leader crosses; subsequent SSE
+            // messages (P2, P3 crossing) would see leader.laps === prevLapsRef
+            // and never fire.  lastAnnouncedLapRef only advances when we
+            // actually speak — so the gate stays open until 3 riders are on
+            // the same lap, at which point the gaps are time-based, not laps.
+            const leader = leaderboard[0];
+            if (leader && leader.laps > lastAnnouncedLapRef.current) {
+              const ridersOnLeaderLap = leaderboard.filter(r => r.laps >= leader.laps && !r.dnf && !r.dns).length;
+              if (ridersOnLeaderLap >= 5) {
+                const top5 = leaderboard.filter(r => !r.dnf && !r.dns).slice(0, 5);
+                triggerAnnouncement(leader.laps, top5, positionChanges, false);
+                lastAnnouncedLapRef.current = leader.laps;
+              }
+            }
+          }
+        }
+
+        for (const entry of leaderboard) {
+          prevLapsRef.current.set(entry.riderId, entry.laps);
+          prevPositionsRef.current.set(entry.riderId, entry.position);
         }
         prevSseStatusRef.current = payload.status;
         setSseLeaderboard(leaderboard);
       } catch { /* ignore parse errors */ }
     };
-    announcerEs.onmessage = (evt) => {
-      try {
-        const payload = JSON.parse(evt.data);
-        receiveAnnouncement(payload.announcement, generation);
-      } catch { /* ignore parse errors */ }
-    };
 
     return () => {
-      if (announcementGenerationRef.current === generation) {
-        announcementGenerationRef.current++;
-      }
       es.close();
-      announcerEs.close();
-      setTimingConnected(false);
-      if (correctionTimerRef.current) clearTimeout(correctionTimerRef.current);
-      if (announcerEsRef.current === announcerEs) announcerEsRef.current = null;
       if (esRef.current === es) { esRef.current = null; activeMotoIdRef.current = null; }
     };
-  }, [announcerMotoId, receiveAnnouncement]);
+  }, [activeMoto?.id, activeMoto?.status, triggerAnnouncement, triggerStartAnnouncement]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -350,7 +355,6 @@ export default function WatchLive() {
     msRef.current = null;
     sbRef.current = null;
     queueRef.current = [];
-    queuedBytesRef.current = 0;
     // Only reset video.src when there was an active MediaSource to detach.
     // Skipping this on a fresh connection (hadMs = false) avoids spurious
     // load events that can interfere with a pending MSE initialisation.
@@ -358,13 +362,6 @@ export default function WatchLive() {
       videoRef.current.src = "";   // triggers sourceclose on the old MediaSource (ignored since ref is null)
       videoRef.current.load();     // reset decoder state
     }
-  }
-
-  function recoverMediaPipeline(reason: string) {
-    if (cleaningUpRef.current) return;
-    logEvent(`${reason} — requesting clean live boundary`);
-    teardownMSE();
-    wsRef.current?.close();
   }
 
   function cleanup() {
@@ -445,13 +442,10 @@ export default function WatchLive() {
           if (sbRef.current !== sb || msRef.current?.readyState !== "open") return;
           if (queueRef.current.length > 0 && !sb.updating) {
             const next = queueRef.current.shift()!;
-            queuedBytesRef.current -= next.byteLength;
             try {
               sb.appendBuffer(next);
             } catch (err) {
               logEvent(`appendBuffer(queue): ${err instanceof Error ? err.message : String(err)}`);
-              recoverMediaPipeline("queued append failed");
-              return;
             }
           }
           tryPlay();
@@ -460,7 +454,6 @@ export default function WatchLive() {
         // Flush first queued chunk (should be the WebM init segment)
         if (queueRef.current.length > 0 && !sb.updating) {
           const next = queueRef.current.shift()!;
-          queuedBytesRef.current -= next.byteLength;
           // Log first 4 bytes so we can confirm it's a WebM EBML header (1A 45 DF A3)
           const hdr = new Uint8Array(next, 0, Math.min(4, next.byteLength));
           const hex = Array.from(hdr).map(b => b.toString(16).padStart(2, "0")).join(" ");
@@ -469,8 +462,6 @@ export default function WatchLive() {
             sb.appendBuffer(next);
           } catch (err) {
             logEvent(`appendBuffer(init): ${err instanceof Error ? err.message : String(err)}`);
-            recoverMediaPipeline("initial append failed");
-            return;
           }
         } else {
           logEvent("sourceopen: queue empty — no init segment!");
@@ -538,11 +529,11 @@ export default function WatchLive() {
     const sb = sbRef.current;
     // Guard: if there's no SourceBuffer or the parent MediaSource isn't open, queue the chunk
     if (!sb || msRef.current?.readyState !== "open") {
-      enqueueChunk(data);
+      queueRef.current.push(data);
       return;
     }
     if (sb.updating || queueRef.current.length > 0) {
-      enqueueChunk(data);
+      queueRef.current.push(data);
     } else {
       try {
         sb.appendBuffer(data);
@@ -557,18 +548,8 @@ export default function WatchLive() {
             }
           }
         } catch {}
-        recoverMediaPipeline("live append failed");
+        queueRef.current.push(data);
       }
-    }
-  }
-
-  function enqueueChunk(data: ArrayBuffer) {
-    queueRef.current.push(data);
-    queuedBytesRef.current += data.byteLength;
-    if (isVideoQueueOverLimit(queueRef.current.length, queuedBytesRef.current)) {
-      logEvent(`client queue overflow (${queueRef.current.length} chunks) — reconnecting`);
-      teardownMSE();
-      wsRef.current?.close();
     }
   }
 
@@ -614,7 +595,6 @@ export default function WatchLive() {
     ws.addEventListener("close", () => clearInterval(keepAliveId), { once: true });
 
     ws.onmessage = (e) => {
-      if (wsRef.current !== ws) return;
       // The Replit proxy converts text WebSocket frames into binary frames.
       // Detect JSON messages by checking for the '{' magic byte (0x7b) so we
       // handle them correctly regardless of whether they arrive as string or ArrayBuffer.
@@ -705,7 +685,7 @@ export default function WatchLive() {
           // black frame.  If autoplay is blocked the user would see a black
           // screen with the Live badge but no video — exactly the symptom.
           initMSE(mimeTypeRef.current);
-          enqueueChunk(e.data as ArrayBuffer);
+          queueRef.current.push(e.data as ArrayBuffer);
         } else {
           // Subsequent binary chunks — MSE is initialising or already open.
           // Don't set "playing" here either; sourceopen is the single source
@@ -725,7 +705,7 @@ export default function WatchLive() {
       const video = videoRef.current;
       if (!video || viewerStateRef.current !== "playing") return;
       const t = video.currentTime;
-      if (isPlaybackStalled(viewerStateRef.current, video.paused, t, lastTimeRef.current)) {
+      if (t === lastTimeRef.current && !video.paused) {
         logEvent("stall detected — reconnecting");
         clearInterval(stallTimerRef.current!);
         stallTimerRef.current = null;
@@ -735,12 +715,9 @@ export default function WatchLive() {
       }
     }, 4000);
 
-    ws.onerror = () => {
-      if (wsRef.current === ws) setViewerStateSynced("error");
-    };
+    ws.onerror = () => { setViewerStateSynced("error"); };
 
     ws.onclose = () => {
-      if (wsRef.current !== ws) return;
       if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
       if (!cleaningUpRef.current) {
         // Capture state BEFORE overwriting so the "ended" delay check is accurate.
@@ -830,10 +807,10 @@ export default function WatchLive() {
       </div>
 
       {/* Main content: sidebar + video */}
-      <div className="flex flex-1 flex-col overflow-y-auto md:min-h-0 md:flex-row md:overflow-hidden">
+      <div className="flex-1 flex min-h-0">
 
         {/* ── Left sidebar: current moto + leaderboard ── */}
-        <div className="h-44 w-full shrink-0 border-b border-white/10 flex flex-col overflow-hidden md:h-auto md:w-64 md:border-b-0 md:border-r">
+        <div className="w-64 shrink-0 border-r border-white/10 flex flex-col overflow-hidden">
           {activeMoto ? (
             <>
               {/* Moto header */}
@@ -884,18 +861,6 @@ export default function WatchLive() {
                 <div className="px-3 py-1 border-b border-white/5 shrink-0 flex items-center gap-1 text-primary/60 text-[10px]">
                   <Volume2 size={9} />
                   {announcerLabel}
-                </div>
-              )}
-              {announcerOn && activeMoto.status === "in_progress" && !announcerConnected && (
-                <div className="px-3 py-1 border-b border-white/5 shrink-0 flex items-center gap-1 text-yellow-400/70 text-[10px]">
-                  <Volume2 size={9} />
-                  Announcer reconnecting…
-                </div>
-              )}
-              {announcerOn && announcerError && (
-                <div className="px-3 py-1 border-b border-white/5 shrink-0 flex items-center gap-1 text-red-400/70 text-[10px]">
-                  <VolumeX size={9} />
-                  Announcer audio unavailable
                 </div>
               )}
 
@@ -1090,12 +1055,8 @@ export default function WatchLive() {
           )}
         </div>
 
-        {/* ── Video and live race views (right side) ── */}
-        <div className="relative flex min-h-[34rem] min-w-0 flex-1 flex-col bg-black md:min-h-0">
-        <div
-          data-viewer-state={viewerState}
-          className="relative flex min-h-[18rem] flex-1 items-center justify-center bg-black md:min-h-0"
-        >
+        {/* ── Video (right side) ── */}
+        <div className="flex-1 flex items-center justify-center relative bg-black">
           {/* 360 split view: front + back lenses side-by-side via canvas */}
           {is360 && <SplitView360 videoRef={videoRef} />}
 
@@ -1230,17 +1191,6 @@ export default function WatchLive() {
           </div>
         )}
         </div>{/* end video panel */}
-        {activeMoto?.status === "in_progress" && (
-          <div className="h-64 shrink-0 border-t border-white/10 md:h-[19rem] md:max-h-[42vh]">
-            <LiveRaceViews
-              data={liveSnapshot}
-              connected={timingConnected}
-              correctionVisible={timingCorrectionVisible}
-              compact
-            />
-          </div>
-        )}
-        </div>{/* end video and analytics column */}
       </div>{/* end sidebar+video flex row */}
 
       {/* Footer */}

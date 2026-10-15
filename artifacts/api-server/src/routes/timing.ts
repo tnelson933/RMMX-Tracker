@@ -13,51 +13,13 @@ import {
   registrationsTable,
 } from "@workspace/db";
 import { fetchEnduoPenaltyMap } from "./enduro-scoring";
-import { eq, and, asc, desc, isNotNull, isNull, or, gt, lt, sql, inArray, ilike } from "drizzle-orm";
+import { eq, and, asc, desc, isNotNull, or, gt, sql, inArray, ilike } from "drizzle-orm";
 import type { Response } from "express";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
 import { recordTagSeen } from "../lib/recentTags";
-import {
-  canonicalizeCrossingTimestamp,
-  deriveClockSkewRepair,
-  isTrustedDirectActiveTimingSource,
-  isImplausiblyFutureCrossing,
-  parseTrustworthyReceivedAt,
-} from "../lib/crossingTimestamp";
-import {
-  advanceAnnouncerLifecycle,
-  calculateRaceTimeRemainingMs,
-  createAnnouncerLifecycleState,
-  hydrateAnnouncerLifecycle,
-  type AnnouncerLifecycleState,
-} from "../lib/announcerLifecycle";
-import {
-  buildAnnouncementScript as buildRaceAnnouncementScript,
-  type AnnouncerEntry,
-  type AnnouncerPositionChange,
-} from "../lib/announcerScript";
 
 const router = Router();
-
-function ingestCrossingTime(value: unknown, source: string): Date {
-  const receivedAt = new Date();
-  return canonicalizeCrossingTimestamp(value ?? receivedAt, receivedAt, { source });
-}
-
-function ingestDirectActiveCrossingTime(value: unknown, body: Record<string, unknown>, source: string): Date {
-  const serverReceivedAt = new Date();
-  const originalReceipt = parseTrustworthyReceivedAt(
-    body.receivedAtUtc ?? body.receivedAt,
-    serverReceivedAt,
-  );
-  const receivedAt = originalReceipt ?? serverReceivedAt;
-  return canonicalizeCrossingTimestamp(value ?? receivedAt, receivedAt, {
-    source,
-    deviceTimezone: body.deviceTimezone,
-    timeSource: body.timeSource ?? body.source,
-  }, originalReceipt !== null && isTrustedDirectActiveTimingSource(body.source, body.timeSource));
-}
 
 function getStaffClubId(res: any): number | null {
   const v = res.locals?.staffClubId;
@@ -81,49 +43,6 @@ async function checkEventClubAccess(eventId: number, staffCId: number | null): P
 // ── SSE registry: motoId → connected Response objects ─────────────────────────
 const sseClients = new Map<number, Set<Response>>();
 
-type AnnouncerEvent = {
-  id: string;
-  sequence: number;
-  kind: "start" | "lap" | "time_expired" | "extra_lap" | "finish";
-  lap: number;
-  createdAt: string;
-  audioUrl: string;
-  label: string;
-};
-
-type AnnouncerState = {
-  sequence: number;
-  lifecycle: AnnouncerLifecycleState;
-  currentEvent: AnnouncerEvent | null;
-  pending: Promise<void>;
-  retrySnapshot: LeaderboardSnapshot | null;
-};
-
-const announcerStates = new Map<number, AnnouncerState>();
-const announcerAudio = new Map<string, { buffer: Buffer; createdAt: number }>();
-const ANNOUNCER_CLIP_WINDOW_MS = 20_000;
-
-function getAnnouncerState(motoId: number): AnnouncerState {
-  let state = announcerStates.get(motoId);
-  if (!state) {
-    state = {
-      sequence: 0,
-      lifecycle: createAnnouncerLifecycleState(),
-      currentEvent: null,
-      pending: Promise.resolve(),
-      retrySnapshot: null,
-    };
-    announcerStates.set(motoId, state);
-  }
-  return state;
-}
-
-function activeAnnouncement(state: AnnouncerState): AnnouncerEvent | null {
-  if (!state.currentEvent) return null;
-  const ageMs = Date.now() - new Date(state.currentEvent.createdAt).getTime();
-  return ageMs <= ANNOUNCER_CLIP_WINDOW_MS ? state.currentEvent : null;
-}
-
 function sseSubscribe(motoId: number, res: Response) {
   if (!sseClients.has(motoId)) sseClients.set(motoId, new Set());
   sseClients.get(motoId)!.add(res);
@@ -144,54 +63,6 @@ export function sseBroadcast(motoId: number, data: object) {
       clients.delete(client);
     }
   }
-}
-
-function broadcastAnnouncement(motoId: number, announcement: AnnouncerEvent) {
-  const clients = announcerClients.get(motoId);
-  if (!clients?.size) return;
-  const payload = `data: ${JSON.stringify({ type: "announcement", announcement })}\n\n`;
-  for (const client of [...clients]) {
-    try {
-      (client as any).write(payload);
-    } catch {
-      clients.delete(client);
-    }
-  }
-}
-
-const announcerClients = new Map<number, Set<Response>>();
-
-function announcerSubscribe(motoId: number, res: Response) {
-  if (!announcerClients.has(motoId)) announcerClients.set(motoId, new Set());
-  announcerClients.get(motoId)!.add(res);
-}
-
-function announcerUnsubscribe(motoId: number, res: Response) {
-  announcerClients.get(motoId)?.delete(res);
-}
-
-function broadcastCrossingAccepted(input: {
-  motoId: number;
-  crossingId: number;
-  lapNumber: number;
-  lapTimeMs: number;
-  crossingTime: Date;
-  readerId?: string;
-  readerReceivedAt?: string;
-  ingestStartedAt: string;
-}) {
-  sseBroadcast(input.motoId, {
-    type: "crossing_accepted",
-    motoId: input.motoId,
-    crossingId: input.crossingId,
-    lapNumber: input.lapNumber,
-    lapTimeMs: input.lapTimeMs,
-    crossingTime: input.crossingTime.toISOString(),
-    readerReceivedAt: input.readerReceivedAt ?? null,
-    ingestStartedAt: input.ingestStartedAt,
-    acknowledgedAt: new Date().toISOString(),
-    readerId: input.readerId ?? null,
-  });
 }
 
 // ── RMonitor SSE registry: eventId → bridge connections ───────────────────────
@@ -304,265 +175,10 @@ function normalizeLapMs(val: unknown): number {
   return 0;
 }
 
-function buildPositionMaps(
-  crossings: Array<{ riderId: number | null; lapNumber: number | null }>,
-  eligibleRiderIds: Set<number>,
-): Map<number, Map<number, number>> {
-  const positionsByLap = new Map<number, Map<number, number>>();
-
-  for (const crossing of crossings) {
-    if (
-      crossing.riderId == null
-      || !eligibleRiderIds.has(crossing.riderId)
-      || crossing.lapNumber == null
-      || crossing.lapNumber < 1
-    ) continue;
-    const lapPositions = positionsByLap.get(crossing.lapNumber) ?? new Map<number, number>();
-    // A corrected/replayed crossing should not create a second position for the
-    // same rider in one lap. The first crossing remains the order at the line.
-    if (!lapPositions.has(crossing.riderId)) {
-      lapPositions.set(crossing.riderId, lapPositions.size + 1);
-    }
-    positionsByLap.set(crossing.lapNumber, lapPositions);
-  }
-
-  return positionsByLap;
-}
-
-async function buildRaceAnalytics(
-  motoId: number,
-  raceStyle: string | null | undefined,
-  leaderboard: Array<{
-    position: number | null;
-    riderId: number;
-    riderName: string;
-    bibNumber: string | null;
-    laps: number;
-    dnf: boolean;
-    dns: boolean;
-  }>,
-) {
-  const activeEntries = leaderboard.filter(entry => !entry.dnf && !entry.dns);
-  const activeRiderIds = new Set(activeEntries.map(entry => entry.riderId));
-  const fieldCompletedLaps = activeEntries.length > 0
-    ? Math.min(...activeEntries.map(entry => entry.laps))
-    : 0;
-  const requestedLapNumbers = [...new Set([
-    1,
-    fieldCompletedLaps > 1 ? fieldCompletedLaps - 1 : null,
-    fieldCompletedLaps > 0 ? fieldCompletedLaps : null,
-  ].filter((lap): lap is number => lap != null))];
-
-  const [crossings, fastestLapRows] = await Promise.all([
-    requestedLapNumbers.length > 0
-      ? db
-        .select({
-          riderId: lapCrossingsTable.riderId,
-          lapNumber: lapCrossingsTable.lapNumber,
-        })
-        .from(lapCrossingsTable)
-        .where(and(
-          eq(lapCrossingsTable.motoId, motoId),
-          inArray(lapCrossingsTable.lapNumber, requestedLapNumbers),
-        ))
-        .orderBy(asc(lapCrossingsTable.crossingTime), asc(lapCrossingsTable.id))
-      : Promise.resolve([]),
-    db
-      .select({
-        riderId: lapCrossingsTable.riderId,
-        bestLapMs: sql<number | null>`min(${lapCrossingsTable.lapTimeMs})`,
-      })
-      .from(lapCrossingsTable)
-      .where(and(
-        eq(lapCrossingsTable.motoId, motoId),
-        isNotNull(lapCrossingsTable.riderId),
-        gt(lapCrossingsTable.lapNumber, raceStyle === "motocross" ? 1 : 0),
-        gt(lapCrossingsTable.lapTimeMs, 0),
-      ))
-      .groupBy(lapCrossingsTable.riderId),
-  ]);
-
-  const positionsByLap = buildPositionMaps(crossings, activeRiderIds);
-  const isCompleteFieldLap = (positions: Map<number, number> | undefined) =>
-    !!positions
-    && activeRiderIds.size > 0
-    && activeRiderIds.size === positions.size
-    && [...activeRiderIds].every(riderId => positions.has(riderId));
-  const firstLapCandidate = positionsByLap.get(1);
-  const firstLapPositions = isCompleteFieldLap(firstLapCandidate) ? firstLapCandidate! : null;
-  const latestLapCandidate = fieldCompletedLaps > 0 ? positionsByLap.get(fieldCompletedLaps) : undefined;
-  // "Last full lap" means every active rider has a unique crossing in that lap.
-  // This protects the callout from inconsistent result rows or a partial field.
-  const lastCompletedLap = isCompleteFieldLap(latestLapCandidate) ? fieldCompletedLaps : null;
-  const previousLapPositions = lastCompletedLap && lastCompletedLap > 1
-    ? positionsByLap.get(lastCompletedLap - 1) ?? null
-    : null;
-  const latestLapPositions = lastCompletedLap ? latestLapCandidate ?? null : null;
-  const currentPositions = new Map(
-    leaderboard
-      .filter(entry => !entry.dnf && !entry.dns && entry.position != null)
-      .map(entry => [entry.riderId, entry.position as number]),
-  );
-  const entryByRiderId = new Map(leaderboard.map(entry => [entry.riderId, entry]));
-
-  const describeRider = (riderId: number) => {
-    const entry = entryByRiderId.get(riderId);
-    return entry ? {
-      riderId: entry.riderId,
-      riderName: entry.riderName,
-      bibNumber: entry.bibNumber,
-    } : null;
-  };
-
-  let movingUp: {
-    riderId: number;
-    riderName: string;
-    bibNumber: string | null;
-    positionsGained: number;
-    fromPosition: number;
-    toPosition: number;
-    lapNumber: number;
-  } | null = null;
-  if (
-    previousLapPositions
-    && latestLapPositions
-    && lastCompletedLap
-    && isCompleteFieldLap(previousLapPositions)
-  ) {
-    for (const [riderId, fromPosition] of previousLapPositions) {
-      const toPosition = latestLapPositions.get(riderId);
-      const rider = describeRider(riderId);
-      if (!rider || toPosition == null) continue;
-      const positionsGained = fromPosition - toPosition;
-      if (positionsGained > (movingUp?.positionsGained ?? 0)) {
-        movingUp = { ...rider, positionsGained, fromPosition, toPosition, lapNumber: lastCompletedLap };
-      }
-    }
-  }
-
-  let mostPasses: {
-    riderId: number;
-    riderName: string;
-    bibNumber: string | null;
-    positionsGained: number;
-    startPosition: number;
-    currentPosition: number;
-  } | null = null;
-  let fallingBack: {
-    riderId: number;
-    riderName: string;
-    bibNumber: string | null;
-    positionsLost: number;
-    startPosition: number;
-    currentPosition: number;
-  } | null = null;
-  if (firstLapPositions) {
-    for (const [riderId, startPosition] of firstLapPositions) {
-      const currentPosition = currentPositions.get(riderId);
-      const rider = describeRider(riderId);
-      if (!rider || currentPosition == null) continue;
-      const positionDelta = startPosition - currentPosition;
-      if (positionDelta > (mostPasses?.positionsGained ?? 0)) {
-        mostPasses = { ...rider, positionsGained: positionDelta, startPosition, currentPosition };
-      }
-      const positionsLost = currentPosition - startPosition;
-      if (positionsLost > (fallingBack?.positionsLost ?? 0)) {
-        fallingBack = { ...rider, positionsLost, startPosition, currentPosition };
-      }
-    }
-  }
-
-  const bestLapByRiderId = new Map(
-    fastestLapRows
-      .filter(row => row.riderId != null && row.bestLapMs != null && row.bestLapMs > 0)
-      .map(row => [row.riderId as number, Number(row.bestLapMs)]),
-  );
-  const fastestLaps = leaderboard
-    .filter(entry => !entry.dnf && !entry.dns)
-    .sort((a, b) => {
-      const aBest = bestLapByRiderId.get(a.riderId) ?? null;
-      const bBest = bestLapByRiderId.get(b.riderId) ?? null;
-      if (aBest == null && bBest == null) return (a.position ?? 9999) - (b.position ?? 9999);
-      if (aBest == null) return 1;
-      if (bBest == null) return -1;
-      return aBest - bBest;
-    })
-    .map(entry => {
-      const bestLapMs = bestLapByRiderId.get(entry.riderId) ?? null;
-      return {
-        riderId: entry.riderId,
-        riderName: entry.riderName,
-        bibNumber: entry.bibNumber,
-        bestLapMs,
-        bestLap: bestLapMs != null ? formatLapTime(bestLapMs) : null,
-      };
-    });
-  const timedFastestLaps = fastestLaps.filter(entry => entry.bestLapMs != null);
-  const fastest = timedFastestLaps[0] ?? null;
-  const nextFastest = timedFastestLaps[1] ?? null;
-
-  return {
-    lastCompletedLap,
-    movingUp,
-    mostPasses,
-    fallingBack,
-    fastestLap: fastest ? {
-      ...fastest,
-      marginMs: nextFastest ? (nextFastest.bestLapMs as number) - (fastest.bestLapMs as number) : null,
-      margin: nextFastest ? formatLapTime((nextFastest.bestLapMs as number) - (fastest.bestLapMs as number)) : null,
-      nextRiderName: nextFastest?.riderName ?? null,
-    } : null,
-    fastestLaps,
-  };
-}
-
 // ── Leaderboard snapshot from current race_results ─────────────────────────────
 export async function buildLeaderboard(motoId: number) {
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
   if (!moto) return null;
-  const [event] = await db
-    .select({ raceStyle: eventsTable.raceStyle })
-    .from(eventsTable)
-    .where(eq(eventsTable.id, moto.eventId));
-  const excludeFirstLapFromBest = event?.raceStyle === "motocross";
-
-  // Repair the distinctive failure mode produced by a reader clock running in
-  // the future. lapNumber plus insertion id is the logical order; absolute
-  // crossing_time cannot be trusted in this case. Delayed (past) uploads are
-  // deliberately left untouched.
-  if (moto.startedAt) {
-    const crossings = await db
-      .select()
-      .from(lapCrossingsTable)
-      .where(eq(lapCrossingsTable.motoId, motoId))
-      .orderBy(asc(lapCrossingsTable.lapNumber), asc(lapCrossingsTable.id));
-    const byRider = new Map<number, typeof crossings>();
-    for (const crossing of crossings) {
-      if (crossing.riderId == null) continue;
-      const group = byRider.get(crossing.riderId) ?? [];
-      group.push(crossing);
-      byRider.set(crossing.riderId, group);
-    }
-    for (const [riderId, riderCrossings] of byRider) {
-      const repaired = deriveClockSkewRepair(moto.startedAt, riderCrossings);
-      if (!repaired?.length) continue;
-      await db.transaction(async tx => {
-        for (const crossing of repaired) {
-          await tx.update(lapCrossingsTable)
-            .set({ crossingTime: crossing.crossingTime, lapTimeMs: crossing.lapTimeMs })
-            .where(eq(lapCrossingsTable.id, crossing.id));
-        }
-        const lapTimes = repaired.map(c => c.lapTimeMs);
-        const totalMs = lapTimes.reduce((sum, value) => sum + value, 0);
-        await tx.update(raceResultsTable)
-          .set({ lapTimes, totalTime: formatLapTime(totalMs) })
-          .where(and(
-            eq(raceResultsTable.motoId, motoId),
-            eq(raceResultsTable.riderId, riderId),
-          ));
-      });
-    }
-  }
 
   const results = await db
     .select({
@@ -586,9 +202,6 @@ export async function buildLeaderboard(motoId: number) {
   const leaderboard = results.map((r) => {
     const raw = Array.isArray(r.lapTimes) ? (r.lapTimes as unknown[]) : [];
     const lapMs = raw.map(normalizeLapMs).filter(t => t > 0);
-    const eligibleLapMs = raw
-      .map(normalizeLapMs)
-      .filter((t, index) => (!excludeFirstLapFromBest || index >= 1) && t > 0);
     // Always prefer stored totalTime (matches web platform exactly — covers manually entered
     // results, RFID results, and results that were RFID-timed then manually corrected).
     // Fall back to summing RFID laps only when no stored value (live/in-progress moto).
@@ -596,7 +209,8 @@ export async function buildLeaderboard(motoId: number) {
     const rfidTotalMs = lapMs.length ? lapMs.reduce((s, t) => s + t, 0) : 0;
     const totalMs = storedTotalMs || rfidTotalMs;
     const lastMs = lapMs.at(-1) ?? null;
-    const bestMs = eligibleLapMs.length ? Math.min(...eligibleLapMs) : null;
+    const validMs = lapMs.filter(t => t > 0);
+    const bestMs = validMs.length ? Math.min(...validMs) : null;
     return {
       position: r.position,
       riderId: r.riderId,
@@ -630,45 +244,21 @@ export async function buildLeaderboard(motoId: number) {
       gap: entry.totalMs > 0 && leader.totalMs > 0 ? `+${formatLapTime(entry.totalMs - leader.totalMs)}` : "—",
     };
   });
-  const analytics = await buildRaceAnalytics(motoId, event?.raceStyle, withGaps);
-  const timeRemainingMs = calculateRaceTimeRemainingMs({
-    startedAt: moto.startedAt,
-    pausedAt: moto.pausedAt,
-    totalPausedMs: moto.totalPausedMs ?? 0,
-    timeLimitMs: moto.timeLimitMs,
-    timeExpiredAt: moto.timeExpiredAt,
-  });
 
   return {
     motoId,
     motoName: moto.name,
     raceClass: moto.raceClass,
-    motoType: moto.type,
-    fieldSize: Array.isArray(moto.lineup) ? moto.lineup.length : 0,
     status: moto.status,
     startedAt: moto.startedAt?.toISOString() ?? null,
     completedAt: moto.completedAt?.toISOString() ?? null,
-    lapCount: moto.lapCount ?? null,
     timeLimitMs: moto.timeLimitMs ?? null,
     plusLaps: moto.plusLaps ?? null,
     timeExpiredAt: moto.timeExpiredAt?.toISOString() ?? null,
-    pausedAt: moto.pausedAt?.toISOString() ?? null,
-    totalPausedMs: moto.totalPausedMs ?? 0,
-    timeRemainingMs,
-    announcerStartedAt: moto.announcerStartedAt?.toISOString() ?? null,
-    announcerLastLap: moto.announcerLastLap ?? 0,
-    announcerTimeExpiredAt: moto.announcerTimeExpiredAt?.toISOString() ?? null,
-    announcerExpiryLeaderLap: moto.announcerExpiryLeaderLap ?? null,
-    announcerLastExtraLap: moto.announcerLastExtraLap ?? 0,
-    announcerSequence: moto.announcerSequence ?? 0,
-    announcerFinishedAt: moto.announcerFinishedAt?.toISOString() ?? null,
     leaderboard: withGaps,
-    analytics,
     updatedAt: new Date().toISOString(),
   };
 }
-
-type LeaderboardSnapshot = NonNullable<Awaited<ReturnType<typeof buildLeaderboard>>>;
 
 // Default minimum milliseconds between two valid crossings for the same tag in the same moto.
 // Rejects burst duplicates from the same antenna pass (a single tag read triggers
@@ -694,20 +284,6 @@ function withMotoLock<T>(motoId: number, fn: () => Promise<T>): Promise<T> {
   return prev.then(() => fn()).finally(unlock);
 }
 
-async function updateRaceResultPositions(sorted: Array<{ id: number }>) {
-  if (sorted.length === 0) return;
-  const positionCases = sql.join(
-    sorted.map((result, index) => sql`when ${raceResultsTable.id} = ${result.id} then ${index + 1}`),
-    sql` `,
-  );
-  await db
-    .update(raceResultsTable)
-    .set({
-      position: sql<number>`case ${positionCases} else ${raceResultsTable.position} end`,
-    })
-    .where(inArray(raceResultsTable.id, sorted.map(result => result.id)));
-}
-
 // ── Core crossing processor (runs inside per-moto lock) ───────────────────────
 async function _processCrossing(opts: {
   rfidNumber: string;
@@ -717,16 +293,8 @@ async function _processCrossing(opts: {
   antennaId?: number;
   bypassDebounce?: boolean;
   overrideRiderId?: number | null;
-  readerReceivedAt?: string;
 }) {
-  const ingestStartedAt = new Date().toISOString();
-  const { rfidNumber, motoId, readerId, antennaId, bypassDebounce, overrideRiderId, readerReceivedAt } = opts;
-  // Last line of defence for internal callers that bypass an HTTP ingest route.
-  const crossingTime = canonicalizeCrossingTimestamp(opts.crossingTime, new Date(), {
-    source: "processCrossing",
-    motoId,
-    readerId,
-  });
+  const { rfidNumber, motoId, crossingTime, readerId, antennaId, bypassDebounce, overrideRiderId } = opts;
 
   // 1. Load moto
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
@@ -830,10 +398,7 @@ async function _processCrossing(opts: {
     // finish is never swallowed but a lingering tag at the line cannot self-finish.
     if (!bypassDebounce && riderCrossings.length > 0) {
       const last = riderCrossings[riderCrossings.length - 1];
-      const lastTime = isImplausiblyFutureCrossing(last.crossingTime, last.createdAt)
-        ? last.createdAt
-        : last.crossingTime;
-      const gapMs = crossingTime.getTime() - lastTime.getTime();
+      const gapMs = crossingTime.getTime() - new Date(last.crossingTime).getTime();
       if (gapMs < debounceMs) {
         return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
       }
@@ -863,7 +428,6 @@ async function _processCrossing(opts: {
       .insert(lapCrossingsTable)
       .values({ eventId: moto.eventId, motoId, riderId, rfidNumber, crossingTime, lapNumber, lapTimeMs: elapsedMs, readerId: readerId ?? null, antennaId: antennaId ?? null })
       .returning();
-    broadcastCrossingAccepted({ motoId, crossingId: crossing.id, lapNumber, lapTimeMs: elapsedMs, crossingTime, readerId, readerReceivedAt, ingestStartedAt });
 
     // Upsert race_result: running riders carry lapTimes [] (totalTime null → "—"),
     // finished riders carry a single elapsed entry used by the leaderboard.
@@ -922,8 +486,7 @@ async function _processCrossing(opts: {
     const enduroSorted = enduroResults
       .map((r) => {
         const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-        const eligibleLaps = laps.filter(lap => lap > 0);
-        const bestMs = eligibleLaps.length > 0 ? Math.min(...eligibleLaps) : null;
+        const bestMs = laps.length > 0 ? Math.min(...laps) : null;
         const pen = penaltyMap.get(r.riderId) ?? { penaltySeconds: 0, disqualified: false };
         return { id: r.id, bestMs, pen };
       })
@@ -937,11 +500,16 @@ async function _processCrossing(opts: {
         // Sort by best pass time + penalty seconds converted to ms
         return (a.bestMs + a.pen.penaltySeconds * 1_000) - (b.bestMs + b.pen.penaltySeconds * 1_000);
       });
-    await updateRaceResultPositions(enduroSorted);
+    for (let i = 0; i < enduroSorted.length; i++) {
+      await db
+        .update(raceResultsTable)
+        .set({ position: i + 1 })
+        .where(eq(raceResultsTable.id, enduroSorted[i].id));
+    }
 
     const enduroSnapshot = await buildLeaderboard(motoId);
     if (enduroSnapshot) {
-      publishTimingSnapshot(enduroSnapshot);
+      sseBroadcast(motoId, enduroSnapshot);
       const rmonLines = buildRMonitorLines(enduroSnapshot, {
         riderId,
         bibNumber: enduroSnapshot.leaderboard.find((e) => e.riderId === riderId)?.bibNumber ?? null,
@@ -959,16 +527,13 @@ async function _processCrossing(opts: {
     .select()
     .from(lapCrossingsTable)
     .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.rfidNumber, rfidNumber)))
-    .orderBy(asc(lapCrossingsTable.lapNumber), asc(lapCrossingsTable.id));
+    .orderBy(asc(lapCrossingsTable.crossingTime));
 
   // ── Debounce: reject burst reads from the same antenna pass ─────────────────
   // Skipped for manual crossings (organizer is intentionally pressing a button).
   if (!bypassDebounce && prevCrossings.length > 0) {
     const lastCrossing = prevCrossings[prevCrossings.length - 1];
-    const lastTime = isImplausiblyFutureCrossing(lastCrossing.crossingTime, lastCrossing.createdAt)
-      ? lastCrossing.createdAt
-      : lastCrossing.crossingTime;
-    const gapMs = crossingTime.getTime() - lastTime.getTime();
+    const gapMs = crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime();
     if (gapMs < debounceMs) {
       // Silent accept — not an error, just a duplicate burst read
       return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
@@ -978,24 +543,15 @@ async function _processCrossing(opts: {
   const lapNumber = prevCrossings.length + 1;
   const prevTime =
     prevCrossings.length > 0
-      ? (isImplausiblyFutureCrossing(
-          prevCrossings[prevCrossings.length - 1].crossingTime,
-          prevCrossings[prevCrossings.length - 1].createdAt,
-        )
-          ? prevCrossings[prevCrossings.length - 1].createdAt
-          : prevCrossings[prevCrossings.length - 1].crossingTime)
+      ? prevCrossings[prevCrossings.length - 1].crossingTime
       : moto.startedAt;
   const lapTimeMs = crossingTime.getTime() - new Date(prevTime).getTime();
-  if (!Number.isFinite(lapTimeMs) || lapTimeMs < 0) {
-    throw new Error("Crossing time precedes the moto start or previous lap");
-  }
 
   // 4. Store crossing
   const [crossing] = await db
     .insert(lapCrossingsTable)
     .values({ eventId: moto.eventId, motoId, riderId, rfidNumber, crossingTime, lapNumber, lapTimeMs, readerId: readerId ?? null, antennaId: antennaId ?? null })
     .returning();
-  broadcastCrossingAccepted({ motoId, crossingId: crossing.id, lapNumber, lapTimeMs, crossingTime, readerId, readerReceivedAt, ingestStartedAt });
 
   // 5. Upsert race_results for this rider
   if (riderId) {
@@ -1060,13 +616,18 @@ async function _processCrossing(opts: {
       })
       .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
 
-    await updateRaceResultPositions(sorted);
+    for (let i = 0; i < sorted.length; i++) {
+      await db
+        .update(raceResultsTable)
+        .set({ position: i + 1 })
+        .where(eq(raceResultsTable.id, sorted[i].id));
+    }
   }
 
   // 7. Build & broadcast leaderboard (JSON SSE for the live scoreboard widget)
   const snapshot = await buildLeaderboard(motoId);
   if (snapshot) {
-    publishTimingSnapshot(snapshot);
+    sseBroadcast(motoId, snapshot);
     // Also push RMonitor lines to any bridge clients subscribed to this event
     const rmonLines = buildRMonitorLines(snapshot, {
       riderId,
@@ -1095,7 +656,7 @@ async function _processCrossing(opts: {
           .set({ status: "completed", completedAt: new Date() })
           .where(eq(motosTable.id, motoId));
         const completedSnapshot = await buildLeaderboard(motoId);
-        if (completedSnapshot) publishTimingSnapshot(completedSnapshot);
+        if (completedSnapshot) sseBroadcast(motoId, completedSnapshot);
       }
     }
   }
@@ -1119,7 +680,10 @@ router.post("/timing/crossing", async (req, res) => {
     return res.status(400).json({ error: "rfidNumber and motoId are required" });
   }
 
-  const time = ingestCrossingTime(crossingTime, "direct_crossing_ingest");
+  const time = crossingTime ? new Date(crossingTime) : new Date();
+  if (isNaN(time.getTime())) {
+    return res.status(400).json({ error: "Invalid crossingTime" });
+  }
 
   const antenna = antennaId !== undefined ? Number(antennaId) : undefined;
 
@@ -1207,7 +771,7 @@ async function getActivePracticeSessionForClub(clubId: number) {
 //
 // Accepts ALL hardware payload formats:
 //   • Generic:           { rfidNumber, crossingTime? }
-//   • F2000 Active Transponder Timing: { transponder, passingTime? }
+//   • Feibot F2000 Active Transponder Timing: { transponder, passingTime? }
 //   • Impinj R700:       { events: [{ type:"tagInventoryEvent", tagInventoryEvent:{epcHex,firstSeenTime} }] }
 //   • Zebra FX7500:      { data: { tags: [{idHex, firstSeenTimestamp}] } } or { tags:[...] }
 router.post("/timing/active/crossing", async (req, res) => {
@@ -1243,7 +807,7 @@ router.post("/timing/active/crossing", async (req, res) => {
       const results: unknown[] = [];
       for (const tag of tagEvents) {
         const rfidNumber = tag.epcHex.toUpperCase();
-        const crossingTime = ingestCrossingTime(tag.firstSeenTime, "active_ingest_impinj_practice");
+        const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
         if (isNaN(crossingTime.getTime())) { results.push({ rfidNumber, error: "Invalid firstSeenTime" }); continue; }
         try {
           const r = await processPracticeCrossing(session, rfidNumber, crossingTime);
@@ -1255,7 +819,7 @@ router.post("/timing/active/crossing", async (req, res) => {
     const results: unknown[] = [];
     for (const tag of tagEvents) {
       const rfidNumber = tag.epcHex.toUpperCase();
-      const crossingTime = ingestCrossingTime(tag.firstSeenTime, "active_ingest_impinj");
+      const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
       if (isNaN(crossingTime.getTime())) { results.push({ rfidNumber, error: "Invalid firstSeenTime" }); continue; }
       try {
         const r = await processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "impinj-r700", antennaId: tag.antennaPort });
@@ -1291,7 +855,7 @@ router.post("/timing/active/crossing", async (req, res) => {
       }
       const results: unknown[] = [];
       for (const tag of tagEvents) {
-        const crossingTime = ingestCrossingTime(tag.timestamp, "active_ingest_tag_practice");
+        const crossingTime = tag.timestamp ? new Date(tag.timestamp) : new Date();
         try {
           const r = await processPracticeCrossing(session, tag.epcHex, crossingTime);
           const outcome = "skipped" in r ? `skipped(${r.reason})` : `recorded(crossing=${r.crossing?.id})`;
@@ -1303,7 +867,7 @@ router.post("/timing/active/crossing", async (req, res) => {
     }
     const results: unknown[] = [];
     for (const tag of tagEvents) {
-      const crossingTime = ingestCrossingTime(tag.timestamp, "active_ingest_tag");
+      const crossingTime = tag.timestamp ? new Date(tag.timestamp) : new Date();
       try {
         const r = await processCrossing({ rfidNumber: tag.epcHex, motoId: moto.id, crossingTime, readerId: "impinj-r700-fw10", antennaId: tag.antennaPort });
         results.push(r.debounced ? { rfidNumber: tag.epcHex, debounced: true } : { rfidNumber: tag.epcHex, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
@@ -1326,7 +890,7 @@ router.post("/timing/active/crossing", async (req, res) => {
       for (const tag of zebraTags) {
         const rfidNumber = ((tag.idHex || tag.epc) as string | undefined ?? "").toUpperCase();
         if (!rfidNumber) { results.push({ error: "Tag missing idHex/epc field" }); continue; }
-        const crossingTime = ingestCrossingTime(tag.firstSeenTimestamp, "active_ingest_zebra_practice");
+        const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
         try {
           const r = await processPracticeCrossing(session, rfidNumber, crossingTime);
           results.push("skipped" in r ? { rfidNumber, skipped: true } : { rfidNumber, crossingId: r.crossing?.id });
@@ -1338,7 +902,7 @@ router.post("/timing/active/crossing", async (req, res) => {
     for (const tag of zebraTags) {
       const rfidNumber = ((tag.idHex || tag.epc) as string | undefined ?? "").toUpperCase();
       if (!rfidNumber) { results.push({ error: "Tag missing idHex/epc field" }); continue; }
-      const crossingTime = ingestCrossingTime(tag.firstSeenTimestamp, "active_ingest_zebra");
+      const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
       try {
         const r = await processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "zebra-fx7500", antennaId: tag.antennaPort });
         results.push(r.debounced ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
@@ -1357,7 +921,10 @@ router.post("/timing/active/crossing", async (req, res) => {
   }
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
-  const crossingTime = ingestDirectActiveCrossingTime(rawTime, body, "active_ingest_generic");
+  const crossingTime = rawTime ? new Date(rawTime) : new Date();
+  if (isNaN(crossingTime.getTime())) {
+    return res.status(400).json({ error: "Invalid crossing time — must be ISO 8601" });
+  }
   recordTagSeen(clubId, String(rfidNumber).toUpperCase());
 
   const moto = await getActiveMotoForClub(clubId);
@@ -1379,7 +946,7 @@ router.post("/timing/active/crossing", async (req, res) => {
   const readerId: string = body?.loopId ?? body?.readerId ?? body?.readername ?? "rfid";
 
   try {
-    const result = await processCrossing({ rfidNumber: String(rfidNumber), motoId: moto.id, crossingTime, readerId, readerReceivedAt: body?.readerReceivedAt });
+    const result = await processCrossing({ rfidNumber: String(rfidNumber), motoId: moto.id, crossingTime, readerId });
     if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });
     return res.json({
       ok: true, motoId: moto.id,
@@ -1474,7 +1041,7 @@ router.post("/timing/impinj-crossing", async (req, res) => {
   const results: unknown[] = [];
   for (const tag of tagEvents) {
     const rfidNumber = tag.epcHex.toUpperCase();
-    const crossingTime = ingestCrossingTime(tag.firstSeenTime, "legacy_impinj_ingest");
+    const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
     if (isNaN(crossingTime.getTime())) {
       results.push({ rfidNumber, error: "Invalid firstSeenTime" });
       continue;
@@ -1538,7 +1105,7 @@ router.post("/timing/zebra-crossing", async (req, res) => {
       results.push({ error: "Tag missing idHex/epc field" });
       continue;
     }
-    const crossingTime = ingestCrossingTime(tag.firstSeenTimestamp, "legacy_zebra_ingest");
+    const crossingTime = tag.firstSeenTimestamp ? new Date(tag.firstSeenTimestamp) : new Date();
     if (isNaN(crossingTime.getTime())) {
       results.push({ rfidNumber, error: "Invalid firstSeenTimestamp" });
       continue;
@@ -1594,7 +1161,10 @@ router.post("/timing/mylaps-crossing", async (req, res) => {
   const rawTime: string | undefined =
     body?.passingTime ?? body?.crossingTime ?? body?.timestamp ?? body?.passTime;
 
-  const crossingTime = ingestDirectActiveCrossingTime(rawTime, body, "legacy_active_ingest");
+  const crossingTime = rawTime ? new Date(rawTime) : new Date();
+  if (isNaN(crossingTime.getTime())) {
+    return res.status(400).json({ error: "Invalid passingTime — must be ISO 8601" });
+  }
 
   const moto = await getActiveMotoForEvent(eventId);
   if (!moto) {
@@ -1671,7 +1241,6 @@ router.post("/timing/manual-crossing", async (req, res) => {
       readerId: "MANUAL",
       bypassDebounce: true,
       overrideRiderId: Number(riderId),
-      readerReceivedAt: undefined,
     });
     return res.json({
       ok: true,
@@ -1694,30 +1263,22 @@ router.get("/timing/live/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
   const staffCId = getStaffClubId(res);
   if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
-  const sock = (req as any).socket;
-  sock?.setNoDelay?.(true);
-  sock?.setTimeout?.(0);
-  sock?.setKeepAlive?.(true, 1_000);
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("X-Accel-Buffering", "no");
   (res as any).flushHeaders?.();
 
-  // Serialize the baseline/subscription handoff with crossing ingestion. A
-  // crossing is therefore either represented in this historical baseline or
-  // delivered live after subscription, never both and never neither.
-  await withMotoLock(motoId, async () => {
-    const snapshot = await buildLeaderboard(motoId);
-    if (snapshot) {
-      (res as any).write(`data: ${JSON.stringify(snapshot)}\n\n`);
-    } else {
-      (res as any).write(`data: ${JSON.stringify({ error: "Moto not found" })}\n\n`);
-    }
-    sseSubscribe(motoId, res);
-  });
+  // Send initial state immediately
+  const snapshot = await buildLeaderboard(motoId);
+  if (snapshot) {
+    (res as any).write(`data: ${JSON.stringify(snapshot)}\n\n`);
+  } else {
+    (res as any).write(`data: ${JSON.stringify({ error: "Moto not found" })}\n\n`);
+  }
+
+  sseSubscribe(motoId, res);
 
   // Heartbeat every 20s to prevent proxy timeouts
   const heartbeat = setInterval(() => {
@@ -1734,52 +1295,6 @@ router.get("/timing/live/:motoId", async (req, res) => {
   });
 
   return;
-});
-
-router.get("/timing/announcer-live/:motoId", async (req, res) => {
-  const motoId = Number(req.params.motoId);
-  const staffCId = getStaffClubId(res);
-  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  (res as any).flushHeaders?.();
-
-  const state = getAnnouncerState(motoId);
-  const [persisted] = await db
-    .select({ sequence: motosTable.announcerSequence })
-    .from(motosTable)
-    .where(eq(motosTable.id, motoId));
-  state.sequence = Math.max(state.sequence, persisted?.sequence ?? 0);
-  (res as any).write(`data: ${JSON.stringify({
-    type: "announcement-state",
-    announcement: activeAnnouncement(state),
-    sequence: state.sequence,
-  })}\n\n`);
-  announcerSubscribe(motoId, res);
-
-  const heartbeat = setInterval(() => {
-    try {
-      (res as any).write(": heartbeat\n\n");
-    } catch {
-      clearInterval(heartbeat);
-    }
-  }, 20_000);
-  req.on("close", () => {
-    clearInterval(heartbeat);
-    announcerUnsubscribe(motoId, res);
-  });
-  return;
-});
-
-router.get("/timing/announcer-audio/:eventId", (req, res) => {
-  const audio = announcerAudio.get(req.params.eventId);
-  if (!audio) return res.status(404).json({ error: "Announcement audio expired" });
-  res.setHeader("Content-Type", "audio/mpeg");
-  res.setHeader("Cache-Control", "public, max-age=300, immutable");
-  return res.send(audio.buffer);
 });
 
 // GET /timing/crossings/:motoId — all raw crossings (debug / replay)
@@ -2167,24 +1682,6 @@ function buildStartScript(opts: {
   return parts.join(" ");
 }
 
-function buildRaceUnderwayScript(opts: {
-  typeLabel: string;
-  raceClass: string | null;
-  motoName: string | null;
-}): string {
-  const raceClass = expandAbbrev(opts.raceClass);
-  const motoName = expandAbbrev(opts.motoName);
-  return [
-    pick([
-      "The gate has dropped — we are racing!",
-      "And they are off — this race is underway!",
-      "Here we go — racing is live on track!",
-    ]),
-    raceClass ? `${raceClass}, ${opts.typeLabel} is underway.` : `The ${opts.typeLabel} is underway.`,
-    motoName ? `This is ${motoName}.` : null,
-  ].filter(Boolean).join(" ");
-}
-
 // ── Announcement script builder (pure code — no LLM needed) ───────────────────
 
 interface Top5Entry {
@@ -2192,6 +1689,7 @@ interface Top5Entry {
   riderName: string;
   laps: number;
   lastLap: string | null;
+  totalTime: string | null;
   gap: string;
   dnf?: boolean;
   dns?: boolean;
@@ -2203,29 +1701,21 @@ interface PositionChange {
   to: number;
 }
 
-export function buildAnnouncementScript(opts: {
+function buildAnnouncementScript(opts: {
   lapCompleted: number;
   top5: Top5Entry[];
   positionChanges: PositionChange[];
-  kind: "lap" | "extra_lap" | "time_expired" | "finish";
-  timeRemainingMs?: number | null;
-  lapsRemaining?: number | null;
-  extraLapsRemaining?: number;
+  isComplete: boolean;
 }): string {
-  const {
-    lapCompleted,
-    top5,
-    positionChanges,
-    kind,
-    timeRemainingMs = null,
-    lapsRemaining = null,
-    extraLapsRemaining,
-  } = opts;
-  const isComplete = kind === "finish";
+  const { lapCompleted, top5, positionChanges, isComplete } = opts;
 
   const ORDINALS = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
   const CARDINALS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
     "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+
+  function lapWord(n: number): string {
+    return n < CARDINALS.length ? CARDINALS[n] : String(n);
+  }
 
   function posWord(n: number): string {
     return n <= 5 ? ORDINALS[n] : `${n}th`;
@@ -2251,9 +1741,8 @@ export function buildAnnouncementScript(opts: {
     return `${mins} minute${mins > 1 ? "s" : ""} and ${secStr} back`;
   }
 
-  // Format one lap time "M:SS.cc" → natural speech. Never use total race time
-  // in an announcer script: the useful facts are a lap and a same-lap gap.
-  function lapToSpeech(t: string | null): string | null {
+  // Format total time "M:SS.cc" → natural speech
+  function totalToSpeech(t: string | null): string | null {
     if (!t) return null;
     const m = t.match(/^(\d+):(\d+)\.(\d+)/);
     if (!m) return null;
@@ -2266,52 +1755,7 @@ export function buildAnnouncementScript(opts: {
     return `${mins} minute${mins > 1 ? "s" : ""} and ${secStr} seconds`;
   }
 
-  function numberWord(n: number): string {
-    return n >= 0 && n < CARDINALS.length ? CARDINALS[n] : String(n);
-  }
-
-  function remainingLapsSpeech(n: number): string {
-    if (n <= 0) return "No laps remain";
-    return `${numberWord(n)} lap${n === 1 ? "" : "s"} remaining`;
-  }
-
-  function remainingExtraLapsSpeech(n: number): string {
-    if (n <= 0) return "No extra laps remain";
-    return `${numberWord(n)} extra lap${n === 1 ? "" : "s"} remaining`;
-  }
-
-  function remainingTimeSpeech(ms: number): string {
-    const totalSeconds = Math.max(0, Math.round(ms / 1_000));
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    if (mins > 0) {
-      return `${mins} minute${mins === 1 ? "" : "s"}${secs ? ` and ${secs} second${secs === 1 ? "" : "s"}` : ""} remaining`;
-    }
-    return `${secs} second${secs === 1 ? "" : "s"} remaining`;
-  }
-
   const parts: string[] = [];
-
-  if (kind === "time_expired") {
-    const extra = Math.max(0, extraLapsRemaining ?? 0);
-    parts.push(pick([
-      "Time is up!",
-      "The race clock has expired!",
-      "The time limit is up!",
-    ]));
-    parts.push(`${remainingExtraLapsSpeech(extra)}.`);
-    return parts.join(" ");
-  }
-
-  if (kind === "extra_lap") {
-    const extra = Math.max(0, extraLapsRemaining ?? 0);
-    parts.push(pick([
-      "An extra lap is complete.",
-      "That's another extra lap in the books.",
-      "They have completed another extra lap.",
-    ]));
-    parts.push(`${remainingExtraLapsSpeech(extra)}.`);
-  }
 
   if (isComplete) {
     parts.push(pick([
@@ -2322,11 +1766,11 @@ export function buildAnnouncementScript(opts: {
     ]));
     const winner = top5[0];
     if (winner) {
-      const lapStr = lapToSpeech(winner.lastLap);
+      const timeStr = totalToSpeech(winner.totalTime);
       parts.push(pick([
-        `${winner.riderName} takes the win${lapStr ? ` after a final lap of ${lapStr}` : ""}!`,
-        `${winner.riderName} crosses the line first${lapStr ? ` with a ${lapStr} final lap` : ""}!`,
-        `It's ${winner.riderName} for the win${lapStr ? ` after a ${lapStr} lap` : ""}!`,
+        `${winner.riderName} takes the win${timeStr ? ` in ${timeStr}` : ""}!`,
+        `${winner.riderName} crosses the line first${timeStr ? ` — ${timeStr}` : ""}!`,
+        `It's ${winner.riderName} for the win${timeStr ? ` in ${timeStr}` : ""}!`,
       ]));
     }
     if (top5[1]) parts.push(pick([
@@ -2353,34 +1797,24 @@ export function buildAnnouncementScript(opts: {
       }
     }
 
-    if (kind === "lap") {
-      // Lap callout
-      const lapStr = lapCompleted < CARDINALS.length ? CARDINALS[lapCompleted] : String(lapCompleted);
-      parts.push(pick([
-        `Lap ${lapStr} is complete.`,
-        `That's lap ${lapStr} in the books.`,
-        `Through lap ${lapStr} now.`,
-        `Lap ${lapStr} done.`,
-      ]));
-    }
+    // Lap callout
+    const lapStr = lapCompleted < CARDINALS.length ? CARDINALS[lapCompleted] : String(lapCompleted);
+    parts.push(pick([
+      `Lap ${lapStr} is complete.`,
+      `That's lap ${lapStr} in the books.`,
+      `Through lap ${lapStr} now.`,
+      `Lap ${lapStr} done.`,
+    ]));
 
     // Leader
     const leader = top5[0];
     if (leader) {
-      const lapStr = lapToSpeech(leader.lastLap);
+      const timeStr = totalToSpeech(leader.totalTime);
       parts.push(pick([
-        `${leader.riderName} leads${lapStr ? ` with a ${lapStr} lap` : ""}.`,
-        `${leader.riderName} out front${lapStr ? ` on a ${lapStr} lap` : ""}.`,
-        `${leader.riderName} in the lead${lapStr ? ` after a ${lapStr} lap` : ""}.`,
+        `${leader.riderName} leads${timeStr ? `, ${timeStr} on the clock` : ""}.`,
+        `${leader.riderName} out front${timeStr ? ` — ${timeStr}` : ""}.`,
+        `${leader.riderName} in the lead${timeStr ? ` with ${timeStr} elapsed` : ""}.`,
       ]));
-    }
-
-    if (kind === "lap") {
-      if (timeRemainingMs != null) {
-        parts.push(`The clock shows ${remainingTimeSpeech(timeRemainingMs)}.`);
-      } else if (lapsRemaining != null) {
-        parts.push(`${remainingLapsSpeech(Math.max(0, lapsRemaining))}.`);
-      }
     }
 
     // P2–P5: only call out riders who are on the same lap as the leader.
@@ -2407,253 +1841,6 @@ export function buildAnnouncementScript(opts: {
   }
 
   return parts.join(" ");
-}
-
-async function createSharedAnnouncement(
-  motoId: number,
-  state: AnnouncerState,
-  kind: AnnouncerEvent["kind"],
-  lap: number,
-  script: string,
-  label: string,
-  persistMarker?: () => Promise<number | null>,
-) {
-  const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
-  const persistedSequence = persistMarker ? await persistMarker() : null;
-  if (persistMarker && persistedSequence == null) return;
-  const sequence = persistedSequence ?? state.sequence + 1;
-  state.sequence = Math.max(state.sequence, sequence);
-  const id = `${motoId}-${Date.now()}-${sequence}`;
-  announcerAudio.set(id, { buffer: audioBuffer, createdAt: Date.now() });
-  const announcement: AnnouncerEvent = {
-    id,
-    sequence,
-    kind,
-    lap,
-    createdAt: new Date().toISOString(),
-    audioUrl: `/api/timing/announcer-audio/${id}`,
-    label,
-  };
-  state.currentEvent = announcement;
-  broadcastAnnouncement(motoId, announcement);
-  setTimeout(() => announcerAudio.delete(id), 10 * 60_000).unref?.();
-}
-
-async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<void> {
-  const state = getAnnouncerState(snapshot.motoId);
-  state.sequence = Math.max(state.sequence, snapshot.announcerSequence);
-  const active = snapshot.leaderboard.filter(r => !r.dnf && !r.dns);
-  hydrateAnnouncerLifecycle(state.lifecycle, {
-    started: !!snapshot.announcerStartedAt,
-    finished: !!snapshot.announcerFinishedAt,
-    lastAnnouncedLap: snapshot.announcerLastLap,
-    timeExpiredAnnounced: !!snapshot.announcerTimeExpiredAt,
-    expiryLeaderLap: snapshot.announcerExpiryLeaderLap,
-    lastAnnouncedExtraLap: snapshot.announcerLastExtraLap,
-  });
-  if (state.lifecycle.previousPositions.size === 0 && state.lifecycle.lastAnnouncedLap > 0) {
-    state.lifecycle.previousPositions = new Map(
-      active.map(rider => [rider.riderId, rider.position ?? 9999]),
-    );
-  }
-  const nextLifecycle: AnnouncerLifecycleState = {
-    ...state.lifecycle,
-    previousPositions: new Map(state.lifecycle.previousPositions),
-  };
-  const action = advanceAnnouncerLifecycle(
-    nextLifecycle,
-    snapshot.status,
-    snapshot.leaderboard,
-    snapshot.fieldSize,
-    {
-      timeExpired: !!snapshot.timeExpiredAt,
-      plusLaps: snapshot.plusLaps,
-    },
-  );
-  if (action.kind === "start") {
-    const typeLabel =
-      snapshot.motoType === "heat" ? "heat race" :
-      snapshot.motoType === "main" ? "main event" :
-      snapshot.motoType === "practice" ? "practice session" :
-      snapshot.motoType === "lcq" ? "last chance qualifier" :
-      "race";
-    const script = buildRaceUnderwayScript({
-      typeLabel,
-      raceClass: snapshot.raceClass,
-      motoName: snapshot.motoName,
-    });
-    await createSharedAnnouncement(
-      snapshot.motoId,
-      state,
-      "start",
-      0,
-      script,
-      "Race starting!",
-      async () => {
-        const claimed = await db.update(motosTable)
-          .set({
-            announcerStartedAt: new Date(),
-            announcerSequence: sql`${motosTable.announcerSequence} + 1`,
-          })
-          .where(and(
-            eq(motosTable.id, snapshot.motoId),
-            eq(motosTable.status, "in_progress"),
-            isNull(motosTable.announcerStartedAt),
-          ))
-          .returning({ sequence: motosTable.announcerSequence });
-        return claimed[0]?.sequence ?? null;
-      },
-    );
-    state.lifecycle = nextLifecycle;
-    return;
-  }
-  if (action.kind === "none") {
-    state.lifecycle = nextLifecycle;
-    return;
-  }
-  const script = buildRaceAnnouncementScript({
-    lapCompleted: action.lap,
-    top5: active.slice(0, 5) as AnnouncerEntry[],
-    positionChanges: action.kind === "lap" ? action.positionChanges : [],
-    kind: action.kind,
-    timeRemainingMs: action.kind === "lap" && snapshot.timeLimitMs != null && !snapshot.timeExpiredAt
-      ? snapshot.timeRemainingMs
-      : null,
-    lapsRemaining: action.kind === "lap" && snapshot.lapCount != null
-      ? Math.max(0, snapshot.lapCount - action.lap)
-      : null,
-    extraLapsRemaining:
-      action.kind === "time_expired" || action.kind === "extra_lap"
-        ? action.extraLapsRemaining
-        : undefined,
-  });
-  await createSharedAnnouncement(
-    snapshot.motoId,
-    state,
-    action.kind,
-    action.lap,
-    script,
-    action.kind === "finish"
-      ? "Race complete!"
-      : action.kind === "time_expired"
-        ? `Time is up — ${action.extraLapsRemaining} extra lap${action.extraLapsRemaining === 1 ? "" : "s"} remaining`
-        : action.kind === "extra_lap"
-          ? `${action.extraLapsRemaining} extra lap${action.extraLapsRemaining === 1 ? "" : "s"} remaining`
-          : `Lap ${action.lap} announced`,
-    action.kind === "finish"
-      ? async () => {
-          const claimed = await db.update(motosTable)
-            .set({
-              announcerFinishedAt: new Date(),
-              announcerSequence: sql`${motosTable.announcerSequence} + 1`,
-            })
-            .where(and(
-              eq(motosTable.id, snapshot.motoId),
-              eq(motosTable.status, "completed"),
-              isNull(motosTable.announcerFinishedAt),
-            ))
-            .returning({ sequence: motosTable.announcerSequence });
-          return claimed[0]?.sequence ?? null;
-        }
-      : action.kind === "time_expired"
-        ? async () => {
-            const claimed = await db.update(motosTable)
-              .set({
-                announcerTimeExpiredAt: new Date(),
-                announcerExpiryLeaderLap: action.lap,
-                announcerLastExtraLap: 0,
-                announcerLastLap: action.lap,
-                announcerSequence: sql`${motosTable.announcerSequence} + 1`,
-              })
-              .where(and(
-                eq(motosTable.id, snapshot.motoId),
-                eq(motosTable.status, "in_progress"),
-                eq(motosTable.timeExpiredAt, new Date(snapshot.timeExpiredAt!)),
-                isNull(motosTable.announcerTimeExpiredAt),
-              ))
-              .returning({ sequence: motosTable.announcerSequence });
-            return claimed[0]?.sequence ?? null;
-          }
-        : action.kind === "extra_lap"
-          ? async () => {
-              const claimed = await db.update(motosTable)
-                .set({
-                  announcerLastExtraLap: action.extraLapsCompleted,
-                  announcerLastLap: action.lap,
-                  announcerSequence: sql`${motosTable.announcerSequence} + 1`,
-                })
-                .where(and(
-                  eq(motosTable.id, snapshot.motoId),
-                  inArray(motosTable.status, ["in_progress", "completed"]),
-                  eq(motosTable.timeExpiredAt, new Date(snapshot.timeExpiredAt!)),
-                  isNotNull(motosTable.announcerTimeExpiredAt),
-                  eq(motosTable.announcerExpiryLeaderLap, nextLifecycle.expiryLeaderLap!),
-                  lt(motosTable.announcerLastExtraLap, action.extraLapsCompleted),
-                ))
-                .returning({ sequence: motosTable.announcerSequence });
-              return claimed[0]?.sequence ?? null;
-            }
-          : async () => {
-              const claimed = await db.update(motosTable)
-                .set({
-                  announcerLastLap: action.lap,
-                  announcerSequence: sql`${motosTable.announcerSequence} + 1`,
-                })
-                .where(and(
-                  eq(motosTable.id, snapshot.motoId),
-                  eq(motosTable.status, "in_progress"),
-                  lt(motosTable.announcerLastLap, action.lap),
-                ))
-                .returning({ sequence: motosTable.announcerSequence });
-              return claimed[0]?.sequence ?? null;
-            },
-  );
-  state.lifecycle = nextLifecycle;
-}
-
-export function updateSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<void> {
-  const state = getAnnouncerState(snapshot.motoId);
-  state.pending = state.pending.catch(() => {}).then(async () => {
-    if (state.retrySnapshot) {
-      const retry = state.retrySnapshot;
-      await processSharedAnnouncer(retry);
-      state.retrySnapshot = null;
-    }
-    try {
-      await processSharedAnnouncer(snapshot);
-    } catch (error) {
-      state.retrySnapshot ??= snapshot;
-      throw error;
-    }
-  });
-  return state.pending;
-}
-
-export function startSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<void> {
-  return updateSharedAnnouncer({
-    ...snapshot,
-    status: "in_progress",
-    leaderboard: snapshot.leaderboard.map(rider => ({ ...rider, laps: 0 })),
-  });
-}
-
-export function publishTimingSnapshot(snapshot: LeaderboardSnapshot) {
-  sseBroadcast(snapshot.motoId, snapshot);
-  void updateSharedAnnouncer(snapshot).catch(() => {});
-}
-
-export async function resetSharedAnnouncer(motoId: number) {
-  announcerStates.delete(motoId);
-  await db.update(motosTable)
-    .set({
-      announcerStartedAt: null,
-      announcerLastLap: 0,
-      announcerTimeExpiredAt: null,
-      announcerExpiryLeaderLap: null,
-      announcerLastExtraLap: 0,
-      announcerFinishedAt: null,
-    })
-    .where(eq(motosTable.id, motoId));
 }
 
 // POST /timing/announce-moto-start — hype intro when organizer starts a moto
@@ -2694,39 +1881,18 @@ router.post("/timing/announce-moto-start", async (req, res) => {
 // POST /timing/announce — generate AI voice announcement for current leaderboard
 router.post("/timing/announce", async (req, res) => {
   try {
-    const {
-      lapCompleted,
-      top5,
-      positionChanges = [],
-      isComplete = false,
-      kind,
-      timeRemainingMs,
-      lapsRemaining,
-      extraLapsRemaining,
-    } = req.body as {
+    const { lapCompleted, top5, positionChanges = [], isComplete = false } = req.body as {
       lapCompleted: number;
-      top5: AnnouncerEntry[];
-      positionChanges: AnnouncerPositionChange[];
+      top5: Top5Entry[];
+      positionChanges: PositionChange[];
       isComplete: boolean;
-      kind?: "lap" | "extra_lap" | "time_expired" | "finish";
-      timeRemainingMs?: number | null;
-      lapsRemaining?: number | null;
-      extraLapsRemaining?: number;
     };
 
     if (!Array.isArray(top5) || top5.length === 0) {
       return res.status(400).json({ error: "top5 array is required" });
     }
 
-    const script = buildRaceAnnouncementScript({
-      lapCompleted,
-      top5,
-      positionChanges,
-      kind: kind ?? (isComplete ? "finish" : "lap"),
-      timeRemainingMs,
-      lapsRemaining,
-      extraLapsRemaining,
-    });
+    const script = buildAnnouncementScript({ lapCompleted, top5, positionChanges, isComplete });
     const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
 
     res.setHeader("Content-Type", "audio/mpeg");

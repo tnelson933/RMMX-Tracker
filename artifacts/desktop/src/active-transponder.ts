@@ -1,6 +1,6 @@
 import net from "net";
 
-// F2000 TCP protocol (v3.2). Packets are:
+// Feibot F2000 TCP protocol (v3.2). Packets are:
 // machineId@cmd@cmdSN@parameters; (normally TCP port 55555).
 
 export type ActiveTransponderConnectionState =
@@ -49,20 +49,7 @@ export interface ActiveTransponderConfiguration {
   loopEnabled: [boolean, boolean];
 }
 
-export interface ActiveTransponderPassingMetadata {
-  /** UTC receipt captured at the TCP socket data event, before any HTTP queueing. */
-  receivedAtUtc: string;
-  /** Host IANA zone used while parsing the F2000's local wall-clock timestamp. */
-  deviceTimezone: string;
-  source: "f2000_tcp";
-  timeSource: "f2000_device";
-}
-
-export type ActiveTransponderPassingCallback = (
-  epc: string,
-  crossingTime: Date,
-  metadata: ActiveTransponderPassingMetadata,
-) => void;
+export type ActiveTransponderPassingCallback = (epc: string, crossingTime: Date) => void;
 export type ActiveTransponderStatusCallback = (status: ActiveTransponderStatus) => void;
 
 const ACTIVE_TRANSPONDER_PORT = 55555;
@@ -78,19 +65,19 @@ const DEFAULT_CONFIGURATION: ActiveTransponderConfiguration = {
 
 export function normalizeActiveTransponderAddress(address: string): { host: string; port: number; address: string } {
   const value = address.trim();
-  if (!value) throw new Error("Enter an F2000 IP address or hostname.");
+  if (!value) throw new Error("Enter a Feibot F2000 IP address or hostname.");
   // Bracketed IPv6 is accepted; unbracketed IPv6 uses the default port.
   const bracketed = /^\[([^\]]+)\](?::(.+))?$/.exec(value);
   const colon = value.lastIndexOf(":");
   const hasSingleColonPort = colon > 0 && value.indexOf(":") === colon;
   const host = bracketed ? bracketed[1] : hasSingleColonPort ? value.slice(0, colon) : value;
   const portText = bracketed ? bracketed[2] : hasSingleColonPort ? value.slice(colon + 1) : undefined;
-  if (!host) throw new Error("Enter an F2000 IP address or hostname.");
+  if (!host) throw new Error("Enter a Feibot F2000 IP address or hostname.");
   if (portText !== undefined) {
-    if (!/^\d+$/.test(portText)) throw new Error("F2000 port must be a number between 1 and 65535.");
+    if (!/^\d+$/.test(portText)) throw new Error("Feibot F2000 port must be a number between 1 and 65535.");
     const port = Number(portText);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error("F2000 port must be between 1 and 65535.");
+      throw new Error("Feibot F2000 port must be between 1 and 65535.");
     }
     return { host, port, address: host.includes(":") ? `[${host}]:${port}` : `${host}:${port}` };
   }
@@ -135,14 +122,6 @@ let configuration: ActiveTransponderConfiguration = {
 let configApplied = false;
 let lastReaderOpenRequestAt = 0;
 const intentionallyDisconnectedSockets = new WeakSet<net.Socket>();
-
-export function formatActiveTransponderLocalClock(now = new Date()): { date: string; time: string } {
-  const two = (value: number) => String(value).padStart(2, "0");
-  return {
-    date: `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`,
-    time: `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}.${two(Math.floor(now.getMilliseconds() / 10))}`,
-  };
-}
 
 export function getActiveTransponderStatus(): ActiveTransponderStatus {
   const connected = !!socket && !socket.destroyed;
@@ -244,15 +223,18 @@ export function configureActiveTransponder(config: ActiveTransponderConfiguratio
 /** Synchronizes the F2000's local clock using separate V3.2 date/time commands. */
 export function syncActiveTransponderClock(): void {
   if (!socket || socket.destroyed || !machineId) {
-    throw new Error("Connect to the F2000 and wait for its machine ID before syncing its clock.");
+    throw new Error("Connect to the Feibot F2000 and wait for its machine ID before syncing its clock.");
   }
-  sendClockCommands();
+  const now = new Date();
+  const two = (value: number) => String(value).padStart(2, "0");
+  sendCommand("setDate", `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`);
+  sendCommand("setTime", `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}.${two(Math.floor(now.getMilliseconds() / 10))}`);
   notifyStatus();
 }
 
 /** Opens both loops for a hardware test. A crossing is only reported when the F2000 actually sends one. */
 export function startActiveTransponderTest(): void {
-  if (!desiredConnected) throw new Error("Connect to the F2000 before starting a loop test.");
+  if (!desiredConnected) throw new Error("Connect to the Feibot F2000 before starting a loop test.");
   testActive = true;
   connectError = null;
   syncReaders();
@@ -288,8 +270,6 @@ function createConnection(host: string, port: number, epoch: number, reportIniti
       connected = true; settled = true;
       if (connectingSocket === connection) connectingSocket = null;
       socket = connection;
-      connection.setNoDelay(true);
-      connection.setKeepAlive(true, 1_000);
       connection.setTimeout(0);
       connectError = null;
       reconnectAttempt = 0;
@@ -310,7 +290,7 @@ function createConnection(host: string, port: number, epoch: number, reportIniti
     connection.on("data", (chunk: Buffer) => {
       if (!isCurrent() || socket !== connection) return;
       recvBuffer += chunk.toString("utf8");
-      processPackets(passingCallback, new Date());
+      processPackets(passingCallback);
     });
     connection.on("error", (error) => {
       if (!isCurrent()) return;
@@ -375,22 +355,22 @@ function clearDeviceSessionState(): void {
   eventId = null; recvBuffer = ""; commandSerialNumber = 0; reader1State = "unknown"; reader2State = "unknown"; configApplied = false; lastReaderOpenRequestAt = 0;
 }
 
-function processPackets(onPassing: ActiveTransponderPassingCallback | undefined, receivedAt: Date): void {
+function processPackets(onPassing?: ActiveTransponderPassingCallback): void {
   let delimiterIndex: number;
   while ((delimiterIndex = recvBuffer.indexOf(";")) >= 0) {
     const packet = recvBuffer.slice(0, delimiterIndex).trim(); recvBuffer = recvBuffer.slice(delimiterIndex + 1);
-    if (packet) processPacket(packet, onPassing, receivedAt);
+    if (packet) processPacket(packet, onPassing);
   }
 }
 
-function processPacket(packet: string, onPassing: ActiveTransponderPassingCallback | undefined, receivedAt: Date): void {
+function processPacket(packet: string, onPassing?: ActiveTransponderPassingCallback): void {
   const parts = packet.split("@");
   if (parts.length < 4) return;
   const [packetMachineId, command, , ...parameterParts] = parts;
   if (!packetMachineId || !command) return;
   if (!machineId) { machineId = packetMachineId; applyConfiguration(); }
   const parameters = parameterParts.join("@");
-  if (command === "epc") processEpc(parameters, onPassing, receivedAt);
+  if (command === "epc") processEpc(parameters, onPassing);
   else if (command === "heartBeat") {
     lastHeartbeatAt = new Date().toISOString();
     if (connectError?.startsWith("No F2000 heartbeat")) connectError = null;
@@ -403,27 +383,14 @@ function processPacket(packet: string, onPassing: ActiveTransponderPassingCallba
   notifyStatus();
 }
 
-function processEpc(parameters: string, onPassing: ActiveTransponderPassingCallback | undefined, receivedAt: Date): void {
+function processEpc(parameters: string, onPassing?: ActiveTransponderPassingCallback): void {
   const commaIndex = parameters.indexOf(",");
   if (commaIndex < 1) return;
-  const timestamp = parseF2000Timestamp(parameters.slice(0, commaIndex).trim(), receivedAt);
+  const timestamp = parseFeibotTimestamp(parameters.slice(0, commaIndex).trim());
   const epc = parameters.slice(commaIndex + 1).trim();
   if (!timestamp || !epc) return;
   lastPassingAt = timestamp.toISOString(); passingCount++; connectError = null;
-  onPassing?.(epc, timestamp, {
-    receivedAtUtc: receivedAt.toISOString(),
-    deviceTimezone: getHostIanaTimezone(),
-    source: "f2000_tcp",
-    timeSource: "f2000_device",
-  });
-}
-
-export function getHostIanaTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch {
-    return "UTC";
-  }
+  onPassing?.(epc, timestamp);
 }
 
 function processMachineState(parameters: string): void {
@@ -441,14 +408,12 @@ function parseOptionalNumber(value: string | undefined): number | null {
   return value === undefined || value === "" || !Number.isFinite(parsed) ? null : parsed;
 }
 
-function parseF2000Timestamp(value: string, receivedAt: Date): Date | null {
+function parseFeibotTimestamp(value: string): Date | null {
   const match = /^(\d{4})-(\d{1,2})-(\d{1,2})_(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/.exec(value);
   if (!match) return null;
   const [, y, mo, d, h, mi, s, ms = "0"] = match;
   const date = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s), Number(ms.padEnd(3, "0")));
-  const valid = date.getFullYear() === Number(y) && date.getMonth() === Number(mo) - 1 && date.getDate() === Number(d) && date.getHours() === Number(h) && date.getMinutes() === Number(mi) && date.getSeconds() === Number(s);
-  if (!valid) return receivedAt;
-  return Math.abs(date.getTime() - receivedAt.getTime()) > 5 * 60 * 1000 ? receivedAt : date;
+  return date.getFullYear() === Number(y) && date.getMonth() === Number(mo) - 1 && date.getDate() === Number(d) && date.getHours() === Number(h) && date.getMinutes() === Number(mi) && date.getSeconds() === Number(s) ? date : null;
 }
 
 function readersShouldBeOpen(): boolean { return localReaderActive || testActive; }
@@ -482,15 +447,9 @@ function sendCommand(command: string, parameters: string): void {
   const serial = String(commandSerialNumber++ % 10_000).padStart(4, "0");
   socket.write(`${machineId}@${command}@${serial}@${parameters};`);
 }
-function sendClockCommands(): void {
-  const { date, time } = formatActiveTransponderLocalClock();
-  sendCommand("setDate", date);
-  sendCommand("setTime", time);
-}
 function applyConfiguration(): void {
   if (!socket || socket.destroyed || !machineId) return;
-  // Clock and settings must precede readerOpen and any first-packet crossing.
-  sendClockCommands();
+  // These must precede readerOpen on every freshly identified connection.
   sendCommand("setActiveChannel", String(configuration.activeChannel));
   sendCommand("setActivePower", String(configuration.activePower));
   sendCommand(configuration.loopEnabled[0] ? "loopEnable" : "loopDisable", "1");

@@ -16,6 +16,4 @@ export interface ClubUpdate {
   description?: string;
   autoDnfEnabled?: boolean;
   autoDnfThreshold?: number;
-  /** Set false to suspend the club */
-  active?: boolean;
 }

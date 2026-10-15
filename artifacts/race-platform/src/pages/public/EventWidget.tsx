@@ -62,10 +62,6 @@ function toLapNums(lapTimes: unknown[] | undefined): number[] {
   }).filter(n => n > 0);
 }
 
-function eligibleLapNums(lapTimes: unknown[] | undefined, raceStyle?: string | null): number[] {
-  return toLapNums(raceStyle === "motocross" ? lapTimes?.slice(1) : lapTimes);
-}
-
 function fmtMs(ms: number | null | undefined): string {
   if (!ms || ms <= 0) return "—";
   const totalSec = ms / 1000;
@@ -285,10 +281,7 @@ export default function EventWidget() {
               const allLaps = motoResults.flatMap(m => toLapNums(m.lapTimes as unknown[] | undefined));
               const directLaps = toLapNums(rider.lapTimes as unknown[] | undefined);
               const lapsToShow = allLaps.length > 0 ? allLaps : directLaps;
-              const eligibleLaps = motoResults.length > 0
-                 ? motoResults.flatMap(m => eligibleLapNums(m.lapTimes as unknown[] | undefined, event.raceStyle))
-                 : eligibleLapNums(rider.lapTimes as unknown[] | undefined, event.raceStyle);
-              const bl = bestLapMs(eligibleLaps);
+              const bl = bestLapMs(lapsToShow.slice(1)); // exclude lap 1 (gate-to-line partial lap)
               const totalMs = parseTotalTimeMs(rider.totalTime);
               const isExpanded = expanded === rider.riderId;
 
@@ -358,7 +351,7 @@ export default function EventWidget() {
                         motoResults.map(moto => {
                           const laps = toLapNums(moto.lapTimes as unknown[] | undefined);
                           const motoInfo = motos?.find(m => m.id === moto.motoId);
-                           const mbl = bestLapMs(eligibleLapNums(moto.lapTimes as unknown[] | undefined, event.raceStyle));
+                          const mbl = bestLapMs(laps.slice(1)); // exclude lap 1 (gate-to-line partial lap)
                           const motoTotalMs = parseTotalTimeMs(moto.totalTime);
                           return (
                             <div key={moto.id} style={{ marginBottom: 14 }}>
@@ -383,7 +376,7 @@ export default function EventWidget() {
                               {laps.length > 0 ? (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                                   {laps.map((lap, i) => {
-                                     const isBest = (event.raceStyle !== "motocross" || i > 0) && mbl !== null && lap === mbl;
+                                    const isBest = i > 0 && mbl !== null && lap === mbl;
                                     return (
                                       <div key={i} style={{ background: isBest ? "rgba(22,163,74,0.08)" : "#f1f5f9", border: `1px solid ${isBest ? "rgba(22,163,74,0.35)" : "#e2e8f0"}`, borderRadius: 5, padding: "4px 10px", fontSize: 12, color: isBest ? "#16a34a" : "#374151", fontVariantNumeric: "tabular-nums" }}>
                                         <span style={{ fontSize: 9, color: isBest ? "#16a34a" : "#94a3b8", marginRight: 4 }}>L{i + 1}</span>
@@ -402,8 +395,7 @@ export default function EventWidget() {
                       ) : directLaps.length > 0 ? (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                           {directLaps.map((lap, i) => {
-                             const isBest = (event.raceStyle !== "motocross" || i > 0) &&
-                               bestLapMs(eligibleLapNums(rider.lapTimes as unknown[] | undefined, event.raceStyle)) === lap;
+                            const isBest = i > 0 && bestLapMs(directLaps.slice(1)) === lap;
                             return (
                               <div key={i} style={{ background: isBest ? "rgba(22,163,74,0.08)" : "#f1f5f9", border: `1px solid ${isBest ? "rgba(22,163,74,0.35)" : "#e2e8f0"}`, borderRadius: 5, padding: "4px 10px", fontSize: 12, color: isBest ? "#16a34a" : "#374151", fontVariantNumeric: "tabular-nums" }}>
                                 <span style={{ fontSize: 9, color: "#94a3b8", marginRight: 4 }}>L{i + 1}</span>

@@ -1,35 +1,8 @@
 uploads = []
+outputs = []
 
 [[generated]]
 id = "WZE5aRmGt3P1V_msghMRn"
 uri = "file://artifacts/rider-app/assets/images/icon.png"
 type = "image"
 title = "rider app icon"
-
-[[outputs]]
-id = "UIMzgGNsTMdnp9SQCOatM"
-uri = "file://generated-artifacts/claude-handoff/RM-Tracker-Claude-Handoff.zip"
-type = "unspecified"
-title = "RM Tracker — Complete Claude Handoff"
-description = "Source and context package: 938 files covering web, API, mobile, desktop, offline server, RM Connect, database models/SQL, release workflows, 116 historical plans, setup instructions and verification results. No live database records or secret values."
-logical_id = "42018140-336d-4b10-b070-f963b9632e23"
-content_hash = "sha256:7443afc8ed8d9ee2073424adf98b60b101a4dd242f90227273edeecce2cb78e7"
-size = 8408052
-mtime_ms = 1792079240965
-storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:76412ce6-2ad8-416e-9180-da1e7426c9b9/42018140-336d-4b10-b070-f963b9632e23/4cdd314b-0fde-4cc5-96ec-e4e19f66c821"
-storage_version_token = "1792079272096741"
-content_type = "application/octet-stream"
-
-[[outputs]]
-id = "Jg-SrfmvBJ9kMqAlOYb-y"
-uri = "file://generated-artifacts/claude-handoff/APP_CONTEXT.md"
-type = "text"
-title = "RM Tracker — Application Context"
-description = "Standalone Markdown guide to the product, architecture, features, domain rules, recent dashboard decisions, integrations and important engineering constraints. Also included in the ZIP."
-logical_id = "52781e4e-8c2a-4f3f-ac4a-9cc5c6f23182"
-content_hash = "sha256:eca85c344802b86a555def8ae1b47506175c8717e5512efa3e0b35c426807f05"
-size = 17596
-mtime_ms = 1792079241602
-storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:76412ce6-2ad8-416e-9180-da1e7426c9b9/52781e4e-8c2a-4f3f-ac4a-9cc5c6f23182/b783d09b-8df4-4a09-9600-1989ea27c3bb"
-storage_version_token = "1792079273075637"
-content_type = "text/markdown"

@@ -20,10 +20,6 @@ function NativeTabLayout() {
         <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
         <Label>My Races</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="results">
-        <Icon sf={{ default: "flag.checkered", selected: "flag.checkered" }} />
-        <Label>Results</Label>
-      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="train">
         <Icon sf={{ default: "figure.run", selected: "figure.run" }} />
         <Label>Train</Label>
@@ -92,18 +88,6 @@ function ClassicTabLayout() {
               <SymbolView name="trophy" tintColor={color} size={22} />
             ) : (
               <Feather name="award" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="results"
-        options={{
-          title: "Results",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="flag.checkered" tintColor={color} size={22} />
-            ) : (
-              <Feather name="flag" size={22} color={color} />
             ),
         }}
       />

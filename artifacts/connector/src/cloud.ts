@@ -75,8 +75,6 @@ export interface CloudStatusReport {
   lastReadAt: string | null;
   readCount: number;
   antennaIds: number[];
-  hostTimezone?: string | null;
-  utcOffsetMinutes?: number;
 }
 
 export interface CloudLinkStatus {
@@ -170,9 +168,6 @@ export class CloudLink extends EventEmitter {
     antennaId?: number | null;
     clubId?: number | null;
     eventId?: number | null;
-    receivedAtUtc?: Date;
-    deviceTimezone?: string | null;
-    source?: string;
   }): Promise<{ ok: boolean; message?: string }> {
     if (!this.cloudUrl || !this.readerToken) {
       return { ok: false, message: "Cloud link not configured" };
@@ -180,20 +175,13 @@ export class CloudLink extends EventEmitter {
     const payload = JSON.stringify({
       rfidNumber: input.rfidNumber,
       crossingTime: input.crossingTime.toISOString(),
-      ...(input.receivedAtUtc ? {
-        receivedAtUtc: input.receivedAtUtc.toISOString(),
-        receivedAt: input.receivedAtUtc.toISOString(),
-        readerReceivedAt: input.receivedAtUtc.toISOString(),
-      } : {}),
-      ...(input.deviceTimezone ? { deviceTimezone: input.deviceTimezone } : {}),
-      ...(input.source ? { source: input.source, timeSource: input.source } : {}),
       ...(input.antennaId != null ? { antennaId: input.antennaId } : {}),
       ...(input.eventId != null ? { eventId: input.eventId } : {}),
     });
     const headers = { "Content-Type": "application/json" };
 
     const tokenUrl = `${this.cloudUrl}/api/timing/readers/${this.readerToken}/crossing`;
-    const res = await fetch(tokenUrl, { method: "POST", headers, body: payload, keepalive: true });
+    const res = await fetch(tokenUrl, { method: "POST", headers, body: payload });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
 
     // 422 "no checkpoint assignment" → not an enduro setup; use facility routing.
@@ -212,7 +200,7 @@ export class CloudLink extends EventEmitter {
       return { ok: false, message: data.message ?? "No checkpoint assignment and no clubId for facility routing" };
     }
     const facilityUrl = `${this.cloudUrl}/api/timing/active/crossing?clubId=${input.clubId}`;
-    const res2 = await fetch(facilityUrl, { method: "POST", headers, body: payload, keepalive: true });
+    const res2 = await fetch(facilityUrl, { method: "POST", headers, body: payload });
     const data2 = (await res2.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
     return { ok: !!data2.ok, message: data2.message ?? data2.error };
   }
@@ -224,13 +212,10 @@ export class CloudLink extends EventEmitter {
       this.cloudUrl.replace(/^http/, "ws") +
       `/api/connector/ws?token=${encodeURIComponent(this.readerToken)}`;
 
-    const ws = new WebSocket(wsUrl, { perMessageDeflate: false });
+    const ws = new WebSocket(wsUrl);
     this.ws = ws;
 
     ws.on("open", () => {
-      const socket = (ws as any)._socket;
-      socket?.setNoDelay?.(true);
-      socket?.setKeepAlive?.(true, 1_000);
       this.reconnectAttempt = 0;
       this.lastError = null;
       this.emit("connected");

@@ -1,8 +1,5 @@
 import { Router } from "express";
-import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
-import { resolveRegistrationRider } from "../registration-rider";
-import { markRiderFieldsDirty } from "../rider-profile-dirty";
 
 const router = Router();
 
@@ -56,7 +53,6 @@ function serializeEvent(e: any) {
     scoringTableId: e.scoring_table_id ?? null,
     minLapMs: e.min_lap_ms ?? null,
     amaEventId: e.ama_event_id ?? null,
-    raceStyle: e.race_style ?? null,
     endDate: e.end_date ?? null,
     createdAt: e.created_at,
   };
@@ -118,7 +114,7 @@ router.post("/events", (req, res) => {
     registrationOpen, registrationClose, paymentEnabled,
     requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, raceClassLimits, purchaseOptions,
     timingTechnology, transponderRentalEnabled, transponderRentalFee,
-    noDuplicateBibs, requireClubId, scoringTableId, minLapMs, amaEventId, raceStyle, endDate,
+    noDuplicateBibs, requireClubId, scoringTableId, minLapMs, amaEventId, endDate,
   } = req.body;
 
   if (!name || !date) {
@@ -139,8 +135,8 @@ router.post("/events", (req, res) => {
           race_class_limits, purchase_options,
           timing_technology, transponder_rental_enabled, transponder_rental_fee,
           no_duplicate_bibs, require_club_id, scoring_table_id, min_lap_ms,
-          ama_event_id, race_style, end_date, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
+          ama_event_id, end_date, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
     )
     .run(
       user.club_id, String(name), cleanDate,
@@ -158,7 +154,7 @@ router.post("/events", (req, res) => {
       transponderRentalEnabled ? 1 : 0,
       transponderRentalFee ?? null,
       noDuplicateBibs ? 1 : 0, requireClubId ? 1 : 0,
-      scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null, raceStyle ?? "motocross", cleanEndDate ?? null,
+      scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null, cleanEndDate ?? null,
     );
 
   const newEventId = Number(result.lastInsertRowid);
@@ -225,7 +221,6 @@ router.patch("/events/:eventId", (req, res) => {
     minLapMs: "min_lap_ms",
     imageUrl: "image_url",
     amaEventId: "ama_event_id",
-    raceStyle: "race_style",
     endDate: "end_date",
   };
 
@@ -318,35 +313,52 @@ router.post("/events/:eventId/registrations", (req, res) => {
     firstName, lastName, email, phone, dateOfBirth,
     emergencyContact, emergencyPhone, streetAddress, city, homeState, zip,
     raceClass, bibNumber, amaNumber, clubIdNumber, bikeBrand, bikeModel, bikeYear,
-    sponsors,
     transponderNumber, rentTransponder, selectedPurchaseOptions,
     paymentMethod, amountPaid, status,
     riderId: explicitRiderId,
   } = req.body;
 
   if (!raceClass) return res.status(400).json({ error: "raceClass is required" });
-  const rawTransponderNumber =
-    transponderNumber ?? req.body.myLapsTransponderNumber;
-  const normalizedTransponderNumber =
-    normalizeActiveTransponderIdentifier(rawTransponderNumber);
-  const hasNonblankTransponder =
-    rawTransponderNumber != null &&
-    (typeof rawTransponderNumber !== "string" ||
-      rawTransponderNumber.trim() !== "");
-  if (hasNonblankTransponder && !normalizedTransponderNumber) {
-    return res.status(400).json({
-      error: "Active transponder number must be 1–9 hexadecimal characters",
-    });
-  }
 
-  const resolution = resolveRegistrationRider(db, {
-    ...req.body,
-    riderId: explicitRiderId,
-  });
-  if ("error" in resolution) {
-    return res.status(resolution.status).json({ error: resolution.error });
+  let riderId: number;
+
+  if (explicitRiderId) {
+    riderId = Number(explicitRiderId);
+  } else {
+    if (!firstName || !lastName) return res.status(400).json({ error: "firstName and lastName are required" });
+
+    const existing = email
+      ? (db.prepare("SELECT id FROM riders WHERE LOWER(email) = LOWER(?)").get(String(email)) as any)
+      : null;
+
+    if (existing) {
+      riderId = existing.id;
+      if (firstName || lastName || phone) {
+        db.prepare(
+          "UPDATE riders SET first_name = ?, last_name = ?, email = ?, phone = ? WHERE id = ?"
+        ).run(
+          String(firstName).trim(), String(lastName).trim(),
+          email ? String(email).trim() : null,
+          phone ? String(phone).trim() : null,
+          riderId,
+        );
+      }
+    } else {
+      const rr = db.prepare(
+        `INSERT INTO riders (first_name, last_name, email, phone, date_of_birth,
+           emergency_contact, emergency_phone, street_address, city, home_state, zip, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+      ).run(
+        String(firstName).trim(), String(lastName).trim(),
+        email ? String(email).trim() : null,
+        phone ? String(phone).trim() : null,
+        dateOfBirth ?? null,
+        emergencyContact ?? null, emergencyPhone ?? null,
+        streetAddress ?? null, city ?? null, homeState ?? null, zip ?? null,
+      );
+      riderId = Number(rr.lastInsertRowid);
+    }
   }
-  const { riderId } = resolution;
 
   const resolvedStatus = status ?? "confirmed";
   // An explicit payment method means the organizer collected payment on-site (cash / waived / other)
@@ -354,16 +366,15 @@ router.post("/events/:eventId/registrations", (req, res) => {
 
   const result = db.prepare(
     `INSERT INTO registrations (event_id, rider_id, race_class, bib_number, ama_number, club_id_number,
-       bike_brand, bike_model, bike_year, sponsors, mylaps_transponder_number, transponder_rental,
-       selected_purchase_options, payment_method, amount_paid, payment_status, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+       bike_brand, bike_model, bike_year, mylaps_transponder_number, transponder_rental,
+       payment_method, amount_paid, payment_status, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
   ).run(
     eventId, riderId, String(raceClass),
     bibNumber ?? null, amaNumber ?? null, clubIdNumber ?? null,
-    bikeBrand ?? null, bikeModel ?? null, bikeYear ?? null, sponsors ?? null,
-    normalizedTransponderNumber,
+    bikeBrand ?? null, bikeModel ?? null, bikeYear ?? null,
+    (transponderNumber ?? req.body.myLapsTransponderNumber) ?? null,
     rentTransponder ? 1 : 0,
-    JSON.stringify(selectedPurchaseOptions || []),
     paymentMethod ?? null,
     amountPaid ?? null,
     resolvedPaymentStatus,
@@ -371,12 +382,6 @@ router.post("/events/:eventId/registrations", (req, res) => {
   );
 
   const reg = db.prepare("SELECT * FROM registrations WHERE id = ?").get(Number(result.lastInsertRowid)) as any;
-  if (normalizedTransponderNumber) {
-    db.prepare(
-      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
-    ).run(normalizedTransponderNumber, riderId);
-    markRiderFieldsDirty(db, riderId, ["mylapsTransponderId"]);
-  }
   const rider = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(riderId) as any;
   const riderName = rider ? `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim() : "";
 

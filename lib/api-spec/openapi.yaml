@@ -3511,9 +3511,6 @@ components:
           type: boolean
         requireClubId:
           type: boolean
-        requireTransponder:
-          type: boolean
-          description: When true, active-timing registrations require a personal transponder or an available rental
         requireWaiver:
           type: boolean
           description: When true, riders must read and accept the club waiver before completing registration
@@ -3643,9 +3640,6 @@ components:
           type: boolean
         requireClubId:
           type: boolean
-        requireTransponder:
-          type: boolean
-          description: When true, active-timing registrations require a personal transponder or an available rental
         requireWaiver:
           type: boolean
           description: When true, riders must read and accept the club waiver before completing registration
@@ -3745,9 +3739,6 @@ components:
           type: boolean
         requireClubId:
           type: boolean
-        requireTransponder:
-          type: boolean
-          description: When true, active-timing registrations require a personal transponder or an available rental
         requireWaiver:
           type: boolean
           description: When true, riders must read and accept the club waiver before completing registration
@@ -4271,15 +4262,12 @@ components:
           type: integer
         lapCount:
           type: ["integer", "null"]
-          minimum: 1
-          description: Positive lap target for a lap-count race; mutually exclusive with timeLimitMs
+          description: Number of laps in this moto
         timeLimitMs:
           type: ["integer", "null"]
-          minimum: 1
-          description: Positive duration in milliseconds for a timed race; mutually exclusive with lapCount
+          description: Time limit in milliseconds (practice sessions only, optional)
         plusLaps:
           type: ["integer", "null"]
-          minimum: 0
           description: Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag
         timeExpiredAt:
           type: ["string", "null"]
@@ -4346,17 +4334,14 @@ components:
         motoNumber:
           type: integer
         lapCount:
-          type: ["integer", "null"]
-          minimum: 1
-          description: Positive lap target for a lap-count race; mutually exclusive with timeLimitMs. Send null for a timed race.
+          type: integer
+          description: Number of laps in this moto
         timeLimitMs:
-          type: ["integer", "null"]
-          minimum: 1
-          description: Positive duration in milliseconds for a timed race; mutually exclusive with lapCount. Send null for a lap-count race.
+          type: integer
+          description: Time limit in milliseconds (practice sessions only, optional)
         plusLaps:
-          type: ["integer", "null"]
-          minimum: 0
-          description: Extra laps after the time limit expires; defaults to 1 for timed races and is cleared for lap-count races
+          type: integer
+          description: Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format)
         practiceMode:
           type: string
           enum: [lap_count, countdown]
@@ -4387,15 +4372,10 @@ components:
           type: string
         lapCount:
           type: ["integer", "null"]
-          minimum: 1
-          description: Positive lap target; setting it clears timeLimitMs and plusLaps
         timeLimitMs:
           type: ["integer", "null"]
-          minimum: 1
-          description: Positive timed-race duration in milliseconds; setting it clears lapCount
         plusLaps:
           type: ["integer", "null"]
-          minimum: 0
           description: Extra laps after the time limit expires; null to clear
         timeExpiredAt:
           type: ["string", "null"]
@@ -4734,7 +4714,7 @@ components:
 
     ClubDashboard:
       type: object
-      required: [totalEvents, upcomingEvents, totalRiders, totalRegistrations, uniqueRegistrations, recentActivity, actionItems]
+      required: [totalEvents, upcomingEvents, totalRiders, totalRegistrations, uniqueRegistrations, recentActivity]
       properties:
         totalEvents:
           type: integer
@@ -4757,62 +4737,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Event"
-        nextEventSnapshot:
-          oneOf:
-            - $ref: "#/components/schemas/DashboardEventSnapshot"
-            - type: "null"
-        actionItems:
-          type: array
-          items:
-            $ref: "#/components/schemas/DashboardActionItem"
-
-    DashboardEventSnapshot:
-      type: object
-      required: [id, name, date, registrationCount, newRegistrationsLast7Days, paidCount, unpaidCount, missingWaiversCount, missingTranspondersCount]
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        date:
-          type: string
-        location:
-          type: ["string", "null"]
-        trackName:
-          type: ["string", "null"]
-        registrationClose:
-          type: ["string", "null"]
-        maxRiders:
-          type: ["integer", "null"]
-        registrationCount:
-          type: integer
-        newRegistrationsLast7Days:
-          type: integer
-        paidCount:
-          type: integer
-        unpaidCount:
-          type: integer
-        missingWaiversCount:
-          type: integer
-        missingTranspondersCount:
-          type: integer
-
-    DashboardActionItem:
-      type: object
-      required: [type, label, count, href, severity]
-      properties:
-        type:
-          type: string
-          enum: [unpaid, waiver, transponder]
-        label:
-          type: string
-        count:
-          type: integer
-        href:
-          type: string
-        severity:
-          type: string
-          enum: [warning, urgent]
 
     ActivityItem:
       type: object
@@ -5815,7 +5739,7 @@ components:
           description: UUID used as the URL key for this reader's ingest endpoint
         hardwareAddress:
           type: ["string", "null"]
-          description: Last 6 of MAC address for Impinj R700, or the F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.
+          description: Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.
         lastSeenAt:
           type: ["string", "null"]
           format: date-time
@@ -5834,7 +5758,7 @@ components:
           enum: [rfid, active_transponder]
         hardwareAddress:
           type: string
-          description: Last 6 of MAC address for Impinj R700, or the F2000 IP address
+          description: Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address
 
     ReaderUpdateInput:
       type: object
@@ -5844,7 +5768,7 @@ components:
           type: string
         hardwareAddress:
           type: ["string", "null"]
-          description: Last 6 of MAC address for Impinj R700, or the F2000 IP address
+          description: Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address
 
     ConnectorStatus:
       type: object

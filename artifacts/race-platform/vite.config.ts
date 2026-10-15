@@ -5,8 +5,6 @@ import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { VitePWA } from "vite-plugin-pwa";
 
-const PWA_RELEASE = "2026.08.27.1";
-
 export default defineConfig(async ({ command }) => {
   const rawPort = process.env.PORT;
   const rawBasePath = process.env.BASE_PATH;
@@ -69,7 +67,6 @@ export default defineConfig(async ({ command }) => {
         ],
       },
       workbox: {
-        importScripts: [`sw-auto-reload.js?v=${PWA_RELEASE}`],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2}"],
         navigateFallback: "index.html",

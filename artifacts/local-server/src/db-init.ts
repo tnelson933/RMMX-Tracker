@@ -33,7 +33,7 @@ export function initDb() {
         "timing_technology", "transponder_rental_enabled",
         "transponder_rental_fee", "no_duplicate_bibs", "require_club_id",
         "scoring_table_id", "entry_fee_category_id", "min_lap_ms",
-        "ama_event_id", "race_style", "end_date", "created_at", "image_sync_attempts",
+        "ama_event_id", "end_date", "created_at", "image_sync_attempts",
       ];
       const colsToCopy = newCols.filter((c) => existingCols.includes(c));
       const colList = colsToCopy.join(", ");
@@ -72,7 +72,6 @@ export function initDb() {
             entry_fee_category_id      INTEGER,
             min_lap_ms                 INTEGER,
             ama_event_id               TEXT,
-            race_style                 TEXT,
             end_date                   TEXT,
             created_at                 TEXT NOT NULL DEFAULT (datetime('now')),
             image_sync_attempts        INTEGER NOT NULL DEFAULT 0
@@ -142,7 +141,6 @@ export function initDb() {
       entry_fee_category_id      INTEGER,
       min_lap_ms                 INTEGER,
       ama_event_id               TEXT,
-      race_style                 TEXT,
       end_date                   TEXT,
       created_at                 TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -232,11 +230,9 @@ export function initDb() {
       lineup                 TEXT NOT NULL DEFAULT '[]',
       lap_count              INTEGER,
       time_limit_ms          INTEGER,
-      plus_laps              INTEGER,
       practice_mode          TEXT,
       countdown_seconds      INTEGER,
       started_at             TEXT,
-      time_expired_at        TEXT,
       completed_at           TEXT,
       staggered_order        INTEGER,
       created_at             TEXT NOT NULL DEFAULT (datetime('now'))
@@ -403,26 +399,6 @@ export function initDb() {
 
     INSERT OR IGNORE INTO _sync_state (id) VALUES (1);
 
-    -- Durable translation between this SQLite database's rider IDs and the
-    -- cloud IDs.  IDs are intentionally not rewritten locally: historic timing
-    -- rows can safely retain their local foreign keys.
-    CREATE TABLE IF NOT EXISTS _rider_cloud_map (
-      local_rider_id INTEGER PRIMARY KEY,
-      cloud_rider_id INTEGER,
-      client_identity TEXT NOT NULL UNIQUE,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    -- Explicit rider profile outbox. The riders table is also a cloud cache, so
-    -- mere row existence must never be interpreted as local write intent.
-    CREATE TABLE IF NOT EXISTS _rider_profile_dirty (
-      rider_id   INTEGER NOT NULL,
-      field_name TEXT NOT NULL,
-      version    INTEGER NOT NULL DEFAULT 1,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (rider_id, field_name)
-    );
-
     -- Desktop write queue: rows inserted by SQLite triggers on every local write.
     -- The Electron sync engine polls this table and pushes changes to the cloud.
     CREATE TABLE IF NOT EXISTS _write_queue (
@@ -508,6 +484,20 @@ export function initDb() {
       INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('registrations', NEW.id, 'upsert');
     END;
 
+    -- riders (new rider created at the gate)
+    CREATE TRIGGER IF NOT EXISTS _wq_riders_insert
+    AFTER INSERT ON riders
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('riders', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_riders_update
+    AFTER UPDATE ON riders
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('riders', NEW.id, 'upsert');
+    END;
+
     -- rfid_assignments (assign transponder to rider at event)
     CREATE TRIGGER IF NOT EXISTS _wq_rfid_assignments_insert
     AFTER INSERT ON rfid_assignments
@@ -567,15 +557,6 @@ export function initDb() {
     BEGIN
       INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('practice_crossings', NEW.id, 'insert');
     END;
-  `);
-
-  // Rider writes use the field-level outbox above. Remove triggers installed by
-  // older versions, and discard their ambiguous rider queue entries: they do not
-  // contain enough information to distinguish edits from untouched pulled rows.
-  db.exec(`
-    DROP TRIGGER IF EXISTS _wq_riders_insert;
-    DROP TRIGGER IF EXISTS _wq_riders_update;
-    DELETE FROM _write_queue WHERE table_name = 'riders';
   `);
 
   // ── MIGRATION: Add auto_dnf_enabled / auto_dnf_threshold to clubs ────────
@@ -650,7 +631,6 @@ export function initDb() {
     // keep legacy column name for backward compat (old rows may reference it)
     ["events", "min_lap_times              TEXT NOT NULL DEFAULT '{}'"],
     ["events", "ama_event_id               TEXT"],
-    ["events", "race_style                 TEXT"],
     // users
     ["users", "tour_completed INTEGER NOT NULL DEFAULT 0"],
     ["users", "name           TEXT NOT NULL DEFAULT ''"],
@@ -710,8 +690,6 @@ export function initDb() {
     ["motos", "scheduled_time         TEXT"],
     ["motos", "lap_count              INTEGER"],
     ["motos", "time_limit_ms          INTEGER"],
-    ["motos", "plus_laps              INTEGER"],
-    ["motos", "time_expired_at        TEXT"],
     ["motos", "practice_mode          TEXT"],
     ["motos", "countdown_seconds      INTEGER"],
     ["motos", "staggered_order        INTEGER"],
@@ -749,36 +727,6 @@ export function initDb() {
       // Column already exists — ignore
     }
   }
-
-  // Track names were historically stored locally but omitted from desktop sync.
-  // Requeue each locally named practice session once so the cloud copy — and
-  // therefore Rider App history — receives its venue_name.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS _local_data_migrations (
-      name       TEXT PRIMARY KEY,
-      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    INSERT INTO _write_queue (table_name, record_id, operation)
-    SELECT 'practice_sessions', ps.id, 'upsert'
-    FROM practice_sessions ps
-    WHERE TRIM(COALESCE(ps.venue_name, '')) <> ''
-      AND NOT EXISTS (
-        SELECT 1
-        FROM _write_queue q
-        WHERE q.table_name = 'practice_sessions'
-          AND q.record_id = ps.id
-          AND q.synced_at IS NULL
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM _local_data_migrations m
-        WHERE m.name = 'requeue-practice-session-track-names'
-      );
-
-    INSERT OR IGNORE INTO _local_data_migrations (name)
-    VALUES ('requeue-practice-session-track-names');
-  `);
 
   // Seed autoincrement sequences so desktop-created rows start at a high ID range
   // and never collide with cloud-assigned sequential IDs (1, 2, 3...).

@@ -45,34 +45,6 @@ function formatRelative(ts: number) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-function LinkifiedStripeError({ message }: { message: string }) {
-  const parts = message.split(/(https?:\/\/[^\s]+)/g);
-
-  return (
-    <span>
-      {parts.map((part, index) => {
-        if (!part.startsWith("http://") && !part.startsWith("https://")) return part;
-
-        const url = part.replace(/[),.;!?]+$/, "");
-        const trailingPunctuation = part.slice(url.length);
-        return (
-          <span key={`${url}-${index}`}>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium underline underline-offset-2 hover:opacity-80"
-            >
-              Open Stripe settings
-            </a>
-            {trailingPunctuation}
-          </span>
-        );
-      })}
-    </span>
-  );
-}
-
 function DesktopStripeRedirect() {
   const [cloudUrl, setCloudUrl] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -322,21 +294,8 @@ export default function StripeConnect() {
       toast({
         title: isConnectNotEnabled ? "Stripe Connect not enabled" : "Could not start Stripe Connect",
         description: isConnectNotEnabled
-          ? (
-              <span>
-                Your Stripe account hasn&apos;t enabled Connect yet.{" "}
-                <a
-                  href="https://dashboard.stripe.com/connect"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium underline underline-offset-2 hover:opacity-80"
-                >
-                  Enable Stripe Connect
-                </a>
-                , then try again.
-              </span>
-            )
-          : <LinkifiedStripeError message={err.message} />,
+          ? "Your Stripe account hasn't enabled Connect yet. Visit dashboard.stripe.com/connect to activate it, then try again."
+          : err.message,
         variant: "destructive",
       });
     },
@@ -352,7 +311,7 @@ export default function StripeConnect() {
       window.open(data.url, "_blank");
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: <LinkifiedStripeError message={err.message} />, variant: "destructive" });
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
 
@@ -370,7 +329,7 @@ export default function StripeConnect() {
       toast({ title: "Disconnected", description: "Your Stripe account has been disconnected." });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: <LinkifiedStripeError message={err.message} />, variant: "destructive" });
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
 

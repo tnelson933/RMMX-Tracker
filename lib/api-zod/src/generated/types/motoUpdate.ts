@@ -11,35 +11,14 @@ export interface MotoUpdate {
   status?: string;
   lineup?: number[];
   scheduledTime?: string;
-  /**
-     * Positive lap target; setting it clears timeLimitMs and plusLaps
-     * @minimum 1
-     * @nullable
-     */
+  /** @nullable */
   lapCount?: number | null;
-  /**
-     * Positive timed-race duration in milliseconds; setting it clears lapCount
-     * @minimum 1
-     * @nullable
-     */
+  /** @nullable */
   timeLimitMs?: number | null;
-  /**
-     * Extra laps after the time limit expires; null to clear
-     * @minimum 0
-     * @nullable
-     */
-  plusLaps?: number | null;
-  /**
-     * ISO timestamp; set when the race timer expires; pass null to clear
-     * @nullable
-     */
-  timeExpiredAt?: Date | null;
   /** @nullable */
   practiceMode?: MotoUpdatePracticeMode;
   /** @nullable */
   countdownSeconds?: number | null;
   motoNumber?: number;
   name?: string;
-  /** Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock */
-  enduroHasRfidStart?: boolean;
 }

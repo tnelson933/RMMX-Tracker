@@ -26,11 +26,3 @@ Club organizers can connect a Stripe Express account to collect event entry fees
 1. POST `/api/stripe/connect/start` → creates Express account → returns accountLink URL → frontend redirects user to Stripe
 2. After Stripe onboarding, Stripe redirects to GET `/api/stripe/connect/return` → checks `charges_enabled` → sets `stripeOnboardingComplete = true` → redirects to `/payments?connected=1`
 3. Frontend `StripeConnect.tsx` detects `?connected=1`, shows success banner, refetches status
-
-## Account ownership and credentials
-
-Each organizer must onboard and own an individual connected Stripe account, receive payouts into that account, and manage its banking and tax information through Stripe. Never ask organizers to enter Stripe secret keys into the platform.
-
-**Why:** The platform credential is only the Stripe Connect control plane used to create secure onboarding links and Checkout sessions. Payment sessions must route funds to the club's connected-account destination so organizers process payments and receive payouts individually.
-
-**How to apply:** Keep organizer onboarding club-scoped, store only the connected account ID, and verify every organizer payment path sets that club account as the transfer destination.

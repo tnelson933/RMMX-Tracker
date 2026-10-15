@@ -13,7 +13,6 @@ export const usersTable = pgTable("users", {
   tourCompleted: boolean("tour_completed").default(false).notNull(),
   permissions: text("permissions").array().notNull().default([]),
   offlineSyncToken: text("offline_sync_token"),
-  lastPushSentAt: timestamp("last_push_sent_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

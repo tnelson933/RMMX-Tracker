@@ -1,8 +1,5 @@
 import { Router } from "express";
-import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb, parseBool, parseJsonArr } from "../db";
-import { resolveRegistrationRider } from "../registration-rider";
-import { markRiderFieldsDirty } from "../rider-profile-dirty";
 
 const router = Router();
 
@@ -72,40 +69,52 @@ router.post("/events/:eventId/registrations", (req, res) => {
   const {
     firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone,
     streetAddress, city, homeState, zip,
-    raceClass, bibNumber, amaNumber, clubIdNumber, bikeBrand, bikeModel, bikeYear,
-    sponsors, rentTransponder,
+    raceClass, bibNumber, clubIdNumber, bikeBrand, rentTransponder,
     transponderNumber, selectedPurchaseOptions,
     paymentMethod, amountPaid, status: reqStatus,
-    riderId: explicitRiderId,
   } = req.body;
 
-  if (!raceClass) {
-    return res.status(400).json({ error: "raceClass required" });
-  }
-  const rawTransponderNumber =
-    transponderNumber ?? req.body.myLapsTransponderNumber;
-  const normalizedTransponderNumber =
-    normalizeActiveTransponderIdentifier(rawTransponderNumber);
-  const hasNonblankTransponder =
-    rawTransponderNumber != null &&
-    (typeof rawTransponderNumber !== "string" ||
-      rawTransponderNumber.trim() !== "");
-  if (hasNonblankTransponder && !normalizedTransponderNumber) {
-    return res.status(400).json({
-      error: "Active transponder number must be 1–9 hexadecimal characters",
-    });
+  if (!firstName || !lastName || !email || !raceClass) {
+    return res.status(400).json({ error: "firstName, lastName, email, raceClass required" });
   }
 
   const db = getDb();
 
-  const resolution = resolveRegistrationRider(db, {
-    ...req.body,
-    riderId: explicitRiderId,
-  });
-  if ("error" in resolution) {
-    return res.status(resolution.status).json({ error: resolution.error });
+  // Find or create rider by email
+  let rider = db
+    .prepare("SELECT * FROM riders WHERE email = ? LIMIT 1")
+    .get(email) as Record<string, unknown> | undefined;
+
+  if (!rider) {
+    const r = db
+      .prepare(
+        `INSERT INTO riders (first_name, last_name, email, phone, date_of_birth,
+           emergency_contact, emergency_phone, street_address, city, home_state, zip)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        firstName, lastName, email,
+        phone || null, dateOfBirth || null, emergencyContact || null, emergencyPhone || null,
+        streetAddress || null, city || null, homeState || null, zip || null,
+      );
+    rider = db
+      .prepare("SELECT * FROM riders WHERE id = ?")
+      .get(r.lastInsertRowid) as Record<string, unknown>;
+  } else {
+    db.prepare(
+      `UPDATE riders SET first_name = ?, last_name = ?,
+         phone = COALESCE(?, phone), date_of_birth = COALESCE(?, date_of_birth),
+         emergency_contact = COALESCE(?, emergency_contact),
+         emergency_phone = COALESCE(?, emergency_phone)
+       WHERE id = ?`,
+    ).run(
+      firstName, lastName,
+      phone || null, dateOfBirth || null, emergencyContact || null, emergencyPhone || null,
+      rider.id,
+    );
   }
-  const { riderId, rider } = resolution;
+
+  const riderId = rider!.id as number;
   const finalStatus = reqStatus || "confirmed";
   const hasPaid =
     paymentMethod && amountPaid != null && parseFloat(String(amountPaid)) >= 0;
@@ -115,29 +124,21 @@ router.post("/events/:eventId/registrations", (req, res) => {
     .prepare(
       `INSERT INTO registrations
          (event_id, rider_id, race_class, status, payment_status, payment_method, amount_paid,
-           bib_number, ama_number, club_id_number, bike_brand, bike_model, bike_year, sponsors,
-           transponder_rental, mylaps_transponder_number,
+          bib_number, club_id_number, bike_brand, transponder_rental, mylaps_transponder_number,
           selected_purchase_options, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
     )
     .run(
       eventId, riderId, raceClass, finalStatus, finalPaymentStatus,
       paymentMethod || null,
       hasPaid ? String(amountPaid) : null,
-      bibNumber || null, amaNumber || null, clubIdNumber || null, bikeBrand || null,
-      bikeModel || null, bikeYear || null, sponsors || null,
+      bibNumber || null, clubIdNumber || null, bikeBrand || null,
       rentTransponder ? 1 : 0,
-      normalizedTransponderNumber,
+      (transponderNumber ?? req.body.myLapsTransponderNumber) || null,
       JSON.stringify(selectedPurchaseOptions || []),
     );
 
   const regId = regResult.lastInsertRowid as number;
-  if (normalizedTransponderNumber) {
-    db.prepare(
-      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
-    ).run(normalizedTransponderNumber, riderId);
-    markRiderFieldsDirty(db, riderId, ["mylapsTransponderId"]);
-  }
 
   // Auto-create checkin for confirmed registrations
   if (finalStatus === "confirmed") {
@@ -158,11 +159,11 @@ router.post("/events/:eventId/registrations", (req, res) => {
 
   return res.status(201).json({
     ...deserializeReg(reg),
-    riderName: `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim(),
-    firstName: rider.first_name,
-    lastName: rider.last_name,
-    email: rider.email,
-    phone: rider.phone ?? null,
+    riderName: `${firstName} ${lastName}`.trim(),
+    firstName,
+    lastName,
+    email,
+    phone: phone || null,
   });
 });
 
@@ -171,28 +172,7 @@ router.patch("/registrations/:registrationId", (req, res) => {
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
   const id = Number(req.params.registrationId);
-  const {
-    status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod,
-    riderId, displayFirstName, displayLastName,
-  } = req.body;
-  const hasTransponderUpdate =
-    req.body.transponderNumber !== undefined ||
-    req.body.myLapsTransponderNumber !== undefined;
-  const rawTransponderNumber =
-    req.body.transponderNumber !== undefined
-      ? req.body.transponderNumber
-      : req.body.myLapsTransponderNumber;
-  const normalizedTransponderNumber =
-    normalizeActiveTransponderIdentifier(rawTransponderNumber);
-  const hasNonblankTransponder =
-    rawTransponderNumber != null &&
-    (typeof rawTransponderNumber !== "string" ||
-      rawTransponderNumber.trim() !== "");
-  if (hasTransponderUpdate && hasNonblankTransponder && !normalizedTransponderNumber) {
-    return res.status(400).json({
-      error: "Active transponder number must be 1–9 hexadecimal characters",
-    });
-  }
+  const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod, riderId, displayFirstName, displayLastName } = req.body;
 
   const updates: string[] = [];
   const params: unknown[] = [];
@@ -214,10 +194,6 @@ router.patch("/registrations/:registrationId", (req, res) => {
   if (riderId !== undefined) { updates.push("rider_id = ?"); params.push(Number(riderId)); }
   if (displayFirstName !== undefined) { updates.push("display_first_name = ?"); params.push(displayFirstName || null); }
   if (displayLastName !== undefined) { updates.push("display_last_name = ?"); params.push(displayLastName || null); }
-  if (hasTransponderUpdate) {
-    updates.push("mylaps_transponder_number = ?");
-    params.push(normalizedTransponderNumber);
-  }
 
   if (updates.length === 0) {
     return res.status(400).json({ error: "No fields to update" });
@@ -232,12 +208,6 @@ router.patch("/registrations/:registrationId", (req, res) => {
     .get(id) as Record<string, unknown> | undefined;
 
   if (!updated) return res.status(404).json({ error: "Not found" });
-  if (normalizedTransponderNumber) {
-    db.prepare(
-      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
-    ).run(normalizedTransponderNumber, updated.rider_id);
-    markRiderFieldsDirty(db, Number(updated.rider_id), ["mylapsTransponderId"]);
-  }
 
   // Create a checkin record if the registration is now confirmed and one doesn't exist yet
   if (updated.status === "confirmed") {
@@ -261,59 +231,38 @@ router.get("/public/riders/lookup", (req, res) => {
   if (!email) return res.status(400).json({ error: "email required" });
 
   const db = getDb();
-  const riders = db
-    .prepare("SELECT * FROM riders WHERE lower(trim(email)) = ? ORDER BY id ASC")
-    .all(email) as Record<string, unknown>[];
+  const rider = db
+    .prepare("SELECT * FROM riders WHERE lower(email) = ? LIMIT 1")
+    .get(email) as Record<string, unknown> | undefined;
 
-  if (!riders.length) {
-    return res.json({ found: false, count: 0, riders: [] });
-  }
+  if (!rider) return res.json({ found: false });
 
-  const latestRegistration = db
+  const lastReg = db
     .prepare(
-      `SELECT ama_number, club_id_number, bike_brand, bike_model, bike_year,
-              bib_number, sponsors, mylaps_transponder_number
-       FROM registrations
-       WHERE rider_id = ?
-       ORDER BY created_at DESC, id DESC
-       LIMIT 1`,
-    );
-
-  const result = riders.map((rider) => {
-    const lastReg = latestRegistration.get(rider.id) as
-      | Record<string, unknown>
-      | undefined;
-    return {
-      id: rider.id,
-      firstName: rider.first_name ?? "",
-      lastName: rider.last_name ?? "",
-      phone: rider.phone ?? "",
-      dateOfBirth: rider.date_of_birth ?? "",
-      emergencyContact: rider.emergency_contact ?? "",
-      emergencyPhone: rider.emergency_phone ?? "",
-      streetAddress: rider.street_address ?? "",
-      city: rider.city ?? "",
-      homeState: rider.home_state ?? "",
-      zip: rider.zip ?? "",
-      amaNumber: lastReg?.ama_number ?? rider.ama_number ?? "",
-      clubIdNumber: lastReg?.club_id_number ?? "",
-      bikeBrand: lastReg?.bike_brand ?? rider.bike_manufacturer ?? "",
-      bikeModel: lastReg?.bike_model ?? rider.bike_model ?? "",
-      bikeYear: lastReg?.bike_year ?? rider.bike_year ?? "",
-      bibNumber:
-        lastReg?.bib_number != null
-          ? String(lastReg.bib_number)
-          : rider.bib_number ?? "",
-      sponsors: lastReg?.sponsors ?? rider.sponsors ?? "",
-      myLapsTransponderNumber:
-        lastReg?.mylaps_transponder_number ?? rider.mylaps_transponder_id ?? "",
-    };
-  });
+      `SELECT ama_number, club_id_number, bike_brand, bike_model, bike_year, bib_number, sponsors
+       FROM registrations WHERE rider_id = ? ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(rider.id) as Record<string, unknown> | undefined;
 
   return res.json({
     found: true,
-    count: result.length,
-    riders: result,
+    firstName: rider.first_name ?? "",
+    lastName: rider.last_name ?? "",
+    phone: rider.phone ?? "",
+    dateOfBirth: rider.date_of_birth ?? "",
+    emergencyContact: rider.emergency_contact ?? "",
+    emergencyPhone: rider.emergency_phone ?? "",
+    streetAddress: rider.street_address ?? "",
+    city: rider.city ?? "",
+    homeState: rider.home_state ?? "",
+    zip: rider.zip ?? "",
+    amaNumber: lastReg?.ama_number ?? "",
+    clubIdNumber: lastReg?.club_id_number ?? "",
+    bikeBrand: lastReg?.bike_brand ?? "",
+    bikeModel: lastReg?.bike_model ?? "",
+    bikeYear: lastReg?.bike_year ?? "",
+    bibNumber: lastReg?.bib_number ? String(lastReg.bib_number) : "",
+    sponsors: lastReg?.sponsors ?? "",
   });
 });
 

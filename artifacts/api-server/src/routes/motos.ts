@@ -2,39 +2,9 @@ import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
 import { eq, and, inArray, min, ne, gt, asc } from "drizzle-orm";
-import { sseBroadcast, buildLeaderboard, publishTimingSnapshot, resetSharedAnnouncer } from "./timing";
-import { shouldPublishAnnouncerSnapshotForMotoPatch } from "../lib/announcerLifecycle";
+import { sseBroadcast, buildLeaderboard } from "./timing";
 import { sendPushNotifications } from "../lib/push";
 import { sendConnectorCommand } from "../lib/connectorRelay";
-
-export type NormalizedMotoTiming =
-  | { lapCount: number | null; timeLimitMs: number | null; plusLaps: number | null; error?: never }
-  | { error: string; lapCount?: never; timeLimitMs?: never; plusLaps?: never };
-
-/** Shared create/generate boundary normalization; kept exported for focused route tests. */
-export function normalizeMotoTiming(lapCount: unknown, timeLimitMs: unknown, plusLaps: unknown): NormalizedMotoTiming {
-  const normalizedLapCount = lapCount == null ? null : Number(lapCount);
-  const normalizedTimeLimitMs = timeLimitMs == null ? null : Number(timeLimitMs);
-  if (normalizedLapCount !== null && (!Number.isInteger(normalizedLapCount) || normalizedLapCount <= 0)) {
-    return { error: "lapCount must be a positive integer" };
-  }
-  if (normalizedTimeLimitMs !== null && (!Number.isInteger(normalizedTimeLimitMs) || normalizedTimeLimitMs <= 0)) {
-    return { error: "timeLimitMs must be a positive integer" };
-  }
-  if (normalizedLapCount !== null && normalizedTimeLimitMs !== null) {
-    return { error: "lapCount and timeLimitMs are mutually exclusive" };
-  }
-  if (plusLaps != null && normalizedTimeLimitMs === null) {
-    return { error: "plusLaps is only valid when timeLimitMs is set" };
-  }
-  const normalizedPlusLaps = normalizedTimeLimitMs !== null
-    ? (plusLaps == null ? 1 : Number(plusLaps))
-    : null;
-  if (normalizedPlusLaps !== null && (!Number.isInteger(normalizedPlusLaps) || normalizedPlusLaps < 0)) {
-    return { error: "plusLaps must be a nonnegative integer for a timed race" };
-  }
-  return { lapCount: normalizedLapCount, timeLimitMs: normalizedTimeLimitMs, plusLaps: normalizedPlusLaps };
-}
 
 /**
  * Broadcast a moto start/stop command to any RM Connect apps for the club.
@@ -300,17 +270,15 @@ router.post("/events/:eventId/motos", async (req, res) => {
   // raceClasses (multi-class practice): raceClass can be derived from first entry
   const resolvedRaceClass = raceClass || (Array.isArray(raceClasses) && raceClasses.length > 0 ? raceClasses[0] : null);
   if (!name || !type || !resolvedRaceClass || motoNumber === undefined) return res.status(400).json({ error: "name, type, raceClass (or raceClasses), motoNumber required" });
-  const timing = normalizeMotoTiming(lapCount, timeLimitMs, plusLaps);
-  if ("error" in timing) return res.status(400).json({ error: timing.error });
 
   const [moto] = await db.insert(motosTable).values({
     eventId, name, type,
     raceClass: resolvedRaceClass,
     raceClasses: Array.isArray(raceClasses) && raceClasses.length > 0 ? raceClasses : null,
     motoNumber, scheduledTime, lineup: lineup || [], status: "scheduled",
-    lapCount: timing.lapCount,
-    timeLimitMs: timing.timeLimitMs,
-    plusLaps: timing.plusLaps,
+    lapCount: lapCount ? Number(lapCount) : null,
+    timeLimitMs: timeLimitMs ? Number(timeLimitMs) : null,
+    plusLaps: plusLaps != null ? Number(plusLaps) : null,
     practiceMode: practiceMode ?? "lap_count",
     countdownSeconds: countdownSeconds ? Number(countdownSeconds) : null,
     enduroHasRfidStart: enduroHasRfidStart === true,
@@ -331,41 +299,6 @@ router.patch("/motos/:motoId", async (req, res) => {
   }
 
   const updates: Record<string, unknown> = {};
-  const [existingFormat] = await db
-    .select({ lapCount: motosTable.lapCount, timeLimitMs: motosTable.timeLimitMs, plusLaps: motosTable.plusLaps })
-    .from(motosTable)
-    .where(eq(motosTable.id, id));
-  if (!existingFormat) return res.status(404).json({ error: "Not found" });
-  const requestedLapCount = req.body.lapCount === undefined ? undefined : (req.body.lapCount === null ? null : Number(req.body.lapCount));
-  const requestedTimeLimitMs = req.body.timeLimitMs === undefined ? undefined : (req.body.timeLimitMs === null ? null : Number(req.body.timeLimitMs));
-  if (requestedLapCount !== undefined && requestedLapCount !== null && (!Number.isInteger(requestedLapCount) || requestedLapCount <= 0)) {
-    return res.status(400).json({ error: "lapCount must be a positive integer" });
-  }
-  if (requestedTimeLimitMs !== undefined && requestedTimeLimitMs !== null && (!Number.isInteger(requestedTimeLimitMs) || requestedTimeLimitMs <= 0)) {
-    return res.status(400).json({ error: "timeLimitMs must be a positive integer" });
-  }
-  if (requestedLapCount != null && requestedTimeLimitMs != null) {
-    return res.status(400).json({ error: "lapCount and timeLimitMs are mutually exclusive" });
-  }
-  let resultingLapCount = requestedLapCount === undefined ? existingFormat.lapCount : requestedLapCount;
-  let resultingTimeLimitMs = requestedTimeLimitMs === undefined ? existingFormat.timeLimitMs : requestedTimeLimitMs;
-  if (requestedLapCount != null) resultingTimeLimitMs = null;
-  if (requestedTimeLimitMs != null) resultingLapCount = null;
-  const requestedPlusLaps = req.body.plusLaps === undefined ? undefined : (req.body.plusLaps === null ? null : Number(req.body.plusLaps));
-  const resultingPlusLaps = resultingTimeLimitMs !== null
-    ? (requestedPlusLaps === undefined ? (requestedTimeLimitMs != null ? 1 : existingFormat.plusLaps ?? 1) : requestedPlusLaps ?? 1)
-    : null;
-  if (resultingPlusLaps !== null && (!Number.isInteger(resultingPlusLaps) || resultingPlusLaps < 0)) {
-    return res.status(400).json({ error: "plusLaps must be a nonnegative integer for a timed race" });
-  }
-  if (requestedPlusLaps != null && resultingTimeLimitMs === null) {
-    return res.status(400).json({ error: "plusLaps is only valid when timeLimitMs is set" });
-  }
-  if (req.body.lapCount !== undefined || req.body.timeLimitMs !== undefined || req.body.plusLaps !== undefined) {
-    updates.lapCount = resultingLapCount;
-    updates.timeLimitMs = resultingTimeLimitMs;
-    updates.plusLaps = resultingPlusLaps;
-  }
   if (req.body.status !== undefined) {
     updates.status = req.body.status;
     if (req.body.status === "in_progress") {
@@ -382,6 +315,9 @@ router.patch("/motos/:motoId", async (req, res) => {
   }
   if (req.body.lineup !== undefined) updates.lineup = req.body.lineup;
   if (req.body.scheduledTime !== undefined) updates.scheduledTime = req.body.scheduledTime;
+  if (req.body.lapCount !== undefined) updates.lapCount = req.body.lapCount !== null ? Number(req.body.lapCount) : null;
+  if (req.body.timeLimitMs !== undefined) updates.timeLimitMs = req.body.timeLimitMs !== null ? Number(req.body.timeLimitMs) : null;
+  if (req.body.plusLaps !== undefined) updates.plusLaps = req.body.plusLaps !== null ? Number(req.body.plusLaps) : null;
   if (req.body.timeExpiredAt !== undefined) updates.timeExpiredAt = req.body.timeExpiredAt !== null ? new Date(req.body.timeExpiredAt) : null;
   if (req.body.practiceMode !== undefined) updates.practiceMode = req.body.practiceMode !== null ? String(req.body.practiceMode) : null;
   if (req.body.countdownSeconds !== undefined) updates.countdownSeconds = req.body.countdownSeconds !== null ? Number(req.body.countdownSeconds) : null;
@@ -391,9 +327,9 @@ router.patch("/motos/:motoId", async (req, res) => {
   const [moto] = await db.update(motosTable).set(updates as any).where(eq(motosTable.id, id)).returning();
   if (!moto) return res.status(404).json({ error: "Not found" });
 
-  if (shouldPublishAnnouncerSnapshotForMotoPatch(req.body)) {
+  if (req.body.status !== undefined) {
     buildLeaderboard(id).then(snapshot => {
-      if (snapshot) publishTimingSnapshot(snapshot);
+      if (snapshot) sseBroadcast(id, snapshot);
     }).catch(() => {});
   }
 
@@ -458,17 +394,9 @@ router.post("/motos/:motoId/restart", async (req, res) => {
     .where(eq(raceResultsTable.motoId, id));
   const [updated] = await db
     .update(motosTable)
-    .set({
-      status: "scheduled",
-      startedAt: null,
-      completedAt: null,
-      pausedAt: null,
-      totalPausedMs: 0,
-      timeExpiredAt: null,
-    })
+    .set({ status: "scheduled", startedAt: null, pausedAt: null, totalPausedMs: 0 })
     .where(eq(motosTable.id, id))
     .returning();
-  await resetSharedAnnouncer(id);
   buildLeaderboard(id).then(snap => { if (snap) sseBroadcast(id, snap); }).catch(() => {});
   return res.json({ ok: true, moto: updated });
 });
@@ -675,14 +603,9 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
 
   // Guard: do not allow generating motos after the race date has passed.
   const [eventDateRow] = await db
-    .select({
-      date: eventsTable.date,
-      endDate: eventsTable.endDate,
-      raceStyle: eventsTable.raceStyle,
-    })
+    .select({ date: eventsTable.date, endDate: eventsTable.endDate })
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
-  const eligibleLapNumberFloor = eventDateRow?.raceStyle === "motocross" ? 2 : 1;
   if (eventDateRow) {
     const effectiveDate = (eventDateRow.endDate ?? eventDateRow.date).substring(0, 10);
     const todayStr = new Date().toISOString().substring(0, 10);
@@ -704,9 +627,9 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
     useRegistrations,      // boolean: when true, slot all registered riders (not just checked-in)
   } = req.body;
   const minGap: number = minRacesBetween && Number(minRacesBetween) >= 1 ? Math.min(3, Number(minRacesBetween)) : 0;
-  const timing = normalizeMotoTiming(lapCount, timeLimitMs, plusLaps);
-  if ("error" in timing) return res.status(400).json({ error: timing.error });
-  const { lapCount: motoLapCount, timeLimitMs: motoTimeLimitMs, plusLaps: motoPlusLaps } = timing;
+  const motoLapCount: number | null = lapCount != null && Number(lapCount) > 0 ? Number(lapCount) : null;
+  const motoTimeLimitMs: number | null = timeLimitMs != null && Number(timeLimitMs) > 0 ? Number(timeLimitMs) : null;
+  const motoPlusLaps: number | null = plusLaps != null && Number(plusLaps) >= 0 ? Number(plusLaps) : null;
 
   // Map gatePickMethod to internal seeding method + gate assignment flag.
   // gatePickMethod supersedes gateSeedingMethod when both are present.
@@ -821,11 +744,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
           bestLap: min(practiceCrossingsTable.lapTimeMs),
         })
           .from(practiceCrossingsTable)
-          .where(and(
-            inArray(practiceCrossingsTable.sessionId, sessionIds),
-            gt(practiceCrossingsTable.lapNumber, eligibleLapNumberFloor - 1),
-            gt(practiceCrossingsTable.lapTimeMs, 0),
-          ))
+          .where(inArray(practiceCrossingsTable.sessionId, sessionIds))
           .groupBy(practiceCrossingsTable.riderId);
         for (const row of bestLaps) {
           if (row.riderId != null && row.bestLap != null && row.bestLap > 0) {
@@ -903,7 +822,6 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
         .from(lapCrossingsTable)
         .where(and(
           inArray(lapCrossingsTable.motoId, prevRoundMotoIds),
-          gt(lapCrossingsTable.lapNumber, eligibleLapNumberFloor - 1),
           gt(lapCrossingsTable.lapTimeMs, 0),
         ))
         .groupBy(lapCrossingsTable.motoId, lapCrossingsTable.riderId);
@@ -1481,11 +1399,6 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
   if (!moto) return res.status(404).json({ error: "Moto not found" });
   if (moto.status === "completed") return res.status(409).json({ error: "Moto is completed — lineup is locked" });
   if (!moto.raceClass) return res.status(400).json({ error: "Moto has no race class" });
-  const [event] = await db
-    .select({ raceStyle: eventsTable.raceStyle })
-    .from(eventsTable)
-    .where(eq(eventsTable.id, eventId));
-  const eligibleLapNumberFloor = event?.raceStyle === "motocross" ? 2 : 1;
 
   const raceClass = moto.raceClass;
   const seedingMethod: "random" | "practice_fastest_lap" | "previous_round" | "registration_order" =
@@ -1541,11 +1454,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
           riderId: practiceCrossingsTable.riderId,
           bestLap: min(practiceCrossingsTable.lapTimeMs),
         }).from(practiceCrossingsTable)
-          .where(and(
-            inArray(practiceCrossingsTable.sessionId, sessionIds),
-            gt(practiceCrossingsTable.lapNumber, eligibleLapNumberFloor - 1),
-            gt(practiceCrossingsTable.lapTimeMs, 0),
-          ))
+          .where(inArray(practiceCrossingsTable.sessionId, sessionIds))
           .groupBy(practiceCrossingsTable.riderId);
         for (const row of bestLaps) {
           if (row.riderId != null && row.bestLap != null && row.bestLap > 0) {
@@ -1585,11 +1494,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
         riderId: lapCrossingsTable.riderId,
         bestLap: min(lapCrossingsTable.lapTimeMs),
       }).from(lapCrossingsTable)
-        .where(and(
-          inArray(lapCrossingsTable.motoId, prevRoundMotoIds),
-          gt(lapCrossingsTable.lapNumber, eligibleLapNumberFloor - 1),
-          gt(lapCrossingsTable.lapTimeMs, 0),
-        ))
+        .where(and(inArray(lapCrossingsTable.motoId, prevRoundMotoIds), gt(lapCrossingsTable.lapTimeMs, 0)))
         .groupBy(lapCrossingsTable.riderId);
       const bestLapInRound = new Map<number, number>();
       for (const row of bestLapsRound) {

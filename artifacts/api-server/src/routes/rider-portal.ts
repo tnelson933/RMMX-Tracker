@@ -733,7 +733,6 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       eventState: eventsTable.state,
       eventLocation: eventsTable.location,
       timingTechnology: eventsTable.timingTechnology,
-      raceStyle: eventsTable.raceStyle,
       motoId: raceResultsTable.motoId,
       motoName: motosTable.name,
       motoNumber: motosTable.motoNumber,
@@ -822,7 +821,6 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     eventState: string;
     eventLocation: string | null;
     timingTechnology: string | null;
-    raceStyle: string | null;
     raceClass: string;
     motos: Array<{
       motoId: number;
@@ -850,7 +848,6 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
         eventState: row.eventState ?? "",
         eventLocation: row.eventLocation ?? null,
         timingTechnology: row.timingTechnology ?? null,
-        raceStyle: row.raceStyle ?? null,
         raceClass: row.raceClass,
         motos: [],
       });
@@ -1379,9 +1376,7 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
       return bTime.localeCompare(aTime);
     })
     .map(s => {
-      const lapTimes = s.laps.filter(
-        l => l.lapNumber >= 1 && l.lapTimeMs !== null && l.lapTimeMs > 0,
-      );
+      const lapTimes = s.laps.filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
       const bestLapMs = lapTimes.length > 0 ? Math.min(...lapTimes.map(l => l.lapTimeMs!)) : null;
       return {
         ...s,
@@ -1534,11 +1529,7 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
           lapTimeMs: c.lapTimeMs,
           crossingTime: c.crossingTime.toISOString(),
         });
-        if (
-          (event.raceStyle !== "motocross" || (c.lapNumber ?? 0) >= 2)
-          && c.lapTimeMs !== null
-          && c.lapTimeMs > 0
-        ) {
+        if (c.lapTimeMs !== null && c.lapTimeMs > 0) {
           entry.bestLapMs = entry.bestLapMs === null ? c.lapTimeMs : Math.min(entry.bestLapMs, c.lapTimeMs);
         }
       }
@@ -1580,7 +1571,6 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
       eventName: event.name,
       eventDate: (event.date as string | null) ?? null,
       eventState: (event.state as string | null) ?? null,
-      raceStyle: event.raceStyle ?? null,
       raceClass: riderClass,
       sessions,
     });
@@ -1752,7 +1742,8 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 
         // Build leaderboard from lap crossings
         const motoCrossings = crossingsByMoto.get(moto.id) ?? [];
-        const resolvedCrossings = motoCrossings.map(c => {
+        const validCrossings = motoCrossings.filter(c => (c.lapTimeMs ?? 0) > 0);
+        const resolvedCrossings = validCrossings.map(c => {
           const resolvedIdentity = c.riderId === null
             ? resolveTimingIdentity(event.id, c.rfidNumber)
             : null;
@@ -1769,10 +1760,6 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
         });
         const riderBestMap = new Map<string, { riderId: number | null; riderName: string; bestLapMs: number }>();
         for (const c of resolvedCrossings) {
-          if (
-            (event.raceStyle === "motocross" && (c.lapNumber ?? 0) < 2)
-            || (c.lapTimeMs ?? 0) <= 0
-          ) continue;
           const key = c.effectiveRiderId !== null
             ? `rider:${c.effectiveRiderId}`
             : `rfid:${normalizeTimingIdentifier(c.rfidNumber) ?? c.rfidNumber}`;
@@ -1882,7 +1869,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       eventState: event.state ?? null,
       eventLocation: event.location ?? null,
       status: event.status,
-      raceStyle: event.raceStyle ?? null,
+      raceStyle: event.raceStyle ?? "motocross",
       classStartTimes: classStartTimesByEvent.get(event.id) ?? {},
       registrations,
       motos: allMotos,

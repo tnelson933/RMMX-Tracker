@@ -11,5 +11,5 @@ export type EventTimingTechnology = typeof EventTimingTechnology[keyof typeof Ev
 
 export const EventTimingTechnology = {
   rfid: 'rfid',
-  active_transponder: 'active_transponder',
+  mylaps: 'mylaps',
 } as const;

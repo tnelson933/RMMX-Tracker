@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Video, VideoOff, Mic, MicOff, Radio, AlertCircle, Loader2 } from "lucide-react";
+import { Video, VideoOff, Mic, MicOff, Radio, AlertCircle, Copy, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useBroadcast } from "@/contexts/BroadcastContext";
@@ -27,9 +27,12 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [permissionState, setPermissionState] = useState<"requesting" | "granted" | "denied">("requesting");
-  // Reactive public origin is used to detect whether cloud sync is configured
-  // when this screen is running inside the desktop app.
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Reactive public origin — resolves to the cloud URL even when running from the
+  // desktop app so any shareable links we show work for spectators.
   const publicOrigin = usePublicOrigin();
+  const watchLink = `${publicOrigin}/watch/${eventId}`;
 
   // Detect whether we're running in the desktop app without cloud sync configured.
   // In that case the WebSocket relay is unavailable — warn the organizer instead of
@@ -280,6 +283,27 @@ export function LiveBroadcast({ eventId }: LiveBroadcastProps) {
           </>
         ) : (
           <>
+            {/* Shareable spectator link — built from the cloud origin so it works outside the desktop app */}
+            <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Share with spectators</p>
+              <div className="flex items-center gap-2">
+                <span className="flex-1 truncate font-mono text-xs text-foreground select-all">{watchLink}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 h-7 px-2 text-xs"
+                  onClick={() => {
+                    navigator.clipboard.writeText(watchLink);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
+                  }}
+                >
+                  {linkCopied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+                  <span className="ml-1">{linkCopied ? "Copied!" : "Copy"}</span>
+                </Button>
+              </div>
+            </div>
+
             <div className="flex items-center gap-2 flex-wrap">
               <Button
                 variant="ghost" size="sm"

@@ -15,7 +15,7 @@ export const motosTable = pgTable("motos", {
   scheduledTime: text("scheduled_time"),
   lineup: jsonb("lineup").notNull().default([]),
   lapCount: integer("lap_count"),
-  timeLimitMs: integer("time_limit_ms"), // positive race duration; mutually exclusive with lapCount
+  timeLimitMs: integer("time_limit_ms"),
   practiceMode: text("practice_mode").default("lap_count"), // lap_count | countdown (practice motos only)
   countdownSeconds: integer("countdown_seconds"), // duration in seconds for countdown mode
   startedAt: timestamp("started_at", { withTimezone: true }),
@@ -28,13 +28,6 @@ export const motosTable = pgTable("motos", {
   totalPausedMs: integer("total_paused_ms").notNull().default(0),
   plusLaps: integer("plus_laps"),
   timeExpiredAt: timestamp("time_expired_at", { withTimezone: true }),
-  announcerStartedAt: timestamp("announcer_started_at", { withTimezone: true }),
-  announcerLastLap: integer("announcer_last_lap").notNull().default(0),
-  announcerTimeExpiredAt: timestamp("announcer_time_expired_at", { withTimezone: true }),
-  announcerExpiryLeaderLap: integer("announcer_expiry_leader_lap"),
-  announcerLastExtraLap: integer("announcer_last_extra_lap").notNull().default(0),
-  announcerSequence: integer("announcer_sequence").notNull().default(0),
-  announcerFinishedAt: timestamp("announcer_finished_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
