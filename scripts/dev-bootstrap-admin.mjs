@@ -1,28 +1,32 @@
 #!/usr/bin/env node
-// Create the first organizer account in an EMPTY LOCAL dev database.
+// Create the first organizer account in an EMPTY dev/test database.
 // There is no signup/bootstrap route in the API, so a fresh DB needs one row by hand.
 //
 //   node scripts/dev-bootstrap-admin.mjs [email] [clubName] [state]
 //
 // Inserts a club, a super_admin user tied to it (no password), and a one-time
 // setup token, then prints the /setup-account link where you choose the password.
-// Refuses to run unless DATABASE_URL points at localhost.
+// Refuses to run unless DATABASE_URL points at localhost, or at the host named in
+// BOOTSTRAP_ALLOW_HOST (the test server's Docker database is "db").
 import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-process.loadEnvFile(path.join(root, ".env"));
+const envFile = path.join(root, ".env");
+if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const url = new URL(process.env.DATABASE_URL ?? "");
-if (!["127.0.0.1", "localhost", "::1"].includes(url.hostname)) {
+const allowedHosts = ["127.0.0.1", "localhost", "::1", process.env.BOOTSTRAP_ALLOW_HOST].filter(Boolean);
+if (!allowedHosts.includes(url.hostname)) {
   console.error(`Refusing: DATABASE_URL host is ${url.hostname}, not localhost.`);
   process.exit(1);
 }
 
 const [email = "admin@local.test", clubName = "Dev Club", state = "UT"] = process.argv.slice(2);
-const webOrigin = `http://127.0.0.1:${process.env.WEB_PORT ?? "19869"}`;
+const webOrigin = process.env.APP_URL ?? `http://127.0.0.1:${process.env.WEB_PORT ?? "19869"}`;
 
 const { Client } = createRequire(path.join(root, "lib", "db", "package.json"))("pg");
 const client = new Client({ connectionString: process.env.DATABASE_URL });

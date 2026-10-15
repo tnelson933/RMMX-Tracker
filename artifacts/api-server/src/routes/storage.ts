@@ -10,7 +10,13 @@ import {
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { ObjectPermission } from "../lib/objectAcl";
 
-const UPLOADS_DIR = path.join(process.cwd(), ".uploads");
+// UPLOADS_DIR should point at persistent storage (e.g. a Docker volume) off Replit.
+const UPLOADS_DIR = process.env.UPLOADS_DIR
+  ? path.resolve(process.env.UPLOADS_DIR)
+  : path.join(process.cwd(), ".uploads");
+// Replit object storage is only reachable when its bucket env is provisioned;
+// elsewhere the disk copy is the only copy and cloud calls are skipped.
+const cloudStorageEnabled = Boolean(process.env.PRIVATE_OBJECT_DIR);
 // Ensure directory exists at module load time
 fs.mkdir(UPLOADS_DIR, { recursive: true }).catch(() => {});
 
@@ -47,11 +53,13 @@ router.post(
       // Best-effort cloud upload for persistence across redeployments.
       // If object storage is not provisioned, log a warning and continue —
       // the disk copy is sufficient for development and single-server deploys.
-      try {
-        const cloudPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext);
-        req.log.info({ cloudPath }, "File also uploaded to object storage");
-      } catch (cloudErr) {
-        req.log.warn({ err: cloudErr }, "Object storage unavailable — file saved to disk only");
+      if (cloudStorageEnabled) {
+        try {
+          const cloudPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext);
+          req.log.info({ cloudPath }, "File also uploaded to object storage");
+        } catch (cloudErr) {
+          req.log.warn({ err: cloudErr }, "Object storage unavailable — file saved to disk only");
+        }
       }
 
       // Return the /uploads/ path served by GET /storage/uploads/:filename.
@@ -100,6 +108,11 @@ router.get("/storage/uploads/:filename", async (req: Request, res: Response) => 
     return;
   } catch {
     // Not on disk — fall through to cloud storage
+  }
+
+  if (!cloudStorageEnabled) {
+    res.status(404).json({ error: "File not found" });
+    return;
   }
 
   // 2. Fall back to Replit cloud object storage (survives redeployments)

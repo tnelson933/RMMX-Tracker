@@ -81,7 +81,10 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      // COOKIE_SECURE=false allows a plain-HTTP test server (no domain/TLS yet).
+      secure: process.env.COOKIE_SECURE
+        ? process.env.COOKIE_SECURE === "true"
+        : process.env.NODE_ENV === "production",
       httpOnly: true,
       // No global maxAge — login route sets it based on rememberMe choice
     },

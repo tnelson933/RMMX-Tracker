@@ -63,5 +63,8 @@ export async function getStripeSync(): Promise<StripeSync> {
   return new StripeSync({
     poolConfig: { connectionString: databaseUrl },
     stripeSecretKey: secretKey,
+    // On Replit the managed webhook secret lives in the sync schema; elsewhere
+    // supply the endpoint's signing secret from the Stripe dashboard.
+    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || undefined,
   });
 }

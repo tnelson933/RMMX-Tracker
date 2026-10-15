@@ -1,0 +1,22 @@
+# One origin for the whole app (what Replit's router used to do):
+#   /api/*  -> API (incl. WebSocket upgrades for video/RM Connect, unbuffered SSE for live timing)
+#   else    -> built web app with SPA fallback
+# SITE_ADDRESS ":80" = plain HTTP on the LAN. Set it to a domain later for automatic HTTPS.
+{$SITE_ADDRESS::80} {
+	handle /api/* {
+		reverse_proxy api:8080 {
+			# Live timing uses Server-Sent Events; never buffer them.
+			flush_interval -1
+		}
+	}
+
+	handle {
+		root * /srv
+		encode gzip
+		# Service worker + HTML must revalidate so installed PWAs pick up new builds.
+		@revalidate path /index.html /sw.js /sw-auto-reload.js /manifest.webmanifest
+		header @revalidate Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
