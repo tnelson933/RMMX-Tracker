@@ -1,3 +1,6 @@
+// Historical one-time data fix from the Replit era; it already ran in production.
+// Intentionally NOT mounted in routes/index.ts. Do not re-mount without a super_admin guard.
+
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { ridersTable, registrationsTable, checkinsTable } from "@workspace/db";
