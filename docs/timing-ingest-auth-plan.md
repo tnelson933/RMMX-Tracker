@@ -7,7 +7,11 @@ Progress:
 - Done (branch `claude/timing-token-hardening`): reader tokens are redacted
   from request logs, and the token route rejects an `eventId` from another club
   with 403.
-- Next: Phase 0 logging, then Phase 1.
+- Done (branch `claude/timing-ingest-observe`): Phase 0. Every ingest POST
+  logs one `timing ingest observed` line with route, credential kind
+  (`reader_path_token` / `bearer` / `session` / `none`), club/event/moto hints,
+  status and user agent. No credential values are logged.
+- Next: Phase 1, which needs a decision on the per-club enforcement column.
 
 ## 1. The problem
 
