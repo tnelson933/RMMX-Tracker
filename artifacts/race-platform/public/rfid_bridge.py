@@ -97,6 +97,10 @@ Compatible software: Race Monitor, Orbits, and any RMonitor TCP client.
 
 ────────────────────────────────────────────────────────────────────────────────
 Optional flags (all readers):
+  --reader-token TOKEN    This reader's token from Reader Setup. Sent to the
+                          cloud as "Authorization: Bearer TOKEN" on every
+                          crossing. Required once your club enforces timing
+                          ingest authentication.
   --port   5555           Local port (default 5555)
   --db     cache.sqlite3  Local cache file path
   --retry  10             Seconds between offline retry attempts
@@ -116,6 +120,7 @@ RMonitor output flags:
 
 Environment variables (alternative to flags):
   RMMX_API_URL      Cloud API base URL
+  RMMX_READER_TOKEN Reader token (same as --reader-token)
   RMMX_PORT         Local port
   RMMX_DB           Cache file path
   RMMX_READER       Reader mode
@@ -151,6 +156,10 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("rfid-bridge")
+
+# Reader token sent as a Bearer credential on every cloud crossing post. It is
+# added at send time, so crossings queued before an upgrade replay with it.
+READER_TOKEN = ""
 
 # ── SSL context (skips cert verification — readers use self-signed certs) ──────
 import ssl as _ssl
@@ -321,10 +330,13 @@ def forward_to_cloud(api_url: str, cloud_path: str, payload: dict, timeout: int 
     """
     url = f"{api_url.rstrip('/')}{cloud_path}"
     data = json.dumps(payload).encode()
+    headers = {"Content-Type": "application/json"}
+    if READER_TOKEN:
+        headers["Authorization"] = f"Bearer {READER_TOKEN}"
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
@@ -335,6 +347,13 @@ def forward_to_cloud(api_url: str, cloud_path: str, payload: dict, timeout: int 
             # Permanent rejection (bad payload or no active moto) — don't retry
             log.warning("Cloud rejected crossing with HTTP %d — marking done (no retry)", e.code)
             return True
+        if e.code in (401, 403):
+            # Missing, wrong or revoked reader token. Keep the crossing queued so
+            # it replays once the token is fixed and the bridge restarted.
+            log.error("Cloud refused the crossing (HTTP %d): %s. Check --reader-token; "
+                      "the crossing stays queued.", e.code,
+                      "no reader token set" if not READER_TOKEN else "reader token rejected")
+            return False
         log.debug("Cloud HTTP %d — will retry later", e.code)
         return False
     except (urllib.error.URLError, OSError, TimeoutError) as e:
@@ -1103,7 +1122,16 @@ def main():
         help="Enable RMonitor TCP server on this local port (default 0 = disabled). "
              "Scoreboards/announcers connect to tcp://YOUR-IP:PORT. Requires --event-id.",
     )
+    parser.add_argument(
+        "--reader-token",
+        default=os.getenv("RMMX_READER_TOKEN", ""),
+        metavar="TOKEN",
+        help="This reader's token from Reader Setup, sent as a Bearer credential on "
+             "every cloud crossing. Env: RMMX_READER_TOKEN.",
+    )
     args = parser.parse_args()
+    global READER_TOKEN
+    READER_TOKEN = args.reader_token.strip()
 
     if not args.api_url:
         print()
@@ -1196,6 +1224,7 @@ def main():
             log.info("  → Crossings route to active practice session for club %s", args.club_id)
         elif args.event_id:
             log.info("  Event ID   : %s", args.event_id)
+    log.info("  Reader token: %s", "set" if READER_TOKEN else "NOT SET (required once your club enforces ingest auth)")
     log.info("  Local port : %d", args.port)
     log.info("  Cache file : %s", args.db)
     log.info("  Retry every: %ds", args.retry)

@@ -24,7 +24,27 @@ Progress:
     connector sockets).
   - Not yet: settings UI/API for the mode (set it in SQL for now), OpenAPI
     entries for the new routes, trusted-source restriction (Phase 3).
-- Next: Phase 2 (RM Connect, bridge, ReaderSetup).
+- Done (branch `claude/timing-ingest-callers-phase2`): Phase 2, approved
+  2026-10-15.
+  - RM Connect sends `Authorization: Bearer <readerToken>` on the facility
+    fallback (compatible with servers with and without ingest auth). Needs a
+    new connector release (`connector-v*` tag) to reach the field.
+  - `rfid_bridge.py` takes `--reader-token` / `RMMX_READER_TOKEN` and sends it
+    on every cloud post, including queued rows. 401/403 keep the crossing
+    queued (changed from "permanent failure" in section 4, so no crossing is
+    dropped while a token is being fixed).
+  - ReaderSetup shows each reader's Timing URL (`/readers/:token/active/crossing`)
+    and Checkpoint URL, the timing-URL card picks a reader instead of showing
+    `?clubId=`, the connection test pings the reader's own URL, and a key button
+    rotates the token.
+  - OfflineMode's cloud start script passes the club's first RFID reader token;
+    the dead `cloudEndpoint` is gone.
+  - OpenAPI: `readerActiveCrossing`, `readerPing`, `rotateReaderToken`.
+  - Not changed: the live-timing benchmark (another session is fixing it) and
+    the offline bundle README (it points at the local server, which has no
+    ingest auth).
+- Next: Phase 3 (warn, then enforce, club by club) after deploy, a connector
+  release, and a weekend of Phase 0 logs.
 
 ## 1. The problem
 
