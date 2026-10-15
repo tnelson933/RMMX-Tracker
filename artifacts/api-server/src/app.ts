@@ -6,6 +6,7 @@ import ConnectPgSimple from "connect-pg-simple";
 import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { redactLogUrl } from "./lib/logRedaction";
 import { WebhookHandlers } from "./webhookHandlers";
 import { staffPermissionMiddleware } from "./middleware/staffPermissions";
 
@@ -22,7 +23,7 @@ app.use(
         return {
           id: req.id,
           method: req.method,
-          url: req.url?.split("?")[0],
+          url: redactLogUrl(req.url),
         };
       },
       res(res) {
