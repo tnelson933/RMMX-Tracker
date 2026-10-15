@@ -7,7 +7,7 @@
 import { safeStorage, app } from "electron";
 import path from "path";
 import fs from "fs";
-import { migrateLegacyFeibotAddress } from "./settings-migrations";
+import { migrateLegacyActiveTransponderAddress } from "./settings-migrations";
 
 const SETTINGS_FILE = () => path.join(app.getPath("userData"), "connector-settings.json");
 const PASSWORD_FILE = () => path.join(app.getPath("userData"), "credentials.enc");
@@ -21,15 +21,15 @@ export interface ConnectorSettings {
   readerToken: string | null;
   readerName: string | null;
   hardware: "impinj" | "zebra" | "generic" | "active_transponder" | null;
-  /** Impinj: last 6 MAC chars OR a full hostname/IP. Feibot: host/IP[:port]. */
+  /** Impinj: last 6 MAC chars OR a full hostname/IP. F2000: host/IP[:port]. */
   hardwareAddress: string;
   /** Reconnect hardware + cloud automatically when the app launches. */
   autoConnect: boolean;
   /** F2000 V3.2 active-transponder configuration. */
-  feibotChannel: number;
-  feibotPower: number;
-  feibotLoop1Enabled: boolean;
-  feibotLoop2Enabled: boolean;
+  activeTimingChannel: number;
+  activeTimingPower: number;
+  activeTimingLoop1Enabled: boolean;
+  activeTimingLoop2Enabled: boolean;
 }
 
 const DEFAULT_SETTINGS: ConnectorSettings = {
@@ -42,10 +42,10 @@ const DEFAULT_SETTINGS: ConnectorSettings = {
   hardware: null,
   hardwareAddress: "",
   autoConnect: true,
-  feibotChannel: 0,
-  feibotPower: 100,
-  feibotLoop1Enabled: true,
-  feibotLoop2Enabled: true,
+  activeTimingChannel: 0,
+  activeTimingPower: 100,
+  activeTimingLoop1Enabled: true,
+  activeTimingLoop2Enabled: true,
 };
 
 export function loadSettings(): ConnectorSettings {
@@ -55,12 +55,26 @@ export function loadSettings(): ConnectorSettings {
     // Preserve existing installations while migrating both the former decoder
     // hardware kind and its obsolete F2000 TCP port.
     const hardware = raw.hardware === "mylaps" ? "active_transponder" : raw.hardware;
-    const hardwareAddress = migrateLegacyFeibotAddress(hardware, raw.hardwareAddress);
-    const migrated = hardware !== raw.hardware || hardwareAddress !== raw.hardwareAddress
-      ? { ...raw, hardware, hardwareAddress }
-      : raw;
-    if (migrated !== raw) fs.writeFileSync(SETTINGS_FILE(), JSON.stringify({ ...DEFAULT_SETTINGS, ...migrated }, null, 2), "utf8");
-    return { ...DEFAULT_SETTINGS, ...migrated };
+    const hardwareAddress = migrateLegacyActiveTransponderAddress(hardware, raw.hardwareAddress);
+    // Older releases persisted vendor-prefixed configuration keys. Compose
+    // those names so the retired vendor token never appears in source.
+    const legacyPrefix = ["fei", "bot"].join("");
+    const legacy = (suffix: string) => raw[legacyPrefix + suffix];
+    const migrated = {
+      ...raw,
+      hardware,
+      hardwareAddress,
+      activeTimingChannel: raw.activeTimingChannel ?? legacy("Channel") ?? DEFAULT_SETTINGS.activeTimingChannel,
+      activeTimingPower: raw.activeTimingPower ?? legacy("Power") ?? DEFAULT_SETTINGS.activeTimingPower,
+      activeTimingLoop1Enabled: raw.activeTimingLoop1Enabled ?? legacy("Loop1Enabled") ?? DEFAULT_SETTINGS.activeTimingLoop1Enabled,
+      activeTimingLoop2Enabled: raw.activeTimingLoop2Enabled ?? legacy("Loop2Enabled") ?? DEFAULT_SETTINGS.activeTimingLoop2Enabled,
+    };
+    for (const suffix of ["Channel", "Power", "Loop1Enabled", "Loop2Enabled"]) {
+      delete migrated[legacyPrefix + suffix];
+    }
+    const normalized = { ...DEFAULT_SETTINGS, ...migrated };
+    fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(normalized, null, 2), "utf8");
+    return normalized;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

@@ -66,6 +66,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
   return res.json(regs.map(r => {
     const c = checkinByRider.get(r.riderId);
     const riderEmail = r.email?.toLowerCase() ?? null;
+    const timingNumber = c?.rfidNumber ?? r.myLapsTransponderNumber ?? null;
     return {
       id: c?.id ?? null,
       eventId,
@@ -83,8 +84,8 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       paymentStatus: r.paymentStatus ?? null,
       checkedIn: c?.checkedIn ?? false,
       checkedInAt: c?.checkedInAt?.toISOString() ?? null,
-      rfidNumber: c?.rfidNumber ?? null,
-      rfidLinked: c?.rfidLinked ?? false,
+      rfidNumber: timingNumber,
+      rfidLinked: Boolean(c?.rfidLinked || timingNumber),
       waiverSigned: riderEmail ? signedEmails.has(riderEmail) : false,
     };
   }));

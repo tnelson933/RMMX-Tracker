@@ -1,0 +1,53 @@
+# Build and submit both store releases in one run. Store credentials are managed
+# remotely by EAS and are never checked into this repository.
+name: Release Rider App to App Store and Google Play
+
+defaults:
+  tools:
+    node: "20.19.4"
+    pnpm: "10.26.1"
+  run:
+    working_directory: ./artifacts/rider-app
+
+jobs:
+  build_ios:
+    name: Build iOS for App Store
+    type: build
+    params:
+      platform: ios
+      profile: production
+
+  submit_ios:
+    name: Submit iOS to App Store Connect
+    needs:
+      - build_ios
+    type: testflight
+    params:
+      build_id: ${{ needs.build_ios.outputs.build_id }}
+    hooks:
+      after_checkout:
+        - name: Expose Rider App config to EAS Submit
+          run: |
+            node -e 'require("fs").writeFileSync("app.json", JSON.stringify({expo:{name:"RM Tracker",slug:"rider-app",owner:"tnelson933",ios:{bundleIdentifier:"com.rockymountain.riderapp"},extra:{eas:{projectId:"97b8d6d6-ed00-43d6-8c64-128a8c2b6800"}}}}))'
+            cp artifacts/rider-app/eas.json eas.json
+
+  build_android:
+    name: Build Android for Google Play
+    type: build
+    params:
+      platform: android
+      profile: production
+
+  submit_android:
+    name: Submit Android to Google Play
+    needs:
+      - build_android
+    type: submit
+    params:
+      build_id: ${{ needs.build_android.outputs.build_id }}
+    hooks:
+      after_checkout:
+        - name: Expose Rider App config to EAS Submit
+          run: |
+            node -e 'require("fs").writeFileSync("app.json", JSON.stringify({expo:{name:"RM Tracker",slug:"rider-app",owner:"tnelson933",android:{package:"com.rockymountain.riderapp"},extra:{eas:{projectId:"97b8d6d6-ed00-43d6-8c64-128a8c2b6800"}}}}))'
+            cp artifacts/rider-app/eas.json eas.json

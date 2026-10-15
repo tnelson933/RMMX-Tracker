@@ -24,4 +24,7 @@ export interface RiderUpdate {
   city?: string;
   homeState?: string;
   zip?: string;
+  skillLevel?: string;
+  /** Race disciplines the rider competes in */
+  raceTypes?: string[];
 }

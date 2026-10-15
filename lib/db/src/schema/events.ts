@@ -55,6 +55,7 @@ export const eventsTable = pgTable("events", {
   raceStyle: text("race_style").notNull().default("motocross"),
   enduroPenaltyConfig: jsonb("enduro_penalty_config").$type<EnduroPenaltyConfig | null>(),
   quickCheckinEnabled: boolean("quick_checkin_enabled").notNull().default(false),
+  quickCheckinNotifiedAt: timestamp("quick_checkin_notified_at"),
   trackLat: doublePrecision("track_lat"),
   trackLng: doublePrecision("track_lng"),
   streetAddress: text("street_address"),

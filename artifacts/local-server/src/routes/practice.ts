@@ -68,7 +68,9 @@ function buildLiveBoard(session: PracticeSessionRow, crossings: PracticeCrossing
     const sorted = [...riderCrossings].sort(
       (a, b) => new Date(a.crossing_time).getTime() - new Date(b.crossing_time).getTime(),
     );
-    const withLap = sorted.filter((c) => c.lap_time_ms !== null && c.lap_time_ms > 0);
+    const withLap = sorted.filter(
+      (c) => c.lap_number >= 1 && c.lap_time_ms !== null && c.lap_time_ms > 0,
+    );
     const bestLapMs = withLap.length > 0 ? Math.min(...withLap.map((c) => c.lap_time_ms!)) : null;
     const last = sorted[sorted.length - 1];
 
@@ -286,13 +288,14 @@ router.post("/practice", (req, res) => {
 
   const { name, debounceMs, venueName } = req.body as { name?: string; debounceMs?: number; venueName?: string };
   if (!name) return res.status(400).json({ error: "name required" });
+  if (!venueName?.trim()) return res.status(400).json({ error: "Track name is required" });
 
   const db = getDb();
   const ins = db
     .prepare(
       "INSERT INTO practice_sessions (club_id, name, debounce_ms, venue_name, status, started_at) VALUES (?, ?, ?, ?, 'active', datetime('now'))",
     )
-    .run(clubId, name, debounceMs ? Number(debounceMs) : 10000, venueName?.trim() || null);
+    .run(clubId, name, debounceMs ? Number(debounceMs) : 10000, venueName.trim());
 
   const session = db
     .prepare("SELECT * FROM practice_sessions WHERE id = ?")
@@ -322,8 +325,10 @@ router.patch("/practice/:id", (req, res) => {
     vals.push(req.body.name);
   }
   if (req.body.venueName !== undefined) {
+    const venueName = String(req.body.venueName).trim();
+    if (!venueName) return res.status(400).json({ error: "Track name is required" });
     sets.push("venue_name = ?");
-    vals.push(req.body.venueName?.trim() || null);
+    vals.push(venueName);
   }
   if (req.body.debounceMs !== undefined) {
     sets.push("debounce_ms = ?");

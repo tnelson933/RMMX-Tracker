@@ -17,9 +17,10 @@ function parseSecs(t: string | null | undefined): number | null {
   return null;
 }
 
-function bestLap(lapTimes: string[] | null | undefined): number | null {
+function bestLap(lapTimes: string[] | null | undefined, raceStyle?: string | null): number | null {
   if (!lapTimes?.length) return null;
-  const parsed = lapTimes.map(parseSecs).filter((x): x is number => x !== null);
+  const eligibleLapTimes = raceStyle === "motocross" ? lapTimes.slice(1) : lapTimes;
+  const parsed = eligibleLapTimes.map(parseSecs).filter((x): x is number => x !== null);
   if (!parsed.length) return null;
   return Math.min(...parsed);
 }
@@ -344,7 +345,7 @@ export default function GateSchedulePage() {
       // Race mode: use results, sort by position
       const withBest = motoResults.map((r) => ({
         ...r,
-        bestSecs: bestLap(r.lapTimes),
+        bestSecs: bestLap(r.lapTimes, activeEvent?.raceStyle),
         totalSecs: parseSecs(r.totalTime),
       }));
 
@@ -389,7 +390,7 @@ export default function GateSchedulePage() {
       raceClass: (featuredMoto.raceClasses?.length ? featuredMoto.raceClasses[0] : featuredMoto.raceClass) ?? null,
       isFirst: i === 0,
     }));
-  }, [featuredMoto, results]);
+  }, [featuredMoto, results, activeEvent?.raceStyle]);
 
   // ── No club ID ──
   if (!clubId) {

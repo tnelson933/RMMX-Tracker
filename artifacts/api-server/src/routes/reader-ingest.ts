@@ -35,6 +35,7 @@ import { processCrossing } from "./timing";
 import { processPracticeCrossing } from "./practice";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { recordTagSeen } from "../lib/recentTags";
+import { canonicalizeCrossingTimestamp, parseTrustworthyReceivedAt } from "../lib/crossingTimestamp";
 
 const router = Router();
 
@@ -91,6 +92,12 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
     crossingTime?: string;
     antennaId?: number;
     eventId?: number;
+    receivedAt?: string;
+    receivedAtUtc?: string;
+    deviceTimezone?: string;
+    timeSource?: string;
+    source?: string;
+    readerReceivedAt?: string;
   };
 
   if (!body.rfidNumber) return res.status(400).json({ ok: false, message: "rfidNumber is required" });
@@ -109,9 +116,23 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
     .where(eq(readersTable.id, reader.id))
     .catch(() => {});
 
-  const crossingTime = body.crossingTime ? new Date(body.crossingTime) : new Date();
+  const serverReceivedAt = new Date();
   const isActiveTransponderReader =
     reader.type === "active_transponder" || reader.type === "mylaps";
+  const originalReceipt = parseTrustworthyReceivedAt(
+    body.receivedAtUtc ?? body.receivedAt,
+    serverReceivedAt,
+  );
+  const receivedAt = originalReceipt ?? serverReceivedAt;
+  const crossingTime = canonicalizeCrossingTimestamp(body.crossingTime ?? receivedAt, receivedAt, {
+    source: "reader_token_ingest",
+    readerId: reader.id,
+    deviceTimezone: body.deviceTimezone,
+    timeSource: body.timeSource ?? body.source,
+  // A registered active reader is authenticated by its token, so it can attest
+  // direct timing even when an older bridge did not include source metadata.
+  // Passive reader types deliberately cannot opt into past-skew replacement.
+  }, isActiveTransponderReader && originalReceipt !== null);
 
   // 3. Prefer a running practice whenever the club has no moto actually in
   // progress. An event can remain in race_day status while organizers run a
@@ -249,6 +270,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
         crossingTime,
         readerId: `reader:${reader.id}`,
         antennaId: incomingAntenna ?? undefined,
+        readerReceivedAt: body.readerReceivedAt ?? originalReceipt?.toISOString(),
       });
       const action = (result as any)?.enduroAction ?? (isEven ? "started" : "finished");
       return res.json({ ok: true, message: `Rider ${action} on moto ${sameGateMotoId}` });
@@ -325,6 +347,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
       crossingTime,
       readerId: `reader:${reader.id}`,
       antennaId: incomingAntenna ?? undefined,
+      readerReceivedAt: body.readerReceivedAt ?? originalReceipt?.toISOString(),
     });
     const action = (result as any)?.enduroAction ?? (isEven ? "started" : "finished");
     return res.json({ ok: true, message: `Rider ${action} on moto ${assignment.motoId}` });

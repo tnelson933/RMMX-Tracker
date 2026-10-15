@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "243690590916",
+    "project_id": "rm-tracker-93933",
+    "storage_bucket": "rm-tracker-93933.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:243690590916:android:a491275e4bbf289086ef91",
+        "android_client_info": {
+          "package_name": "com.rockymountain.riderapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCdflTe7IfSD7Cerl-yOaJkPjpb0iyKCeA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

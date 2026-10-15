@@ -15,14 +15,30 @@ export interface MotoInput {
   /** For multi-class practice motos; when set overrides raceClass for display */
   raceClasses?: string[];
   motoNumber: number;
-  /** Number of laps in this moto */
-  lapCount?: number;
-  /** Time limit in milliseconds (practice sessions only, optional) */
-  timeLimitMs?: number;
+  /**
+     * Positive lap target for a lap-count race; mutually exclusive with timeLimitMs. Send null for a timed race.
+     * @minimum 1
+     * @nullable
+     */
+  lapCount?: number | null;
+  /**
+     * Positive duration in milliseconds for a timed race; mutually exclusive with lapCount. Send null for a lap-count race.
+     * @minimum 1
+     * @nullable
+     */
+  timeLimitMs?: number | null;
+  /**
+     * Extra laps after the time limit expires; defaults to 1 for timed races and is cleared for lap-count races
+     * @minimum 0
+     * @nullable
+     */
+  plusLaps?: number | null;
   /** Timer mode for practice motos — lap_count (default) or countdown */
   practiceMode?: MotoInputPracticeMode;
   /** Duration in seconds for countdown mode (practice motos only) */
   countdownSeconds?: number;
   scheduledTime?: string;
   lineup?: number[];
+  /** Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock */
+  enduroHasRfidStart?: boolean;
 }

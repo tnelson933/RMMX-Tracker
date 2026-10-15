@@ -5,9 +5,12 @@
  * RM Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { RfidAssignmentInputAssignmentType } from './rfidAssignmentInputAssignmentType';
 
 export interface RfidAssignmentInput {
   riderId: number;
   rfidNumber: string;
   eventId?: number;
+  /** Optional assignment kind. Omitted requests retain legacy passive RFID behavior. */
+  assignmentType?: RfidAssignmentInputAssignmentType;
 }

@@ -119,7 +119,17 @@ function chipFor(status: string): { label: string; color: string } {
 
 // ─── Schedule moto card ───────────────────────────────────────────────────────
 
-function ScheduleMotoCard({ moto, colors, isEnduro }: { moto: ScheduleMoto; colors: ReturnType<typeof useColors>; isEnduro?: boolean }) {
+function ScheduleMotoCard({
+  moto,
+  colors,
+  isEnduro,
+  raceStyle,
+}: {
+  moto: ScheduleMoto;
+  colors: ReturnType<typeof useColors>;
+  isEnduro?: boolean;
+  raceStyle?: string | null;
+}) {
   const mine   = moto.isAnyFamilyMemberInMoto;
   const live   = moto.status === "in_progress";
   const isPrac = moto.type === "practice";
@@ -128,8 +138,13 @@ function ScheduleMotoCard({ moto, colors, isEnduro }: { moto: ScheduleMoto; colo
   const badgeBg = live ? "#ef444420" : mine ? colors.primary + "18" : colors.muted;
   const badgeFg = live ? "#ef4444"   : mine ? colors.primary        : colors.mutedForeground;
 
-  const myBestLap = isPrac && moto.practiceLaps
-    ? Math.min(...moto.practiceLaps.filter(l => (l.lapTimeMs ?? 0) > 0).map(l => l.lapTimeMs!)) || null
+  const eligiblePracticeLaps = isPrac
+    ? (moto.practiceLaps ?? []).filter(l =>
+        (raceStyle !== "motocross" || l.lapNumber > 1) && (l.lapTimeMs ?? 0) > 0
+      )
+    : [];
+  const myBestLap = eligiblePracticeLaps.length > 0
+    ? Math.min(...eligiblePracticeLaps.map(l => l.lapTimeMs!))
     : null;
   const myRank = moto.practiceLeaderboard?.find(e => e.isMe)?.rank ?? null;
 
@@ -305,7 +320,15 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
           </Text>
         </View>
       ) : (
-        event.motos.map(moto => <ScheduleMotoCard key={moto.motoId} moto={moto} colors={colors} isEnduro={isEnduro} />)
+        event.motos.map(moto => (
+          <ScheduleMotoCard
+            key={moto.motoId}
+            moto={moto}
+            colors={colors}
+            isEnduro={isEnduro}
+            raceStyle={event.raceStyle}
+          />
+        ))
       )}
     </>
   );

@@ -47,6 +47,10 @@ function toLapNums(lapTimes: unknown[] | undefined): number[] {
   }).filter(n => n > 0);
 }
 
+function eligibleLapNums(lapTimes: unknown[] | undefined, raceStyle?: string | null): number[] {
+  return toLapNums(raceStyle === "motocross" ? lapTimes?.slice(1) : lapTimes);
+}
+
 function fmtMs(ms: number | null | undefined): string {
   if (!ms || ms <= 0) return "—";
   const totalSec = ms / 1000;
@@ -110,6 +114,7 @@ export default function SeriesWidget() {
 
   const [eventResults, setEventResults] = useState<RaceResult[]>([]);
   const [eventMotos, setEventMotos] = useState<Moto[]>([]);
+  const [eventRaceStyle, setEventRaceStyle] = useState<string | null>(null);
   const [eventLoading, setEventLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [activeEventClass, setActiveEventClass] = useState("");
@@ -132,15 +137,18 @@ export default function SeriesWidget() {
     setEventLoading(true);
     setEventResults([]);
     setEventMotos([]);
+    setEventRaceStyle(null);
 
     const doFetch = (showLoader = false) => {
       if (showLoader) setEventLoading(true);
       return Promise.all([
         fetch(`/api/events/${selectedEventId}/results`).then(r => r.json()),
         fetch(`/api/events/${selectedEventId}/motos`).then(r => r.json()),
-      ]).then(([results, motos]) => {
+        fetch(`/api/events/${selectedEventId}`).then(r => r.ok ? r.json() : null),
+      ]).then(([results, motos, event]) => {
         setEventResults(Array.isArray(results) ? results : []);
         setEventMotos(Array.isArray(motos) ? motos : []);
+        setEventRaceStyle(typeof event?.raceStyle === "string" ? event.raceStyle : null);
         setEventLoading(false);
       }).catch(() => setEventLoading(false));
     };
@@ -436,7 +444,10 @@ export default function SeriesWidget() {
                 const allLaps = motoResults.flatMap(m => toLapNums(m.lapTimes ?? undefined));
                 const directLaps = toLapNums(rider.lapTimes ?? undefined);
                 const lapsToShow = allLaps.length > 0 ? allLaps : directLaps;
-                const bl = bestLapMs(lapsToShow.slice(1)); // exclude lap 1 (gate-to-line partial lap)
+                const eligibleLaps = motoResults.length > 0
+                  ? motoResults.flatMap(m => eligibleLapNums(m.lapTimes ?? undefined, eventRaceStyle))
+                  : eligibleLapNums(rider.lapTimes ?? undefined, eventRaceStyle);
+                const bl = bestLapMs(eligibleLaps);
                 const totalMs = parseTotalTimeMs(rider.totalTime);
                 const totalPts = !mainMotoForEventClass
                   ? motoResults.reduce((sum, r) => sum + ((r as any).points ?? 0), 0)
@@ -494,7 +505,7 @@ export default function SeriesWidget() {
                         {motoResults.length > 0 ? motoResults.map(moto => {
                           const laps = toLapNums(moto.lapTimes ?? undefined);
                           const motoInfo = eventMotos.find(m => m.id === moto.motoId);
-                          const mbl = bestLapMs(laps.slice(1)); // exclude lap 1 (gate-to-line partial lap)
+                           const mbl = bestLapMs(eligibleLapNums(moto.lapTimes ?? undefined, eventRaceStyle));
                           return (
                             <div key={moto.id} style={{ marginBottom: 14 }}>
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#dc2626", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
@@ -505,7 +516,7 @@ export default function SeriesWidget() {
                               {laps.length > 0 ? (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                                   {laps.map((lap, i) => {
-                                    const isBest = i > 0 && mbl !== null && lap === mbl;
+                                    const isBest = (eventRaceStyle !== "motocross" || i > 0) && mbl !== null && lap === mbl;
                                     return (
                                       <div key={i} style={{ background: isBest ? "rgba(22,163,74,0.08)" : "#f1f5f9", border: `1px solid ${isBest ? "rgba(22,163,74,0.35)" : "#e2e8f0"}`, borderRadius: 5, padding: "4px 10px", fontSize: 12, color: isBest ? "#16a34a" : "#374151", fontVariantNumeric: "tabular-nums" }}>
                                         <span style={{ fontSize: 9, color: isBest ? "#16a34a" : "#94a3b8", marginRight: 4 }}>L{i + 1}</span>
@@ -523,7 +534,8 @@ export default function SeriesWidget() {
                         }) : directLaps.length > 0 ? (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                             {directLaps.map((lap, i) => {
-                              const isBest = i > 0 && bestLapMs(directLaps.slice(1)) === lap;
+                              const isBest = (eventRaceStyle !== "motocross" || i > 0) &&
+                                bestLapMs(eligibleLapNums(rider.lapTimes ?? undefined, eventRaceStyle)) === lap;
                               return (
                                 <div key={i} style={{ background: isBest ? "rgba(22,163,74,0.08)" : "#f1f5f9", border: `1px solid ${isBest ? "rgba(22,163,74,0.35)" : "#e2e8f0"}`, borderRadius: 5, padding: "4px 10px", fontSize: 12, color: isBest ? "#16a34a" : "#374151", fontVariantNumeric: "tabular-nums" }}>
                                   <span style={{ fontSize: 9, color: "#94a3b8", marginRight: 4 }}>L{i + 1}</span>

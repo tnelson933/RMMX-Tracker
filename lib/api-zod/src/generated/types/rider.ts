@@ -45,5 +45,9 @@ export interface Rider {
      * @nullable
      */
   clubIdNumber?: string | null;
+  /** @nullable */
+  skillLevel?: string | null;
+  /** Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert) */
+  raceTypes?: string[];
   createdAt?: string;
 }

@@ -74,6 +74,7 @@ export interface EventHistory {
   eventState: string;
   eventLocation: string | null;
   raceClass: string;
+  raceStyle?: string | null;
   motos: MotoResult[];
   bestPosition: number | null;
   totalPoints: number;
@@ -265,9 +266,11 @@ export function EventDetailScreen({
         {event.motos.map(moto => {
           const hasTimes = moto.lapTimes.length > 0;
           const lapMsArr = hasTimes ? moto.lapTimes.map(parseLapMs) : [];
-          const trueLaps = lapMsArr.slice(1); // lap 1 is a partial lap (gate to line), exclude from best
+          const trueLaps = event.raceStyle === "motocross" ? lapMsArr.slice(1) : lapMsArr;
           const bestMs   = trueLaps.length > 0 ? Math.min(...trueLaps) : Infinity;
-          const fastestIdx = bestMs < Infinity ? lapMsArr.findIndex((ms, i) => i > 0 && ms === bestMs) : -1;
+          const fastestIdx = bestMs < Infinity
+            ? lapMsArr.findIndex((ms, i) => (event.raceStyle !== "motocross" || i > 0) && ms === bestMs)
+            : -1;
 
           return (
             <View key={moto.motoId} style={{

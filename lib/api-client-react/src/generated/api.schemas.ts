@@ -311,6 +311,8 @@ export interface Event {
   transponderRentalFee?: number | null;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, active-timing registrations require a personal transponder or an available rental */
+  requireTransponder?: boolean;
   /** When true, riders must read and accept the club waiver before completing registration */
   requireWaiver?: boolean;
   /** @nullable */
@@ -422,6 +424,8 @@ export interface EventInput {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, active-timing registrations require a personal transponder or an available rental */
+  requireTransponder?: boolean;
   /** When true, riders must read and accept the club waiver before completing registration */
   requireWaiver?: boolean;
   /** @nullable */
@@ -511,6 +515,8 @@ export interface EventUpdate {
   transponderRentalFee?: number;
   noDuplicateBibs?: boolean;
   requireClubId?: boolean;
+  /** When true, active-timing registrations require a personal transponder or an available rental */
+  requireTransponder?: boolean;
   /** When true, riders must read and accept the club waiver before completing registration */
   requireWaiver?: boolean;
   /** @nullable */
@@ -966,17 +972,20 @@ export interface Moto {
   status: MotoStatus;
   motoNumber?: number;
   /**
-     * Number of laps in this moto
+     * Positive lap target for a lap-count race; mutually exclusive with timeLimitMs
+     * @minimum 1
      * @nullable
      */
   lapCount?: number | null;
   /**
-     * Time limit in milliseconds (practice sessions only, optional)
+     * Positive duration in milliseconds for a timed race; mutually exclusive with lapCount
+     * @minimum 1
      * @nullable
      */
   timeLimitMs?: number | null;
   /**
      * Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format), 0 = end immediately at the flag
+     * @minimum 0
      * @nullable
      */
   plusLaps?: number | null;
@@ -1055,12 +1064,24 @@ export interface MotoInput {
   /** For multi-class practice motos; when set overrides raceClass for display */
   raceClasses?: string[];
   motoNumber: number;
-  /** Number of laps in this moto */
-  lapCount?: number;
-  /** Time limit in milliseconds (practice sessions only, optional) */
-  timeLimitMs?: number;
-  /** Extra laps after the time limit expires — 1 = one more lap after the flag (standard MX format) */
-  plusLaps?: number;
+  /**
+     * Positive lap target for a lap-count race; mutually exclusive with timeLimitMs. Send null for a timed race.
+     * @minimum 1
+     * @nullable
+     */
+  lapCount?: number | null;
+  /**
+     * Positive duration in milliseconds for a timed race; mutually exclusive with lapCount. Send null for a lap-count race.
+     * @minimum 1
+     * @nullable
+     */
+  timeLimitMs?: number | null;
+  /**
+     * Extra laps after the time limit expires; defaults to 1 for timed races and is cleared for lap-count races
+     * @minimum 0
+     * @nullable
+     */
+  plusLaps?: number | null;
   /** Timer mode for practice motos — lap_count (default) or countdown */
   practiceMode?: MotoInputPracticeMode;
   /** Duration in seconds for countdown mode (practice motos only) */
@@ -1086,12 +1107,21 @@ export interface MotoUpdate {
   status?: string;
   lineup?: number[];
   scheduledTime?: string;
-  /** @nullable */
+  /**
+     * Positive lap target; setting it clears timeLimitMs and plusLaps
+     * @minimum 1
+     * @nullable
+     */
   lapCount?: number | null;
-  /** @nullable */
+  /**
+     * Positive timed-race duration in milliseconds; setting it clears lapCount
+     * @minimum 1
+     * @nullable
+     */
   timeLimitMs?: number | null;
   /**
      * Extra laps after the time limit expires; null to clear
+     * @minimum 0
      * @nullable
      */
   plusLaps?: number | null;
@@ -1292,6 +1322,51 @@ export interface ActivityItem {
   timestamp: string;
 }
 
+export interface DashboardEventSnapshot {
+  id: number;
+  name: string;
+  date: string;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  trackName?: string | null;
+  /** @nullable */
+  registrationClose?: string | null;
+  /** @nullable */
+  maxRiders?: number | null;
+  registrationCount: number;
+  newRegistrationsLast7Days: number;
+  paidCount: number;
+  unpaidCount: number;
+  missingWaiversCount: number;
+  missingTranspondersCount: number;
+}
+
+export type DashboardActionItemType = typeof DashboardActionItemType[keyof typeof DashboardActionItemType];
+
+
+export const DashboardActionItemType = {
+  unpaid: 'unpaid',
+  waiver: 'waiver',
+  transponder: 'transponder',
+} as const;
+
+export type DashboardActionItemSeverity = typeof DashboardActionItemSeverity[keyof typeof DashboardActionItemSeverity];
+
+
+export const DashboardActionItemSeverity = {
+  warning: 'warning',
+  urgent: 'urgent',
+} as const;
+
+export interface DashboardActionItem {
+  type: DashboardActionItemType;
+  label: string;
+  count: number;
+  href: string;
+  severity: DashboardActionItemSeverity;
+}
+
 export interface ClubDashboard {
   totalEvents: number;
   upcomingEvents: number;
@@ -1302,6 +1377,8 @@ export interface ClubDashboard {
   checkedInToday?: number;
   recentActivity: ActivityItem[];
   upcomingEventList?: Event[];
+  nextEventSnapshot?: DashboardEventSnapshot | null;
+  actionItems: DashboardActionItem[];
 }
 
 export type RaceDaySummaryPaymentSummary = {
@@ -1923,7 +2000,7 @@ export interface Reader {
   /** UUID used as the URL key for this reader's ingest endpoint */
   token: string;
   /**
-     * Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.
+     * Last 6 of MAC address for Impinj R700, or the F2000 IP address. RM Connect connects to Active Transponder Timing hardware on port 55555.
      * @nullable
      */
   hardwareAddress?: string | null;
@@ -1943,14 +2020,14 @@ export const ReaderInputType = {
 export interface ReaderInput {
   name: string;
   type: ReaderInputType;
-  /** Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address */
+  /** Last 6 of MAC address for Impinj R700, or the F2000 IP address */
   hardwareAddress?: string;
 }
 
 export interface ReaderUpdateInput {
   name: string;
   /**
-     * Last 6 of MAC address for Impinj R700, or the Feibot F2000 IP address
+     * Last 6 of MAC address for Impinj R700, or the F2000 IP address
      * @nullable
      */
   hardwareAddress?: string | null;
@@ -2057,7 +2134,7 @@ export interface SetEventReaderAssignmentsInput {
 }
 
 export interface ReaderCrossingInput {
-  /** RFID tag EPC or MyLaps transponder number */
+  /** RFID tag EPC or Active Timing transponder number */
   rfidNumber?: string;
   /** ISO timestamp of the crossing; defaults to server time if omitted */
   crossingTime?: string;
@@ -2109,8 +2186,19 @@ export type ListEventCancellations200 = {
 
 export type ListRfidTagsParams = {
 eventId?: number;
-assignmentType?: 'rfid' | 'active_transponder';
+/**
+ * Optional assignment kind. Omitted requests retain legacy passive RFID behavior.
+ */
+assignmentType?: ListRfidTagsAssignmentType;
 };
+
+export type ListRfidTagsAssignmentType = typeof ListRfidTagsAssignmentType[keyof typeof ListRfidTagsAssignmentType];
+
+
+export const ListRfidTagsAssignmentType = {
+  rfid: 'rfid',
+  active_transponder: 'active_transponder',
+} as const;
 
 export type DeleteCheckpointArrival200 = {
   ok?: boolean;

@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ActivityItem } from './activityItem';
+import type { DashboardActionItem } from './dashboardActionItem';
+import type { DashboardEventSnapshot } from './dashboardEventSnapshot';
 import type { Event } from './event';
 
 export interface ClubDashboard {
@@ -18,4 +20,6 @@ export interface ClubDashboard {
   checkedInToday?: number;
   recentActivity: ActivityItem[];
   upcomingEventList?: Event[];
+  nextEventSnapshot?: DashboardEventSnapshot | null;
+  actionItems: DashboardActionItem[];
 }

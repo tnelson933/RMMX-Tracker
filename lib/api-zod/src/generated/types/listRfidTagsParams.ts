@@ -5,7 +5,12 @@
  * RM Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListRfidTagsAssignmentType } from './listRfidTagsAssignmentType';
 
 export type ListRfidTagsParams = {
 eventId?: number;
+/**
+ * Optional assignment kind. Omitted requests retain legacy passive RFID behavior.
+ */
+assignmentType?: ListRfidTagsAssignmentType;
 };

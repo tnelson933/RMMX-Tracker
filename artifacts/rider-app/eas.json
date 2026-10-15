@@ -20,16 +20,20 @@
       }
     },
     "production": {
+      "node": "20.19.4",
       "pnpm": "10.26.1",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "rmmx-tracker.replit.app"
       },
       "android": {
+        "autoIncrement": true,
         "buildType": "app-bundle",
+        "image": "sdk-54",
         "credentialsSource": "remote"
       },
       "ios": {
         "autoIncrement": true,
+        "image": "macos-sequoia-15.6-xcode-26.0",
         "credentialsSource": "remote"
       }
     }
@@ -37,13 +41,11 @@
   "submit": {
     "production": {
       "android": {
-        "serviceAccountKeyPath": "./google-service-account.json",
-        "track": "production"
+        "track": "production",
+        "releaseStatus": "completed"
       },
       "ios": {
-        "ascApiKeyPath": "./AuthKey_XXXXXXXXXX.p8",
-        "ascApiKeyIssuerId": "REPLACE_WITH_ISSUER_ID",
-        "ascApiKeyId": "REPLACE_WITH_KEY_ID"
+        "ascAppId": "6791718924"
       }
     }
   }

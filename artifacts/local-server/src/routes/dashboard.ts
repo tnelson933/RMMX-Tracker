@@ -84,7 +84,7 @@ router.get("/dashboard/club/:clubId", (req, res) => {
   const upcomingEventList = db.prepare(`
     SELECT id, club_id, name, date, state, location, track_name,
            race_classes, registration_open, registration_close,
-           status, payment_enabled, entry_fee, max_riders, created_at
+           status, payment_enabled, entry_fee, max_riders, race_style, created_at
     FROM events
     WHERE club_id = ? AND status != 'completed'
     ORDER BY date ASC
@@ -114,6 +114,7 @@ router.get("/dashboard/club/:clubId", (req, res) => {
       paymentEnabled: e.payment_enabled === 1,
       entryFee: e.entry_fee ? Number(e.entry_fee) : null,
       maxRiders: e.max_riders ?? null,
+      raceStyle: e.race_style ?? null,
       createdAt: e.created_at,
       clubName: null,
     })),

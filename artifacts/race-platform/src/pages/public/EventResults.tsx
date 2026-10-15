@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { LiveRaceViews, useLiveRaceStream } from "./LiveLeaderboard";
 
 // ─── Lap time formatter ───────────────────────────────────────────────────────
 function formatLapTime(ms: number): string {
@@ -33,16 +34,20 @@ function formatLapTime(ms: number): string {
 // ─── LapTimesModal ────────────────────────────────────────────────────────────
 function LapTimesModal({
   result,
+  raceStyle,
   onClose,
 }: {
   result: RaceResult | null;
+  raceStyle?: string | null;
   onClose: () => void;
 }) {
   if (!result) return null;
 
   const lapTimes = result.lapTimes ?? [];
   const parsedLaps = lapTimes.map(t => parseInt(t, 10)).filter(n => !isNaN(n) && n > 0);
-  const trueParsedLaps = parsedLaps.slice(1); // exclude lap 1 (gate-to-line partial lap)
+  const trueParsedLaps = (raceStyle === "motocross" ? lapTimes.slice(1) : lapTimes)
+    .map(t => parseInt(t, 10))
+    .filter(n => !isNaN(n) && n > 0);
   const bestLapMs = trueParsedLaps.length > 0 ? Math.min(...trueParsedLaps) : null;
 
   return (
@@ -72,7 +77,7 @@ function LapTimesModal({
             </div>
             <div className="space-y-0.5 max-h-72 overflow-y-auto">
               {parsedLaps.map((lapMs, idx) => {
-                const isBest = idx > 0 && lapMs === bestLapMs;
+                const isBest = (raceStyle !== "motocross" || idx > 0) && lapMs === bestLapMs;
                 return (
                   <div
                     key={idx}
@@ -421,6 +426,7 @@ export default function EventResults() {
   }, [eventId]);
 
   const activeMoto = motos?.find(m => m.status === "in_progress");
+  const liveRace = useLiveRaceStream(activeMoto?.id);
 
   if (event && !activeClass && event.raceClasses && event.raceClasses.length > 0) {
     setActiveClass(event.raceClasses[0]);
@@ -604,6 +610,11 @@ export default function EventResults() {
 
             {/* Live Standings tab */}
             <TabsContent value="standings" className="m-0 bg-card border rounded-b-lg shadow-sm">
+              {activeMoto && (
+                <div className="h-[32rem] max-h-[70vh] overflow-hidden border-b bg-sidebar">
+                  <LiveRaceViews {...liveRace} />
+                </div>
+              )}
               <div className="p-6 md:p-8">
                 {event.raceClasses && event.raceClasses.length > 0 ? (
                   <>
@@ -857,7 +868,11 @@ export default function EventResults() {
       </div>
 
       {/* Shared lap times modal — driven by selectedResult across both tabs */}
-      <LapTimesModal result={selectedResult} onClose={() => setSelectedResult(null)} />
+      <LapTimesModal
+        result={selectedResult}
+        raceStyle={event.raceStyle}
+        onClose={() => setSelectedResult(null)}
+      />
 
       {/* Image lightbox */}
       {imageLightboxOpen && (event as any).imageUrl && (

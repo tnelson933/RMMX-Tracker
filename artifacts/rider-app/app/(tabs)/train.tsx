@@ -46,6 +46,10 @@ function lapDelta(ms: number, bestMs: number): string {
   return `+${((ms - bestMs) / 1000).toFixed(3)}s`;
 }
 
+function isLapEligible(lapNumber: number, raceStyle?: string | null): boolean {
+  return raceStyle !== "motocross" || lapNumber > 1;
+}
+
 function dateKey(iso: string | null | undefined): string {
   if (!iso) return "unknown";
   const d = new Date(iso);
@@ -86,6 +90,7 @@ interface SessionItem  {
   bestLapMs: number | null;
   leaderboard?: LeaderboardEntry[];
   startedAt?: string | null;
+  raceStyle?: string | null;
 }
 interface DateGroup    { key: string; label: string; sessions: SessionItem[] }
 interface TrackItem    { key: string; label: string; sublabel: string | null; sessions: SessionItem[]; dates: DateGroup[] }
@@ -177,7 +182,15 @@ function ChipBar({ items, selected, onSelect, colors }: {
 
 // ─── Lap table ────────────────────────────────────────────────────────────────
 
-function LapTable({ laps, colors }: { laps: LapEntry[]; colors: ReturnType<typeof useColors> }) {
+function LapTable({
+  laps,
+  colors,
+  raceStyle,
+}: {
+  laps: LapEntry[];
+  colors: ReturnType<typeof useColors>;
+  raceStyle?: string | null;
+}) {
   const validLaps = laps.filter(l => (l.lapTimeMs ?? 0) > 0);
   if (validLaps.length === 0) return (
     <View style={{ padding: 24, alignItems: "center", gap: 6 }}>
@@ -185,8 +198,10 @@ function LapTable({ laps, colors }: { laps: LapEntry[]; colors: ReturnType<typeo
       <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>No lap times recorded yet.</Text>
     </View>
   );
-  const bestMs = Math.min(...validLaps.map(l => l.lapTimeMs!));
-  const fastestIdx = validLaps.findIndex(l => l.lapTimeMs === bestMs);
+  const eligibleLaps = validLaps.filter(l => isLapEligible(l.lapNumber, raceStyle));
+  const bestMs = eligibleLaps.length > 0
+    ? Math.min(...eligibleLaps.map(l => l.lapTimeMs!))
+    : null;
   return (
     <View style={{ borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, overflow: "hidden", backgroundColor: colors.card }}>
       <View style={{ flexDirection: "row", paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted + "80", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
@@ -195,8 +210,10 @@ function LapTable({ laps, colors }: { laps: LapEntry[]; colors: ReturnType<typeo
         <Text style={{ width: 70, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap</Text>
       </View>
       {validLaps.map((lap, i) => {
-        const isBest = i === fastestIdx;
-        const delta  = isBest ? "" : lapDelta(lap.lapTimeMs!, bestMs);
+        const isBest = isLapEligible(lap.lapNumber, raceStyle) && bestMs != null && lap.lapTimeMs === bestMs;
+        const delta  = isLapEligible(lap.lapNumber, raceStyle) && bestMs != null && !isBest
+          ? lapDelta(lap.lapTimeMs!, bestMs)
+          : "";
         return (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: i < validLaps.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border, backgroundColor: isBest ? ACCENT + "10" : "transparent" }}>
             <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{lap.lapNumber}</Text>
@@ -929,9 +946,10 @@ export default function TrainScreen() {
               status: s.status,
               riderId: profile.id,
               myLaps: (s.myLaps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
-              bestLapMs: s.myLaps?.length ? (() => { const v = (s.myLaps as LapEntry[]).filter(l => (l.lapTimeMs ?? 0) > 0); return v.length ? Math.min(...v.map(l => l.lapTimeMs!)) : null; })() : null,
+              bestLapMs: s.myLaps?.length ? (() => { const v = (s.myLaps as LapEntry[]).filter(l => isLapEligible(l.lapNumber, ev.raceStyle) && (l.lapTimeMs ?? 0) > 0); return v.length ? Math.min(...v.map(l => l.lapTimeMs!)) : null; })() : null,
               leaderboard: s.leaderboard ?? [],
               startedAt: ev.eventDate ?? null,
+              raceStyle: ev.raceStyle ?? null,
             }));
             if (sessions.length === 0) continue;
             // Events: single date group keyed by event date
@@ -953,22 +971,28 @@ export default function TrainScreen() {
             // Group standalone sessions by venue name so each track gets its own chip
             const venueMap = new Map<string, any[]>();
             for (const s of standaloneSessions as any[]) {
-              const venue: string = s.venueName?.trim() || "Open Practice";
+              const venue: string = s.venueName?.trim() || "Unknown Track";
               if (!venueMap.has(venue)) venueMap.set(venue, []);
               venueMap.get(venue)!.push(s);
             }
             for (const [venue, venueSessions] of venueMap) {
-              const allSessions: SessionItem[] = venueSessions.map((s: any) => ({
-                key: `practice-${s.sessionId}-rider-${profile.id}`,
-                label: s.sessionName,
-                status: s.endedAt ? "completed" : "in_progress",
-                riderId: profile.id,
-                practiceSessionId: Number(s.sessionId),
-                myLaps: (s.laps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
-                bestLapMs: s.bestLapMs ?? null,
-                leaderboard: undefined,
-                startedAt: s.startedAt ?? null,
-              }));
+              const allSessions: SessionItem[] = venueSessions
+                .map((s: any) => ({
+                  key: `practice-${s.sessionId}-rider-${profile.id}`,
+                  label: s.sessionName,
+                  status: s.endedAt ? "completed" : "in_progress",
+                  riderId: profile.id,
+                  practiceSessionId: Number(s.sessionId),
+                  myLaps: (s.laps ?? []).sort((a: LapEntry, b: LapEntry) => a.lapNumber - b.lapNumber),
+                  bestLapMs: s.laps?.length ? (() => { const v = (s.laps as LapEntry[]).filter(l => (l.lapTimeMs ?? 0) > 0); return v.length ? Math.min(...v.map(l => l.lapTimeMs!)) : null; })() : null,
+                  leaderboard: undefined,
+                  startedAt: s.startedAt ?? null,
+                }))
+                .sort((a, b) => {
+                  const aTime = a.startedAt ? Date.parse(a.startedAt) : 0;
+                  const bTime = b.startedAt ? Date.parse(b.startedAt) : 0;
+                  return bTime - aTime;
+                });
               // Group by date (descending — newest date first)
               const dateMap = new Map<string, SessionItem[]>();
               for (const s of allSessions) {
@@ -1003,7 +1027,7 @@ export default function TrainScreen() {
           const time = session.startedAt ? Date.parse(session.startedAt) : 0;
           return Number.isFinite(time) ? Math.max(max, time) : max;
         }, 0);
-        return latest(b) - latest(a);
+        return latest(b) - latest(a) || a.label.localeCompare(b.label);
       });
 
       setTracks(built);
@@ -1130,7 +1154,10 @@ export default function TrainScreen() {
           .sort((a, b) => a.lapNumber - b.lapNumber);
         setLiveLaps(laps);
 
-        const newBest = laps.length ? Math.min(...laps.map(l => l.lapTimeMs!)) : null;
+        const eligibleLaps = laps.filter(l => isLapEligible(l.lapNumber, currentSession?.raceStyle));
+        const newBest = eligibleLaps.length
+          ? Math.min(...eligibleLaps.map(l => l.lapTimeMs!))
+          : null;
 
         if (isFirstPollRef.current) {
           isFirstPollRef.current = false;
@@ -1179,9 +1206,8 @@ export default function TrainScreen() {
     pbAnim,
   ]);
 
-  const allSessions     = tracks.flatMap(t => t.sessions);
   // Stats always span the whole track (all dates) so "Best Ever" is truly all-time at that track
-  const displaySessions = currentTrack?.sessions ?? allSessions;
+  const displaySessions = currentTrack?.sessions ?? [];
   const totalLaps       = displaySessions.reduce((n, s) => n + s.myLaps.filter(l => (l.lapTimeMs ?? 0) > 0).length, 0);
   const allBests        = displaySessions.map(s => s.bestLapMs).filter((ms): ms is number => ms != null && ms > 0);
   const overallBest     = allBests.length ? Math.min(...allBests) : null;
@@ -1317,7 +1343,12 @@ export default function TrainScreen() {
                 {/* Session summary — use live laps when polling is active */}
                 {(() => {
                   const displayLaps = liveLaps ?? currentSession.myLaps.filter(l => (l.lapTimeMs ?? 0) > 0);
-                  const displayBest = displayLaps.length ? Math.min(...displayLaps.map(l => l.lapTimeMs!)) : currentSession.bestLapMs;
+                  const eligibleDisplayLaps = displayLaps.filter(l =>
+                    isLapEligible(l.lapNumber, currentSession.raceStyle)
+                  );
+                  const displayBest = eligibleDisplayLaps.length
+                    ? Math.min(...eligibleDisplayLaps.map(l => l.lapTimeMs!))
+                    : null;
                   const lapCount    = displayLaps.length;
                   return (
                     <Animated.View style={{
@@ -1369,7 +1400,11 @@ export default function TrainScreen() {
                 })()}
                 <View>
                   <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Lap Times</Text>
-                  <LapTable laps={liveLaps ?? currentSession.myLaps} colors={colors} />
+                  <LapTable
+                    laps={liveLaps ?? currentSession.myLaps}
+                    colors={colors}
+                    raceStyle={currentSession.raceStyle}
+                  />
                 </View>
                 {currentSession.leaderboard && currentSession.leaderboard.length > 0 && (
                   <View>

@@ -101,6 +101,22 @@ export class SyncEngine {
         last_pulled_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z',
         updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS _rider_cloud_map (
+        local_rider_id INTEGER PRIMARY KEY,
+        cloud_rider_id INTEGER,
+        client_identity TEXT NOT NULL UNIQUE,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS _rider_profile_dirty (
+        rider_id INTEGER NOT NULL,
+        field_name TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (rider_id, field_name)
+      );
+      DROP TRIGGER IF EXISTS _wq_riders_insert;
+      DROP TRIGGER IF EXISTS _wq_riders_update;
+      DELETE FROM _write_queue WHERE table_name = 'riders';
     `);
   }
 
@@ -135,7 +151,10 @@ export class SyncEngine {
   getPendingCount(): number {
     const row = this.db
       .prepare(
-        "SELECT COUNT(*) as cnt FROM _write_queue WHERE synced_at IS NULL AND attempt_count < ?",
+        `SELECT
+           (SELECT COUNT(*) FROM _write_queue
+            WHERE synced_at IS NULL AND attempt_count < ?)
+           + (SELECT COUNT(*) FROM _rider_profile_dirty) AS cnt`,
       )
       .get(MAX_ATTEMPTS) as { cnt: number };
     return row.cnt;
@@ -222,6 +241,7 @@ export class SyncEngine {
       const pending = this.getPendingCount();
       if (pending > 0) {
         try {
+          await this.pushRiderProfiles();
           await this.pushQueue();
         } catch (pushErr) {
           // Push failed — capture the error but do NOT re-throw.
@@ -382,9 +402,23 @@ export class SyncEngine {
 
     for (const [table, ids] of Object.entries(grouped)) {
       const placeholders = ids.map(() => "?").join(",");
-      const tableRows = this.db
+      let tableRows = this.db
         .prepare(`SELECT * FROM ${table} WHERE id IN (${placeholders})`)
         .all(...ids) as Record<string, unknown>[];
+      if (["checkins", "rfid_assignments", "registrations", "race_results"].includes(table)) {
+        const cloudIdFor = this.db.prepare(
+          "SELECT cloud_rider_id FROM _rider_cloud_map WHERE local_rider_id = ?",
+        );
+        tableRows = tableRows.map((row) => {
+          if (row.rider_id == null) return row;
+          const mapped = cloudIdFor.get(Number(row.rider_id)) as
+            | { cloud_rider_id: number | null }
+            | undefined;
+          return mapped?.cloud_rider_id != null
+            ? { ...row, rider_id: mapped.cloud_rider_id }
+            : row;
+        });
+      }
       payload[table] = tableRows;
     }
 
@@ -452,6 +486,87 @@ export class SyncEngine {
     if (eventRemaps.length > 0) {
       this.applyEventIdRemaps(eventRemaps);
     }
+  }
+
+  private async pushRiderProfiles(): Promise<void> {
+    const dirty = this.db.prepare(`
+      SELECT rider_id, field_name, version
+      FROM _rider_profile_dirty
+      ORDER BY rider_id, field_name
+    `).all() as Array<{ rider_id: number; field_name: string; version: number }>;
+    if (!dirty.length) return;
+
+    const byRider = new Map<number, Array<{ field: string; version: number }>>();
+    for (const row of dirty) {
+      const fields = byRider.get(row.rider_id) ?? [];
+      fields.push({ field: row.field_name, version: row.version });
+      byRider.set(row.rider_id, fields);
+    }
+
+    const definitions: Record<string, string> = {
+      firstName: "first_name", lastName: "last_name", email: "email", phone: "phone",
+      dateOfBirth: "date_of_birth", emergencyContact: "emergency_contact",
+      emergencyPhone: "emergency_phone", rfidNumber: "rfid_number",
+      streetAddress: "street_address", city: "city", homeState: "home_state",
+      zip: "zip", bibNumber: "bib_number", amaNumber: "ama_number",
+      bikeManufacturer: "bike_manufacturer", bikeModel: "bike_model",
+      bikeYear: "bike_year", sponsors: "sponsors",
+      mylapsTransponderId: "mylaps_transponder_id",
+    };
+    const riderStmt = this.db.prepare("SELECT * FROM riders WHERE id = ?");
+    const identityStmt = this.db.prepare(
+      "SELECT client_identity, cloud_rider_id FROM _rider_cloud_map WHERE local_rider_id = ?",
+    );
+    const riders: Record<string, unknown>[] = [];
+    for (const [localId, fields] of byRider) {
+      const row = riderStmt.get(localId) as Record<string, unknown> | undefined;
+      const identity = identityStmt.get(localId) as
+        | { client_identity: string; cloud_rider_id: number | null }
+        | undefined;
+      if (!row || !identity) continue;
+      const payload: Record<string, unknown> = {
+        id: localId,
+        localRiderId: localId,
+        clientIdentity: identity.client_identity,
+        ...(identity.cloud_rider_id != null
+          ? { cloudRiderId: identity.cloud_rider_id }
+          : {}),
+      };
+      for (const { field } of fields) {
+        const column = definitions[field];
+        if (column) payload[field] = row[column];
+      }
+      riders.push(payload);
+    }
+    if (!riders.length) return;
+
+    const res = await fetch(`${this.cloudUrl}/api/clubs/${this.clubId}/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: this.sessionCookie! },
+      body: JSON.stringify({ riders }),
+    });
+    const body = await res.text();
+    if (!res.ok) throw new Error(`Rider profile push failed (${res.status}): ${body}`);
+    const result = JSON.parse(body) as { riderIdMap?: Record<string, number> };
+    if (!result.riderIdMap) return;
+
+    const saveMap = this.db.prepare(`
+      UPDATE _rider_cloud_map SET cloud_rider_id = ?, updated_at = datetime('now')
+      WHERE local_rider_id = ?
+    `);
+    const acknowledge = this.db.prepare(`
+      DELETE FROM _rider_profile_dirty
+      WHERE rider_id = ? AND field_name = ? AND version = ?
+    `);
+    this.db.transaction(() => {
+      for (const [localIdText, cloudId] of Object.entries(result.riderIdMap ?? {})) {
+        const localId = Number(localIdText);
+        saveMap.run(cloudId, localId);
+        for (const field of byRider.get(localId) ?? []) {
+          acknowledge.run(localId, field.field, field.version);
+        }
+      }
+    })();
   }
 
   // Child tables that carry an event_id FK and must be updated when
@@ -777,6 +892,13 @@ export class SyncEngine {
           .all(table, MAX_ATTEMPTS) as Array<{ record_id: number }>
       ).map((r) => r.record_id),
     );
+    if (table === "riders") {
+      for (const row of this.db
+        .prepare("SELECT DISTINCT rider_id FROM _rider_profile_dirty")
+        .all() as Array<{ rider_id: number }>) {
+        pendingIds.add(row.rider_id);
+      }
+    }
 
     const toSnake = (s: string) =>
       s.replace(/([A-Z])/g, "_$1").toLowerCase();
@@ -844,6 +966,15 @@ export class SyncEngine {
            ON CONFLICT(id) DO UPDATE SET ${assignments}`,
         )
         .run(...vals);
+      if (table === "riders" && snakeRow.id != null) {
+        this.db.prepare(`
+          INSERT INTO _rider_cloud_map (local_rider_id, cloud_rider_id, client_identity)
+          VALUES (?, ?, lower(hex(randomblob(16))))
+          ON CONFLICT(local_rider_id) DO UPDATE SET
+            cloud_rider_id = COALESCE(_rider_cloud_map.cloud_rider_id, excluded.cloud_rider_id),
+            updated_at = datetime('now')
+        `).run(Number(snakeRow.id), Number(snakeRow.id));
+      }
       changed += result.changes;
     }
 

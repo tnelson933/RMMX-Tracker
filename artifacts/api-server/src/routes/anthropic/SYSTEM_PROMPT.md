@@ -217,7 +217,7 @@ RM Tracker supports two timing hardware modes. Select the mode for an event in t
 - Supports **Impinj R700** RFID readers (connects directly over the network via LLRP — the organizer enters the reader's address, e.g. the last 6 characters of the MAC on the label) and **active transponder decoders** (enter the decoder's IP address).
 - Setup: download and install RM Connect → sign in with the organizer email → pick a registered reader from the list → choose hardware type and enter its address → leave the app running in the tray.
 - The Reader Setup page shows a live **RM Connect** status card: whether the app is online, whether the hardware is connected, and how many reads have come through.
-- Timing sessions **start and stop automatically**: passive RFID reading follows the moto lifecycle, while Feibot active timing stays armed so a missed cloud command cannot lose a physical crossing. The server accepts active crossings only for a live moto, running practice, or explicit hardware test.
+- Timing sessions **start and stop automatically**: passive RFID reading follows the moto lifecycle, while active timing stays armed so a missed cloud command cannot lose a physical crossing. The server accepts active crossings only for a live moto, running practice, or explicit hardware test.
 - Crossings stream to the cloud in real time and route to the active moto (or to enduro checkpoint assignments if the reader is assigned to one).
 
 ### RFID Sticker Tags (default)

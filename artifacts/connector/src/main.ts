@@ -3,7 +3,7 @@
  *
  * A tray-only Electron app that bridges local timing hardware to the cloud:
  *   - Impinj R700 via LLRP (TCP 5084, reached by mDNS hostname from MAC digits)
- *   - Feibot F2000 active transponder timing (TCP 55555)
+ *   - F2000 active transponder timing (TCP 55555)
  *
  * Crossings are forwarded to the cloud ingest endpoint. Start/stop commands
  * arrive over a WebSocket when the organizer starts or completes a moto in
@@ -20,7 +20,7 @@ import {
 } from "electron";
 import path from "path";
 import { LlrpClient, impinjHostFromMac } from "./llrp";
-import { FeibotClient } from "./feibot";
+import { ActiveTransponderClient, type ActiveTimingReceiptMetadata } from "./active-transponder-client";
 import { RecentReadDeduper } from "./recent-read-deduper";
 import { shouldForwardCrossing, type CrossingSource } from "./crossing-policy";
 import {
@@ -56,7 +56,7 @@ if (!settings.cloudUrl && __DEFAULT_CLOUD_URL__) {
 let sessionCookie: string | null = null;
 
 const llrp = new LlrpClient();
-const feibot = new FeibotClient();
+const activeTransponder = new ActiveTransponderClient();
 const cloud = new CloudLink();
 
 let activeMoto: { motoId: number; name: string; eventId: number | null } | null = null;
@@ -88,7 +88,7 @@ function getConnectorVersion(): string {
 function getAggregateStatus(): AggregateStatus {
   const isLlrp = settings.hardware === "impinj" || settings.hardware === "zebra" || settings.hardware === "generic";
   const dev = isLlrp ? llrp.getStatus() : null;
-  const active = settings.hardware === "active_transponder" ? feibot.getStatus() : null;
+  const active = settings.hardware === "active_transponder" ? activeTransponder.getStatus() : null;
 
   const cloudStatus = cloud.getStatus();
   const deviceConnected = dev?.connected ?? active?.connected ?? false;
@@ -134,6 +134,8 @@ function getAggregateStatus(): AggregateStatus {
       loop2State: active?.loop2State,
       diagnosis,
       ready: active?.ready,
+      hostTimezone: active?.hostTimezone,
+      utcOffsetMinutes: active?.utcOffsetMinutes,
     },
     // Keep event context internal; the renderer's established status shape only
     // exposes the moto identity and display name.
@@ -226,6 +228,7 @@ async function forwardCrossing(
   rfidNumber: string,
   crossingTime: Date,
   antennaId?: number | null,
+  receipt?: ActiveTimingReceiptMetadata,
 ): Promise<void> {
   if (!shouldForwardCrossing(source, activeMoto !== null, testMode)) return;
 
@@ -243,6 +246,9 @@ async function forwardCrossing(
       antennaId,
       clubId: settings.clubId,
       eventId: activeMoto?.eventId ?? null,
+      receivedAtUtc: receipt?.receivedAt,
+      deviceTimezone: receipt?.deviceTimezone,
+      source: receipt?.source,
     });
     if (testMode) {
       if (result.ok) {
@@ -272,12 +278,12 @@ llrp.on("tag", (read) => {
   pushStatusToWindow();
 });
 
-feibot.on("tag", (tag: string, crossingTime: Date) => {
+activeTransponder.on("tag", (tag: string, crossingTime: Date, receipt: ActiveTimingReceiptMetadata) => {
   if (testMode) {
     testProgress = "sending_crossing";
-    testMessage = "PowerTag received from Feibot. Confirming the cloud crossing…";
+    testMessage = "PowerTag received from active timing. Confirming the cloud crossing…";
   }
-  forwardCrossing("active_transponder", tag, crossingTime).catch(() => {});
+  forwardCrossing("active_transponder", tag, crossingTime, undefined, receipt).catch(() => {});
   pushStatusToWindow();
 });
 
@@ -296,15 +302,15 @@ function resolveHardwareHost(): string {
     }
     return addr;
   }
-  return addr; // zebra/generic: hostname or IP · Feibot: hostname/IP[:port]
+  return addr; // zebra/generic: hostname or IP · F2000: hostname/IP[:port]
 }
 
-function applyFeibotSettings(): void {
-  feibot.configure({
-    channel: settings.feibotChannel,
-    power: settings.feibotPower,
-    loop1Enabled: settings.feibotLoop1Enabled,
-    loop2Enabled: settings.feibotLoop2Enabled,
+function applyActiveTimingSettings(): void {
+  activeTransponder.configure({
+    channel: settings.activeTimingChannel,
+    power: settings.activeTimingPower,
+    loop1Enabled: settings.activeTimingLoop1Enabled,
+    loop2Enabled: settings.activeTimingLoop2Enabled,
   });
 }
 
@@ -313,21 +319,21 @@ function applyWebsiteActiveTimingConfig(
   syncClock = false,
 ): void {
   if (!Number.isInteger(config.channel) || config.channel < 0 || config.channel > 5) {
-    throw new Error("Website sent an invalid Feibot channel.");
+    throw new Error("Website sent an invalid active timing channel.");
   }
   if (!Number.isInteger(config.power) || config.power < 0 || config.power > 100) {
-    throw new Error("Website sent an invalid Feibot power value.");
+    throw new Error("Website sent an invalid active timing power value.");
   }
   settings = {
     ...settings,
-    feibotChannel: config.channel,
-    feibotPower: config.power,
-    feibotLoop1Enabled: !!config.loop1Enabled,
-    feibotLoop2Enabled: !!config.loop2Enabled,
+    activeTimingChannel: config.channel,
+    activeTimingPower: config.power,
+    activeTimingLoop1Enabled: !!config.loop1Enabled,
+    activeTimingLoop2Enabled: !!config.loop2Enabled,
   };
   saveSettings(settings);
-  applyFeibotSettings();
-  if (syncClock && feibot.getStatus().transportReady) feibot.syncClock();
+  applyActiveTimingSettings();
+  if (syncClock && activeTransponder.getStatus().transportReady) activeTransponder.syncClock();
 }
 
 async function connectHardware(): Promise<void> {
@@ -343,11 +349,11 @@ async function connectHardware(): Promise<void> {
         await llrp.startReading().catch(() => {});
       }
     } else if (settings.hardware === "active_transponder") {
-      applyFeibotSettings();
-      await feibot.connect(host);
+      applyActiveTimingSettings();
+      await activeTransponder.connect(host);
       // Keep active timing live continuously. A dropped WebSocket start command
       // must not prevent the F2000 from observing a physical crossing.
-      feibot.startReading();
+      activeTransponder.startReading();
     }
   } finally {
     hardwareConnecting = false;
@@ -364,7 +370,7 @@ function disconnectHardware(): void {
     deviceReconnectTimer = null;
   }
   llrp.disconnect().catch(() => {});
-  feibot.disconnect();
+  activeTransponder.disconnect();
   pushStatusToWindow();
 }
 
@@ -384,23 +390,23 @@ llrp.on("disconnected", () => {
   pushStatusToWindow();
 });
 llrp.on("error", () => pushStatusToWindow());
-feibot.on("disconnected", () => {
+activeTransponder.on("disconnected", () => {
   scheduleHardwareReconnect();
   pushStatusToWindow();
 });
-feibot.on("status", () => {
-  const status = feibot.getStatus();
+activeTransponder.on("status", () => {
+  const status = activeTransponder.getStatus();
   if (testMode && testProgress === "opening_loops") {
     if (status.ready) {
       testProgress = "waiting_for_tag";
-      testMessage = "Both enabled Feibot loops are running. Pass a PowerTag over either loop.";
+      testMessage = "Both enabled F2000 loops are running. Pass a PowerTag over either loop.";
     } else if (status.transportReady) {
-      testMessage = "Feibot is identified. Waiting for it to confirm the enabled loops are running; RM Connect is retrying the open command.";
+      testMessage = "F2000 is identified. Waiting for it to confirm the enabled loops are running; RM Connect is retrying the open command.";
     }
   }
   pushStatusToWindow();
 });
-feibot.on("error", pushStatusToWindow);
+activeTransponder.on("error", pushStatusToWindow);
 
 // ── Cloud command handling ────────────────────────────────────────────────────
 
@@ -414,6 +420,8 @@ cloud.setStatusProvider(() => {
     lastReadAt: s.device.lastReadAt,
     readCount: s.device.readCount,
     antennaIds: s.device.antennaIds,
+    hostTimezone: s.device.hostTimezone,
+    utcOffsetMinutes: s.device.utcOffsetMinutes,
   };
 });
 
@@ -432,8 +440,8 @@ cloud.on("command", (cmd: CloudCommand) => {
         scheduleHardwareReconnect();
       });
     } else if (settings.hardware === "active_transponder") {
-      applyFeibotSettings();
-      feibot.startReading();
+      applyActiveTimingSettings();
+      activeTransponder.startReading();
     }
   } else if (cmd.type === "stop_moto") {
     activeMoto = null;
@@ -488,10 +496,10 @@ function registerIpc(): void {
     readerName: settings.readerName,
     hardware: settings.hardware,
     hardwareAddress: settings.hardwareAddress,
-    feibotChannel: settings.feibotChannel,
-    feibotPower: settings.feibotPower,
-    feibotLoop1Enabled: settings.feibotLoop1Enabled,
-    feibotLoop2Enabled: settings.feibotLoop2Enabled,
+    activeTimingChannel: settings.activeTimingChannel,
+    activeTimingPower: settings.activeTimingPower,
+    activeTimingLoop1Enabled: settings.activeTimingLoop1Enabled,
+    activeTimingLoop2Enabled: settings.activeTimingLoop2Enabled,
     hasSession: !!sessionCookie,
   }));
 
@@ -544,10 +552,10 @@ function registerIpc(): void {
       if (reader.type === "active_transponder" && reader.activeTimingConfig) {
         settings = {
           ...settings,
-          feibotChannel: reader.activeTimingConfig.channel,
-          feibotPower: reader.activeTimingConfig.power,
-          feibotLoop1Enabled: reader.activeTimingConfig.loop1Enabled,
-          feibotLoop2Enabled: reader.activeTimingConfig.loop2Enabled,
+          activeTimingChannel: reader.activeTimingConfig.channel,
+          activeTimingPower: reader.activeTimingConfig.power,
+          activeTimingLoop1Enabled: reader.activeTimingConfig.loop1Enabled,
+          activeTimingLoop2Enabled: reader.activeTimingConfig.loop2Enabled,
         };
       }
       saveSettings(settings);
@@ -566,17 +574,17 @@ function registerIpc(): void {
 
   ipcMain.handle("hardware:configure", async (_e, input: { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean; syncClock?: boolean }) => {
     try {
-      if (settings.hardware !== "active_transponder") throw new Error("Feibot settings are only available for an F2000 reader.");
+      if (settings.hardware !== "active_transponder") throw new Error("Active timing settings are only available for an F2000 reader.");
       if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("Channel must be a whole number from 0 to 5.");
       if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("Power must be a whole number from 0 to 100.");
-      settings = { ...settings, feibotChannel: input.channel, feibotPower: input.power, feibotLoop1Enabled: !!input.loop1Enabled, feibotLoop2Enabled: !!input.loop2Enabled };
+      settings = { ...settings, activeTimingChannel: input.channel, activeTimingPower: input.power, activeTimingLoop1Enabled: !!input.loop1Enabled, activeTimingLoop2Enabled: !!input.loop2Enabled };
       saveSettings(settings);
-      applyFeibotSettings();
-      if (input.syncClock) feibot.syncClock();
+      applyActiveTimingSettings();
+      if (input.syncClock) activeTransponder.syncClock();
       pushStatusToWindow();
       return { ok: true };
     } catch (err: any) {
-      return { ok: false, error: err?.message ?? "Unable to apply Feibot settings." };
+      return { ok: false, error: err?.message ?? "Unable to apply active timing settings." };
     }
   });
 
@@ -584,7 +592,7 @@ function registerIpc(): void {
     testMode = !!enabled;
     testProgress = testMode ? (settings.hardware === "active_transponder" ? "opening_loops" : "waiting_for_tag") : "inactive";
     testMessage = testMode ? (settings.hardware === "active_transponder"
-      ? "Opening Feibot loops 1 and 2. Waiting for a real PowerTag crossing…"
+      ? "Opening F2000 loops 1 and 2. Waiting for a real PowerTag crossing…"
       : "Waiting for a real tag read…") : null;
     try {
       if (isLlrpHardware()) {
@@ -596,10 +604,10 @@ function registerIpc(): void {
       } else if (settings.hardware === "active_transponder") {
         // Active timing stays armed outside motos so missed cloud commands
         // cannot create a silent gap in physical crossing delivery.
-        feibot.startReading();
-        if (testMode && feibot.getStatus().ready) {
+        activeTransponder.startReading();
+        if (testMode && activeTransponder.getStatus().ready) {
           testProgress = "waiting_for_tag";
-          testMessage = "Both enabled Feibot loops are running. Pass a PowerTag over either loop.";
+          testMessage = "Both enabled F2000 loops are running. Pass a PowerTag over either loop.";
         }
       }
       pushStatusToWindow();

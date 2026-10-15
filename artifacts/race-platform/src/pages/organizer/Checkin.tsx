@@ -12,12 +12,8 @@ import { useOfflineAwareQuery } from "@/hooks/useOfflineAwareQuery";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
 import { useSyncQueue } from "@/hooks/useSyncQueue";
 import { CacheStatusBadge } from "@/components/CacheStatusBadge";
-
-// Active transponder numbers: purely numeric, 1–9 digits.
-function isInvalidTransponder(val: string | null | undefined): boolean {
-  if (!val || !val.trim()) return false;
-  return !/^\d{1,9}$/.test(val.trim());
-}
+import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
+import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 
 // RFID tags: alphanumeric + dashes, 1–32 characters.
 function isInvalidRfid(val: string | null | undefined): boolean {
@@ -28,7 +24,9 @@ import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrat
 import { useToast } from "@/hooks/use-toast";
 
 function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber }: { registrationId: number; eventId: number; onDone: () => void; currentNumber?: string }) {
-  const [value, setValue] = useState(currentNumber ?? "");
+  const [value, setValue] = useState(
+    () => normalizeActiveTransponderIdentifier(currentNumber) ?? "",
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -39,17 +37,26 @@ function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber
   const submit = async () => {
     const tag = value.trim();
     if (!tag) return;
+    const normalizedTag = normalizeActiveTransponderIdentifier(tag);
+    if (!normalizedTag) {
+      toast({
+        title: "Invalid transponder",
+        description: "Use 1–9 hexadecimal characters (0–9, A–F).",
+        variant: "destructive",
+      });
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/events/${eventId}/registrations/${registrationId}/assign-rental-transponder`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transponderNumber: tag }),
+        body: JSON.stringify({ transponderNumber: normalizedTag }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to assign");
       queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
-      toast({ title: "Transponder assigned", description: `#${tag} — auto-removes 24 h after the event` });
+      toast({ title: "Transponder assigned", description: `#${normalizedTag} — auto-removes 24 h after the event` });
       onDone();
     } catch (e: any) {
       toast({ title: "Failed to assign transponder", description: e.message, variant: "destructive" });
@@ -81,7 +88,11 @@ function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber
 }
 
 function RfidInput({ riderId, eventId, onDone, isActiveTransponder, currentTag }: { riderId: number; eventId: number; onDone: () => void; isActiveTransponder?: boolean; currentTag?: string }) {
-  const [value, setValue] = useState(currentTag ?? "");
+  const [value, setValue] = useState(() =>
+    isActiveTransponder
+      ? normalizeActiveTransponderIdentifier(currentTag) ?? ""
+      : currentTag ?? "",
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -92,10 +103,21 @@ function RfidInput({ riderId, eventId, onDone, isActiveTransponder, currentTag }
   const submit = () => {
     const tag = value.trim();
     if (!tag) return;
+    const normalizedTag = isActiveTransponder
+      ? normalizeActiveTransponderIdentifier(tag)
+      : tag;
+    if (!normalizedTag) {
+      toast({
+        title: "Invalid transponder",
+        description: "Use 1–9 hexadecimal characters (0–9, A–F).",
+        variant: "destructive",
+      });
+      return;
+    }
     assignMutation.mutate({
       data: {
         riderId,
-        rfidNumber: tag,
+        rfidNumber: normalizedTag,
         eventId,
         ...(isActiveTransponder ? { assignmentType: "active_transponder" as const } : {}),
       },
@@ -727,7 +749,7 @@ export default function Checkin() {
                 ? (checkin as any).myLapsTransponderNumber as string | null
                 : checkin.rfidNumber ?? null;
               const isTagInvalid = isActiveTransponder
-                ? isInvalidTransponder(tagVal)
+                ? isInvalidAssignedActiveTransponderIdentifier(tagVal)
                 : isInvalidRfid(tagVal);
               return (
               <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : pendingRiderIds.has(checkin.riderId) ? 'border-amber-500 bg-amber-500/5' : 'hover:border-primary/50'}`}>

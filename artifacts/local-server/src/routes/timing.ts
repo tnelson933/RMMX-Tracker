@@ -3,6 +3,101 @@ import type { Response } from "express";
 import { getDb, parseJsonArr, parseJson } from "../db";
 
 const router = Router();
+const MAX_CROSSING_FUTURE_MS = 5 * 60 * 1000;
+
+// Must match the direct active provenance emitted by RM Connect, RM Tracker,
+// and the Python live TCP bridge. Generic/passive facility payloads are not
+// included because an old timestamp may be a valid delayed upload.
+export const TRUSTED_DIRECT_ACTIVE_TIMING_SOURCES = [
+  "connector_live_tcp",
+  "f2000_tcp",
+  "f2000_device",
+  "bridge_live_tcp",
+] as const;
+
+export function isTrustedDirectActiveTimingSource(...values: unknown[]): boolean {
+  const trusted = new Set<string>(TRUSTED_DIRECT_ACTIVE_TIMING_SOURCES);
+  return values.some(value =>
+    typeof value === "string" && trusted.has(value.trim().toLowerCase()),
+  );
+}
+
+function canonicalizeCrossingTimestamp(
+  value: unknown,
+  receivedAt = new Date(),
+  source = "local_timing",
+  rejectPastSkew = false,
+): Date {
+  const candidate = value instanceof Date ? value : new Date(value as string | number);
+  if (
+    !Number.isFinite(candidate.getTime())
+    || candidate.getTime() > receivedAt.getTime() + MAX_CROSSING_FUTURE_MS
+    || (rejectPastSkew && candidate.getTime() < receivedAt.getTime() - MAX_CROSSING_FUTURE_MS)
+  ) {
+    console.warn(JSON.stringify({
+      event: "crossing_timestamp_canonicalized",
+      source,
+      suppliedTimestamp: Number.isFinite(candidate.getTime()) ? candidate.toISOString() : String(value),
+      receivedAt: receivedAt.toISOString(),
+    }));
+    return receivedAt;
+  }
+  return candidate;
+}
+
+export function canonicalizeDirectActiveTimestamp(value: unknown, body: Record<string, unknown>, source: string): Date {
+  const serverReceivedAt = new Date();
+  const rawReceipt = body.receivedAtUtc ?? body.receivedAt;
+  const suppliedReceipt = rawReceipt == null ? null : new Date(rawReceipt as string | number);
+  const trustworthyReceipt = suppliedReceipt
+    && Number.isFinite(suppliedReceipt.getTime())
+    && suppliedReceipt.getTime() <= serverReceivedAt.getTime() + MAX_CROSSING_FUTURE_MS
+      ? suppliedReceipt
+      : null;
+  const receivedAt = trustworthyReceipt ?? serverReceivedAt;
+  return canonicalizeCrossingTimestamp(
+    value ?? receivedAt,
+    receivedAt,
+    source,
+    trustworthyReceipt !== null && isTrustedDirectActiveTimingSource(body.source, body.timeSource),
+  );
+}
+
+function deriveClockSkewRepair(
+  startedAt: Date,
+  crossings: Array<{ id: number; crossing_time: string; created_at: string }>,
+): Array<{ id: number; time: Date; lapMs: number }> | null {
+  // Historical SQLite rows lack durable original receipt/source metadata. A
+  // stable past offset can be a legitimate delayed or retried batch, so only
+  // repair the known reader-clock-ahead failure mode. Direct active ingress
+  // applies trusted receipt-backed skew correction in both directions.
+  if (crossings.length < 2) return null;
+  const offsets = crossings.map(c => new Date(c.crossing_time).getTime() - new Date(c.created_at).getTime());
+  if (offsets.some(offset => !Number.isFinite(offset))) return null;
+  const sorted = [...offsets].sort((a, b) => a - b);
+  const median = sorted.length % 2
+    ? sorted[(sorted.length - 1) / 2]
+    : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+  const spread = sorted[sorted.length - 1] - sorted[0];
+  const quarterHourMs = 15 * 60 * 1000;
+  const timezoneDistance = Math.abs(Math.abs(median) - Math.round(Math.abs(median) / quarterHourMs) * quarterHourMs);
+  if (
+    median <= MAX_CROSSING_FUTURE_MS
+    || spread > 2 * 60 * 1000
+    || !offsets.every(offset => Math.sign(offset) === Math.sign(median))
+    || timezoneDistance > 2 * 60 * 1000
+  ) return null;
+  let previousMs = startedAt.getTime();
+  const repaired: Array<{ id: number; time: Date; lapMs: number }> = [];
+  for (const crossing of crossings) {
+    const time = new Date(crossing.created_at);
+    const lapMs = time.getTime() - previousMs;
+    if (!Number.isFinite(lapMs) || lapMs < 0) return null;
+    repaired.push({ id: crossing.id, time, lapMs });
+    previousMs = time.getTime();
+  }
+  return repaired;
+}
 
 // ── Utility: format milliseconds → "M:SS.mm" ─────────────────────────────────
 export function formatLapTime(ms: number): string {
@@ -38,12 +133,64 @@ export function sseBroadcast(motoId: number, data: object) {
   }
 }
 
+function broadcastCrossingAccepted(motoId: number, result: {
+  crossing: { id: number } | null;
+  lapNumber: number | null;
+  lapTimeMs: number | null;
+}, crossingTime: Date, readerId?: string, readerReceivedAt?: string, ingestStartedAt = new Date().toISOString()) {
+  if (!result.crossing) return;
+  sseBroadcast(motoId, {
+    type: "crossing_accepted",
+    motoId,
+    crossingId: result.crossing.id,
+    lapNumber: result.lapNumber,
+    lapTimeMs: result.lapTimeMs,
+    crossingTime: crossingTime.toISOString(),
+    readerReceivedAt: readerReceivedAt ?? null,
+    ingestStartedAt,
+    acknowledgedAt: new Date().toISOString(),
+    readerId: readerId ?? null,
+  });
+}
+
 // ── Build leaderboard snapshot from SQLite ────────────────────────────────────
 export function buildLeaderboard(motoId: number) {
   const db = getDb();
 
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
   if (!moto) return null;
+  const event = db.prepare("SELECT race_style FROM events WHERE id = ?").get(moto.event_id) as any;
+  const excludeFirstLapFromBest = event?.race_style === "motocross";
+
+  // Self-heal stable timezone-labelled reader clocks using logical
+  // lap/insertion order. Delayed uploads are intentionally not repaired.
+  if (moto.started_at) {
+    const crossings = db.prepare(`
+      SELECT * FROM lap_crossings
+      WHERE moto_id = ? AND rider_id IS NOT NULL
+      ORDER BY rider_id, lap_number, id
+    `).all(motoId) as any[];
+    const byRider = new Map<number, any[]>();
+    for (const crossing of crossings) {
+      const group = byRider.get(crossing.rider_id) ?? [];
+      group.push(crossing);
+      byRider.set(crossing.rider_id, group);
+    }
+    const repair = db.transaction(() => {
+      for (const [riderId, riderCrossings] of byRider) {
+        const repaired = deriveClockSkewRepair(new Date(moto.started_at), riderCrossings);
+        if (!repaired?.length) continue;
+        const updateCrossing = db.prepare(
+          "UPDATE lap_crossings SET crossing_time = ?, lap_time_ms = ? WHERE id = ?",
+        );
+        for (const row of repaired) updateCrossing.run(row.time.toISOString(), row.lapMs, row.id);
+        const laps = repaired.map(row => row.lapMs);
+        db.prepare("UPDATE race_results SET lap_times = ?, total_time = ? WHERE moto_id = ? AND rider_id = ?")
+          .run(JSON.stringify(laps), formatLapTime(laps.reduce((sum, lap) => sum + lap, 0)), motoId, riderId);
+      }
+    });
+    repair();
+  }
 
   const results = db.prepare(`
     SELECT rr.*, r.first_name, r.last_name
@@ -57,7 +204,10 @@ export function buildLeaderboard(motoId: number) {
     const lapMs = parseJsonArr<number>(r.lap_times);
     const totalMs = lapMs.reduce((s, t) => s + t, 0);
     const lastMs = lapMs.length > 0 ? lapMs[lapMs.length - 1] : null;
-    const bestMs = lapMs.length ? Math.min(...lapMs) : null;
+    const eligibleLapMs = lapMs.filter(
+      (t, index) => (!excludeFirstLapFromBest || index >= 1) && t > 0,
+    );
+    const bestMs = eligibleLapMs.length ? Math.min(...eligibleLapMs) : null;
     return {
       position: r.position ?? 999,
       riderId: r.rider_id,
@@ -114,16 +264,30 @@ function processCrossing(opts: {
   antennaId?: number;
   bypassDebounce?: boolean;
   overrideRiderId?: number | null;
+  onAccepted?: (result: {
+    crossing: { id: number };
+    lapNumber: number;
+    lapTimeMs: number;
+  }) => void;
 }) {
   const db = getDb();
-  const { rfidNumber, motoId, crossingTime, readerId, antennaId, bypassDebounce, overrideRiderId } = opts;
+  const { rfidNumber, motoId, readerId, antennaId, bypassDebounce, overrideRiderId, onAccepted } = opts;
+  const crossingTime = canonicalizeCrossingTimestamp(opts.crossingTime, new Date(), "processCrossing");
   const tagNumber = rfidNumber.trim();
 
   type CrossingResult =
     | { debounced: true; crossing: null; lapNumber: null; lapTimeMs: null }
-    | { debounced: false; crossing: { id: number }; lapNumber: number; lapTimeMs: number };
+    | {
+      debounced: false;
+      crossing: { id: number };
+      lapNumber: number;
+      lapTimeMs: number;
+      moto: any;
+      riderId: number | null;
+      tagNumber: string;
+    };
 
-  const result = db.transaction((): CrossingResult => {
+  const accepted = db.transaction((): CrossingResult => {
     const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
     if (!moto) throw new Error("Moto not found");
     if (moto.status !== "in_progress") throw new Error("Moto is not in progress");
@@ -165,13 +329,16 @@ function processCrossing(opts: {
 
     // Previous crossings for this tag+moto (ordered oldest → newest)
     const prevCrossings = db
-      .prepare("SELECT * FROM lap_crossings WHERE moto_id = ? AND rfid_number = ? ORDER BY crossing_time ASC")
+      .prepare("SELECT * FROM lap_crossings WHERE moto_id = ? AND rfid_number = ? ORDER BY lap_number, id")
       .all(motoId, tagNumber) as any[];
 
     // Debounce: reject burst antenna reads
     if (!bypassDebounce && prevCrossings.length > 0) {
       const lastCrossing = prevCrossings[prevCrossings.length - 1];
-      const gapMs = crossingTime.getTime() - new Date(lastCrossing.crossing_time).getTime();
+      const rawLastTime = new Date(lastCrossing.crossing_time);
+      const createdAt = new Date(lastCrossing.created_at);
+      const lastTime = rawLastTime.getTime() > createdAt.getTime() + MAX_CROSSING_FUTURE_MS ? createdAt : rawLastTime;
+      const gapMs = crossingTime.getTime() - lastTime.getTime();
       if (gapMs < debounceMs) {
         return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
       }
@@ -180,9 +347,17 @@ function processCrossing(opts: {
     const lapNumber = prevCrossings.length + 1;
     const prevTime =
       prevCrossings.length > 0
-        ? new Date(prevCrossings[prevCrossings.length - 1].crossing_time)
+        ? (() => {
+            const previous = prevCrossings[prevCrossings.length - 1];
+            const rawTime = new Date(previous.crossing_time);
+            const createdAt = new Date(previous.created_at);
+            return rawTime.getTime() > createdAt.getTime() + MAX_CROSSING_FUTURE_MS ? createdAt : rawTime;
+          })()
         : new Date(moto.started_at);
     const lapTimeMs = crossingTime.getTime() - prevTime.getTime();
+    if (!Number.isFinite(lapTimeMs) || lapTimeMs < 0) {
+      throw new Error("Crossing time precedes the moto start or previous lap");
+    }
 
     // Store the crossing
     const ins = db.prepare(`
@@ -197,6 +372,17 @@ function processCrossing(opts: {
     );
     const crossing = { id: Number(insResult.lastInsertRowid) };
 
+    return { debounced: false, crossing, lapNumber, lapTimeMs, moto, riderId, tagNumber };
+  })();
+
+  if (accepted.debounced) return accepted;
+
+  const { crossing, lapNumber, lapTimeMs, moto, riderId } = accepted;
+  // The insert transaction has committed. Emit the lightweight acknowledgement
+  // before rebuilding race results, positions, or the leaderboard snapshot.
+  onAccepted?.({ crossing, lapNumber, lapTimeMs });
+
+  db.transaction(() => {
     // Upsert race_results for this rider
     if (riderId) {
       const checkin = (db
@@ -231,13 +417,20 @@ function processCrossing(opts: {
 
       // Recalculate positions for all riders in this moto
       const allResults = db
-        .prepare("SELECT id, lap_times FROM race_results WHERE moto_id = ?")
+        .prepare("SELECT id, rider_id, lap_times, dnf, dns FROM race_results WHERE moto_id = ?")
         .all(motoId) as any[];
 
       const sorted = allResults
         .map((r: any) => {
           const laps = parseJsonArr<number>(r.lap_times);
-          return { id: r.id, laps: laps.length, totalMs: laps.reduce((s: number, t: number) => s + t, 0) };
+          return {
+            id: r.id,
+            riderId: r.rider_id,
+            laps: laps.length,
+            totalMs: laps.reduce((s: number, t: number) => s + t, 0),
+            dnf: r.dnf === 1,
+            dns: r.dns === 1,
+          };
         })
         .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
 
@@ -245,12 +438,33 @@ function processCrossing(opts: {
       for (let i = 0; i < sorted.length; i++) {
         updatePos.run(i + 1, sorted[i].id);
       }
+
+      // Timed motos finish when the rider currently leading the race completes
+      // the configured number of passes after the timer's flag point. Count
+      // crossings (not result laps) so this remains correct even when timing
+      // data is corrected independently of the leaderboard.
+      if (moto.time_expired_at && moto.plus_laps != null && moto.plus_laps > 0) {
+        const leader = sorted[0];
+        if (leader && !leader.dnf && !leader.dns) {
+          const lapsAfterFlag = db.prepare(`
+            SELECT COUNT(*) AS count
+            FROM lap_crossings
+            WHERE moto_id = ?
+              AND rider_id = ?
+              AND crossing_time > ?
+          `).get(motoId, leader.riderId, moto.time_expired_at) as { count: number };
+          if (lapsAfterFlag.count >= moto.plus_laps) {
+            db.prepare(
+              "UPDATE motos SET status = 'completed', completed_at = ? WHERE id = ?",
+            ).run(new Date().toISOString(), motoId);
+          }
+        }
+      }
     }
 
-    return { debounced: false, crossing, lapNumber, lapTimeMs };
   })();
 
-  return result;
+  return { debounced: false as const, crossing, lapNumber, lapTimeMs };
 }
 
 // ── Helpers: find active moto ─────────────────────────────────────────────────
@@ -282,7 +496,8 @@ function processPracticeCrossing(opts: {
   crossingTime: Date;
 }): { id: number; lapNumber: number; lapTimeMs: number | null } | { debounced: true } | null {
   const db = getDb();
-  const { rfidNumber, session, crossingTime } = opts;
+  const { rfidNumber, session } = opts;
+  const crossingTime = canonicalizeCrossingTimestamp(opts.crossingTime, new Date(), "processPracticeCrossing");
   const tagNumber = rfidNumber.trim();
 
   const lastCrossing = db
@@ -373,15 +588,22 @@ router.get("/timing/reader-state", (_req, res) => {
 
 // POST /timing/crossing — direct motoId crossing (hardware or simulation)
 router.post("/timing/crossing", (req, res) => {
-  const { rfidNumber, motoId, crossingTime, readerId, antennaId } = req.body;
+  const ingestStartedAt = new Date().toISOString();
+  const { rfidNumber, motoId, crossingTime, readerId, antennaId, readerReceivedAt } = req.body;
   if (!rfidNumber || !motoId) {
     return res.status(400).json({ error: "rfidNumber and motoId are required" });
   }
-  const time = crossingTime ? new Date(crossingTime) : new Date();
-  if (isNaN(time.getTime())) return res.status(400).json({ error: "Invalid crossingTime" });
+  const time = canonicalizeCrossingTimestamp(crossingTime ?? new Date(), new Date(), "direct_crossing_ingest");
   const antenna = antennaId !== undefined ? Number(antennaId) : undefined;
   try {
-    const result = processCrossing({ rfidNumber, motoId: Number(motoId), crossingTime: time, readerId, antennaId: antenna });
+    const result = processCrossing({
+      rfidNumber,
+      motoId: Number(motoId),
+      crossingTime: time,
+      readerId,
+      antennaId: antenna,
+      onAccepted: accepted => broadcastCrossingAccepted(Number(motoId), accepted, time, readerId, readerReceivedAt, ingestStartedAt),
+    });
     if (result.debounced) return res.json({ ok: true, debounced: true });
     const snapshot = buildLeaderboard(Number(motoId));
     if (snapshot) sseBroadcast(Number(motoId), snapshot);
@@ -395,6 +617,7 @@ router.post("/timing/crossing", (req, res) => {
 // Accepts all hardware formats: Generic/RFID bridge, AMBrc, Impinj R700, Zebra FX7500
 // In the local server, clubId is accepted for compatibility but ignored (only one club).
 router.post("/timing/active/crossing", (req, res) => {
+  const ingestStartedAt = new Date().toISOString();
   const body = req.body as any;
 
   // Impinj R700 native IoT Connector format
@@ -409,8 +632,7 @@ router.post("/timing/active/crossing", (req, res) => {
     const results: unknown[] = [];
     for (const tag of tagEvents) {
       const rfidNumber = tag.epcHex.toUpperCase();
-      const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
-      if (isNaN(crossingTime.getTime())) { results.push({ rfidNumber, error: "Invalid firstSeenTime" }); continue; }
+      const crossingTime = canonicalizeCrossingTimestamp(tag.firstSeenTime ?? new Date(), new Date(), "active_impinj_ingest");
       if (moto) {
         try {
           const r = processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "impinj-r700", antennaId: tag.antennaPort });
@@ -464,8 +686,7 @@ router.post("/timing/active/crossing", (req, res) => {
     return res.status(400).json({ error: "Cannot extract tag/transponder ID — expected rfidNumber, transponder, transponderId, Impinj events[], or Zebra tags[]" });
   }
   const rawTime = body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
-  const crossingTime = rawTime ? new Date(rawTime) : new Date();
-  if (isNaN(crossingTime.getTime())) return res.status(400).json({ error: "Invalid crossing time — must be ISO 8601" });
+  const crossingTime = canonicalizeDirectActiveTimestamp(rawTime, body, "active_generic_ingest");
 
   const moto = getActiveMotoForAnyEvent();
   const practiceGeneric = !moto ? getActivePracticeSession() : null;
@@ -474,7 +695,13 @@ router.post("/timing/active/crossing", (req, res) => {
 
   if (moto) {
     try {
-      const result = processCrossing({ rfidNumber: String(rfidNumber), motoId: moto.id, crossingTime, readerId });
+      const result = processCrossing({
+        rfidNumber: String(rfidNumber),
+        motoId: moto.id,
+        crossingTime,
+        readerId,
+        onAccepted: accepted => broadcastCrossingAccepted(moto.id, accepted, crossingTime, readerId, body?.readerReceivedAt, ingestStartedAt),
+      });
       if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });
       const snapshot = buildLeaderboard(moto.id);
       if (snapshot) sseBroadcast(moto.id, snapshot);
@@ -494,19 +721,25 @@ router.post("/timing/active/crossing", (req, res) => {
 // POST /timing/transponder-crossing?eventId=N — AMBrc timing-decoder format.
 // The former endpoint remains available as a compatibility alias.
 router.post(["/timing/transponder-crossing", "/timing/mylaps-crossing"], (req, res) => {
+  const ingestStartedAt = new Date().toISOString();
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) return res.status(400).json({ error: "eventId query param is required" });
   const body = req.body as any;
   const transponder: string | undefined = body?.transponder ?? body?.rfidNumber ?? body?.transponderId ?? body?.id;
   if (!transponder) return res.status(400).json({ error: "Missing transponder field — expected 'transponder', 'rfidNumber', or 'transponderId'" });
   const rawTime = body?.passingTime ?? body?.crossingTime ?? body?.timestamp ?? body?.passTime;
-  const crossingTime = rawTime ? new Date(rawTime) : new Date();
-  if (isNaN(crossingTime.getTime())) return res.status(400).json({ error: "Invalid passingTime — must be ISO 8601" });
+  const crossingTime = canonicalizeDirectActiveTimestamp(rawTime, body, "legacy_active_ingest");
   const moto = getActiveMotoForEvent(eventId);
   if (!moto) return res.status(409).json({ error: "No moto currently in progress for this event" });
   const readerId: string = body?.loopId ?? body?.readerId ?? "active-transponder";
   try {
-    const result = processCrossing({ rfidNumber: String(transponder), motoId: moto.id, crossingTime, readerId });
+    const result = processCrossing({
+      rfidNumber: String(transponder),
+      motoId: moto.id,
+      crossingTime,
+      readerId,
+      onAccepted: accepted => broadcastCrossingAccepted(moto.id, accepted, crossingTime, readerId, body?.readerReceivedAt, ingestStartedAt),
+    });
     if (result.debounced) return res.json({ ok: true, debounced: true, motoId: moto.id });
     const snapshot = buildLeaderboard(moto.id);
     if (snapshot) sseBroadcast(moto.id, snapshot);
@@ -530,8 +763,7 @@ router.post("/timing/impinj-crossing", (req, res) => {
   const results: unknown[] = [];
   for (const tag of tagEvents) {
     const rfidNumber = tag.epcHex.toUpperCase();
-    const crossingTime = tag.firstSeenTime ? new Date(tag.firstSeenTime) : new Date();
-    if (isNaN(crossingTime.getTime())) { results.push({ rfidNumber, error: "Invalid firstSeenTime" }); continue; }
+    const crossingTime = canonicalizeCrossingTimestamp(tag.firstSeenTime ?? new Date(), new Date(), "legacy_impinj_ingest");
     try {
       const r = processCrossing({ rfidNumber, motoId: moto.id, crossingTime, readerId: "impinj-r700", antennaId: tag.antennaPort });
       results.push(r.debounced ? { rfidNumber, debounced: true } : { rfidNumber, crossingId: r.crossing?.id, lapNumber: r.lapNumber, lapTimeMs: r.lapTimeMs });
@@ -580,7 +812,16 @@ router.post("/timing/manual-crossing", (req, res) => {
     .get(Number(riderId), moto.event_id) as any;
   const rfidNumber = assignment?.rfid_number ?? `MANUAL-${riderId}`;
   try {
-    const result = processCrossing({ rfidNumber, motoId: Number(motoId), crossingTime: new Date(), readerId: "MANUAL", bypassDebounce: true, overrideRiderId: Number(riderId) });
+    const manualCrossingTime = new Date();
+    const result = processCrossing({
+      rfidNumber,
+      motoId: Number(motoId),
+      crossingTime: manualCrossingTime,
+      readerId: "MANUAL",
+      bypassDebounce: true,
+      overrideRiderId: Number(riderId),
+      onAccepted: accepted => broadcastCrossingAccepted(Number(motoId), accepted, manualCrossingTime, "MANUAL"),
+    });
     const snapshot = buildLeaderboard(Number(motoId));
     if (snapshot) sseBroadcast(Number(motoId), snapshot);
     return res.json({ ok: true, crossingId: result.crossing?.id ?? null, lapNumber: result.lapNumber, lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null, lapTimeMs: result.lapTimeMs });
@@ -611,14 +852,14 @@ router.get("/timing/live/:motoId", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   (res as any).flushHeaders?.();
 
+  sseSubscribe(motoId, res);
+
   const snapshot = buildLeaderboard(motoId);
   if (snapshot) {
     (res as any).write(`data: ${JSON.stringify(snapshot)}\n\n`);
   } else {
     (res as any).write(`data: ${JSON.stringify({ error: "Moto not found" })}\n\n`);
   }
-
-  sseSubscribe(motoId, res);
 
   const heartbeat = setInterval(() => {
     try { (res as any).write(": heartbeat\n\n"); }

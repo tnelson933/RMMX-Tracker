@@ -230,6 +230,7 @@ interface RiderOption {
   bikeYear: string;
   bibNumber: string;
   sponsors: string;
+  myLapsTransponderNumber: string;
 }
 
 const DESKTOP_CLOUD_URL = import.meta.env.VITE_CLOUD_URL as string | undefined;
@@ -267,6 +268,8 @@ export default function Register() {
   const [lookedUpName, setLookedUpName] = useState<string>("");
   const [riderOptions, setRiderOptions] = useState<RiderOption[] | null>(null);
   const autoLookupFiredRef = useRef(false);
+  const lookupRequestRef = useRef(0);
+  const riderClassesRequestRef = useRef(0);
   const [alreadyRegisteredClasses, setAlreadyRegisteredClasses] = useState<Set<string>>(new Set());
 
   const [compCodeInput, setCompCodeInput] = useState("");
@@ -638,35 +641,44 @@ export default function Register() {
   }, [pendingPayment?.sessionId, pendingPayment?.registrationId, !!success]);
 
   const populateFromRider = (rider: RiderOption) => {
+    const profileValues: Partial<RegisterForm> = {
+      firstName: rider.firstName ?? "",
+      lastName: rider.lastName ?? "",
+      phone: rider.phone ?? "",
+      dateOfBirth: rider.dateOfBirth ?? "",
+      emergencyContact: rider.emergencyContact ?? "",
+      emergencyPhone: rider.emergencyPhone ?? "",
+      streetAddress: rider.streetAddress ?? "",
+      city: rider.city ?? "",
+      homeState: rider.homeState ?? "",
+      zip: rider.zip ?? "",
+      amaNumber: rider.amaNumber ?? "",
+      clubIdNumber: rider.clubIdNumber ?? "",
+      bikeBrand: rider.bikeBrand ?? "",
+      bikeModel: rider.bikeModel ?? "",
+      bikeYear: rider.bikeYear ?? "",
+      bibNumber: rider.bibNumber ?? "",
+      sponsors: rider.sponsors ?? "",
+      myLapsTransponderNumber: rider.myLapsTransponderNumber ?? "",
+    };
+    for (const [name, value] of Object.entries(profileValues) as Array<[keyof RegisterForm, RegisterForm[keyof RegisterForm]]>) {
+      if (!form.getFieldState(name).isDirty) {
+        form.setValue(name, value, { shouldDirty: false });
+      }
+    }
     setSelectedRiderId(rider.id ?? null);
-    form.setValue("firstName", rider.firstName, { shouldDirty: false });
-    form.setValue("lastName", rider.lastName, { shouldDirty: false });
-    form.setValue("phone", rider.phone, { shouldDirty: false });
-    form.setValue("dateOfBirth", rider.dateOfBirth, { shouldDirty: false });
-    form.setValue("emergencyContact", rider.emergencyContact, { shouldDirty: false });
-    form.setValue("emergencyPhone", rider.emergencyPhone, { shouldDirty: false });
-    if (rider.streetAddress) form.setValue("streetAddress", rider.streetAddress, { shouldDirty: false });
-    if (rider.city) form.setValue("city", rider.city, { shouldDirty: false });
-    if (rider.homeState) form.setValue("homeState", rider.homeState, { shouldDirty: false });
-    if (rider.zip) form.setValue("zip", rider.zip, { shouldDirty: false });
-    if (rider.amaNumber) form.setValue("amaNumber", rider.amaNumber, { shouldDirty: false });
-    if (rider.clubIdNumber) form.setValue("clubIdNumber", rider.clubIdNumber, { shouldDirty: false });
-    if (rider.bikeBrand) form.setValue("bikeBrand", rider.bikeBrand, { shouldDirty: false });
-    if (rider.bikeModel) form.setValue("bikeModel", rider.bikeModel, { shouldDirty: false });
-    if (rider.bikeYear) form.setValue("bikeYear", rider.bikeYear, { shouldDirty: false });
-    if (rider.bibNumber) form.setValue("bibNumber", rider.bibNumber, { shouldDirty: false });
-    if (rider.sponsors) form.setValue("sponsors", rider.sponsors, { shouldDirty: false });
     setLookedUpName(`${rider.firstName} ${rider.lastName}`);
     setLookupState("found");
     setRiderOptions(null);
+    setAlreadyRegisteredClasses(new Set());
+    const classesRequest = ++riderClassesRequestRef.current;
     // Fetch which classes this rider is already registered for at this event
     if (eventId && rider.id) {
       fetch(`/api/public/events/${eventId}/rider-classes?riderId=${rider.id}`)
         .then(r => r.json())
         .then((d: { registeredClasses?: string[] }) => {
-          if (d.registeredClasses?.length) {
-            setAlreadyRegisteredClasses(new Set(d.registeredClasses));
-          }
+          if (classesRequest !== riderClassesRequestRef.current) return;
+          setAlreadyRegisteredClasses(new Set(d.registeredClasses ?? []));
         })
         .catch(() => {});
     }
@@ -676,12 +688,14 @@ export default function Register() {
     const trimmed = email.trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmed)) return;
+    const request = ++lookupRequestRef.current;
     setLookupState("loading");
     setLookedUpName("");
     setRiderOptions(null);
     try {
       const res = await fetch(`/api/public/riders/lookup?email=${encodeURIComponent(trimmed)}`);
       const data = await res.json();
+      if (request !== lookupRequestRef.current || form.getValues("email").trim().toLowerCase() !== trimmed.toLowerCase()) return;
       if (!data.found) {
         setLookupState("not_found");
         return;
@@ -693,11 +707,16 @@ export default function Register() {
         setLookupState("pick");
       }
     } catch {
+      if (request !== lookupRequestRef.current) return;
       setLookupState("not_found");
     }
   };
 
   const onSubmit = async (data: RegisterForm) => {
+    if (lookupState === "pick" || (riderOptions !== null && selectedRiderId === null)) {
+      setSubmitError("Select the correct rider profile for this email before registering.");
+      return;
+    }
     // Client-side enforcement of event-level required fields
     if (event?.requireAma && !data.amaNumber?.trim()) {
       form.setError("amaNumber", { message: "AMA # is required for this event" });
@@ -714,17 +733,6 @@ export default function Register() {
     if (event?.requireLiabilityWaiver && !liabilityWaiverAccepted) {
       setSubmitError("You must sign the liability waiver before registering.");
       return;
-    }
-    // Active transponder events require a transponder number or rental when required.
-    if (event?.timingTechnology === "active_transponder" && event.requireTransponder) {
-      const hasNumber = !!data.myLapsTransponderNumber?.trim();
-      const hasRental = !!data.rentTransponder;
-      if (!hasNumber && !hasRental) {
-        form.setError("myLapsTransponderNumber", {
-          message: "Enter your active transponder number, or select a rental below.",
-        });
-        return;
-      }
     }
     setSubmitting(true);
     setSubmitError(null);
@@ -1078,6 +1086,16 @@ export default function Register() {
                             type="email"
                             placeholder="rider@example.com"
                             {...field}
+                            onChange={e => {
+                              lookupRequestRef.current++;
+                              riderClassesRequestRef.current++;
+                              setSelectedRiderId(null);
+                              setAlreadyRegisteredClasses(new Set());
+                              setRiderOptions(null);
+                              setLookedUpName("");
+                              setLookupState("idle");
+                              field.onChange(e);
+                            }}
                             onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
                           />
                         </FormControl>
@@ -1111,12 +1129,14 @@ export default function Register() {
                               className="w-full text-left rounded-lg border border-border bg-background px-4 py-3 hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
                             >
                               <div className="font-semibold text-sm">{rider.firstName} {rider.lastName}</div>
-                              {(rider.city || rider.homeState) && (
-                                <div className="text-xs text-muted-foreground mt-0.5">
-                                  {[rider.city, rider.homeState].filter(Boolean).join(", ")}
-                                  {rider.bibNumber ? ` · #${rider.bibNumber}` : ""}
-                                </div>
-                              )}
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {[
+                                  rider.dateOfBirth ? `DOB ${rider.dateOfBirth}` : "",
+                                  rider.phone,
+                                  [rider.city, rider.homeState].filter(Boolean).join(", "),
+                                  rider.bibNumber ? `#${rider.bibNumber}` : "",
+                                ].filter(Boolean).join(" · ") || `Profile ID ${rider.id}`}
+                              </div>
                             </button>
                           ))}
                         </div>
@@ -1137,14 +1157,26 @@ export default function Register() {
                       <FormField control={form.control} name="firstName" render={({ field }) => (
                         <FormItem>
                           <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="Jake" {...field} /></FormControl>
+                          <FormControl>
+                            <Input
+                              placeholder="Jake"
+                              {...field}
+                              onChange={field.onChange}
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <FormField control={form.control} name="lastName" render={({ field }) => (
                         <FormItem>
                           <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="Morrison" {...field} /></FormControl>
+                          <FormControl>
+                            <Input
+                              placeholder="Morrison"
+                              {...field}
+                              onChange={field.onChange}
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
@@ -1835,7 +1867,7 @@ export default function Register() {
 
                 <Button
                   type="submit"
-                  disabled={submitting || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted) || (event.requireLiabilityWaiver && !liabilityWaiverAccepted)}
+                  disabled={submitting || lookupState === "pick" || (riderOptions !== null && selectedRiderId === null) || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted) || (event.requireLiabilityWaiver && !liabilityWaiverAccepted)}
                   className="w-full font-heading uppercase tracking-wider text-base h-12"
                 >
                   {submitting ? (

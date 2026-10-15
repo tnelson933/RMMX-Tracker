@@ -46,6 +46,7 @@ import {
 const LOCAL_PORT = 9090;
 const STARTUP_TIMEOUT_MS = 15_000;
 const WINDOW_TITLE = "RM Tracker";
+const LOCAL_TIMING_HTTP_AGENT = new http.Agent({ keepAlive: true, maxSockets: 4 });
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -511,9 +512,9 @@ function registerIpcHandlers(): void {
     if (savedSettings.configuration) configureActiveTransponder(savedSettings.configuration);
     await connectActiveTransponder(
       requestedAddress,
-      (epc, crossingTime) => {
+      (epc, crossingTime, metadata) => {
         postCrossingToLocalServer(
-          { tag: epc, fieldName: "transponder", crossingTime },
+          { tag: epc, fieldName: "transponder", crossingTime, ...metadata },
           (error) => error && reportActiveTransponderError(error),
         );
       },
@@ -771,19 +772,45 @@ function registerIpcHandlers(): void {
 
 // ── Forward tag reads to local server ─────────────────────────────────────────
 
+export function buildLocalCrossingPayload(opts: {
+  tag: string;
+  fieldName?: "rfidNumber" | "transponder";
+  crossingTime?: Date;
+  receivedAtUtc?: string;
+  deviceTimezone?: string | null;
+  source?: string;
+  timeSource?: string;
+}): Record<string, string> {
+  const { tag, fieldName = "rfidNumber", crossingTime, receivedAtUtc, deviceTimezone, source, timeSource } = opts;
+  const payload: Record<string, string> = {
+    [fieldName]: tag,
+    crossingTime: (crossingTime ?? new Date()).toISOString(),
+  };
+  if (receivedAtUtc) payload.receivedAtUtc = receivedAtUtc;
+  if (receivedAtUtc) payload.readerReceivedAt = receivedAtUtc;
+  if (deviceTimezone) payload.deviceTimezone = deviceTimezone;
+  if (source) payload.source = source;
+  if (timeSource) payload.timeSource = timeSource;
+  return payload;
+}
+
 function postCrossingToLocalServer(opts: {
   tag: string;
   fieldName?: "rfidNumber" | "transponder";
   crossingTime?: Date;
+  receivedAtUtc?: string;
+  deviceTimezone?: string | null;
+  source?: string;
+  timeSource?: string;
 }, onFailure?: (message: string) => void): void {
-  const { tag, fieldName = "rfidNumber", crossingTime } = opts;
-  const body = JSON.stringify({ [fieldName]: tag, crossingTime: (crossingTime ?? new Date()).toISOString() });
+  const body = JSON.stringify(buildLocalCrossingPayload(opts));
   const req = http.request(
     {
       host: "127.0.0.1",
       port: LOCAL_PORT,
       path: "/api/timing/active/crossing",
       method: "POST",
+      agent: LOCAL_TIMING_HTTP_AGENT,
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
@@ -812,6 +839,7 @@ function postCrossingToLocalServer(opts: {
       }
     },
   );
+  req.on("socket", (socket) => socket.setNoDelay(true));
 
   req.on("error", (err) => {
     console.error(`[rfid] failed to post crossing: ${err.message}`);
