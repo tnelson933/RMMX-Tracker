@@ -61,6 +61,7 @@ type BenchmarkFixture = {
 };
 
 type Snapshot = {
+  type?: string;
   motoId?: number;
   motoName?: string;
   leaderboard?: unknown[];
@@ -267,7 +268,12 @@ function connectViewer(motoId: number, index: number): Viewer {
             .map((line) => line.slice(5).trimStart())
             .join("\n");
           if (!data) continue;
-          notifySnapshot(JSON.parse(data) as Snapshot);
+          const payload = JSON.parse(data) as Snapshot;
+          // The live stream also carries lightweight events (crossing_accepted
+          // acks sent before the full snapshot). Like the web clients, only
+          // count complete leaderboard snapshots.
+          if (payload.type) continue;
+          notifySnapshot(payload);
         }
       }
       if (!controller.signal.aborted) fail(new Error(`viewer ${index + 1} SSE stream ended`));
