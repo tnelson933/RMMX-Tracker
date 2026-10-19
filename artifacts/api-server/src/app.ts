@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import { randomBytes } from "node:crypto";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
@@ -7,7 +8,7 @@ import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { WebhookHandlers } from "./webhookHandlers";
-import { staffPermissionMiddleware } from "./middleware/staffPermissions";
+import { accessControlMiddleware } from "./middleware/accessControl";
 
 const app: Express = express();
 // The Replit/deployment proxy terminates TLS before requests reach Express.
@@ -66,7 +67,16 @@ app.post(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const sessionSecret = process.env.SESSION_SECRET || "race-platform-dev-secret";
+// Never fall back to a known secret: anyone could forge session cookies with it.
+// Without SESSION_SECRET we use a random per-process secret, so sessions stop
+// surviving restarts (everyone signs in again) but cannot be forged.
+let sessionSecret = process.env.SESSION_SECRET ?? "";
+if (!sessionSecret) {
+  logger.error("SESSION_SECRET is not set; using a random secret. Sessions will not survive restarts.");
+  sessionSecret = randomBytes(48).toString("hex");
+} else if (sessionSecret.length < 32) {
+  logger.warn("SESSION_SECRET is shorter than 32 characters; use a long random value.");
+}
 const PgSession = ConnectPgSimple(session);
 
 app.use(
@@ -91,6 +101,6 @@ app.use(
   })
 );
 
-app.use("/api", staffPermissionMiddleware, router);
+app.use("/api", accessControlMiddleware, router);
 
 export default app;

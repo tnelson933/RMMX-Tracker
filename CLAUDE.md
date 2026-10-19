@@ -80,6 +80,11 @@ development only. All commands run from the repo root (`RM-Tracker/`).
 - `node scripts/dev-sample-data.mjs <organizer-email> <password> [clubId]`: fills the local
   DB with 2 completed demo events, 12 riders and a series. It publishes results and
   recalculates points through the running API. Local only, and does nothing on a second run.
+- API access is default-deny (`artifacts/api-server/src/middleware/accessControl.ts`): a new
+  route needs an organizer session unless it's added to `PUBLIC_RULES`, and organizers are
+  scoped to their club through `res.locals.staffClubId`. After auth changes, run
+  `node scripts/dev-security-check.mjs e2e-organizer@local.test other-organizer@local.test <pw> 7`
+  (club 2000 / event 7 is a local-only second club for cross-club checks).
 - Branding follows the claude.ai org design system "Rocky Mountain ATV/MC Design System"
   (Barlow/Roboto, red `#B30000`, charcoal `#242424`, pill buttons). Theme tokens live in
   `artifacts/race-platform/src/index.css`; brand assets are in `race-platform/public/brand/`.

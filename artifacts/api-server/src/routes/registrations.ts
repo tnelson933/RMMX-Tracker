@@ -6,6 +6,7 @@ import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
 import { isRegistrationTransponderRequirementSatisfied } from "../lib/registrationTransponderRequirement";
+import { resolvePurchaseOptions } from "../lib/purchaseOptions";
 
 const router = Router();
 
@@ -102,7 +103,9 @@ function submittedRiderProfile(
   const copy = (source: string, destination = source) => {
     if (!Object.prototype.hasOwnProperty.call(body, source)) return;
     const value = body[source];
-    if (typeof value === "string") profile[destination] = value.trim() || null;
+    // A blank field keeps the saved value. The public lookup no longer returns
+    // contact/DOB/address details, so returning riders often leave them empty.
+    if (typeof value === "string" && value.trim()) profile[destination] = value.trim();
   };
 
   copy("firstName");
@@ -146,6 +149,17 @@ router.get("/public/riders/lookup", async (req, res) => {
 
   if (!riders.length) return res.json({ found: false, count: 0, riders: [] });
 
+  // Contact, DOB, address and emergency details only go to a signed-in organizer
+  // or the rider account that owns this email. Anonymous callers get racing info.
+  let canSeePrivate = !!(req.session as any)?.userId;
+  const riderAccountId = (req.session as any)?.riderAccountId as number | undefined;
+  if (!canSeePrivate && riderAccountId) {
+    const [account] = await db.select({ email: riderAccountsTable.email })
+      .from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+    canSeePrivate = account?.email?.trim().toLowerCase() === email;
+  }
+  const priv = (v: string | null | undefined) => (canSeePrivate ? v ?? "" : "");
+
   const riderIds = riders.map(r => r.id);
 
   const allLastRegs = await db.select({
@@ -178,14 +192,14 @@ router.get("/public/riders/lookup", async (req, res) => {
       firstName: rider.firstName ?? "",
       lastName: rider.lastName ?? "",
       email: rider.email ?? "",
-      phone: rider.phone ?? "",
-      dateOfBirth: rider.dateOfBirth ?? "",
-      emergencyContact: rider.emergencyContact ?? "",
-      emergencyPhone: rider.emergencyPhone ?? "",
-      streetAddress: rider.streetAddress ?? "",
-      city: rider.city ?? "",
+      phone: priv(rider.phone),
+      dateOfBirth: priv(rider.dateOfBirth),
+      emergencyContact: priv(rider.emergencyContact),
+      emergencyPhone: priv(rider.emergencyPhone),
+      streetAddress: priv(rider.streetAddress),
+      city: priv(rider.city),
       homeState: rider.homeState ?? "",
-      zip: rider.zip ?? "",
+      zip: priv(rider.zip),
       amaNumber: lastReg?.amaNumber ?? rider.amaNumber ?? "",
       clubIdNumber: lastReg?.clubIdNumber ?? "",
       bikeBrand: lastReg?.bikeBrand ?? rider.bikeManufacturer ?? "",
@@ -398,7 +412,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     paymentStatus: "unpaid",
     transponderRental: wantsRental,
     myLapsTransponderNumber: normalizedTransponderNumber,
-    selectedPurchaseOptions: Array.isArray(selectedPurchaseOptions) ? selectedPurchaseOptions : [],
+    selectedPurchaseOptions: resolvePurchaseOptions(selectedPurchaseOptions, eventData?.purchaseOptions),
   }).returning();
 
   // Only create the check-in record immediately for free events.
@@ -546,7 +560,8 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
 
     const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, reg.riderId));
 
-    const purchaseOptsList = ((reg.selectedPurchaseOptions as Array<{ id: string; name: string; amount: number }>) ?? []);
+    // Re-price stored selections from the event config (older rows may hold client-supplied amounts).
+    const purchaseOptsList = resolvePurchaseOptions(reg.selectedPurchaseOptions, event.purchaseOptions);
     const purchaseOptionsTotal = purchaseOptsList.reduce((sum, o) => sum + Number(o.amount), 0);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1208,9 +1223,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   const totalEntryFees = entryFeeNum * numClasses;
   const rentalFeeNum = wantsRental && events[0].transponderRentalFee ? Number(events[0].transponderRentalFee) : 0;
   const rfidStickerFeeNum = wantsRfidSticker && events[0].rfidStickerFee ? Number(events[0].rfidStickerFee) : 0;
-  const purchaseOptsList = Array.isArray(selectedPurchaseOptions)
-    ? (selectedPurchaseOptions as Array<{ id: string; name: string; amount: number }>)
-    : [];
+  // Prices come from the event's configured options, never from the request body.
+  const purchaseOptsList = resolvePurchaseOptions(selectedPurchaseOptions, events[0].purchaseOptions);
   const purchaseOptionsTotal = purchaseOptsList.reduce((sum, o) => sum + Number(o.amount), 0);
   if (validatedCompCode) {
     // Comp discount applies to total entry fees (all classes)
@@ -1247,7 +1261,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       ...sharedRegFields,
       raceClass: cls,
       // Purchase options and transponder rental attach to the first reg only
-      selectedPurchaseOptions: idx === 0 ? (Array.isArray(selectedPurchaseOptions) ? selectedPurchaseOptions : []) : [],
+      selectedPurchaseOptions: idx === 0 ? purchaseOptsList : [],
     }))
   ).returning();
 
