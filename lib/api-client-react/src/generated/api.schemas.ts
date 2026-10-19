@@ -2266,3 +2266,11 @@ export type ReaderCrossing200 = {
   message?: string;
 };
 
+export type ReaderActiveCrossing200 = { [key: string]: unknown };
+
+export type ReaderPing200 = {
+  ok: boolean;
+  received?: string;
+  clubId?: number;
+};
+

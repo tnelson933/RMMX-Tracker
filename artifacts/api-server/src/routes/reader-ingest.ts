@@ -31,11 +31,12 @@ import {
   registrationsTable,
 } from "@workspace/db/schema";
 import { eq, and, count, ilike, or } from "drizzle-orm";
-import { processCrossing } from "./timing";
+import { processCrossing, handleFacilityCrossing, handlePing } from "./timing";
 import { processPracticeCrossing } from "./practice";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { recordTagSeen } from "../lib/recentTags";
 import { canonicalizeCrossingTimestamp, parseTrustworthyReceivedAt } from "../lib/crossingTimestamp";
+import { findReaderByToken } from "../lib/ingestAuth";
 
 const router = Router();
 
@@ -85,6 +86,36 @@ async function resolveRider(
   return rider?.id ?? null;
 }
 
+function markReaderSeen(readerId: number) {
+  db.update(readersTable)
+    .set({ lastSeenAt: new Date() })
+    .where(eq(readersTable.id, readerId))
+    .catch(() => {});
+}
+
+/**
+ * POST /timing/readers/:token/active/crossing
+ *
+ * Per-reader version of the facility URL (/timing/active/crossing?clubId=).
+ * Same payload formats and moto/practice routing, but the club comes from the
+ * reader token instead of a guessable query parameter. Use this URL for
+ * hardware that cannot send an Authorization header.
+ */
+router.post("/timing/readers/:token/active/crossing", async (req, res) => {
+  const reader = await findReaderByToken(req.params.token);
+  if (!reader) return res.status(404).json({ ok: false, message: "Unknown reader token" });
+  markReaderSeen(reader.id);
+  return handleFacilityCrossing(req, res, reader.clubId);
+});
+
+// POST /timing/readers/:token/ping — connectivity test for a per-reader URL.
+router.post("/timing/readers/:token/ping", async (req, res) => {
+  const reader = await findReaderByToken(req.params.token);
+  if (!reader) return res.status(404).json({ ok: false, message: "Unknown reader token" });
+  markReaderSeen(reader.id);
+  return handlePing(req, res, reader.clubId);
+});
+
 router.post("/timing/readers/:token/crossing", async (req, res) => {
   const { token } = req.params;
   const body = req.body as {
@@ -103,7 +134,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
   if (!body.rfidNumber) return res.status(400).json({ ok: false, message: "rfidNumber is required" });
 
   // 1. Resolve reader by token
-  const [reader] = await db.select().from(readersTable).where(eq(readersTable.token, token));
+  const reader = await findReaderByToken(token);
   if (!reader) return res.status(404).json({ ok: false, message: "Unknown reader token" });
 
   // Record the tag in the live scanner buffer — even if this request ends in
@@ -111,10 +142,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
   recordTagSeen(reader.clubId, String(body.rfidNumber).toUpperCase());
 
   // 2. Update last-seen (fire-and-forget)
-  db.update(readersTable)
-    .set({ lastSeenAt: new Date() })
-    .where(eq(readersTable.id, reader.id))
-    .catch(() => {});
+  markReaderSeen(reader.id);
 
   const serverReceivedAt = new Date();
   const isActiveTransponderReader =
@@ -138,6 +166,23 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
   // progress. An event can remain in race_day status while organizers run a
   // practice, so event status alone must not divert the crossing away from the
   // active practice.
+  // A reader token only authorizes its own club. An eventId supplied by the
+  // caller must belong to that club, or a token from one club could route
+  // crossings into another club's event. Unknown event IDs keep their existing
+  // handling (no assignment → 422), so connectors still fall back as before.
+  // Deliberately not a 422: RM Connect retries on the facility URL when a 422
+  // message mentions "assignment" or "no active race_day event".
+  const requestedEventId = Number(body.eventId);
+  if (body.eventId != null && Number.isInteger(requestedEventId) && requestedEventId > 0) {
+    const [requestedEvent] = await db
+      .select({ clubId: eventsTable.clubId })
+      .from(eventsTable)
+      .where(eq(eventsTable.id, requestedEventId));
+    if (requestedEvent && requestedEvent.clubId !== reader.clubId) {
+      return res.status(403).json({ ok: false, message: "Event does not belong to this reader's club" });
+    }
+  }
+
   let eventId = body.eventId ?? null;
   if (!eventId) {
     const [activeMoto] = await db

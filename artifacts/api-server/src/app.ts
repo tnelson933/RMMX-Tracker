@@ -7,8 +7,10 @@ import ConnectPgSimple from "connect-pg-simple";
 import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { redactLogUrl } from "./lib/logRedaction";
 import { WebhookHandlers } from "./webhookHandlers";
 import { accessControlMiddleware } from "./middleware/accessControl";
+import { ingestObservationMiddleware } from "./middleware/ingestObservation";
 
 const app: Express = express();
 // The Replit/deployment proxy terminates TLS before requests reach Express.
@@ -23,7 +25,7 @@ app.use(
         return {
           id: req.id,
           method: req.method,
-          url: req.url?.split("?")[0],
+          url: redactLogUrl(req.url),
         };
       },
       res(res) {
@@ -101,6 +103,7 @@ app.use(
   })
 );
 
-app.use("/api", accessControlMiddleware, router);
+// Ingest observation runs first so it records every caller, including denied ones.
+app.use("/api", ingestObservationMiddleware, accessControlMiddleware, router);
 
 export default app;

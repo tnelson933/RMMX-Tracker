@@ -211,8 +211,16 @@ export class CloudLink extends EventEmitter {
     if (!input.clubId) {
       return { ok: false, message: data.message ?? "No checkpoint assignment and no clubId for facility routing" };
     }
+    // The facility URL is addressed by club ID, so authenticate with this
+    // reader's token. Servers without ingest auth ignore the header; servers
+    // with it reject a facility post without a credential once the club enforces.
     const facilityUrl = `${this.cloudUrl}/api/timing/active/crossing?clubId=${input.clubId}`;
-    const res2 = await fetch(facilityUrl, { method: "POST", headers, body: payload, keepalive: true });
+    const res2 = await fetch(facilityUrl, {
+      method: "POST",
+      headers: { ...headers, Authorization: `Bearer ${this.readerToken}` },
+      body: payload,
+      keepalive: true,
+    });
     const data2 = (await res2.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
     return { ok: !!data2.ok, message: data2.message ?? data2.error };
   }

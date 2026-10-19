@@ -105,9 +105,11 @@ import type {
   RaceDaySummary,
   RaceResult,
   Reader,
+  ReaderActiveCrossing200,
   ReaderCrossing200,
   ReaderCrossingInput,
   ReaderInput,
+  ReaderPing200,
   ReaderUpdateInput,
   RecentResultItem,
   RecentTag,
@@ -2872,6 +2874,78 @@ export const useDeleteReader = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteReaderMutationOptions(options));
+    }
+
+export const getRotateReaderTokenUrl = (readerId: number,) => {
+
+
+
+
+  return `/api/readers/${readerId}/rotate-token`
+}
+
+/**
+ * The old token stops working immediately, on the per-reader URLs, as a Bearer credential, and for live RM Connect connections. Hardware and RM Connect must be given the new URL or token.
+
+ * @summary Issue a new token for a reader and revoke the old one
+ */
+export const rotateReaderToken = async (readerId: number, options?: RequestInit): Promise<Reader> => {
+
+  return customFetch<Reader>(getRotateReaderTokenUrl(readerId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRotateReaderTokenMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateReaderToken>>, TError,{readerId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rotateReaderToken>>, TError,{readerId: number}, TContext> => {
+
+const mutationKey = ['rotateReaderToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rotateReaderToken>>, {readerId: number}> = (props) => {
+          const {readerId} = props ?? {};
+
+          return  rotateReaderToken(readerId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RotateReaderTokenMutationResult = NonNullable<Awaited<ReturnType<typeof rotateReaderToken>>>
+
+    export type RotateReaderTokenMutationError = ErrorType<void>
+
+    /**
+ * @summary Issue a new token for a reader and revoke the old one
+ */
+export const useRotateReaderToken = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateReaderToken>>, TError,{readerId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rotateReaderToken>>,
+        TError,
+        {readerId: number},
+        TContext
+      > => {
+      return useMutation(getRotateReaderTokenMutationOptions(options));
     }
 
 export const getListRidersUrl = (params?: ListRidersParams,) => {
@@ -10234,5 +10308,151 @@ export const useReaderCrossing = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getReaderCrossingMutationOptions(options));
+    }
+
+export const getReaderActiveCrossingUrl = (token: string,) => {
+
+
+
+
+  return `/api/timing/readers/${token}/active/crossing`
+}
+
+/**
+ * Same payload formats and routing as /timing/active/crossing (generic, active transponder, and the RFID reader event formats), but the club comes from the reader token. Use this URL for hardware that cannot send an Authorization header.
+
+ * @summary Per-reader facility URL; routes to the club's in-progress moto or practice
+ */
+export const readerActiveCrossing = async (token: string,
+    readerActiveCrossingBody: unknown, options?: RequestInit): Promise<ReaderActiveCrossing200> => {
+
+  return customFetch<ReaderActiveCrossing200>(getReaderActiveCrossingUrl(token),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      readerActiveCrossingBody,)
+  }
+);}
+
+
+
+
+export const getReaderActiveCrossingMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof readerActiveCrossing>>, TError,{token: string;data: BodyType<unknown>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof readerActiveCrossing>>, TError,{token: string;data: BodyType<unknown>}, TContext> => {
+
+const mutationKey = ['readerActiveCrossing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof readerActiveCrossing>>, {token: string;data: BodyType<unknown>}> = (props) => {
+          const {token,data} = props ?? {};
+
+          return  readerActiveCrossing(token,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReaderActiveCrossingMutationResult = NonNullable<Awaited<ReturnType<typeof readerActiveCrossing>>>
+    export type ReaderActiveCrossingMutationBody = BodyType<unknown>
+    export type ReaderActiveCrossingMutationError = ErrorType<void>
+
+    /**
+ * @summary Per-reader facility URL; routes to the club's in-progress moto or practice
+ */
+export const useReaderActiveCrossing = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof readerActiveCrossing>>, TError,{token: string;data: BodyType<unknown>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof readerActiveCrossing>>,
+        TError,
+        {token: string;data: BodyType<unknown>},
+        TContext
+      > => {
+      return useMutation(getReaderActiveCrossingMutationOptions(options));
+    }
+
+export const getReaderPingUrl = (token: string,) => {
+
+
+
+
+  return `/api/timing/readers/${token}/ping`
+}
+
+/**
+ * @summary Connectivity test for a per-reader URL (records nothing)
+ */
+export const readerPing = async (token: string,
+    readerPingBody: unknown, options?: RequestInit): Promise<ReaderPing200> => {
+
+  return customFetch<ReaderPing200>(getReaderPingUrl(token),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      readerPingBody,)
+  }
+);}
+
+
+
+
+export const getReaderPingMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof readerPing>>, TError,{token: string;data: BodyType<unknown>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof readerPing>>, TError,{token: string;data: BodyType<unknown>}, TContext> => {
+
+const mutationKey = ['readerPing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof readerPing>>, {token: string;data: BodyType<unknown>}> = (props) => {
+          const {token,data} = props ?? {};
+
+          return  readerPing(token,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReaderPingMutationResult = NonNullable<Awaited<ReturnType<typeof readerPing>>>
+    export type ReaderPingMutationBody = BodyType<unknown>
+    export type ReaderPingMutationError = ErrorType<void>
+
+    /**
+ * @summary Connectivity test for a per-reader URL (records nothing)
+ */
+export const useReaderPing = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof readerPing>>, TError,{token: string;data: BodyType<unknown>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof readerPing>>,
+        TError,
+        {token: string;data: BodyType<unknown>},
+        TContext
+      > => {
+      return useMutation(getReaderPingMutationOptions(options));
     }
 

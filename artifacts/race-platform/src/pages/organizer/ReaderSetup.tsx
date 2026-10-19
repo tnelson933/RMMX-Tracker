@@ -3,6 +3,7 @@ import {
   Wifi, Timer, Copy, Check, Send, RefreshCw,
   CheckCircle2, XCircle, Download, Circle, ExternalLink,
   Usb, Trash2, Plus, Radio, Pencil, X, ScanLine, Loader2, MonitorDown, Activity, Battery, AlertCircle, Play, Settings,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,14 +13,18 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useListReaders, useCreateReader, useDeleteReader, useUpdateReader, getListReadersQueryKey,
+  useListReaders, useCreateReader, useDeleteReader, useUpdateReader, useRotateReaderToken, getListReadersQueryKey,
   useGetConnectorStatus,
   useGetRecentTags, useClearRecentTags, getGetRecentTagsQueryKey,
 } from "@workspace/api-client-react";
 
 const BASE_URL = window.location.origin;
-const FACILITY_ENDPOINT_BASE = `${BASE_URL}/api/timing/active/crossing`;
 const PING_ENDPOINT_BASE = `${BASE_URL}/api/timing/ping`;
+// Hardware is programmed with a per-reader URL. The token in it identifies the
+// reader and its club, so no guessable club ID is needed.
+const readerTimingUrl = (token: string) => `${BASE_URL}/api/timing/readers/${token}/active/crossing`;
+const readerCheckpointUrl = (token: string) => `${BASE_URL}/api/timing/readers/${token}/crossing`;
+const readerPingUrl = (token: string) => `${BASE_URL}/api/timing/readers/${token}/ping`;
 type ReaderType   = "impinj-r700" | "zebra-fx7500" | "generic";
 
 interface ActiveTransponderStatus {
@@ -485,14 +490,6 @@ export default function ReaderSetup() {
   const openSerialSettings = () =>
     window.dispatchEvent(new CustomEvent("rm-open-serial-settings"));
 
-  const facilityEndpoint = user?.clubId
-    ? `${FACILITY_ENDPOINT_BASE}?clubId=${user.clubId}`
-    : `${FACILITY_ENDPOINT_BASE}?clubId=YOUR_CLUB_ID`;
-
-  const pingEndpoint = user?.clubId
-    ? `${PING_ENDPOINT_BASE}?clubId=${user.clubId}`
-    : null;
-
   const queryClient = useQueryClient();
 
   // ── Registered readers ──
@@ -501,6 +498,11 @@ export default function ReaderSetup() {
   const { data: readers = [] } = useListReaders({
     query: { refetchInterval: identifying ? 1500 : false } as any,
   });
+  // The timing URL card shows the URL of one RFID reader (the first by default).
+  const rfidReaders = (readers as any[]).filter(r => r.type === "rfid");
+  const [urlReaderId, setUrlReaderId] = useState<number | null>(null);
+  const urlReader = rfidReaders.find(r => r.id === urlReaderId) ?? rfidReaders[0] ?? null;
+  const facilityEndpoint: string | null = urlReader ? readerTimingUrl(urlReader.token) : null;
   // RM Connect live status — refresh every 10s so the card stays current
   const { data: connectorStatuses = [] } = useGetConnectorStatus({
     query: { refetchInterval: 10_000 } as any,
@@ -531,6 +533,7 @@ export default function ReaderSetup() {
   const createReaderMutation = useCreateReader();
   const deleteReaderMutation = useDeleteReader();
   const updateReaderMutation = useUpdateReader();
+  const rotateReaderMutation = useRotateReaderToken();
   const [newReaderName, setNewReaderName] = useState("");
   const [newReaderType, setNewReaderType] = useState<"rfid" | "active_transponder">("rfid");
   const [newReaderAddress, setNewReaderAddress] = useState("");
@@ -630,8 +633,20 @@ export default function ReaderSetup() {
     }
   }
 
-  function readerIngestUrl(token: string) {
-    return `${BASE_URL}/api/timing/readers/${token}/crossing`;
+  async function handleRotateReader(reader: { id: number; name: string }) {
+    const confirmed = window.confirm(
+      `Issue a new URL and token for "${reader.name}"?\n\n` +
+      "The current URL and token stop working immediately. Reprogram the reader " +
+      "with the new URL, and re-select the reader in RM Connect.",
+    );
+    if (!confirmed) return;
+    try {
+      await rotateReaderMutation.mutateAsync({ readerId: reader.id });
+      queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
+      toast({ title: "New reader URL issued", description: "Update the reader and RM Connect with the new URL." });
+    } catch {
+      toast({ title: "Failed to issue a new URL", variant: "destructive" });
+    }
   }
 
   function lastSeenLabel(lastSeenAt: string | null | undefined): { text: string; live: boolean } {
@@ -789,6 +804,12 @@ export default function ReaderSetup() {
   const [testResult,  setTestResult]  = useState<{ ok: boolean; message: string } | null>(null);
   const [testLoading, setTestLoading] = useState(false);
 
+  // Test the selected reader's own URL when there is one; otherwise fall back to
+  // the signed-in club ping (active timing tests and clubs with no RFID reader yet).
+  const pingEndpoint = tech === "rfid" && urlReader
+    ? readerPingUrl(urlReader.token)
+    : user?.clubId ? `${PING_ENDPOINT_BASE}?clubId=${user.clubId}` : null;
+
   const sendTest = async () => {
     if (!testValue || !pingEndpoint) return;
     setTestLoading(true);
@@ -820,8 +841,8 @@ export default function ReaderSetup() {
     }
   };
 
-  const copyUrl       = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedUrl(true);       setTimeout(() => setCopiedUrl(false),       2000); };
-  const copyManualUrl = () => { navigator.clipboard.writeText(facilityEndpoint); setCopiedManualUrl(true); setTimeout(() => setCopiedManualUrl(false), 2000); };
+  const copyUrl       = () => { if (!facilityEndpoint) return; navigator.clipboard.writeText(facilityEndpoint); setCopiedUrl(true);       setTimeout(() => setCopiedUrl(false),       2000); };
+  const copyManualUrl = () => { if (!facilityEndpoint) return; navigator.clipboard.writeText(facilityEndpoint); setCopiedManualUrl(true); setTimeout(() => setCopiedManualUrl(false), 2000); };
 
   const manualReaderUrl =
     readerType === "impinj-r700"  ? `https://${readerIp || "READER_IP"}` :
@@ -844,11 +865,13 @@ export default function ReaderSetup() {
     </button>
   );
 
-  const urlField = (
+  const urlField = facilityEndpoint ? (
     <div className="flex items-center gap-2">
       <code className="flex-1 font-mono text-xs bg-background border rounded px-2.5 py-1.5 break-all text-primary">{facilityEndpoint}</code>
       {urlCopyButton}
     </div>
+  ) : (
+    <p className="text-xs text-amber-600">Register this reader in step 2 first. Its timing URL appears here.</p>
   );
 
   type Row = { step: number; label: string; content: React.ReactNode };
@@ -984,18 +1007,37 @@ export default function ReaderSetup() {
           <div>
             <p className="font-heading font-bold uppercase tracking-wider text-sm">Your Timing URL</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              This gets programmed into your hardware once — it automatically routes to whichever moto is running.
+              Each reader has its own URL. Program it into that reader once. It automatically routes to whichever moto or practice is running.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2.5 truncate text-primary">
-              {facilityEndpoint}
-            </code>
-            <button onClick={copyUrl} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2.5 text-xs font-medium hover:bg-muted transition-colors">
-              {copiedUrl ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
-              {copiedUrl ? "Copied" : "Copy"}
-            </button>
-          </div>
+          {urlReader ? (
+            <>
+              {rfidReaders.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs shrink-0">Reader</Label>
+                  <Select value={String(urlReader.id)} onValueChange={v => setUrlReaderId(Number(v))}>
+                    <SelectTrigger className="h-8 w-full sm:w-64 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {rfidReaders.map(r => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2.5 truncate text-primary">
+                  {facilityEndpoint}
+                </code>
+                <button onClick={copyUrl} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2.5 text-xs font-medium hover:bg-muted transition-colors">
+                  {copiedUrl ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+                  {copiedUrl ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Register your reader in step 2 below. Its timing URL appears here.
+            </p>
+          )}
         </div>
       )}
 
@@ -1083,7 +1125,8 @@ export default function ReaderSetup() {
           <div className="rounded-xl border overflow-hidden divide-y">
             {(readers as any[]).filter(reader => reader.type === tech).map((reader: any) => {
               const { text: lsText, live } = lastSeenLabel(reader.lastSeenAt);
-              const url = readerIngestUrl(reader.token);
+              const timingUrl = readerTimingUrl(reader.token);
+              const checkpointUrl = readerCheckpointUrl(reader.token);
               const isEditing = editingId === reader.id;
               const isIdentified = identifiedId === reader.id;
               return (
@@ -1169,6 +1212,14 @@ export default function ReaderSetup() {
                           <Pencil size={14} />
                         </button>
                         <button
+                          onClick={() => handleRotateReader(reader)}
+                          disabled={rotateReaderMutation.isPending}
+                          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+                          title="Issue a new URL (revokes the current one)"
+                        >
+                          <KeyRound size={14} />
+                        </button>
+                        <button
                           onClick={() => handleDeleteReader(reader.id)}
                           className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded"
                           title="Remove reader"
@@ -1178,9 +1229,23 @@ export default function ReaderSetup() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2">
-                    <code className="flex-1 font-mono text-xs truncate text-primary">{url}</code>
-                    <CopyButton text={url} />
+                  {reader.type === "rfid" && (
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Timing URL</p>
+                      <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2">
+                        <code className="flex-1 font-mono text-xs truncate text-primary">{timingUrl}</code>
+                        <CopyButton text={timingUrl} />
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+                      Checkpoint URL <span className="normal-case tracking-normal font-normal">(only for start, finish, or time-check assignments)</span>
+                    </p>
+                    <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2">
+                      <code className="flex-1 font-mono text-xs truncate text-primary">{checkpointUrl}</code>
+                      <CopyButton text={checkpointUrl} />
+                    </div>
                   </div>
                 </div>
               );
