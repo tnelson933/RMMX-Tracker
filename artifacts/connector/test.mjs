@@ -413,6 +413,44 @@ async function captureCrossingPayload(eventId, metadata = {}) {
   }
 }
 
+test("facility fallback authenticates with the reader token", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      requests.push({ url: request.url, authorization: request.headers.authorization ?? null });
+      response.writeHead(request.url.includes("/readers/") ? 422 : 200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(request.url.includes("/readers/")
+        ? { ok: false, message: "Reader has no checkpoint assignment for this event" }
+        : { ok: true }));
+    });
+  });
+  const webSockets = new WebSocketServer({ server });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const link = new CloudLink();
+  link.start(`http://127.0.0.1:${server.address().port}`, "test-reader-token");
+  try {
+    const result = await link.postCrossing({
+      rfidNumber: "12345",
+      crossingTime: new Date("2025-01-02T03:04:05.000Z"),
+      clubId: 1000,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].url, "/api/timing/readers/test-reader-token/crossing");
+    assert.equal(requests[0].authorization, null);
+    assert.equal(requests[1].url, "/api/timing/active/crossing?clubId=1000");
+    assert.equal(requests[1].authorization, "Bearer test-reader-token");
+  } finally {
+    link.stop();
+    webSockets.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test("includes armed event context in the token crossing payload", async () => {
   const payload = await captureCrossingPayload(42);
   assert.equal(payload.eventId, 42);

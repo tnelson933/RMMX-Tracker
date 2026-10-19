@@ -561,9 +561,10 @@ Use the search box to filter by rider name or tag number.
 
 **Reader Setup** (sidebar):
 - Choose timing technology: **RFID Sticker Tags** or **Active Transponder Timing**
-- **Auto-configure** — enter your reader's IP address; the platform's Python bridge programs the reader's target URL and authentication headers automatically
+- **Your Timing URL** — every registered RFID reader has its own timing URL (`https://<your-domain>/api/timing/readers/<token>/active/crossing`). Program it into that reader once; it routes crossings to whichever moto or practice is running. The token in the URL identifies the reader and its club, so the URL should be treated like a password.
+- **Auto-configure** — enter your reader's IP address; the platform's Python bridge programs the reader to send tag reads to the bridge on the track laptop. The bridge forwards them to the cloud using the reader's token (the downloaded start script includes it).
 - **Manual configuration** — step-by-step instructions for programming via the reader's built-in web interface
-- **Test Ping** — sends a fake tag read to the cloud to confirm end-to-end connectivity
+- **Test Ping** — sends a fake tag read to the selected reader's URL to confirm end-to-end connectivity (nothing is recorded)
 - **Desktop app** — adds a native serial-port picker for direct USB/serial connections to active transponder decoders
 
 ### Registered Readers (reader-aware timing)
@@ -571,14 +572,18 @@ Use the search box to filter by rider name or tag number.
 For enduro events you can give each physical reader its own **unique ingest URL** so crossings are routed to the correct gate automatically:
 
 1. In **Reader Setup → Registered Readers**, click **Add Reader** → enter a name (e.g. "Start Gate Test 1") and select RFID or Active Transponder Timing → click **Add**
-2. The platform generates a unique URL: `https://<your-domain>/api/timing/readers/<token>/crossing`
-3. Copy that URL and program it into the physical reader hardware — you only do this once per reader
+2. The platform shows two URLs for the reader: the **Timing URL** (`.../readers/<token>/active/crossing`, routes to the running moto or practice) and the **Checkpoint URL** (`https://<your-domain>/api/timing/readers/<token>/crossing`, for enduro start/finish/time-check assignments)
+3. Copy the Checkpoint URL and program it into the physical reader hardware — you only do this once per reader
 4. In the **Event Schedule tab** (enduro events only) a **Checkpoint Readers** card appears at the bottom — use the dropdowns to assign a reader to the **Start** and **Finish** of each test moto, and to each **Time Check** → click **Save**
 5. When a tag crosses, the reader calls its unique URL; the platform resolves the assignment and routes the crossing to the correct moto and role — no manual gate-selection needed on race day
 
 **Role enforcement**: a Start reader only processes crossings when the rider hasn't yet started (even crossing count); a Finish reader only processes when the rider has an open start (odd count). This prevents mis-routing if a reader sees a tag at the wrong moment.
 
 **Renaming a reader**: click the pencil icon next to any registered reader to edit its name inline, then click **Save**. The unique ingest URL does not change.
+
+**New URL (token rotation)**: click the key icon next to a reader to issue a new token. The old URLs and token stop working immediately, including for a running RM Connect, so the reader must be reprogrammed with the new URL and re-selected in RM Connect. Use this if a reader URL was shared or leaked.
+
+**Timing ingest authentication**: each club has a setting that controls crossings sent without a reader token or organizer sign-in (for example the older `/api/timing/active/crossing?clubId=` URL): off (accepted, the default), warn (accepted and logged) or enforce (rejected). Readers using their own timing URL, RM Connect, and the bridge with a reader token keep working in every mode. There is no screen for this setting yet; the platform team changes it.
 
 **Identify Reader**: when several readers are deployed and you can't tell which physical box maps to which name in the list, click **Identify Reader**, then hold a tag up to one of the readers. The reader that picks up the scan is highlighted in the list with a "This one" badge. Listening stops automatically after the scan (or times out after 60 seconds).
 

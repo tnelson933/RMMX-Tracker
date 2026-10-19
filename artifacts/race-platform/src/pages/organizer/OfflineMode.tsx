@@ -10,7 +10,7 @@ import {
   CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
   Wifi, Loader2, Database, Timer, Settings2,
 } from "lucide-react";
-import { useGetOfflinePackageInfo, useRebuildOfflinePackage } from "@workspace/api-client-react";
+import { useGetOfflinePackageInfo, useRebuildOfflinePackage, useListReaders } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const LAST_DOWNLOAD_KEY = "offline_package_last_downloaded_etag";
@@ -277,6 +277,7 @@ export default function OfflineMode() {
 
   const { user } = useAuth();
   const cloudDomain = getPublicOrigin();
+  const { data: bridgeReaders = [] } = useListReaders();
   const clubId = user?.clubId ?? "<your-club-id>";
 
   const handleExportRaceData = useCallback(async () => {
@@ -329,9 +330,12 @@ export default function OfflineMode() {
   };
 
   const BRIDGE_URL = "http://localhost:5555";
-  const cloudEndpoint = `${cloudDomain}/api/timing/active/crossing?clubId=${clubId}`;
   const bridgeCmdLocal = `python rfid_bridge.py --api-url http://localhost:8080`;
-  const bridgeCmdCloud = `python rfid_bridge.py --api-url ${cloudDomain}`;
+  // The cloud bridge authenticates with the club's first RFID reader token, so it
+  // keeps working once the club enforces timing ingest authentication.
+  const bridgeReader = (bridgeReaders as any[]).find(r => r.type === "rfid") ?? null;
+  const bridgeCmdCloud = `python rfid_bridge.py --api-url ${cloudDomain}` +
+    (bridgeReader ? ` --reader-token ${bridgeReader.token}` : "");
 
   const installCmdMac = `unzip rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
   const installCmdWindows = `tar -xf rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
