@@ -3,7 +3,8 @@ import { db } from "@workspace/db";
 import { readersTable, usersTable, eventReaderAssignmentsTable, ridersTable, registrationsTable, eventsTable, type ActiveTimingConfig } from "@workspace/db/schema";
 import { eq, asc, and, inArray, ilike, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { getConnectorStatus, sendConnectorCommand, sendReaderConnectorCommand } from "../lib/connectorRelay";
+import { disconnectReaderConnectors, getConnectorStatus, sendConnectorCommand, sendReaderConnectorCommand } from "../lib/connectorRelay";
+import { forgetReaderToken } from "../lib/ingestAuth";
 import { getRecentTags, clearRecentTags } from "../lib/recentTags";
 
 const router = Router();
@@ -223,6 +224,34 @@ router.post("/readers/:readerId/active-timing-config", async (req, res) => {
   return res.json({ reader: publicReader(saved), sent, queued: sent === 0 });
 });
 
+// POST /readers/:readerId/rotate-token — issue a new token and revoke the old one.
+// Hardware and RM Connect using the old URL or token stop working at once and
+// must be given the new one.
+router.post("/readers/:readerId/rotate-token", async (req, res) => {
+  const clubId = await getCallerClubId(req);
+  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+
+  const readerId = Number(req.params.readerId);
+  if (!readerId) return res.status(400).json({ error: "Invalid readerId" });
+
+  const [existing] = await db
+    .select({ clubId: readersTable.clubId, token: readersTable.token })
+    .from(readersTable)
+    .where(eq(readersTable.id, readerId));
+  if (!existing) return res.status(404).json({ error: "Reader not found" });
+  if (existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+
+  const [reader] = await db
+    .update(readersTable)
+    .set({ token: randomUUID() })
+    .where(eq(readersTable.id, readerId))
+    .returning();
+
+  forgetReaderToken(existing.token);
+  disconnectReaderConnectors(readerId);
+  return res.json(publicReader(reader));
+});
+
 // DELETE /readers/:readerId — remove a reader
 router.delete("/readers/:readerId", async (req, res) => {
   const clubId = await getCallerClubId(req);
@@ -232,13 +261,18 @@ router.delete("/readers/:readerId", async (req, res) => {
   if (!readerId) return res.status(400).json({ error: "Invalid readerId" });
 
   // Verify ownership before delete
-  const [reader] = await db.select({ clubId: readersTable.clubId }).from(readersTable).where(eq(readersTable.id, readerId));
+  const [reader] = await db
+    .select({ clubId: readersTable.clubId, token: readersTable.token })
+    .from(readersTable)
+    .where(eq(readersTable.id, readerId));
   if (!reader) return res.status(404).json({ error: "Reader not found" });
   if (reader.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
 
   // Delete dependent assignments first (no DB-level CASCADE on this FK)
   await db.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.readerId, readerId));
   await db.delete(readersTable).where(eq(readersTable.id, readerId));
+  forgetReaderToken(reader.token);
+  disconnectReaderConnectors(readerId);
   return res.status(204).send();
 });
 

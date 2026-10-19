@@ -11,7 +11,20 @@ Progress:
   logs one `timing ingest observed` line with route, credential kind
   (`reader_path_token` / `bearer` / `session` / `none`), club/event/moto hints,
   status and user agent. No credential values are logged.
-- Next: Phase 1, which needs a decision on the per-club enforcement column.
+- Done (branch `claude/timing-ingest-auth-phase1`): Phase 1. Owner approved
+  the `clubs.timing_ingest_auth` column (local DB only) on 2026-10-15.
+  - `lib/ingestAuth.ts` resolves reader token (path or Bearer), session user,
+    or none; wrong-club credentials get 403; no credential follows the club
+    mode (off/warn/enforce, default off). `TIMING_INGEST_AUTH_OVERRIDE=off` is
+    the global kill switch.
+  - Gated: `/timing/crossing`, `/active/crossing`, `/ping`, `/impinj-crossing`,
+    `/zebra-crossing`, `/mylaps-crossing`, `/practice/active/crossing`.
+  - New: `/timing/readers/:token/active/crossing`, `/timing/readers/:token/ping`,
+    `POST /readers/:id/rotate-token` (also revokes on delete and closes live
+    connector sockets).
+  - Not yet: settings UI/API for the mode (set it in SQL for now), OpenAPI
+    entries for the new routes, trusted-source restriction (Phase 3).
+- Next: Phase 2 (RM Connect, bridge, ReaderSetup).
 
 ## 1. The problem
 
@@ -196,11 +209,19 @@ the owner deploys it.
     regression.
 - **Timestamp normalization.**
   - `ingestCrossingTime` and `ingestDirectActiveCrossingTime` call `new Date()`
-    inside the handler, so auth work would shift the "received" instant.
-  - Capture `serverReceivedAt` at the start of the request (first middleware) and
-    pass it in, so normalization sees the same receipt time as today.
-  - `canonicalizeCrossingTimestamp` and `parseTrustworthyReceivedAt` themselves
-    are unchanged.
+    inside the handler, so auth work could shift the "received" instant.
+  - As built in Phase 1: on `/timing/crossing`, the practice route and the token
+    route, the check runs **after** the receipt time is captured. On the
+    facility, ping and event-scoped routes it runs first, but those handlers
+    already query the DB before computing the time, and the auth lookups are
+    cached (reader 30s, event/moto→club 60s, club mode 10s), so steady-state
+    cost is a map lookup.
+  - Changed from the original proposal: no request-start receipt time is passed
+    into the helpers. They are called per tag inside batch loops, so a shared
+    request-start time would give every untimed tag in a batch the same
+    timestamp, which could create position ties that don't happen today.
+  - `canonicalizeCrossingTimestamp` and `parseTrustworthyReceivedAt` are
+    unchanged.
 - **SSE baseline handoff.** This is unaffected as long as the point above holds.
   `GET /timing/live/:motoId` takes the same lock, and every accepted crossing is
   still either in the baseline or delivered live.

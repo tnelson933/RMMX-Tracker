@@ -16,6 +16,12 @@ export const clubsTable = pgTable("clubs", {
   autoDnfEnabled: boolean("auto_dnf_enabled").notNull().default(false),
   autoDnfThreshold: integer("auto_dnf_threshold").notNull().default(75),
   active: boolean("active").notNull().default(true),
+  /**
+   * How the cloud treats timing ingest requests that carry no reader token or
+   * organizer session: "off" accepts them, "warn" accepts and logs a warning,
+   * "enforce" rejects them with 401. See docs/timing-ingest-auth-plan.md.
+   */
+  timingIngestAuth: text("timing_ingest_auth", { enum: ["off", "warn", "enforce"] }).notNull().default("off"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

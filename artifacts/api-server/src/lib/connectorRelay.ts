@@ -116,6 +116,23 @@ export function sendReaderConnectorCommand(
   return sent;
 }
 
+/**
+ * Close every live connector socket opened with this reader's token. Used after
+ * the token is rotated or the reader deleted, so the old token stops working
+ * immediately instead of when the socket next reconnects.
+ */
+export function disconnectReaderConnectors(readerId: number): number {
+  let closed = 0;
+  for (const set of connectors.values()) {
+    for (const conn of set) {
+      if (conn.status.readerId !== readerId) continue;
+      conn.ws.close(4001, "Reader token revoked");
+      closed++;
+    }
+  }
+  return closed;
+}
+
 /** Live connector connections for a club (for the organizer UI). */
 export function getConnectorStatus(clubId: number): ConnectorStatus[] {
   const set = connectors.get(clubId);

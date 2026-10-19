@@ -15,6 +15,8 @@ import { logger } from "../lib/logger";
 
 const INGEST_ROUTES: Array<[RegExp, string]> = [
   [/^\/timing\/readers\/[^/]+\/crossing\/?$/, "reader_token_crossing"],
+  [/^\/timing\/readers\/[^/]+\/active\/crossing\/?$/, "reader_token_active_crossing"],
+  [/^\/timing\/readers\/[^/]+\/ping\/?$/, "reader_token_ping"],
   [/^\/timing\/crossing\/?$/, "crossing"],
   [/^\/timing\/active\/crossing\/?$/, "active_crossing"],
   [/^\/timing\/ping\/?$/, "ping"],
@@ -39,7 +41,7 @@ export function classifyIngestCredential(opts: {
   hasAuthorizationHeader: boolean;
   hasSessionUser: boolean;
 }): IngestCredential {
-  if (opts.route === "reader_token_crossing") return "reader_path_token";
+  if (opts.route.startsWith("reader_token_")) return "reader_path_token";
   if (opts.hasAuthorizationHeader) return "bearer";
   if (opts.hasSessionUser) return "session";
   return "none";
@@ -70,6 +72,8 @@ export function ingestObservationMiddleware(req: Request, res: Response, next: N
           eventIdHint: idHint(req.query.eventId ?? body.eventId),
           motoIdHint: idHint(body.motoId),
           staffClubId: typeof res.locals.staffClubId === "number" ? res.locals.staffClubId : null,
+          // Principal resolved by lib/ingestAuth (null on token routes and early 400s).
+          principal: typeof res.locals.ingestPrincipal === "string" ? res.locals.ingestPrincipal : null,
           status: res.statusCode,
           userAgent: req.headers["user-agent"]?.slice(0, 120) ?? null,
         },
