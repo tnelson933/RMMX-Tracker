@@ -66,7 +66,8 @@ router.get("/clubs", async (req, res) => {
   );
 });
 
-router.post("/clubs", async (req, res) => {
+// Creating clubs (and their organizer invites) is a platform-admin action.
+router.post("/clubs", requireAdmin, async (req, res) => {
   const session = req.session as any;
   if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
 

@@ -1,7 +1,4 @@
-import type { Request, Response, NextFunction } from "express";
-import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import type { Response, NextFunction } from "express";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 
@@ -106,52 +103,35 @@ const STAFF_RULES: RouteRule[] = [
   { pattern: /^\/users(\/|$)/, permissions: null },
 ];
 
-export async function staffPermissionMiddleware(req: Request, res: Response, next: NextFunction) {
-  const sessionUserId = (req.session as any)?.userId;
-  if (!sessionUserId) return next(); // unauthenticated — route handlers return 401
-
-  const path = req.path;
-  const method = req.method.toUpperCase() as HttpMethod;
-
-  // Fetch the user's role, permissions, and clubId (fresh from DB for correctness)
-  const [user] = await db
-    .select({ role: usersTable.role, permissions: usersTable.permissions, clubId: usersTable.clubId })
-    .from(usersTable)
-    .where(eq(usersTable.id, sessionUserId));
-
-  if (!user) return next(); // stale session — let auth handlers deal with it
-
-  // Organizers and admins are never restricted here
-  if (user.role !== "staff") return next();
-
+/**
+ * Staff branch of accessControlMiddleware: enforce per-permission rules and
+ * scope the request to the staff member's club.
+ */
+export function applyStaffRules(
+  user: { permissions: string[] | null; clubId: number | null },
+  path: string,
+  method: string,
+  res: Response,
+  next: NextFunction,
+) {
   const staffPerms: string[] = user.permissions ?? [];
 
   // Safety: a staff account without a clubId would bypass all club-scoping checks.
-  // Deny immediately rather than risk unscoped data access.
   if (user.clubId == null) {
     return res.status(403).json({ error: "Forbidden: staff account has no club assignment" });
   }
 
-  // Expose staff clubId via res.locals so route handlers can enforce club ownership.
-  // Route handlers must read res.locals.staffClubId and apply it as a scope guard.
+  // Route handlers read res.locals.staffClubId as the club this caller is limited to.
   res.locals.staffClubId = user.clubId;
 
-  // Find the first rule whose pattern matches AND whose method list (if any) includes this request method
+  // First rule whose pattern matches AND whose method list (if any) includes this method wins.
   for (const rule of STAFF_RULES) {
     if (!rule.pattern.test(path)) continue;
-    if (rule.methods && !rule.methods.includes(method)) continue;
+    if (rule.methods && !rule.methods.includes(method as HttpMethod)) continue;
 
-    // Rule matched
-    if (rule.permissions === null) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-    if (rule.permissions.length === 0) {
-      return next(); // unconditionally allowed
-    }
-    const hasAny = rule.permissions.some((p) => staffPerms.includes(p));
-    if (!hasAny) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
+    if (rule.permissions === null) return res.status(403).json({ error: "Forbidden" });
+    if (rule.permissions.length === 0) return next();
+    if (!rule.permissions.some((p) => staffPerms.includes(p))) return res.status(403).json({ error: "Forbidden" });
     return next();
   }
 

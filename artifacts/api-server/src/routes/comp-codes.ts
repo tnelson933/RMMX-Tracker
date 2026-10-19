@@ -6,6 +6,22 @@ import crypto from "crypto";
 
 const router = Router();
 
+/** The club the caller is limited to (set by accessControl for organizers and staff; null = super_admin). */
+function scopedClubId(res: any): number | null {
+  const v = res.locals?.staffClubId;
+  return typeof v === "number" ? v : null;
+}
+
+/** 403s and returns false when the caller may not manage codes for this club. */
+function canManageClub(res: any, clubId: number | null | undefined): boolean {
+  const scope = scopedClubId(res);
+  if (scope !== null && clubId !== scope) {
+    res.status(403).json({ error: "Forbidden" });
+    return false;
+  }
+  return true;
+}
+
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const bytes = crypto.randomBytes(8);
@@ -39,6 +55,7 @@ router.post("/events/:eventId/comp-codes", async (req, res) => {
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
   if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!canManageClub(res, event.clubId)) return;
 
   // Custom code — create exactly one with the specified string
   if (customCode) {
@@ -95,6 +112,9 @@ router.get("/events/:eventId/comp-codes", async (req, res) => {
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const eventId = Number(req.params.eventId);
+  const [ownerEvent] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!ownerEvent) return res.status(404).json({ error: "Event not found" });
+  if (!canManageClub(res, ownerEvent.clubId)) return;
   const codes = await db
     .select({
       id: compCodesTable.id,
@@ -200,6 +220,7 @@ router.get("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) => {
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const clubId = Number(req.params.clubId);
+  if (!canManageClub(res, clubId)) return;
   const riderId = Number(req.params.riderId);
 
   const [rider] = await db.select({ firstName: ridersTable.firstName, lastName: ridersTable.lastName })
@@ -234,6 +255,7 @@ router.post("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) => 
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const clubId = Number(req.params.clubId);
+  if (!canManageClub(res, clubId)) return;
   const riderId = Number(req.params.riderId);
   const { amount } = req.body;
 
@@ -298,6 +320,7 @@ router.delete("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) =
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const clubId = Number(req.params.clubId);
+  if (!canManageClub(res, clubId)) return;
   const riderId = Number(req.params.riderId);
 
   const [existing] = await db.select({ id: compCodesTable.id }).from(compCodesTable).where(
