@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { createContext, Script } from "vm";
 import { db } from "@workspace/db";
 import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable, clubsTable, seriesTable, seriesPointsTable } from "@workspace/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { formulaPoints } from "../lib/safeFormula";
 
 const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -30,22 +30,6 @@ function parseResultTimeToMs(t: string | null | undefined): number {
     return (mins * 60 + secs) * 1000 + frac;
   } catch {
     return Infinity;
-  }
-}
-
-/**
- * Safely evaluate a user-defined formula string.
- * Sandbox only exposes: position (1-based), riders (total starters), Math.
- * Returns 0 on any error or non-finite result.
- */
-function evalFormula(formula: string, position: number, riders: number): number {
-  try {
-    const sandbox = createContext({ position, riders, Math });
-    const result = new Script(formula).runInContext(sandbox, { timeout: 50 });
-    if (typeof result !== "number" || !isFinite(result)) return 0;
-    return Math.max(0, Math.round(result));
-  } catch {
-    return 0;
   }
 }
 
@@ -95,7 +79,7 @@ function calcPoints(opts: {
   switch (opts.scoringMethod) {
     case "formula":
       if (!opts.scoringFormula) return 0;
-      return evalFormula(opts.scoringFormula, opts.position, opts.totalStarters);
+      return formulaPoints(opts.scoringFormula, opts.position, opts.totalStarters);
     case "per_rider":
       return Math.max(0, opts.totalStarters - opts.position + 1);
     case "highest_points":

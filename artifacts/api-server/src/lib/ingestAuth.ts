@@ -5,7 +5,7 @@
  *   - reader: a registered reader's token, from the URL path or
  *             `Authorization: Bearer <readerToken>`
  *   - user:   an organizer/admin/staff session (staff permissions are already
- *             enforced by staffPermissionMiddleware)
+ *             enforced by accessControlMiddleware)
  *   - none:   legacy unauthenticated hardware and bridges
  *
  * A reader or user principal from a different club than the request targets is
@@ -157,7 +157,7 @@ export async function resolveIngestPrincipal(
 
   const userId = (req.session as any)?.userId;
   if (typeof userId === "number") {
-    // staffPermissionMiddleware already loaded staff and checked permissions.
+    // accessControlMiddleware already loaded staff and checked permissions.
     const staffClubId = res.locals?.staffClubId;
     if (typeof staffClubId === "number") {
       return { kind: "user", userId, clubId: staffClubId, platformWide: false };

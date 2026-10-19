@@ -2,8 +2,21 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { pointsTablesTable, usersTable, seriesTable, eventsTable } from "@workspace/db";
 import { eq, isNull, or } from "drizzle-orm";
+import { evaluateFormula } from "../lib/safeFormula";
 
 const router = Router();
+
+/** Reject formulas the points engine can't evaluate, so a bad one doesn't silently score 0. */
+function formulaError(formula: unknown): string | null {
+  if (formula == null || formula === "") return null;
+  if (typeof formula !== "string") return "scoringFormula must be a string";
+  try {
+    evaluateFormula(formula, { position: 1, riders: 10 });
+    return null;
+  } catch (err) {
+    return `Invalid scoring formula: ${(err as Error).message}. Use position, riders, numbers, + - * / % **, comparisons, ?:, and Math functions.`;
+  }
+}
 
 router.get("/points-tables", async (req, res) => {
   const userId = (req.session as any).userId;
@@ -41,6 +54,8 @@ router.post("/points-tables", async (req, res) => {
   if (!name || !scoringMethod || !Array.isArray(pointsScale)) {
     return res.status(400).json({ error: "name, scoringMethod, and pointsScale are required" });
   }
+  const postFormulaError = formulaError(scoringFormula);
+  if (postFormulaError) return res.status(400).json({ error: postFormulaError });
 
   const [table] = await db.insert(pointsTablesTable).values({
     clubId: userClubId,
@@ -79,6 +94,8 @@ router.patch("/points-tables/:tableId", async (req, res) => {
   if (userClubId !== null && existing.clubId !== userClubId) return res.status(403).json({ error: "Forbidden" });
 
   const { name, description, scoringMethod, mainEventOnly, pointsScale, scoringFormula, autoDnfEnabled, autoDnfThreshold } = req.body;
+  const patchFormulaError = formulaError(scoringFormula);
+  if (patchFormulaError) return res.status(400).json({ error: patchFormulaError });
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
