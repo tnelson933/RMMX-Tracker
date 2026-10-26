@@ -2,7 +2,7 @@
   "expo": {
     "name": "RM Tracker",
     "slug": "rider-app",
-    "version": "1.0.18",
+    "version": "1.0.19",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rider-app",
@@ -30,7 +30,7 @@
     },
     "android": {
       "package": "com.rockymountain.riderapp",
-      "versionCode": 18,
+      "versionCode": 19,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
@@ -40,7 +40,7 @@
       [
         "expo-router",
         {
-          "origin": "https://replit.com/"
+          "origin": "https://rm-tracker-production-9c47.up.railway.app/"
         }
       ],
       "expo-font",
