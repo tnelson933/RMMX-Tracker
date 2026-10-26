@@ -1,0 +1,33 @@
+# RM Tracker on Railway: one service runs the API and serves the built website
+# from the same origin (WEB_DIST_DIR), so /api, WebSockets and SSE need no proxy.
+# Selected by railway.json. The Docker Compose setup (deploy/Dockerfile) is unchanged.
+FROM node:24-bookworm-slim
+
+# ffmpeg: announcer text-to-speech audio conversion. python3/make/g++: native
+# deps compiled from source during install.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg python3 make g++ ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable && corepack prepare pnpm@10.26.1 --activate
+
+WORKDIR /app
+COPY . .
+
+# Only the cloud API, web app and DB tooling (skips Electron/Expo installs).
+RUN pnpm install --frozen-lockfile \
+    --filter @workspace/api-server... \
+    --filter @workspace/race-platform... \
+    --filter @workspace/db...
+
+RUN cd artifacts/api-server && node build.mjs
+# Same-origin build: no VITE_CLOUD_URL, so the site talks to /api on its own host.
+RUN cd artifacts/race-platform && BASE_PATH=/ NODE_ENV=production pnpm exec vite build --config vite.config.ts
+
+WORKDIR /app/artifacts/api-server
+ENV NODE_ENV=production \
+    PORT=8080 \
+    UPLOADS_DIR=/data/uploads \
+    WEB_DIST_DIR=/app/artifacts/race-platform/dist/public
+EXPOSE 8080
+CMD ["node", "--enable-source-maps", "dist/index.mjs"]

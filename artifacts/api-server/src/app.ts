@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import { randomBytes } from "node:crypto";
+import path from "node:path";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
@@ -44,9 +45,13 @@ app.use(cors({
 
 // Artifact workflow readiness probes the service root. Keep it lightweight so
 // the API remains routable to the website after restarts and publishes.
-app.get("/", (_req, res) => {
-  res.status(200).json({ status: "ok", service: "race-platform-api" });
-});
+// When the API also serves the website (WEB_DIST_DIR), "/" is the home page and
+// health checks use /api/healthz instead.
+if (!process.env.WEB_DIST_DIR) {
+  app.get("/", (_req, res) => {
+    res.status(200).json({ status: "ok", service: "race-platform-api" });
+  });
+}
 
 // Stripe webhook — must be registered BEFORE express.json() to receive raw Buffer
 app.post(
@@ -105,5 +110,28 @@ app.use(
 
 // Ingest observation runs first so it records every caller, including denied ones.
 app.use("/api", ingestObservationMiddleware, accessControlMiddleware, router);
+
+// Single-service hosting (Railway): when WEB_DIST_DIR points at the built website,
+// the API also serves it, so the site and /api share one origin (what Caddy does in
+// deploy/docker-compose.yml). Unset everywhere else, so nothing changes there.
+const webDist = process.env.WEB_DIST_DIR;
+if (webDist) {
+  const indexHtml = path.join(webDist, "index.html");
+  // HTML, service worker and manifest must revalidate so installed PWAs pick up new builds.
+  const revalidate = new Set(["/index.html", "/sw.js", "/sw-auto-reload.js", "/manifest.webmanifest"]);
+  app.use(express.static(webDist, {
+    index: false,
+    setHeaders(res, filePath) {
+      const rel = "/" + path.relative(webDist, filePath).split(path.sep).join("/");
+      if (revalidate.has(rel)) res.setHeader("Cache-Control", "no-cache");
+      else if (rel.startsWith("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    },
+  }));
+  // SPA fallback for client-side routes; unknown /api paths still 404 as JSON above.
+  app.get(/^(?!\/api(\/|$)).*/, (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(indexHtml);
+  });
+}
 
 export default app;
