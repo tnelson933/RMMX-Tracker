@@ -26,11 +26,12 @@
         ],
         "ITSAppUsesNonExemptEncryption": false,
         "NSFaceIDUsageDescription": "Use Face ID to sign in to RM Tracker quickly and securely."
-      }
+      },
+      "buildNumber": "2"
     },
     "android": {
       "package": "com.rockymountain.riderapp",
-      "versionCode": 19,
+      "versionCode": 20,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
