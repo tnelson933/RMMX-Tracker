@@ -7,8 +7,13 @@ Project `rm-tracker` (workspace "tnelson933's Projects"), environment `productio
 | `Postgres` | Railway PostgreSQL (template) | 50 GB volume. Private network only (no public TCP proxy). |
 | `rm-tracker` | API + website, one service | GitHub `tnelson933/RMMX-Tracker`, auto-deploys on push. Volume at `/data/uploads`. |
 
-Public URL: `https://rm-tracker-production-9c47.up.railway.app` (add a custom domain in the
-service's Settings → Networking, then update `APP_URL`).
+Public URL: **`https://www.rmroost.com`** (`APP_URL`). DNS is at Network Solutions: `www` is a CNAME
+to Railway, and the bare `rmroost.com` forwards to `www`, because Network Solutions can't CNAME the
+bare domain. The bare domain is also added on Railway, pending, in case DNS moves to Cloudflare.
+The Railway address `https://rm-tracker-production-9c47.up.railway.app` still works.
+
+App builds point at `www.rmroost.com`: the rider app via `EXPO_PUBLIC_DOMAIN` in `eas.json`, and
+desktop/RM Connect via the GitHub repo variable `CLOUD_URL`.
 
 ## How it runs
 

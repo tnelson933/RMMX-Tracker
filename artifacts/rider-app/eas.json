@@ -8,7 +8,7 @@
       "pnpm": "10.26.1",
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "rm-tracker-production-9c47.up.railway.app"
+        "EXPO_PUBLIC_DOMAIN": "www.rmroost.com"
       },
       "android": {
         "buildType": "apk",
@@ -23,7 +23,7 @@
       "node": "20.19.4",
       "pnpm": "10.26.1",
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "rm-tracker-production-9c47.up.railway.app"
+        "EXPO_PUBLIC_DOMAIN": "www.rmroost.com"
       },
       "android": {
         "autoIncrement": true,

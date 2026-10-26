@@ -41,7 +41,7 @@
       [
         "expo-router",
         {
-          "origin": "https://rm-tracker-production-9c47.up.railway.app/"
+          "origin": "https://www.rmroost.com/"
         }
       ],
       "expo-font",
