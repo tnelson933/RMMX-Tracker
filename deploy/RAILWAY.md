@@ -59,6 +59,35 @@ BOOTSTRAP_ALLOW_HOST=postgres.railway.internal node /app/scripts/dev-bootstrap-a
 
 It prints a one-time `/setup-account` link built from `APP_URL`.
 
+## Restoring the Replit production database
+
+Rehearsed locally on 2026-10-26 with Replit's `pg_dump -Fc --no-owner --no-acl
+--exclude-table-data=session` export (PostgreSQL 16, 40 tables, 5,285 rows). All row counts
+matched, and the site and API worked on the restored data.
+
+1. In Railway, turn on **Public Networking** (TCP proxy) for the `Postgres` service. The database
+   is private-only otherwise.
+2. Replace the placeholder data, restore and upgrade the schema (from a machine with PostgreSQL 17+
+   client tools):
+   ```bash
+   psql "$RAILWAY_PUBLIC_DB_URL" -c 'DROP SCHEMA public CASCADE; DROP SCHEMA IF EXISTS _system CASCADE; CREATE SCHEMA public;'
+   pg_restore --no-owner --no-acl --exit-on-error -d "$RAILWAY_PUBLIC_DB_URL" production.dump
+   psql "$RAILWAY_PUBLIC_DB_URL" -v ON_ERROR_STOP=1 -f deploy/migrations/2026-10-26-replit-prod-to-current.sql
+   ```
+   Use the reviewed SQL, **not** `drizzle-kit push`. Push would drop the `session` table and an
+   existing foreign key.
+3. Check the row counts against the export's `row-counts.csv`, then redeploy `rm-tracker`.
+4. Turn Public Networking **off** again.
+
+People sign in with their existing Replit accounts. The bootstrap admin created on the empty
+database is replaced.
+
+Uploaded images don't come across. The 12 files that production references (11 past event
+images and 1 club logo) already fail to load on the live Replit site, so organizers re-upload them.
+
+A rehearsal restore must not run while Replit is still live: the copy holds real rider emails and
+push tokens. Do the real restore at cutover, from a fresh export taken with registrations paused.
+
 ## Backups
 
 Enable backups on the `Postgres` service (Railway dashboard → Postgres → Backups). Uploaded
