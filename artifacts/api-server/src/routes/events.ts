@@ -393,7 +393,7 @@ router.patch("/events/:eventId", async (req, res) => {
       try {
         const geoRes = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
-          { headers: { "User-Agent": "RMTracker/1.0 (race-platform)" } }
+          { headers: { "User-Agent": "RMRoost/1.0 (race-platform)" } }
         );
         const geoJson = await geoRes.json() as Array<{ lat: string; lon: string }>;
         if (geoJson[0]) {

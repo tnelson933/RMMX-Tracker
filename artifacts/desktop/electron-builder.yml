@@ -1,6 +1,6 @@
 appId: com.rockymtn.rm-tracker
-productName: RM Tracker
-copyright: Copyright © 2026 RM Tracker
+productName: RM Roost
+copyright: Copyright © 2026 RM Roost
 
 directories:
   output: release
@@ -52,7 +52,7 @@ win:
     - target: nsis
       arch:
         - x64
-  publisherName: RM Tracker
+  publisherName: RM Roost
 
 linux:
   target:

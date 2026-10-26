@@ -20,7 +20,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#desktop-v}"
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" --title "RM Tracker $version" --generate-notes
+            gh release create "$GITHUB_REF_NAME" --title "RM Roost $version" --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -1245,7 +1245,7 @@ export default function WatchLive() {
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-white/10 text-center text-white/20 text-xs">
-        RM Tracker · Live Stream
+        RM Roost · Live Stream
       </div>
     </div>
   );

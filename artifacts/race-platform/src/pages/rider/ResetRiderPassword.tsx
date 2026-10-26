@@ -51,7 +51,7 @@ export default function ResetRiderPassword() {
       <div className="max-w-md mx-auto px-4 py-20 text-center">
         <CheckCircle className="w-12 h-12 text-[#1A8409] mx-auto mb-4" />
         <h1 className="text-[28px] font-heading font-extrabold uppercase text-[#242424] mb-2">Password Updated</h1>
-        <p className="text-[#333] leading-[1.7]">Your password has been reset. Open the RM Tracker app and sign in with your new password.</p>
+        <p className="text-[#333] leading-[1.7]">Your password has been reset. Open the RM Roost app and sign in with your new password.</p>
       </div>
     );
   }
@@ -62,7 +62,7 @@ export default function ResetRiderPassword() {
         containerClassName="max-w-5xl"
         eyebrow="Rider account"
         title="Reset Password"
-        subtitle="Choose a new password for your RM Tracker rider account."
+        subtitle="Choose a new password for your RM Roost rider account."
       />
       <div className="brand-form max-w-md mx-auto px-4 py-10">
       <form onSubmit={handleSubmit} className="space-y-4">

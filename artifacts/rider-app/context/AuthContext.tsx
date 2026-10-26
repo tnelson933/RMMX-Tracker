@@ -275,7 +275,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!hasHardware || !isEnrolled) throw new Error("Biometric authentication is not available on this device");
 
     const result = await LocalAuth.authenticateAsync({
-      promptMessage: "Sign in to RM Tracker",
+      promptMessage: "Sign in to RM Roost",
       fallbackLabel: "Use password",
       cancelLabel: "Cancel",
     });

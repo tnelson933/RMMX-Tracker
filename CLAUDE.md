@@ -1,4 +1,4 @@
-# RM Tracker — instructions for continuing development
+# RM Roost — instructions for continuing development
 
 Read `docs/claude-handoff/START_HERE.md`, then
 `docs/claude-handoff/APP_CONTEXT.md` before making changes.

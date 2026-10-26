@@ -1,4 +1,4 @@
-# RM Tracker on Railway: one service runs the API and serves the built website
+# RM Roost on Railway: one service runs the API and serves the built website
 # from the same origin (WEB_DIST_DIR), so /api, WebSockets and SSE need no proxy.
 # Selected by railway.json. The Docker Compose setup (deploy/Dockerfile) is unchanged.
 FROM node:24-bookworm-slim

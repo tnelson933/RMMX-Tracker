@@ -1,4 +1,4 @@
-# RM Tracker self-hosted stack: Postgres + API + Caddy (web + /api proxy).
+# RM Roost self-hosted stack: Postgres + API + Caddy (web + /api proxy).
 # Usage (from repo root):
 #   cp deploy/.env.example deploy/.env   # fill in values
 #   docker compose -f deploy/docker-compose.yml up -d --build

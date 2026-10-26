@@ -23,7 +23,7 @@ function Lockup({ onClick }: { onClick?: () => void }) {
     <Link href="/" className="flex items-center gap-3 shrink-0" onClick={onClick}>
       <img src={rmLogo} alt="" className="h-10 w-10" />
       <span className="flex flex-col leading-none">
-        <span className="font-heading font-extrabold text-white text-2xl uppercase tracking-wide">RM Tracker</span>
+        <span className="font-heading font-extrabold text-white text-2xl uppercase tracking-wide">RM Roost</span>
         <span className="text-[13px] text-[#8C8C8C] mt-1">Race timing &amp; results</span>
       </span>
     </Link>
@@ -197,7 +197,7 @@ function PublicFooter() {
 
       <div className="bg-white border-t-2 border-[#ECECEC]">
         <div className="container mx-auto px-4 py-5 text-center text-sm text-[#333]">
-          &copy; {new Date().getFullYear()}&nbsp;&nbsp;|&nbsp;&nbsp;RM Tracker by Rocky Mountain ATV/MC. All rights reserved.
+          &copy; {new Date().getFullYear()}&nbsp;&nbsp;|&nbsp;&nbsp;RM Roost by Rocky Mountain ATV/MC. All rights reserved.
         </div>
       </div>
     </footer>

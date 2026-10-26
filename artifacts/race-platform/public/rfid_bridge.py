@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RMMX Tracker — Local RFID Bridge
+RM Roost — Local RFID Bridge
 =================================
 Run this script on your scoring laptop at the track.
 

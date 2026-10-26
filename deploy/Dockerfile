@@ -1,4 +1,4 @@
-# RM Tracker cloud API + web build for self-hosting (replaces Replit deployment).
+# RM Roost cloud API + web build for self-hosting (replaces Replit deployment).
 # Build from the repo root:  docker compose -f deploy/docker-compose.yml build
 FROM node:24-bookworm-slim AS app
 

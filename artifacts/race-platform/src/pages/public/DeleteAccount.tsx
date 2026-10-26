@@ -52,7 +52,7 @@ export default function DeleteAccount() {
     <div className="max-w-lg mx-auto px-6 py-12">
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Delete My Account</h1>
       <p className="text-gray-600 mb-8">
-        Submit this form to request deletion of your RM Tracker account and all associated data.
+        Submit this form to request deletion of your RM Roost account and all associated data.
         We'll process your request within 30 days and send a confirmation email.
       </p>
 

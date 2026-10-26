@@ -5,7 +5,7 @@ import { getDb, parseJsonArr, parseJson } from "../db";
 const router = Router();
 const MAX_CROSSING_FUTURE_MS = 5 * 60 * 1000;
 
-// Must match the direct active provenance emitted by RM Connect, RM Tracker,
+// Must match the direct active provenance emitted by RM Connect, RM Roost,
 // and the Python live TCP bridge. Generic/passive facility payloads are not
 // included because an old timestamp may be a valid delayed upload.
 export const TRUSTED_DIRECT_ACTIVE_TIMING_SOURCES = [

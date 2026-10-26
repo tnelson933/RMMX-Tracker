@@ -1,3 +1,5 @@
+// Must stay the first import: pins the data folder before anything reads it.
+import "./user-data-path";
 import {
   app,
   BrowserWindow,
@@ -45,7 +47,7 @@ import {
 
 const LOCAL_PORT = 9090;
 const STARTUP_TIMEOUT_MS = 15_000;
-const WINDOW_TITLE = "RM Tracker";
+const WINDOW_TITLE = "RM Roost";
 const LOCAL_TIMING_HTTP_AGENT = new http.Agent({ keepAlive: true, maxSockets: 4 });
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -862,7 +864,7 @@ function setupAutoUpdater(): void {
     dialog.showMessageBox({
       type: "info",
       title: "Update available",
-      message: `RM Tracker v${info.version} is available and will be installed automatically when you quit.`,
+      message: `RM Roost v${info.version} is available and will be installed automatically when you quit.`,
       buttons: ["OK"],
     });
   });

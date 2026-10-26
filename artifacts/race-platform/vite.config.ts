@@ -50,8 +50,8 @@ export default defineConfig(async ({ command }) => {
       },
       includeAssets: ["favicon.svg", "rm-logo.png"],
       manifest: {
-        name: "RM Tracker",
-        short_name: "RM Tracker",
+        name: "RM Roost",
+        short_name: "RM Roost",
         description:
           "Live RFID timing, race scoring, and series points for ATV and motorcycle clubs.",
         theme_color: "#242424",

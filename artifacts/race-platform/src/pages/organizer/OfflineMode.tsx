@@ -350,9 +350,9 @@ export default function OfflineMode() {
     if (platform === "windows") {
       content = [
         "@echo off",
-        "title RM Tracker Timing Bridge",
+        "title RM Roost Timing Bridge",
         "echo ================================================",
-        "echo   RM Tracker Timing Bridge",
+        "echo   RM Roost Timing Bridge",
         "echo ================================================",
         "echo.",
         "echo Starting... Keep this window open while racing.",
@@ -370,7 +370,7 @@ export default function OfflineMode() {
         "#!/bin/bash",
         'cd "$(dirname "$0")"',
         "echo '================================================'",
-        "echo '  RM Tracker Timing Bridge'",
+        "echo '  RM Roost Timing Bridge'",
         "echo '================================================'",
         "echo ''",
         "echo 'Starting... Keep this window open while racing.'",
@@ -398,9 +398,9 @@ export default function OfflineMode() {
     if (platform === "windows") {
       content = [
         "@echo off",
-        "title RM Tracker — Install",
+        "title RM Roost — Install",
         "echo ================================================",
-        "echo   RM Tracker — Install",
+        "echo   RM Roost — Install",
         "echo ================================================",
         "echo.",
         "cd %USERPROFILE%\\Downloads",
@@ -449,7 +449,7 @@ export default function OfflineMode() {
     if (platform === "windows") {
       const lines = [
         "@echo off",
-        "title RM Tracker",
+        "title RM Roost",
         "cd %USERPROFILE%\\Downloads\\rocky-mountain-local-server",
       ];
       if (hasSync) {

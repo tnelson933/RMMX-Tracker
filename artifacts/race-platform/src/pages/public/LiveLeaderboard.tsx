@@ -964,7 +964,7 @@ function LegacyLiveLeaderboard() {
             </AnimatePresence>
 
             <footer className="p-4 text-center text-xs text-white/20">
-              Powered by RM Tracker · Updates live
+              Powered by RM Roost · Updates live
             </footer>
           </section>
         </>
@@ -982,7 +982,7 @@ export default function LiveLeaderboard() {
         <Link href="/" className="flex items-center gap-2 text-sm text-white/50 transition-colors hover:text-white">
           <ChevronLeft size={16} /> Home
         </Link>
-        <span className="text-xs uppercase tracking-wider text-white/35">RM Tracker Live</span>
+        <span className="text-xs uppercase tracking-wider text-white/35">RM Roost Live</span>
       </div>
       <LiveRaceViews {...stream} showRaceStatus />
     </main>

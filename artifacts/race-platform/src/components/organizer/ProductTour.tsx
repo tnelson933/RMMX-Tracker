@@ -14,7 +14,7 @@ interface TourStep {
 
 const ALL_STEPS: TourStep[] = [
   {
-    title: "👋 Welcome to RM Tracker",
+    title: "👋 Welcome to RM Roost",
     description:
       "You're all set up. This quick tour highlights everything available in the sidebar — only takes a minute.",
   },

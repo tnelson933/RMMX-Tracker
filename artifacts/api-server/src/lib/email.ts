@@ -1,4 +1,4 @@
-const FROM_ADDRESS = process.env.EMAIL_FROM || "RMMT Ops <onboarding@resend.dev>";
+const FROM_ADDRESS = process.env.EMAIL_FROM || "RM Roost <onboarding@resend.dev>";
 
 async function sendEmail(to: string, subject: string, html: string): Promise<{ ok: boolean; reason?: string }> {
   const apiKey = process.env.RESEND_API_KEY;
@@ -38,12 +38,12 @@ export async function sendSetupEmail(opts: {
 }) {
   const { to, name, token, appUrl, isNew = true } = opts;
   const url = `${appUrl}/setup-account?token=${token}`;
-  const subject = isNew ? "Set up your RMMT Ops account" : "Reset your RMMT Ops password";
-  const heading = isNew ? "You've been invited to RMMT Ops" : "Password reset requested";
+  const subject = isNew ? "Set up your RM Roost account" : "Reset your RM Roost password";
+  const heading = isNew ? "You've been invited to RM Roost" : "Password reset requested";
   const actionLabel = isNew ? "Set Up My Account" : "Reset Password";
   const bodyText = isNew
-    ? `You've been added as an organizer on RMMT Ops. Click the button below to set your password and activate your account.`
-    : `We received a request to reset your RMMT Ops password. Click the button below to choose a new one.`;
+    ? `You've been added as an organizer on RM Roost. Click the button below to set your password and activate your account.`
+    : `We received a request to reset your RM Roost password. Click the button below to choose a new one.`;
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:40px 24px;background:#f9f9f9">

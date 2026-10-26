@@ -1,4 +1,4 @@
-# Self-hosting RM Tracker (test server)
+# Self-hosting RM Roost (test server)
 
 Runs the cloud API, the website and PostgreSQL with Docker Compose. Caddy serves
 the site and forwards `/api` to the API on the same origin, which is the job

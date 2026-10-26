@@ -264,7 +264,7 @@ export default function LoginScreen() {
           <View style={s.logoBox}>
             <Feather name="flag" size={30} color="#fff" />
           </View>
-          <Text style={s.appName}>RM Tracker</Text>
+          <Text style={s.appName}>RM Roost</Text>
           <Text style={s.tagline}>Your race schedule, results & more</Text>
         </View>
 
@@ -360,7 +360,7 @@ export default function LoginScreen() {
         <View style={s.footer}>
           <Text style={s.footerText}>
             {mode === "login"
-              ? "RM Tracker gives you real-time race schedules,\nlap times, and results for every event you enter."
+              ? "RM Roost gives you real-time race schedules,\nlap times, and results for every event you enter."
               : "Your account links to all riders with the same email\nso your whole family's schedule is in one place."}
           </Text>
         </View>

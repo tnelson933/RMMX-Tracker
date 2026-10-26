@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "RM Tracker",
+    "name": "RM Roost",
     "slug": "rider-app",
     "version": "1.0.19",
     "orientation": "portrait",
@@ -25,7 +25,7 @@
           "remote-notification"
         ],
         "ITSAppUsesNonExemptEncryption": false,
-        "NSFaceIDUsageDescription": "Use Face ID to sign in to RM Tracker quickly and securely."
+        "NSFaceIDUsageDescription": "Use Face ID to sign in to RM Roost quickly and securely."
       },
       "buildNumber": "2"
     },

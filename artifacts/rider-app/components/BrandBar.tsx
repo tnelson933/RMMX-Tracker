@@ -110,7 +110,7 @@ export function BrandBar() {
         </View>
         <View>
           <Text style={[styles.brand, { color: colors.foreground }]}>RM</Text>
-          <Text style={[styles.sub, { color: colors.mutedForeground }]}>TRACKER</Text>
+          <Text style={[styles.sub, { color: colors.mutedForeground }]}>ROOST</Text>
         </View>
       </View>
 

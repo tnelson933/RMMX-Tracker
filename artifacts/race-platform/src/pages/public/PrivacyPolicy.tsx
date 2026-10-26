@@ -5,8 +5,8 @@ export default function PrivacyPolicy() {
       <p className="text-gray-500 mb-8">Last updated: July 11, 2026</p>
 
       <p className="mb-6">
-        Rocky Mountain ATV/MC Race Platform ("RM Tracker", "we", "our", or "us") operates the RM
-        Tracker mobile application and web platform. This policy explains what information we
+        Rocky Mountain ATV/MC Race Platform ("RM Roost", "we", "our", or "us") operates the RM
+        Roost mobile application and web platform. This policy explains what information we
         collect, how we use it, and your rights.
       </p>
 

@@ -99,10 +99,10 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const SidebarContent = () => (
     <>
       <div className="h-16 flex items-center px-4 gap-3 border-b border-sidebar-border/50 shrink-0">
-        <img src={rmLogo} alt="RM Tracker" className="h-9 w-9 shrink-0" />
+        <img src={rmLogo} alt="RM Roost" className="h-9 w-9 shrink-0" />
         <span className="flex flex-col leading-none">
           <span className="text-white font-heading font-extrabold text-xl uppercase tracking-wider">RM</span>
-          <span className="text-[#8C8C8C] font-heading font-bold text-xs uppercase tracking-widest">Tracker</span>
+          <span className="text-[#8C8C8C] font-heading font-bold text-xs uppercase tracking-widest">Roost</span>
         </span>
         {/* Close button — mobile only */}
         <button
@@ -277,10 +277,10 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu size={22} />
           </button>
-          <img src={rmLogo} alt="RM Tracker" className="h-7 w-7" />
+          <img src={rmLogo} alt="RM Roost" className="h-7 w-7" />
           <span className="flex flex-col leading-none">
             <span className="font-heading font-extrabold text-base uppercase tracking-wider text-white">RM</span>
-            <span className="font-heading font-bold text-[10px] uppercase tracking-widest text-[#8C8C8C]">Tracker</span>
+            <span className="font-heading font-bold text-[10px] uppercase tracking-widest text-[#8C8C8C]">Roost</span>
           </span>
           <div className="ml-auto">
             <LocalSyncBadge />

@@ -314,7 +314,7 @@ router.post("/rider/auth/forgot-password", async (req, res) => {
         <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:40px">
           <h1 style="margin:0 0 8px;font-size:22px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#111">Reset Your Password</h1>
           <p style="margin:0 0 24px;font-size:15px;color:#555;line-height:1.6">
-            We received a request to reset your RM Tracker password. Click the button below to choose a new one.
+            We received a request to reset your RM Roost password. Click the button below to choose a new one.
           </p>
           <a href="${resetUrl}" style="display:inline-block;padding:14px 28px;background:#dc2626;color:#fff;text-decoration:none;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:1px;border-radius:4px">
             Reset Password
@@ -330,7 +330,7 @@ router.post("/rider/auth/forgot-password", async (req, res) => {
       await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: process.env.EMAIL_FROM || "RMMT Ops <onboarding@resend.dev>", to: normalized, subject: "Reset your RM Tracker password", html }),
+        body: JSON.stringify({ from: process.env.EMAIL_FROM || "RM Roost <onboarding@resend.dev>", to: normalized, subject: "Reset your RM Roost password", html }),
       });
     }
   }
