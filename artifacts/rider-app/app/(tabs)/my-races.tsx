@@ -535,9 +535,9 @@ export default function MyRacesScreen() {
 
   const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    header:    { paddingTop: insets.top + 16, paddingHorizontal: 20, paddingBottom: 16, backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border },
+    header:    { paddingTop: insets.top + 16, paddingHorizontal: 20, paddingBottom: 16, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border },
     statsRow:  { flexDirection: "row", gap: 10, marginTop: 12 },
-    filterBar: { flexDirection: "row", paddingHorizontal: 10, paddingVertical: 8, gap: 6, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.background },
+    filterBar: { flexDirection: "row", paddingHorizontal: 10, paddingVertical: 8, gap: 6, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card },
     footer:    { height: insets.bottom + 32 },
   });
 

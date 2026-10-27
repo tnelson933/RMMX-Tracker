@@ -1536,7 +1536,7 @@ export default function ResultsScreen() {
       {/* Header */}
       <View style={{
         paddingTop: insets.top + 16, paddingHorizontal: 20, paddingBottom: 12,
-        backgroundColor: colors.background,
+        backgroundColor: colors.card,
         borderBottomWidth: 1, borderBottomColor: colors.border,
       }}>
         <BrandBar />

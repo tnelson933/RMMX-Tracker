@@ -1214,7 +1214,7 @@ export default function TrainScreen() {
 
   const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    header:    { paddingTop: insets.top + 16, paddingHorizontal: 20, paddingBottom: 12, backgroundColor: colors.background, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    header:    { paddingTop: insets.top + 16, paddingHorizontal: 20, paddingBottom: 12, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border },
     statsRow:  { flexDirection: "row", gap: 10, marginTop: 14 },
     statBox:   { flex: 1, backgroundColor: colors.muted, borderRadius: 10, padding: 12, alignItems: "center" },
     statValue: { fontSize: 18, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" },

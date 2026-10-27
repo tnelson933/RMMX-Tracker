@@ -127,7 +127,7 @@ export function SubHeader({
     <View style={{
       paddingTop: insets.top + 4,
       paddingHorizontal: 16, paddingBottom: 12,
-      backgroundColor: colors.background,
+      backgroundColor: colors.card,
       borderBottomWidth: 1, borderBottomColor: colors.border,
     }}>
       <BrandBar />

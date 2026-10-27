@@ -349,6 +349,11 @@ function ProfileList() {
 
   const s = StyleSheet.create({
     scroll: { flex: 1 },
+    headerBand: {
+      marginHorizontal: -16, marginTop: -16, marginBottom: 14,
+      paddingHorizontal: 16, paddingTop: insets.top + 16, paddingBottom: 16,
+      backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
     container: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: (tabBarHeight > 0 ? tabBarHeight : 49 + insets.bottom) + 16, gap: 14 },
     pageTitle: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" },
     pageSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
@@ -432,9 +437,11 @@ function ProfileList() {
     >
       {/* Account section */}
       <View>
-        <BrandBar />
-        <Text style={s.pageTitle}>My Profiles</Text>
-        <Text style={s.pageSubtitle}>Select which riders drive the app data</Text>
+        <View style={s.headerBand}>
+          <BrandBar />
+          <Text style={s.pageTitle}>My Profiles</Text>
+          <Text style={s.pageSubtitle}>Select which riders drive the app data</Text>
+        </View>
       </View>
 
       {/* Account email */}
@@ -1266,8 +1273,8 @@ export default function ProfileScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
-      {isAuthenticated ? <ProfileList /> : <AuthForm />}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {isAuthenticated ? <ProfileList /> : <View style={{ flex: 1, paddingTop: insets.top }}><AuthForm /></View>}
     </View>
   );
 }
