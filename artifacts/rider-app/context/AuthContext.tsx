@@ -87,7 +87,8 @@ interface AuthContextType {
   biometricEnabled: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithBiometric: () => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  /** Resolves with the number of rider profiles the new account links to. */
+  register: (email: string, password: string) => Promise<number>;
   logout: () => Promise<void>;
   refreshProfiles: () => Promise<void>;
   riderFetch: (path: string, options?: RequestInit) => Promise<Response>;
@@ -329,7 +330,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await login(email, pass);
   }
 
-  async function register(email: string, password: string): Promise<void> {
+  async function register(email: string, password: string): Promise<number> {
     const data = await postJson(`${BASE_URL}/api/rider/auth/register`,
       { email: email.trim().toLowerCase(), password }, "Couldn't create your account");
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
@@ -337,6 +338,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccount(acc);
     void loadProfiles(data.mobileToken);
     void tryRegisterPushToken(data.mobileToken);
+    return typeof data.linkedProfiles === "number" ? data.linkedProfiles : -1;
   }
 
   async function logout(): Promise<void> {

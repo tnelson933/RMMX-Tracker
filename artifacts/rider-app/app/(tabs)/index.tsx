@@ -24,6 +24,7 @@ import { RockyHomeWidget } from "@/components/RockyHomeWidget";
 import { FollowingFeed } from "@/components/FollowingFeed";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
+import { NoProfileLinked } from "@/components/NoProfileLinked";
 
 const ACCENT = "#cf152d";
 
@@ -183,27 +184,6 @@ function SectionHeader({ icon, title, colors }: { icon: string; title: string; c
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginBottom: 10, marginTop: 4 }}>
       <Feather name={icon as any} size={12} color={ACCENT} />
       <Text style={{ fontSize: 11, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>{title}</Text>
-    </View>
-  );
-}
-
-// ─── No profile empty state ───────────────────────────────────────────────────
-
-function NoProfileCard({ colors }: { colors: ReturnType<typeof useColors> }) {
-  const router = useRouter();
-  return (
-    <View style={{ marginHorizontal: 16, marginBottom: 24, borderRadius: 14, backgroundColor: colors.card, padding: 20, alignItems: "center", gap: 8, borderWidth: 1, borderColor: colors.border }}>
-      <Feather name="user-x" size={32} color={colors.mutedForeground + "70"} />
-      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>No Rider Profile</Text>
-      <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 18 }}>
-        Register for an event with your email address to link a rider profile.
-      </Text>
-      <Pressable
-        onPress={() => router.push("/(tabs)/profile" as any)}
-        style={{ marginTop: 4, paddingHorizontal: 18, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.primary }}
-      >
-        <Text style={{ color: "#fff", fontSize: 13, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Go to Profile</Text>
-      </Pressable>
     </View>
   );
 }
@@ -401,7 +381,7 @@ export default function HomeScreen() {
         </View>
 
         {/* ── No profile warning ── */}
-        {!hasProfile && <NoProfileCard colors={colors} />}
+        {!hasProfile && <NoProfileLinked variant="card" />}
 
         {/* ── Upcoming events ── */}
         {hasProfile && (

@@ -41,7 +41,7 @@ import {
   riderProfileManagersTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull } from "drizzle-orm";
-import { canManageRider, managedRiderWhere, ownsRider } from "../lib/riderAccess";
+import { canManageRider, managedRiderIds, managedRiderWhere, ownsRider } from "../lib/riderAccess";
 
 const router = Router();
 
@@ -262,7 +262,7 @@ router.post("/rider/auth/register", async (req, res) => {
   const normalized = String(email).toLowerCase().trim();
   const existing = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.email, normalized));
   if (existing.length > 0) {
-    return res.status(409).json({ error: "An account with this email already exists" });
+    return res.status(409).json({ error: "An account with this email already exists. Switch to Sign In, or use Forgot password if you don't remember it." });
   }
 
   const hash = await bcrypt.hash(String(password), 12);
@@ -274,7 +274,12 @@ router.post("/rider/auth/register", async (req, res) => {
   const mobileToken = generateMobileToken();
   await db.insert(riderMobileTokensTable).values({ riderAccountId: account.id, token: mobileToken });
 
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), mobileToken });
+  // How many rider profiles this email already links to. Zero usually means the
+  // rider registered for races with a different email (or mistyped this one), so
+  // the app warns them right away instead of showing empty screens.
+  const linkedProfiles = (await managedRiderIds({ id: account.id, email: account.email })).length;
+
+  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), mobileToken, linkedProfiles });
 });
 
 // POST /rider/auth/login

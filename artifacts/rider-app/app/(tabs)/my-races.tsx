@@ -26,6 +26,7 @@ import {
   SeriesStandingsScreen,
   ViewState,
 } from "@/components/RaceSubScreens";
+import { NoProfileLinked } from "@/components/NoProfileLinked";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -605,15 +606,7 @@ export default function MyRacesScreen() {
   }
 
   if (!primaryProfile) {
-    return (
-      <View style={[styles.container, { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 8 }]}>
-        <Feather name="user-x" size={40} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>No rider profile linked</Text>
-        <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>
-          Register for an event using this email address to link your rider profile.
-        </Text>
-      </View>
-    );
+    return <NoProfileLinked />;
   }
 
   // ── Stat box tap handlers ──────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -19,6 +20,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { postJson } from "@/lib/friendlyErrors";
+import { suggestEmailFix } from "@/lib/emailTypos";
+
+/** Show an alert and resolve with the value of the button the user tapped. */
+function choose<T>(title: string, message: string, buttons: { text: string; value: T; style?: "cancel" | "destructive" }[]): Promise<T> {
+  return new Promise(resolve => {
+    Alert.alert(title, message, buttons.map(b => ({ text: b.text, style: b.style, onPress: () => resolve(b.value) })), { cancelable: false });
+  });
+}
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 
@@ -26,7 +35,7 @@ export default function LoginScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { login, register, loginWithBiometric, biometricEnabled } = useRiderAuth();
+  const { login, register, logout, loginWithBiometric, biometricEnabled } = useRiderAuth();
 
   const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
   const [email, setEmail] = useState("");
@@ -87,13 +96,55 @@ export default function LoginScreen() {
     }
 
     if (!email.trim() || !password) return;
-    setLoading(true);
     setError(null);
+
+    // A mistyped email signs in to nothing, or worse, creates a second empty
+    // account that isn't linked to the rider's race history.
+    let target = email.trim().toLowerCase();
+    const fix = suggestEmailFix(target);
+    if (fix) {
+      const useFix = await choose("Check your email", `Did you mean ${fix}?`, [
+        { text: `Keep ${target}`, value: false, style: "cancel" },
+        { text: `Use ${fix}`, value: true },
+      ]);
+      if (useFix) { target = fix; setEmail(fix); }
+    }
+
+    if (mode === "register") {
+      const confirmed = await choose(
+        "Create account?",
+        `Create an RM Roost account for\n${target}\n\nUse the same email you register for races with. That's how your rider profiles and results link to this account.`,
+        [
+          { text: "Edit email", value: false, style: "cancel" },
+          { text: "Create account", value: true },
+        ],
+      );
+      if (!confirmed) return;
+    }
+
+    setLoading(true);
     try {
       if (mode === "login") {
-        await login(email, password);
+        await login(target, password);
       } else {
-        await register(email, password);
+        const linked = await register(target, password);
+        if (linked === 0) {
+          setLoading(false);
+          const signOut = await choose(
+            "No rider profiles found",
+            `No race registrations use ${target} yet.\n\nIf you've raced before, you probably registered with a different email. Sign out and sign in (or create your account) with that email instead.\n\nNew to racing? Continue, then register for an event with this email.`,
+            [
+              { text: "Use a different email", value: true, style: "cancel" },
+              { text: "Continue", value: false },
+            ],
+          );
+          if (signOut) {
+            await logout();
+            setMode("login");
+            setPassword("");
+            return;
+          }
+        }
       }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace("/(tabs)" as any);
