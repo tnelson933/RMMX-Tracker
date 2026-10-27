@@ -1685,7 +1685,7 @@ export default function ResultsScreen() {
                 </>
               )}
 
-              <View style={{ height: insets.bottom + 40 }} />
+              <View style={{ height: insets.bottom + 150 }} />
             </>
           )}
         </ScrollView>
@@ -1726,7 +1726,7 @@ export default function ResultsScreen() {
               {filteredSeries.map(s => (
                 <SeriesCard key={s.id} series={s} colors={colors} onPress={() => setSelectedSeries(s)} />
               ))}
-              <View style={{ height: insets.bottom + 40 }} />
+              <View style={{ height: insets.bottom + 150 }} />
             </>
           )}
         </ScrollView>

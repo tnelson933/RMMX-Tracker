@@ -25,7 +25,8 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { useTheme, type ThemePreference } from "@/context/ThemeContext";
 import { BrandBar } from "@/components/BrandBar";
 import { NETWORK_ERROR_MESSAGE, postJson } from "@/lib/friendlyErrors";
-import { StatTile } from "@/components/RaceStats";
+import { PositionBadge, StatTile } from "@/components/RaceStats";
+import { displayDate } from "@/lib/format";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 const PRIVACY_URL = `${BASE_URL}/privacy`;
@@ -151,6 +152,8 @@ function ProfileList() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedGarageId, setExpandedGarageId] = useState<number | null>(null);
+  const [expandedRiderId, setExpandedRiderId] = useState<number | null>(null);
+  const [showLinkHelp, setShowLinkHelp] = useState(false);
   const [garageEdit, setGarageEdit] = useState<{ rideExperience: string; bikeHours: string; raceTypes: string[] }>({ rideExperience: "", bikeHours: "", raceTypes: [] });
   const [garageSaving, setGarageSaving] = useState(false);
   const [showAddBike, setShowAddBike] = useState<number | null>(null);
@@ -354,7 +357,7 @@ function ProfileList() {
       paddingHorizontal: 16, paddingTop: insets.top + 16, paddingBottom: 16,
       backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border,
     },
-    container: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: (tabBarHeight > 0 ? tabBarHeight : 49 + insets.bottom) + 16, gap: 14 },
+    container: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: (tabBarHeight > 0 ? tabBarHeight : 49 + insets.bottom) + 96, gap: 14 },
     pageTitle: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" },
     pageSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
     accountCard: {
@@ -368,6 +371,21 @@ function ProfileList() {
     sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 },
     sectionLabel: { fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" },
     sectionHint: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+    listCard: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+    riderRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+    riderInitials: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+    riderName: { fontSize: 15, color: colors.foreground, fontFamily: "Inter_700Bold" },
+    riderMeta: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 },
+    expandBtn: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+    actionPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.primaryTint, borderWidth: 1, borderColor: colors.primary + "44" },
+    actionPillText: { fontSize: 12, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    settingRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 13 },
+    settingIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center" },
+    settingLabel: { fontSize: 15, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    settingSub: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 },
+    settingDivider: { height: 1, backgroundColor: colors.border, marginLeft: 58 },
+    miniSeg: { flexDirection: "row", backgroundColor: colors.muted, borderRadius: 999, padding: 3, gap: 2 },
+    miniSegBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
     // Active summary banner
     activeBanner: {
       flexDirection: "row", alignItems: "center", gap: 8,
@@ -440,58 +458,36 @@ function ProfileList() {
         <View style={s.headerBand}>
           <BrandBar />
           <Text style={s.pageTitle}>My Profiles</Text>
-          <Text style={s.pageSubtitle}>Select which riders drive the app data</Text>
+          <Text style={s.pageSubtitle} numberOfLines={1}>
+            Signed in as <Text style={{ fontFamily: "Inter_700Bold", color: colors.foreground }}>{account?.email}</Text>
+          </Text>
         </View>
       </View>
 
-      {/* Account email */}
-      <View style={s.accountCard}>
-        <View style={s.accountIcon}>
-          <Feather name="mail" size={18} color={colors.primary} />
-        </View>
+      {/* Rider profiles */}
+      <View style={s.sectionRow}>
         <View style={{ flex: 1 }}>
-          <Text style={s.accountLabel}>Account Email</Text>
-          <Text style={s.accountEmail} numberOfLines={1}>{account?.email}</Text>
+          <Text style={s.sectionLabel}>Riders</Text>
+          <Text style={s.sectionHint}>Checked riders drive the app. Tap a rider to show or hide them.</Text>
         </View>
+        {profiles.length > 1 && (
+          <Pressable
+            onPress={handleSelectAll}
+            style={({ pressed }) => ({
+              paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+              backgroundColor: allSelected ? colors.primary : colors.muted,
+              borderWidth: 1, borderColor: allSelected ? colors.primary : colors.border,
+              opacity: pressed ? 0.7 : 1, flexDirection: "row", alignItems: "center", gap: 4,
+            })}
+          >
+            <Feather name={allSelected ? "minus" : "check-square"} size={12} color={allSelected ? "#fff" : colors.mutedForeground} />
+            <Text style={{ fontSize: 12, fontWeight: "700", color: allSelected ? "#fff" : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
+              {allSelected ? "Solo" : "All"}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
-      {/* Rider profiles section */}
-      {profiles.length > 0 && (
-        <>
-          <View style={s.sectionRow}>
-            <View>
-              <Text style={s.sectionLabel}>Rider Profiles</Text>
-              <Text style={s.sectionHint}>Tap a card to activate or deactivate</Text>
-            </View>
-            {profiles.length > 1 && (
-              <Pressable
-                onPress={handleSelectAll}
-                style={({ pressed }) => ({
-                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-                  backgroundColor: allSelected ? colors.primary : colors.muted,
-                  borderWidth: 1, borderColor: allSelected ? colors.primary : colors.border,
-                  opacity: pressed ? 0.7 : 1, flexDirection: "row", alignItems: "center", gap: 4,
-                })}
-              >
-                <Feather name={allSelected ? "minus" : "check-square"} size={12} color={allSelected ? "#fff" : colors.mutedForeground} />
-                <Text style={{ fontSize: 12, fontWeight: "700", color: allSelected ? "#fff" : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
-                  {allSelected ? "Solo" : "All"}
-                </Text>
-              </Pressable>
-            )}
-          </View>
-
-          {/* Active summary banner */}
-          <View style={s.activeBanner}>
-            <Feather name="check-circle" size={14} color={colors.primary} />
-            <Text style={s.activeBannerText} numberOfLines={1}>
-              Showing: {activeSummary()}
-            </Text>
-          </View>
-        </>
-      )}
-
-      {/* Profile cards */}
       {profiles.length === 0 ? (
         <View style={s.emptyBox}>
           <Feather name="user" size={36} color={colors.mutedForeground + "50"} />
@@ -501,151 +497,82 @@ function ProfileList() {
           </Text>
         </View>
       ) : (
-        profiles.map((profile) => {
-          const isSelected = selectedProfileIds.includes(profile.id);
-          const isOnlyOne = selectedProfileIds.length === 1 && isSelected;
-          return (
-            <Pressable
-              key={profile.id}
-              onPress={() => toggleProfile(profile.id)}
-              style={({ pressed }) => [
-                s.profileCard,
-                isSelected && s.profileCardSelected,
-                { opacity: pressed ? 0.85 : 1 },
-              ]}
-            >
-              {/* Selected accent bar */}
-              {isSelected && (
-                <View style={{ height: 3, backgroundColor: colors.primary }} />
-              )}
-
-              <View style={s.profileCardInner}>
-                <View style={s.profileRow}>
-                  <View style={s.profileLeft}>
-                    {/* Avatar */}
-                    <View style={[s.profileAvatar, { backgroundColor: isSelected ? colors.primary + "20" : colors.primary + "12" }]}>
-                      <Feather name="user" size={20} color={isSelected ? colors.primary : colors.primary} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.profileName}>
-                        {profile.firstName} {profile.lastName}
-                      </Text>
-                      <Text style={s.profileBib}>
-                        {profile.bibNumber ? `#${profile.bibNumber}` : "No bib number"}
-                      </Text>
-                    </View>
+        <View style={s.listCard}>
+          {profiles.map((profile, idx) => {
+            const isSelected = selectedProfileIds.includes(profile.id);
+            const isOnlyOne = selectedProfileIds.length === 1 && isSelected;
+            const isOpen = expandedRiderId === profile.id;
+            const initials = `${profile.firstName?.[0] ?? ""}${profile.lastName?.[0] ?? ""}`.toUpperCase();
+            return (
+              <View key={profile.id} style={idx > 0 ? { borderTopWidth: 1, borderTopColor: colors.border } : null}>
+                <Pressable
+                  onPress={() => toggleProfile(profile.id)}
+                  style={({ pressed }) => [s.riderRow, { opacity: pressed ? 0.8 : 1 }]}
+                >
+                  <View style={[s.riderInitials, { backgroundColor: isSelected ? colors.primary : colors.muted }]}>
+                    <Text style={{ fontSize: 14, color: isSelected ? "#fff" : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>{initials || "?"}</Text>
                   </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.riderName} numberOfLines={1}>{profile.firstName} {profile.lastName}</Text>
+                    <Text style={s.riderMeta} numberOfLines={1}>
+                      {profile.bibNumber ? `#${profile.bibNumber}` : "No bib"} · {profile.eventsRaced} {profile.eventsRaced === 1 ? "event" : "events"}{profile.totalPoints ? ` · ${profile.totalPoints} pts` : ""}
+                    </Text>
+                  </View>
+                  {profile.bestPosition ? <PositionBadge position={profile.bestPosition} size="sm" /> : null}
+                  <View style={[s.checkOuter, { borderColor: isSelected ? colors.primary : colors.border, backgroundColor: isSelected ? colors.primary : "transparent" }]}>
+                    {isSelected && <Feather name="check" size={13} color="#fff" />}
+                  </View>
+                  <Pressable
+                    onPress={() => setExpandedRiderId(isOpen ? null : profile.id)}
+                    hitSlop={10}
+                    accessibilityLabel={isOpen ? "Hide rider details" : "Show rider details"}
+                    style={({ pressed }) => [s.expandBtn, { backgroundColor: colors.muted, opacity: pressed ? 0.6 : 1 }]}
+                  >
+                    <Feather name={isOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.foreground} />
+                  </Pressable>
+                </Pressable>
 
-                  {/* Checkbox */}
-                  <View style={[
-                    s.checkOuter,
-                    { borderColor: isSelected ? colors.primary : colors.border + "aa", backgroundColor: isSelected ? colors.primary : "transparent" },
-                  ]}>
-                    {isSelected ? (
-                      <Feather name="check" size={14} color="#fff" />
-                    ) : (
-                      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.muted }} />
+                {isOpen && (
+                  <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
+                    <View style={s.statsRow}>
+                      <StatTile compact value={profile.eventsRaced} label="Events" />
+                      <StatTile compact value={profile.bestPosition ? `P${profile.bestPosition}` : "—"} label="Best Finish" />
+                      <StatTile compact value={profile.totalPoints} label="Points" highlight />
+                    </View>
+                    {profile.lastRaced && (
+                      <Text style={s.lastRaced}>
+                        Last raced {displayDate(profile.lastRaced).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        {isOnlyOne ? " · at least one rider must stay checked" : ""}
+                      </Text>
                     )}
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                      {([
+                        ["edit-2", "Edit profile", `/rider/${profile.id}`],
+                        ["bar-chart-2", "Stats & managers", `/stats/${profile.id}`],
+                        ["tool", "Maintenance", `/maintenance/${profile.id}`],
+                      ] as const).map(([icon, label, href]) => (
+                        <Pressable
+                          key={label}
+                          onPress={() => router.push(href as any)}
+                          style={({ pressed }) => [s.actionPill, { opacity: pressed ? 0.7 : 1 }]}
+                        >
+                          <Feather name={icon} size={13} color={colors.primary} />
+                          <Text style={s.actionPillText}>{label}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
                   </View>
-                </View>
-
-                {/* Stats */}
-                <View style={s.statsRow}>
-                  <StatTile compact value={profile.eventsRaced} label="Events" />
-                  <StatTile compact value={profile.bestPosition ? `P${profile.bestPosition}` : "—"} label="Best Finish" />
-                  <StatTile compact value={profile.totalPoints} label="Points" highlight />
-                </View>
-
-                {profile.lastRaced && (
-                  <Text style={s.lastRaced}>
-                    Last raced:{" "}
-                    {new Date(profile.lastRaced.includes("T") ? profile.lastRaced : profile.lastRaced + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                  </Text>
                 )}
-
-                {/* Can't-deselect hint */}
-                {isOnlyOne && (
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground + "70", fontFamily: "Inter_400Regular", marginTop: 6 }}>
-                    At least one rider must be active
-                  </Text>
-                )}
-
-                {/* Edit profile button — nested Pressable captures touch before outer toggle */}
-                <Pressable
-                  onPress={() => router.push(`/rider/${profile.id}` as any)}
-                  style={({ pressed }) => ({
-                    marginTop: 10,
-                    paddingTop: 10,
-                    borderTopWidth: 1,
-                    borderTopColor: colors.border + "80",
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    opacity: pressed ? 0.5 : 1,
-                  })}
-                >
-                  <Feather name="edit-2" size={12} color={colors.primary} />
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>
-                    Edit Profile
-                  </Text>
-                  <Feather name="chevron-right" size={12} color={colors.primary} />
-                </Pressable>
-
-                {/* Career stats, share card and profile managers */}
-                <Pressable
-                  onPress={() => router.push(`/stats/${profile.id}` as any)}
-                  style={({ pressed }) => ({
-                    marginTop: 8,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    opacity: pressed ? 0.5 : 1,
-                  })}
-                >
-                  <Feather name="bar-chart-2" size={12} color={colors.primary} />
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>
-                    Stats, Sharing & Managers
-                  </Text>
-                  <Feather name="chevron-right" size={12} color={colors.primary} />
-                </Pressable>
               </View>
-            </Pressable>
-          );
-        })
+            );
+          })}
+        </View>
       )}
 
-      {/* ─── My Race Organizations ───────────────────── */}
-      {profiles.length > 0 && (
-        <Pressable
-          onPress={() => router.push("/organizations" as any)}
-          style={({ pressed }) => ({
-            backgroundColor: colors.card,
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: colors.border,
-            flexDirection: "row",
-            alignItems: "center",
-            padding: 16,
-            gap: 12,
-            opacity: pressed ? 0.75 : 1,
-          })}
-        >
-          <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: colors.primary + "15", alignItems: "center", justifyContent: "center" }}>
-            <Feather name="flag" size={18} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-              My Race Organizations
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-              Clubs you've raced with &amp; notification settings
-            </Text>
-          </View>
-          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-        </Pressable>
-      )}
+      <Pressable style={s.addBtn} onPress={() => router.push("/rider/new" as any)}>
+        <Feather name="user-plus" size={16} color={colors.mutedForeground} />
+        <Text style={s.addBtnText}>Add Rider Profile</Text>
+      </Pressable>
 
       {/* ─── My Garage ───────────────────────────────── */}
       {profiles.length > 0 && (
@@ -961,298 +888,259 @@ function ProfileList() {
                   </View>
                 )}
 
-                {/* Maintenance schedule link */}
-                <Pressable
-                  onPress={() => router.push(`/maintenance/${profile.id}` as any)}
-                  style={({ pressed }) => ({
-                    flexDirection: "row", alignItems: "center", gap: 8,
-                    paddingHorizontal: 14, paddingVertical: 11,
-                    opacity: pressed ? 0.7 : 1,
-                    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
-                  })}
-                >
-                  <Feather name="tool" size={14} color={colors.primary} />
-                  <Text style={{ flex: 1, fontSize: 13, color: colors.primary, fontFamily: "Inter_600SemiBold" }}>
-                    Maintenance Schedule
-                  </Text>
-                  <Feather name="chevron-right" size={14} color={colors.primary} />
-                </Pressable>
               </View>
             );
           })}
         </>
       )}
 
-      {/* Add profile */}
-      <Pressable style={s.addBtn} onPress={() => router.push("/rider/new" as any)}>
-        <Feather name="user-plus" size={16} color={colors.mutedForeground} />
-        <Text style={s.addBtnText}>Add Rider Profile</Text>
-      </Pressable>
-
-      {/* Info */}
-      <View style={s.infoCard}>
-        <Text style={s.infoTitle}>How profiles are linked</Text>
-        <Text style={s.infoText}>
-          Rider profiles are automatically linked by email address. If you register a family member using this email, their profile will appear here. Select multiple riders to view their combined schedule, history, and stats across the app.
-        </Text>
-      </View>
-
-      {/* ─── Appearance ──────────────────────────────── */}
-      <View>
-        <Text style={[s.sectionLabel, { marginBottom: 8 }]}>Appearance</Text>
-        <View style={{
-          backgroundColor: colors.card, borderRadius: 14,
-          borderWidth: 1, borderColor: colors.border,
-          flexDirection: "row", overflow: "hidden",
-        }}>
-          {(["light", "dark"] as ThemePreference[]).map((option, idx) => {
-            const isActive = themePref === option;
-            const label = option === "light" ? "Light" : "Dark";
-            const icon = option === "light" ? "sun" : "moon";
-            return (
-              <Pressable
-                key={option}
-                onPress={async () => {
-                  setThemePref(option);
-                  await Haptics.selectionAsync();
-                }}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  paddingVertical: 12,
-                  gap: 4,
-                  backgroundColor: isActive ? colors.primary : "transparent",
-                  borderLeftWidth: idx > 0 ? 1 : 0,
-                  borderLeftColor: colors.border,
-                  opacity: pressed ? 0.75 : 1,
-                })}
-              >
-                <Feather
-                  name={icon as any}
-                  size={16}
-                  color={isActive ? "#fff" : colors.mutedForeground}
-                />
-                <Text style={{
-                  fontSize: 12, fontWeight: "700",
-                  fontFamily: "Inter_700Bold",
-                  color: isActive ? "#fff" : colors.mutedForeground,
-                }}>
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* ─── Security ─────────────────────────────────── */}
-      <View>
-        <Pressable
-          onPress={() => { setShowSecurity(v => !v); setPwError(null); setPwSuccess(false); }}
-          style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
-        >
-          <Text style={[s.sectionLabel, { flex: 1 }]}>Security</Text>
-          <Feather name={showSecurity ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
-        </Pressable>
-
-        {showSecurity && (
-          <View style={{
-            backgroundColor: colors.card, borderRadius: 14,
-            borderWidth: 1, borderColor: colors.border, padding: 16, gap: 12,
-          }}>
-            {/* Biometric toggle */}
-            {biometricHardware && (
-              <Pressable
-                onPress={handleToggleBiometric}
-                style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
-              >
-                <Feather
-                  name={biometricType === "face" ? "aperture" : "check-circle"}
-                  size={18}
-                  color={biometricEnabled ? colors.primary : colors.mutedForeground}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>
-                    {biometricType === "face" ? "Face ID" : "Fingerprint"} sign-in
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-                    {biometricEnabled ? "Enabled — tap to disable" : "Tap to enable quick biometric sign-in"}
-                  </Text>
-                </View>
-                <View style={{
-                  width: 44, height: 26, borderRadius: 13,
-                  backgroundColor: biometricEnabled ? colors.primary : colors.muted,
-                  justifyContent: "center",
-                  paddingHorizontal: 3,
-                }}>
-                  <View style={{
-                    width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff",
-                    alignSelf: biometricEnabled ? "flex-end" : "flex-start",
-                  }} />
-                </View>
-              </Pressable>
-            )}
-
-            {biometricHardware && !biometricEnabled && bioSetupOpen && (
-              <View style={{ gap: 8 }}>
-                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                  Enter your password once. It's stored in this device's secure keychain and used only for {biometricType === "face" ? "Face ID" : "fingerprint"} sign-in.
-                </Text>
-                {bioError && (
-                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: colors.dangerTint, borderRadius: 8, padding: 10 }}>
-                    <Feather name="alert-circle" size={14} color={colors.destructive} style={{ marginTop: 1 }} />
-                    <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{bioError}</Text>
-                  </View>
-                )}
-                <View style={{
-                  borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-                  borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
-                }}>
-                  <TextInput
-                    style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
-                    placeholder="Your password"
-                    placeholderTextColor={colors.mutedForeground}
-                    secureTextEntry
-                    value={bioPassword}
-                    onChangeText={setBioPassword}
-                    autoCapitalize="none"
-                    returnKeyType="done"
-                    onSubmitEditing={handleConfirmBiometric}
-                  />
-                </View>
+      {/* ─── Settings ─────────────────────────────────── */}
+      <Text style={[s.sectionLabel, { marginTop: 6 }]}>Settings</Text>
+      <View style={s.listCard}>
+          <Pressable onPress={() => router.push("/organizations" as any)} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
+            <View style={s.settingIcon}><Feather name="flag" size={15} color={colors.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.settingLabel}>Race organizations</Text>
+              <Text style={s.settingSub}>Clubs you race with and their alerts</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+          </Pressable>
+        <View style={s.settingDivider} />
+        <View style={s.settingRow}>
+          <View style={s.settingIcon}><Feather name={themePref === "dark" ? "moon" : "sun"} size={15} color={colors.primary} /></View>
+          <Text style={[s.settingLabel, { flex: 1 }]}>Appearance</Text>
+          <View style={s.miniSeg}>
+            {(["light", "dark"] as ThemePreference[]).map(option => {
+              const isActive = themePref === option;
+              return (
                 <Pressable
-                  onPress={handleConfirmBiometric}
-                  disabled={bioSaving}
-                  style={({ pressed }) => ({
-                    backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 13,
-                    alignItems: "center", opacity: pressed || bioSaving ? 0.75 : 1,
-                  })}
+                  key={option}
+                  onPress={async () => { setThemePref(option); await Haptics.selectionAsync(); }}
+                  style={[s.miniSegBtn, isActive && { backgroundColor: colors.primary }]}
                 >
-                  {bioSaving
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>
-                        Turn On {biometricType === "face" ? "Face ID" : "Fingerprint"}
-                      </Text>
-                  }
+                  <Feather name={option === "light" ? "sun" : "moon"} size={12} color={isActive ? "#fff" : colors.mutedForeground} />
+                  <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: isActive ? "#fff" : colors.mutedForeground }}>{option === "light" ? "Light" : "Dark"}</Text>
                 </Pressable>
-              </View>
-            )}
-
-            {biometricHardware && (
-              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
-            )}
-
-            {/* Change password */}
-            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Change Password
-            </Text>
-
-            {pwSuccess ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.successTint, borderRadius: 8, padding: 10 }}>
-                <Feather name="check-circle" size={14} color={colors.success} />
-                <Text style={{ fontSize: 13, color: colors.success, fontFamily: "Inter_400Regular" }}>Password updated successfully</Text>
-              </View>
-            ) : (
-              <>
-                {pwError && (
-                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: colors.dangerTint, borderRadius: 8, padding: 10 }}>
-                    <Feather name="alert-circle" size={14} color={colors.destructive} style={{ marginTop: 1 }} />
-                    <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{pwError}</Text>
-                  </View>
-                )}
-                <View style={{
-                  borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-                  borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
-                }}>
-                  <TextInput
-                    style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
-                    placeholder="Current password"
-                    placeholderTextColor={colors.mutedForeground}
-                    secureTextEntry
-                    value={pwCurrent}
-                    onChangeText={setPwCurrent}
-                    autoCapitalize="none"
-                  />
-                </View>
-                <View style={{
-                  borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-                  borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
-                }}>
-                  <TextInput
-                    style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
-                    placeholder="New password (min 8 characters)"
-                    placeholderTextColor={colors.mutedForeground}
-                    secureTextEntry
-                    value={pwNew}
-                    onChangeText={setPwNew}
-                    autoCapitalize="none"
-                  />
-                </View>
-                <View style={{
-                  borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-                  borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
-                }}>
-                  <TextInput
-                    style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
-                    placeholder="Confirm new password"
-                    placeholderTextColor={colors.mutedForeground}
-                    secureTextEntry
-                    value={pwConfirm}
-                    onChangeText={setPwConfirm}
-                    autoCapitalize="none"
-                    returnKeyType="done"
-                    onSubmitEditing={handleChangePassword}
-                  />
-                </View>
-                <Pressable
-                  onPress={handleChangePassword}
-                  disabled={pwSaving}
-                  style={({ pressed }) => ({
-                    backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 13,
-                    alignItems: "center", opacity: pressed || pwSaving ? 0.75 : 1,
-                  })}
-                >
-                  {pwSaving
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Update Password</Text>
-                  }
-                </Pressable>
-              </>
-            )}
+              );
+            })}
           </View>
+        </View>
+        <View style={s.settingDivider} />
+          <Pressable onPress={() => { setShowSecurity(v => !v); setPwError(null); setPwSuccess(false); }} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
+            <View style={s.settingIcon}><Feather name="lock" size={15} color={colors.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.settingLabel}>Security</Text>
+              <Text style={s.settingSub}>{biometricHardware ? "Face ID / fingerprint and password" : "Change your password"}</Text>
+            </View>
+            <Feather name={showSecurity ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
+          </Pressable>
+        <View style={{ paddingHorizontal: 12 }}>
+        {showSecurity && (
+            <View style={{
+              backgroundColor: colors.card, borderRadius: 14,
+              borderWidth: 1, borderColor: colors.border, padding: 16, gap: 12,
+            }}>
+              {/* Biometric toggle */}
+              {biometricHardware && (
+                <Pressable
+                  onPress={handleToggleBiometric}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
+                >
+                  <Feather
+                    name={biometricType === "face" ? "aperture" : "check-circle"}
+                    size={18}
+                    color={biometricEnabled ? colors.primary : colors.mutedForeground}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>
+                      {biometricType === "face" ? "Face ID" : "Fingerprint"} sign-in
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+                      {biometricEnabled ? "Enabled — tap to disable" : "Tap to enable quick biometric sign-in"}
+                    </Text>
+                  </View>
+                  <View style={{
+                    width: 44, height: 26, borderRadius: 13,
+                    backgroundColor: biometricEnabled ? colors.primary : colors.muted,
+                    justifyContent: "center",
+                    paddingHorizontal: 3,
+                  }}>
+                    <View style={{
+                      width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff",
+                      alignSelf: biometricEnabled ? "flex-end" : "flex-start",
+                    }} />
+                  </View>
+                </Pressable>
+              )}
+  
+              {biometricHardware && !biometricEnabled && bioSetupOpen && (
+                <View style={{ gap: 8 }}>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                    Enter your password once. It's stored in this device's secure keychain and used only for {biometricType === "face" ? "Face ID" : "fingerprint"} sign-in.
+                  </Text>
+                  {bioError && (
+                    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: colors.dangerTint, borderRadius: 8, padding: 10 }}>
+                      <Feather name="alert-circle" size={14} color={colors.destructive} style={{ marginTop: 1 }} />
+                      <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{bioError}</Text>
+                    </View>
+                  )}
+                  <View style={{
+                    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+                    borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
+                  }}>
+                    <TextInput
+                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                      placeholder="Your password"
+                      placeholderTextColor={colors.mutedForeground}
+                      secureTextEntry
+                      value={bioPassword}
+                      onChangeText={setBioPassword}
+                      autoCapitalize="none"
+                      returnKeyType="done"
+                      onSubmitEditing={handleConfirmBiometric}
+                    />
+                  </View>
+                  <Pressable
+                    onPress={handleConfirmBiometric}
+                    disabled={bioSaving}
+                    style={({ pressed }) => ({
+                      backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 13,
+                      alignItems: "center", opacity: pressed || bioSaving ? 0.75 : 1,
+                    })}
+                  >
+                    {bioSaving
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>
+                          Turn On {biometricType === "face" ? "Face ID" : "Fingerprint"}
+                        </Text>
+                    }
+                  </Pressable>
+                </View>
+              )}
+  
+              {biometricHardware && (
+                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
+              )}
+  
+              {/* Change password */}
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Change Password
+              </Text>
+  
+              {pwSuccess ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.successTint, borderRadius: 8, padding: 10 }}>
+                  <Feather name="check-circle" size={14} color={colors.success} />
+                  <Text style={{ fontSize: 13, color: colors.success, fontFamily: "Inter_400Regular" }}>Password updated successfully</Text>
+                </View>
+              ) : (
+                <>
+                  {pwError && (
+                    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: colors.dangerTint, borderRadius: 8, padding: 10 }}>
+                      <Feather name="alert-circle" size={14} color={colors.destructive} style={{ marginTop: 1 }} />
+                      <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{pwError}</Text>
+                    </View>
+                  )}
+                  <View style={{
+                    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+                    borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
+                  }}>
+                    <TextInput
+                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                      placeholder="Current password"
+                      placeholderTextColor={colors.mutedForeground}
+                      secureTextEntry
+                      value={pwCurrent}
+                      onChangeText={setPwCurrent}
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  <View style={{
+                    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+                    borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
+                  }}>
+                    <TextInput
+                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                      placeholder="New password (min 8 characters)"
+                      placeholderTextColor={colors.mutedForeground}
+                      secureTextEntry
+                      value={pwNew}
+                      onChangeText={setPwNew}
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  <View style={{
+                    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+                    borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
+                  }}>
+                    <TextInput
+                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                      placeholder="Confirm new password"
+                      placeholderTextColor={colors.mutedForeground}
+                      secureTextEntry
+                      value={pwConfirm}
+                      onChangeText={setPwConfirm}
+                      autoCapitalize="none"
+                      returnKeyType="done"
+                      onSubmitEditing={handleChangePassword}
+                    />
+                  </View>
+                  <Pressable
+                    onPress={handleChangePassword}
+                    disabled={pwSaving}
+                    style={({ pressed }) => ({
+                      backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 13,
+                      alignItems: "center", opacity: pressed || pwSaving ? 0.75 : 1,
+                    })}
+                  >
+                    {pwSaving
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Update Password</Text>
+                    }
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
+        </View>
+        <View style={s.settingDivider} />
+          <Pressable onPress={() => setShowLinkHelp(v => !v)} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
+            <View style={s.settingIcon}><Feather name="link" size={15} color={colors.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.settingLabel}>How profiles link</Text>
+            </View>
+            <Feather name={showLinkHelp ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
+          </Pressable>
+        {showLinkHelp && (
+          <Text style={[s.infoText, { paddingHorizontal: 16, paddingBottom: 14 }]}>
+            Rider profiles link by email. Register a family member with this email and they show up here. Check several riders to see their combined schedule, history and stats.
+          </Text>
         )}
+        <View style={s.settingDivider} />
+          <Pressable onPress={handleOpenPrivacy} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
+            <View style={s.settingIcon}><Feather name="shield" size={15} color={colors.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.settingLabel}>Privacy policy</Text>
+            </View>
+            <Feather name="external-link" size={15} color={colors.mutedForeground} />
+          </Pressable>
       </View>
 
-      {/* Privacy policy */}
-      <Pressable style={s.signOutBtn} onPress={handleOpenPrivacy} accessibilityRole="link">
-        <Feather name="shield" size={16} color={colors.foreground} />
-        <Text style={[s.signOutText, { color: colors.foreground }]}>Privacy Policy</Text>
-      </Pressable>
-
-      {/* Sign out */}
-      <Pressable style={s.signOutBtn} onPress={handleSignOut} disabled={loggingOut}>
-        {loggingOut ? (
-          <ActivityIndicator color="#DC2626" size="small" />
-        ) : (
-          <>
-            <Feather name="log-out" size={16} color="#DC2626" />
-            <Text style={s.signOutText}>Sign Out</Text>
-          </>
-        )}
-      </Pressable>
-
-      {/* Delete account (App Store 5.1.1(v)) */}
-      <Pressable style={s.signOutBtn} onPress={handleDeleteAccount} disabled={deletingAccount || loggingOut}>
-        {deletingAccount ? (
-          <ActivityIndicator color="#DC2626" size="small" />
-        ) : (
-          <>
-            <Feather name="trash-2" size={16} color="#DC2626" />
-            <Text style={s.signOutText}>Delete Account</Text>
-          </>
-        )}
-      </Pressable>
+      {/* ─── Account ──────────────────────────────────── */}
+      <View style={s.listCard}>
+        <Pressable onPress={handleSignOut} disabled={loggingOut} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
+          <View style={[s.settingIcon, { backgroundColor: colors.dangerTint }]}>
+            {loggingOut ? <ActivityIndicator color={colors.destructive} size="small" /> : <Feather name="log-out" size={15} color={colors.destructive} />}
+          </View>
+          <Text style={[s.settingLabel, { flex: 1, color: colors.destructive }]}>Sign out</Text>
+        </Pressable>
+        <View style={s.settingDivider} />
+        <Pressable onPress={handleDeleteAccount} disabled={deletingAccount || loggingOut} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
+          <View style={[s.settingIcon, { backgroundColor: colors.dangerTint }]}>
+            {deletingAccount ? <ActivityIndicator color={colors.destructive} size="small" /> : <Feather name="trash-2" size={15} color={colors.destructive} />}
+          </View>
+          <Text style={[s.settingLabel, { flex: 1, color: colors.destructive }]}>Delete account</Text>
+        </Pressable>
+      </View>
     </ScrollView>
   );
 }

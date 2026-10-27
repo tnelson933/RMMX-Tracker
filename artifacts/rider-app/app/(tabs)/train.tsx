@@ -486,7 +486,7 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
 }) {
   const typeMeta = WORKOUT_TYPE_META[workoutType];
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 32 }}>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 150 }}>
       {/* Plan header */}
       <View style={{ borderRadius: 14, overflow: "hidden", borderWidth: 1.5, borderColor: colors.primary + "44" }}>
         <View style={{ padding: 16, backgroundColor: colors.primary + "12" }}>
@@ -689,7 +689,7 @@ function InputScreen({ onGenerate, colors, insets }: {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 24, paddingBottom: insets.bottom + 32 }}>
+      <ScrollView contentContainerStyle={{ padding: 20, gap: 24, paddingBottom: insets.bottom + 150 }}>
         {/* Hero */}
         <View style={{ alignItems: "center", gap: 8, paddingTop: 8 }}>
           <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center" }}>
@@ -1223,7 +1223,7 @@ export default function TrainScreen() {
     segBtn:    { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center" },
     pickerRow: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     pickerLabel: { fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8, paddingHorizontal: 16, marginBottom: 6 },
-    footer:    { height: insets.bottom + 32 },
+    footer:    { height: insets.bottom + 150 },
   });
 
   if (authLoading) {
@@ -1304,7 +1304,7 @@ export default function TrainScreen() {
           )}
           <ScrollView
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, gap: 16, paddingBottom: insets.bottom + 32 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, gap: 16, paddingBottom: insets.bottom + 150 }}
           >
             {trackLoading && !refreshing ? (
               <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>

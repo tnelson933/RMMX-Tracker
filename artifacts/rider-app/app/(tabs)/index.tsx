@@ -361,7 +361,7 @@ export default function HomeScreen() {
         {hasProfile && <FollowingFeed refreshKey={feedRefreshKey} />}
 
         {/* Footer */}
-        <View style={{ height: insets.bottom + 40 }} />
+        <View style={{ height: insets.bottom + 150 }} />
       </ScrollView>
     </View>
   );

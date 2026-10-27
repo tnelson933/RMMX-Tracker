@@ -538,7 +538,7 @@ export default function MyRacesScreen() {
     header:    { paddingTop: insets.top + 16, paddingHorizontal: 20, paddingBottom: 16, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border },
     statsRow:  { flexDirection: "row", gap: 10, marginTop: 12 },
     filterBar: { flexDirection: "row", paddingHorizontal: 10, paddingVertical: 8, gap: 6, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card },
-    footer:    { height: insets.bottom + 32 },
+    footer:    { height: insets.bottom + 150 },
   });
 
   if (authLoading) {
