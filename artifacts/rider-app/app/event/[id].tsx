@@ -19,6 +19,9 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { RmCashWidget } from "@/components/RmCashWidget";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
+import * as WebBrowser from "expo-web-browser";
+import { EmptyState } from "@/components/EmptyState";
+import { eventDay, placeLabel } from "@/lib/format";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 
@@ -69,8 +72,7 @@ interface MyRegistration {
 }
 
 function fmtDate(iso: string) {
-  const normalized = iso.includes("T") ? iso : iso + "T12:00:00";
-  return new Date(normalized).toLocaleDateString("en-US", {
+  return eventDay(iso).toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric", year: "numeric",
   });
 }
@@ -248,13 +250,24 @@ export default function EventDetailScreen() {
     },
     backBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
     backText: { fontSize: 15, color: colors.primary, fontFamily: "Inter_600SemiBold" },
-    eventHeader: {
-      paddingHorizontal: 16,
-      paddingTop: 4,
-      paddingBottom: 14,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+    hero: {
+      marginHorizontal: 16, marginTop: 4, marginBottom: 14, padding: 16, borderRadius: 20,
+      backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, overflow: "hidden",
     },
+    heroStripes: { position: "absolute", top: 18, left: -60, right: -60, transform: [{ rotate: "-12deg" }] },
+    statusRow: { flexDirection: "row", gap: 8, minHeight: 4 },
+    dateBlock: {
+      width: 62, height: 66, borderRadius: 14, backgroundColor: colors.primary,
+      alignItems: "center", justifyContent: "center",
+    },
+    dateMonth: { fontSize: 12, color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 1.5 },
+    dateDay: { fontSize: 28, color: "#fff", fontFamily: "Inter_700Bold", lineHeight: 32 },
+    metaChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 14 },
+    metaChip: {
+      flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.muted,
+      borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border,
+    },
+    metaChipText: { fontSize: 12, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
     liveBadge: {
       flexDirection: "row", alignItems: "center", gap: 4,
       backgroundColor: "#ef444420", paddingHorizontal: 10, paddingVertical: 4,
@@ -269,9 +282,8 @@ export default function EventDetailScreen() {
     openText: { fontSize: 11, fontWeight: "700", color: "#22c55e", fontFamily: "Inter_700Bold", letterSpacing: 0.5 },
     eventName: {
       fontSize: 22, fontWeight: "800", color: colors.foreground,
-      fontFamily: "Inter_700Bold", letterSpacing: -0.5, marginBottom: 6,
+      fontFamily: "Inter_700Bold", letterSpacing: 0.5, textTransform: "uppercase", fontStyle: "italic", marginBottom: 2,
     },
-    metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 5 },
     metaText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
 
     // NOW RACING card
@@ -342,12 +354,12 @@ export default function EventDetailScreen() {
 
     // Registration
     registerCard: {
-      margin: 16, borderRadius: 14, backgroundColor: colors.card,
-      borderWidth: 1, borderColor: colors.border, padding: 16,
+      margin: 16, borderRadius: 18, backgroundColor: colors.card,
+      borderWidth: 1, borderColor: colors.border, padding: 18,
     },
-    primaryBtn: { marginTop: 14, backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 14, alignItems: "center" },
-    mutedBtn:   { marginTop: 14, backgroundColor: colors.muted,   borderRadius: 10, paddingVertical: 14, alignItems: "center" },
-    btnText:    { color: "#fff", fontSize: 16, fontWeight: "700", fontFamily: "Inter_700Bold" },
+    primaryBtn: { marginTop: 14, backgroundColor: colors.primary, borderRadius: 999, paddingVertical: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
+    mutedBtn:   { marginTop: 14, backgroundColor: colors.muted,   borderRadius: 999, paddingVertical: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
+    btnText:    { color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 },
 
     // Modal
     modalOverlay: { flex: 1, backgroundColor: "#00000088", justifyContent: "flex-end" },
@@ -389,6 +401,7 @@ export default function EventDetailScreen() {
 
   const isRaceDay = event.status === "race_day";
   const isRegOpen = event.status === "registration_open";
+  const isFinished = event.status === "completed";
 
   const chipFor = (status: string) => {
     const map: Record<string, { label: string; color: string }> = {
@@ -428,42 +441,64 @@ export default function EventDetailScreen() {
           </View>
         )}
 
-        {/* Event header */}
-        <View style={s.eventHeader}>
-          {isRaceDay && (
-            <View style={s.liveBadge}>
-              <View style={s.liveDot} />
-              <Text style={s.liveText}>LIVE NOW</Text>
-            </View>
-          )}
-          {isRegOpen && (
-            <View style={s.openBadge}>
-              <Text style={s.openText}>REGISTRATION OPEN</Text>
-            </View>
-          )}
-          <Text style={s.eventName}>{event.name}</Text>
-          <View style={s.metaRow}>
-            <Feather name="calendar" size={13} color={colors.mutedForeground} />
-            <Text style={s.metaText}>{fmtDate(event.date)}</Text>
+        {/* Event hero: race-poster header with a date block and status */}
+        <View style={s.hero}>
+          <View pointerEvents="none" style={s.heroStripes}>
+            <View style={{ height: 3, backgroundColor: colors.primary, opacity: 0.6, marginRight: 120 }} />
+            <View style={{ height: 8, backgroundColor: colors.primary, opacity: 0.25, marginTop: 10, marginLeft: 80 }} />
+            <View style={{ height: 2, backgroundColor: colors.foreground, opacity: 0.1, marginTop: 10, marginRight: 40 }} />
           </View>
-          {(event.location || event.state) && (
-            <View style={s.metaRow}>
-              <Feather name="map-pin" size={13} color={colors.mutedForeground} />
-              <Text style={s.metaText}>{[event.location, event.state].filter(Boolean).join(", ")}</Text>
+
+          <View style={s.statusRow}>
+            {isRaceDay && (
+              <View style={s.liveBadge}>
+                <View style={s.liveDot} />
+                <Text style={s.liveText}>LIVE NOW</Text>
+              </View>
+            )}
+            {isRegOpen && (
+              <View style={s.openBadge}>
+                <Text style={s.openText}>REGISTRATION OPEN</Text>
+              </View>
+            )}
+            {isFinished && (
+              <View style={[s.openBadge, { backgroundColor: colors.muted }]}>
+                <Text style={[s.openText, { color: colors.mutedForeground }]}>🏁 FINISHED</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+            <View style={s.dateBlock}>
+              <Text style={s.dateMonth}>{eventDay(event.date).toLocaleDateString("en-US", { month: "short" }).toUpperCase()}</Text>
+              <Text style={s.dateDay}>{eventDay(event.date).getDate()}</Text>
             </View>
-          )}
-          {event.trackName && (
-            <View style={s.metaRow}>
-              <Feather name="flag" size={13} color={colors.mutedForeground} />
-              <Text style={s.metaText}>{event.trackName}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.eventName}>{event.name}</Text>
+              <Text style={s.metaText}>{fmtDate(event.date)}</Text>
             </View>
-          )}
-          {event.clubName && (
-            <View style={s.metaRow}>
-              <Feather name="users" size={13} color={colors.mutedForeground} />
-              <Text style={s.metaText}>{event.clubName}</Text>
-            </View>
-          )}
+          </View>
+
+          <View style={s.metaChips}>
+            {(event.location || event.state) && (
+              <View style={s.metaChip}>
+                <Feather name="map-pin" size={12} color={colors.primary} />
+                <Text style={s.metaChipText}>{placeLabel(event.location, event.state)}</Text>
+              </View>
+            )}
+            {event.trackName && (
+              <View style={s.metaChip}>
+                <Feather name="flag" size={12} color={colors.primary} />
+                <Text style={s.metaChipText}>{event.trackName}</Text>
+              </View>
+            )}
+            {event.clubName && (
+              <View style={s.metaChip}>
+                <Feather name="users" size={12} color={colors.primary} />
+                <Text style={s.metaChipText}>{event.clubName}</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* ── RACE DAY view ── */}
@@ -629,11 +664,11 @@ export default function EventDetailScreen() {
           <View style={s.registerCard}>
             {event.entryFee != null && (
               <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4, marginBottom: 14 }}>
-                <Text style={{ fontSize: 28, fontWeight: "800", color: colors.primary, fontFamily: "Inter_700Bold" }}>
+                <Text style={{ fontSize: 40, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: -1 }}>
                   ${event.entryFee}
                 </Text>
-                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                  entry fee
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+                  Entry fee
                 </Text>
               </View>
             )}
@@ -688,7 +723,8 @@ export default function EventDetailScreen() {
 
             {isAuthenticated ? (
               <Pressable style={s.primaryBtn} onPress={() => setShowRegisterModal(true)}>
-                <Text style={s.btnText}>{myRegistrations.length > 0 ? "Register for Another Class" : "Register Now"}</Text>
+                <Text style={s.btnText}>{myRegistrations.length > 0 ? "Add another class" : "Register now"}</Text>
+                <Feather name="arrow-right" size={18} color="#fff" />
               </Pressable>
             ) : (
               <>
@@ -701,6 +737,34 @@ export default function EventDetailScreen() {
               </>
             )}
           </View>
+        )}
+        {/* ── FINISHED view ── */}
+        {isFinished && (
+          <EmptyState
+            variant="card"
+            icon="flag"
+            title="Checkered flag"
+            message={myRegistrations.length > 0 || registeredClasses.size > 0
+              ? "This race is in the books. See how you did, moto by moto."
+              : "This race is in the books. Check the full results, or find your next race."}
+            primary={myRegistrations.length > 0 || registeredClasses.size > 0
+              ? { label: "Your results", icon: "award", onPress: () => router.push(`/result/${event.id}` as any) }
+              : { label: "Full results", icon: "list", onPress: () => void WebBrowser.openBrowserAsync(`${BASE_URL}/results/${event.id}`) }}
+            secondary={myRegistrations.length > 0 || registeredClasses.size > 0
+              ? { label: "Full results", onPress: () => void WebBrowser.openBrowserAsync(`${BASE_URL}/results/${event.id}`) }
+              : { label: "Find your next race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
+          />
+        )}
+
+        {/* ── Not open yet / closed ── */}
+        {!isRaceDay && !isRegOpen && !isFinished && (
+          <EmptyState
+            variant="card"
+            icon="clock"
+            title="Registration isn't open"
+            message="Entries for this race aren't open right now. We'll show the Register button here as soon as they are."
+            secondary={{ label: "Find another race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
+          />
         )}
       </ScrollView>
 

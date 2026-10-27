@@ -17,6 +17,7 @@ import { fmtDateShared as fmtDate, fmtLap } from "@/components/RaceSubScreens";
 import { useColors } from "@/hooks/useColors";
 import { onTabReset } from "@/utils/tabEvents";
 import { EmptyState } from "@/components/EmptyState";
+import { placeLabel } from "@/lib/format";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1435,17 +1436,6 @@ function SeriesStandingsScreen({
 
 type MainTab = "races" | "series";
 
-/** "City, ST" without repeating the state when the location already includes it ("Denver, CO" + "CO"). */
-function placeLabel(place: string | null | undefined, state: string | null | undefined): string {
-  const p = (place ?? "").trim();
-  const st = (state ?? "").trim();
-  if (!st) return p;
-  if (!p) return st;
-  const lower = p.toLowerCase();
-  const before = p.charAt(p.length - st.length - 1);
-  const endsWithState = lower.endsWith(st.toLowerCase()) && (p.length === st.length || before === "," || before === " ");
-  return endsWithState ? p : `${p}, ${st}`;
-}
 
 export default function ResultsScreen() {
   const colors  = useColors();
