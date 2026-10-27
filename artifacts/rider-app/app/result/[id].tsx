@@ -15,8 +15,6 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { ShareResultButton } from "@/components/ShareCard";
 
-const ACCENT = "#cf152d";
-
 function parseLapMs(s: string): number {
   if (!s) return Infinity;
   const c = s.indexOf(":");
@@ -127,7 +125,7 @@ export default function ResultDetailScreen() {
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color={ACCENT} size="large" />
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
   }
@@ -196,7 +194,7 @@ export default function ResultDetailScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 {ev.riderName ? (
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold", marginBottom: 2 }}>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", marginBottom: 2 }}>
                     {ev.riderName}
                   </Text>
                 ) : null}

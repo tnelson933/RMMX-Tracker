@@ -781,7 +781,7 @@ export default function RiderDetailScreen() {
       padding: 6,
     },
     errorBanner: {
-      backgroundColor: "#FEE2E2",
+      backgroundColor: colors.dangerTint,
       borderRadius: 10,
       padding: 12,
       flexDirection: "row",
@@ -791,11 +791,11 @@ export default function RiderDetailScreen() {
     errorText: {
       flex: 1,
       fontSize: 13,
-      color: "#DC2626",
+      color: colors.destructive,
       fontFamily: "Inter_400Regular",
     },
     savedBanner: {
-      backgroundColor: "#DCFCE7",
+      backgroundColor: colors.successTint,
       borderRadius: 10,
       padding: 12,
       flexDirection: "row",
@@ -804,7 +804,7 @@ export default function RiderDetailScreen() {
     },
     savedText: {
       fontSize: 13,
-      color: "#16A34A",
+      color: colors.success,
       fontFamily: "Inter_600SemiBold",
     },
     emailNote: {
@@ -913,13 +913,13 @@ export default function RiderDetailScreen() {
           {/* Save feedback banners */}
           {saveError && (
             <View style={s.errorBanner}>
-              <Feather name="alert-circle" size={15} color="#DC2626" />
+              <Feather name="alert-circle" size={15} color={colors.destructive} />
               <Text style={s.errorText}>{saveError}</Text>
             </View>
           )}
           {savedOk && (
             <View style={s.savedBanner}>
-              <Feather name="check-circle" size={15} color="#16A34A" />
+              <Feather name="check-circle" size={15} color={colors.success} />
               <Text style={s.savedText}>Profile saved successfully</Text>
             </View>
           )}

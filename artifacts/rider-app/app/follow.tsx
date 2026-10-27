@@ -8,8 +8,6 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
-const ACCENT = "#cf152d";
-
 interface FoundRider { id: number; name: string; lastRaced: string | null; clubName: string | null; following: boolean }
 interface Followed { riderId: number; name: string }
 
@@ -141,7 +139,7 @@ function RiderRow({ title, subtitle, following, onToggle, onOpen, colors }: {
       </View>
       <Pressable onPress={onToggle} hitSlop={6} style={({ pressed }) => ({
         paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, opacity: pressed ? 0.7 : 1,
-        backgroundColor: following ? "transparent" : ACCENT, borderWidth: 1, borderColor: following ? colors.border : ACCENT,
+        backgroundColor: following ? "transparent" : colors.primary, borderWidth: 1, borderColor: following ? colors.border : colors.primary,
       })}>
         <Text style={{ fontSize: 13, color: following ? colors.foreground : "#fff", fontFamily: "Inter_700Bold" }}>{following ? "Following" : "Follow"}</Text>
       </Pressable>

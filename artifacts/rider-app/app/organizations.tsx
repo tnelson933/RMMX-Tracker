@@ -16,8 +16,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 
-const ACCENT = "#cf152d";
-
 interface Organization {
   clubId: number;
   clubName: string;
@@ -168,7 +166,7 @@ export default function OrganizationsScreen() {
       width: 40,
       height: 40,
       borderRadius: 10,
-      backgroundColor: ACCENT + "15",
+      backgroundColor: colors.primary + "15",
       alignItems: "center",
       justifyContent: "center",
       flexShrink: 0,
@@ -266,7 +264,7 @@ export default function OrganizationsScreen() {
                   <View style={s.orgRow}>
                     {/* Club icon */}
                     <View style={s.iconBox}>
-                      <Feather name="flag" size={18} color={ACCENT} />
+                      <Feather name="flag" size={18} color={colors.primary} />
                     </View>
 
                     {/* Club info */}
@@ -286,8 +284,8 @@ export default function OrganizationsScreen() {
                         <Switch
                           value={org.notificationsEnabled}
                           onValueChange={(v) => handleToggle(org.clubId, v)}
-                          trackColor={{ false: colors.border, true: ACCENT + "90" }}
-                          thumbColor={org.notificationsEnabled ? ACCENT : colors.mutedForeground}
+                          trackColor={{ false: colors.border, true: colors.primary + "90" }}
+                          thumbColor={org.notificationsEnabled ? colors.primary : colors.mutedForeground}
                           ios_backgroundColor={colors.border}
                         />
                       )}

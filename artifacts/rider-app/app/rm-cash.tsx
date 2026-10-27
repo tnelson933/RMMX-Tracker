@@ -48,7 +48,7 @@ export default function RmCashScreen() {
     content: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
     iconCircle: {
       width: 64, height: 64, borderRadius: 32,
-      backgroundColor: "#dcfce7",
+      backgroundColor: colors.successTint,
       alignItems: "center", justifyContent: "center",
       alignSelf: "center", marginTop: 12, marginBottom: 12,
     },
@@ -65,7 +65,7 @@ export default function RmCashScreen() {
       borderRadius: 16,
       backgroundColor: colors.card,
       borderWidth: 1,
-      borderColor: "#bbf7d0",
+      borderColor: colors.success,
       paddingVertical: 28,
       paddingHorizontal: 16,
       alignItems: "center",
@@ -121,7 +121,7 @@ export default function RmCashScreen() {
       marginBottom: insets.bottom + 20,
       marginTop: 16,
       marginHorizontal: 16,
-      backgroundColor: "#cf152d",
+      backgroundColor: colors.primary,
       borderRadius: 14,
       paddingVertical: 16,
       flexDirection: "row",
@@ -146,7 +146,7 @@ export default function RmCashScreen() {
 
       <ScrollView style={s.content} contentContainerStyle={{ paddingBottom: 16 }}>
         <View style={s.iconCircle}>
-          <Feather name="zap" size={30} color="#16a34a" />
+          <Feather name="zap" size={30} color={colors.success} />
         </View>
         <Text style={s.title}>RM Cash</Text>
         <Text style={s.subtitle}>Your Rocky Mountain ATV/MC balance</Text>

@@ -74,7 +74,7 @@ export function RockyHomeWidget() {
       {/* ── Header ── */}
       <View style={styles.header}>
         <View style={styles.iconWrap}>
-          <Feather name="zap" size={14} color={ACCENT} />
+          <Feather name="zap" size={14} color={colors.primary} />
         </View>
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>
           Rocky{" "}
@@ -103,7 +103,7 @@ export function RockyHomeWidget() {
           )}
           {isTyping ? (
             <View style={[styles.assistantBubble, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-              <ActivityIndicator size="small" color={ACCENT} />
+              <ActivityIndicator size="small" color={colors.primary} />
             </View>
           ) : lastAssistant ? (
             <View style={[styles.assistantBubble, { backgroundColor: colors.muted, borderColor: colors.border }]}>
@@ -157,13 +157,13 @@ export function RockyHomeWidget() {
               style={({ pressed }) => [
                 styles.followUpChip,
                 {
-                  backgroundColor: ACCENT + "12",
-                  borderColor: ACCENT + "40",
+                  backgroundColor: colors.primary + "12",
+                  borderColor: colors.primary + "40",
                   opacity: pressed ? 0.72 : 1,
                 },
               ]}
             >
-              <Text style={[styles.followUpChipText, { color: ACCENT }]}>
+              <Text style={[styles.followUpChipText, { color: colors.primary }]}>
                 {chip.label}
               </Text>
             </Pressable>
@@ -173,11 +173,11 @@ export function RockyHomeWidget() {
 
       {/* ── Error banner ── */}
       {error && (
-        <View style={styles.errorBanner}>
-          <Feather name="alert-circle" size={12} color="#DC2626" />
-          <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
+        <View style={[styles.errorBanner, { backgroundColor: colors.dangerTint }]}>
+          <Feather name="alert-circle" size={12} color={colors.destructive} />
+          <Text style={[styles.errorText, { color: colors.destructive }]} numberOfLines={2}>{error}</Text>
           <Pressable onPress={() => setError(null)} hitSlop={8}>
-            <Feather name="x" size={12} color="#DC2626" />
+            <Feather name="x" size={12} color={colors.destructive} />
           </Pressable>
         </View>
       )}
@@ -211,9 +211,9 @@ export function RockyHomeWidget() {
             width: 34,
             height: 34,
             borderRadius: 17,
-            backgroundColor: inputText.trim() && !isTyping ? ACCENT : colors.muted,
+            backgroundColor: inputText.trim() && !isTyping ? colors.primary : colors.muted,
             borderWidth: 1,
-            borderColor: inputText.trim() && !isTyping ? ACCENT : colors.border,
+            borderColor: inputText.trim() && !isTyping ? colors.primary : colors.border,
             alignItems: "center",
             justifyContent: "center",
             opacity: pressed ? 0.75 : 1,
@@ -368,12 +368,10 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     padding: 8,
     borderRadius: 8,
-    backgroundColor: "#FEE2E2",
   },
   errorText: {
     flex: 1,
     fontSize: 11,
-    color: "#DC2626",
     fontFamily: "Inter_400Regular",
   },
   disclaimer: {

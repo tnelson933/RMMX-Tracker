@@ -9,8 +9,6 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { formatLap, type CareerStats } from "@/components/ShareCard";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
-const ACCENT = "#cf152d";
-
 interface Recent { eventId: number; eventName: string; eventDate: string; raceClass: string; bestPosition: number | null; motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }> }
 
 /** Another rider's public profile: published results only. */
@@ -108,7 +106,7 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, gap: 12 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" },
   headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
-  followBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: ACCENT, borderWidth: 1, borderColor: ACCENT },
+  followBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.primary, borderWidth: 1, borderColor: colors.primary },
   followingBtn: { backgroundColor: "transparent", borderColor: colors.border },
   followText: { color: "#fff", fontSize: 13, fontFamily: "Inter_700Bold" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },

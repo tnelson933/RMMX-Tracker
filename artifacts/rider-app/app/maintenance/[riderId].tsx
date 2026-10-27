@@ -23,8 +23,6 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
-const ACCENT = "#cf152d";
-
 interface MaintenanceItem {
   id: number;
   riderId: number;
@@ -58,9 +56,9 @@ function StatusBadge({ item }: { item: MaintenanceItem }) {
   const days = getDaysSince(item.lastServicedAt);
 
   const map = {
-    overdue:  { color: "#DC2626", bg: "#FEE2E2", label: "Overdue" },
-    due_soon: { color: "#D97706", bg: "#FEF3C7", label: "Due Soon" },
-    ok:       { color: "#16A34A", bg: "#DCFCE7", label: "OK" },
+    overdue:  { color: colors.destructive, bg: colors.dangerTint, label: "Overdue" },
+    due_soon: { color: colors.warning, bg: colors.warningTint, label: "Due Soon" },
+    ok:       { color: colors.success, bg: colors.successTint, label: "OK" },
     unknown:  { color: colors.mutedForeground, bg: colors.muted, label: "Not logged" },
   };
 
@@ -251,7 +249,7 @@ export default function MaintenanceScreen() {
     genBtn: {
       flexDirection: "row", alignItems: "center", gap: 6,
       paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-      backgroundColor: ACCENT,
+      backgroundColor: colors.primary,
     },
     genBtnText: { fontSize: 12, color: "#fff", fontFamily: "Inter_700Bold" },
     scroll: { flex: 1 },
@@ -384,13 +382,13 @@ export default function MaintenanceScreen() {
           {/* Summary */}
           {items.length > 0 && (
             <View style={s.summaryRow}>
-              <View style={[s.summaryBox, { backgroundColor: overdueCount > 0 ? "#FEE2E2" : colors.card, borderColor: overdueCount > 0 ? "#FCA5A5" : colors.border }]}>
-                <Text style={[s.summaryNum, { color: overdueCount > 0 ? "#DC2626" : colors.mutedForeground }]}>{overdueCount}</Text>
-                <Text style={[s.summaryLabel, { color: overdueCount > 0 ? "#DC2626" : colors.mutedForeground }]}>Overdue</Text>
+              <View style={[s.summaryBox, { backgroundColor: overdueCount > 0 ? colors.dangerTint : colors.card, borderColor: overdueCount > 0 ? colors.destructive : colors.border }]}>
+                <Text style={[s.summaryNum, { color: overdueCount > 0 ? colors.destructive : colors.mutedForeground }]}>{overdueCount}</Text>
+                <Text style={[s.summaryLabel, { color: overdueCount > 0 ? colors.destructive : colors.mutedForeground }]}>Overdue</Text>
               </View>
-              <View style={[s.summaryBox, { backgroundColor: dueSoonCount > 0 ? "#FEF3C7" : colors.card, borderColor: dueSoonCount > 0 ? "#FDE68A" : colors.border }]}>
-                <Text style={[s.summaryNum, { color: dueSoonCount > 0 ? "#D97706" : colors.mutedForeground }]}>{dueSoonCount}</Text>
-                <Text style={[s.summaryLabel, { color: dueSoonCount > 0 ? "#D97706" : colors.mutedForeground }]}>Due Soon</Text>
+              <View style={[s.summaryBox, { backgroundColor: dueSoonCount > 0 ? colors.warningTint : colors.card, borderColor: dueSoonCount > 0 ? colors.warning : colors.border }]}>
+                <Text style={[s.summaryNum, { color: dueSoonCount > 0 ? colors.warning : colors.mutedForeground }]}>{dueSoonCount}</Text>
+                <Text style={[s.summaryLabel, { color: dueSoonCount > 0 ? colors.warning : colors.mutedForeground }]}>Due Soon</Text>
               </View>
               <View style={[s.summaryBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[s.summaryNum, { color: colors.primary }]}>{items.length}</Text>

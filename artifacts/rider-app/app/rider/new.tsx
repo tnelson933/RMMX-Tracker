@@ -231,7 +231,7 @@ export default function NewRiderScreen() {
       marginBottom: 14,
     },
     errorBanner: {
-      backgroundColor: "#FEE2E2",
+      backgroundColor: colors.dangerTint,
       borderRadius: 10,
       padding: 12,
       flexDirection: "row",
@@ -241,7 +241,7 @@ export default function NewRiderScreen() {
     errorText: {
       flex: 1,
       fontSize: 13,
-      color: "#DC2626",
+      color: colors.destructive,
       fontFamily: "Inter_400Regular",
     },
     note: {
@@ -281,7 +281,7 @@ export default function NewRiderScreen() {
         >
           {error && (
             <View style={s.errorBanner}>
-              <Feather name="alert-circle" size={15} color="#DC2626" />
+              <Feather name="alert-circle" size={15} color={colors.destructive} />
               <Text style={s.errorText}>{error}</Text>
             </View>
           )}

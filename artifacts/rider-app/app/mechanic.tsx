@@ -23,8 +23,6 @@ import { resolveFollowUpChips } from "@/utils/rockyFollowUps";
 
 const CONFIRM_CLEAR_LABEL = "Clear chat";
 
-const ACCENT = "#cf152d";
-
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
 // ─── Linked text — renders URLs as tappable links ─────────────────────────────
@@ -71,14 +69,14 @@ function MessageBubble({ msg, colors }: { msg: ChatMessage; colors: ReturnType<t
       isUser ? styles.bubbleRowRight : styles.bubbleRowLeft,
     ]}>
       {!isUser && (
-        <View style={[styles.avatar, { backgroundColor: ACCENT + "22", borderColor: ACCENT + "44" }]}>
+        <View style={[styles.avatar, { backgroundColor: colors.primary + "22", borderColor: colors.primary + "44" }]}>
           <Text style={{ fontSize: 14 }}>🔧</Text>
         </View>
       )}
       <View style={[
         styles.bubble,
         isUser
-          ? { backgroundColor: ACCENT, maxWidth: "78%" }
+          ? { backgroundColor: colors.primary, maxWidth: "78%" }
           : { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, maxWidth: "82%" },
       ]}>
         <LinkedText
@@ -87,7 +85,7 @@ function MessageBubble({ msg, colors }: { msg: ChatMessage; colors: ReturnType<t
             styles.bubbleText,
             { color: isUser ? "#fff" : colors.foreground, fontFamily: "Inter_400Regular" },
           ]}
-          linkColor={isUser ? "#ffd0d6" : ACCENT}
+          linkColor={isUser ? "#ffd0d6" : colors.primary}
         />
       </View>
     </View>
@@ -99,11 +97,11 @@ function MessageBubble({ msg, colors }: { msg: ChatMessage; colors: ReturnType<t
 function TypingIndicator({ colors }: { colors: ReturnType<typeof useColors> }) {
   return (
     <View style={[styles.bubbleRow, styles.bubbleRowLeft]}>
-      <View style={[styles.avatar, { backgroundColor: ACCENT + "22", borderColor: ACCENT + "44" }]}>
+      <View style={[styles.avatar, { backgroundColor: colors.primary + "22", borderColor: colors.primary + "44" }]}>
         <Text style={{ fontSize: 14 }}>🔧</Text>
       </View>
       <View style={[styles.bubble, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}>
-        <ActivityIndicator size="small" color={ACCENT} />
+        <ActivityIndicator size="small" color={colors.primary} />
       </View>
     </View>
   );
@@ -142,13 +140,13 @@ function MemoryPanel({
         style={({ pressed }) => [styles.memoryHeader, { opacity: pressed ? 0.7 : 1 }]}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Feather name="cpu" size={13} color={ACCENT} />
-          <Text style={{ fontSize: 12, fontFamily: "Inter_700Bold", color: ACCENT, letterSpacing: 0.3 }}>
+          <Feather name="cpu" size={13} color={colors.primary} />
+          <Text style={{ fontSize: 12, fontFamily: "Inter_700Bold", color: colors.primary, letterSpacing: 0.3 }}>
             Rocky's Memory
           </Text>
           {memory.length > 0 && (
-            <View style={[styles.memoryBadge, { backgroundColor: ACCENT + "20", borderColor: ACCENT + "40" }]}>
-              <Text style={{ fontSize: 10, color: ACCENT, fontFamily: "Inter_700Bold" }}>{memory.length}</Text>
+            <View style={[styles.memoryBadge, { backgroundColor: colors.primary + "20", borderColor: colors.primary + "40" }]}>
+              <Text style={{ fontSize: 10, color: colors.primary, fontFamily: "Inter_700Bold" }}>{memory.length}</Text>
             </View>
           )}
         </View>
@@ -197,17 +195,17 @@ function MemoryPanel({
             style={({ pressed }) => [
               styles.clearMemoryBtn,
               {
-                backgroundColor: confirmingClear ? "#FEE2E2" : colors.muted,
-                borderColor: confirmingClear ? "#FECACA" : colors.border,
+                backgroundColor: confirmingClear ? colors.dangerTint : colors.muted,
+                borderColor: confirmingClear ? colors.destructive : colors.border,
                 opacity: pressed ? 0.7 : 1,
               },
             ]}
           >
-            <Feather name="trash-2" size={13} color={confirmingClear ? "#DC2626" : colors.mutedForeground} />
+            <Feather name="trash-2" size={13} color={confirmingClear ? colors.destructive : colors.mutedForeground} />
             <Text
               style={[
                 styles.clearMemoryLabel,
-                { color: confirmingClear ? "#DC2626" : colors.mutedForeground },
+                { color: confirmingClear ? colors.destructive : colors.mutedForeground },
               ]}
             >
               {confirmingClear ? "Tap again to confirm" : "Clear memory"}
@@ -280,8 +278,8 @@ export default function MechanicScreen() {
         <View style={{ flex: 1, alignItems: "center" }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Rocky</Text>
-            <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, backgroundColor: ACCENT + "22", borderWidth: 1, borderColor: ACCENT + "44" }}>
-              <Text style={{ fontSize: 9, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold", letterSpacing: 0.8 }}>AI</Text>
+            <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, backgroundColor: colors.primary + "22", borderWidth: 1, borderColor: colors.primary + "44" }}>
+              <Text style={{ fontSize: 9, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", letterSpacing: 0.8 }}>AI</Text>
             </View>
           </View>
           <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
@@ -304,7 +302,7 @@ export default function MechanicScreen() {
           style={({ pressed }) => ({
             height: 36, borderRadius: 18,
             paddingHorizontal: 10,
-            backgroundColor: confirmingClear ? "#FEE2E2" : colors.muted,
+            backgroundColor: confirmingClear ? colors.dangerTint : colors.muted,
             alignItems: "center", justifyContent: "center",
             opacity: pressed ? 0.6 : 1,
             flexDirection: "row", gap: 4,
@@ -313,10 +311,10 @@ export default function MechanicScreen() {
           <Feather
             name="trash-2"
             size={15}
-            color={confirmingClear ? "#DC2626" : colors.mutedForeground}
+            color={confirmingClear ? colors.destructive : colors.mutedForeground}
           />
           {confirmingClear && (
-            <Text style={{ fontSize: 11, color: "#DC2626", fontFamily: "Inter_700Bold" }}>
+            <Text style={{ fontSize: 11, color: colors.destructive, fontFamily: "Inter_700Bold" }}>
               {CONFIRM_CLEAR_LABEL}
             </Text>
           )}
@@ -325,13 +323,13 @@ export default function MechanicScreen() {
 
       {/* Bike context banner (if bike info set) */}
       {bikeStr.length > 0 && (
-        <View style={[styles.contextBanner, { backgroundColor: ACCENT + "10", borderBottomColor: ACCENT + "25" }]}>
-          <Feather name="settings" size={11} color={ACCENT} />
-          <Text style={{ fontSize: 11, color: ACCENT, fontFamily: "Inter_500Medium" }}>{bikeStr}</Text>
+        <View style={[styles.contextBanner, { backgroundColor: colors.primary + "10", borderBottomColor: colors.primary + "25" }]}>
+          <Feather name="settings" size={11} color={colors.primary} />
+          <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium" }}>{bikeStr}</Text>
           {storedInfo.rideExperience && (
             <>
-              <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: ACCENT + "60" }} />
-              <Text style={{ fontSize: 11, color: ACCENT, fontFamily: "Inter_500Medium", textTransform: "capitalize" }}>{storedInfo.rideExperience}</Text>
+              <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: colors.primary + "60" }} />
+              <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium", textTransform: "capitalize" }}>{storedInfo.rideExperience}</Text>
             </>
           )}
         </View>
@@ -361,11 +359,11 @@ export default function MechanicScreen() {
 
       {/* Error banner */}
       {error && (
-        <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#FEE2E2", flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Feather name="alert-circle" size={14} color="#DC2626" />
-          <Text style={{ flex: 1, fontSize: 12, color: "#DC2626", fontFamily: "Inter_400Regular" }}>{error}</Text>
+        <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: colors.dangerTint, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Feather name="alert-circle" size={14} color={colors.destructive} />
+          <Text style={{ flex: 1, fontSize: 12, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{error}</Text>
           <Pressable onPress={() => setError(null)}>
-            <Feather name="x" size={14} color="#DC2626" />
+            <Feather name="x" size={14} color={colors.destructive} />
           </Pressable>
         </View>
       )}
@@ -385,13 +383,13 @@ export default function MechanicScreen() {
               style={({ pressed }) => [
                 styles.followUpChip,
                 {
-                  backgroundColor: ACCENT + "12",
-                  borderColor: ACCENT + "40",
+                  backgroundColor: colors.primary + "12",
+                  borderColor: colors.primary + "40",
                   opacity: pressed ? 0.72 : 1,
                 },
               ]}
             >
-              <Text style={[styles.followUpChipText, { color: ACCENT }]} numberOfLines={1}>
+              <Text style={[styles.followUpChipText, { color: colors.primary }]} numberOfLines={1}>
                 {chip.label}
               </Text>
             </Pressable>
@@ -431,11 +429,11 @@ export default function MechanicScreen() {
             disabled={!inputText.trim() || isTyping}
             style={({ pressed }) => ({
               width: 42, height: 42, borderRadius: 21,
-              backgroundColor: inputText.trim() && !isTyping ? ACCENT : colors.muted,
+              backgroundColor: inputText.trim() && !isTyping ? colors.primary : colors.muted,
               alignItems: "center", justifyContent: "center",
               opacity: pressed ? 0.75 : 1,
               borderWidth: 1,
-              borderColor: inputText.trim() && !isTyping ? ACCENT : colors.border,
+              borderColor: inputText.trim() && !isTyping ? colors.primary : colors.border,
             })}
           >
             <Feather name="send" size={17} color={inputText.trim() && !isTyping ? "#fff" : colors.mutedForeground} />

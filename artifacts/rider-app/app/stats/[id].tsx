@@ -10,8 +10,6 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { StatsShareCard, formatLap, useShareCapture, type CareerStats } from "@/components/ShareCard";
 
-const ACCENT = "#cf152d";
-
 interface Manager { id: number; email: string; joined: boolean; isYou: boolean }
 
 /** Career stats, a shareable stats card, and who can manage this rider profile. */
@@ -199,12 +197,12 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   tile: { width: "31.5%", backgroundColor: colors.card, borderRadius: 12, paddingVertical: 12, alignItems: "center", borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   tileValue: { fontSize: 18, color: colors.foreground, fontFamily: "Inter_700Bold" },
   tileLabel: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Inter_500Medium", textAlign: "center" },
-  primaryBtn: { flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: ACCENT, borderRadius: 999, paddingVertical: 14 },
+  primaryBtn: { flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, borderRadius: 999, paddingVertical: 14 },
   primaryBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
   managerRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.card, borderRadius: 12, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   managerEmail: { fontSize: 14, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
   managerStatus: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Inter_400Regular" },
   inviteRow: { flexDirection: "row", gap: 8 },
   input: { flex: 1, backgroundColor: colors.card, borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 12, color: colors.foreground, fontFamily: "Inter_400Regular" },
-  addBtn: { backgroundColor: ACCENT, borderRadius: 999, paddingHorizontal: 20, alignItems: "center", justifyContent: "center" },
+  addBtn: { backgroundColor: colors.primary, borderRadius: 999, paddingHorizontal: 20, alignItems: "center", justifyContent: "center" },
 });

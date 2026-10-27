@@ -26,7 +26,6 @@ import { useTheme, type ThemePreference } from "@/context/ThemeContext";
 import { BrandBar } from "@/components/BrandBar";
 import { NETWORK_ERROR_MESSAGE, postJson } from "@/lib/friendlyErrors";
 
-const ACCENT = "#cf152d";
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 const PRIVACY_URL = `${BASE_URL}/privacy`;
 
@@ -82,7 +81,7 @@ function AuthForm() {
     switchRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 4 },
     switchText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
     switchLink: { fontSize: 13, color: colors.primary, fontFamily: "Inter_600SemiBold" },
-    error: { backgroundColor: "#FEE2E2", borderRadius: 8, padding: 12, fontSize: 13, color: "#DC2626", fontFamily: "Inter_400Regular" },
+    error: { backgroundColor: colors.dangerTint, borderRadius: 8, padding: 12, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" },
   });
 
   return (
@@ -366,13 +365,13 @@ function ProfileList() {
     // Active summary banner
     activeBanner: {
       flexDirection: "row", alignItems: "center", gap: 8,
-      backgroundColor: ACCENT + "14", borderRadius: 10, padding: 10,
-      borderWidth: 1, borderColor: ACCENT + "35",
+      backgroundColor: colors.primary + "14", borderRadius: 10, padding: 10,
+      borderWidth: 1, borderColor: colors.primary + "35",
     },
-    activeBannerText: { flex: 1, fontSize: 13, fontWeight: "600", color: ACCENT, fontFamily: "Inter_600SemiBold" },
+    activeBannerText: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" },
     activeBannerBtn: {
       paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
-      backgroundColor: ACCENT, flexDirection: "row", alignItems: "center", gap: 4,
+      backgroundColor: colors.primary, flexDirection: "row", alignItems: "center", gap: 4,
     },
     activeBannerBtnText: { fontSize: 11, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" },
     // Profile card
@@ -380,7 +379,7 @@ function ProfileList() {
       backgroundColor: colors.card, borderRadius: 14,
       borderWidth: 1, borderColor: colors.border, overflow: "hidden",
     },
-    profileCardSelected: { borderWidth: 1.5, borderColor: ACCENT },
+    profileCardSelected: { borderWidth: 1.5, borderColor: colors.primary },
     profileCardInner: { padding: 14 },
     profileRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
     profileLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
@@ -461,8 +460,8 @@ function ProfileList() {
                 onPress={handleSelectAll}
                 style={({ pressed }) => ({
                   paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-                  backgroundColor: allSelected ? ACCENT : colors.muted,
-                  borderWidth: 1, borderColor: allSelected ? ACCENT : colors.border,
+                  backgroundColor: allSelected ? colors.primary : colors.muted,
+                  borderWidth: 1, borderColor: allSelected ? colors.primary : colors.border,
                   opacity: pressed ? 0.7 : 1, flexDirection: "row", alignItems: "center", gap: 4,
                 })}
               >
@@ -476,7 +475,7 @@ function ProfileList() {
 
           {/* Active summary banner */}
           <View style={s.activeBanner}>
-            <Feather name="check-circle" size={14} color={ACCENT} />
+            <Feather name="check-circle" size={14} color={colors.primary} />
             <Text style={s.activeBannerText} numberOfLines={1}>
               Showing: {activeSummary()}
             </Text>
@@ -509,15 +508,15 @@ function ProfileList() {
             >
               {/* Selected accent bar */}
               {isSelected && (
-                <View style={{ height: 3, backgroundColor: ACCENT }} />
+                <View style={{ height: 3, backgroundColor: colors.primary }} />
               )}
 
               <View style={s.profileCardInner}>
                 <View style={s.profileRow}>
                   <View style={s.profileLeft}>
                     {/* Avatar */}
-                    <View style={[s.profileAvatar, { backgroundColor: isSelected ? ACCENT + "20" : colors.primary + "12" }]}>
-                      <Feather name="user" size={20} color={isSelected ? ACCENT : colors.primary} />
+                    <View style={[s.profileAvatar, { backgroundColor: isSelected ? colors.primary + "20" : colors.primary + "12" }]}>
+                      <Feather name="user" size={20} color={isSelected ? colors.primary : colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.profileName}>
@@ -532,7 +531,7 @@ function ProfileList() {
                   {/* Checkbox */}
                   <View style={[
                     s.checkOuter,
-                    { borderColor: isSelected ? ACCENT : colors.border + "aa", backgroundColor: isSelected ? ACCENT : "transparent" },
+                    { borderColor: isSelected ? colors.primary : colors.border + "aa", backgroundColor: isSelected ? colors.primary : "transparent" },
                   ]}>
                     {isSelected ? (
                       <Feather name="check" size={14} color="#fff" />
@@ -634,8 +633,8 @@ function ProfileList() {
             opacity: pressed ? 0.75 : 1,
           })}
         >
-          <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: ACCENT + "15", alignItems: "center", justifyContent: "center" }}>
-            <Feather name="flag" size={18} color={ACCENT} />
+          <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: colors.primary + "15", alignItems: "center", justifyContent: "center" }}>
+            <Feather name="flag" size={18} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
@@ -687,15 +686,15 @@ function ProfileList() {
                     padding: 14, opacity: pressed ? 0.75 : 1,
                   })}
                 >
-                  <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: ACCENT + "18", alignItems: "center", justifyContent: "center" }}>
-                    <DirtBikeIcon size={20} color={ACCENT} />
+                  <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.primary + "18", alignItems: "center", justifyContent: "center" }}>
+                    <DirtBikeIcon size={20} color={colors.primary} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
                       {profile.firstName} {profile.lastName}
                     </Text>
                     {(profile.bikes && profile.bikes.length > 0) ? (
-                      <Text style={{ fontSize: 12, color: ACCENT, fontFamily: "Inter_500Medium", marginTop: 1 }}>
+                      <Text style={{ fontSize: 12, color: colors.primary, fontFamily: "Inter_500Medium", marginTop: 1 }}>
                         {bikeStr || `${profile.bikes.length} bike${profile.bikes.length === 1 ? "" : "s"}`}
                       </Text>
                     ) : (
@@ -742,12 +741,12 @@ function ProfileList() {
                               flexDirection: "row", alignItems: "center", gap: 10,
                               paddingHorizontal: 12, paddingVertical: 10,
                               borderRadius: 10, borderWidth: 1.5,
-                              borderColor: bike.isDefault ? ACCENT : colors.border,
-                              backgroundColor: bike.isDefault ? ACCENT + "10" : colors.background,
+                              borderColor: bike.isDefault ? colors.primary : colors.border,
+                              backgroundColor: bike.isDefault ? colors.primary + "10" : colors.background,
                               marginBottom: 6, opacity: pressed ? 0.75 : 1,
                             })}
                           >
-                            <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: bike.isDefault ? ACCENT : colors.border, backgroundColor: bike.isDefault ? ACCENT : "transparent", alignItems: "center", justifyContent: "center" }}>
+                            <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: bike.isDefault ? colors.primary : colors.border, backgroundColor: bike.isDefault ? colors.primary : "transparent", alignItems: "center", justifyContent: "center" }}>
                               {bike.isDefault && <Feather name="check" size={11} color="#fff" />}
                             </View>
                             <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>{bs}</Text>
@@ -813,7 +812,7 @@ function ProfileList() {
                                   setAddBikeSaving(false);
                                 }
                               }}
-                              style={({ pressed }) => ({ flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 8, backgroundColor: ACCENT, opacity: pressed || addBikeSaving ? 0.75 : 1 })}
+                              style={({ pressed }) => ({ flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 8, backgroundColor: colors.primary, opacity: pressed || addBikeSaving ? 0.75 : 1 })}
                             >
                               {addBikeSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontSize: 13, color: "#fff", fontFamily: "Inter_700Bold" }}>Add Bike</Text>}
                             </Pressable>
@@ -865,8 +864,8 @@ function ProfileList() {
                               onPress={() => setGarageEdit(prev => ({ ...prev, rideExperience: lvl.toLowerCase() }))}
                               style={({ pressed }) => ({
                                 paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-                                backgroundColor: selected ? ACCENT : colors.background,
-                                borderWidth: 1.5, borderColor: selected ? ACCENT : colors.border,
+                                backgroundColor: selected ? colors.primary : colors.background,
+                                borderWidth: 1.5, borderColor: selected ? colors.primary : colors.border,
                                 opacity: pressed ? 0.75 : 1,
                               })}
                             >
@@ -899,20 +898,20 @@ function ProfileList() {
                                 flexDirection: "row", alignItems: "center", gap: 10,
                                 paddingHorizontal: 12, paddingVertical: 10,
                                 borderRadius: 10, borderWidth: 1.5,
-                                borderColor: isChecked ? ACCENT : colors.border,
-                                backgroundColor: isChecked ? ACCENT + "12" : colors.background,
+                                borderColor: isChecked ? colors.primary : colors.border,
+                                backgroundColor: isChecked ? colors.primary + "12" : colors.background,
                                 opacity: pressed ? 0.75 : 1,
                               })}
                             >
                               <View style={{
                                 width: 20, height: 20, borderRadius: 4,
-                                borderWidth: 2, borderColor: isChecked ? ACCENT : colors.border + "aa",
-                                backgroundColor: isChecked ? ACCENT : "transparent",
+                                borderWidth: 2, borderColor: isChecked ? colors.primary : colors.border + "aa",
+                                backgroundColor: isChecked ? colors.primary : "transparent",
                                 alignItems: "center", justifyContent: "center",
                               }}>
                                 {isChecked && <Feather name="check" size={12} color="#fff" />}
                               </View>
-                              <Text style={{ fontSize: 14, fontWeight: "600", color: isChecked ? ACCENT : colors.foreground, fontFamily: "Inter_600SemiBold" }}>
+                              <Text style={{ fontSize: 14, fontWeight: "600", color: isChecked ? colors.primary : colors.foreground, fontFamily: "Inter_600SemiBold" }}>
                                 {discipline}
                               </Text>
                             </Pressable>
@@ -950,7 +949,7 @@ function ProfileList() {
                       }}
                       disabled={garageSaving}
                       style={({ pressed }) => ({
-                        backgroundColor: ACCENT, borderRadius: 10, paddingVertical: 12,
+                        backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 12,
                         alignItems: "center", opacity: pressed || garageSaving ? 0.75 : 1,
                       })}
                     >
@@ -1024,7 +1023,7 @@ function ProfileList() {
                   justifyContent: "center",
                   paddingVertical: 12,
                   gap: 4,
-                  backgroundColor: isActive ? ACCENT : "transparent",
+                  backgroundColor: isActive ? colors.primary : "transparent",
                   borderLeftWidth: idx > 0 ? 1 : 0,
                   borderLeftColor: colors.border,
                   opacity: pressed ? 0.75 : 1,
@@ -1072,7 +1071,7 @@ function ProfileList() {
                 <Feather
                   name={biometricType === "face" ? "aperture" : "check-circle"}
                   size={18}
-                  color={biometricEnabled ? ACCENT : colors.mutedForeground}
+                  color={biometricEnabled ? colors.primary : colors.mutedForeground}
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>
@@ -1084,7 +1083,7 @@ function ProfileList() {
                 </View>
                 <View style={{
                   width: 44, height: 26, borderRadius: 13,
-                  backgroundColor: biometricEnabled ? ACCENT : colors.muted,
+                  backgroundColor: biometricEnabled ? colors.primary : colors.muted,
                   justifyContent: "center",
                   paddingHorizontal: 3,
                 }}>
@@ -1102,9 +1101,9 @@ function ProfileList() {
                   Enter your password once. It's stored in this device's secure keychain and used only for {biometricType === "face" ? "Face ID" : "fingerprint"} sign-in.
                 </Text>
                 {bioError && (
-                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#FEE2E2", borderRadius: 8, padding: 10 }}>
-                    <Feather name="alert-circle" size={14} color="#DC2626" style={{ marginTop: 1 }} />
-                    <Text style={{ flex: 1, fontSize: 13, color: "#DC2626", fontFamily: "Inter_400Regular" }}>{bioError}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: colors.dangerTint, borderRadius: 8, padding: 10 }}>
+                    <Feather name="alert-circle" size={14} color={colors.destructive} style={{ marginTop: 1 }} />
+                    <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{bioError}</Text>
                   </View>
                 )}
                 <View style={{
@@ -1127,7 +1126,7 @@ function ProfileList() {
                   onPress={handleConfirmBiometric}
                   disabled={bioSaving}
                   style={({ pressed }) => ({
-                    backgroundColor: ACCENT, borderRadius: 10, paddingVertical: 13,
+                    backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 13,
                     alignItems: "center", opacity: pressed || bioSaving ? 0.75 : 1,
                   })}
                 >
@@ -1151,16 +1150,16 @@ function ProfileList() {
             </Text>
 
             {pwSuccess ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#D1FAE5", borderRadius: 8, padding: 10 }}>
-                <Feather name="check-circle" size={14} color="#065F46" />
-                <Text style={{ fontSize: 13, color: "#065F46", fontFamily: "Inter_400Regular" }}>Password updated successfully</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.successTint, borderRadius: 8, padding: 10 }}>
+                <Feather name="check-circle" size={14} color={colors.success} />
+                <Text style={{ fontSize: 13, color: colors.success, fontFamily: "Inter_400Regular" }}>Password updated successfully</Text>
               </View>
             ) : (
               <>
                 {pwError && (
-                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#FEE2E2", borderRadius: 8, padding: 10 }}>
-                    <Feather name="alert-circle" size={14} color="#DC2626" style={{ marginTop: 1 }} />
-                    <Text style={{ flex: 1, fontSize: 13, color: "#DC2626", fontFamily: "Inter_400Regular" }}>{pwError}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: colors.dangerTint, borderRadius: 8, padding: 10 }}>
+                    <Feather name="alert-circle" size={14} color={colors.destructive} style={{ marginTop: 1 }} />
+                    <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{pwError}</Text>
                   </View>
                 )}
                 <View style={{
@@ -1211,7 +1210,7 @@ function ProfileList() {
                   onPress={handleChangePassword}
                   disabled={pwSaving}
                   style={({ pressed }) => ({
-                    backgroundColor: ACCENT, borderRadius: 10, paddingVertical: 13,
+                    backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 13,
                     alignItems: "center", opacity: pressed || pwSaving ? 0.75 : 1,
                   })}
                 >

@@ -24,8 +24,6 @@ import { DirtBikeIcon } from "@/components/DirtBikeIcon";
 import { BrandBar } from "@/components/BrandBar";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 
-const ACCENT = "#cf152d";
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmtLap(ms: number | null | undefined): string {
@@ -169,7 +167,7 @@ function ChipBar({ items, selected, onSelect, colors }: {
         return (
           <Pressable key={item.key} onPress={() => onSelect(item.key)} style={{
             paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-            backgroundColor: active ? ACCENT : colors.muted,
+            backgroundColor: active ? colors.primary : colors.muted,
             borderWidth: active ? 0 : StyleSheet.hairlineWidth, borderColor: colors.border,
           }}>
             <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : colors.foreground, fontFamily: "Inter_700Bold" }}>{item.label}</Text>
@@ -216,11 +214,11 @@ function LapTable({
           ? lapDelta(lap.lapTimeMs!, bestMs)
           : "";
         return (
-          <View key={i} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: i < validLaps.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border, backgroundColor: isBest ? ACCENT + "10" : "transparent" }}>
+          <View key={i} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: i < validLaps.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border, backgroundColor: isBest ? colors.primary + "10" : "transparent" }}>
             <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{lap.lapNumber}</Text>
-            <Text style={{ flex: 1, fontSize: 15, fontWeight: isBest ? "800" : "400", color: isBest ? ACCENT : colors.foreground, fontFamily: isBest ? "Inter_700Bold" : "Inter_400Regular" }}>{fmtLap(lap.lapTimeMs)}</Text>
+            <Text style={{ flex: 1, fontSize: 15, fontWeight: isBest ? "800" : "400", color: isBest ? colors.primary : colors.foreground, fontFamily: isBest ? "Inter_700Bold" : "Inter_400Regular" }}>{fmtLap(lap.lapTimeMs)}</Text>
             <View style={{ width: 70, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 4 }}>
-              {isBest ? (<><Feather name="zap" size={11} color={ACCENT} /><Text style={{ fontSize: 11, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold" }}>BEST</Text></>) : delta ? (<Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{delta}</Text>) : null}
+              {isBest ? (<><Feather name="zap" size={11} color={colors.primary} /><Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>BEST</Text></>) : delta ? (<Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{delta}</Text>) : null}
             </View>
           </View>
         );
@@ -241,16 +239,16 @@ function Leaderboard({ entries, colors }: { entries: LeaderboardEntry[]; colors:
         <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Best Lap</Text>
       </View>
       {entries.map((e, i) => (
-        <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: i < entries.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border, backgroundColor: e.isMe ? ACCENT + "0d" : "transparent" }}>
-          <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: e.rank === 1 ? ACCENT : e.isMe ? ACCENT + "30" : colors.muted, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ fontSize: 12, fontWeight: "700", color: e.rank === 1 ? "#fff" : e.isMe ? ACCENT : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>{e.rank}</Text>
+        <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: i < entries.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border, backgroundColor: e.isMe ? colors.primary + "0d" : "transparent" }}>
+          <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: e.rank === 1 ? colors.primary : e.isMe ? colors.primary + "30" : colors.muted, alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: e.rank === 1 ? "#fff" : e.isMe ? colors.primary : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>{e.rank}</Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 14, fontWeight: e.isMe ? "700" : "400", color: colors.foreground, fontFamily: e.isMe ? "Inter_700Bold" : "Inter_400Regular" }}>{e.riderName}{e.isMe ? "  ★" : ""}</Text>
             {e.bibNumber && <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>#{e.bibNumber}</Text>}
           </View>
           <View style={{ alignItems: "flex-end", gap: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: e.isMe ? ACCENT : colors.foreground, fontFamily: e.isMe ? "Inter_700Bold" : "Inter_500Medium" }}>{fmtLap(e.bestLapMs)}</Text>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: e.isMe ? colors.primary : colors.foreground, fontFamily: e.isMe ? "Inter_700Bold" : "Inter_500Medium" }}>{fmtLap(e.bestLapMs)}</Text>
             <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{e.lapCount} lap{e.lapCount !== 1 ? "s" : ""}</Text>
           </View>
         </View>
@@ -327,9 +325,9 @@ function ExerciseCard({ ex, phaseColor, index: _index, colors }: {
           </View>
         ) : null}
         {ex.mxBenefit ? (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: ACCENT + "12" }}>
-            <DirtBikeIcon size={11} color={ACCENT} />
-            <Text style={{ fontSize: 11, color: ACCENT, fontFamily: "Inter_500Medium" }} numberOfLines={1}>{ex.mxBenefit}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary + "12" }}>
+            <DirtBikeIcon size={11} color={colors.primary} />
+            <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium" }} numberOfLines={1}>{ex.mxBenefit}</Text>
           </View>
         ) : null}
       </View>
@@ -406,9 +404,9 @@ function DrillCard({ drill, phaseColor, colors }: {
           </View>
         ) : null}
         {drill.mxFocus ? (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: ACCENT + "12" }}>
-            <DirtBikeIcon size={11} color={ACCENT} />
-            <Text style={{ fontSize: 11, color: ACCENT, fontFamily: "Inter_500Medium" }} numberOfLines={1}>{drill.mxFocus}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary + "12" }}>
+            <DirtBikeIcon size={11} color={colors.primary} />
+            <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium" }} numberOfLines={1}>{drill.mxFocus}</Text>
           </View>
         ) : null}
       </View>
@@ -489,26 +487,26 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 32 }}>
       {/* Plan header */}
-      <View style={{ borderRadius: 14, overflow: "hidden", borderWidth: 1.5, borderColor: ACCENT + "44" }}>
-        <View style={{ padding: 16, backgroundColor: ACCENT + "12" }}>
+      <View style={{ borderRadius: 14, overflow: "hidden", borderWidth: 1.5, borderColor: colors.primary + "44" }}>
+        <View style={{ padding: 16, backgroundColor: colors.primary + "12" }}>
           <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
             <Text style={{ flex: 1, fontSize: 20, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5, lineHeight: 24 }}>
               {plan.planTitle}
             </Text>
-            <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: ACCENT, marginLeft: 10 }}>
+            <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.primary, marginLeft: 10 }}>
               <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>{plan.totalMinutes} min</Text>
             </View>
           </View>
           {/* Workout type badge */}
-          <View style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: ACCENT + "22", marginBottom: 10 }}>
+          <View style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.primary + "22", marginBottom: 10 }}>
             <Text style={{ fontSize: 12 }}>{typeMeta.emoji}</Text>
-            <Text style={{ fontSize: 11, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold" }}>{typeMeta.label}</Text>
+            <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>{typeMeta.label}</Text>
           </View>
           {/* Focus tags */}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
             {(plan.focus ?? []).map((f, i) => (
-              <View key={i} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: ACCENT + "25" }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold" }}>{f}</Text>
+              <View key={i} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.primary + "25" }}>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>{f}</Text>
               </View>
             ))}
           </View>
@@ -517,7 +515,7 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
             <View style={{ gap: 3 }}>
               {(plan.mxRelevance as string[]).map((bullet, i) => (
                 <View key={i} style={{ flexDirection: "row", gap: 7, alignItems: "flex-start" }}>
-                  <Text style={{ fontSize: 13, color: ACCENT, fontFamily: "Inter_700Bold", lineHeight: 19 }}>·</Text>
+                  <Text style={{ fontSize: 13, color: colors.primary, fontFamily: "Inter_700Bold", lineHeight: 19 }}>·</Text>
                   <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 19 }}>{bullet}</Text>
                 </View>
               ))}
@@ -565,7 +563,7 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
 
       {/* Footer tips */}
       {plan.proTip && (
-        <TipCard emoji="🏆" label="Pro Tip" labelColor={ACCENT} text={plan.proTip} colors={colors} />
+        <TipCard emoji="🏆" label="Pro Tip" labelColor={colors.primary} text={plan.proTip} colors={colors} />
       )}
       {plan.nutritionTip && (
         <TipCard emoji="🥗" label="Nutrition" labelColor="#22c55e" text={plan.nutritionTip} colors={colors} />
@@ -575,8 +573,8 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
       )}
 
       {/* New plan button */}
-      <Pressable onPress={onReset} style={({ pressed }) => ({ marginTop: 4, borderRadius: 12, borderWidth: 1.5, borderColor: ACCENT, paddingVertical: 14, alignItems: "center", opacity: pressed ? 0.7 : 1 })}>
-        <Text style={{ fontSize: 15, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold" }}>Generate New Plan</Text>
+      <Pressable onPress={onReset} style={({ pressed }) => ({ marginTop: 4, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary, paddingVertical: 14, alignItems: "center", opacity: pressed ? 0.7 : 1 })}>
+        <Text style={{ fontSize: 15, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>Generate New Plan</Text>
       </Pressable>
     </ScrollView>
   );
@@ -602,8 +600,8 @@ function LoadingScreen({ colors, insets }: { colors: ReturnType<typeof useColors
   return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 40, gap: 24 }}>
       {/* Animated logo / spinner */}
-      <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: ACCENT + "20", alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator size="large" color={ACCENT} />
+      <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
       <View style={{ alignItems: "center", gap: 8 }}>
         <Text style={{ fontSize: 18, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>
@@ -693,8 +691,8 @@ function InputScreen({ onGenerate, colors, insets }: {
       <ScrollView contentContainerStyle={{ padding: 20, gap: 24, paddingBottom: insets.bottom + 32 }}>
         {/* Hero */}
         <View style={{ alignItems: "center", gap: 8, paddingTop: 8 }}>
-          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: ACCENT + "20", alignItems: "center", justifyContent: "center" }}>
-            <DirtBikeIcon size={44} color={ACCENT} />
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center" }}>
+            <DirtBikeIcon size={44} color={colors.primary} />
           </View>
           <Text style={{ fontSize: 22, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center", letterSpacing: -0.5 }}>
             MX Training Coach
@@ -718,7 +716,7 @@ function InputScreen({ onGenerate, colors, insets }: {
             numberOfLines={4}
             style={{
               borderRadius: 12, borderWidth: 1.5,
-              borderColor: goal.trim().length > 0 ? ACCENT + "80" : colors.border,
+              borderColor: goal.trim().length > 0 ? colors.primary + "80" : colors.border,
               backgroundColor: colors.card, padding: 14,
               fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular",
               lineHeight: 20, minHeight: 110, textAlignVertical: "top",
@@ -753,7 +751,7 @@ function InputScreen({ onGenerate, colors, insets }: {
                   onPress={() => handleSetWorkoutType(wt.key)}
                   style={({ pressed }) => ({
                     flex: 1, paddingVertical: 12, paddingHorizontal: 6, borderRadius: 12,
-                    backgroundColor: active ? ACCENT : colors.muted,
+                    backgroundColor: active ? colors.primary : colors.muted,
                     borderWidth: active ? 0 : StyleSheet.hairlineWidth, borderColor: colors.border,
                     alignItems: "center", gap: 4, opacity: pressed ? 0.75 : 1,
                   })}
@@ -777,7 +775,7 @@ function InputScreen({ onGenerate, colors, insets }: {
               return (
                 <Pressable key={d} onPress={() => setDuration(d)} style={({ pressed }) => ({
                   flex: 1, minWidth: "18%", paddingVertical: 12, borderRadius: 10,
-                  backgroundColor: active ? ACCENT : colors.muted,
+                  backgroundColor: active ? colors.primary : colors.muted,
                   borderWidth: active ? 0 : StyleSheet.hairlineWidth, borderColor: colors.border,
                   alignItems: "center", opacity: pressed ? 0.7 : 1,
                 })}>
@@ -795,7 +793,7 @@ function InputScreen({ onGenerate, colors, insets }: {
           onPress={() => onGenerate(goal.trim(), duration!, workoutType!)}
           style={({ pressed }) => ({
             borderRadius: 14, paddingVertical: 16, alignItems: "center",
-            backgroundColor: canGenerate ? ACCENT : colors.muted,
+            backgroundColor: canGenerate ? colors.primary : colors.muted,
             opacity: pressed ? 0.8 : 1,
           })}
         >
@@ -1218,7 +1216,7 @@ export default function TrainScreen() {
     header:    { paddingTop: insets.top + 16, paddingHorizontal: 20, paddingBottom: 12, backgroundColor: colors.background, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     statsRow:  { flexDirection: "row", gap: 10, marginTop: 14 },
     statBox:   { flex: 1, backgroundColor: colors.muted, borderRadius: 10, padding: 12, alignItems: "center" },
-    statValue: { fontSize: 18, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold" },
+    statValue: { fontSize: 18, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" },
     statLabel: { fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 },
     segControl: { flexDirection: "row", margin: 16, borderRadius: 999, backgroundColor: colors.muted, padding: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
     segBtn:    { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center" },
@@ -1228,7 +1226,7 @@ export default function TrainScreen() {
   });
 
   if (authLoading) {
-    return <View style={[styles.container, { flex: 1, alignItems: "center", justifyContent: "center" }]}><ActivityIndicator color={ACCENT} /></View>;
+    return <View style={[styles.container, { flex: 1, alignItems: "center", justifyContent: "center" }]}><ActivityIndicator color={colors.primary} /></View>;
   }
 
   if (!isAuthenticated) {
@@ -1237,7 +1235,7 @@ export default function TrainScreen() {
         <Feather name="activity" size={48} color={colors.mutedForeground} />
         <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>Your training lives here</Text>
         <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>Sign in to see your practice sessions and lap times.</Text>
-        <Pressable style={{ marginTop: 12, backgroundColor: ACCENT, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 }} onPress={() => router.push("/(tabs)/profile")}>
+        <Pressable style={{ marginTop: 12, backgroundColor: colors.primary, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 }} onPress={() => router.push("/(tabs)/profile")}>
           <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Sign In</Text>
         </Pressable>
       </View>
@@ -1313,11 +1311,11 @@ export default function TrainScreen() {
             </View>
           )}
           <ScrollView
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
             contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, gap: 16, paddingBottom: insets.bottom + 32 }}
           >
             {trackLoading && !refreshing ? (
-              <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={ACCENT} /></View>
+              <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>
             ) : trackError ? (
               <View style={{ padding: 32, alignItems: "center", gap: 8 }}>
                 <Feather name="alert-circle" size={32} color={colors.mutedForeground} />
@@ -1349,7 +1347,7 @@ export default function TrainScreen() {
                     <Animated.View style={{
                       borderRadius: 12,
                       borderWidth: pbFlash ? 2 : StyleSheet.hairlineWidth,
-                      borderColor: pbFlash ? "#eab308" : ACCENT + "44",
+                      borderColor: pbFlash ? "#eab308" : colors.primary + "44",
                       backgroundColor: colors.card,
                       padding: 16,
                       opacity: pbFlash
@@ -1385,7 +1383,7 @@ export default function TrainScreen() {
                           </View>
                         </View>
                         <View style={{ alignItems: "flex-end", gap: 2 }}>
-                          <Text style={{ fontSize: 24, fontWeight: "800", color: pbFlash ? "#ca8a04" : ACCENT, fontFamily: "Inter_700Bold" }}>{fmtLap(displayBest)}</Text>
+                          <Text style={{ fontSize: 24, fontWeight: "800", color: pbFlash ? "#ca8a04" : colors.primary, fontFamily: "Inter_700Bold" }}>{fmtLap(displayBest)}</Text>
                           <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>Best Lap</Text>
                           <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{lapCount} laps</Text>
                         </View>
@@ -1430,7 +1428,7 @@ export default function TrainScreen() {
               <Feather name="alert-circle" size={40} color="#ef4444" />
               <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>Couldn't Generate Plan</Text>
               <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>{coachError}</Text>
-              <Pressable onPress={() => setCoachState("input")} style={{ backgroundColor: ACCENT, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 }}>
+              <Pressable onPress={() => setCoachState("input")} style={{ backgroundColor: colors.primary, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 }}>
                 <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Try Again</Text>
               </Pressable>
             </View>

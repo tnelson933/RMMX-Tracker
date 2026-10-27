@@ -547,7 +547,6 @@ export function SeriesStandingsScreen({
   riderFetch: (path: string, options?: RequestInit) => Promise<Response>;
 }) {
   const primary = colors.primary;
-  const ACCENT = "#cf152d";
   const [rows, setRows] = useState<PublicSeriesStandingRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -580,7 +579,7 @@ export function SeriesStandingsScreen({
         colors={colors}
         insets={insets}
         rightEl={
-          <View style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: ACCENT }}>
+          <View style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: colors.primary }}>
             <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>
               {ordinal(riderPosition)}
             </Text>
@@ -625,23 +624,23 @@ export function SeriesStandingsScreen({
                       flexDirection: "row", alignItems: "center",
                       paddingHorizontal: 14, paddingVertical: 13,
                       borderBottomWidth: idx < top10.length - 1 ? 1 : 0,
-                      borderBottomColor: isMe ? ACCENT + "33" : colors.border,
-                      backgroundColor: isMe ? ACCENT + "12" : "transparent",
+                      borderBottomColor: isMe ? colors.primary + "33" : colors.border,
+                      backgroundColor: isMe ? colors.primary + "12" : "transparent",
                     }}
                   >
                     <View style={{
                       width: 26, height: 26, borderRadius: 13,
-                      backgroundColor: isMe ? ACCENT : (row.position <= 3 ? primary + "18" : colors.muted),
+                      backgroundColor: isMe ? colors.primary : (row.position <= 3 ? primary + "18" : colors.muted),
                       alignItems: "center", justifyContent: "center", marginRight: 8,
                     }}>
                       <Text style={{ fontSize: 12, fontWeight: "700", color: isMe ? "#fff" : (row.position <= 3 ? primary : colors.mutedForeground), fontFamily: "Inter_700Bold" }}>
                         {row.position}
                       </Text>
                     </View>
-                    <Text style={{ flex: 1, fontSize: 14, fontWeight: isMe ? "700" : "400", color: isMe ? ACCENT : colors.foreground, fontFamily: isMe ? "Inter_700Bold" : "Inter_400Regular" }}>
+                    <Text style={{ flex: 1, fontSize: 14, fontWeight: isMe ? "700" : "400", color: isMe ? colors.primary : colors.foreground, fontFamily: isMe ? "Inter_700Bold" : "Inter_400Regular" }}>
                       {row.riderName}
                     </Text>
-                    <Text style={{ width: 52, fontSize: 14, fontWeight: isMe ? "700" : "500", color: isMe ? ACCENT : colors.foreground, fontFamily: isMe ? "Inter_700Bold" : "Inter_500Medium", textAlign: "right" }}>
+                    <Text style={{ width: 52, fontSize: 14, fontWeight: isMe ? "700" : "500", color: isMe ? colors.primary : colors.foreground, fontFamily: isMe ? "Inter_700Bold" : "Inter_500Medium", textAlign: "right" }}>
                       {row.totalScore}
                     </Text>
                   </View>
@@ -658,20 +657,20 @@ export function SeriesStandingsScreen({
                 <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>· · ·</Text>
                 <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
               </View>
-              <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: ACCENT + "44", backgroundColor: ACCENT + "0c", overflow: "hidden" }}>
+              <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary + "44", backgroundColor: colors.primary + "0c", overflow: "hidden" }}>
                 <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 13 }}>
-                  <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: ACCENT, alignItems: "center", justifyContent: "center", marginRight: 8 }}>
+                  <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginRight: 8 }}>
                     <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>{myRowBelow.position}</Text>
                   </View>
-                  <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold" }}>
+                  <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>
                     {myRowBelow.riderName}
                   </Text>
-                  <Text style={{ width: 52, fontSize: 14, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold", textAlign: "right" }}>
+                  <Text style={{ width: 52, fontSize: 14, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textAlign: "right" }}>
                     {myRowBelow.totalScore}
                   </Text>
                 </View>
                 <View style={{ paddingHorizontal: 14, paddingBottom: 10 }}>
-                  <Text style={{ fontSize: 11, color: ACCENT, fontFamily: "Inter_500Medium" }}>
+                  <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium" }}>
                     Your position · {ordinal(riderPosition)} place
                   </Text>
                 </View>
@@ -706,7 +705,6 @@ export function PointsScreen({
   insets: ReturnType<typeof useSafeAreaInsets>;
 }) {
   const primary = colors.primary;
-  const ACCENT = "#cf152d";
   const eventsWithPoints = events.filter(e => e.totalPoints > 0 || e.motos.some(m => (m.points ?? 0) > 0));
 
   const [seriesList, setSeriesList] = useState<RiderSeriesEntry[]>([]);
@@ -764,8 +762,8 @@ export function PointsScreen({
         ) : seriesList.length > 0 ? (
           <>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
-              <Feather name="trending-up" size={13} color={ACCENT} />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+              <Feather name="trending-up" size={13} color={colors.primary} />
+              <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                 Series Standings
               </Text>
             </View>
@@ -782,7 +780,7 @@ export function PointsScreen({
                   riderIds,
                 })}
                 style={({ pressed }) => ({
-                  borderRadius: 12, borderWidth: 1.5, borderColor: ACCENT + "33",
+                  borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary + "33",
                   backgroundColor: colors.card, overflow: "hidden",
                   opacity: pressed ? 0.75 : 1,
                 })}
@@ -791,7 +789,7 @@ export function PointsScreen({
                   {/* Position badge */}
                   <View style={{
                     width: 52, height: 52, borderRadius: 26,
-                    backgroundColor: ACCENT, alignItems: "center", justifyContent: "center",
+                    backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
                   }}>
                     <Text style={{ fontSize: 22, fontWeight: "800", color: "#fff", fontFamily: "Inter_700Bold", lineHeight: 24 }}>
                       {s.position}
@@ -805,15 +803,15 @@ export function PointsScreen({
                       {s.seriesName}
                     </Text>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: ACCENT + "18" }}>
-                        <Text style={{ fontSize: 11, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold" }}>{s.raceClass}</Text>
+                      <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.primary + "18" }}>
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>{s.raceClass}</Text>
                       </View>
                       <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
                         {s.totalPoints} pts
                       </Text>
                     </View>
                   </View>
-                  <Feather name="chevron-right" size={16} color={ACCENT} />
+                  <Feather name="chevron-right" size={16} color={colors.primary} />
                 </View>
               </Pressable>
             ))}

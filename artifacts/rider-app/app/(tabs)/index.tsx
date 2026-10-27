@@ -26,8 +26,6 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 
-const ACCENT = "#cf152d";
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function greeting(firstName: string): string {
@@ -82,8 +80,8 @@ function UpcomingEventCard({ event, colors, onPress }: { event: UpcomingEvent; c
         </Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           {event.isRegistered && (
-            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: ACCENT + "20" }}>
-              <Text style={{ fontSize: 10, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold" }}>REG'D</Text>
+            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary + "20" }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>REG'D</Text>
             </View>
           )}
           {isLive ? (
@@ -108,8 +106,8 @@ function UpcomingEventCard({ event, colors, onPress }: { event: UpcomingEvent; c
       {classes.length > 0 && (
         <View style={{ flexDirection: "row", gap: 6, marginTop: 8 }}>
           {classes.map(cls => (
-            <View key={cls} style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: ACCENT + "18" }}>
-              <Text style={{ fontSize: 11, fontWeight: "600", color: ACCENT, fontFamily: "Inter_600SemiBold" }}>{cls}</Text>
+            <View key={cls} style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.primary + "18" }}>
+              <Text style={{ fontSize: 11, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>{cls}</Text>
             </View>
           ))}
         </View>
@@ -140,14 +138,14 @@ function RecentResultCard({ result, colors, onPress }: { result: EventHistory; c
       <View style={{
         width: 44, height: 44, borderRadius: 10,
         backgroundColor: result.bestPosition != null && result.bestPosition <= 3
-          ? ACCENT + "20"
+          ? colors.primary + "20"
           : colors.muted,
         alignItems: "center", justifyContent: "center",
         borderWidth: result.bestPosition != null && result.bestPosition <= 3 ? 1 : 0,
-        borderColor: ACCENT + "44",
+        borderColor: colors.primary + "44",
       }}>
         {result.bestPosition != null ? (
-          <Text style={{ fontSize: 14, fontWeight: "800", color: result.bestPosition <= 3 ? ACCENT : colors.foreground, fontFamily: "Inter_700Bold" }}>
+          <Text style={{ fontSize: 14, fontWeight: "800", color: result.bestPosition <= 3 ? colors.primary : colors.foreground, fontFamily: "Inter_700Bold" }}>
             P{result.bestPosition}
           </Text>
         ) : (
@@ -158,7 +156,7 @@ function RecentResultCard({ result, colors, onPress }: { result: EventHistory; c
       {/* Event info */}
       <View style={{ flex: 1 }}>
         {result.riderName && (
-          <Text style={{ fontSize: 10, fontWeight: "600", color: ACCENT, fontFamily: "Inter_600SemiBold", marginBottom: 1 }}>{result.riderName}</Text>
+          <Text style={{ fontSize: 10, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold", marginBottom: 1 }}>{result.riderName}</Text>
         )}
         <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }} numberOfLines={1}>{result.eventName}</Text>
         <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
@@ -182,8 +180,8 @@ function RecentResultCard({ result, colors, onPress }: { result: EventHistory; c
 function SectionHeader({ icon, title, colors }: { icon: string; title: string; colors: ReturnType<typeof useColors> }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginBottom: 10, marginTop: 4 }}>
-      <Feather name={icon as any} size={12} color={ACCENT} />
-      <Text style={{ fontSize: 11, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>{title}</Text>
+      <Feather name={icon as any} size={12} color={colors.primary} />
+      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>{title}</Text>
     </View>
   );
 }
@@ -352,7 +350,7 @@ export default function HomeScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {/* ── Hero header ── */}
         <View style={{
@@ -389,7 +387,7 @@ export default function HomeScreen() {
             <SectionHeader icon="calendar" title="My Upcoming Events" colors={colors} />
             {loading && upcoming.length === 0 ? (
               <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                <ActivityIndicator color={ACCENT} size="small" />
+                <ActivityIndicator color={colors.primary} size="small" />
               </View>
             ) : upcoming.length > 0 ? (
               upcoming.map(e => <UpcomingEventCard key={e.eventId} event={e} colors={colors} onPress={() => router.push(`/event/${e.eventId}` as any)} />)
@@ -408,7 +406,7 @@ export default function HomeScreen() {
             <SectionHeader icon="award" title="Recent Results" colors={colors} />
             {loading && recentResults.length === 0 ? (
               <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                <ActivityIndicator color={ACCENT} size="small" />
+                <ActivityIndicator color={colors.primary} size="small" />
               </View>
             ) : recentResults.length > 0 ? (
               recentResults.map((r, i) => (

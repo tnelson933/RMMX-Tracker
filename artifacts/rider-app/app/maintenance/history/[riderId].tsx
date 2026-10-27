@@ -22,8 +22,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
-const ACCENT = "#cf152d";
-
 interface HistoryEntry {
   id: number;
   riderId: number;
@@ -109,7 +107,7 @@ function EditModal({
       alignItems: "center",
     },
     cancelText: { fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" },
-    saveBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: ACCENT, alignItems: "center" },
+    saveBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center" },
     saveText: { fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" },
   });
 
@@ -390,7 +388,7 @@ export default function MaintenanceHistoryScreen() {
 
       {loading ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={ACCENT} />
+          <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
         <ScrollView
