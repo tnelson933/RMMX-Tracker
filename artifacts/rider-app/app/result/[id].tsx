@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { ShareResultButton } from "@/components/ShareCard";
+import { PositionBadge } from "@/components/RaceStats";
 
 function parseLapMs(s: string): number {
   if (!s) return Infinity;
@@ -208,11 +209,9 @@ export default function ResultDetailScreen() {
                 </Text>
               </View>
               {ev.bestPosition != null && (
-                <View style={{ alignItems: "center" }}>
-                  <Text style={{ fontSize: 28, fontWeight: "800", color: primary, fontFamily: "Inter_700Bold" }}>
-                    P{ev.bestPosition}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                <View style={{ alignItems: "center", gap: 6 }}>
+                  <PositionBadge position={ev.bestPosition} size="lg" />
+                  <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
                     Best
                   </Text>
                 </View>
@@ -272,17 +271,7 @@ export default function ResultDetailScreen() {
                         ) : null}
                       </View>
                     </View>
-                    {moto.dnf || moto.dns ? (
-                      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.muted }}>
-                        <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
-                          {moto.dnf ? "DNF" : "DNS"}
-                        </Text>
-                      </View>
-                    ) : moto.position != null ? (
-                      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: primary }}>
-                        <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>P{moto.position}</Text>
-                      </View>
-                    ) : null}
+                    <PositionBadge position={moto.position} dnf={moto.dnf} dns={moto.dns} />
                   </View>
 
                   {/* Lap table */}

@@ -8,12 +8,15 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { formatLap, type CareerStats } from "@/components/ShareCard";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
+import { parsePosition, podiumColor, podiumTextColor } from "@/components/RaceStats";
+import { useTheme } from "@/context/ThemeContext";
 
 interface Recent { eventId: number; eventName: string; eventDate: string; raceClass: string; bestPosition: number | null; motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }> }
 
 /** Another rider's public profile: published results only. */
 export default function RacerScreen() {
   const colors = useColors();
+  const isDark = useTheme().resolvedScheme === "dark";
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -81,7 +84,7 @@ export default function RacerScreen() {
         <ScrollView contentContainerStyle={s.content}>
           <View style={s.grid}>
             {tiles.map(([label, value]) => (
-              <View key={label} style={s.tile}><Text style={s.tileValue}>{value}</Text><Text style={s.tileLabel}>{label}</Text></View>
+              <View key={label} style={[s.tile, podiumColor(parsePosition(value)) ? { borderColor: podiumColor(parsePosition(value))! } : null]}><View style={[s.tileStripe, { backgroundColor: podiumColor(parsePosition(value)) ?? colors.primary }]} /><Text style={[s.tileValue, podiumTextColor(parsePosition(value), isDark) ? { color: podiumTextColor(parsePosition(value), isDark)! } : null]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text><Text style={s.tileLabel}>{label}</Text></View>
             ))}
           </View>
           <Text style={s.section}>Recent results</Text>
@@ -112,8 +115,9 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   content: { padding: 16, paddingBottom: insets.bottom + 32, gap: 10 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  tile: { width: "31.5%", backgroundColor: colors.card, borderRadius: 12, paddingVertical: 12, alignItems: "center", borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  tileValue: { fontSize: 18, color: colors.foreground, fontFamily: "Inter_700Bold" },
+  tile: { width: "31.5%", backgroundColor: colors.card, borderRadius: 14, paddingVertical: 16, paddingHorizontal: 6, alignItems: "center", borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+  tileStripe: { position: "absolute", top: 0, left: 12, right: 12, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3 },
+  tileValue: { fontSize: 26, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: -0.5 },
   tileLabel: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Inter_500Medium" },
   section: { fontSize: 13, letterSpacing: 1.5, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Inter_700Bold", marginTop: 8 },
   muted: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },

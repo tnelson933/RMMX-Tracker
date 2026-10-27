@@ -28,6 +28,7 @@ import {
 } from "@/components/RaceSubScreens";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
+import { PositionBadge, StatTile } from "@/components/RaceStats";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -399,9 +400,7 @@ function HistoryCard({ event, colors, onPress }: { event: EventHistory; colors: 
         </View>
         <View style={{ alignItems: "flex-end", gap: 4 }}>
           {event.bestPosition != null && (
-            <View style={{ paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary }}>
-              <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>P{event.bestPosition}</Text>
-            </View>
+            <PositionBadge position={event.bestPosition} />
           )}
           {event.totalPoints > 0 && (
             <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{event.totalPoints} pts</Text>
@@ -413,15 +412,7 @@ function HistoryCard({ event, colors, onPress }: { event: EventHistory; colors: 
           <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{moto.motoName}</Text>
           {moto.totalTime && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{moto.totalTime}</Text>}
           {moto.points != null && moto.points > 0 && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{moto.points}pts</Text>}
-          {moto.dnf || moto.dns ? (
-            <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, backgroundColor: colors.muted }}>
-              <Text style={{ fontSize: 11, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>{moto.dnf ? "DNF" : "DNS"}</Text>
-            </View>
-          ) : moto.position != null ? (
-            <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, backgroundColor: colors.primary }}>
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>P{moto.position}</Text>
-            </View>
-          ) : null}
+          <PositionBadge position={moto.position} dnf={moto.dnf} dns={moto.dns} size="sm" />
         </View>
       ))}
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted + "40" }}>
@@ -805,61 +796,11 @@ export default function MyRacesScreen() {
           My Racing
         </Text>
 
-        {/* Tappable stat boxes */}
+        {/* Tappable stat tiles */}
         <View style={styles.statsRow}>
-          {/* Events */}
-          <Pressable
-            onPress={handleTapEvents}
-            style={({ pressed }) => ({
-              flex: 1, backgroundColor: colors.muted, borderRadius: 10, padding: 12,
-              alignItems: "center", opacity: pressed ? 0.7 : 1,
-              borderWidth: 1, borderColor: colors.border,
-            })}
-          >
-            <Text style={{ fontSize: 20, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>
-              {combinedEventsRaced}
-            </Text>
-            <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Events
-            </Text>
-            <Feather name="chevron-right" size={11} color={colors.mutedForeground} style={{ position: "absolute", right: 8, top: "50%", marginTop: -6 }} />
-          </Pressable>
-
-          {/* Points */}
-          <Pressable
-            onPress={handleTapPoints}
-            style={({ pressed }) => ({
-              flex: 1, backgroundColor: colors.muted, borderRadius: 10, padding: 12,
-              alignItems: "center", opacity: pressed ? 0.7 : 1,
-              borderWidth: 1, borderColor: colors.border,
-            })}
-          >
-            <Text style={{ fontSize: 20, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>
-              {combinedTotalPoints}
-            </Text>
-            <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Points
-            </Text>
-            <Feather name="chevron-right" size={11} color={colors.mutedForeground} style={{ position: "absolute", right: 8, top: "50%", marginTop: -6 }} />
-          </Pressable>
-
-          {/* Best Finish */}
-          <Pressable
-            onPress={handleTapBestFinish}
-            style={({ pressed }) => ({
-              flex: 1, backgroundColor: colors.muted, borderRadius: 10, padding: 12,
-              alignItems: "center", opacity: pressed ? 0.7 : 1,
-              borderWidth: 1, borderColor: colors.border,
-            })}
-          >
-            <Text style={{ fontSize: 20, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>
-              {combinedBestPosition != null ? `P${combinedBestPosition}` : "—"}
-            </Text>
-            <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Best Finish
-            </Text>
-            <Feather name="chevron-right" size={11} color={colors.mutedForeground} style={{ position: "absolute", right: 8, top: "50%", marginTop: -6 }} />
-          </Pressable>
+          <StatTile value={combinedEventsRaced} label="Events" onPress={handleTapEvents} />
+          <StatTile value={combinedTotalPoints} label="Points" onPress={handleTapPoints} highlight />
+          <StatTile value={combinedBestPosition != null ? `P${combinedBestPosition}` : "—"} label="Best Finish" onPress={handleTapBestFinish} />
         </View>
       </View>
 

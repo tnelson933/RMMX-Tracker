@@ -24,6 +24,7 @@ import { DirtBikeIcon } from "@/components/DirtBikeIcon";
 import { BrandBar } from "@/components/BrandBar";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
+import { StatTile } from "@/components/RaceStats";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1274,18 +1275,9 @@ export default function TrainScreen() {
         {/* Track-mode stats (only shown in track mode) */}
         {tabMode === "track" && (
           <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>{displaySessions.length}</Text>
-              <Text style={styles.statLabel}>Sessions</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>{totalLaps}</Text>
-              <Text style={styles.statLabel}>Total Laps</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>{fmtLap(overallBest)}</Text>
-              <Text style={styles.statLabel}>Best Ever</Text>
-            </View>
+            <StatTile value={displaySessions.length} label="Sessions" />
+            <StatTile value={totalLaps} label="Total Laps" />
+            <StatTile value={fmtLap(overallBest)} label="Best Ever" highlight />
           </View>
         )}
       </View>

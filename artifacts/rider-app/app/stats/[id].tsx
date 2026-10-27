@@ -9,12 +9,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { StatsShareCard, formatLap, useShareCapture, type CareerStats } from "@/components/ShareCard";
+import { parsePosition, podiumColor, podiumTextColor } from "@/components/RaceStats";
+import { useTheme } from "@/context/ThemeContext";
 
 interface Manager { id: number; email: string; joined: boolean; isYou: boolean }
 
 /** Career stats, a shareable stats card, and who can manage this rider profile. */
 export default function RiderStatsScreen() {
   const colors = useColors();
+  const isDark = useTheme().resolvedScheme === "dark";
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -123,8 +126,9 @@ export default function RiderStatsScreen() {
           ) : (
             <View style={s.grid}>
               {tiles.map(([label, value]) => (
-                <View key={label} style={s.tile}>
-                  <Text style={s.tileValue}>{value}</Text>
+                <View key={label} style={[s.tile, podiumColor(parsePosition(value)) ? { borderColor: podiumColor(parsePosition(value))! } : null]}>
+                  <View style={[s.tileStripe, { backgroundColor: podiumColor(parsePosition(value)) ?? colors.primary }]} />
+                  <Text style={[s.tileValue, podiumTextColor(parsePosition(value), isDark) ? { color: podiumTextColor(parsePosition(value), isDark)! } : null]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
                   <Text style={s.tileLabel}>{label}</Text>
                 </View>
               ))}
@@ -194,8 +198,9 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   muted: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 18 },
   note: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 15 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  tile: { width: "31.5%", backgroundColor: colors.card, borderRadius: 12, paddingVertical: 12, alignItems: "center", borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  tileValue: { fontSize: 18, color: colors.foreground, fontFamily: "Inter_700Bold" },
+  tile: { width: "31.5%", backgroundColor: colors.card, borderRadius: 14, paddingVertical: 16, paddingHorizontal: 6, alignItems: "center", borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+  tileStripe: { position: "absolute", top: 0, left: 12, right: 12, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3 },
+  tileValue: { fontSize: 26, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: -0.5 },
   tileLabel: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Inter_500Medium", textAlign: "center" },
   primaryBtn: { flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, borderRadius: 999, paddingVertical: 14 },
   primaryBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },

@@ -26,6 +26,7 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
+import { PositionBadge } from "@/components/RaceStats";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -136,22 +137,10 @@ function RecentResultCard({ result, colors, onPress }: { result: EventHistory; c
       })}
     >
       {/* Position badge */}
-      <View style={{
-        width: 44, height: 44, borderRadius: 10,
-        backgroundColor: result.bestPosition != null && result.bestPosition <= 3
-          ? colors.primary + "20"
-          : colors.muted,
-        alignItems: "center", justifyContent: "center",
-        borderWidth: result.bestPosition != null && result.bestPosition <= 3 ? 1 : 0,
-        borderColor: colors.primary + "44",
-      }}>
-        {result.bestPosition != null ? (
-          <Text style={{ fontSize: 14, fontWeight: "800", color: result.bestPosition <= 3 ? colors.primary : colors.foreground, fontFamily: "Inter_700Bold" }}>
-            P{result.bestPosition}
-          </Text>
-        ) : (
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>—</Text>
-        )}
+      <View style={{ width: 64, alignItems: "center" }}>
+        {result.bestPosition != null
+          ? <PositionBadge position={result.bestPosition} size="md" />
+          : <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>—</Text>}
       </View>
 
       {/* Event info */}

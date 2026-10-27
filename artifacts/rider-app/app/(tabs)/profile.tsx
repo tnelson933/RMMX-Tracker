@@ -25,6 +25,7 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { useTheme, type ThemePreference } from "@/context/ThemeContext";
 import { BrandBar } from "@/components/BrandBar";
 import { NETWORK_ERROR_MESSAGE, postJson } from "@/lib/friendlyErrors";
+import { StatTile } from "@/components/RaceStats";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 const PRIVACY_URL = `${BASE_URL}/privacy`;
@@ -543,18 +544,9 @@ function ProfileList() {
 
                 {/* Stats */}
                 <View style={s.statsRow}>
-                  <View style={s.statBox}>
-                    <Text style={s.statLabel}>Events</Text>
-                    <Text style={s.statValue}>{profile.eventsRaced}</Text>
-                  </View>
-                  <View style={s.statBox}>
-                    <Text style={s.statLabel}>Best Finish</Text>
-                    <Text style={s.statValue}>{profile.bestPosition ? `P${profile.bestPosition}` : "—"}</Text>
-                  </View>
-                  <View style={s.statBox}>
-                    <Text style={s.statLabel}>Points</Text>
-                    <Text style={s.statValuePrimary}>{profile.totalPoints}</Text>
-                  </View>
+                  <StatTile compact value={profile.eventsRaced} label="Events" />
+                  <StatTile compact value={profile.bestPosition ? `P${profile.bestPosition}` : "—"} label="Best Finish" />
+                  <StatTile compact value={profile.totalPoints} label="Points" highlight />
                 </View>
 
                 {profile.lastRaced && (
