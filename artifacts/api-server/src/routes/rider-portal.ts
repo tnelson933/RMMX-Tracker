@@ -15,6 +15,7 @@ import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
 import {
   riderAccountsTable,
+  usersTable,
   ridersTable,
   raceResultsTable,
   motosTable,
@@ -264,18 +265,26 @@ router.post("/rider/auth/register", async (req, res) => {
 router.post("/rider/auth/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ error: "Email and password required" });
+    return res.status(400).json({ error: "Enter both your email address and your password." });
   }
 
   const normalized = String(email).toLowerCase().trim();
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.email, normalized));
   if (!account) {
-    return res.status(401).json({ error: "Incorrect email or password. Please try again." });
+    // Point organizers who landed on the rider login to the right place.
+    const [organizer] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, normalized));
+    return res.status(401).json({
+      error: organizer
+        ? `${normalized} is an organizer account, not a rider account. Use Organizer Login instead, or create a separate rider account.`
+        : `There's no rider account for ${normalized}. Check the spelling, or choose "Create account" to sign up.`,
+    });
   }
 
   const valid = await bcrypt.compare(String(password), account.passwordHash);
   if (!valid) {
-    return res.status(401).json({ error: "Incorrect email or password. Please try again." });
+    return res.status(401).json({
+      error: "That password doesn't match this account. Check that Caps Lock is off, or use \"Forgot password\" to reset it.",
+    });
   }
 
   (req.session as any).riderAccountId = account.id;

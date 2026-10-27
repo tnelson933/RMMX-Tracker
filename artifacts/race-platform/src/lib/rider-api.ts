@@ -1,17 +1,22 @@
+import { isNetworkError, NETWORK_ERROR_MESSAGE, serverErrorMessage } from "./friendlyErrors";
+
 const BASE = "/api";
 
 async function apiFetch(path: string, options?: RequestInit) {
-  const res = await fetch(`${BASE}${path}`, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+  } catch (err) {
+    throw new Error(isNetworkError(err) ? NETWORK_ERROR_MESSAGE : String((err as Error)?.message ?? err));
+  }
   if (!res.ok) {
-    if (res.status >= 500) {
-      throw new Error("The server is temporarily unavailable. Please try again in a moment.");
-    }
+    if (res.status >= 500) throw new Error(serverErrorMessage(res.status));
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || "Something went wrong. Please try again.");
+    throw new Error(data.error || `Request failed (error ${res.status}). Please try again.`);
   }
   return res.json();
 }

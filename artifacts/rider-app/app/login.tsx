@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { postJson } from "@/lib/friendlyErrors";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 
@@ -75,14 +76,10 @@ export default function LoginScreen() {
       setLoading(true);
       setError(null);
       try {
-        await fetch(`${BASE_URL}/api/rider/auth/forgot-password`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        });
+        await postJson(`${BASE_URL}/api/rider/auth/forgot-password`, { email }, "Couldn't send the reset email");
         setForgotSent(true);
-      } catch {
-        setError("Network error. Please try again.");
+      } catch (e: any) {
+        setError(e.message);
       } finally {
         setLoading(false);
       }
@@ -101,7 +98,7 @@ export default function LoginScreen() {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace("/(tabs)" as any);
     } catch (e: any) {
-      setError(e.message ?? "Something went wrong");
+      setError(e.message ?? "Sign-in failed. Please try again.");
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);

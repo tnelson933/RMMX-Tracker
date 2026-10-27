@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Alert, Linking, Platform } from "react-native";
+import { postJson } from "@/lib/friendlyErrors";
 
 const TOKEN_KEY = "rider_mobile_token";
 const SELECTED_IDS_KEY = "rider_selected_profile_ids";
@@ -250,13 +251,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function login(email: string, password: string): Promise<void> {
-    const res = await fetch(`${BASE_URL}/api/rider/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Login failed");
+    const data = await postJson(`${BASE_URL}/api/rider/auth/login`,
+      { email: email.trim().toLowerCase(), password }, "Sign-in failed");
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
     setAccount(acc);
@@ -289,13 +285,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function register(email: string, password: string): Promise<void> {
-    const res = await fetch(`${BASE_URL}/api/rider/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Registration failed");
+    const data = await postJson(`${BASE_URL}/api/rider/auth/register`,
+      { email: email.trim().toLowerCase(), password }, "Couldn't create your account");
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
     setAccount(acc);

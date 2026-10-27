@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { ShieldAlert, KeyRound, Eye, EyeOff, RefreshCw } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { isNetworkError, NETWORK_ERROR_MESSAGE, serverErrorMessage } from "@/lib/friendlyErrors";
 
 const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
@@ -118,12 +119,14 @@ export default function Login() {
 
           // Build a human-readable error string
           let apiError: string;
-          if (status !== undefined && status >= 500) {
-            apiError = "The server is temporarily unavailable. Please try again in a moment.";
+          if (status === undefined && isNetworkError(error)) {
+            apiError = NETWORK_ERROR_MESSAGE;
+          } else if (status !== undefined && status >= 500) {
+            apiError = serverErrorMessage(status);
           } else if (serverMsg) {
             apiError = serverMsg;
           } else {
-            apiError = error?.message || "Incorrect email or password. Please try again.";
+            apiError = error?.message || `Sign-in failed${status ? ` (error ${status})` : ""}. Please try again.`;
           }
 
           // On desktop: if the local user doesn't exist yet (first install) or has

@@ -2,7 +2,7 @@ import { Router } from "express";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
-import { usersTable, passwordSetupTokensTable, clubsTable } from "@workspace/db";
+import { riderAccountsTable, usersTable, passwordSetupTokensTable, clubsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { sendSetupEmail } from "../lib/email";
 
@@ -18,7 +18,7 @@ function getAppUrl(): string {
 router.post("/auth/login", async (req, res) => {
   const { email, password, rememberMe } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ error: "Email and password required" });
+    return res.status(400).json({ error: "Enter both your email address and your password." });
   }
 
   const normalizedEmail = String(email).toLowerCase().trim();
@@ -26,18 +26,27 @@ router.post("/auth/login", async (req, res) => {
   const user = users[0];
 
   if (!user) {
-    return res.status(401).json({ error: "Incorrect email or password. Please try again." });
+    // Point riders who landed on the organizer login to the right place.
+    const [riderAccount] = await db.select({ id: riderAccountsTable.id }).from(riderAccountsTable)
+      .where(eq(riderAccountsTable.email, normalizedEmail));
+    return res.status(401).json({
+      error: riderAccount
+        ? `${normalizedEmail} is a rider account, not an organizer account. Use Rider Login instead.`
+        : `There's no organizer account for ${normalizedEmail}. Check the spelling. Organizer accounts are created by invitation, so ask your club admin to invite you; riders should use Rider Login.`,
+    });
   }
 
   if (!user.passwordHash) {
     return res.status(401).json({
-      error: "Account not activated yet. Check your email for a setup link, or use 'First time sign in' below.",
+      error: "This account hasn't been set up yet. Open the setup link in your invitation email, or use \"First time signing in? Set up your account\" below to get a new link.",
     });
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
-    return res.status(401).json({ error: "Incorrect email or password. Please try again." });
+    return res.status(401).json({
+      error: "That password doesn't match this account. Check that Caps Lock is off, or use \"Forgot your password?\" below to reset it.",
+    });
   }
 
   // Check if the club is active (non-super_admin users with a club)
