@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import { useTheme } from "@/context/ThemeContext";
 import { RmCashWidget } from "@/components/RmCashWidget";
 import { useRiderAuth } from "@/context/AuthContext";
 
@@ -97,14 +98,15 @@ const pa = StyleSheet.create({
 
 export function BrandBar() {
   const router = useRouter();
+  const isDark = useTheme().resolvedScheme === "dark";
   return (
     <View style={styles.row}>
       <View style={styles.left}>
-        {/* RM Roost banner on a black badge so the white lettering reads in light and dark mode. */}
-        <View style={styles.bannerBadge}>
+        {/* The banner's white lettering needs a dark backdrop: the page itself in dark mode, a black badge in light mode. */}
+        <View style={isDark ? styles.bannerBare : styles.bannerBadge}>
           <Image
-            source={require("../assets/images/brand-banner.png")}
-            style={styles.banner}
+            source={require("../assets/images/brand-banner-hero.png")}
+            style={isDark ? styles.bannerLarge : styles.banner}
             resizeMode="contain"
             accessibilityLabel="RM Roost"
           />
@@ -146,5 +148,12 @@ const styles = StyleSheet.create({
   banner: {
     width: 120,
     height: 38,
+  },
+  bannerBare: {
+    marginLeft: -6,
+  },
+  bannerLarge: {
+    width: 150,
+    height: 47,
   },
 });

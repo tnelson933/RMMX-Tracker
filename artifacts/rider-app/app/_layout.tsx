@@ -20,7 +20,14 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useRiderAuth } from "@/context/AuthContext";
 import { RockyChatProvider } from "@/context/RockyChatContext";
-import { ThemeProvider } from "@/context/ThemeContext";
+import { ThemeProvider, useTheme } from "@/context/ThemeContext";
+import { StatusBar } from "react-native";
+
+/** Status bar icons follow the in-app Appearance setting. */
+function ThemedStatusBar() {
+  const { resolvedScheme } = useTheme();
+  return <StatusBar barStyle={resolvedScheme === "dark" ? "light-content" : "dark-content"} />;
+}
 
 // Set API base URL for generated hooks (public endpoints like events list)
 setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`);
@@ -126,6 +133,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
+        <ThemedStatusBar />
         <ErrorBoundary>
           <QueryClientProvider client={queryClient}>
             <AuthProvider>

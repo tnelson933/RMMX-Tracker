@@ -368,7 +368,7 @@ export default function HomeScreen() {
 
           {/* Greeting */}
           <View style={{ marginTop: 14 }}>
-            <Text style={{ fontSize: 28, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5 }}>
+            <Text style={{ fontSize: 24, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }} numberOfLines={1} adjustsFontSizeToFit>
               {primaryProfile ? greeting(primaryProfile.firstName) : "Welcome Back!"}
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 }}>

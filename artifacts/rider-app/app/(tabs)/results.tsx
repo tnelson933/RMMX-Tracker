@@ -1562,7 +1562,7 @@ export default function ResultsScreen() {
         borderBottomWidth: 1, borderBottomColor: colors.border,
       }}>
         <BrandBar />
-        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5, marginBottom: 12 }}>
+        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>
           Race Results
         </Text>
 

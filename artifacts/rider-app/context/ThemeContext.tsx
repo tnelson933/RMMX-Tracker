@@ -15,16 +15,17 @@ interface ThemeContextValue {
   resolvedScheme: "light" | "dark";
 }
 
+// Dark is the default: the race theme the brand art is designed for.
 const ThemeContext = createContext<ThemeContextValue>({
-  preference: "light",
+  preference: "dark",
   setPreference: () => {},
-  resolvedScheme: "light",
+  resolvedScheme: "dark",
 });
 
 const STORAGE_KEY = "rider_theme_preference";
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>("light");
+  const [preference, setPreferenceState] = useState<ThemePreference>("dark");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {

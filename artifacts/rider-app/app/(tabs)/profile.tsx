@@ -68,7 +68,7 @@ function AuthForm() {
       backgroundColor: colors.primary,
       alignItems: "center", justifyContent: "center", marginBottom: 8,
     },
-    title: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+    title: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" },
     subtitle: { fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 8 },
     inputWrapper: {
       flexDirection: "row", alignItems: "center",
@@ -350,7 +350,7 @@ function ProfileList() {
   const s = StyleSheet.create({
     scroll: { flex: 1 },
     container: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: (tabBarHeight > 0 ? tabBarHeight : 49 + insets.bottom) + 16, gap: 14 },
-    pageTitle: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+    pageTitle: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" },
     pageSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
     accountCard: {
       backgroundColor: colors.card, borderRadius: 14, padding: 16,

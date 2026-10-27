@@ -786,7 +786,7 @@ export default function MyRacesScreen() {
       {/* Header */}
       <View style={styles.header}>
         <BrandBar />
-        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5 }}>
+        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" }}>
           My Racing
         </Text>
 

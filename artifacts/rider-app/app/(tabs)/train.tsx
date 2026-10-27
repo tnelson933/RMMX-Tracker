@@ -1253,7 +1253,7 @@ export default function TrainScreen() {
       {/* ── Shared header ── */}
       <View style={styles.header}>
         <BrandBar />
-        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5 }}>Train</Text>
+        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" }}>Train</Text>
 
         {/* Segmented control: Track | Coach */}
         <View style={[styles.segControl, { marginTop: 14, marginHorizontal: 0 }]}>
