@@ -1,1042 +1,120 @@
-import { useState, useCallback, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { getPublicOrigin } from "@/lib/publicOrigin";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  WifiOff, Download, AlertTriangle,
-  CheckCircle2, XCircle, RefreshCw, Copy, Check, ChevronDown, ChevronUp,
-  Wifi, Loader2, Database, Timer, Settings2,
-} from "lucide-react";
-import { useGetOfflinePackageInfo, useRebuildOfflinePackage, useListReaders } from "@workspace/api-client-react";
-import { useAuth } from "@/contexts/AuthContext";
+import { WifiOff, Download, CheckCircle2, Monitor, Apple, Radio, RefreshCw, CloudUpload } from "lucide-react";
 
-const LAST_DOWNLOAD_KEY = "offline_package_last_downloaded_etag";
+// Offline race days run in the RM Roost desktop app: it bundles the local race
+// server, connects to timing hardware over a local network, and syncs back to
+// the cloud when internet returns. This page only points organizers to it.
 
-// ── Local IP detection via WebRTC ICE candidate probe ─────────────────────────
-// The browser opens a local peer connection to gather ICE candidates, which
-// includes the machine's LAN IP without any external request.
-// Falls back gracefully when the browser blocks local IP discovery
-// (Chrome with mDNS obfuscation, strict privacy mode, etc.).
-function useLocalIp(): { ip: string | null; loading: boolean } {
-  const [ip, setIp] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+const FALLBACK_TAG = "desktop-v1.0.111";
+const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${FALLBACK_TAG}`;
 
-  useEffect(() => {
-    let done = false;
-    let pc: RTCPeerConnection | null = null;
+interface DesktopDownloads { macArm: string; macX64: string; windows: string }
 
-    const finish = (found: string | null) => {
-      if (done) return;
-      done = true;
-      setIp(found);
-      setLoading(false);
-      pc?.close();
-    };
-
-    const timer = setTimeout(() => finish(null), 2000);
-
-    try {
-      pc = new RTCPeerConnection({ iceServers: [] });
-      pc.createDataChannel("");
-      pc.onicecandidate = (e) => {
-        if (!e.candidate) { finish(null); return; }
-        // Parse IPv4 address from the candidate string
-        const m = /(\d{1,3}(?:\.\d{1,3}){3})/.exec(e.candidate.candidate);
-        if (m && !m[1].startsWith("127.")) {
-          clearTimeout(timer);
-          finish(m[1]);
-        }
-      };
-      void pc.createOffer().then((offer) => pc!.setLocalDescription(offer));
-    } catch {
-      finish(null);
-      clearTimeout(timer);
-    }
-
-    return () => { clearTimeout(timer); pc?.close(); };
-  }, []);
-
-  return { ip, loading };
+function detectPlatform(): "windows" | "mac" | "other" {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  if (/Windows/i.test(ua)) return "windows";
+  if (/Macintosh|Mac OS X/i.test(ua)) return "mac";
+  return "other";
 }
 
-function StepHeader({ n, title }: { n: number; title: string }) {
-  return (
-    <div className="flex items-center gap-3 mb-4">
-      <div className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-base font-heading font-bold flex-shrink-0">
-        {n}
-      </div>
-      <h2 className="text-xl font-heading font-bold uppercase tracking-tight">{title}</h2>
-    </div>
-  );
-}
-
-function CopyableCodeBlock({ children }: { children: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(children);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <div className="relative group">
-      <pre className="bg-background border border-border rounded-lg px-4 py-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre pr-12">
-        {children}
-      </pre>
-      <button
-        onClick={copy}
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 rounded border border-border bg-background px-2 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
-        title="Copy"
-      >
-        {copied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </div>
-  );
-}
-
-function Callout({ kind, children }: { kind: "warning" | "tip" | "info"; children: React.ReactNode }) {
-  const styles = {
-    warning: { wrapper: "border-amber-500/40 bg-amber-500/10", icon: <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" /> },
-    tip:     { wrapper: "border-green-500/40 bg-green-500/10",  icon: <CheckCircle2  size={15} className="text-green-500 shrink-0 mt-0.5" /> },
-    info:    { wrapper: "border-primary/40 bg-primary/10",      icon: <RefreshCw     size={15} className="text-primary shrink-0 mt-0.5" /> },
-  };
-  const s = styles[kind];
-  return (
-    <div className={`rounded-lg border-2 ${s.wrapper} p-4 flex gap-3 text-sm`}>
-      {s.icon}
-      <span className="text-foreground/90">{children}</span>
-    </div>
-  );
-}
-
-function CheckItem({ ok, children }: { ok: boolean; children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2 text-sm">
-      {ok
-        ? <CheckCircle2 size={15} className="text-green-500 shrink-0 mt-0.5" />
-        : <XCircle size={15} className="text-destructive shrink-0 mt-0.5" />}
-      <span className={ok ? "text-foreground" : "text-muted-foreground"}>{children}</span>
-    </li>
-  );
-}
-
-function ShowMeHow({ label = "Show me how", children }: { label?: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="space-y-2">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
-      >
-        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-        {open ? "Hide" : label}
-      </button>
-      {open && <div className="space-y-2">{children}</div>}
-    </div>
-  );
-}
-
-function OsToggle({ os, onChange }: { os: "mac" | "windows"; onChange: (os: "mac" | "windows") => void }) {
-  return (
-    <div className="flex items-center gap-1 text-xs">
-      <span className="text-muted-foreground mr-1">My computer:</span>
-      <button
-        onClick={() => onChange("mac")}
-        className={`px-2.5 py-1 rounded border font-medium transition-colors ${os === "mac" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-      >
-        Mac / Linux
-      </button>
-      <button
-        onClick={() => onChange("windows")}
-        className={`px-2.5 py-1 rounded border font-medium transition-colors ${os === "windows" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-      >
-        Windows
-      </button>
-    </div>
-  );
-}
-
-function formatBuildDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
-}
-function formatBuildDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
-}
-
-function PackageInfoBanner({ builtAt, version, etag, lastEtag }: { builtAt: string; version: string; etag: string; lastEtag: string | null }) {
-  const isOutOfDate = lastEtag !== null && lastEtag !== etag;
-  const hasNeverDownloaded = lastEtag === null;
-
-  if (isOutOfDate) {
-    return (
-      <div className="rounded-lg border-2 border-amber-500/40 bg-amber-500/10 p-3 flex gap-2 text-xs">
-        <RefreshCw size={13} className="text-amber-500 shrink-0 mt-0.5" />
-        <span className="text-foreground/90">
-          A newer version was built on <strong>{formatBuildDate(builtAt)}</strong> — re-download before your next event.
-        </span>
-      </div>
-    );
-  }
-  if (hasNeverDownloaded) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        Package built <span className="font-medium text-foreground">{formatBuildDate(builtAt)}</span> (v{version})
-      </p>
-    );
-  }
-  return (
-    <p className="text-xs text-muted-foreground">
-      <CheckCircle2 size={11} className="text-green-500 inline mr-1 -mt-0.5" />
-      You have the latest version — published <span className="font-medium text-foreground">{formatBuildDateTime(builtAt)}</span>
-    </p>
-  );
-}
+const STEPS = [
+  { icon: RefreshCw, title: "Sync before you leave", body: "Sign in to the desktop app while you have internet. It copies your events, riders and registrations to the laptop." },
+  { icon: Radio, title: "Connect your reader at the track", body: "In Reader Setup, choose \"No, connect without internet\". The app finds your RFID reader or F2000 on the local network." },
+  { icon: CloudUpload, title: "Results upload automatically", body: "Run check-in, timing and results offline. Everything syncs to the cloud once the laptop is back online." },
+];
 
 export default function OfflineMode() {
-  // When accessed via the local server (localhost / 127.0.0.1), the
-  // /offline/package-info endpoint does not exist.  Disable the query
-  // entirely in that context so it never fires, never errors, and never
-  // flashes the "Download info unavailable" banner.
-  const isLocalServer = typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-  // The RM Roost desktop app bundles the local server and syncs on its own, so
-  // the zip/install/start-script steps below do not apply to it.
   const isDesktopApp = typeof window !== "undefined" &&
     typeof (window as unknown as { electronAPI?: unknown }).electronAPI !== "undefined";
-
-  const { data: pkgInfo, isError: pkgError, isPending: pkgPending, isFetching: pkgFetching, refetch: refetchPkgInfo } = useGetOfflinePackageInfo({
-    query: {
-      staleTime: 60_000,
-      enabled: !isLocalServer,
-      retry: false,
-    } as any,
+  const platform = detectPlatform();
+  const [downloads, setDownloads] = useState<DesktopDownloads>({
+    macArm:  `${FALLBACK_BASE}/RM-Tracker-arm64.dmg`,
+    macX64:  `${FALLBACK_BASE}/RM-Tracker-x64.dmg`,
+    windows: `${FALLBACK_BASE}/RM-Tracker-Setup.exe`,
   });
 
-  const [lastDownloadedEtag, setLastDownloadedEtag] = useState<string | null>(() =>
-    localStorage.getItem(LAST_DOWNLOAD_KEY),
+  useEffect(() => {
+    if (isDesktopApp) return;
+    fetch("/api/config/desktop-release")
+      .then(r => r.ok ? r.json() : null)
+      .then((data: DesktopDownloads | null) => {
+        if (data?.macArm) setDownloads({ macArm: data.macArm, macX64: data.macX64, windows: data.windows });
+      })
+      .catch(() => {});
+  }, [isDesktopApp]);
+
+  const windowsButton = (
+    <Button asChild size="lg" variant={platform === "windows" ? "default" : "outline"} className="gap-2">
+      <a href={downloads.windows}><Monitor size={18} /> Download for Windows</a>
+    </Button>
   );
-
-  const handleDownload = useCallback(() => {
-    if (pkgInfo?.etag) {
-      localStorage.setItem(LAST_DOWNLOAD_KEY, pkgInfo.etag);
-      setLastDownloadedEtag(pkgInfo.etag);
-    }
-  }, [pkgInfo?.etag]);
-
-  const { mutate: triggerRebuild, isPending: isRebuilding, isError: rebuildFailed, error: rebuildError, reset: resetRebuild } = useRebuildOfflinePackage({
-    mutation: {
-      onSuccess: () => {
-        refetchPkgInfo();
-      },
-    },
-  });
-
-  const handleRebuild = useCallback(() => {
-    resetRebuild();
-    triggerRebuild();
-  }, [resetRebuild, triggerRebuild]);
-
-  const [os, setOs] = useState<"mac" | "windows">("mac");
-  const [tech, setTech] = useState<"rfid" | "active_transponder">("rfid");
-  const [syncEnabled, setSyncEnabled] = useState(false);
-  const [syncToken, setSyncToken] = useState<string | null>(null);
-  const [syncTokenLoading, setSyncTokenLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [exportDone, setExportDone] = useState(false);
-  const [showReconnectBanner, setShowReconnectBanner] = useState(false);
-
-  // Offline reader auto-configure
-  const [offlineBridgeStatus, setOfflineBridgeStatus] = useState<"checking" | "running" | "offline">("offline");
-  const [offlineReaderType, setOfflineReaderType] = useState<"impinj-r700" | "zebra-fx7500">("impinj-r700");
-  const [offlineReaderIp, setOfflineReaderIp] = useState("");
-  const [offlineConfiguring, setOfflineConfiguring] = useState(false);
-  const [offlineConfigResult, setOfflineConfigResult] = useState<{ ok: boolean; message: string } | null>(null);
-
-  useEffect(() => {
-    const handleOnline = () => setShowReconnectBanner(true);
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, []);
-
-  // Poll the local bridge so we know when it's running for offline auto-configure
-  useEffect(() => {
-    if (tech !== "rfid") return;
-    setOfflineBridgeStatus("checking");
-    const check = async () => {
-      try {
-        const res = await fetch(`${BRIDGE_URL}/api-status`);
-        setOfflineBridgeStatus(res.ok ? "running" : "offline");
-      } catch {
-        setOfflineBridgeStatus("offline");
-      }
-    };
-    check();
-    const id = setInterval(check, 5000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tech]);
-
-  const { user } = useAuth();
-  const cloudDomain = getPublicOrigin();
-  const { data: bridgeReaders = [] } = useListReaders();
-  const clubId = user?.clubId ?? "<your-club-id>";
-
-  const handleExportRaceData = useCallback(async () => {
-    if (!user?.clubId || exporting) return;
-    setExporting(true);
-    try {
-      const res = await fetch(`/api/clubs/${user.clubId}/export`, { credentials: "include" });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      const today = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `race-data-${today}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setExportDone(true);
-      setTimeout(() => setExportDone(false), 4000);
-    } catch {
-      // silent
-    } finally {
-      setExporting(false);
-    }
-  }, [user?.clubId, exporting]);
-
-  const { ip: localIp, loading: ipLoading } = useLocalIp();
-
-  const configureReaderOffline = async () => {
-    if (!localIp || !offlineReaderIp.trim()) return;
-    setOfflineConfiguring(true);
-    setOfflineConfigResult(null);
-    const bridgePath = offlineReaderType === "impinj-r700" ? "timing/impinj-crossing" : "timing/zebra-crossing";
-    const targetUrl = `http://${localIp}:5555/${bridgePath}`;
-    try {
-      const res = await fetch(`${BRIDGE_URL}/configure-reader`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ readerType: offlineReaderType, readerIp: offlineReaderIp.trim(), targetUrl }),
-      });
-      const data = await res.json() as { ok: boolean; message?: string; error?: string };
-      const msg = data.ok ? (data.message ?? "Reader configured!") : (data.error ?? "Something went wrong.");
-      setOfflineConfigResult({ ok: data.ok, message: msg });
-    } catch {
-      setOfflineConfigResult({ ok: false, message: "Could not reach the bridge. Make sure the start-timing script is running." });
-    } finally {
-      setOfflineConfiguring(false);
-    }
-  };
-
-  const BRIDGE_URL = "http://localhost:5555";
-  // The desktop app serves its local server on its own origin (port 9090); the
-  // standalone local server package listens on 8080.
-  const localApiUrl = isDesktopApp ? window.location.origin : "http://localhost:8080";
-  const bridgeCmdLocal = `python rfid_bridge.py --api-url ${localApiUrl}`;
-  // The cloud bridge authenticates with the club's first RFID reader token, so it
-  // keeps working once the club enforces timing ingest authentication.
-  const bridgeReader = (bridgeReaders as any[]).find(r => r.type === "rfid") ?? null;
-  const bridgeCmdCloud = `python rfid_bridge.py --api-url ${cloudDomain}` +
-    (bridgeReader ? ` --reader-token ${bridgeReader.token}` : "");
-
-  const installCmdMac = `unzip rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
-  const installCmdWindows = `tar -xf rocky-mountain-local-server-latest.zip\ncd rocky-mountain-local-server\nnpm install`;
-
-  const startCmdMac = `cd rocky-mountain-local-server\nnpm start`;
-  const startCmdWindows = `cd rocky-mountain-local-server\nnpm start`;
-
-  const downloadLauncher = (platform: "windows" | "mac", cmd: string) => {
-    const cmd3 = cmd.replace(/^python /, "python3 ");
-    let content: string;
-    let filename: string;
-    if (platform === "windows") {
-      content = [
-        "@echo off",
-        "title RM Roost Timing Bridge",
-        "echo ================================================",
-        "echo   RM Roost Timing Bridge",
-        "echo ================================================",
-        "echo.",
-        "echo Starting... Keep this window open while racing.",
-        "echo.",
-        "set SCRIPT_DIR=%~dp0",
-        'cd /d "%SCRIPT_DIR%"',
-        cmd,
-        "echo.",
-        "echo Bridge stopped. Press any key to close.",
-        "pause > nul",
-      ].join("\r\n");
-      filename = "start-timing.bat";
-    } else {
-      content = [
-        "#!/bin/bash",
-        'cd "$(dirname "$0")"',
-        "echo '================================================'",
-        "echo '  RM Roost Timing Bridge'",
-        "echo '================================================'",
-        "echo ''",
-        "echo 'Starting... Keep this window open while racing.'",
-        "echo ''",
-        cmd3,
-        "echo ''",
-        "echo 'Bridge stopped.'",
-      ].join("\n");
-      filename = "start-timing.command";
-    }
-    const blob = new Blob([content], { type: "text/plain" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const downloadInstallScript = (platform: "windows" | "mac") => {
-    let content: string;
-    let filename: string;
-    if (platform === "windows") {
-      content = [
-        "@echo off",
-        "title RM Roost — Install",
-        "echo ================================================",
-        "echo   RM Roost — Install",
-        "echo ================================================",
-        "echo.",
-        "cd %USERPROFILE%\\Downloads",
-        "echo Unzipping server package...",
-        "tar -xf rocky-mountain-local-server-latest.zip",
-        "cd rocky-mountain-local-server",
-        "echo.",
-        "echo Installing dependencies (this may take a minute)...",
-        "npm install",
-        "echo.",
-        "echo Done! Press any key to close.",
-        "pause > nul",
-      ].join("\r\n");
-      filename = "install-server.bat";
-    } else {
-      content = [
-        "#!/bin/bash",
-        "cd ~/Downloads",
-        "echo 'Unzipping server package...'",
-        "unzip -o rocky-mountain-local-server-latest.zip",
-        "cd rocky-mountain-local-server",
-        "echo ''",
-        "echo 'Installing dependencies (this may take a minute)...'",
-        "npm install",
-        "echo ''",
-        "echo 'Done! You can close this window.'",
-        "read -n1",
-      ].join("\n");
-      filename = "install-server.command";
-    }
-    const blob = new Blob([content], { type: "text/plain" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const downloadStartScript = (platform: "windows" | "mac", token?: string | null) => {
-    const hasSync = !!token;
-    let content: string;
-    let filename: string;
-    if (platform === "windows") {
-      const lines = [
-        "@echo off",
-        "title RM Roost",
-        "cd %USERPROFILE%\\Downloads\\rocky-mountain-local-server",
-      ];
-      if (hasSync) {
-        lines.push(
-          `set CLOUD_URL=${cloudDomain}`,
-          `set CLUB_ID=${clubId}`,
-          `set SYNC_TOKEN=${token}`,
-        );
-      }
-      lines.push("npm start", "pause > nul");
-      content = lines.join("\r\n");
-      filename = "start-server.bat";
-    } else {
-      const lines = [
-        "#!/bin/bash",
-        "cd ~/Downloads/rocky-mountain-local-server",
-      ];
-      if (hasSync) {
-        lines.push(
-          `export CLOUD_URL=${cloudDomain}`,
-          `export CLUB_ID=${clubId}`,
-          `export SYNC_TOKEN=${token}`,
-        );
-      }
-      lines.push("npm start");
-      content = lines.join("\n");
-      filename = "start-server.command";
-    }
-    const blob = new Blob([content], { type: "text/plain" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
+  const macButtons = (
+    <>
+      <Button asChild size="lg" variant={platform === "mac" ? "default" : "outline"} className="gap-2">
+        <a href={downloads.macArm}><Apple size={18} /> Mac (Apple silicon)</a>
+      </Button>
+      <Button asChild size="lg" variant="outline" className="gap-2">
+        <a href={downloads.macX64}><Apple size={18} /> Mac (Intel)</a>
+      </Button>
+    </>
+  );
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-8">
-
-      {/* ── Back-online reconnect banner ─────────────────────────────────────────── */}
-      {showReconnectBanner && (
-        <div className="flex items-start gap-3 rounded-xl border-2 border-green-500/50 bg-green-500/10 px-4 py-4">
-          <Wifi size={20} className="text-green-500 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0 space-y-2">
-            <p className="text-sm font-semibold text-foreground">You're back online!</p>
-            <p className="text-xs text-muted-foreground">Switch your timing reader back to the cloud now so it's ready for your next event.</p>
-            <div className="flex flex-wrap items-center gap-2">
-              {tech === "rfid" ? (
-                <button
-                  onClick={() => {
-                    downloadLauncher(os, bridgeCmdCloud);
-                    setShowReconnectBanner(false);
-                  }}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border bg-background transition-colors hover:bg-muted">
-                  <Download size={12} /> Download switch-to-cloud script
-                </button>
-              ) : (
-                <p className="text-xs text-muted-foreground">Open RM Connect and reconnect the F2000 on TCP port 55555.</p>
-              )}
-              <button
-                onClick={() => setShowReconnectBanner(false)}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
-                Skip for now
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Page header ─────────────────────────────────────────────────────────── */}
       <div>
         <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
           <WifiOff className="text-primary" size={32} /> Offline Mode
         </h1>
         <p className="text-muted-foreground mt-1">
-          Run a full race day with no internet — your laptop handles everything, then syncs back to the cloud when you're done.
+          No internet at the track? Run the whole race day from the RM Roost desktop app on your laptop.
         </p>
-
-        {/* Tech picker */}
-        <div className="mt-5 space-y-2">
-          <p className="text-sm font-semibold text-foreground">What timing technology do you use?</p>
-          <div className="grid grid-cols-2 gap-3 max-w-sm">
-            <button
-              onClick={() => setTech("rfid")}
-              className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${tech === "rfid" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-            >
-              <Wifi size={18} className={tech === "rfid" ? "text-primary" : "text-muted-foreground"} />
-              <div>
-                <p className="font-semibold text-sm">RFID Sticker Tags</p>
-                <p className="text-xs text-muted-foreground">Bridge script</p>
-              </div>
-            </button>
-            <button
-              onClick={() => setTech("active_transponder")}
-              className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${tech === "active_transponder" ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-            >
-              <Timer size={18} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
-              <div>
-                <p className="font-semibold text-sm">Active Timing Reader</p>
-                <p className="text-xs text-muted-foreground">F2000 · port 55555</p>
-              </div>
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* ── Step 1 — Before Race Day ─────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3 border-b">
-          <StepHeader n={1} title="Before Race Day — One-Time Setup" />
-        </CardHeader>
-        <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
-
-          {isDesktopApp && (
-            <div className="space-y-3">
-              <div className="rounded-lg border-2 border-green-500/40 bg-green-500/10 p-3 flex gap-2 text-xs">
-                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
-                <span className="text-foreground/90">
-                  You're using the <strong>RM Roost desktop app</strong>. The offline race server is built in, so there's nothing else to install.
-                </span>
-              </div>
-              <p className="text-foreground font-semibold">Sync this laptop before you leave</p>
-              <p>
-                While you still have internet, open RM Roost and sign in. It copies your events, riders and
-                registrations to this laptop and keeps them up to date. Wait for the <strong>Synced</strong> badge
-                under your name before heading to the venue.
-              </p>
-              <p className="text-xs">
-                Cloud sync not connected? Use <strong>Cloud Sync Settings</strong> in the RM Roost app menu.
-                To set up another laptop, download RM Roost from <strong>{cloudDomain.replace(/^https?:\/\//, "")}</strong>.
-              </p>
-            </div>
-          )}
-
-          {!isDesktopApp && (<>
-          {/* 1a — Download */}
-          <div className="space-y-3">
-            <p className="text-foreground font-semibold">Download the software to your laptop</p>
-
-            {isLocalServer && (
-              <div className="rounded-lg border-2 border-green-500/40 bg-green-500/10 p-3 flex gap-2 text-xs">
-                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
-                <span className="text-foreground/90">
-                  You're already running the local server — no download needed. To get the installer for a different laptop, visit this page from the <strong>cloud portal</strong>.
-                </span>
-              </div>
-            )}
-
-            {!isLocalServer && pkgInfo && (
-              <div className="flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <PackageInfoBanner
-                    builtAt={pkgInfo.builtAt}
-                    version={pkgInfo.version}
-                    etag={pkgInfo.etag}
-                    lastEtag={lastDownloadedEtag}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleRebuild}
-                  disabled={isRebuilding}
-                  className="shrink-0 flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-muted transition-colors px-3 py-1.5 text-xs font-medium text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isRebuilding ? (
-                    <>
-                      <Loader2 size={12} className="animate-spin" />
-                      Rebuilding…
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw size={12} />
-                      Rebuild
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-            {!isLocalServer && !pkgInfo && !pkgError && !pkgPending && !pkgFetching && (
-              <button
-                type="button"
-                onClick={handleRebuild}
-                disabled={isRebuilding}
-                className="flex items-center gap-1.5 rounded-md border border-border bg-background hover:bg-muted transition-colors px-3 py-1.5 text-xs font-medium text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isRebuilding ? (
-                  <>
-                    <Loader2 size={12} className="animate-spin" />
-                    Rebuilding…
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw size={12} />
-                    Rebuild Now
-                  </>
-                )}
-              </button>
-            )}
-            {!isLocalServer && pkgError && !pkgPending && !pkgFetching && (
-              <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
-                <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
-                <span className="text-muted-foreground">Download info unavailable — contact support if this persists.</span>
-              </div>
-            )}
-            {!isLocalServer && rebuildFailed && (
-              <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 flex gap-2 text-xs">
-                <AlertTriangle size={13} className="text-destructive shrink-0 mt-0.5" />
-                <span className="text-muted-foreground">
-                  Rebuild failed: {(rebuildError as any)?.response?.data?.error ?? (rebuildError as any)?.message ?? "Unknown error"}
-                </span>
-              </div>
-            )}
-
-            {!isLocalServer && (
-              <>
-                <a
-                  href="/api/offline/package"
-                  download="rocky-mountain-local-server-latest.zip"
-                  onClick={handleDownload}
-                  className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-3 group"
-                >
-                  <Download size={14} className="text-primary shrink-0 group-hover:scale-110 transition-transform" />
-                  <span className="text-xs font-mono text-primary flex-1">rocky-mountain-local-server-latest.zip</span>
-                  {pkgInfo ? (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-auto font-mono text-muted-foreground">v{pkgInfo.version}</Badge>
-                  ) : (
-                    <Badge variant="default" className="text-[10px] px-1.5 py-0 ml-auto">Download</Badge>
-                  )}
-                </a>
-                <p className="text-xs text-muted-foreground">
-                  Save it to your <strong>Downloads</strong> folder — the install script will look for it there.
-                </p>
-              </>
-            )}
-          </div>
-
-          {/* 1b — Install */}
-          <div className="space-y-2">
-            <p className="text-foreground font-semibold">Install it (one time only)</p>
-            <p>Download this script and double-click it — it unzips and installs everything automatically. No typing needed.</p>
-            <OsToggle os={os} onChange={setOs} />
-            <button onClick={() => downloadInstallScript(os)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-              <Download size={12} /> {os === "windows" ? "install-server.bat" : "install-server.command"}
-            </button>
-            {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
-          </div>
-
-          {/* 1c — Download start script */}
-          <div className="space-y-3">
-            <p className="text-foreground font-semibold">Download the start script</p>
-            <p>Check the box below to include auto-sync — results will upload to the cloud automatically once your laptop reconnects to the internet after the race.</p>
-            <label className="flex items-center gap-2.5 cursor-pointer select-none w-fit">
-              <input
-                type="checkbox"
-                checked={syncEnabled}
-                onChange={async (e) => {
-                  const checked = e.target.checked;
-                  setSyncEnabled(checked);
-                  if (checked && !syncToken) {
-                    setSyncTokenLoading(true);
-                    try {
-                      const res = await fetch("/api/auth/offline-token", { method: "POST", credentials: "include" });
-                      if (res.ok) {
-                        const data = await res.json() as { token: string };
-                        setSyncToken(data.token);
-                      }
-                    } finally {
-                      setSyncTokenLoading(false);
-                    }
-                  }
-                }}
-                className="w-4 h-4 accent-primary"
-              />
-              <span className="text-sm">
-                Include auto-sync
-                {syncTokenLoading && <span className="text-muted-foreground ml-1">(generating token…)</span>}
-                {syncEnabled && syncToken && <span className="text-green-600 dark:text-green-400 ml-1">✓ ready</span>}
-              </span>
-            </label>
-            <button
-              onClick={() => downloadStartScript(os, syncEnabled ? syncToken : null)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-              <Download size={12} /> {os === "windows" ? "start-server.bat" : "start-server.command"}
-              {syncEnabled && syncToken && <span className="text-green-600 dark:text-green-400 font-normal ml-1">(sync included)</span>}
-            </button>
-            <p className="text-xs text-muted-foreground">
-              Double-click to start. Then open{" "}
-              <a href="http://localhost:8080" target="_blank" rel="noopener noreferrer" className="font-mono bg-muted rounded px-1 text-primary underline underline-offset-2 hover:bg-muted/70 transition-colors">http://localhost:8080</a>{" "}
-              in your browser to confirm it's working.
+      {isDesktopApp ? (
+        <Card className="border-2 border-green-500/40">
+          <CardContent className="pt-6 space-y-3">
+            <p className="flex items-center gap-2 font-semibold">
+              <CheckCircle2 size={18} className="text-green-500" /> You're in the desktop app. Offline mode is built in.
             </p>
-            {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
-          </div>
-
-          </>)}
-
-          <Callout kind="tip">
-            Do this at home before your first event — a quick test now prevents surprises on race day.
-          </Callout>
-
-        </CardContent>
-      </Card>
-
-      {/* ── Step 2 — On Race Day ─────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3 border-b">
-          <StepHeader n={2} title="On Race Day" />
-        </CardHeader>
-        <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
-
-          {!isDesktopApp && (<>
-          {/* 2a — Download race data */}
-          <div className="space-y-3">
-            <p className="text-foreground font-semibold">Download your race data</p>
-            <p>
-              Before you leave home (while you still have internet), download a copy of your
-              rider database and event info. Your laptop uses this file to run the event offline.
+            <p className="text-sm text-muted-foreground">
+              Nothing else to install. To time without internet, open Reader Setup and choose "No, connect without internet".
             </p>
-            <Button
-              variant="outline"
-              onClick={handleExportRaceData}
-              disabled={exporting}
-              className="font-heading uppercase tracking-wider gap-2"
-            >
-              {exporting
-                ? <Loader2 size={15} className="animate-spin" />
-                : exportDone
-                  ? <CheckCircle2 size={15} className="text-green-500" />
-                  : <Database size={15} />}
-              {exporting ? "Downloading…" : exportDone ? "Downloaded!" : "Download Race Data"}
+            <Button asChild className="gap-2">
+              <Link href="/rfid/setup"><Radio size={16} /> Open Reader Setup</Link>
             </Button>
-            <Callout kind="warning">
-              Do this at home before heading to the venue — you need internet to download it.
-            </Callout>
-          </div>
-
-          {/* 2b — Start the software */}
-          <div className="space-y-2">
-            <p className="text-foreground font-semibold">Start the software on your laptop</p>
-            <p>Double-click the start script you downloaded in Step 1. Keep the window open all day — don't close it.</p>
-            <button onClick={() => downloadStartScript(os, syncEnabled ? syncToken : null)}
-              className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-              <Download size={12} /> {os === "windows" ? "start-server.bat" : "start-server.command"}
-              {syncEnabled && syncToken && <span className="text-green-600 dark:text-green-400 font-normal ml-1">(sync included)</span>}
-            </button>
-          </div>
-          </>)}
-
-          {/* 2c — Point your reader at the laptop */}
-          <div className="space-y-3">
-            <p className="text-foreground font-semibold">Point your timing reader at your laptop</p>
-            <p>
-              Your timing reader normally sends data to the cloud. For offline mode, redirect
-              it to your laptop instead.
-            </p>
-
-            {tech === "rfid" ? (
-              <div className="space-y-2">
-                {/* IP detection — needed so user knows what address to put in the reader's config */}
-                {ipLoading ? (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 size={13} className="animate-spin" />
-                    Detecting your laptop's IP address…
-                  </div>
-                ) : localIp ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs">
-                    <Wifi size={13} className="text-green-500 shrink-0" />
-                    <span className="text-foreground">
-                      Your laptop's IP address on this network is{" "}
-                      <span className="font-mono font-bold text-green-600 dark:text-green-400">{localIp}</span>
-                      {" "}— use this when configuring your reader.
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                    <Wifi size={13} className="shrink-0" />
-                    <span>Couldn't auto-detect your IP. Check your network settings to find your laptop's address on the hotspot, then enter it in your reader's configuration.</span>
-                  </div>
-                )}
-                <p className="text-xs font-medium text-foreground">
-                  Start your bridge pointed at the laptop instead of the cloud:
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <a href="/rfid_bridge.py" download="rfid_bridge.py"
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                    <Download size={12} /> rfid_bridge.py
-                  </a>
-                  <button onClick={() => downloadLauncher(os, bridgeCmdLocal)}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                    <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
-                  </button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Save both files to your <strong>Downloads</strong> folder — they must be in the same folder.
-                  Double-click <strong>{os === "windows" ? "start-timing.bat" : "start-timing.command"}</strong> — a terminal opens and the bridge starts. Keep the window open all day.
-                </p>
-
-                {/* Auto-configure reader */}
-                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3 mt-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-xs font-semibold text-foreground">Auto-configure your reader</p>
-                    {offlineBridgeStatus === "running" ? (
-                      <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                        <CheckCircle2 size={11} /> Bridge running
-                      </span>
-                    ) : offlineBridgeStatus === "checking" ? (
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Loader2 size={11} className="animate-spin" /> Checking…
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs text-amber-500">
-                        <AlertTriangle size={11} /> Bridge not running — start it first
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Enter your reader's IP and click Configure — the bridge will push the offline target URL directly to the reader over your network. No manual reader setup needed.
-                  </p>
-                  <div className="flex flex-wrap gap-2 items-end">
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Reader model</label>
-                      <select
-                        value={offlineReaderType}
-                        onChange={e => { setOfflineReaderType(e.target.value as "impinj-r700" | "zebra-fx7500"); setOfflineConfigResult(null); }}
-                        className="h-8 text-xs rounded-md border bg-background px-2 font-mono"
-                      >
-                        <option value="impinj-r700">Impinj R700</option>
-                        <option value="zebra-fx7500">Zebra FX7500</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Reader IP address</label>
-                      <Input
-                        value={offlineReaderIp}
-                        onChange={e => { setOfflineReaderIp(e.target.value); setOfflineConfigResult(null); }}
-                        placeholder="e.g. 192.168.1.20"
-                        className="font-mono h-8 text-xs w-44"
-                        onKeyDown={e => { if (e.key === "Enter") void configureReaderOffline(); }}
-                      />
-                    </div>
-                    <button
-                      onClick={() => void configureReaderOffline()}
-                      disabled={offlineConfiguring || !offlineReaderIp.trim() || !localIp || offlineBridgeStatus !== "running"}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 h-8 rounded-md border bg-background hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {offlineConfiguring
-                        ? <Loader2 size={12} className="animate-spin" />
-                        : <Settings2 size={12} />}
-                      {offlineConfiguring ? "Configuring…" : "Configure Reader"}
-                    </button>
-                  </div>
-                  {!localIp && !ipLoading && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">Couldn't detect your laptop's IP — auto-configure needs it to set the reader's target URL. Check your network connection.</p>
-                  )}
-                  {localIp && (
-                    <p className="text-xs text-muted-foreground">
-                      Reader will be pointed at{" "}
-                      <span className="font-mono text-foreground">http://{localIp}:5555/…</span>
-                      {" "}(your laptop on this network).
-                    </p>
-                  )}
-                  {offlineConfigResult && (
-                    <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs ${offlineConfigResult.ok ? "border-green-500/40 bg-green-500/10" : "border-destructive/40 bg-destructive/10"}`}>
-                      {offlineConfigResult.ok
-                        ? <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
-                        : <XCircle size={13} className="text-destructive shrink-0 mt-0.5" />}
-                      <span>{offlineConfigResult.message}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : isDesktopApp ? (
-              <div className="space-y-3">
-                <p className="text-xs font-medium text-foreground">
-                  Connect the F2000 directly from RM Roost:
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Open <strong>Reader Setup</strong>, choose <strong>Active Timing Reader</strong>, enter the F2000's IP address, and connect.
-                  RM Roost talks to the reader on TCP port <strong className="font-mono">55555</strong> and records crossings on this laptop.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-xs font-medium text-foreground">
-                  Connect the F2000 through RM Connect on the track laptop:
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  In RM Connect, select <strong>Active Timing Reader</strong>, enter the F2000's IP address, and connect.
-                  RM Connect uses TCP port <strong className="font-mono">55555</strong> and forwards crossings to the local server.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* 2c — Run the event */}
-          <div className="space-y-3">
-            <p className="text-foreground font-semibold">Run your event normally</p>
-            <p>
-              {isDesktopApp
-                ? "Run the day in RM Roost exactly as you would online. Everything below works with no internet."
-                : "Open the organizer portal in your browser and run the day exactly as you would with the cloud. Everything below works with no internet."}
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4">
-                <p className="font-semibold text-green-600 dark:text-green-400 text-xs uppercase tracking-wider mb-2.5">Works offline</p>
-                <ul className="space-y-1.5">
-                  <CheckItem ok={true}>Rider check-in</CheckItem>
-                  <CheckItem ok={true}>Live transponder timing</CheckItem>
-                  <CheckItem ok={true}>Moto scoring &amp; results</CheckItem>
-                  <CheckItem ok={true}>Transponder / bib setup</CheckItem>
-                  <CheckItem ok={true}>Walk-up registration</CheckItem>
-                </ul>
-              </div>
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-                <p className="font-semibold text-destructive text-xs uppercase tracking-wider mb-2.5">Not available offline</p>
-                <ul className="space-y-1.5">
-                  <CheckItem ok={false}>Series points &amp; standings</CheckItem>
-                  <CheckItem ok={false}>Online pre-registration</CheckItem>
-                  <CheckItem ok={false}>Public results page</CheckItem>
-                  <CheckItem ok={false}>Email confirmations</CheckItem>
-                  <CheckItem ok={false}>Payment processing</CheckItem>
-                </ul>
-              </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-2 border-primary/25">
+          <CardContent className="pt-6 space-y-4">
+            <div>
+              <p className="font-heading font-bold uppercase tracking-wider text-sm flex items-center gap-2">
+                <Download size={16} className="text-primary" /> Download RM Roost for desktop
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">Sign in with your RM Roost account after installing.</p>
             </div>
+            <div className="flex flex-wrap gap-3">
+              {platform === "mac" ? <>{macButtons}{windowsButton}</> : <>{windowsButton}{macButtons}</>}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {STEPS.map(({ icon: Icon, title, body }, i) => (
+          <div key={title} className="rounded-xl border bg-card p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">{i + 1}</span>
+              <Icon size={16} className="text-muted-foreground" />
+            </div>
+            <p className="font-semibold text-sm">{title}</p>
+            <p className="text-xs text-muted-foreground">{body}</p>
           </div>
-
-          <Callout kind="tip">
-            {isDesktopApp
-              ? "Keep RM Roost open all day — quitting it stops the local timing server and your timing reader will lose its connection."
-              : "Keep the terminal window open all day — closing it stops the software and your timing reader will lose its connection."}
-          </Callout>
-
-        </CardContent>
-      </Card>
-
-      {/* ── Step 3 — After the Race ──────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3 border-b">
-          <StepHeader n={3} title="After the Race" />
-        </CardHeader>
-        <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
-
-          {/* 3a — Auto-sync reminder */}
-          <p>
-            As soon as your laptop connects to the internet — driving home, stopping at a café, wherever —{" "}
-            {isDesktopApp ? "RM Roost" : "the software"} syncs your race data automatically. Results will appear publicly within minutes. Nothing to do.
-          </p>
-
-          {/* 3b — Point reader back */}
-          <div className="space-y-2">
-            <p className="text-foreground font-semibold">Switch your timing reader back to the cloud</p>
-            <p>Point your reader back at the cloud so it's ready for your next event.</p>
-            {tech === "rfid" ? (
-              <div className="space-y-2">
-                <button onClick={() => downloadLauncher(os, bridgeCmdCloud)}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors">
-                  <Download size={12} /> {os === "windows" ? "start-timing.bat" : "start-timing.command"}
-                </button>
-                <p className="text-xs text-muted-foreground">Double-click to run — the bridge reconnects to the cloud automatically.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  Open RM Connect and reconnect the F2000 to the cloud on TCP port <strong className="font-mono">55555</strong>.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <Callout kind="warning">
-            Don't delete or reset anything on your laptop until you've confirmed the sync went through. Check the public Results page — if your results are showing, you're good to go.
-          </Callout>
-
-        </CardContent>
-      </Card>
-
+        ))}
+      </div>
     </div>
   );
 }

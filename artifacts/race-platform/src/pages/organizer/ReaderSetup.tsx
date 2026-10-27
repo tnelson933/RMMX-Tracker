@@ -17,6 +17,7 @@ import {
   useGetConnectorStatus,
   useGetRecentTags, useClearRecentTags, getGetRecentTagsQueryKey,
 } from "@workspace/api-client-react";
+import { ConnectionModeChooser } from "@/components/organizer/OfflineHardwareSetup";
 
 const BASE_URL = window.location.origin;
 const PING_ENDPOINT_BASE = `${BASE_URL}/api/timing/ping`;
@@ -985,6 +986,8 @@ export default function ReaderSetup() {
           </button>
         </div>
       </section>
+
+      {isDesktop && <ConnectionModeChooser tech={tech} />}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-lg border bg-card p-3">

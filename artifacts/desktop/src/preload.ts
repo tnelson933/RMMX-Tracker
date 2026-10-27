@@ -6,6 +6,12 @@ import type {
   ActiveTransponderStatus,
   ActiveTransponderConfiguration,
   CloudCredentials,
+  NetworkInfo,
+  NetworkScanResult,
+  NetworkProbeResult,
+  RfidNetworkStatus,
+  RfidNetworkSettings,
+  RfidHardware,
 } from "./ipc-types";
 
 const electronAPI = {
@@ -55,6 +61,25 @@ const electronAPI = {
       const handler = (_: unknown, status: ActiveTransponderStatus) => cb(status);
       ipcRenderer.on("active-transponder:status", handler);
       return () => ipcRenderer.off("active-transponder:status", handler);
+    },
+  },
+
+  network: {
+    getInfo: (): Promise<NetworkInfo> => ipcRenderer.invoke("network:getInfo"),
+    scan: (): Promise<NetworkScanResult> => ipcRenderer.invoke("network:scan"),
+    probe: (host: string): Promise<NetworkProbeResult> => ipcRenderer.invoke("network:probe", host),
+  },
+
+  rfidNetwork: {
+    getSettings: (): Promise<RfidNetworkSettings> => ipcRenderer.invoke("rfid-network:getSettings"),
+    getStatus: (): Promise<RfidNetworkStatus> => ipcRenderer.invoke("rfid-network:getStatus"),
+    connect: (address: string, hardware: RfidHardware): Promise<void> =>
+      ipcRenderer.invoke("rfid-network:connect", address, hardware),
+    disconnect: (): Promise<void> => ipcRenderer.invoke("rfid-network:disconnect"),
+    onStatus: (cb: (status: RfidNetworkStatus) => void): (() => void) => {
+      const handler = (_: unknown, status: RfidNetworkStatus) => cb(status);
+      ipcRenderer.on("rfid-network:status", handler);
+      return () => ipcRenderer.off("rfid-network:status", handler);
     },
   },
 

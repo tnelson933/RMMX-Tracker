@@ -107,3 +107,16 @@ export type IpcChannels = {
   }) => { ok: boolean; status: number; data: unknown };
   "app:getVersion": () => string;
 };
+
+export type { NetworkInfo, NetworkAdapter, DiscoveredDevice, ScanResult as NetworkScanResult } from "./network-discovery";
+export type { RfidNetworkStatus, RfidHardware } from "./rfid-network";
+
+export interface NetworkProbeResult {
+  resolved: string | null;
+  kinds: Array<"active_transponder" | "rfid">;
+}
+
+export interface RfidNetworkSettings {
+  address?: string;
+  hardware?: "impinj" | "zebra" | "generic";
+}

@@ -45,6 +45,13 @@ import {
   syncActiveTransponderClock,
   type ActiveTransponderConfiguration,
 } from "./active-transponder";
+import { getNetworkInfo, scanLocalNetwork, probeDevice } from "./network-discovery";
+import {
+  connectRfidNetworkReader,
+  disconnectRfidNetworkReader,
+  getRfidNetworkStatus,
+  type RfidHardware,
+} from "./rfid-network";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -158,6 +165,24 @@ function loadActiveTransponderAddress(): string {
 
 function saveActiveTransponderSettings(settings: ActiveTransponderSettings): void {
   fs.writeFileSync(getActiveTransponderSettingsPath(), JSON.stringify(settings), { mode: 0o600 });
+}
+
+interface RfidNetworkSettings {
+  address?: string;
+  hardware?: RfidHardware;
+}
+
+function getRfidNetworkSettingsPath(): string {
+  return path.join(app.getPath("userData"), "rfid-network.json");
+}
+
+function loadRfidNetworkSettings(): RfidNetworkSettings {
+  try {
+    const saved = JSON.parse(fs.readFileSync(getRfidNetworkSettingsPath(), "utf8")) as RfidNetworkSettings;
+    return saved && typeof saved === "object" ? saved : {};
+  } catch {
+    return {};
+  }
 }
 
 // ── Local server management ───────────────────────────────────────────────────
@@ -692,6 +717,35 @@ function registerIpcHandlers(): void {
     mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
   });
 
+  // Local-network (no internet) hardware setup
+  ipcMain.handle("network:getInfo", () => getNetworkInfo());
+  ipcMain.handle("network:scan", () => {
+    // Never probe readers this app already holds a session with.
+    const skip = [getActiveTransponderStatus().deviceIp, getRfidNetworkStatus().host].filter(
+      (address): address is string => !!address,
+    );
+    return scanLocalNetwork(skip);
+  });
+  ipcMain.handle("network:probe", (_event, host: string) => probeDevice(String(host ?? "")));
+
+  ipcMain.handle("rfid-network:getSettings", () => loadRfidNetworkSettings());
+  ipcMain.handle("rfid-network:getStatus", () => getRfidNetworkStatus());
+  ipcMain.handle("rfid-network:connect", async (_event, address: string, hardware: RfidHardware) => {
+    if (!["impinj", "zebra", "generic"].includes(hardware)) throw new Error("Unknown RFID reader type.");
+    await connectRfidNetworkReader(
+      String(address ?? ""),
+      hardware,
+      (epc) => postCrossingToLocalServer({ tag: epc }),
+      (status) => mainWindow?.webContents.send("rfid-network:status", status),
+    );
+    fs.writeFileSync(getRfidNetworkSettingsPath(), JSON.stringify({ address: String(address).trim(), hardware }), { mode: 0o600 });
+    mainWindow?.webContents.send("rfid-network:status", getRfidNetworkStatus());
+  });
+  ipcMain.handle("rfid-network:disconnect", () => {
+    disconnectRfidNetworkReader();
+    mainWindow?.webContents.send("rfid-network:status", getRfidNetworkStatus());
+  });
+
   ipcMain.handle("auth:getCredentials", () => getPublicCredentials());
 
   ipcMain.handle(
@@ -1084,6 +1138,7 @@ function cleanupAndQuit(): void {
   stopSyncEngine();
   disconnectPort();
   disconnectActiveTransponder();
+  disconnectRfidNetworkReader();
   void stopLocalServer().finally(() => {
     app.quit();
   });

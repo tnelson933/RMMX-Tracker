@@ -67,7 +67,7 @@ To change status: Events → click the event → Edit tab → change the Status 
 - **Notifications** — send push notifications to riders; view send history
 - **Race Day Display** — jumbotron / announcer display for the track
 - **Reader Setup** — configure RFID or Active Transponder Timing hardware
-- **Offline Mode** — export event data and sync back after offline operation
+- **Offline Mode** — download the RM Roost desktop app for race days without internet
 - **Team** — invite staff and set role-based permissions; manage default race classes and class rules; set track/venue name; configure rider acknowledgement forms and liability waivers; manage brand contingencies
 
 ---
@@ -597,8 +597,8 @@ For enduro events you can give each physical reader its own **unique ingest URL*
 
 ## Offline Mode & Desktop App
 
-### Cloud-based offline export
-**Offline Mode** (sidebar) → download a packaged data export. Use this if you expect no internet at the venue. After the event, return to Offline Mode → Sync → upload the exported .db or .zip file to push results back to the cloud.
+### Offline Mode page
+**Offline Mode** (sidebar) links to the RM Roost desktop app downloads (Windows, Mac Apple silicon, Mac Intel). Organizers expecting no internet at the venue install it, sign in while still online so their events sync to the laptop, and run the race day from it. Results upload automatically when the laptop is back online.
 
 ### Electron Desktop App
 The desktop app is a separate Windows/Mac application that runs a full local race server on localhost:9090. It is designed for race-day reliability without depending on internet connectivity.
@@ -608,6 +608,7 @@ Key desktop features:
 - **Cloud sync queue** — all writes are queued in a local SQLite database and synced to the cloud in the background. The sync queue survives network outages and retries automatically.
 - **Sync status** — a sync indicator in the top bar shows pending items and last-sync time
 - **RFID via serial port** — native USB/serial reader support (bypasses network configuration)
+- **Connect without internet** — in the desktop app's Reader Setup, choose "No, connect without internet". It walks through putting the reader and laptop on one local network (a router or switch with no internet, or a direct cable), scans the network for F2000 readers (TCP 55555) and LLRP RFID readers such as Impinj and Zebra (TCP 5084), and connects to them directly. Impinj readers can also be reached by hostname, `impinj-xx-xx-xx.local` from the last 6 MAC characters. For a direct cable to an F2000, give the F2000 a fixed IP (e.g. 192.168.1.200) and the laptop's Ethernet adapter a fixed IP on the same network (e.g. 192.168.1.10). Only one program can hold an LLRP reader at a time, so RM Connect must be closed.
 - **Encrypted credentials** — login credentials are stored encrypted using Electron's safeStorage
 
 ---
