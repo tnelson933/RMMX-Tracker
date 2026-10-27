@@ -25,6 +25,7 @@ import { BrandBar } from "@/components/BrandBar";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
 import { StatTile } from "@/components/RaceStats";
+import { displayDate } from "@/lib/format";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,8 +39,7 @@ function fmtLap(ms: number | null | undefined): string {
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "";
-  const normalized = iso.includes("T") ? iso : iso + "T12:00:00";
-  return new Date(normalized).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return displayDate(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function lapDelta(ms: number, bestMs: number): string {
@@ -59,8 +59,7 @@ function dateKey(iso: string | null | undefined): string {
 
 function dateLabel(iso: string | null | undefined): string {
   if (!iso) return "Unknown Date";
-  const normalized = iso.includes("T") ? iso : iso + "T12:00:00";
-  return new Date(normalized).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return displayDate(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function equipmentIcon(equipment: string): keyof typeof Feather.glyphMap {

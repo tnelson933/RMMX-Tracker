@@ -15,6 +15,7 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { ShareResultButton } from "@/components/ShareCard";
 import { PositionBadge } from "@/components/RaceStats";
+import { displayDate } from "@/lib/format";
 
 function parseLapMs(s: string): number {
   if (!s) return Infinity;
@@ -35,8 +36,7 @@ function lapDeltaStr(ms: number, bestMs: number): string {
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "";
-  const normalized = iso.includes("T") ? iso : iso + "T12:00:00";
-  return new Date(normalized).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return displayDate(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 interface MotoResult {

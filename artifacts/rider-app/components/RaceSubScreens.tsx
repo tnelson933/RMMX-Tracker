@@ -11,13 +11,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BrandBar } from "@/components/BrandBar";
 import { useColors } from "@/hooks/useColors";
+import { displayDate } from "@/lib/format";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 export function fmtDateShared(iso: string | null | undefined): string {
   if (!iso) return "";
-  const normalized = iso.includes("T") ? iso : iso + "T12:00:00";
-  return new Date(normalized).toLocaleDateString("en-US", {
+  return displayDate(iso).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   });
 }

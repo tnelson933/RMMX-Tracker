@@ -17,3 +17,11 @@ export function placeLabel(place: string | null | undefined, state: string | nul
 export function eventDay(iso: string): Date {
   return new Date(`${iso.slice(0, 10)}T12:00:00`);
 }
+
+/**
+ * Date for display: a date-only value or a midnight-UTC value (how event dates are
+ * stored) is a calendar day; anything else is a real moment in time.
+ */
+export function displayDate(iso: string): Date {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) || /T00:00:00(\.0+)?Z$/.test(iso) ? eventDay(iso) : new Date(iso);
+}

@@ -27,6 +27,7 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
 import { PositionBadge } from "@/components/RaceStats";
+import { displayDate } from "@/lib/format";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,8 +39,7 @@ function greeting(firstName: string): string {
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "";
-  const normalized = iso.includes("T") ? iso : iso + "T12:00:00";
-  return new Date(normalized).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return displayDate(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function fmtToday(): string {
