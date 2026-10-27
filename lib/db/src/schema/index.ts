@@ -32,3 +32,4 @@ export * from "./event_reader_assignments";
 export * from "./rider_bikes";
 export * from "./liability_waiver_signatures";
 export * from "./quick_checkin_notifications";
+export * from "./rider_social";

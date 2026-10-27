@@ -39,6 +39,7 @@ import {
   compCodesTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull } from "drizzle-orm";
+import { canManageRider, managedRiderWhere } from "../lib/riderAccess";
 
 const router = Router();
 
@@ -431,7 +432,7 @@ router.get("/rider/my-event-ids", requireRiderAuth, async (req, res) => {
   const familyRiders = await db
     .select({ id: ridersTable.id })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+    .where(await managedRiderWhere(account));
 
   if (familyRiders.length === 0) return res.json({ eventIds: [] });
 
@@ -460,7 +461,7 @@ router.get("/rider/events/:eventId/my-registrations", requireRiderAuth, async (r
   const familyRiders = await db
     .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+    .where(await managedRiderWhere(account));
 
   if (familyRiders.length === 0) return res.json({ registeredClasses: [], registrations: [] });
 
@@ -509,7 +510,7 @@ router.patch("/rider/events/:eventId/my-registrations/:regId", requireRiderAuth,
   const familyRiders = await db
     .select({ id: ridersTable.id })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+    .where(await managedRiderWhere(account));
   const familyRiderIds = familyRiders.map(r => r.id);
 
   const [reg] = await db.select().from(registrationsTable)
@@ -582,7 +583,7 @@ router.post("/rider/events/:eventId/registrations/cancel", requireRiderAuth, asy
   const familyRiders = await db
     .select({ id: ridersTable.id })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+    .where(await managedRiderWhere(account));
   const familyRiderIds = familyRiders.map(r => r.id);
 
   // Verify ownership — all IDs must belong to a family rider for this event
@@ -641,7 +642,7 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   const riders = await db.select().from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = ${account.email}`);
+    .where(await managedRiderWhere(account));
 
   // For each rider, compute summary stats from race results
   const profilesWithStats = await Promise.all(
@@ -714,7 +715,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "Rider not found" });
-  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -762,6 +763,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     const s = lt && typeof lt === "object" && "time" in lt ? String((lt as { time: string }).time) : String(lt ?? "");
     const m = s.trim().match(/^(\d+):(\d{2})\.(\d{1,3})$/);
     if (m) return parseInt(m[1]) * 60_000 + parseInt(m[2]) * 1_000 + parseInt(m[3].padEnd(3, "0"));
+    if (/^\d+$/.test(s.trim()) && parseInt(s.trim(), 10) > 1000) return parseInt(s.trim(), 10); // ms as text
     const sec = s.trim().replace(/s$/i, "").match(/^(\d+)(?:\.(\d{1,3}))?$/);
     if (sec) return parseInt(sec[1]) * 1_000 + (sec[2] ? parseInt(sec[2].padEnd(3, "0")) : 0);
     return null;
@@ -906,7 +908,7 @@ router.get("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "Rider not found" });
-  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -946,7 +948,7 @@ router.patch("/rider/profiles/:riderId/rfid", requireRiderAuth, async (req, res)
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "Rider not found" });
-  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -973,7 +975,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "Rider not found" });
-  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -1039,7 +1041,7 @@ async function verifyRiderOwnership(riderAccountId: number, riderId: number): Pr
   if (!account) return null;
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return null;
-  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) return null;
+  if (!(await canManageRider(account, rider))) return null;
   return { account, rider };
 }
 
@@ -1191,7 +1193,7 @@ router.patch("/rider/profiles/:riderId/maintenance-suggestions", requireRiderAut
     .from(ridersTable)
     .where(eq(ridersTable.id, riderId));
 
-  if (!rider || rider.email?.toLowerCase() !== account.email.toLowerCase()) {
+  if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -1259,7 +1261,7 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "Rider not found" });
-  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -1404,7 +1406,7 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "Rider not found" });
-  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -1600,7 +1602,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "Rider not found" });
-  if (!rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -1608,7 +1610,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
   const familyRiders = await db
     .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+    .where(await managedRiderWhere(account));
 
   const familyRiderIds = familyRiders.map(r => r.id);
   const familyRiderMap = new Map(familyRiders.map(r => [r.id, `${r.firstName} ${r.lastName}`]));
@@ -1916,7 +1918,7 @@ router.get("/rider/motos/:motoId/detail", requireRiderAuth, async (req, res) => 
   const familyRiders = await db
     .select({ id: ridersTable.id })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+    .where(await managedRiderWhere(account));
   const familyRiderIds = familyRiders.map(r => r.id);
 
   const reg = await db
@@ -2190,7 +2192,7 @@ router.post("/rider/mechanic-chat", requireRiderAuth, async (req, res) => {
     if (!isNaN(riderId)) {
       const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
       const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-      if (account && rider && rider.email && rider.email.toLowerCase() === account.email.toLowerCase()) {
+      if (account && rider && (await canManageRider(account, rider))) {
         maintenanceItems = await db
           .select()
           .from(riderMaintenanceTable)
@@ -2378,7 +2380,7 @@ router.get("/rider/maintenance-check", requireRiderAuth, async (req, res) => {
     .select({ id: ridersTable.id, firstName: ridersTable.firstName })
     .from(ridersTable)
     .where(and(
-      sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`,
+      await managedRiderWhere(account),
       eq(ridersTable.aiMaintenanceSuggestions, true),
     ));
 
@@ -2436,7 +2438,7 @@ router.get("/rider/series", requireRiderAuth, async (req, res) => {
   const riders = await db
     .select({ id: ridersTable.id })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = ${account.email}`);
+    .where(await managedRiderWhere(account));
 
   if (riders.length === 0) return res.json([]);
 
@@ -2569,7 +2571,7 @@ router.get("/rider/maintenance/:riderId", async (req, res) => {
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -2594,7 +2596,7 @@ router.put("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -2655,7 +2657,7 @@ router.delete("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -2683,7 +2685,7 @@ router.get("/rider/maintenance/:riderId/history", async (req, res) => {
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -2709,7 +2711,7 @@ router.patch("/rider/maintenance/:riderId/history/:historyId", async (req, res) 
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -2747,7 +2749,7 @@ router.delete("/rider/maintenance/:riderId/history/:historyId", async (req, res)
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -2773,7 +2775,7 @@ router.post("/rider/maintenance/:riderId/ai-generate", async (req, res) => {
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider || !rider.email || rider.email.toLowerCase() !== account.email.toLowerCase()) {
+  if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "Access denied" });
   }
 
@@ -2867,19 +2869,19 @@ Include 10–15 items tailored to this specific make and model. Common categorie
 router.get("/rider/my-organizations", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId as number;
 
-  // Find all rider profiles linked to this account (by email)
+  // Find all rider profiles this account owns or manages
   const [account] = await db
-    .select({ email: riderAccountsTable.email })
+    .select({ id: riderAccountsTable.id, email: riderAccountsTable.email })
     .from(riderAccountsTable)
     .where(eq(riderAccountsTable.id, riderAccountId));
 
   if (!account) return res.status(401).json({ error: "Not authenticated" });
 
-  // Get all riders with this email (case-insensitive to handle mixed-case stored records)
+  // Owned (email match) and managed profiles
   const linkedRiders = await db
     .select({ id: ridersTable.id })
     .from(ridersTable)
-    .where(ilike(ridersTable.email, account.email));
+    .where(await managedRiderWhere(account));
 
   if (linkedRiders.length === 0) {
     return res.json([]);

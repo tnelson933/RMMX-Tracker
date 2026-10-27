@@ -51,6 +51,9 @@ function RootLayoutNav() {
       <Stack.Screen name="result/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="rider/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="rider/new" options={{ headerShown: false }} />
+      <Stack.Screen name="stats/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="follow" options={{ headerShown: false }} />
+      <Stack.Screen name="racer/[id]" options={{ headerShown: false }} />
     </Stack>
   );
 }

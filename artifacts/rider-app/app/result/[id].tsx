@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { ShareResultButton } from "@/components/ShareCard";
 
 const ACCENT = "#cf152d";
 
@@ -212,6 +213,15 @@ export default function ResultDetailScreen() {
                 </View>
               )}
             </View>
+
+            <ShareResultButton
+              name={ev.riderName ?? (activeProfiles[0] ? `${activeProfiles[0].firstName} ${activeProfiles[0].lastName}` : "")}
+              eventName={ev.eventName}
+              raceClass={ev.raceClass}
+              bestPosition={ev.bestPosition ?? null}
+              motos={ev.motos.map(m => ({ motoName: m.motoName, position: m.dnf || m.dns ? null : m.position, dnf: m.dnf, dns: m.dns }))}
+              color={primary}
+            />
 
             {/* Motos */}
             {ev.motos.map(moto => {

@@ -47,10 +47,16 @@ Set secrets in the Railway dashboard (service → Variables), never in chat or i
 
 ## Database schema
 
-Schema changes are applied with `drizzle-kit push` (`pnpm --filter @workspace/db run push`).
-The first deploy ran it once as a pre-deploy command, which was then removed. For later schema
-changes, review the diff first: do not add push back as a permanent pre-deploy step, because a
-push that wants to drop or rename something would run unattended against production data.
+Schema changes ship as reviewed SQL files in `deploy/migrations/` (`0001-…`, `0002-…`), applied
+in order by `scripts/migrate.mjs`, which Railway runs as the **pre-deploy command**
+(`node /app/scripts/migrate.mjs`). Each file runs once in a transaction and is recorded in
+`app_schema_migrations`. If a migration fails, the deploy stops and the previous version keeps
+running. Files must be additive and re-runnable (`IF NOT EXISTS`).
+
+To add one: update `lib/db/src/schema`, write the matching `NNNN-description.sql`, then run
+`node scripts/migrate.mjs` locally and diff against a fresh `drizzle-kit push` database.
+Don't run `drizzle-kit push` against production: it would drop the runtime `session` table and
+foreign keys that only exist in the restored data.
 
 ## First admin account
 
@@ -77,7 +83,7 @@ matched, and the site and API worked on the restored data.
    ```bash
    psql "$RAILWAY_PUBLIC_DB_URL" -c 'DROP SCHEMA public CASCADE; DROP SCHEMA IF EXISTS _system CASCADE; CREATE SCHEMA public;'
    pg_restore --no-owner --no-acl --exit-on-error -d "$RAILWAY_PUBLIC_DB_URL" production.dump
-   psql "$RAILWAY_PUBLIC_DB_URL" -v ON_ERROR_STOP=1 -f deploy/migrations/2026-10-26-replit-prod-to-current.sql
+   psql "$RAILWAY_PUBLIC_DB_URL" -v ON_ERROR_STOP=1 -f deploy/migrations/0001-replit-prod-to-current.sql
    ```
    Use the reviewed SQL, **not** `drizzle-kit push`. Push would drop the `session` table and an
    existing foreign key.

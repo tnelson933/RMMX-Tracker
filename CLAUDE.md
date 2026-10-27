@@ -85,6 +85,11 @@ development only. All commands run from the repo root (`RM-Tracker/`).
   scoped to their club through `res.locals.staffClubId`. After auth changes, run
   `node scripts/dev-security-check.mjs e2e-organizer@local.test other-organizer@local.test <pw> 7`
   (club 2000 / event 7 is a local-only second club for cross-club checks).
+- Schema changes: add a reviewed, re-runnable SQL file to `deploy/migrations/` and the matching
+  Drizzle schema; `node scripts/migrate.mjs` applies pending files (Railway runs it pre-deploy).
+  Rider features check: `node scripts/dev-rider-social-check.mjs <riderId-with-published-results>`.
+- Rider profile access goes through `artifacts/api-server/src/lib/riderAccess.ts` (owner by email
+  or an invited manager). Never compare rider and account emails directly in a route.
 - Branding follows the claude.ai org design system "Rocky Mountain ATV/MC Design System"
   (Barlow/Roboto, red `#B30000`, charcoal `#242424`, pill buttons). Theme tokens live in
   `artifacts/race-platform/src/index.css`; brand assets are in `race-platform/public/brand/`.

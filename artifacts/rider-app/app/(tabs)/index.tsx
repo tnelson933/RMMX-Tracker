@@ -21,6 +21,7 @@ import {
   ViewState,
 } from "@/components/RaceSubScreens";
 import { RockyHomeWidget } from "@/components/RockyHomeWidget";
+import { FollowingFeed } from "@/components/FollowingFeed";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 
@@ -292,8 +293,10 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, [hasLiveEvent, loadData]);
 
+  const [feedRefreshKey, setFeedRefreshKey] = useState(0);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    setFeedRefreshKey(k => k + 1);
     await loadData();
     setRefreshing(false);
   }, [loadData]);
@@ -444,6 +447,9 @@ export default function HomeScreen() {
             )}
           </>
         )}
+
+        {/* ── Riders you follow ── */}
+        {hasProfile && <FollowingFeed refreshKey={feedRefreshKey} />}
 
         {/* ── Rocky inline chat ── */}
         <RockyHomeWidget />

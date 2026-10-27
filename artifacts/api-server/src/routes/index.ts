@@ -40,6 +40,7 @@ import readerIngestRouter from "./reader-ingest";
 import accountDeletionRouter from "./account-deletion";
 import liabilityWaiverRouter from "./liability-waiver";
 import quickCheckinRouter from "./quick-checkin";
+import riderSocialRouter from "./rider-social";
 
 const router: IRouter = Router();
 
@@ -84,5 +85,6 @@ router.use(readerIngestRouter);
 router.use(accountDeletionRouter);
 router.use(liabilityWaiverRouter);
 router.use(quickCheckinRouter);
+router.use(riderSocialRouter);
 
 export default router;

@@ -12,6 +12,7 @@ import {
 import { eq, and, ne, inArray } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
+import { managedRiderWhere } from "../lib/riderAccess";
 
 const router = Router();
 
@@ -43,7 +44,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
   const familyRiders = await db
     .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName, transponderId: ridersTable.mylapsTransponderId })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+    .where(await managedRiderWhere(account));
 
   if (familyRiders.length === 0) return res.json([]);
 
@@ -280,7 +281,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   const familyRiders = await db
     .select({ id: ridersTable.id, transponderId: ridersTable.mylapsTransponderId })
     .from(ridersTable)
-    .where(sql`LOWER(${ridersTable.email}) = LOWER(${account.email})`);
+    .where(await managedRiderWhere(account));
 
   const familyRiderIds = familyRiders.map(r => r.id);
 

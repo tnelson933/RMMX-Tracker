@@ -6,6 +6,7 @@ import { sseBroadcast, buildLeaderboard, publishTimingSnapshot, resetSharedAnnou
 import { shouldPublishAnnouncerSnapshotForMotoPatch } from "../lib/announcerLifecycle";
 import { sendPushNotifications } from "../lib/push";
 import { sendConnectorCommand } from "../lib/connectorRelay";
+import { accountIdsForRiders } from "../lib/riderAccess";
 
 export type NormalizedMotoTiming =
   | { lapCount: number | null; timeLimitMs: number | null; plusLaps: number | null; error?: never }
@@ -88,26 +89,14 @@ async function sendRaceNotifications(eventId: number): Promise<void> {
   for (const { riderIds, title, body } of toNotify) {
     if (riderIds.length === 0) continue;
 
-    const riderRows = await db
-      .select({ email: ridersTable.email })
-      .from(ridersTable)
-      .where(inArray(ridersTable.id, riderIds));
-
-    const emails = riderRows
-      .map((r) => r.email?.toLowerCase())
-      .filter((e): e is string => !!e);
-    if (emails.length === 0) continue;
-
-    const accounts = await db
-      .select({ id: riderAccountsTable.id })
-      .from(riderAccountsTable)
-      .where(inArray(riderAccountsTable.email, emails));
-    if (accounts.length === 0) continue;
+    // Owners and anyone they've added as a manager (second parent, coach).
+    const accountIds = await accountIdsForRiders(riderIds);
+    if (accountIds.length === 0) continue;
 
     const pushRows = await db
       .select({ token: riderPushTokensTable.expoPushToken })
       .from(riderPushTokensTable)
-      .where(inArray(riderPushTokensTable.riderAccountId, accounts.map((a) => a.id)));
+      .where(inArray(riderPushTokensTable.riderAccountId, accountIds));
     if (pushRows.length === 0) continue;
 
     await sendPushNotifications(pushRows.map((r) => ({ to: r.token, title, body })));

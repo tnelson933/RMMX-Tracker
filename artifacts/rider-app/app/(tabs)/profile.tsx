@@ -518,6 +518,25 @@ function ProfileList() {
                   </Text>
                   <Feather name="chevron-right" size={12} color={colors.primary} />
                 </Pressable>
+
+                {/* Career stats, share card and profile managers */}
+                <Pressable
+                  onPress={() => router.push(`/stats/${profile.id}` as any)}
+                  style={({ pressed }) => ({
+                    marginTop: 8,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    opacity: pressed ? 0.5 : 1,
+                  })}
+                >
+                  <Feather name="bar-chart-2" size={12} color={colors.primary} />
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>
+                    Stats, Sharing & Managers
+                  </Text>
+                  <Feather name="chevron-right" size={12} color={colors.primary} />
+                </Pressable>
               </View>
             </Pressable>
           );

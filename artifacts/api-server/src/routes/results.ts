@@ -4,6 +4,7 @@ import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, regis
 import { eq, and, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { formulaPoints } from "../lib/safeFormula";
+import { notifyFollowersOfResults } from "../lib/riderCareer";
 
 const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -524,6 +525,7 @@ router.post("/events/:eventId/results/publish", async (req, res) => {
   const { published } = req.body;
 
   const existing = await db.select().from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
+  const newlyPublished = published === true && !existing[0]?.published;
   if (existing[0]) {
     await db.update(eventPublicationTable).set({
       published,
@@ -533,6 +535,8 @@ router.post("/events/:eventId/results/publish", async (req, res) => {
   } else {
     await db.insert(eventPublicationTable).values({ eventId, published, publishedAt: published ? new Date() : null });
   }
+  // Tell followers their riders' results are in (only on the first publish, not re-saves).
+  if (newlyPublished) void notifyFollowersOfResults(eventId);
 
   return res.json({ ok: true, published });
 });
