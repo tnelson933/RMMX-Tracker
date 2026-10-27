@@ -29,6 +29,8 @@ import {
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
 import { PositionBadge, StatTile } from "@/components/RaceStats";
+import { EventCard, ResultCard } from "@/components/RaceCards";
+import { placeLabel } from "@/lib/format";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -342,34 +344,15 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
 function UpcomingCard({ event, colors, isRegistered }: { event: PublicEvent; colors: ReturnType<typeof useColors>; isRegistered?: boolean }) {
   const router = useRouter();
   return (
-    <Pressable
+    <EventCard
+      title={event.name}
+      dateIso={event.date}
+      place={placeLabel(event.location, event.state) || null}
+      club={event.clubName}
+      status="open"
+      registered={isRegistered}
       onPress={() => router.push(`/event/${event.eventId}` as any)}
-      style={({ pressed }) => ({
-        marginHorizontal: 16, marginBottom: 10, borderRadius: 12,
-        borderWidth: isRegistered ? 1.5 : 1,
-        borderColor: isRegistered ? colors.primary : colors.border,
-        backgroundColor: colors.card, padding: 14, opacity: pressed ? 0.78 : 1,
-      })}
-    >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }} numberOfLines={1}>{event.name}</Text>
-        {isRegistered && (
-          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary + "20" }}>
-            <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", letterSpacing: 0.3 }}>REGISTERED</Text>
-          </View>
-        )}
-      </View>
-      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-        {fmtDate(event.date)} · {[event.location, event.state].filter(Boolean).join(", ")}
-      </Text>
-      {event.clubName ? (
-        <Text style={{ fontSize: 12, color: colors.mutedForeground + "99", fontFamily: "Inter_400Regular", marginTop: 1 }}>{event.clubName}</Text>
-      ) : null}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 }}>
-        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#22c55e" }} />
-        <Text style={{ fontSize: 12, color: "#22c55e", fontFamily: "Inter_600SemiBold" }}>Registration Open</Text>
-      </View>
-    </Pressable>
+    />
   );
 }
 
@@ -377,50 +360,33 @@ function UpcomingCard({ event, colors, isRegistered }: { event: PublicEvent; col
 
 function HistoryCard({ event, colors, onPress }: { event: EventHistory; colors: ReturnType<typeof useColors>; onPress: () => void }) {
   return (
-    <Pressable
+    <ResultCard
+      position={event.bestPosition}
+      kicker={event.riderName}
+      title={event.eventName}
+      dateIso={event.eventDate}
+      raceClass={event.raceClass}
+      place={event.eventLocation ?? event.eventState}
+      points={event.totalPoints}
       onPress={onPress}
-      style={({ pressed }) => ({
-        marginHorizontal: 16, marginBottom: 10, borderRadius: 12,
-        borderWidth: 1, borderColor: colors.border,
-        backgroundColor: colors.card, overflow: "hidden", opacity: pressed ? 0.75 : 1,
-      })}
-    >
-      <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
-        <View style={{ flex: 1, gap: 2 }}>
-          {event.riderName ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 }}>
-              <Feather name="user" size={10} color="#cf152d" />
-              <Text style={{ fontSize: 11, fontWeight: "600", color: "#cf152d", fontFamily: "Inter_600SemiBold" }}>{event.riderName}</Text>
+      footer={
+        <>
+          {event.motos.map(moto => (
+            <View key={moto.motoId} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 9, borderTopWidth: 1, borderTopColor: colors.border }}>
+              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{moto.motoName}</Text>
+              {moto.totalTime && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{moto.totalTime}</Text>}
+              {moto.points != null && moto.points > 0 && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{moto.points}pts</Text>}
+              <PositionBadge position={moto.position} dnf={moto.dnf} dns={moto.dns} size="sm" />
             </View>
-          ) : null}
-          <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{event.eventName}</Text>
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-            {fmtDate(event.eventDate)} · {event.eventLocation ?? event.eventState} · {event.raceClass}
-          </Text>
-        </View>
-        <View style={{ alignItems: "flex-end", gap: 4 }}>
-          {event.bestPosition != null && (
-            <PositionBadge position={event.bestPosition} />
-          )}
-          {event.totalPoints > 0 && (
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{event.totalPoints} pts</Text>
-          )}
-        </View>
-      </View>
-      {event.motos.map(moto => (
-        <View key={moto.motoId} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{moto.motoName}</Text>
-          {moto.totalTime && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{moto.totalTime}</Text>}
-          {moto.points != null && moto.points > 0 && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{moto.points}pts</Text>}
-          <PositionBadge position={moto.position} dnf={moto.dnf} dns={moto.dns} size="sm" />
-        </View>
-      ))}
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted + "40" }}>
-        <Feather name="clock" size={11} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Tap for lap times</Text>
-        <Feather name="chevron-right" size={11} color={colors.mutedForeground} />
-      </View>
-    </Pressable>
+          ))}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingHorizontal: 16, paddingVertical: 9, borderTopWidth: 1, borderTopColor: colors.border }}>
+            <Feather name="clock" size={11} color={colors.primary} />
+            <Text style={{ fontSize: 11, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>Lap times</Text>
+            <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
+          </View>
+        </>
+      }
+    />
   );
 }
 

@@ -18,6 +18,7 @@ import { useColors } from "@/hooks/useColors";
 import { onTabReset } from "@/utils/tabEvents";
 import { EmptyState } from "@/components/EmptyState";
 import { placeLabel } from "@/lib/format";
+import { EventCard as RaceEventCard } from "@/components/RaceCards";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1037,43 +1038,17 @@ function EventCard({
   onPress: () => void;
 }) {
   const isLive = event.status === "race_day";
+  const multiDay = !!event.endDate && event.endDate.slice(0, 10) !== event.date.slice(0, 10);
   return (
-    <Pressable
+    <RaceEventCard
+      title={event.name}
+      dateIso={event.date}
+      dateLabel={multiDay ? fmtEventRange(event.date, event.endDate) : null}
+      place={placeLabel(event.location || event.trackName, event.state) || null}
+      club={event.clubName}
+      status={isLive ? "live" : null}
       onPress={onPress}
-      style={({ pressed }) => ({
-        marginHorizontal: 16, marginBottom: 10, borderRadius: 12,
-        backgroundColor: colors.card,
-        borderWidth: isLive ? 1.5 : 1,
-        borderColor: isLive ? "#ef4444" : colors.border,
-        overflow: "hidden", opacity: pressed ? 0.78 : 1,
-      })}
-    >
-      {isLive && (
-        <View style={{ backgroundColor: "#ef444412", paddingHorizontal: 14, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#ef4444" }} />
-          <Text style={{ fontSize: 11, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>LIVE NOW</Text>
-        </View>
-      )}
-      <View style={{ padding: 14 }}>
-        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }} numberOfLines={2}>
-              {event.name}
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 3 }}>
-              {fmtEventRange(event.date, event.endDate)}
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-              {placeLabel(event.location || event.trackName, event.state)}
-            </Text>
-            {event.clubName ? (
-              <Text style={{ fontSize: 11, color: colors.mutedForeground + "88", fontFamily: "Inter_400Regular", marginTop: 1 }}>{event.clubName}</Text>
-            ) : null}
-          </View>
-          <Feather name="chevron-right" size={18} color={colors.mutedForeground} style={{ marginTop: 2 }} />
-        </View>
-      </View>
-    </Pressable>
+    />
   );
 }
 

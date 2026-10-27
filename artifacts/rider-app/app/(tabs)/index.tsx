@@ -27,7 +27,8 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
 import { PositionBadge } from "@/components/RaceStats";
-import { displayDate } from "@/lib/format";
+import { displayDate, placeLabel } from "@/lib/format";
+import { EventCard, ResultCard } from "@/components/RaceCards";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -63,62 +64,17 @@ interface UpcomingEvent {
 
 function UpcomingEventCard({ event, colors, onPress }: { event: UpcomingEvent; colors: ReturnType<typeof useColors>; onPress: () => void }) {
   const isLive = event.status === "race_day";
-  const classes = [...new Set((event.registrations ?? []).map(r => r.raceClass).filter(Boolean))].slice(0, 2);
+  const classes = [...new Set((event.registrations ?? []).map(r => r.raceClass).filter((c): c is string => !!c))].slice(0, 2);
   return (
-    <Pressable
+    <EventCard
+      title={event.eventName}
+      dateIso={event.eventDate}
+      place={placeLabel(event.eventLocation, event.eventState) || null}
+      classes={classes}
+      status={isLive ? "live" : "open"}
+      registered={event.isRegistered}
       onPress={onPress}
-      style={({ pressed }) => ({
-        marginHorizontal: 16, marginBottom: 10, borderRadius: 12,
-        backgroundColor: colors.card,
-        borderWidth: isLive ? 1.5 : 1,
-        borderColor: isLive ? "#ef4444" : colors.border,
-        padding: 14,
-        opacity: pressed ? 0.82 : 1,
-      })}
-    >
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }} numberOfLines={1}>
-          {event.eventName}
-        </Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          {event.isRegistered && (
-            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary + "20" }}>
-              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>REG'D</Text>
-            </View>
-          )}
-          {isLive ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#ef444420" }}>
-              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#ef4444" }} />
-              <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold" }}>LIVE</Text>
-            </View>
-          ) : (
-            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#22c55e20" }}>
-              <Text style={{ fontSize: 10, fontWeight: "700", color: "#22c55e", fontFamily: "Inter_700Bold" }}>OPEN</Text>
-            </View>
-          )}
-        </View>
-      </View>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
-        <Feather name="calendar" size={11} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-          {fmtDate(event.eventDate)}
-          {event.eventLocation ? ` · ${event.eventLocation}` : event.eventState ? ` · ${event.eventState}` : ""}
-        </Text>
-      </View>
-      {classes.length > 0 && (
-        <View style={{ flexDirection: "row", gap: 6, marginTop: 8 }}>
-          {classes.map(cls => (
-            <View key={cls} style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.primary + "18" }}>
-              <Text style={{ fontSize: 11, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>{cls}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 3, marginTop: 8 }}>
-        <Text style={{ fontSize: 11, color: colors.mutedForeground + "90", fontFamily: "Inter_400Regular" }}>View details</Text>
-        <Feather name="chevron-right" size={11} color={colors.mutedForeground + "90"} />
-      </View>
-    </Pressable>
+    />
   );
 }
 
@@ -126,42 +82,16 @@ function UpcomingEventCard({ event, colors, onPress }: { event: UpcomingEvent; c
 
 function RecentResultCard({ result, colors, onPress }: { result: EventHistory; colors: ReturnType<typeof useColors>; onPress: () => void }) {
   return (
-    <Pressable
+    <ResultCard
+      position={result.bestPosition}
+      kicker={result.riderName}
+      title={result.eventName}
+      dateIso={result.eventDate}
+      raceClass={result.raceClass}
+      points={result.totalPoints}
+      motos={result.motos}
       onPress={onPress}
-      style={({ pressed }) => ({
-        marginHorizontal: 16, marginBottom: 10, borderRadius: 12,
-        backgroundColor: colors.card,
-        borderWidth: 1, borderColor: colors.border,
-        padding: 14, flexDirection: "row", alignItems: "center", gap: 12,
-        opacity: pressed ? 0.82 : 1,
-      })}
-    >
-      {/* Position badge */}
-      <View style={{ width: 64, alignItems: "center" }}>
-        {result.bestPosition != null
-          ? <PositionBadge position={result.bestPosition} size="md" />
-          : <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>—</Text>}
-      </View>
-
-      {/* Event info */}
-      <View style={{ flex: 1 }}>
-        {result.riderName && (
-          <Text style={{ fontSize: 10, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold", marginBottom: 1 }}>{result.riderName}</Text>
-        )}
-        <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }} numberOfLines={1}>{result.eventName}</Text>
-        <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-          {fmtDate(result.eventDate)} · {result.raceClass}
-        </Text>
-      </View>
-
-      {/* Points */}
-      {result.totalPoints > 0 && (
-        <View style={{ alignItems: "flex-end" }}>
-          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.primary, fontFamily: "Inter_700Bold" }}>{result.totalPoints}</Text>
-          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>pts</Text>
-        </View>
-      )}
-    </Pressable>
+    />
   );
 }
 
@@ -416,10 +346,13 @@ export default function HomeScreen() {
                 />
               ))
             ) : (
-              <View style={{ marginHorizontal: 16, marginBottom: 24, padding: 20, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", gap: 6 }}>
-                <Feather name="award" size={24} color={colors.mutedForeground + "60"} />
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>Race results will appear here once events complete.</Text>
-              </View>
+              <EmptyState
+                variant="card"
+                icon="award"
+                title="No results yet"
+                message="Your finishes, points and lap times show up here after your first race."
+                primary={{ label: "Find a race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
+              />
             )}
           </>
         )}

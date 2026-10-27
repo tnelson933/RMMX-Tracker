@@ -12,6 +12,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BrandBar } from "@/components/BrandBar";
 import { useColors } from "@/hooks/useColors";
 import { displayDate } from "@/lib/format";
+import { ResultCard, ResultHero } from "@/components/RaceCards";
+import { PositionBadge } from "@/components/RaceStats";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -178,60 +180,29 @@ export function EventDetailScreen({
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <SubHeader
-        title={event.eventName}
-        subtitle={[fmtDateShared(event.eventDate), event.eventLocation ?? event.eventState].filter(Boolean).join("  ·  ")}
+        title="Race Result"
         onBack={onBack}
         colors={colors}
         insets={insets}
-        rightEl={
-          event.bestPosition != null ? (
-            <View style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: primary }}>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>
-                P{event.bestPosition}
-              </Text>
-            </View>
-          ) : undefined
-        }
       />
 
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 32 }}>
-        {/* Class + points summary */}
-        <View style={{
-          borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-          backgroundColor: colors.card, padding: 14,
-          flexDirection: "row", alignItems: "center", gap: 12,
-        }}>
-          <View style={{
-            width: 48, height: 48, borderRadius: 24,
-            backgroundColor: primary + "18", alignItems: "center", justifyContent: "center",
-          }}>
-            <Feather name="flag" size={22} color={primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-              {event.raceClass}
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-              {event.motos.length} moto{event.motos.length !== 1 ? "s" : ""}
-              {event.totalPoints > 0 ? `  ·  ${event.totalPoints} pts earned` : ""}
-            </Text>
-          </View>
-          {event.bestPosition != null && (
-            <View style={{ alignItems: "center" }}>
-              <Text style={{ fontSize: 28, fontWeight: "800", color: primary, fontFamily: "Inter_700Bold" }}>
-                P{event.bestPosition}
-              </Text>
-              <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>
-                Best
-              </Text>
-            </View>
-          )}
-        </View>
+        {/* Result hero */}
+        <ResultHero
+          eventName={event.eventName}
+          dateIso={event.eventDate}
+          place={event.eventLocation ?? event.eventState}
+          raceClass={event.raceClass}
+          riderName={event.riderName}
+          bestPosition={event.bestPosition}
+          motoCount={event.motos.length}
+          points={event.totalPoints}
+        />
 
         {/* Gap mode toggle */}
         {hasAnyGaps && (
           <View style={{
-            flexDirection: "row", borderRadius: 10, overflow: "hidden",
+            flexDirection: "row", borderRadius: 999, overflow: "hidden", padding: 4,
             borderWidth: 1, borderColor: colors.border, backgroundColor: colors.muted,
           }}>
             {([
@@ -245,7 +216,7 @@ export function EventDetailScreen({
                   key={opt.key}
                   onPress={() => setGapMode(opt.key)}
                   style={{
-                    flex: 1, paddingVertical: 9, alignItems: "center",
+                    flex: 1, paddingVertical: 9, alignItems: "center", borderRadius: 999,
                     backgroundColor: active ? primary : "transparent",
                   }}
                 >
@@ -286,14 +257,14 @@ export function EventDetailScreen({
                 backgroundColor: colors.muted + "50",
               }}>
                 <View style={{
-                  width: 44, height: 44, borderRadius: 10,
-                  backgroundColor: primary + "18",
+                  width: 46, height: 46, borderRadius: 12,
+                  backgroundColor: colors.foreground,
                   alignItems: "center", justifyContent: "center",
                 }}>
-                  <Text style={{ fontSize: 8, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.3 }}>
+                  <Text style={{ fontSize: 8, fontWeight: "700", color: colors.background, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                     {moto.motoType === "practice" ? "PRAC" : "RACE"}
                   </Text>
-                  <Text style={{ fontSize: 15, fontWeight: "800", color: primary, fontFamily: "Inter_700Bold", lineHeight: 17 }}>
+                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.background, fontFamily: "Inter_700Bold", fontStyle: "italic", lineHeight: 19 }}>
                     #{moto.motoNumber}
                   </Text>
                 </View>
@@ -314,19 +285,7 @@ export function EventDetailScreen({
                     ) : null}
                   </View>
                 </View>
-                {moto.dnf || moto.dns ? (
-                  <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.muted }}>
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
-                      {moto.dnf ? "DNF" : "DNS"}
-                    </Text>
-                  </View>
-                ) : moto.position != null ? (
-                  <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: primary }}>
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>
-                      P{moto.position}
-                    </Text>
-                  </View>
-                ) : null}
+                <PositionBadge position={moto.position} dnf={moto.dnf} dns={moto.dns} />
               </View>
 
               {/* Lap table */}
@@ -446,66 +405,38 @@ export function EventsListScreen({
           </View>
         ) : (
           events.map(ev => (
-            <Pressable
-              key={`${ev.eventId}-${ev.raceClass}`}
-              onPress={() => onSelectEvent(ev)}
-              style={({ pressed }) => ({
-                borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-                backgroundColor: colors.card, overflow: "hidden",
-                opacity: pressed ? 0.75 : 1,
-              })}
-            >
-              {/* Header row */}
-              <View style={{ padding: 14, flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-                    {ev.eventName}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                    {[fmtDateShared(ev.eventDate), ev.eventLocation ?? ev.eventState].filter(Boolean).join("  ·  ")}
-                  </Text>
-                  <View style={{ alignSelf: "flex-start", marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: primary + "18" }}>
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>{ev.raceClass}</Text>
-                  </View>
-                </View>
-                <View style={{ alignItems: "flex-end", gap: 4 }}>
-                  {ev.bestPosition != null && (
-                    <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: primary }}>
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>P{ev.bestPosition}</Text>
+            <View key={`${ev.eventId}-${ev.raceClass}`} style={{ marginHorizontal: -16 }}>
+              <ResultCard
+                position={ev.bestPosition}
+                title={ev.eventName}
+                dateIso={ev.eventDate}
+                raceClass={ev.raceClass}
+                place={ev.eventLocation ?? ev.eventState}
+                points={ev.totalPoints}
+                onPress={() => onSelectEvent(ev)}
+                footer={
+                  <>
+                    {ev.motos.map(m => (
+                      <View key={m.motoId} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
+                        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: colors.foreground, alignItems: "center", justifyContent: "center", marginRight: 10 }}>
+                          <Text style={{ fontSize: 11, color: colors.background, fontFamily: "Inter_700Bold", fontStyle: "italic" }}>#{m.motoNumber}</Text>
+                        </View>
+                        <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{m.motoName}</Text>
+                        {m.totalTime ? (
+                          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{m.totalTime}</Text>
+                        ) : null}
+                        <PositionBadge position={m.position} dnf={m.dnf} dns={m.dns} size="sm" />
+                      </View>
+                    ))}
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingHorizontal: 16, paddingVertical: 9, borderTopWidth: 1, borderTopColor: colors.border }}>
+                      <Feather name="clock" size={11} color={primary} />
+                      <Text style={{ fontSize: 11, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>Lap times</Text>
+                      <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
                     </View>
-                  )}
-                  {ev.totalPoints > 0 && (
-                    <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{ev.totalPoints} pts</Text>
-                  )}
-                </View>
-              </View>
-              {/* Moto summary rows */}
-              {ev.motos.map(m => (
-                <View key={m.motoId} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center", marginRight: 10 }}>
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>#{m.motoNumber}</Text>
-                  </View>
-                  <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{m.motoName}</Text>
-                  {m.totalTime ? (
-                    <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{m.totalTime}</Text>
-                  ) : null}
-                  {m.dnf || m.dns ? (
-                    <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20, backgroundColor: colors.muted }}>
-                      <Text style={{ fontSize: 10, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>{m.dnf ? "DNF" : "DNS"}</Text>
-                    </View>
-                  ) : m.position != null ? (
-                    <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, backgroundColor: primary }}>
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>P{m.position}</Text>
-                    </View>
-                  ) : null}
-                </View>
-              ))}
-              {/* Tap hint */}
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted + "30" }}>
-                <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Tap for lap times</Text>
-                <Feather name="chevron-right" size={11} color={colors.mutedForeground} />
-              </View>
-            </Pressable>
+                  </>
+                }
+              />
+            </View>
           ))
         )}
       </ScrollView>
@@ -876,9 +807,7 @@ export function PointsScreen({
                     </View>
                     <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{m.motoName}</Text>
                     {m.position != null && (
-                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 10 }}>
-                        P{m.position}
-                      </Text>
+                      <View style={{ marginRight: 10 }}><PositionBadge position={m.position} size="sm" /></View>
                     )}
                     <Text style={{ fontSize: 14, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>
                       +{m.points} pts

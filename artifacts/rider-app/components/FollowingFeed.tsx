@@ -6,6 +6,7 @@ import { Pressable, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { EmptyState } from "@/components/EmptyState";
+import { ResultCard } from "@/components/RaceCards";
 
 interface FeedItem {
   riderId: number; riderName: string; eventId: number; eventName: string; eventDate: string;
@@ -47,19 +48,16 @@ export function FollowingFeed({ refreshKey }: { refreshKey: number }) {
         />
       ) : (
         (items ?? []).map(i => (
-          <Pressable key={`${i.riderId}-${i.eventId}-${i.raceClass}`} onPress={() => router.push(`/racer/${i.riderId}` as any)}
-            style={({ pressed }) => ({
-              marginHorizontal: 16, marginBottom: 8, padding: 12, borderRadius: 12, backgroundColor: colors.card,
-              borderWidth: 1, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 10, opacity: pressed ? 0.7 : 1,
-            })}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, color: colors.foreground, fontFamily: "Inter_600SemiBold" }} numberOfLines={1}>{i.riderName}</Text>
-              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }} numberOfLines={1}>
-                {i.raceClass} · {i.eventName}
-              </Text>
-            </View>
-            <Text style={{ fontSize: 18, color: colors.foreground, fontFamily: "Inter_700Bold" }}>{i.bestPosition ? `P${i.bestPosition}` : "—"}</Text>
-          </Pressable>
+          <ResultCard
+            key={`${i.riderId}-${i.eventId}-${i.raceClass}`}
+            position={i.bestPosition}
+            kicker={i.riderName}
+            title={i.eventName}
+            dateIso={i.eventDate}
+            raceClass={i.raceClass}
+            motos={i.motos}
+            onPress={() => router.push(`/racer/${i.riderId}` as any)}
+          />
         ))
       )}
     </View>

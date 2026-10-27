@@ -11,6 +11,7 @@ import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { parsePosition, podiumColor, podiumTextColor } from "@/components/RaceStats";
 import { useTheme } from "@/context/ThemeContext";
 import { goBack } from "@/lib/navigation";
+import { ResultCard } from "@/components/RaceCards";
 
 interface Recent { eventId: number; eventName: string; eventDate: string; raceClass: string; bestPosition: number | null; motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }> }
 
@@ -90,14 +91,16 @@ export default function RacerScreen() {
           </View>
           <Text style={s.section}>Recent results</Text>
           {data!.recent.map(r => (
-            <Pressable key={`${r.eventId}-${r.raceClass}`} onPress={() => router.push(`/event/${r.eventId}` as any)}
-              style={({ pressed }) => [s.resultRow, { opacity: pressed ? 0.7 : 1 }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.resultTitle} numberOfLines={1}>{r.eventName}</Text>
-                <Text style={s.muted} numberOfLines={1}>{r.raceClass} · {r.eventDate} · {r.motos.map(m => (m.dns ? "DNS" : m.dnf ? "DNF" : m.position ? `P${m.position}` : "—")).join(" / ")}</Text>
-              </View>
-              <Text style={s.pos}>{r.bestPosition ? `P${r.bestPosition}` : "—"}</Text>
-            </Pressable>
+            <View key={`${r.eventId}-${r.raceClass}`} style={{ marginHorizontal: -16 }}>
+              <ResultCard
+                position={r.bestPosition}
+                title={r.eventName}
+                dateIso={r.eventDate}
+                raceClass={r.raceClass}
+                motos={r.motos}
+                onPress={() => router.push(`/event/${r.eventId}` as any)}
+              />
+            </View>
           ))}
         </ScrollView>
       )}

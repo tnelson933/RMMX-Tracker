@@ -17,6 +17,7 @@ import { ShareResultButton } from "@/components/ShareCard";
 import { PositionBadge } from "@/components/RaceStats";
 import { displayDate } from "@/lib/format";
 import { goBack } from "@/lib/navigation";
+import { ResultHero } from "@/components/RaceCards";
 
 function parseLapMs(s: string): number {
   if (!s) return Infinity;
@@ -185,39 +186,17 @@ export default function ResultDetailScreen() {
       <ScrollView contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: insets.bottom + 40 }}>
         {results.map((ev, ri) => (
           <View key={`${ev.eventId}-${ri}`} style={{ gap: 12 }}>
-            {/* Rider + class summary */}
-            <View style={{
-              borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-              backgroundColor: colors.card, padding: 14,
-              flexDirection: "row", alignItems: "center", gap: 12,
-            }}>
-              <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center" }}>
-                <Feather name="flag" size={22} color={primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                {ev.riderName ? (
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", marginBottom: 2 }}>
-                    {ev.riderName}
-                  </Text>
-                ) : null}
-                <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-                  {ev.raceClass}
-                </Text>
-                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-                  {ev.motos.length} moto{ev.motos.length !== 1 ? "s" : ""}
-                  {ev.totalPoints > 0 ? `  ·  ${ev.totalPoints} pts` : ""}
-                  {ev.eventLocation ? `  ·  ${ev.eventLocation}` : ev.eventState ? `  ·  ${ev.eventState}` : ""}
-                </Text>
-              </View>
-              {ev.bestPosition != null && (
-                <View style={{ alignItems: "center", gap: 6 }}>
-                  <PositionBadge position={ev.bestPosition} size="lg" />
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
-                    Best
-                  </Text>
-                </View>
-              )}
-            </View>
+            {/* Result hero */}
+            <ResultHero
+              eventName={ev.eventName}
+              dateIso={ev.eventDate}
+              place={ev.eventLocation ?? ev.eventState}
+              raceClass={ev.raceClass}
+              riderName={ev.riderName}
+              bestPosition={ev.bestPosition}
+              motoCount={ev.motos.length}
+              points={ev.totalPoints}
+            />
 
             <ShareResultButton
               name={ev.riderName ?? (activeProfiles[0] ? `${activeProfiles[0].firstName} ${activeProfiles[0].lastName}` : "")}
@@ -251,11 +230,11 @@ export default function ResultDetailScreen() {
                     borderBottomWidth: 1, borderBottomColor: colors.border,
                     backgroundColor: colors.muted + "50",
                   }}>
-                    <View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center" }}>
-                      <Text style={{ fontSize: 8, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.3 }}>
+                    <View style={{ width: 46, height: 46, borderRadius: 12, backgroundColor: colors.foreground, alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ fontSize: 8, fontWeight: "700", color: colors.background, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                         {moto.motoType === "practice" ? "PRAC" : "RACE"}
                       </Text>
-                      <Text style={{ fontSize: 15, fontWeight: "800", color: primary, fontFamily: "Inter_700Bold", lineHeight: 17 }}>
+                      <Text style={{ fontSize: 17, fontWeight: "800", color: colors.background, fontFamily: "Inter_700Bold", fontStyle: "italic", lineHeight: 19 }}>
                         #{moto.motoNumber}
                       </Text>
                     </View>
