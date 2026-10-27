@@ -1,10 +1,11 @@
 import Database from "better-sqlite3";
 import { resolve } from "path";
+import { resolveCloudUrl } from "./lib/cloud-url";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const SQLITE_FILE = process.env.SQLITE_FILE   ?? process.argv[2] ?? "./race_data.db";
-const CLOUD_URL   = (process.env.CLOUD_URL    ?? process.argv[3] ?? "").replace(/\/$/, "");
+const CLOUD_URL   = resolveCloudUrl(process.env.CLOUD_URL ?? process.argv[3]);
 const CLUB_ID     = process.env.CLUB_ID       ?? process.argv[4] ?? "";
 const SYNC_TOKEN  = process.env.SYNC_TOKEN    ?? "";
 const EMAIL       = process.env.CLOUD_EMAIL   ?? process.argv[5] ?? "";
@@ -16,14 +17,14 @@ if (!CLOUD_URL || !CLUB_ID || !(SYNC_TOKEN || (EMAIL && PASSWORD))) {
 
   Usage with sync token (recommended):
     SQLITE_FILE=./race_data.db \\
-    CLOUD_URL=https://your-app.replit.app \\
+    CLOUD_URL=https://www.rmroost.com \\
     CLUB_ID=1 \\
     SYNC_TOKEN=<token> \\
     node dist/sync.mjs
 
   Usage with email/password:
     SQLITE_FILE=./race_data.db \\
-    CLOUD_URL=https://your-app.replit.app \\
+    CLOUD_URL=https://www.rmroost.com \\
     CLUB_ID=1 \\
     CLOUD_EMAIL=jake@club.com \\
     CLOUD_PASSWORD=secret \\

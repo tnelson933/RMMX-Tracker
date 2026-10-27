@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import { CLOUD_URL } from "../lib/cloud-url";
 
 const router = Router();
 
@@ -77,7 +78,7 @@ router.get("/storage/uploads/:filename", async (req, res) => {
   }
 
   // ── Proxy to cloud when file only lives in cloud object storage ─────────
-  const cloudUrl = (process.env.CLOUD_URL ?? "").replace(/\/$/, "");
+  const cloudUrl = CLOUD_URL;
   if (cloudUrl) {
     try {
       const ctrl   = new AbortController();

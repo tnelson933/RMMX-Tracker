@@ -68,10 +68,10 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  artifactName: "RM-Tracker-Setup.${ext}"
+  artifactName: "RM-Roost-Setup.${ext}"
 
 dmg:
-  artifactName: "RM-Tracker-${arch}.${ext}"
+  artifactName: "RM-Roost-${arch}.${ext}"
   contents:
     - x: 130
       y: 220

@@ -2,12 +2,13 @@ import { getDb } from "./db";
 import fs from "fs/promises";
 import path from "path";
 import { RIDER_PROFILE_FIELDS } from "./rider-profile-dirty";
+import { CLOUD_URL as RESOLVED_CLOUD_URL } from "./lib/cloud-url";
 
 const UPLOADS_DIR = path.join(process.cwd(), ".uploads");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-export const CLOUD_URL   = (process.env.CLOUD_URL    ?? "").replace(/\/$/, "");
+export const CLOUD_URL   = RESOLVED_CLOUD_URL;
 export const CLUB_ID     = process.env.CLUB_ID       ?? "";
 export const SYNC_TOKEN  = process.env.SYNC_TOKEN    ?? "";
 export const EMAIL       = process.env.CLOUD_EMAIL   ?? "";

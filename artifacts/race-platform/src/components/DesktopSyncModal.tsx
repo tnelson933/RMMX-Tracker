@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DESKTOP_CLOUD_URL } from "@/lib/desktopCloudUrl";
 
 type ElectronAPI = typeof window extends { electronAPI: infer T } ? T : unknown;
 
@@ -16,9 +17,10 @@ function eAPI(): ElectronAPI | null {
   return (window as { electronAPI?: ElectronAPI }).electronAPI ?? null;
 }
 
-// Baked in at build time via VITE_CLOUD_URL repo variable.
-// If set, we hide the URL field so users only need Club ID + credentials.
-const BUILT_IN_CLOUD_URL: string = (import.meta.env.VITE_CLOUD_URL as string) || "";
+// Baked in at build time via the VITE_CLOUD_URL repo variable, falling back to
+// the production server. There is no URL field: users only enter Club ID and
+// credentials (the desktop app migrates retired cloud URLs on startup).
+const BUILT_IN_CLOUD_URL: string = DESKTOP_CLOUD_URL;
 
 export function DesktopSyncModal() {
   const [open, setOpen] = useState(false);
@@ -124,7 +126,7 @@ export function DesktopSyncModal() {
                 className="mt-1 h-9 text-sm"
               />
               <p className="mt-1 text-[11px] text-muted-foreground leading-tight">
-                Find yours on your Organizer Dashboard
+                On your Dashboard, under Club Profile
               </p>
             </div>
             <div className="min-w-0">

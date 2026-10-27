@@ -202,6 +202,10 @@ export default function OfflineMode() {
   // flashes the "Download info unavailable" banner.
   const isLocalServer = typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  // The RM Roost desktop app bundles the local server and syncs on its own, so
+  // the zip/install/start-script steps below do not apply to it.
+  const isDesktopApp = typeof window !== "undefined" &&
+    typeof (window as unknown as { electronAPI?: unknown }).electronAPI !== "undefined";
 
   const { data: pkgInfo, isError: pkgError, isPending: pkgPending, isFetching: pkgFetching, refetch: refetchPkgInfo } = useGetOfflinePackageInfo({
     query: {
@@ -330,7 +334,10 @@ export default function OfflineMode() {
   };
 
   const BRIDGE_URL = "http://localhost:5555";
-  const bridgeCmdLocal = `python rfid_bridge.py --api-url http://localhost:8080`;
+  // The desktop app serves its local server on its own origin (port 9090); the
+  // standalone local server package listens on 8080.
+  const localApiUrl = isDesktopApp ? window.location.origin : "http://localhost:8080";
+  const bridgeCmdLocal = `python rfid_bridge.py --api-url ${localApiUrl}`;
   // The cloud bridge authenticates with the club's first RFID reader token, so it
   // keeps working once the club enforces timing ingest authentication.
   const bridgeReader = (bridgeReaders as any[]).find(r => r.type === "rfid") ?? null;
@@ -566,6 +573,28 @@ export default function OfflineMode() {
         </CardHeader>
         <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
 
+          {isDesktopApp && (
+            <div className="space-y-3">
+              <div className="rounded-lg border-2 border-green-500/40 bg-green-500/10 p-3 flex gap-2 text-xs">
+                <CheckCircle2 size={13} className="text-green-500 shrink-0 mt-0.5" />
+                <span className="text-foreground/90">
+                  You're using the <strong>RM Roost desktop app</strong>. The offline race server is built in, so there's nothing else to install.
+                </span>
+              </div>
+              <p className="text-foreground font-semibold">Sync this laptop before you leave</p>
+              <p>
+                While you still have internet, open RM Roost and sign in. It copies your events, riders and
+                registrations to this laptop and keeps them up to date. Wait for the <strong>Synced</strong> badge
+                under your name before heading to the venue.
+              </p>
+              <p className="text-xs">
+                Cloud sync not connected? Use <strong>Cloud Sync Settings</strong> in the RM Roost app menu.
+                To set up another laptop, download RM Roost from <strong>{cloudDomain.replace(/^https?:\/\//, "")}</strong>.
+              </p>
+            </div>
+          )}
+
+          {!isDesktopApp && (<>
           {/* 1a — Download */}
           <div className="space-y-3">
             <p className="text-foreground font-semibold">Download the software to your laptop</p>
@@ -725,6 +754,8 @@ export default function OfflineMode() {
             {os === "mac" && <p className="text-xs text-muted-foreground opacity-70">Right-click the file → Open the first time to allow it past Gatekeeper.</p>}
           </div>
 
+          </>)}
+
           <Callout kind="tip">
             Do this at home before your first event — a quick test now prevents surprises on race day.
           </Callout>
@@ -739,6 +770,7 @@ export default function OfflineMode() {
         </CardHeader>
         <CardContent className="pt-5 space-y-6 text-sm text-muted-foreground">
 
+          {!isDesktopApp && (<>
           {/* 2a — Download race data */}
           <div className="space-y-3">
             <p className="text-foreground font-semibold">Download your race data</p>
@@ -774,6 +806,7 @@ export default function OfflineMode() {
               {syncEnabled && syncToken && <span className="text-green-600 dark:text-green-400 font-normal ml-1">(sync included)</span>}
             </button>
           </div>
+          </>)}
 
           {/* 2c — Point your reader at the laptop */}
           <div className="space-y-3">
@@ -898,6 +931,16 @@ export default function OfflineMode() {
                   )}
                 </div>
               </div>
+            ) : isDesktopApp ? (
+              <div className="space-y-3">
+                <p className="text-xs font-medium text-foreground">
+                  Connect the F2000 directly from RM Roost:
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Open <strong>Reader Setup</strong>, choose <strong>Active Timing Reader</strong>, enter the F2000's IP address, and connect.
+                  RM Roost talks to the reader on TCP port <strong className="font-mono">55555</strong> and records crossings on this laptop.
+                </p>
+              </div>
             ) : (
               <div className="space-y-3">
                 <p className="text-xs font-medium text-foreground">
@@ -914,7 +957,11 @@ export default function OfflineMode() {
           {/* 2c — Run the event */}
           <div className="space-y-3">
             <p className="text-foreground font-semibold">Run your event normally</p>
-            <p>Open the organizer portal in your browser and run the day exactly as you would with the cloud. Everything below works with no internet.</p>
+            <p>
+              {isDesktopApp
+                ? "Run the day in RM Roost exactly as you would online. Everything below works with no internet."
+                : "Open the organizer portal in your browser and run the day exactly as you would with the cloud. Everything below works with no internet."}
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4">
@@ -941,7 +988,9 @@ export default function OfflineMode() {
           </div>
 
           <Callout kind="tip">
-            Keep the terminal window open all day — closing it stops the software and your timing reader will lose its connection.
+            {isDesktopApp
+              ? "Keep RM Roost open all day — quitting it stops the local timing server and your timing reader will lose its connection."
+              : "Keep the terminal window open all day — closing it stops the software and your timing reader will lose its connection."}
           </Callout>
 
         </CardContent>
@@ -956,8 +1005,8 @@ export default function OfflineMode() {
 
           {/* 3a — Auto-sync reminder */}
           <p>
-            As soon as your laptop connects to the internet — driving home, stopping at a café, wherever —
-            the software syncs your race data automatically. Results will appear publicly within minutes. Nothing to do.
+            As soon as your laptop connects to the internet — driving home, stopping at a café, wherever —{" "}
+            {isDesktopApp ? "RM Roost" : "the software"} syncs your race data automatically. Results will appear publicly within minutes. Nothing to do.
           </p>
 
           {/* 3b — Point reader back */}

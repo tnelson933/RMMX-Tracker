@@ -7,6 +7,33 @@ const CREDS_FILE   = path.join(app.getPath("userData"), "credentials.enc");
 const META_FILE    = path.join(app.getPath("userData"), "credentials.meta.json");
 const SESSION_FILE = path.join(app.getPath("userData"), "session.enc");
 
+/**
+ * The production cloud server. Used when nothing else is configured, and as
+ * the replacement for cloud URLs saved by builds that pointed at the retired
+ * Replit deployment.
+ */
+export const DEFAULT_CLOUD_URL = "https://www.rmroost.com";
+
+// Hosts of the retired Replit deployment (e.g. rmmx-tracker.replit.app).
+const LEGACY_CLOUD_HOST_SUFFIXES = [".replit.app", ".replit.dev", ".repl.co"];
+
+export function isLegacyCloudUrl(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    return LEGACY_CLOUD_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+  } catch {
+    return false;
+  }
+}
+
+/** Returns the cloud URL to use, replacing a missing or retired one with the default. */
+export function resolveCloudUrl(raw: string | null | undefined): string {
+  const trimmed = String(raw ?? "").trim().replace(/\/$/, "");
+  if (!trimmed || isLegacyCloudUrl(trimmed)) return DEFAULT_CLOUD_URL;
+  return trimmed;
+}
+
 export interface StoredCredentials {
   email: string;
   password: string;
@@ -37,8 +64,18 @@ export function loadCredentials(): StoredCredentials | null {
     };
     let password = "";
     if (fs.existsSync(CREDS_FILE) && safeStorage.isEncryptionAvailable()) {
-      const encrypted = fs.readFileSync(CREDS_FILE);
-      password = safeStorage.decryptString(encrypted);
+      try {
+        password = safeStorage.decryptString(fs.readFileSync(CREDS_FILE));
+      } catch (err) {
+        // The OS key no longer opens the saved password (on macOS the Keychain
+        // entry is named after the app, which changed with the RM Roost
+        // rename). Keep the email, club and cloud URL; signing in again saves
+        // a password the current key can read.
+        console.warn(
+          "[auth] Saved cloud password could not be decrypted; sign in again to restore cloud sync:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     }
     return { ...meta, password };
   } catch {
@@ -68,6 +105,32 @@ export function getPublicCredentials(): CloudCredentials | null {
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * One-time startup migration: installs that saved a cloud URL on the retired
+ * Replit deployment are pointed at the built-in production URL. The cached
+ * session belongs to the old server, so it is dropped. Returns true when the
+ * saved settings were changed.
+ */
+export function migrateLegacyCloudUrl(): boolean {
+  try {
+    if (!fs.existsSync(META_FILE)) return false;
+    const meta = JSON.parse(fs.readFileSync(META_FILE, "utf8")) as Record<string, unknown>;
+    const saved = typeof meta.cloudUrl === "string" ? meta.cloudUrl : "";
+    if (!isLegacyCloudUrl(saved)) return false;
+    meta.cloudUrl = DEFAULT_CLOUD_URL;
+    fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2), "utf8");
+    clearSessionCookie();
+    console.log(`[auth] Migrated saved cloud URL from ${saved} to ${DEFAULT_CLOUD_URL}`);
+    return true;
+  } catch (err) {
+    console.error(
+      "[auth] Could not migrate the saved cloud URL:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return false;
   }
 }
 

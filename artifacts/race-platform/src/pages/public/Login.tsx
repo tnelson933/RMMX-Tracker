@@ -15,6 +15,7 @@ import { ShieldAlert, KeyRound, Eye, EyeOff, RefreshCw } from "lucide-react";
 import rmLogo from "@assets/rm-logo.png";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { isNetworkError, NETWORK_ERROR_MESSAGE, serverErrorMessage } from "@/lib/friendlyErrors";
+import { DESKTOP_CLOUD_URL } from "@/lib/desktopCloudUrl";
 
 const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
@@ -75,13 +76,13 @@ export default function Login() {
               hasSyncUrl = !!state?.cloudUrl;
             } catch { /* ignore */ }
 
-            if (!hasSyncUrl && VITE_CLOUD_URL) {
+            if (!hasSyncUrl) {
               // Sync engine not running — credentials were never saved or were
               // cleared (e.g. fresh install, app update).  Auto-configure it now
               // using the credentials the user just proved are valid locally.
               setCloudSyncing(true);
               try {
-                await api?.auth?.cloudLogin(data.email, data.password, VITE_CLOUD_URL);
+                await api?.auth?.cloudLogin(data.email, data.password, DESKTOP_CLOUD_URL);
               } catch { /* non-fatal */ }
               setCloudSyncing(false);
             } else if (hasSyncUrl) {
@@ -133,7 +134,7 @@ export default function Login() {
           // no password hash (account not activated locally), automatically try to
           // log in to the cloud and pull all data down, then retry locally.
           if (isDesktop) {
-            const fallbackUrl = data.cloudUrl?.trim() || VITE_CLOUD_URL || (window as any).electronAPI?.getCloudUrl?.() || "";
+            const fallbackUrl = data.cloudUrl?.trim() || VITE_CLOUD_URL || (window as any).electronAPI?.getCloudUrl?.() || DESKTOP_CLOUD_URL;
             setCloudSyncing(true);
             setAuthError(null);
             try {

@@ -5,6 +5,7 @@ import path from "path";
 import router from "./routes/index";
 import { initDb } from "./db-init";
 import { corsOptionsFor } from "./lib/request-origin";
+import { CLOUD_URL } from "./lib/cloud-url";
 
 initDb();
 
@@ -37,7 +38,7 @@ app.use("/api", router);
 
 // Redirect shareable links to the cloud URL so they work when opened on the
 // local machine (where VITE_CLOUD_URL may not be baked into the build).
-const cloudUrl = process.env.CLOUD_URL ?? "";
+const cloudUrl = CLOUD_URL;
 if (cloudUrl) {
   app.get("/register/:id", (req, res) => {
     res.redirect(302, `${cloudUrl}/register/${req.params.id}`);

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getDb } from "../db";
+import { CLOUD_URL } from "../lib/cloud-url";
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.get("/stripe/connect/status", async (req, res) => {
   const clubId = user.club_id as number;
 
   // Try the cloud for real-time status first (5-second timeout).
-  const cloudUrl = (process.env.CLOUD_URL ?? "").replace(/\/$/, "");
+  const cloudUrl = CLOUD_URL;
   if (cloudUrl) {
     try {
       const controller = new AbortController();

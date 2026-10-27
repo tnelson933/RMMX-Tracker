@@ -23,6 +23,8 @@ import {
   loadSessionCookie,
   saveSessionCookie,
   clearSessionCookie,
+  migrateLegacyCloudUrl,
+  resolveCloudUrl,
 } from "./auth-manager";
 import {
   listPorts,
@@ -185,11 +187,8 @@ function startLocalServer(): Promise<void> {
   // Pass CLOUD_URL (but NOT auth credentials) to the local server so it can
   // redirect /register/:id requests to the cloud registration page.
   // CLOUD_URL alone does not activate startAutoSync() — that requires CLUB_ID
-  // plus auth credentials too.
-  const savedCreds = loadCredentials();
-  if (savedCreds?.cloudUrl) {
-    env.CLOUD_URL = savedCreds.cloudUrl;
-  }
+  // plus auth credentials too. Falls back to the built-in production URL.
+  env.CLOUD_URL = resolveCloudUrl(loadCredentials()?.cloudUrl);
 
   // Do NOT pass CLOUD_EMAIL / CLOUD_PASSWORD / CLUB_ID / SYNC_TOKEN to the
   // local-server subprocess — those would activate local-server's startAutoSync()
@@ -198,7 +197,13 @@ function startLocalServer(): Promise<void> {
   // ELECTRON_RUN_AS_NODE=1 is required in packaged builds: process.execPath
   // points to the Electron binary, not a bare Node executable. This flag makes
   // Electron skip its GUI bootstrap and behave exactly like `node <script>`.
+  // The local server stores uploaded images in "<cwd>/.uploads". Run it from
+  // the data folder: a packaged app's own working directory can be read-only
+  // ("/" when a macOS app is opened from Finder) or replaced on upgrade.
+  const dataDir = app.getPath("userData");
+  migrateLocalUploads(dataDir);
   localServerProcess = spawn(process.execPath, [indexMjs], {
+    cwd: dataDir,
     env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -285,6 +290,32 @@ function startLocalServer(): Promise<void> {
   });
 }
 
+/**
+ * Earlier builds ran the local server from the app's working directory, so
+ * uploaded images landed in "<cwd>/.uploads". Copy them into the data folder
+ * once so logos and event images that were never synced keep displaying.
+ */
+function migrateLocalUploads(dataDir: string): void {
+  const target = path.join(dataDir, ".uploads");
+  if (fs.existsSync(target)) return;
+  const candidates = new Set([
+    path.join(process.cwd(), ".uploads"),
+    path.join(path.dirname(process.execPath), ".uploads"),
+  ]);
+  for (const source of candidates) {
+    if (path.resolve(source) === path.resolve(target) || !fs.existsSync(source)) continue;
+    try {
+      fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: false });
+      console.log(`[main] Copied local uploads from ${source} to ${target}`);
+    } catch (err) {
+      console.warn(
+        `[main] Could not copy local uploads from ${source}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+}
+
 function stopLocalServer(): Promise<void> {
   return new Promise((resolve) => {
     if (!localServerProcess) {
@@ -362,11 +393,11 @@ function deriveSessionSecret(): string {
 
 function startSyncEngine(): void {
   const creds = loadCredentials();
-  if (!creds?.cloudUrl || !creds.email || !creds.password) return;
+  if (!creds?.email || !creds.password) return;
 
   syncEngine = new SyncEngine({
     dbPath: getDbPath(),
-    cloudUrl: creds.cloudUrl,
+    cloudUrl: resolveCloudUrl(creds.cloudUrl),
     clubId: creds.clubId,
     email: creds.email,
     password: creds.password,
@@ -623,7 +654,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     "auth:setCredentials",
     (_event, email: string, password: string, rawCloudUrl: string, clubId: string) => {
-      const cloudUrl = validateCloudUrl(rawCloudUrl);
+      const cloudUrl = validateCloudUrl(resolveCloudUrl(rawCloudUrl));
       saveCredentials({ email, password, cloudUrl, clubId });
       stopSyncEngine();
       startSyncEngine();
@@ -639,14 +670,9 @@ function registerIpcHandlers(): void {
     "auth:cloudLogin",
     async (_event, email: string, password: string, fallbackCloudUrl: string) => {
       const saved = loadCredentials();
-      const rawCloudUrl = (saved?.cloudUrl || fallbackCloudUrl || "").replace(/\/$/, "");
-      if (!rawCloudUrl) {
-        return {
-          ok: false,
-          error:
-            "Cloud URL not configured. Open Cloud Sync Settings from the app menu and enter your cloud URL.",
-        };
-      }
+      // A saved URL wins; otherwise the renderer's built-in URL; otherwise the
+      // production default. Retired Replit URLs resolve to the default.
+      const rawCloudUrl = resolveCloudUrl(saved?.cloudUrl || fallbackCloudUrl);
       let cloudUrl: string;
       try {
         cloudUrl = validateCloudUrl(rawCloudUrl);
@@ -757,7 +783,7 @@ function registerIpcHandlers(): void {
   // Synchronous IPC — preload calls this with sendSync to expose cloudUrl
   // to the renderer before any React code runs (needed by getPublicOrigin()).
   ipcMain.on("auth:getCloudUrlSync", (event) => {
-    event.returnValue = loadCredentials()?.cloudUrl ?? "";
+    event.returnValue = resolveCloudUrl(loadCredentials()?.cloudUrl);
   });
 
   // ── AI Assistant conversation handlers (AIAssistant component) ───────────────
@@ -971,6 +997,8 @@ function setupAutoUpdater(): void {
 
 app.whenReady().then(async () => {
   registerIpcHandlers();
+  // Before anything reads the saved cloud URL (local server env, sync engine).
+  migrateLegacyCloudUrl();
 
   try {
     await startLocalServer();
