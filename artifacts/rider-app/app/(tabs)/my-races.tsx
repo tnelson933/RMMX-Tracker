@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -27,6 +27,7 @@ import {
   ViewState,
 } from "@/components/RaceSubScreens";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
+import { EmptyState } from "@/components/EmptyState";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -371,16 +372,6 @@ function UpcomingCard({ event, colors, isRegistered }: { event: PublicEvent; col
   );
 }
 
-function EmptyState({ icon, title, text, colors }: { icon: string; title: string; text: string; colors: ReturnType<typeof useColors> }) {
-  return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 40, gap: 10, marginTop: 32 }}>
-      <Feather name={icon as any} size={40} color={colors.mutedForeground + "60"} />
-      <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>{title}</Text>
-      <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>{text}</Text>
-    </View>
-  );
-}
-
 // ─── History card (in History tab) ───────────────────────────────────────────
 
 function HistoryCard({ event, colors, onPress }: { event: EventHistory; colors: ReturnType<typeof useColors>; onPress: () => void }) {
@@ -451,6 +442,13 @@ export default function MyRacesScreen() {
   const { isAuthenticated, isLoading: authLoading, activeProfiles, riderFetch } = useRiderAuth();
 
   const [activeFilter, setActiveFilter]     = useState<FilterTab>("today");
+  // Other screens deep-link a tab, e.g. Home's "Find a race" opens Near Me
+  const { filter: filterParam } = useLocalSearchParams<{ filter?: string }>();
+  useEffect(() => {
+    if (filterParam === "today" || filterParam === "upcoming" || filterParam === "near_me" || filterParam === "history") {
+      setActiveFilter(filterParam);
+    }
+  }, [filterParam]);
   const [schedule, setSchedule]             = useState<{ familyRiderIds: number[]; events: ScheduleEvent[] } | null>(null);
   const [publicEvents, setPublicEvents]     = useState<PublicEvent[]>([]);
   const [history, setHistory]               = useState<EventHistory[]>([]);
@@ -710,14 +708,20 @@ export default function MyRacesScreen() {
       return <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>;
     }
     if (error) {
-      return <EmptyState icon="alert-circle" title="Couldn't load data" text={error} colors={colors} />;
+      return <EmptyState icon="alert-circle" title="Couldn't load your races" message={error} primary={{ label: "Try again", icon: "refresh-cw", onPress: onRefresh }} />;
     }
     switch (activeFilter) {
       case "today":
         return raceDay.length > 0 ? (
           <><View style={{ height: 12 }} />{raceDay.map(e => <RaceDaySection key={e.eventId} event={e} colors={colors} />)}</>
         ) : (
-          <EmptyState icon="zap" title="No events today" text="You have no races scheduled for today. Check Upcoming for what's next." colors={colors} />
+          <EmptyState
+            icon="zap"
+            title="No racing today"
+            message="Nothing on the gate today. See what's coming up, or find your next race."
+            primary={{ label: "Find a race", onPress: () => setActiveFilter("near_me") }}
+            secondary={{ label: "See upcoming", onPress: () => setActiveFilter("upcoming") }}
+          />
         );
 
       case "upcoming":
@@ -730,7 +734,12 @@ export default function MyRacesScreen() {
             {upcoming.map(e => <UpcomingCard key={e.eventId} event={e} colors={colors} isRegistered={registeredEventIds.has(e.eventId)} />)}
           </>
         ) : (
-          <EmptyState icon="calendar" title="Nothing upcoming" text="You're not registered for any upcoming events. Check Near Me to find races to enter." colors={colors} />
+          <EmptyState
+            icon="calendar"
+            title="Calendar's wide open"
+            message="You're not entered in any upcoming races. Find one near you and get registered."
+            primary={{ label: "Find a race near me", icon: "map-pin", onPress: () => setActiveFilter("near_me") }}
+          />
         );
 
       case "near_me":
@@ -753,9 +762,10 @@ export default function MyRacesScreen() {
         ) : (
           <EmptyState
             icon="map-pin"
-            title={nearMeState ? `No open events in ${nearMeState}` : "No events near you"}
-            text="There are no events open for registration in your area right now."
-            colors={colors}
+            title={nearMeState ? `No open races in ${nearMeState}` : "No open races nearby"}
+            message="Nothing's open for registration around you right now. Browse every race, or check back soon."
+            primary={{ label: "Browse all races", icon: "flag", onPress: () => router.push("/(tabs)/results" as any) }}
+            secondary={{ label: "Refresh", onPress: onRefresh }}
           />
         );
 
@@ -776,7 +786,12 @@ export default function MyRacesScreen() {
             ))}
           </>
         ) : (
-          <EmptyState icon="award" title="No race history" text="Your past race results will appear here once events are completed." colors={colors} />
+          <EmptyState
+            icon="award"
+            title="Your story starts here"
+            message="Results from every race you run land here: finishes, laps and points."
+            primary={{ label: "Find a race", onPress: () => setActiveFilter("near_me") }}
+          />
         );
     }
   }

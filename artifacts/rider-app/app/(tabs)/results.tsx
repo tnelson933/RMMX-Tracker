@@ -16,6 +16,7 @@ import { BrandBar } from "@/components/BrandBar";
 import { fmtDateShared as fmtDate, fmtLap } from "@/components/RaceSubScreens";
 import { useColors } from "@/hooks/useColors";
 import { onTabReset } from "@/utils/tabEvents";
+import { EmptyState } from "@/components/EmptyState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1676,17 +1677,13 @@ export default function ResultsScreen() {
               <ActivityIndicator color={colors.primary} />
             </View>
           ) : events.length === 0 ? (
-            <View style={{ paddingVertical: 80, alignItems: "center", paddingHorizontal: 32, gap: 8 }}>
-              <Feather name="flag" size={36} color={colors.mutedForeground + "60"} />
-              <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>
-                {racesDebouncedQ ? "No matching races" : "No races yet"}
-              </Text>
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>
-                {racesDebouncedQ
-                  ? "Try a different search — state abbreviation, city, track name, or event name."
-                  : "Live and completed races will appear here."}
-              </Text>
-            </View>
+            <EmptyState
+              icon={racesDebouncedQ ? "search" : "flag"}
+              title={racesDebouncedQ ? "No matching races" : "No races yet"}
+              message={racesDebouncedQ
+                ? "Try a state (UT), a city, a track or an event name."
+                : "Live and finished races show up here as soon as they start."}
+            />
           ) : (
             <>
               {liveEvents.length > 0 && (

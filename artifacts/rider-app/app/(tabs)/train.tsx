@@ -23,6 +23,7 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { DirtBikeIcon } from "@/components/DirtBikeIcon";
 import { BrandBar } from "@/components/BrandBar";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
+import { EmptyState } from "@/components/EmptyState";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1322,11 +1323,13 @@ export default function TrainScreen() {
                 <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>{trackError}</Text>
               </View>
             ) : tracks.length === 0 ? (
-              <View style={{ paddingTop: 48, alignItems: "center", gap: 10 }}>
-                <Feather name="activity" size={40} color={colors.mutedForeground} />
-                <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>No practice sessions yet</Text>
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>Practice lap times from events or standalone sessions will appear here.</Text>
-              </View>
+              <EmptyState
+                icon="activity"
+                title="Get on the clock"
+                message="Lap times from practice at events and timed practice days show up here, with your best laps highlighted."
+                primary={{ label: "Get a training plan", icon: "cpu", onPress: () => setTabMode("coach") }}
+                secondary={{ label: "Find a race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
+              />
             ) : !currentSession ? (
               <View style={{ paddingTop: 48, alignItems: "center", gap: 8 }}>
                 <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Select a session above</Text>

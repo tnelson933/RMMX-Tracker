@@ -5,6 +5,7 @@ import { Pressable, Text, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
+import { EmptyState } from "@/components/EmptyState";
 
 interface FeedItem {
   riderId: number; riderName: string; eventId: number; eventName: string; eventDate: string;
@@ -37,15 +38,13 @@ export function FollowingFeed({ refreshKey }: { refreshKey: number }) {
         </Pressable>
       </View>
       {items && items.length === 0 ? (
-        <Pressable onPress={() => router.push("/follow" as any)} style={({ pressed }) => ({
-          marginHorizontal: 16, padding: 18, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1,
-          borderColor: colors.border, alignItems: "center", gap: 6, opacity: pressed ? 0.7 : 1,
-        })}>
-          <Feather name="user-plus" size={22} color={colors.mutedForeground + "80"} />
-          <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
-            Follow friends and teammates to see their results here.
-          </Text>
-        </Pressable>
+        <EmptyState
+          variant="card"
+          icon="users"
+          title="Ride with your crew"
+          message="Follow friends, teammates or rivals. Their results show up here the moment they're posted."
+          primary={{ label: "Find riders", icon: "user-plus", onPress: () => router.push("/follow" as any) }}
+        />
       ) : (
         (items ?? []).map(i => (
           <Pressable key={`${i.riderId}-${i.eventId}-${i.raceClass}`} onPress={() => router.push(`/racer/${i.riderId}` as any)}

@@ -25,6 +25,7 @@ import { FollowingFeed } from "@/components/FollowingFeed";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
+import { EmptyState } from "@/components/EmptyState";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -392,10 +393,13 @@ export default function HomeScreen() {
             ) : upcoming.length > 0 ? (
               upcoming.map(e => <UpcomingEventCard key={e.eventId} event={e} colors={colors} onPress={() => router.push(`/event/${e.eventId}` as any)} />)
             ) : (
-              <View style={{ marginHorizontal: 16, marginBottom: 24, padding: 20, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", gap: 6 }}>
-                <Feather name="calendar" size={24} color={colors.mutedForeground + "60"} />
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>You're not registered for any upcoming events.</Text>
-              </View>
+              <EmptyState
+                variant="card"
+                icon="flag"
+                title="Your next race awaits"
+                message="Nothing on your calendar yet. Find an open race near you and lock in your gate."
+                primary={{ label: "Find a race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
+              />
             )}
           </>
         )}
