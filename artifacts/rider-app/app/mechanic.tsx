@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef } from "react";
 import {
   ActivityIndicator,
@@ -22,6 +22,8 @@ import { useRockyChat, type ChatMessage } from "@/context/RockyChatContext";
 import { resolveFollowUpChips } from "@/utils/rockyFollowUps";
 import { goBack } from "@/lib/navigation";
 import { ROCKY_QUICK_QUESTIONS, RockyAvatar } from "@/components/RockyAvatar";
+import { ROCKY_HINT_PENDING_KEY, ROCKY_INTRO_SEEN_KEY } from "@/components/RockyLauncher";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const CONFIRM_CLEAR_LABEL = "Clear chat";
 
@@ -224,6 +226,17 @@ export default function MechanicScreen() {
   const { activeProfiles, bikeInfoMap } = useRiderAuth();
   const { messages, isTyping, error, setError, inputText, setInputText, sendMessage, clearChat, memory, clearMemory, suggestedFollowUps } = useRockyChat();
   const [confirmingClear, setConfirmingClear] = React.useState(false);
+  // First-run intro: Rocky opens himself once and explains what he does
+  const { intro } = useLocalSearchParams<{ intro?: string }>();
+  const [showIntro, setShowIntro] = React.useState(intro === "1");
+  useEffect(() => {
+    if (intro === "1") void AsyncStorage.setItem(ROCKY_INTRO_SEEN_KEY, "1");
+  }, [intro]);
+
+  function minimize() {
+    if (showIntro) void AsyncStorage.setItem(ROCKY_HINT_PENDING_KEY, "1");
+    goBack(router);
+  }
 
   const primaryProfile = activeProfiles[0] ?? null;
   const bikeStr = [
@@ -261,7 +274,8 @@ export default function MechanicScreen() {
         borderBottomColor: colors.border,
       }]}>
         <Pressable
-          onPress={() => goBack(router)}
+          onPress={minimize}
+          accessibilityLabel="Minimize Rocky"
           hitSlop={12}
           style={({ pressed }) => ({
             width: 36, height: 36, borderRadius: 18,
@@ -333,6 +347,42 @@ export default function MechanicScreen() {
               <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium", textTransform: "capitalize" }}>{storedInfo.rideExperience}</Text>
             </>
           )}
+        </View>
+      )}
+
+      {/* First-run intro */}
+      {showIntro && (
+        <View style={{ margin: 12, borderRadius: 20, backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.primary + "88", padding: 18, gap: 12,
+          shadowColor: colors.primary, shadowOpacity: 0.35, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <RockyAvatar size={52} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 10, color: colors.primary, fontFamily: "Inter_700Bold", letterSpacing: 1.2, textTransform: "uppercase" }}>Your new crew chief</Text>
+              <Text style={{ fontSize: 22, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", textTransform: "uppercase" }}>Meet Rocky</Text>
+            </View>
+          </View>
+          {([
+            ["tool", "Bike problems, setup and maintenance: just describe it."],
+            ["trending-up", "Riding tips to get faster: starts, corners, ruts, whoops."],
+            ["cpu", "Remembers your bike and riding, so advice fits you."],
+            ["message-circle", "Minimize me and I'll wait in the corner of every screen."],
+          ] as const).map(([icon, text]) => (
+            <View key={text} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center" }}>
+                <Feather name={icon} size={14} color={colors.primary} />
+              </View>
+              <Text style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Inter_500Medium", lineHeight: 19 }}>{text}</Text>
+            </View>
+          ))}
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+            <Pressable onPress={minimize} style={({ pressed }) => ({ flex: 1, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, borderRadius: 999, paddingVertical: 13, opacity: pressed ? 0.85 : 1 })}>
+              <Feather name="minimize-2" size={15} color="#fff" />
+              <Text style={{ color: "#fff", fontSize: 13, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>Minimize Rocky</Text>
+            </Pressable>
+            <Pressable onPress={() => setShowIntro(false)} style={({ pressed }) => ({ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.muted, borderRadius: 999, paddingVertical: 13, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.85 : 1 })}>
+              <Text style={{ color: colors.foreground, fontSize: 13, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>Ask a question</Text>
+            </Pressable>
+          </View>
         </View>
       )}
 

@@ -18,6 +18,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { RockyLauncher } from "@/components/RockyLauncher";
 import { AuthProvider, useRiderAuth } from "@/context/AuthContext";
 import { RockyChatProvider } from "@/context/RockyChatContext";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
@@ -99,6 +100,7 @@ function RootLayoutNav() {
   }, [isAuthenticated, isLoading, segments]);
 
   return (
+    <>
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false, animation: "fade" }} />
@@ -111,6 +113,9 @@ function RootLayoutNav() {
       <Stack.Screen name="follow" options={{ headerShown: false }} />
       <Stack.Screen name="racer/[id]" options={{ headerShown: false }} />
     </Stack>
+    {/* Rocky, minimized, on every signed-in screen */}
+    {isAuthenticated && !isLoading && <RockyLauncher />}
+    </>
   );
 }
 
