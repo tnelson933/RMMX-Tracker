@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { riderAccountsTable, usersTable, passwordSetupTokensTable, clubsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { sendSetupEmail } from "../lib/email";
+import { canUseOfflineSync } from "../lib/offlineSyncAccess";
 
 const router = Router();
 
@@ -200,11 +201,15 @@ router.patch("/auth/me", async (req, res) => {
   const updates: Record<string, string> = {};
   if (name !== undefined) updates.name = name.trim();
 
-  const [updated] = await db
-    .update(usersTable)
-    .set(updates)
-    .where(eq(usersTable.id, userId))
-    .returning();
+  // Nothing to change: return the current profile instead of running an empty UPDATE.
+  const [updated] = Object.keys(updates).length === 0
+    ? await db.select().from(usersTable).where(eq(usersTable.id, userId))
+    : await db
+      .update(usersTable)
+      .set(updates)
+      .where(eq(usersTable.id, userId))
+      .returning();
+  if (!updated) return res.status(401).json({ error: "Not authenticated" });
 
   return res.json({
     id: updated.id,
@@ -224,6 +229,15 @@ router.patch("/auth/me", async (req, res) => {
 router.post("/auth/offline-token", async (req, res) => {
   const userId = (req.session as any).userId as number | undefined;
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+  const [caller] = await db
+    .select({ role: usersTable.role, permissions: usersTable.permissions })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+  if (!caller) return res.status(401).json({ error: "Not authenticated" });
+  if (!canUseOfflineSync(caller)) {
+    return res.status(403).json({ error: "Offline mode needs the Offline Mode permission. Ask your club organizer to grant it." });
+  }
 
   const token = crypto.randomUUID();
   const [updated] = await db

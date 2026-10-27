@@ -161,11 +161,14 @@ router.patch("/organizer/team/:userId", async (req, res) => {
     updates.permissions = sanitizePermissions(permissions);
   }
 
-  const [updated] = await db
-    .update(usersTable)
-    .set(updates)
-    .where(eq(usersTable.id, userId))
-    .returning();
+  // e.g. { resendInvite: true } alone: nothing to update, keep the member as is.
+  const [updated] = Object.keys(updates).length === 0
+    ? [member]
+    : await db
+      .update(usersTable)
+      .set(updates)
+      .where(eq(usersTable.id, userId))
+      .returning();
 
   let emailSent: boolean | undefined;
   let setupUrl: string | undefined;

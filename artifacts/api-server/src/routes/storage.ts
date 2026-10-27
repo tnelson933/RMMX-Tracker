@@ -20,8 +20,31 @@ const cloudStorageEnabled = Boolean(process.env.PRIVATE_OBJECT_DIR);
 // Ensure directory exists at module load time
 fs.mkdir(UPLOADS_DIR, { recursive: true }).catch(() => {});
 
+/** Upload types accepted by POST /storage/uploads/file (and served inline). */
+const UPLOAD_CONTENT_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".pdf": "application/pdf",
+};
+
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+// Uploads are served from the app's own origin: browsers must never sniff them into
+// HTML/script, and anything that isn't a plain image or PDF downloads instead of rendering.
+const INLINE_SAFE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"]);
+router.use("/storage", (_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  next();
+});
+
+function forceDownloadUnlessSafe(res: Response, contentType: string | null | undefined) {
+  const type = (contentType ?? "").split(";")[0].trim().toLowerCase();
+  if (!INLINE_SAFE_TYPES.has(type)) res.setHeader("Content-Disposition", "attachment");
+}
 
 /**
  * POST /storage/uploads/file
@@ -35,8 +58,15 @@ router.post(
   express.raw({ type: ["image/*", "application/pdf", "application/octet-stream"], limit: "20mb" }),
   async (req: Request, res: Response) => {
     const originalName = (req.headers["x-file-name"] as string) || "upload.png";
-    const contentType = (req.headers["x-content-type"] as string) || "image/png";
-    const ext = path.extname(originalName) || ".png";
+    const ext = (path.extname(originalName) || ".png").toLowerCase();
+    // Only raster images and PDFs. SVG is refused: it can carry script and would be
+    // served from our own origin. The stored type comes from the extension, never
+    // from the client's x-content-type header.
+    const contentType = UPLOAD_CONTENT_TYPES[ext];
+    if (!contentType) {
+      res.status(415).json({ error: "Only PNG, JPEG, GIF, WebP images or PDF files can be uploaded." });
+      return;
+    }
     const filename = `${randomUUID()}${ext}`;
     const filepath = path.join(UPLOADS_DIR, filename);
 
@@ -55,7 +85,7 @@ router.post(
       // the disk copy is sufficient for development and single-server deploys.
       if (cloudStorageEnabled) {
         try {
-          const cloudPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext);
+          const cloudPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext, filename);
           req.log.info({ cloudPath }, "File also uploaded to object storage");
         } catch (cloudErr) {
           req.log.warn({ err: cloudErr }, "Object storage unavailable — file saved to disk only");
@@ -72,15 +102,6 @@ router.post(
   }
 );
 
-const UPLOAD_CONTENT_TYPES: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".svg": "image/svg+xml",
-  ".pdf": "application/pdf",
-};
 
 /**
  * GET /storage/uploads/:filename
@@ -97,7 +118,9 @@ router.get("/storage/uploads/:filename", async (req: Request, res: Response) => 
   }
 
   const ext = path.extname(filename).toLowerCase();
+  // Older uploads may still be .svg or other types: those are sent as downloads.
   const contentType = UPLOAD_CONTENT_TYPES[ext] ?? "application/octet-stream";
+  forceDownloadUnlessSafe(res, contentType);
 
   // 1. Try local disk (fast, works in development and for cached production files)
   try {
@@ -122,6 +145,7 @@ router.get("/storage/uploads/:filename", async (req: Request, res: Response) => 
 
     res.status(cloudResponse.status);
     cloudResponse.headers.forEach((value, key) => res.setHeader(key, value));
+    res.setHeader("Content-Type", contentType);
 
     if (cloudResponse.body) {
       const nodeStream = Readable.fromWeb(cloudResponse.body as ReadableStream<Uint8Array>);
@@ -193,6 +217,7 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
 
     res.status(response.status);
     response.headers.forEach((value, key) => res.setHeader(key, value));
+    forceDownloadUnlessSafe(res, response.headers.get("content-type"));
 
     if (response.body) {
       const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
@@ -239,6 +264,7 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
 
     res.status(response.status);
     response.headers.forEach((value, key) => res.setHeader(key, value));
+    forceDownloadUnlessSafe(res, response.headers.get("content-type"));
 
     if (response.body) {
       const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);

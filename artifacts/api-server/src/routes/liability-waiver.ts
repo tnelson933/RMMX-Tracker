@@ -31,10 +31,9 @@ router.post("/public/events/:eventId/liability-waiver/sign", async (req, res) =>
 
   const contentHash = createHash("sha256").update(waiverSnapshot, "utf8").digest("hex");
 
-  const signerIp =
-    (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ??
-    req.socket.remoteAddress ??
-    null;
+  // req.ip honours app.set("trust proxy", 1): the address our own proxy saw, not a
+  // client-supplied X-Forwarded-For entry.
+  const signerIp = req.ip ?? req.socket.remoteAddress ?? null;
   const signerUserAgent = req.get("user-agent") ?? null;
   const signedAt = new Date();
 

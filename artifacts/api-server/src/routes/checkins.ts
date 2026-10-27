@@ -94,8 +94,12 @@ router.get("/events/:eventId/checkins", async (req, res) => {
 router.post("/events/:eventId/checkins", async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
-  const { riderId, rfidNumber, bibNumber } = req.body;
+  const { riderId, rfidNumber, bibNumber, checkedIn } = req.body;
   if (!riderId) return res.status(400).json({ error: "riderId required" });
+  // `checkedIn: false` un-checks the rider (e.g. dragging a pool rider to the trash
+  // in Motos). Any other value, including omitted, checks the rider in. Matches the
+  // local server.
+  const uncheck = checkedIn === false;
 
   // Look up the registration for class info
   const regs = await db.select().from(registrationsTable)
@@ -107,6 +111,33 @@ router.post("/events/:eventId/checkins", async (req, res) => {
     .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.riderId, riderId)))
     .orderBy(asc(checkinsTable.id))
     .limit(1);
+
+  if (uncheck) {
+    if (!existing[0]) {
+      // Nothing to un-check: never insert a row just to mark it not checked in.
+      return res.json({
+        id: null, eventId, riderId: Number(riderId), riderName: "", raceClass,
+        bibNumber: regBib, checkedIn: false, checkedInAt: null, rfidNumber: null, rfidLinked: false,
+      });
+    }
+    const [unchecked] = await db.update(checkinsTable)
+      .set({ checkedIn: false, checkedInAt: null })
+      .where(eq(checkinsTable.id, existing[0].id))
+      .returning();
+    const [uncheckedRider] = await db.select().from(ridersTable).where(eq(ridersTable.id, unchecked.riderId));
+    return res.json({
+      id: unchecked.id,
+      eventId: unchecked.eventId,
+      riderId: unchecked.riderId,
+      riderName: uncheckedRider ? `${uncheckedRider.firstName} ${uncheckedRider.lastName}` : "",
+      raceClass: unchecked.raceClass,
+      bibNumber: unchecked.bibNumber,
+      checkedIn: unchecked.checkedIn,
+      checkedInAt: null,
+      rfidNumber: unchecked.rfidNumber,
+      rfidLinked: unchecked.rfidLinked,
+    });
+  }
 
   let checkin;
   if (existing[0]) {

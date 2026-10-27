@@ -1280,7 +1280,8 @@ export const CheckinRiderParams = zod.object({
 export const CheckinRiderBody = zod.object({
   "riderId": zod.number(),
   "rfidNumber": zod.string().optional(),
-  "bibNumber": zod.string().optional()
+  "bibNumber": zod.string().optional(),
+  "checkedIn": zod.boolean().optional().describe('false un-checks the rider (no row is created if none exists); omitted or true checks the rider in')
 })
 
 export const CheckinRiderResponse = zod.object({

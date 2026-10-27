@@ -146,13 +146,18 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
   const rfidSet = new Set(rfidRows.map(r => `${r.eventId}:${r.riderId}`));
 
   // Check waiver signatures for events that require them
+  // A signature counts for a rider only when it is linked to one of that rider's
+  // registrations for the event (the waiver is linked to the first class entry), never
+  // merely because the signed-in account's email signed some waiver for the event.
   const waiverRows = await db
-    .select({ eventId: liabilityWaiverSignaturesTable.eventId, signerEmail: liabilityWaiverSignaturesTable.signerEmail, registrationId: liabilityWaiverSignaturesTable.registrationId })
+    .select({ eventId: liabilityWaiverSignaturesTable.eventId, riderId: registrationsTable.riderId })
     .from(liabilityWaiverSignaturesTable)
+    .innerJoin(registrationsTable, and(
+      eq(registrationsTable.id, liabilityWaiverSignaturesTable.registrationId),
+      eq(registrationsTable.eventId, liabilityWaiverSignaturesTable.eventId),
+    ))
     .where(inArray(liabilityWaiverSignaturesTable.eventId, eventIds));
-  // Map by eventId+registrationId and eventId+email for flexible lookup
-  const waiverByRegId = new Set(waiverRows.filter(w => w.registrationId).map(w => `${w.eventId}:${w.registrationId}`));
-  const waiverByEmail = new Set(waiverRows.map(w => `${w.eventId}:${w.signerEmail?.toLowerCase()}`));
+  const waiverByRider = new Set(waiverRows.map(w => `${w.eventId}:${w.riderId}`));
 
   const results: Array<{
     eventId: number;
@@ -206,9 +211,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       }
     } else if (eligible && r.requireLiabilityWaiver) {
       // Full liability waiver — must be in liability_waiver_signatures
-      const hasWaiver =
-        waiverByRegId.has(`${r.eventId}:${r.registrationId}`) ||
-        waiverByEmail.has(`${r.eventId}:${account.email.toLowerCase()}`);
+      const hasWaiver = waiverByRider.has(`${r.eventId}:${r.riderId}`);
       if (!hasWaiver) {
         eligible = false;
         ineligibleReason = "missing_waiver";
@@ -334,13 +337,18 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
       return res.status(400).json({ error: "Waiver not signed — please complete the waiver before checking in" });
     }
   } else if (event.requireLiabilityWaiver) {
-    const sigs = await db
-      .select()
+    // Must be linked to one of this rider's registrations for the event (any class entry).
+    const [sig] = await db
+      .select({ id: liabilityWaiverSignaturesTable.id })
       .from(liabilityWaiverSignaturesTable)
-      .where(eq(liabilityWaiverSignaturesTable.eventId, eventId));
-    const hasSig = sigs.some(
-      s => s.registrationId === reg.id || s.signerEmail?.toLowerCase() === account.email.toLowerCase()
-    );
+      .innerJoin(registrationsTable, eq(registrationsTable.id, liabilityWaiverSignaturesTable.registrationId))
+      .where(and(
+        eq(liabilityWaiverSignaturesTable.eventId, eventId),
+        eq(registrationsTable.eventId, eventId),
+        eq(registrationsTable.riderId, riderId),
+      ))
+      .limit(1);
+    const hasSig = !!sig;
     if (!hasSig) return res.status(400).json({ error: "Waiver not signed — please complete the waiver before checking in" });
   }
 

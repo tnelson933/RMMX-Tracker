@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable, enduroTimeChecksTable } from "@workspace/db";
+import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable, enduroTimeChecksTable, enduroCheckpointArrivalsTable, eventReaderAssignmentsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { sendStatsEmail } from "../lib/email";
 import { normalizeState } from "../utils/normalizeState";
@@ -517,8 +517,22 @@ router.delete("/events/:eventId", async (req, res) => {
     const [ev] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, id));
     if (!ev || ev.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   }
+  // Signed liability waivers are legal records and must be kept, so an event that
+  // has any can't be deleted (they reference it). Say so instead of failing on the FK.
+  const [signedWaiver] = await db.select({ id: liabilityWaiverSignaturesTable.id })
+    .from(liabilityWaiverSignaturesTable)
+    .where(eq(liabilityWaiverSignaturesTable.eventId, id))
+    .limit(1);
+  if (signedWaiver) {
+    return res.status(409).json({
+      error: "This event has signed liability waivers, which must be kept, so it can't be deleted. Cancel the event or mark it completed instead.",
+    });
+  }
   await db.transaction(async (tx) => {
     // Delete deepest dependents first to satisfy FK constraints
+    await tx.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, id));
+    await tx.delete(enduroCheckpointArrivalsTable).where(eq(enduroCheckpointArrivalsTable.eventId, id));
+    await tx.delete(enduroTimeChecksTable).where(eq(enduroTimeChecksTable.eventId, id));
     await tx.delete(raceResultsTable).where(eq(raceResultsTable.eventId, id));
     await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.eventId, id));
     await tx.delete(motosTable).where(eq(motosTable.eventId, id));

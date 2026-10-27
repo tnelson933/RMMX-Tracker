@@ -9,8 +9,11 @@ import {
   usersTable,
   clubSettingsTable,
   registrationsTable,
+  riderAccountsTable,
+  riderMobileTokensTable,
 } from "@workspace/db";
-import { eq, and, desc, asc, ilike, or } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, or, inArray } from "drizzle-orm";
+import { managedRiderIds } from "../lib/riderAccess";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
 import { authorizeIngest } from "../lib/ingestAuth";
@@ -43,6 +46,28 @@ async function getClubId(req: any): Promise<number | null> {
 const router = Router();
 
 const practiceSSEClients = new Map<number, Set<Response>>();
+// Rider-account viewers only receive the rows of riders they own or manage.
+const practiceClientRiderFilter = new WeakMap<Response, Set<number>>();
+
+function boardForClient(res: Response, riders: PracticeRiderRow[]): PracticeRiderRow[] {
+  const allowed = practiceClientRiderFilter.get(res);
+  return allowed ? riders.filter(r => r.riderId != null && allowed.has(r.riderId)) : riders;
+}
+
+/** Rider account behind this request (web session or mobile Bearer token), without touching the session. */
+async function requestRiderAccount(req: any): Promise<{ id: number; email: string } | null> {
+  let accountId = (req.session as any)?.riderAccountId as number | undefined;
+  const auth = (req.headers.authorization ?? "") as string;
+  if (auth.startsWith("Bearer ")) {
+    const [tok] = await db.select({ riderAccountId: riderMobileTokensTable.riderAccountId })
+      .from(riderMobileTokensTable).where(eq(riderMobileTokensTable.token, auth.slice(7).trim()));
+    accountId = tok?.riderAccountId;
+  }
+  if (!accountId) return null;
+  const [account] = await db.select({ id: riderAccountsTable.id, email: riderAccountsTable.email })
+    .from(riderAccountsTable).where(eq(riderAccountsTable.id, accountId));
+  return account ?? null;
+}
 
 type PracticeRiderRow = {
   rfidNumber: string;
@@ -111,12 +136,15 @@ function toJson(s: typeof practiceSessionsTable.$inferSelect) {
   };
 }
 
-function broadcast(sessionId: number, payload: object) {
+function broadcast(sessionId: number, payload: { session: object; riders: PracticeRiderRow[] }) {
   const clients = practiceSSEClients.get(sessionId);
   if (!clients || clients.size === 0) return;
   const data = JSON.stringify(payload);
   for (const res of clients) {
-    try { res.write(`data: ${data}\n\n`); } catch { /* ignore */ }
+    const body = practiceClientRiderFilter.has(res)
+      ? JSON.stringify({ ...payload, riders: boardForClient(res, payload.riders) })
+      : data;
+    try { res.write(`data: ${body}\n\n`); } catch { /* ignore */ }
   }
 }
 
@@ -405,6 +433,9 @@ router.patch("/practice/:id", async (req, res) => {
     if (req.body.status === "ended") updates.endedAt = new Date();
   }
 
+  // Nothing to change: answer with the session as it is instead of an empty UPDATE.
+  if (Object.keys(updates).length === 0) return res.json(toJson(existing));
+
   const [session] = await db.update(practiceSessionsTable)
     .set(updates as any)
     .where(eq(practiceSessionsTable.id, id))
@@ -506,11 +537,53 @@ router.post("/practice/:id/crossing", async (req, res) => {
 // GET /practice/:id/live — SSE
 router.get("/practice/:id/live", async (req, res) => {
   const sessionId = Number(req.params.id);
+  // Anonymous callers get 401 before the lookup, so session ids can't be probed.
+  const hasCredentials = !!(req.session as any)?.userId || !!(req.session as any)?.riderAccountId
+    || String(req.headers.authorization ?? "").startsWith("Bearer ");
+  if (!hasCredentials) { res.status(401).json({ error: "Not authenticated" }); return; }
 
   const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, sessionId));
   if (!session) { res.status(404).json({ error: "Session not found" }); return; }
-  const callerClubId = await getClubId(req);
-  if (callerClubId !== null && session.clubId !== callerClubId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  // This route is public in accessControl so riders can watch; authorize here.
+  // Organizers/super admins see the whole board for their club's sessions; staff
+  // need the practice permission (as the staff rules required before).
+  let organizerAllowed = false;
+  let deniedStatus = 401;
+  const userId = (req.session as any)?.userId as number | undefined;
+  if (userId) {
+    const [user] = await db
+      .select({ role: usersTable.role, clubId: usersTable.clubId, permissions: usersTable.permissions })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId));
+    if (user) {
+      const sameClub = user.role === "super_admin" || (user.clubId != null && user.clubId === session.clubId);
+      const staffOk = user.role !== "staff" || (user.permissions ?? []).includes("practice");
+      organizerAllowed = sameClub && staffOk;
+      if (!organizerAllowed) deniedStatus = 403;
+    }
+  }
+
+  // Rider accounts may watch a session one of their own/managed riders rode in,
+  // and only receive those riders' rows.
+  let riderFilter: Set<number> | null = null;
+  if (!organizerAllowed) {
+    const account = await requestRiderAccount(req);
+    if (account) {
+      const ids = await managedRiderIds(account);
+      const [rode] = ids.length
+        ? await db.select({ id: practiceCrossingsTable.id }).from(practiceCrossingsTable)
+          .where(and(eq(practiceCrossingsTable.sessionId, sessionId), inArray(practiceCrossingsTable.riderId, ids)))
+          .limit(1)
+        : [];
+      if (rode) riderFilter = new Set(ids);
+      else deniedStatus = 403;
+    }
+    if (!riderFilter) {
+      res.status(deniedStatus).json({ error: deniedStatus === 401 ? "Not authenticated" : "Forbidden" });
+      return;
+    }
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -519,11 +592,12 @@ router.get("/practice/:id/live", async (req, res) => {
 
   if (!practiceSSEClients.has(sessionId)) practiceSSEClients.set(sessionId, new Set());
   practiceSSEClients.get(sessionId)!.add(res);
+  if (riderFilter) practiceClientRiderFilter.set(res, riderFilter);
 
   const crossings = await db.select().from(practiceCrossingsTable)
     .where(eq(practiceCrossingsTable.sessionId, sessionId))
     .orderBy(asc(practiceCrossingsTable.crossingTime));
-  res.write(`data: ${JSON.stringify({ session: toJson(session), riders: buildLiveBoard(crossings) })}\n\n`);
+  res.write(`data: ${JSON.stringify({ session: toJson(session), riders: boardForClient(res, buildLiveBoard(crossings)) })}\n\n`);
 
   const heartbeat = setInterval(() => {
     try { res.write(": heartbeat\n\n"); } catch { /* ignore */ }

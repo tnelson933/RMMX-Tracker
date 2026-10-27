@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable, clubsTable, seriesTable, seriesPointsTable } from "@workspace/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, ne } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { formulaPoints } from "../lib/safeFormula";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
+import { callerOwnsClub } from "../middleware/accessControl";
 
 const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -263,6 +264,40 @@ function getStaffClubId(res: any): number | null {
   return typeof v === "number" ? v : null;
 }
 
+/**
+ * AMA number and bike per rider for an event, taken from non-void registrations.
+ * Looked up separately instead of joined so a rider with several class entries
+ * never duplicates result rows. Prefers the entry in the result's class.
+ */
+async function registrationDetailsLookup(eventId: number) {
+  const regs = await db.select({
+    riderId: registrationsTable.riderId,
+    raceClass: registrationsTable.raceClass,
+    amaNumber: registrationsTable.amaNumber,
+    bikeBrand: registrationsTable.bikeBrand,
+  }).from(registrationsTable)
+    .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")))
+    .orderBy(registrationsTable.id);
+  const byClass = new Map<string, { amaNumber: string | null; bikeBrand: string | null }>();
+  const byRider = new Map<number, { amaNumber: string | null; bikeBrand: string | null }>();
+  for (const r of regs) {
+    const details = { amaNumber: r.amaNumber ?? null, bikeBrand: r.bikeBrand ?? null };
+    const key = `${r.riderId}|${r.raceClass}`;
+    if (!byClass.has(key)) byClass.set(key, details);
+    if (!byRider.has(r.riderId)) byRider.set(r.riderId, details);
+  }
+  return (riderId: number, raceClass: string | null) =>
+    byClass.get(`${riderId}|${raceClass}`) ?? byRider.get(riderId) ?? { amaNumber: null, bikeBrand: null };
+}
+
+/** The signed-in caller's club owns this event (or the caller is a super admin). */
+async function callerOwnsEvent(eventId: number, res: any): Promise<boolean> {
+  if (res.locals?.callerIsSuperAdmin === true) return true;
+  if (typeof res.locals?.callerClubId !== "number") return false;
+  const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  return !!evt && callerOwnsClub(res, evt.clubId);
+}
+
 async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
   if (staffCId === null) return true;
   const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
@@ -273,8 +308,9 @@ async function checkEventOwnership(eventId: number, staffCId: number | null, res
 router.get("/events/:eventId/results", async (req, res) => {
   const eventId = Number(req.params.eventId);
 
-  // Unauthenticated requests (widgets, public pages) only see published events
-  if (!(req.session as any).userId) {
+  // Unpublished results are only shown to the club that owns the event (or a super admin).
+  // Everyone else, signed in or not (widgets, public pages, other clubs), sees published events only.
+  if (!await callerOwnsEvent(eventId, res)) {
     const [pub] = await db.select({ published: eventPublicationTable.published })
       .from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
     if (!pub?.published) return res.json([]);
@@ -300,17 +336,12 @@ router.get("/events/:eventId/results", async (req, res) => {
     timeLimitMs: motosTable.timeLimitMs,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
-    amaNumber: registrationsTable.amaNumber,
-    bikeBrand: registrationsTable.bikeBrand,
   }).from(raceResultsTable)
     .leftJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
     .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
-    .leftJoin(registrationsTable, and(
-      eq(registrationsTable.riderId, raceResultsTable.riderId),
-      eq(registrationsTable.eventId, raceResultsTable.eventId),
-    ))
     .where(eq(raceResultsTable.eventId, eventId))
     .orderBy(raceResultsTable.position);
+  const regDetails = await registrationDetailsLookup(eventId);
 
   return res.json(results.map(r => ({
     id: r.id,
@@ -327,8 +358,8 @@ router.get("/events/:eventId/results", async (req, res) => {
     dnf: r.dnf,
     dns: r.dns,
     bibNumber: r.bibNumber,
-    amaNumber: r.amaNumber ?? null,
-    bikeBrand: r.bikeBrand ?? null,
+    amaNumber: regDetails(r.riderId, r.raceClass).amaNumber,
+    bikeBrand: regDetails(r.riderId, r.raceClass).bikeBrand,
   })));
 });
 
@@ -338,8 +369,9 @@ router.post("/events/:eventId/results", async (req, res) => {
   const { motoId, results: riderResults } = req.body;
   if (!motoId || !Array.isArray(riderResults)) return res.status(400).json({ error: "motoId and results[] required" });
 
-  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, Number(motoId)));
+  // The moto must belong to this (ownership-checked) event, or results could be written into another club's race.
+  if (!moto || moto.eventId !== eventId) return res.status(404).json({ error: "Moto not found" });
   const raceClass = moto.raceClass;
   const motoType: string = (moto as any).type ?? "heat";
 
@@ -498,7 +530,8 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
 
   // Fetch the moto's lapCount to enforce the cap
   const [existingResult] = await db.select({ motoId: raceResultsTable.motoId })
-    .from(raceResultsTable).where(eq(raceResultsTable.id, resultId));
+    .from(raceResultsTable)
+    .where(and(eq(raceResultsTable.id, resultId), eq(raceResultsTable.eventId, eventId)));
   if (!existingResult) { res.status(404).json({ error: "Result not found" }); return; }
 
   const [lapMoto] = await db.select({ lapCount: motosTable.lapCount })
@@ -511,7 +544,7 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
   const [updated] = await db
     .update(raceResultsTable)
     .set({ lapTimes: cappedLapTimes, totalTime })
-    .where(eq(raceResultsTable.id, resultId))
+    .where(and(eq(raceResultsTable.id, resultId), eq(raceResultsTable.eventId, eventId)))
     .returning();
 
   if (!updated) { res.status(404).json({ error: "Result not found" }); return; }
@@ -571,16 +604,13 @@ router.get("/events/:eventId/ama-export", async (req, res) => {
     lastName: ridersTable.lastName,
     city: ridersTable.city,
     homeState: ridersTable.homeState,
-    amaNumber: registrationsTable.amaNumber,
+    resultClass: raceResultsTable.raceClass,
     bibNumber: raceResultsTable.bibNumber,
   }).from(raceResultsTable)
     .innerJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
     .innerJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
-    .leftJoin(registrationsTable, and(
-      eq(registrationsTable.riderId, raceResultsTable.riderId),
-      eq(registrationsTable.eventId, eventId),
-    ))
     .where(eq(motosTable.eventId, eventId));
+  const amaRegDetails = await registrationDetailsLookup(eventId);
 
   // Also get homeState from riders (stored as separate column)
   const riderIds = [...new Set(results.map(r => r.riderId))];
@@ -621,7 +651,7 @@ router.get("/events/:eventId/ama-export", async (req, res) => {
       escCsv(trackName),
       escCsv(r.raceClass),
       escCsv(r.motoNumber),
-      escCsv(r.amaNumber ?? ""),
+      escCsv(amaRegDetails(r.riderId, r.resultClass ?? r.raceClass).amaNumber ?? ""),
       escCsv(r.bibNumber ?? ""),
       escCsv(r.firstName ?? ""),
       escCsv(r.lastName ?? ""),

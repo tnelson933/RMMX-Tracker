@@ -7,6 +7,7 @@ import { shouldPublishAnnouncerSnapshotForMotoPatch } from "../lib/announcerLife
 import { sendPushNotifications } from "../lib/push";
 import { sendConnectorCommand } from "../lib/connectorRelay";
 import { accountIdsForRiders } from "../lib/riderAccess";
+import { callerOwnsClub } from "../middleware/accessControl";
 
 export type NormalizedMotoTiming =
   | { lapCount: number | null; timeLimitMs: number | null; plusLaps: number | null; error?: never }
@@ -224,8 +225,9 @@ async function autoAdvanceToMain(eventId: number, raceClass: string, topPerHeat:
 router.get("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
 
-  // Unauthenticated requests: allow published events and active race-day events (gate page)
-  if (!(req.session as any).userId) {
+  // Callers outside the owning club (anonymous, or another club's organizer/staff on this
+  // public route): only published events and active race-day events (gate page).
+  if (!callerOwnsClub(res, await getEventClubId(eventId))) {
     const [[pub], [evt]] = await Promise.all([
       db.select({ published: eventPublicationTable.published })
         .from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId)),

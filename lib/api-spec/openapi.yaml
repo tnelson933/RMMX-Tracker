@@ -4304,6 +4304,9 @@ components:
           type: string
         bibNumber:
           type: string
+        checkedIn:
+          type: boolean
+          description: false un-checks the rider (no row is created if none exists); omitted or true checks the rider in
 
     RfidAssignment:
       type: object

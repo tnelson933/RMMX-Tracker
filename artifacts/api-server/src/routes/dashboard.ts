@@ -242,6 +242,10 @@ router.get("/events/:eventId/raceday-summary", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!events[0]) return res.status(404).json({ error: "Not found" });
+  const staffCId = res.locals.staffClubId;
+  if (typeof staffCId === "number" && events[0].clubId !== staffCId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
 
   const [regCount] = await db.select({ count: count() }).from(registrationsTable).where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")));
   // Count registrations (not checkin rows) whose rider is checked in — so multi-class
@@ -489,6 +493,10 @@ router.get("/reports/event/:eventId", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!events[0]) return res.status(404).json({ error: "Not found" });
+  const staffCId = res.locals.staffClubId;
+  if (typeof staffCId === "number" && events[0].clubId !== staffCId) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
 
   const [regCount] = await db.select({ count: count() }).from(registrationsTable).where(eq(registrationsTable.eventId, eventId));
   const [checkinCount] = await db.select({ count: count() }).from(checkinsTable).where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.checkedIn, true)));

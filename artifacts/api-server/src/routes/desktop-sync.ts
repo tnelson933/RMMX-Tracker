@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, gt, and, inArray, isNull, or } from "drizzle-orm";
+import { eq, gt, and, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { buildLeaderboard, formatLapTime, publishTimingSnapshot, startSharedAnnouncer } from "./timing";
 import {
@@ -23,35 +23,21 @@ import {
   riderAccountsTable,
   riderPushTokensTable,
   eventPublicationTable,
+  eventReaderAssignmentsTable,
+  enduroTimeChecksTable,
+  enduroCheckpointArrivalsTable,
+  liabilityWaiverSignaturesTable,
 } from "@workspace/db";
 import { canonicalizeCrossingTimestamp } from "../lib/crossingTimestamp";
+import { resolveSyncUser, canReceivePasswordHashes, type SyncUser } from "../lib/offlineSyncAccess";
 
 const router = Router();
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 
-async function resolveClubUser(
-  req: any,
-  clubId: number,
-): Promise<{ id: number; clubId: number | null } | null> {
-  const sessionUserId = (req.session as any).userId as number | undefined;
-  if (sessionUserId) {
-    const [user] = await db
-      .select({ id: usersTable.id, clubId: usersTable.clubId })
-      .from(usersTable)
-      .where(eq(usersTable.id, sessionUserId));
-    return user ?? null;
-  }
-
-  const authHeader = (req.headers.authorization ?? "") as string;
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
-  if (!token) return null;
-
-  const [user] = await db
-    .select({ id: usersTable.id, clubId: usersTable.clubId })
-    .from(usersTable)
-    .where(eq((usersTable as any).offlineSyncToken, token));
-  return user ?? null;
+/** Session or Bearer offline-sync-token caller, limited to users allowed to use offline sync. */
+async function resolveClubUser(req: any, _clubId: number): Promise<SyncUser | null> {
+  return resolveSyncUser(req);
 }
 
 function toDate(v: unknown): Date | null {
@@ -85,699 +71,62 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   const affectedMotoIds = new Set<number>();
   const startedMotoIds = new Set<number>();
   const eventIdRemaps: Array<{ localId: number; cloudId: number }> = [];
+  const motoIdRemaps: Array<{ localId: number; cloudId: number }> = [];
+  // Desktop ids that had to be replaced in the cloud (id collision with another
+  // club's row). Child rows in the same push are rewritten through these maps.
+  const eventIdMap = new Map<number, number>();
+  const motoIdMap = new Map<number, number>();
+  const mapEventId = (raw: unknown) => { const n = Number(raw); return eventIdMap.get(n) ?? n; };
+  const mapMotoId = (raw: unknown) => { const n = Number(raw); return motoIdMap.get(n) ?? n; };
+  // Rows that were NOT applied, reported back so they aren't silently lost.
+  const skipped: Record<string, Array<{ id: number | null; reason: string }>> = {};
+  const skip = (table: string, row: { id?: unknown }, reason: string) => {
+    const id = row.id != null && Number(row.id) > 0 ? Number(row.id) : null;
+    (skipped[table] ??= []).push({ id, reason });
+  };
+  // Tables that received explicit (desktop-supplied) ids; their serial sequences
+  // are advanced at the end so later cloud inserts don't hit duplicate keys.
+  const explicitIdTables = new Set<string>();
 
   await db.transaction(async (tx) => {
-    // ── lap_crossings ─────────────────────────────────────────────────────────
-    const crossings = (payload["lap_crossings"] ?? []) as Array<{
-      id?: unknown;
-      event_id: unknown;
-      moto_id: unknown;
-      rfid_number: unknown;
-      crossing_time: unknown;
-      created_at?: unknown;
-      lap_number: unknown;
-      lap_time_ms: unknown;
-      rider_id?: unknown;
-      reader_id?: unknown;
-      antenna_id?: unknown;
-    }>;
-
-    let crossingsUpserted = 0;
-    const previousImportedCrossing = new Map<string, Date>();
-    const repairedImportedLaps = new Map<string, number[]>();
-    const skewedImportedRiders = new Set<string>();
-    const orderedCrossings = [...crossings].sort((a, b) =>
-      Number(a.moto_id) - Number(b.moto_id)
-      || String(a.rfid_number ?? "").localeCompare(String(b.rfid_number ?? ""))
-      || Number(a.lap_number) - Number(b.lap_number)
-      || Number(a.id ?? 0) - Number(b.id ?? 0));
-    for (const c of orderedCrossings) {
-      const eventId = Number(c.event_id);
-      const motoId  = Number(c.moto_id);
-      if (!eventId || !motoId) continue;
-
-      const [event] = await tx
-        .select({ clubId: eventsTable.clubId })
-        .from(eventsTable)
-        .where(eq(eventsTable.id, eventId));
-      if (!event || event.clubId !== clubId) continue;
-
-      const rfidNumber = String(c.rfid_number ?? "");
-      const lapNumber  = Number(c.lap_number);
-      if (!rfidNumber || !lapNumber) continue;
-
-      const [existing] = await tx
-        .select({ id: lapCrossingsTable.id })
-        .from(lapCrossingsTable)
-        .where(
-          and(
-            eq(lapCrossingsTable.motoId, motoId),
-            eq(lapCrossingsTable.rfidNumber, rfidNumber),
-            eq(lapCrossingsTable.lapNumber, lapNumber),
-          ),
-        );
-
-      const cloudReceivedAt = new Date();
-      const localReceivedAt = toDate(c.created_at);
-      const sourceReceivedAt = localReceivedAt
-        && localReceivedAt.getTime() <= cloudReceivedAt.getTime() + 5 * 60 * 1000
-        ? localReceivedAt
-        : cloudReceivedAt;
-      const suppliedCrossingTime = toDate(c.crossing_time);
-      const hadFutureClockSkew = !suppliedCrossingTime
-        || suppliedCrossingTime.getTime() > sourceReceivedAt.getTime() + 5 * 60 * 1000;
-      const crossingTime = canonicalizeCrossingTimestamp(c.crossing_time, sourceReceivedAt, {
-        source: "desktop_sync",
-        motoId,
-        rfidNumber,
-      });
-      const crossingKey = `${motoId}:${rfidNumber}`;
-      let importedLapTimeMs = Number(c.lap_time_ms);
-      if (hadFutureClockSkew) {
-        let previousTime = previousImportedCrossing.get(crossingKey);
-        if (!previousTime && lapNumber === 1) {
-          const [moto] = await tx
-            .select({ startedAt: motosTable.startedAt })
-            .from(motosTable)
-            .where(eq(motosTable.id, motoId));
-          previousTime = moto?.startedAt ?? undefined;
-        }
-        if (previousTime) {
-          const delta = crossingTime.getTime() - previousTime.getTime();
-          if (Number.isFinite(delta) && delta >= 0) importedLapTimeMs = delta;
-        }
-      }
-      previousImportedCrossing.set(crossingKey, crossingTime);
-      if (c.rider_id != null) {
-        const riderKey = `${motoId}:${Number(c.rider_id)}`;
-        const riderLaps = repairedImportedLaps.get(riderKey) ?? [];
-        riderLaps.push(importedLapTimeMs);
-        repairedImportedLaps.set(riderKey, riderLaps);
-        if (hadFutureClockSkew) skewedImportedRiders.add(riderKey);
-      }
-
-      if (existing) {
-        await tx
-          .update(lapCrossingsTable)
-          .set({
-            lapTimeMs:   importedLapTimeMs,
-            crossingTime,
-            // Always carry riderId forward so a re-sync of a manual crossing
-            // does not lose the rider association (rider name would show as the
-            // raw rfidNumber on the crossings feed if riderId is dropped).
-            ...(c.rider_id != null ? { riderId: Number(c.rider_id) } : {}),
-          })
-          .where(eq(lapCrossingsTable.id, existing.id));
-      } else {
-        const clientId = c.id != null && Number(c.id) > 0 ? Number(c.id) : undefined;
-        await tx.insert(lapCrossingsTable).values({
-          ...(clientId ? { id: clientId } : {}),
-          eventId,
-          motoId,
-          riderId:      c.rider_id != null   ? Number(c.rider_id)   : null,
-          rfidNumber,
-          crossingTime,
-          lapNumber,
-          lapTimeMs:    importedLapTimeMs,
-          readerId:     c.reader_id  != null ? String(c.reader_id)  : null,
-          antennaId:    c.antenna_id != null ? Number(c.antenna_id) : null,
-        });
-      }
-      crossingsUpserted++;
-      affectedMotoIds.add(motoId);
-    }
-    results["lap_crossings"] = crossingsUpserted;
-    total += crossingsUpserted;
-
-    // ── race_results ──────────────────────────────────────────────────────────
-    const raceResults = (payload["race_results"] ?? []) as Array<{
-      id?: unknown;
-      event_id?: unknown;
-      moto_id: unknown;
-      rider_id: unknown;
-      race_class?: unknown;
-      position?: unknown;
-      bib_number?: unknown;
-      lap_times?: unknown;
-      total_time?: unknown;
-      dnf?: unknown;
-      dns?: unknown;
-    }>;
-
-    let resultsUpserted = 0;
-    for (const r of raceResults) {
-      const eventId = Number(r.event_id);
-      const motoId  = Number(r.moto_id);
-      const riderId = Number(r.rider_id);
-      if (!eventId || !motoId || !riderId) continue;
-
-      const [event] = await tx
-        .select({ clubId: eventsTable.clubId })
-        .from(eventsTable)
-        .where(eq(eventsTable.id, eventId));
-      if (!event || event.clubId !== clubId) continue;
-
-      const [existing] = await tx
-        .select({ id: raceResultsTable.id })
-        .from(raceResultsTable)
-        .where(
-          and(
-            eq(raceResultsTable.motoId,  motoId),
-            eq(raceResultsTable.riderId, riderId),
-          ),
-        );
-
-      let lapTimes: number[] = [];
-      try {
-        lapTimes = JSON.parse(String(r.lap_times ?? "[]")) as number[];
-      } catch { /* ignore */ }
-      const repairedKey = `${motoId}:${riderId}`;
-      if (skewedImportedRiders.has(repairedKey)) {
-        const repaired = repairedImportedLaps.get(repairedKey) ?? [];
-        if (repaired.length && repaired.every(value => Number.isFinite(value) && value >= 0)) {
-          lapTimes = repaired;
-          r.total_time = formatLapTime(repaired.reduce((sum, value) => sum + value, 0));
-        }
-      }
-
-      if (existing) {
-        await tx
-          .update(raceResultsTable)
-          .set({
-            position:  r.position != null ? Number(r.position) : 999,
-            lapTimes,
-            totalTime: r.total_time != null ? String(r.total_time) : null,
-            dnf:       Boolean(r.dnf),
-            dns:       Boolean(r.dns),
-          })
-          .where(eq(raceResultsTable.id, existing.id));
-      } else {
-        const clientId = r.id != null && Number(r.id) > 0 ? Number(r.id) : undefined;
-        await tx.insert(raceResultsTable).values({
-          ...(clientId ? { id: clientId } : {}),
-          eventId,
-          motoId,
-          riderId,
-          raceClass: r.race_class != null ? String(r.race_class) : "",
-          position:  r.position  != null ? Number(r.position) : 999,
-          bibNumber: r.bib_number != null ? String(r.bib_number) : null,
-          lapTimes,
-          totalTime: r.total_time != null ? String(r.total_time) : null,
-          dnf:       Boolean(r.dnf),
-          dns:       Boolean(r.dns),
-        });
-      }
-      resultsUpserted++;
-      affectedMotoIds.add(motoId);
-    }
-    results["race_results"] = resultsUpserted;
-    total += resultsUpserted;
-
-    // ── motos (status / start / complete / reorder updates) ───────────────────
-    const motos = (payload["motos"] ?? []) as Array<{
-      id?: unknown;
-      event_id?: unknown;
-      eventId?: unknown;
-      name?: unknown;
-      type?: unknown;
-      race_class?: unknown;
-      raceClass?: unknown;
-      moto_number?: unknown;
-      motoNumber?: unknown;
-      status?: unknown;
-      started_at?: unknown;
-      startedAt?: unknown;
-      completed_at?: unknown;
-      completedAt?: unknown;
-      lineup?: unknown;
-      lap_count?: unknown;
-      lapCount?: unknown;
-      time_limit_ms?: unknown;
-      timeLimitMs?: unknown;
-      plus_laps?: unknown;
-      plusLaps?: unknown;
-      time_expired_at?: unknown;
-      timeExpiredAt?: unknown;
-      scheduled_time?: unknown;
-      scheduledTime?: unknown;
-      staggered_group_id?: unknown;
-      staggeredGroupId?: unknown;
-      staggered_order?: unknown;
-      staggeredOrder?: unknown;
-    }>;
-
-    let motosUpserted = 0;
-    for (const m of motos) {
-      const rawMoto = m as Record<string, unknown>;
-      const eventId  = Number(firstDefined(rawMoto, "event_id", "eventId"));
-      const clientId = m.id != null && Number(m.id) > 0 ? Number(m.id) : undefined;
-      if (!eventId) continue;
-
-      const [event] = await tx
-        .select({ clubId: eventsTable.clubId })
-        .from(eventsTable)
-        .where(eq(eventsTable.id, eventId));
-      if (!event || event.clubId !== clubId) continue;
-
-      const rawMotoNumber = firstDefined(rawMoto, "moto_number", "motoNumber");
-      const motoNumber  = rawMotoNumber != null ? Number(rawMotoNumber) : 0;
-      const incomingStatus = m.status !== undefined ? String(m.status) : undefined;
-      const rawStartedAt = firstDefined(rawMoto, "started_at", "startedAt");
-      const rawCompletedAt = firstDefined(rawMoto, "completed_at", "completedAt");
-      const rawLapCount = firstDefined(rawMoto, "lap_count", "lapCount");
-      const rawTimeLimitMs = firstDefined(rawMoto, "time_limit_ms", "timeLimitMs");
-      const rawPlusLaps = firstDefined(rawMoto, "plus_laps", "plusLaps");
-      const rawTimeExpiredAt = firstDefined(rawMoto, "time_expired_at", "timeExpiredAt");
-      const rawScheduledTime = firstDefined(rawMoto, "scheduled_time", "scheduledTime");
-      const rawStaggeredGroupId = firstDefined(rawMoto, "staggered_group_id", "staggeredGroupId");
-      const rawStaggeredOrder = firstDefined(rawMoto, "staggered_order", "staggeredOrder");
-      const requestedLapCount = rawLapCount === undefined ? undefined : (rawLapCount === null ? null : Number(rawLapCount));
-      const requestedTimeLimitMs = rawTimeLimitMs === undefined ? undefined : (rawTimeLimitMs === null ? null : Number(rawTimeLimitMs));
-      const requestedPlusLaps = rawPlusLaps === undefined ? undefined : (rawPlusLaps === null ? null : Number(rawPlusLaps));
-
-      let timingError: string | null = null;
-      if (requestedLapCount !== undefined && requestedLapCount !== null && (!Number.isInteger(requestedLapCount) || requestedLapCount <= 0)) {
-        timingError = "lapCount must be a positive integer";
-      } else if (requestedTimeLimitMs !== undefined && requestedTimeLimitMs !== null && (!Number.isInteger(requestedTimeLimitMs) || requestedTimeLimitMs <= 0)) {
-        timingError = "timeLimitMs must be a positive integer";
-      } else if (requestedLapCount != null && requestedTimeLimitMs != null) {
-        timingError = "lapCount and timeLimitMs are mutually exclusive";
-      } else if (requestedPlusLaps !== undefined && requestedPlusLaps !== null && (!Number.isInteger(requestedPlusLaps) || requestedPlusLaps < 0)) {
-        timingError = "plusLaps must be a nonnegative integer for a timed race";
-      }
-
-      const timeExpiredAt = rawTimeExpiredAt === undefined || rawTimeExpiredAt === null
-        ? rawTimeExpiredAt
-        : toDate(rawTimeExpiredAt);
-      if (rawTimeExpiredAt !== undefined && rawTimeExpiredAt !== null && timeExpiredAt === null) {
-        timingError = "timeExpiredAt must be a valid date";
-      }
-      if (timingError) {
-        req.log.warn({ clubId, motoId: clientId, error: timingError }, "desktop-push skipped invalid moto");
-        continue;
-      }
-
-      // Prefer lookup by id — this is stable across drag-and-drop reorders.
-      // Falling back to (eventId, motoNumber) when there is no client id is
-      // safe for legacy payloads; it must NOT be used when clientId is present
-      // because after a reorder the moto_number has changed on desktop but the
-      // cloud still holds the old value, so the lookup would find the wrong row.
-      let existing: {
-        id: number;
-        status: string;
-        lapCount: number | null;
-        timeLimitMs: number | null;
-        plusLaps: number | null;
-      } | undefined;
-      if (clientId) {
-        [existing] = await tx
-          .select({
-            id: motosTable.id,
-            status: motosTable.status,
-            lapCount: motosTable.lapCount,
-            timeLimitMs: motosTable.timeLimitMs,
-            plusLaps: motosTable.plusLaps,
-          })
-          .from(motosTable)
-          .where(eq(motosTable.id, clientId));
-      } else {
-        [existing] = await tx
-          .select({
-            id: motosTable.id,
-            status: motosTable.status,
-            lapCount: motosTable.lapCount,
-            timeLimitMs: motosTable.timeLimitMs,
-            plusLaps: motosTable.plusLaps,
-          })
-          .from(motosTable)
-          .where(and(eq(motosTable.eventId, eventId), eq(motosTable.motoNumber, motoNumber)));
-      }
-
-      let resultingLapCount = requestedLapCount === undefined ? existing?.lapCount ?? null : requestedLapCount;
-      let resultingTimeLimitMs = requestedTimeLimitMs === undefined ? existing?.timeLimitMs ?? null : requestedTimeLimitMs;
-      if (requestedLapCount != null) resultingTimeLimitMs = null;
-      if (requestedTimeLimitMs != null) resultingLapCount = null;
-      const resultingPlusLaps = resultingTimeLimitMs !== null
-        ? (requestedPlusLaps === undefined
-            ? (requestedTimeLimitMs != null ? 1 : existing?.plusLaps ?? 1)
-            : requestedPlusLaps ?? 1)
-        : null;
-      if (resultingPlusLaps !== null && (!Number.isInteger(resultingPlusLaps) || resultingPlusLaps < 0)) {
-        req.log.warn(
-          { clubId, motoId: clientId, error: "plusLaps must be a nonnegative integer for a timed race" },
-          "desktop-push skipped invalid moto",
-        );
-        continue;
-      }
-      if (requestedPlusLaps != null && resultingTimeLimitMs === null) {
-        req.log.warn(
-          { clubId, motoId: clientId, error: "plusLaps is only valid when timeLimitMs is set" },
-          "desktop-push skipped invalid moto",
-        );
-        continue;
-      }
-
-      if (existing) {
-        if (existing.status !== "in_progress" && incomingStatus === "in_progress") {
-          startedMotoIds.add(existing.id);
-        }
-        let lineup: number[] | undefined;
-        if (m.lineup !== undefined) {
-          try { lineup = JSON.parse(String(m.lineup)) as number[]; } catch { lineup = []; }
-        }
-        const updateSet: Record<string, unknown> = {};
-        if (m.status              !== undefined) updateSet.status       = String(m.status);
-        if (rawStartedAt          !== undefined) updateSet.startedAt    = rawStartedAt === null ? null : toDate(rawStartedAt);
-        if (rawCompletedAt        !== undefined) updateSet.completedAt  = rawCompletedAt === null ? null : toDate(rawCompletedAt);
-        if (rawMotoNumber         != null)  updateSet.motoNumber        = motoNumber;
-        if (m.name                != null)  updateSet.name              = String(m.name);
-        if (rawLapCount !== undefined || rawTimeLimitMs !== undefined || rawPlusLaps !== undefined) {
-          updateSet.lapCount = resultingLapCount;
-          updateSet.timeLimitMs = resultingTimeLimitMs;
-          updateSet.plusLaps = resultingPlusLaps;
-        }
-        if (rawTimeExpiredAt      !== undefined) updateSet.timeExpiredAt = timeExpiredAt;
-        if (rawScheduledTime      !== undefined) updateSet.scheduledTime = rawScheduledTime === null ? null : String(rawScheduledTime);
-        if (lineup !== undefined)           updateSet.lineup            = lineup;
-        if (rawStaggeredGroupId   != null)  updateSet.staggeredGroupId  = Number(rawStaggeredGroupId);
-        else if (rawStaggeredGroupId === null) updateSet.staggeredGroupId = null;
-        if (rawStaggeredOrder     != null)  updateSet.staggeredOrder    = Number(rawStaggeredOrder);
-        else if (rawStaggeredOrder === null)    updateSet.staggeredOrder = null;
-        if (Object.keys(updateSet).length > 0) {
-          await tx
-            .update(motosTable)
-            .set(updateSet as any)
-            .where(eq(motosTable.id, existing.id));
-        }
-        affectedMotoIds.add(existing.id);
-      } else {
-        let lineup: number[] = [];
-        try { lineup = JSON.parse(String(m.lineup ?? "[]")) as number[]; } catch { /* ignore */ }
-
-        const [inserted] = await tx.insert(motosTable).values({
-          ...(clientId ? { id: clientId } : {}),
-          eventId,
-          name:             m.name != null ? String(m.name) : "",
-          type:             m.type != null ? String(m.type) : "moto",
-          raceClass:        firstDefined(rawMoto, "race_class", "raceClass") != null ? String(firstDefined(rawMoto, "race_class", "raceClass")) : "",
-          motoNumber,
-          scheduledTime:    rawScheduledTime != null ? String(rawScheduledTime) : null,
-          lineup,
-          lapCount:         resultingLapCount,
-          timeLimitMs:      resultingTimeLimitMs,
-          plusLaps:         resultingPlusLaps,
-          timeExpiredAt:    timeExpiredAt === undefined ? null : timeExpiredAt,
-          status:           String(m.status ?? "scheduled"),
-          startedAt:        rawStartedAt == null ? null : toDate(rawStartedAt),
-          completedAt:      rawCompletedAt == null ? null : toDate(rawCompletedAt),
-          staggeredGroupId: rawStaggeredGroupId != null ? Number(rawStaggeredGroupId) : null,
-          staggeredOrder:   rawStaggeredOrder    != null ? Number(rawStaggeredOrder)    : null,
-        }).returning({ id: motosTable.id });
-        if (inserted) {
-          affectedMotoIds.add(inserted.id);
-          if (incomingStatus === "in_progress") startedMotoIds.add(inserted.id);
-        }
-      }
-      motosUpserted++;
-    }
-    results["motos"] = motosUpserted;
-    total += motosUpserted;
-
-    // ── checkins ──────────────────────────────────────────────────────────────
-    const checkins = (payload["checkins"] ?? []) as Array<{
-      id?: unknown;
-      event_id: unknown;
-      rider_id: unknown;
-      race_class?: unknown;
-      bib_number?: unknown;
-      checked_in?: unknown;
-      checked_in_at?: unknown;
-      rfid_number?: unknown;
-      rfid_linked?: unknown;
-    }>;
-
-    let checkinsUpserted = 0;
-    for (const c of checkins) {
-      const eventId = Number(c.event_id);
-      const riderId = Number(c.rider_id);
-      if (!eventId || !riderId) continue;
-
-      const [event] = await tx
-        .select({ clubId: eventsTable.clubId })
-        .from(eventsTable)
-        .where(eq(eventsTable.id, eventId));
-      if (!event || event.clubId !== clubId) continue;
-
-      const [existing] = await tx
-        .select({ id: checkinsTable.id })
-        .from(checkinsTable)
-        .where(
-          and(
-            eq(checkinsTable.eventId, eventId),
-            eq(checkinsTable.riderId, riderId),
-          ),
-        );
-
-      const checkedIn   = Boolean(c.checked_in);
-      const rfidLinked  = Boolean(c.rfid_linked);
-      const checkedInAt = toDate(c.checked_in_at);
-
-      if (existing) {
-        await tx
-          .update(checkinsTable)
-          .set({
-            checkedIn, checkedInAt,
-            rfidNumber: c.rfid_number != null ? String(c.rfid_number) : null,
-            rfidLinked,
-            bibNumber:  c.bib_number != null ? String(c.bib_number) : null,
-          })
-          .where(eq(checkinsTable.id, existing.id));
-      } else {
-        const clientId = c.id != null && Number(c.id) > 0 ? Number(c.id) : undefined;
-        await tx.insert(checkinsTable).values({
-          ...(clientId ? { id: clientId } : {}),
-          eventId,
-          riderId,
-          raceClass:  c.race_class != null ? String(c.race_class) : "",
-          bibNumber:  c.bib_number != null ? String(c.bib_number) : null,
-          checkedIn,
-          checkedInAt,
-          rfidNumber: c.rfid_number != null ? String(c.rfid_number) : null,
-          rfidLinked,
-        });
-      }
-      checkinsUpserted++;
-    }
-    results["checkins"] = checkinsUpserted;
-    total += checkinsUpserted;
-
-    // ── riders (gate-created riders / profile edits) ─────────────────────────
-    // Process BEFORE registrations so FK constraint is satisfied when a new
-    // rider and their registration arrive together in the same push batch.
-    const riders = (payload["riders"] ?? []) as Array<{
-      id?: unknown;
-      first_name?: unknown;
-      last_name?: unknown;
-      rfid_number?: unknown;
-    }>;
-
-    // Authorization set 1: rider IDs already linked to this club in cloud DB.
-    const cloudRiderRows = await tx
-      .selectDistinct({ riderId: registrationsTable.riderId })
-      .from(registrationsTable)
-      .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
-      .where(eq(eventsTable.clubId, clubId));
-    const cloudRiderIdSet = new Set(cloudRiderRows.map((r) => r.riderId));
-
-    // Authorization set 2: rider IDs in THIS BATCH paired with a club event.
-    // This allows walk-up riders created offline to sync before their
-    // registrations are inserted (prevents FK violation and "new rider blocked"
-    // scenario where the rider has no cloud registration yet).
-    const incomingRegs = (payload["registrations"] ?? []) as Array<{
-      event_id: unknown;
-      rider_id: unknown;
-    }>;
-    const batchRiderIdSet = new Set<number>();
-    for (const reg of incomingRegs) {
-      const eid = Number(reg.event_id);
-      const rid = Number(reg.rider_id);
-      if (!eid || !rid) continue;
-      const [evt] = await tx
-        .select({ clubId: eventsTable.clubId })
-        .from(eventsTable)
-        .where(eq(eventsTable.id, eid));
-      if (evt && evt.clubId === clubId) batchRiderIdSet.add(rid);
-    }
-
-    let ridersUpserted = 0;
-    for (const r of riders) {
-      const riderId = Number(r.id);
-      if (!riderId) continue;
-
-      // Allow if already on cloud roster OR arriving with a valid club registration
-      if (!cloudRiderIdSet.has(riderId) && !batchRiderIdSet.has(riderId)) continue;
-
-      const [existing] = await tx
-        .select({ id: ridersTable.id })
-        .from(ridersTable)
-        .where(eq(ridersTable.id, riderId));
-
-      if (existing) {
-        // Safety: only update a rider whose ID is already on THIS club's cloud roster.
-        // If the rider ID exists in cloud but belongs to a different club (ID collision
-        // from offline auto-increment), skip the update to prevent cross-club corruption.
-        if (!cloudRiderIdSet.has(riderId)) continue;
-
-        await tx
-          .update(ridersTable)
-          .set({
-            firstName:  r.first_name  != null ? String(r.first_name)  : undefined,
-            lastName:   r.last_name   != null ? String(r.last_name)   : undefined,
-            rfidNumber: r.rfid_number != null ? String(r.rfid_number) : undefined,
-          })
-          .where(eq(ridersTable.id, riderId));
-      } else {
-        // New rider — insert with the client-provided ID.
-        // ON CONFLICT DO NOTHING guards against the rare race condition where
-        // another transaction inserts the same rider ID concurrently.
-        await tx.insert(ridersTable).values({
-          id:         riderId,
-          firstName:  r.first_name  != null ? String(r.first_name)  : "",
-          lastName:   r.last_name   != null ? String(r.last_name)   : "",
-          rfidNumber: r.rfid_number != null ? String(r.rfid_number) : null,
-        }).onConflictDoNothing();
-      }
-      ridersUpserted++;
-    }
-    results["riders"] = ridersUpserted;
-    total += ridersUpserted;
-
-    // ── registrations (walk-up / on-site edits) ───────────────────────────────
-    // Processed AFTER riders so FK is satisfied for new walk-up registrations.
-    const regs = incomingRegs as Array<{
-      id?: unknown;
-      event_id: unknown;
-      rider_id: unknown;
-      race_class?: unknown;
-      status?: unknown;
-      payment_status?: unknown;
-      bib_number?: unknown;
-      bike_brand?: unknown;
-      amount_paid?: unknown;
-      payment_method?: unknown;
-    }>;
-
-    let regsUpserted = 0;
-    for (const r of regs) {
-      const eventId = Number(r.event_id);
-      const riderId = Number(r.rider_id);
-      if (!eventId || !riderId) continue;
-
-      const [event] = await tx
-        .select({ clubId: eventsTable.clubId })
-        .from(eventsTable)
-        .where(eq(eventsTable.id, eventId));
-      if (!event || event.clubId !== clubId) continue;
-
-      const [existing] = await tx
-        .select({ id: registrationsTable.id })
-        .from(registrationsTable)
-        .where(
-          and(
-            eq(registrationsTable.eventId, eventId),
-            eq(registrationsTable.riderId, riderId),
-          ),
-        );
-
-      if (existing) {
-        await tx
-          .update(registrationsTable)
-          .set({
-            status:        r.status        != null ? String(r.status)         : undefined,
-            paymentStatus: r.payment_status != null ? String(r.payment_status) : undefined,
-            bibNumber:     r.bib_number    != null ? String(r.bib_number)     : undefined,
-            bikeBrand:     r.bike_brand    != null ? String(r.bike_brand)     : undefined,
-            amountPaid:    r.amount_paid   != null ? String(r.amount_paid)    : undefined,
-            paymentMethod: r.payment_method != null ? String(r.payment_method) : undefined,
-          })
-          .where(eq(registrationsTable.id, existing.id));
-      } else {
-        const clientId = r.id != null && Number(r.id) > 0 ? Number(r.id) : undefined;
-        await tx.insert(registrationsTable).values({
-          ...(clientId ? { id: clientId } : {}),
-          eventId,
-          riderId,
-          raceClass:     r.race_class     != null ? String(r.race_class)     : "",
-          status:        (r.status        != null ? String(r.status)         : "confirmed") as "pending" | "confirmed" | "cancelled",
-          paymentStatus: (r.payment_status != null ? String(r.payment_status) : "unpaid")   as "unpaid"  | "paid"      | "refunded",
-          bibNumber:     r.bib_number     != null ? String(r.bib_number)     : null,
-          bikeBrand:     r.bike_brand     != null ? String(r.bike_brand)     : null,
-          amountPaid:    r.amount_paid    != null ? String(r.amount_paid)    : null,
-          paymentMethod: r.payment_method != null ? String(r.payment_method) : null,
-        });
-      }
-      regsUpserted++;
-    }
-    results["registrations"] = regsUpserted;
-    total += regsUpserted;
-
-    // ── rfid_assignments (transponder assignment at event) ────────────────────
-    const rfidAssigns = (payload["rfid_assignments"] ?? []) as Array<{
-      id?: unknown;
-      rider_id: unknown;
-      event_id: unknown;
-      rfid_number?: unknown;
-    }>;
-
-    let rfidUpserted = 0;
-    for (const a of rfidAssigns) {
-      const riderId    = Number(a.rider_id);
-      const eventId    = Number(a.event_id);
-      const rfidNumber = String(a.rfid_number ?? "");
-      if (!riderId || !eventId || !rfidNumber) continue;
-
-      const [event] = await tx
-        .select({ clubId: eventsTable.clubId })
-        .from(eventsTable)
-        .where(eq(eventsTable.id, eventId));
-      if (!event || event.clubId !== clubId) continue;
-
-      const [existing] = await tx
-        .select({ id: rfidAssignmentsTable.id })
-        .from(rfidAssignmentsTable)
-        .where(
-          and(
-            eq(rfidAssignmentsTable.riderId,  riderId),
-            eq(rfidAssignmentsTable.eventId,  eventId),
-          ),
-        );
-
-      if (existing) {
-        await tx
-          .update(rfidAssignmentsTable)
-          .set({ rfidNumber })
-          .where(eq(rfidAssignmentsTable.id, existing.id));
-      } else {
-        const clientId = a.id != null && Number(a.id) > 0 ? Number(a.id) : undefined;
-        await tx.insert(rfidAssignmentsTable).values({
-          ...(clientId ? { id: clientId } : {}),
-          riderId,
-          eventId,
-          rfidNumber,
-        });
-      }
-      rfidUpserted++;
-    }
-    results["rfid_assignments"] = rfidUpserted;
-    total += rfidUpserted;
-
+    const clubEventCache = new Map<number, boolean>();
+    /** The event exists and belongs to the pushing club. */
+    const isClubEvent = async (eventId: number): Promise<boolean> => {
+      if (!eventId) return false;
+      const cached = clubEventCache.get(eventId);
+      if (cached !== undefined) return cached;
+      const [ev] = await tx.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+      const ok = !!ev && ev.clubId === clubId;
+      clubEventCache.set(eventId, ok);
+      return ok;
+    };
+    /** The moto exists and belongs to this (club-owned) event. */
+    const motoInEvent = async (motoId: number, eventId: number): Promise<boolean> => {
+      const [m] = await tx.select({ eventId: motosTable.eventId }).from(motosTable).where(eq(motosTable.id, motoId));
+      return !!m && m.eventId === eventId;
+    };
+    /** True when no row (of any club) already uses this id, so the desktop id can be kept. */
+    const idIsFree = async (table: any, id: number): Promise<boolean> => {
+      const [row] = await tx.select({ id: table.id }).from(table).where(eq(table.id, id));
+      return !row;
+    };
+    // Order matters: events (incl. id-collision remaps) first, then motos, so child
+    // rows created on the desktop in the same push find their parents and can be
+    // rewritten through the remaps instead of being dropped.
     // ── event deletes (deletions made on desktop) ────────────────────────────
     const deletes = (payload["_deletes"] ?? {}) as unknown as Record<string, unknown>;
     const eventIdsToDelete = ((deletes["events"] ?? []) as unknown[]).map(Number).filter(Boolean);
     let eventsDeleted = 0;
     for (const eventId of eventIdsToDelete) {
       const [ev] = await tx.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-      if (!ev || ev.clubId !== clubId) continue;
+      if (!ev || ev.clubId !== clubId) { skip("events_deleted", { id: eventId }, "event not found for this club"); continue; }
+      // Signed liability waivers are kept, so an event that has any is not deleted.
+      const [signedWaiver] = await tx.select({ id: liabilityWaiverSignaturesTable.id })
+        .from(liabilityWaiverSignaturesTable).where(eq(liabilityWaiverSignaturesTable.eventId, eventId)).limit(1);
+      if (signedWaiver) { skip("events_deleted", { id: eventId }, "event has signed liability waivers"); continue; }
+      await tx.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, eventId));
+      await tx.delete(enduroCheckpointArrivalsTable).where(eq(enduroCheckpointArrivalsTable.eventId, eventId));
+      await tx.delete(enduroTimeChecksTable).where(eq(enduroTimeChecksTable.eventId, eventId));
       await tx.delete(raceResultsTable).where(eq(raceResultsTable.eventId, eventId));
       await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.eventId, eventId));
       await tx.delete(motosTable).where(eq(motosTable.eventId, eventId));
@@ -787,6 +136,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       await tx.delete(compCodesTable).where(eq(compCodesTable.eventId, eventId));
       await tx.delete(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
       await tx.delete(eventsTable).where(eq(eventsTable.id, eventId));
+      clubEventCache.delete(eventId);
       eventsDeleted++;
     }
     if (eventsDeleted > 0) {
@@ -803,7 +153,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     let eventsUpserted = 0;
     for (const e of events) {
       const eventId = Number(e.id);
-      if (!eventId) continue;
+      if (!eventId) { skip("events", e, "missing id"); continue; }
 
       // Helper: parse a SQLite JSON string stored in e into the proper JS type.
       const parseEventFields = () => {
@@ -897,6 +247,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
             } as any,
             setWhere: eq(eventsTable.clubId, clubId),
           });
+        explicitIdTables.add("events");
+        clubEventCache.delete(eventId);
         eventsUpserted++;
         continue;
       }
@@ -912,6 +264,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           .returning({ id: eventsTable.id });
         if (remapped?.id) {
           eventIdRemaps.push({ localId: eventId, cloudId: remapped.id });
+          eventIdMap.set(eventId, remapped.id);
           req.log.info({ clubId, localId: eventId, cloudId: remapped.id }, "event id collision — remapped");
           eventsUpserted++;
         }
@@ -978,13 +331,719 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     results["events"] = eventsUpserted;
     total += eventsUpserted;
 
+    // ── motos (status / start / complete / reorder updates) ───────────────────
+    const motos = (payload["motos"] ?? []) as Array<{
+      id?: unknown;
+      event_id?: unknown;
+      eventId?: unknown;
+      name?: unknown;
+      type?: unknown;
+      race_class?: unknown;
+      raceClass?: unknown;
+      moto_number?: unknown;
+      motoNumber?: unknown;
+      status?: unknown;
+      started_at?: unknown;
+      startedAt?: unknown;
+      completed_at?: unknown;
+      completedAt?: unknown;
+      lineup?: unknown;
+      lap_count?: unknown;
+      lapCount?: unknown;
+      time_limit_ms?: unknown;
+      timeLimitMs?: unknown;
+      plus_laps?: unknown;
+      plusLaps?: unknown;
+      time_expired_at?: unknown;
+      timeExpiredAt?: unknown;
+      scheduled_time?: unknown;
+      scheduledTime?: unknown;
+      staggered_group_id?: unknown;
+      staggeredGroupId?: unknown;
+      staggered_order?: unknown;
+      staggeredOrder?: unknown;
+    }>;
+
+    let motosUpserted = 0;
+    for (const m of motos) {
+      const rawMoto = m as Record<string, unknown>;
+      const eventId  = mapEventId(firstDefined(rawMoto, "event_id", "eventId"));
+      let clientId = m.id != null && Number(m.id) > 0 ? Number(m.id) : undefined;
+      if (!eventId) { skip("motos", m, "missing event_id"); continue; }
+
+      if (!await isClubEvent(eventId)) { skip("motos", m, "event not found for this club"); continue; }
+
+      const rawMotoNumber = firstDefined(rawMoto, "moto_number", "motoNumber");
+      const motoNumber  = rawMotoNumber != null ? Number(rawMotoNumber) : 0;
+      const incomingStatus = m.status !== undefined ? String(m.status) : undefined;
+      const rawStartedAt = firstDefined(rawMoto, "started_at", "startedAt");
+      const rawCompletedAt = firstDefined(rawMoto, "completed_at", "completedAt");
+      const rawLapCount = firstDefined(rawMoto, "lap_count", "lapCount");
+      const rawTimeLimitMs = firstDefined(rawMoto, "time_limit_ms", "timeLimitMs");
+      const rawPlusLaps = firstDefined(rawMoto, "plus_laps", "plusLaps");
+      const rawTimeExpiredAt = firstDefined(rawMoto, "time_expired_at", "timeExpiredAt");
+      const rawScheduledTime = firstDefined(rawMoto, "scheduled_time", "scheduledTime");
+      const rawStaggeredGroupId = firstDefined(rawMoto, "staggered_group_id", "staggeredGroupId");
+      const rawStaggeredOrder = firstDefined(rawMoto, "staggered_order", "staggeredOrder");
+      const requestedLapCount = rawLapCount === undefined ? undefined : (rawLapCount === null ? null : Number(rawLapCount));
+      const requestedTimeLimitMs = rawTimeLimitMs === undefined ? undefined : (rawTimeLimitMs === null ? null : Number(rawTimeLimitMs));
+      const requestedPlusLaps = rawPlusLaps === undefined ? undefined : (rawPlusLaps === null ? null : Number(rawPlusLaps));
+
+      let timingError: string | null = null;
+      if (requestedLapCount !== undefined && requestedLapCount !== null && (!Number.isInteger(requestedLapCount) || requestedLapCount <= 0)) {
+        timingError = "lapCount must be a positive integer";
+      } else if (requestedTimeLimitMs !== undefined && requestedTimeLimitMs !== null && (!Number.isInteger(requestedTimeLimitMs) || requestedTimeLimitMs <= 0)) {
+        timingError = "timeLimitMs must be a positive integer";
+      } else if (requestedLapCount != null && requestedTimeLimitMs != null) {
+        timingError = "lapCount and timeLimitMs are mutually exclusive";
+      } else if (requestedPlusLaps !== undefined && requestedPlusLaps !== null && (!Number.isInteger(requestedPlusLaps) || requestedPlusLaps < 0)) {
+        timingError = "plusLaps must be a nonnegative integer for a timed race";
+      }
+
+      const timeExpiredAt = rawTimeExpiredAt === undefined || rawTimeExpiredAt === null
+        ? rawTimeExpiredAt
+        : toDate(rawTimeExpiredAt);
+      if (rawTimeExpiredAt !== undefined && rawTimeExpiredAt !== null && timeExpiredAt === null) {
+        timingError = "timeExpiredAt must be a valid date";
+      }
+      if (timingError) {
+        req.log.warn({ clubId, motoId: clientId, error: timingError }, "desktop-push skipped invalid moto");
+        skip("motos", m, timingError);
+        continue;
+      }
+
+      // Prefer lookup by id — this is stable across drag-and-drop reorders.
+      // Falling back to (eventId, motoNumber) when there is no client id is
+      // safe for legacy payloads; it must NOT be used when clientId is present
+      // because after a reorder the moto_number has changed on desktop but the
+      // cloud still holds the old value, so the lookup would find the wrong row.
+      let existing: {
+        id: number;
+        status: string;
+        lapCount: number | null;
+        timeLimitMs: number | null;
+        plusLaps: number | null;
+      } | undefined;
+      // Set when the desktop's moto id belongs to another club's moto (offline id collision).
+      let collidedLocalId: number | undefined;
+      if (clientId) {
+        const [byId] = await tx
+          .select({
+            id: motosTable.id,
+            status: motosTable.status,
+            lapCount: motosTable.lapCount,
+            timeLimitMs: motosTable.timeLimitMs,
+            plusLaps: motosTable.plusLaps,
+            eventClubId: eventsTable.clubId,
+          })
+          .from(motosTable)
+          .innerJoin(eventsTable, eq(eventsTable.id, motosTable.eventId))
+          .where(eq(motosTable.id, clientId));
+        if (byId && byId.eventClubId !== clubId) {
+          // Never update another club's moto. Re-use this event's moto with the same
+          // number if an earlier push already remapped it; otherwise insert a new one
+          // without the id and report the remap.
+          collidedLocalId = clientId;
+          clientId = undefined;
+          [existing] = await tx
+            .select({
+              id: motosTable.id,
+              status: motosTable.status,
+              lapCount: motosTable.lapCount,
+              timeLimitMs: motosTable.timeLimitMs,
+              plusLaps: motosTable.plusLaps,
+            })
+            .from(motosTable)
+            .where(and(eq(motosTable.eventId, eventId), eq(motosTable.motoNumber, motoNumber)));
+        } else if (byId) {
+          existing = byId;
+        } else if (!await idIsFree(motosTable, clientId)) {
+          collidedLocalId = clientId;
+          clientId = undefined;
+        }
+      } else {
+        [existing] = await tx
+          .select({
+            id: motosTable.id,
+            status: motosTable.status,
+            lapCount: motosTable.lapCount,
+            timeLimitMs: motosTable.timeLimitMs,
+            plusLaps: motosTable.plusLaps,
+          })
+          .from(motosTable)
+          .where(and(eq(motosTable.eventId, eventId), eq(motosTable.motoNumber, motoNumber)));
+      }
+
+      let resultingLapCount = requestedLapCount === undefined ? existing?.lapCount ?? null : requestedLapCount;
+      let resultingTimeLimitMs = requestedTimeLimitMs === undefined ? existing?.timeLimitMs ?? null : requestedTimeLimitMs;
+      if (requestedLapCount != null) resultingTimeLimitMs = null;
+      if (requestedTimeLimitMs != null) resultingLapCount = null;
+      const resultingPlusLaps = resultingTimeLimitMs !== null
+        ? (requestedPlusLaps === undefined
+            ? (requestedTimeLimitMs != null ? 1 : existing?.plusLaps ?? 1)
+            : requestedPlusLaps ?? 1)
+        : null;
+      if (resultingPlusLaps !== null && (!Number.isInteger(resultingPlusLaps) || resultingPlusLaps < 0)) {
+        req.log.warn(
+          { clubId, motoId: clientId, error: "plusLaps must be a nonnegative integer for a timed race" },
+          "desktop-push skipped invalid moto",
+        );
+        continue;
+      }
+      if (requestedPlusLaps != null && resultingTimeLimitMs === null) {
+        req.log.warn(
+          { clubId, motoId: clientId, error: "plusLaps is only valid when timeLimitMs is set" },
+          "desktop-push skipped invalid moto",
+        );
+        continue;
+      }
+
+      if (existing) {
+        if (existing.status !== "in_progress" && incomingStatus === "in_progress") {
+          startedMotoIds.add(existing.id);
+        }
+        let lineup: number[] | undefined;
+        if (m.lineup !== undefined) {
+          try { lineup = JSON.parse(String(m.lineup)) as number[]; } catch { lineup = []; }
+        }
+        const updateSet: Record<string, unknown> = {};
+        if (m.status              !== undefined) updateSet.status       = String(m.status);
+        if (rawStartedAt          !== undefined) updateSet.startedAt    = rawStartedAt === null ? null : toDate(rawStartedAt);
+        if (rawCompletedAt        !== undefined) updateSet.completedAt  = rawCompletedAt === null ? null : toDate(rawCompletedAt);
+        if (rawMotoNumber         != null)  updateSet.motoNumber        = motoNumber;
+        if (m.name                != null)  updateSet.name              = String(m.name);
+        if (rawLapCount !== undefined || rawTimeLimitMs !== undefined || rawPlusLaps !== undefined) {
+          updateSet.lapCount = resultingLapCount;
+          updateSet.timeLimitMs = resultingTimeLimitMs;
+          updateSet.plusLaps = resultingPlusLaps;
+        }
+        if (rawTimeExpiredAt      !== undefined) updateSet.timeExpiredAt = timeExpiredAt;
+        if (rawScheduledTime      !== undefined) updateSet.scheduledTime = rawScheduledTime === null ? null : String(rawScheduledTime);
+        if (lineup !== undefined)           updateSet.lineup            = lineup;
+        if (rawStaggeredGroupId   != null)  updateSet.staggeredGroupId  = Number(rawStaggeredGroupId);
+        else if (rawStaggeredGroupId === null) updateSet.staggeredGroupId = null;
+        if (rawStaggeredOrder     != null)  updateSet.staggeredOrder    = Number(rawStaggeredOrder);
+        else if (rawStaggeredOrder === null)    updateSet.staggeredOrder = null;
+        if (Object.keys(updateSet).length > 0) {
+          await tx
+            .update(motosTable)
+            .set(updateSet as any)
+            .where(eq(motosTable.id, existing.id));
+        }
+        affectedMotoIds.add(existing.id);
+        if (collidedLocalId) {
+          motoIdMap.set(collidedLocalId, existing.id);
+          motoIdRemaps.push({ localId: collidedLocalId, cloudId: existing.id });
+        }
+      } else {
+        let lineup: number[] = [];
+        try { lineup = JSON.parse(String(m.lineup ?? "[]")) as number[]; } catch { /* ignore */ }
+
+        const [inserted] = await tx.insert(motosTable).values({
+          ...(clientId ? { id: clientId } : {}),
+          eventId,
+          name:             m.name != null ? String(m.name) : "",
+          type:             m.type != null ? String(m.type) : "moto",
+          raceClass:        firstDefined(rawMoto, "race_class", "raceClass") != null ? String(firstDefined(rawMoto, "race_class", "raceClass")) : "",
+          motoNumber,
+          scheduledTime:    rawScheduledTime != null ? String(rawScheduledTime) : null,
+          lineup,
+          lapCount:         resultingLapCount,
+          timeLimitMs:      resultingTimeLimitMs,
+          plusLaps:         resultingPlusLaps,
+          timeExpiredAt:    timeExpiredAt === undefined ? null : timeExpiredAt,
+          status:           String(m.status ?? "scheduled"),
+          startedAt:        rawStartedAt == null ? null : toDate(rawStartedAt),
+          completedAt:      rawCompletedAt == null ? null : toDate(rawCompletedAt),
+          staggeredGroupId: rawStaggeredGroupId != null ? Number(rawStaggeredGroupId) : null,
+          staggeredOrder:   rawStaggeredOrder    != null ? Number(rawStaggeredOrder)    : null,
+        }).returning({ id: motosTable.id });
+        if (clientId) explicitIdTables.add("motos");
+        if (inserted) {
+          affectedMotoIds.add(inserted.id);
+          if (incomingStatus === "in_progress") startedMotoIds.add(inserted.id);
+          if (collidedLocalId) {
+            motoIdMap.set(collidedLocalId, inserted.id);
+            motoIdRemaps.push({ localId: collidedLocalId, cloudId: inserted.id });
+            req.log.info({ clubId, localId: collidedLocalId, cloudId: inserted.id }, "moto id collision — remapped");
+          }
+        }
+      }
+      motosUpserted++;
+    }
+    results["motos"] = motosUpserted;
+    total += motosUpserted;
+
+    // ── lap_crossings ─────────────────────────────────────────────────────────
+    const crossings = (payload["lap_crossings"] ?? []) as Array<{
+      id?: unknown;
+      event_id: unknown;
+      moto_id: unknown;
+      rfid_number: unknown;
+      crossing_time: unknown;
+      created_at?: unknown;
+      lap_number: unknown;
+      lap_time_ms: unknown;
+      rider_id?: unknown;
+      reader_id?: unknown;
+      antenna_id?: unknown;
+    }>;
+
+    let crossingsUpserted = 0;
+    const previousImportedCrossing = new Map<string, Date>();
+    const repairedImportedLaps = new Map<string, number[]>();
+    const skewedImportedRiders = new Set<string>();
+    const orderedCrossings = [...crossings].sort((a, b) =>
+      Number(a.moto_id) - Number(b.moto_id)
+      || String(a.rfid_number ?? "").localeCompare(String(b.rfid_number ?? ""))
+      || Number(a.lap_number) - Number(b.lap_number)
+      || Number(a.id ?? 0) - Number(b.id ?? 0));
+    for (const c of orderedCrossings) {
+      const eventId = mapEventId(c.event_id);
+      const motoId  = mapMotoId(c.moto_id);
+      if (!eventId || !motoId) { skip("lap_crossings", c, "missing event_id or moto_id"); continue; }
+
+      if (!await isClubEvent(eventId)) { skip("lap_crossings", c, "event not found for this club"); continue; }
+      if (!await motoInEvent(motoId, eventId)) { skip("lap_crossings", c, "moto not found in this event"); continue; }
+
+      const rfidNumber = String(c.rfid_number ?? "");
+      const lapNumber  = Number(c.lap_number);
+      if (!rfidNumber || !lapNumber) { skip("lap_crossings", c, "missing rfid_number or lap_number"); continue; }
+
+      const [existing] = await tx
+        .select({ id: lapCrossingsTable.id })
+        .from(lapCrossingsTable)
+        .where(
+          and(
+            eq(lapCrossingsTable.motoId, motoId),
+            eq(lapCrossingsTable.rfidNumber, rfidNumber),
+            eq(lapCrossingsTable.lapNumber, lapNumber),
+          ),
+        );
+
+      const cloudReceivedAt = new Date();
+      const localReceivedAt = toDate(c.created_at);
+      const sourceReceivedAt = localReceivedAt
+        && localReceivedAt.getTime() <= cloudReceivedAt.getTime() + 5 * 60 * 1000
+        ? localReceivedAt
+        : cloudReceivedAt;
+      const suppliedCrossingTime = toDate(c.crossing_time);
+      const hadFutureClockSkew = !suppliedCrossingTime
+        || suppliedCrossingTime.getTime() > sourceReceivedAt.getTime() + 5 * 60 * 1000;
+      const crossingTime = canonicalizeCrossingTimestamp(c.crossing_time, sourceReceivedAt, {
+        source: "desktop_sync",
+        motoId,
+        rfidNumber,
+      });
+      const crossingKey = `${motoId}:${rfidNumber}`;
+      let importedLapTimeMs = Number(c.lap_time_ms);
+      if (hadFutureClockSkew) {
+        let previousTime = previousImportedCrossing.get(crossingKey);
+        if (!previousTime && lapNumber === 1) {
+          const [moto] = await tx
+            .select({ startedAt: motosTable.startedAt })
+            .from(motosTable)
+            .where(eq(motosTable.id, motoId));
+          previousTime = moto?.startedAt ?? undefined;
+        }
+        if (previousTime) {
+          const delta = crossingTime.getTime() - previousTime.getTime();
+          if (Number.isFinite(delta) && delta >= 0) importedLapTimeMs = delta;
+        }
+      }
+      previousImportedCrossing.set(crossingKey, crossingTime);
+      if (c.rider_id != null) {
+        const riderKey = `${motoId}:${Number(c.rider_id)}`;
+        const riderLaps = repairedImportedLaps.get(riderKey) ?? [];
+        riderLaps.push(importedLapTimeMs);
+        repairedImportedLaps.set(riderKey, riderLaps);
+        if (hadFutureClockSkew) skewedImportedRiders.add(riderKey);
+      }
+
+      if (existing) {
+        await tx
+          .update(lapCrossingsTable)
+          .set({
+            lapTimeMs:   importedLapTimeMs,
+            crossingTime,
+            // Always carry riderId forward so a re-sync of a manual crossing
+            // does not lose the rider association (rider name would show as the
+            // raw rfidNumber on the crossings feed if riderId is dropped).
+            ...(c.rider_id != null ? { riderId: Number(c.rider_id) } : {}),
+          })
+          .where(eq(lapCrossingsTable.id, existing.id));
+      } else {
+        const requestedId = c.id != null && Number(c.id) > 0 ? Number(c.id) : undefined;
+        const clientId = requestedId && await idIsFree(lapCrossingsTable, requestedId) ? requestedId : undefined;
+        if (clientId) explicitIdTables.add("lap_crossings");
+        await tx.insert(lapCrossingsTable).values({
+          ...(clientId ? { id: clientId } : {}),
+          eventId,
+          motoId,
+          riderId:      c.rider_id != null   ? Number(c.rider_id)   : null,
+          rfidNumber,
+          crossingTime,
+          lapNumber,
+          lapTimeMs:    importedLapTimeMs,
+          readerId:     c.reader_id  != null ? String(c.reader_id)  : null,
+          antennaId:    c.antenna_id != null ? Number(c.antenna_id) : null,
+        });
+      }
+      crossingsUpserted++;
+      affectedMotoIds.add(motoId);
+    }
+    results["lap_crossings"] = crossingsUpserted;
+    total += crossingsUpserted;
+
+    // ── race_results ──────────────────────────────────────────────────────────
+    const raceResults = (payload["race_results"] ?? []) as Array<{
+      id?: unknown;
+      event_id?: unknown;
+      moto_id: unknown;
+      rider_id: unknown;
+      race_class?: unknown;
+      position?: unknown;
+      bib_number?: unknown;
+      lap_times?: unknown;
+      total_time?: unknown;
+      dnf?: unknown;
+      dns?: unknown;
+    }>;
+
+    let resultsUpserted = 0;
+    for (const r of raceResults) {
+      const eventId = mapEventId(r.event_id);
+      const motoId  = mapMotoId(r.moto_id);
+      const riderId = Number(r.rider_id);
+      if (!eventId || !motoId || !riderId) { skip("race_results", r, "missing event_id, moto_id or rider_id"); continue; }
+
+      if (!await isClubEvent(eventId)) { skip("race_results", r, "event not found for this club"); continue; }
+      if (!await motoInEvent(motoId, eventId)) { skip("race_results", r, "moto not found in this event"); continue; }
+
+      const [existing] = await tx
+        .select({ id: raceResultsTable.id })
+        .from(raceResultsTable)
+        .where(
+          and(
+            eq(raceResultsTable.motoId,  motoId),
+            eq(raceResultsTable.riderId, riderId),
+          ),
+        );
+
+      let lapTimes: number[] = [];
+      try {
+        lapTimes = JSON.parse(String(r.lap_times ?? "[]")) as number[];
+      } catch { /* ignore */ }
+      const repairedKey = `${motoId}:${riderId}`;
+      if (skewedImportedRiders.has(repairedKey)) {
+        const repaired = repairedImportedLaps.get(repairedKey) ?? [];
+        if (repaired.length && repaired.every(value => Number.isFinite(value) && value >= 0)) {
+          lapTimes = repaired;
+          r.total_time = formatLapTime(repaired.reduce((sum, value) => sum + value, 0));
+        }
+      }
+
+      if (existing) {
+        await tx
+          .update(raceResultsTable)
+          .set({
+            position:  r.position != null ? Number(r.position) : 999,
+            lapTimes,
+            totalTime: r.total_time != null ? String(r.total_time) : null,
+            dnf:       Boolean(r.dnf),
+            dns:       Boolean(r.dns),
+          })
+          .where(eq(raceResultsTable.id, existing.id));
+      } else {
+        const requestedId = r.id != null && Number(r.id) > 0 ? Number(r.id) : undefined;
+        const clientId = requestedId && await idIsFree(raceResultsTable, requestedId) ? requestedId : undefined;
+        if (clientId) explicitIdTables.add("race_results");
+        await tx.insert(raceResultsTable).values({
+          ...(clientId ? { id: clientId } : {}),
+          eventId,
+          motoId,
+          riderId,
+          raceClass: r.race_class != null ? String(r.race_class) : "",
+          position:  r.position  != null ? Number(r.position) : 999,
+          bibNumber: r.bib_number != null ? String(r.bib_number) : null,
+          lapTimes,
+          totalTime: r.total_time != null ? String(r.total_time) : null,
+          dnf:       Boolean(r.dnf),
+          dns:       Boolean(r.dns),
+        });
+      }
+      resultsUpserted++;
+      affectedMotoIds.add(motoId);
+    }
+    results["race_results"] = resultsUpserted;
+    total += resultsUpserted;
+
+    // ── checkins ──────────────────────────────────────────────────────────────
+    const checkins = (payload["checkins"] ?? []) as Array<{
+      id?: unknown;
+      event_id: unknown;
+      rider_id: unknown;
+      race_class?: unknown;
+      bib_number?: unknown;
+      checked_in?: unknown;
+      checked_in_at?: unknown;
+      rfid_number?: unknown;
+      rfid_linked?: unknown;
+    }>;
+
+    let checkinsUpserted = 0;
+    for (const c of checkins) {
+      const eventId = mapEventId(c.event_id);
+      const riderId = Number(c.rider_id);
+      if (!eventId || !riderId) { skip("checkins", c, "missing event_id or rider_id"); continue; }
+
+      if (!await isClubEvent(eventId)) { skip("checkins", c, "event not found for this club"); continue; }
+
+      const [existing] = await tx
+        .select({ id: checkinsTable.id })
+        .from(checkinsTable)
+        .where(
+          and(
+            eq(checkinsTable.eventId, eventId),
+            eq(checkinsTable.riderId, riderId),
+          ),
+        );
+
+      const checkedIn   = Boolean(c.checked_in);
+      const rfidLinked  = Boolean(c.rfid_linked);
+      const checkedInAt = toDate(c.checked_in_at);
+
+      if (existing) {
+        await tx
+          .update(checkinsTable)
+          .set({
+            checkedIn, checkedInAt,
+            rfidNumber: c.rfid_number != null ? String(c.rfid_number) : null,
+            rfidLinked,
+            bibNumber:  c.bib_number != null ? String(c.bib_number) : null,
+          })
+          .where(eq(checkinsTable.id, existing.id));
+      } else {
+        const requestedId = c.id != null && Number(c.id) > 0 ? Number(c.id) : undefined;
+        const clientId = requestedId && await idIsFree(checkinsTable, requestedId) ? requestedId : undefined;
+        if (clientId) explicitIdTables.add("checkins");
+        await tx.insert(checkinsTable).values({
+          ...(clientId ? { id: clientId } : {}),
+          eventId,
+          riderId,
+          raceClass:  c.race_class != null ? String(c.race_class) : "",
+          bibNumber:  c.bib_number != null ? String(c.bib_number) : null,
+          checkedIn,
+          checkedInAt,
+          rfidNumber: c.rfid_number != null ? String(c.rfid_number) : null,
+          rfidLinked,
+        });
+      }
+      checkinsUpserted++;
+    }
+    results["checkins"] = checkinsUpserted;
+    total += checkinsUpserted;
+
+    // ── riders (gate-created riders / profile edits) ─────────────────────────
+    // Process BEFORE registrations so FK constraint is satisfied when a new
+    // rider and their registration arrive together in the same push batch.
+    const riders = (payload["riders"] ?? []) as Array<{
+      id?: unknown;
+      first_name?: unknown;
+      last_name?: unknown;
+      rfid_number?: unknown;
+    }>;
+
+    // Authorization set 1: rider IDs already linked to this club in cloud DB.
+    const cloudRiderRows = await tx
+      .selectDistinct({ riderId: registrationsTable.riderId })
+      .from(registrationsTable)
+      .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+      .where(eq(eventsTable.clubId, clubId));
+    const cloudRiderIdSet = new Set(cloudRiderRows.map((r) => r.riderId));
+
+    // Authorization set 2: rider IDs in THIS BATCH paired with a club event.
+    // This allows walk-up riders created offline to sync before their
+    // registrations are inserted (prevents FK violation and "new rider blocked"
+    // scenario where the rider has no cloud registration yet).
+    const incomingRegs = (payload["registrations"] ?? []) as Array<{
+      event_id: unknown;
+      rider_id: unknown;
+    }>;
+    const batchRiderIdSet = new Set<number>();
+    for (const reg of incomingRegs) {
+      const eid = mapEventId(reg.event_id);
+      const rid = Number(reg.rider_id);
+      if (!eid || !rid) continue;
+      if (await isClubEvent(eid)) batchRiderIdSet.add(rid);
+    }
+
+    let ridersUpserted = 0;
+    for (const r of riders) {
+      const riderId = Number(r.id);
+      if (!riderId) { skip("riders", r, "missing id"); continue; }
+
+      // Allow if already on cloud roster OR arriving with a valid club registration
+      if (!cloudRiderIdSet.has(riderId) && !batchRiderIdSet.has(riderId)) { skip("riders", r, "rider not linked to this club"); continue; }
+
+      const [existing] = await tx
+        .select({ id: ridersTable.id })
+        .from(ridersTable)
+        .where(eq(ridersTable.id, riderId));
+
+      if (existing) {
+        // Safety: only update a rider whose ID is already on THIS club's cloud roster.
+        // If the rider ID exists in cloud but belongs to a different club (ID collision
+        // from offline auto-increment), skip the update to prevent cross-club corruption.
+        if (!cloudRiderIdSet.has(riderId)) { skip("riders", r, "rider id belongs to another club"); continue; }
+
+        await tx
+          .update(ridersTable)
+          .set({
+            firstName:  r.first_name  != null ? String(r.first_name)  : undefined,
+            lastName:   r.last_name   != null ? String(r.last_name)   : undefined,
+            rfidNumber: r.rfid_number != null ? String(r.rfid_number) : undefined,
+          })
+          .where(eq(ridersTable.id, riderId));
+      } else {
+        // New rider — insert with the client-provided ID.
+        // ON CONFLICT DO NOTHING guards against the rare race condition where
+        // another transaction inserts the same rider ID concurrently.
+        await tx.insert(ridersTable).values({
+          id:         riderId,
+          firstName:  r.first_name  != null ? String(r.first_name)  : "",
+          lastName:   r.last_name   != null ? String(r.last_name)   : "",
+          rfidNumber: r.rfid_number != null ? String(r.rfid_number) : null,
+        }).onConflictDoNothing();
+        explicitIdTables.add("riders");
+      }
+      ridersUpserted++;
+    }
+    results["riders"] = ridersUpserted;
+    total += ridersUpserted;
+
+    // ── registrations (walk-up / on-site edits) ───────────────────────────────
+    // Processed AFTER riders so FK is satisfied for new walk-up registrations.
+    const regs = incomingRegs as Array<{
+      id?: unknown;
+      event_id: unknown;
+      rider_id: unknown;
+      race_class?: unknown;
+      status?: unknown;
+      payment_status?: unknown;
+      bib_number?: unknown;
+      bike_brand?: unknown;
+      amount_paid?: unknown;
+      payment_method?: unknown;
+    }>;
+
+    let regsUpserted = 0;
+    for (const r of regs) {
+      const eventId = mapEventId(r.event_id);
+      const riderId = Number(r.rider_id);
+      if (!eventId || !riderId) { skip("registrations", r, "missing event_id or rider_id"); continue; }
+
+      if (!await isClubEvent(eventId)) { skip("registrations", r, "event not found for this club"); continue; }
+
+      const [existing] = await tx
+        .select({ id: registrationsTable.id })
+        .from(registrationsTable)
+        .where(
+          and(
+            eq(registrationsTable.eventId, eventId),
+            eq(registrationsTable.riderId, riderId),
+          ),
+        );
+
+      if (existing) {
+        await tx
+          .update(registrationsTable)
+          .set({
+            status:        r.status        != null ? String(r.status)         : undefined,
+            paymentStatus: r.payment_status != null ? String(r.payment_status) : undefined,
+            bibNumber:     r.bib_number    != null ? String(r.bib_number)     : undefined,
+            bikeBrand:     r.bike_brand    != null ? String(r.bike_brand)     : undefined,
+            amountPaid:    r.amount_paid   != null ? String(r.amount_paid)    : undefined,
+            paymentMethod: r.payment_method != null ? String(r.payment_method) : undefined,
+          })
+          .where(eq(registrationsTable.id, existing.id));
+      } else {
+        const requestedId = r.id != null && Number(r.id) > 0 ? Number(r.id) : undefined;
+        const clientId = requestedId && await idIsFree(registrationsTable, requestedId) ? requestedId : undefined;
+        if (clientId) explicitIdTables.add("registrations");
+        await tx.insert(registrationsTable).values({
+          ...(clientId ? { id: clientId } : {}),
+          eventId,
+          riderId,
+          raceClass:     r.race_class     != null ? String(r.race_class)     : "",
+          status:        (r.status        != null ? String(r.status)         : "confirmed") as "pending" | "confirmed" | "cancelled",
+          paymentStatus: (r.payment_status != null ? String(r.payment_status) : "unpaid")   as "unpaid"  | "paid"      | "refunded",
+          bibNumber:     r.bib_number     != null ? String(r.bib_number)     : null,
+          bikeBrand:     r.bike_brand     != null ? String(r.bike_brand)     : null,
+          amountPaid:    r.amount_paid    != null ? String(r.amount_paid)    : null,
+          paymentMethod: r.payment_method != null ? String(r.payment_method) : null,
+        });
+      }
+      regsUpserted++;
+    }
+    results["registrations"] = regsUpserted;
+    total += regsUpserted;
+
+    // ── rfid_assignments (transponder assignment at event) ────────────────────
+    const rfidAssigns = (payload["rfid_assignments"] ?? []) as Array<{
+      id?: unknown;
+      rider_id: unknown;
+      event_id: unknown;
+      rfid_number?: unknown;
+    }>;
+
+    let rfidUpserted = 0;
+    for (const a of rfidAssigns) {
+      const riderId    = Number(a.rider_id);
+      const eventId    = mapEventId(a.event_id);
+      const rfidNumber = String(a.rfid_number ?? "");
+      if (!riderId || !eventId || !rfidNumber) { skip("rfid_assignments", a, "missing rider_id, event_id or rfid_number"); continue; }
+
+      if (!await isClubEvent(eventId)) { skip("rfid_assignments", a, "event not found for this club"); continue; }
+
+      const [existing] = await tx
+        .select({ id: rfidAssignmentsTable.id })
+        .from(rfidAssignmentsTable)
+        .where(
+          and(
+            eq(rfidAssignmentsTable.riderId,  riderId),
+            eq(rfidAssignmentsTable.eventId,  eventId),
+          ),
+        );
+
+      if (existing) {
+        await tx
+          .update(rfidAssignmentsTable)
+          .set({ rfidNumber })
+          .where(eq(rfidAssignmentsTable.id, existing.id));
+      } else {
+        const requestedId = a.id != null && Number(a.id) > 0 ? Number(a.id) : undefined;
+        const clientId = requestedId && await idIsFree(rfidAssignmentsTable, requestedId) ? requestedId : undefined;
+        if (clientId) explicitIdTables.add("rfid_assignments");
+        await tx.insert(rfidAssignmentsTable).values({
+          ...(clientId ? { id: clientId } : {}),
+          riderId,
+          eventId,
+          rfidNumber,
+        });
+      }
+      rfidUpserted++;
+    }
+    results["rfid_assignments"] = rfidUpserted;
+    total += rfidUpserted;
+
     // ── practice_sessions (create / start / stop on desktop) ─────────────────
     const practiceSessions = (payload["practice_sessions"] ?? []) as Array<Record<string, unknown>>;
 
     let practiceSessionsUpserted = 0;
     for (const s of practiceSessions) {
       const sessionId = Number(s.id);
-      if (!sessionId) continue;
+      if (!sessionId) { skip("practice_sessions", s, "missing id"); continue; }
 
       const [existing] = await tx
         .select({ id: practiceSessionsTable.id, clubId: practiceSessionsTable.clubId })
@@ -992,7 +1051,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         .where(eq(practiceSessionsTable.id, sessionId));
 
       if (existing) {
-        if (existing.clubId !== clubId) continue;
+        if (existing.clubId !== clubId) { skip("practice_sessions", s, "session id belongs to another club"); continue; }
         const updateSet: Record<string, unknown> = {};
         if (s.status      != null) updateSet.status     = String(s.status);
         if (s.name        != null) updateSet.name        = String(s.name);
@@ -1020,6 +1079,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           .insert(practiceSessionsTable)
           .values(insertRow as any)
           .onConflictDoNothing();
+        explicitIdTables.add("practice_sessions");
       }
       practiceSessionsUpserted++;
     }
@@ -1034,26 +1094,31 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       const crossingId = Number(c.id);
       const sessionId  = Number(c.session_id);
       const rfidNumber = String(c.rfid_number ?? "");
-      if (!sessionId || !rfidNumber) continue;
+      if (!sessionId || !rfidNumber) { skip("practice_crossings", c, "missing session_id or rfid_number"); continue; }
 
       // Scope check: session must belong to this club
       const [session] = await tx
         .select({ clubId: practiceSessionsTable.clubId })
         .from(practiceSessionsTable)
         .where(eq(practiceSessionsTable.id, sessionId));
-      if (!session || session.clubId !== clubId) continue;
+      if (!session || session.clubId !== clubId) { skip("practice_crossings", c, "session not found for this club"); continue; }
 
-      // Crossings are immutable — skip if already on cloud
+      // Crossings are immutable — skip if already on cloud. Only a row in this same
+      // session counts; an id held by another club's crossing is an offline id
+      // collision, so the crossing is inserted with a fresh id instead.
+      let keepId = !!crossingId;
       if (crossingId) {
         const [existingCrossing] = await tx
-          .select({ id: practiceCrossingsTable.id })
+          .select({ id: practiceCrossingsTable.id, sessionId: practiceCrossingsTable.sessionId })
           .from(practiceCrossingsTable)
           .where(eq(practiceCrossingsTable.id, crossingId));
-        if (existingCrossing) { practiceCrossingsUpserted++; continue; }
+        if (existingCrossing && existingCrossing.sessionId === sessionId) { practiceCrossingsUpserted++; continue; }
+        if (existingCrossing) keepId = false;
       }
+      if (keepId) explicitIdTables.add("practice_crossings");
 
       const insertRow: Record<string, unknown> = {
-        ...(crossingId ? { id: crossingId } : {}),
+        ...(keepId ? { id: crossingId } : {}),
         sessionId,
         rfidNumber,
         riderId:     c.rider_id    != null ? Number(c.rider_id)    : null,
@@ -1071,6 +1136,14 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     }
     results["practice_crossings"] = practiceCrossingsUpserted;
     total += practiceCrossingsUpserted;
+
+    // Explicit-id inserts don't advance serial sequences; move each one past the
+    // highest id so the next cloud-side insert doesn't collide.
+    for (const table of explicitIdTables) {
+      await tx.execute(sql.raw(
+        `SELECT setval(pg_get_serial_sequence('${table}', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM ${table}), 1))`,
+      ));
+    }
   });
 
   // Recalculate positions from actual performance data and broadcast leaderboards.
@@ -1117,8 +1190,13 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     });
   }
 
-  req.log.info({ clubId, results, total, eventIdRemaps }, "desktop-push complete");
-  return res.json({ ok: true, results, total, idRemaps: { events: eventIdRemaps } });
+  const skippedCount = Object.values(skipped).reduce((n, rows) => n + rows.length, 0);
+  if (skippedCount > 0) req.log.warn({ clubId, skipped }, "desktop-push skipped rows");
+  req.log.info({ clubId, results, total, eventIdRemaps, motoIdRemaps, skippedCount }, "desktop-push complete");
+  // Backward compatible: older desktops read only idRemaps.events. `skipped` lists rows
+  // (by desktop id, per table) that were not applied; `idRemaps.motos` lists moto ids
+  // that collided with another club's moto and were given a new cloud id.
+  return res.json({ ok: true, results, total, idRemaps: { events: eventIdRemaps, motos: motoIdRemaps }, skipped });
 });
 
 // ─── POST /clubs/:clubId/sync-pull ────────────────────────────────────────────
@@ -1152,6 +1230,10 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     clubId:       usersTable.clubId,
     createdAt:    usersTable.createdAt,
   }).from(usersTable).where(eq(usersTable.clubId, clubId));
+  // Staff sync tokens only get their own password hash, never the organizer's or other staff's.
+  if (!canReceivePasswordHashes(user)) {
+    for (const u of clubUsers) if (u.id !== user.id) u.passwordHash = null;
+  }
 
   // Fetch all events for this club — used to scope every subsequent query
   const clubEvents = await db

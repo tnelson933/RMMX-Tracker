@@ -78,6 +78,13 @@ const STAFF_RULES: RouteRule[] = [
 
   // ── Reader setup / RFID ───────────────────────────────────────────────────
   { pattern: /^\/rfid(\/|$)/, permissions: ["reader_setup"] },
+  { pattern: /^\/readers(\/|$)/, permissions: ["reader_setup"] },
+
+  // ── Event reports ─────────────────────────────────────────────────────────
+  { pattern: /^\/reports(\/|$)/, permissions: ["events"] },
+
+  // ── Track library: read for event/practice setup ──────────────────────────
+  { pattern: /^\/tracks(\/|$)/, permissions: ["events", "practice"], methods: ["GET", "HEAD"] },
 
   // ── Offline mode ──────────────────────────────────────────────────────────
   { pattern: /^\/offline(\/|$)/, permissions: ["offline_mode"] },
@@ -90,7 +97,7 @@ const STAFF_RULES: RouteRule[] = [
   { pattern: /^\/ai(\/|$)/, permissions: ["points_tables"] },
 
   // ── Payments / Stripe Connect ─────────────────────────────────────────────
-  { pattern: /^\/stripe-connect(\/|$)/, permissions: ["payments"] },
+  { pattern: /^\/stripe\/connect(\/|$)/, permissions: ["payments"] },
 
   // ── Discount codes and discount categories ────────────────────────────────
   // Matches /discount-codes and /discount-categories (note: pattern uses hyphen, not slash).

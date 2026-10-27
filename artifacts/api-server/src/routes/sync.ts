@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
+import { resolveSyncUser } from "../lib/offlineSyncAccess";
 import {
   usersTable,
   eventsTable,
@@ -87,25 +88,12 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
   }
 
   // Accept either a session cookie (browser) or a Bearer sync token (local server).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // Staff need the offline_mode permission (checked on every use, not only at issue).
   const sessionUserId = (req.session as any).userId as number | undefined;
-  let user: { id: number; clubId: number | null } | undefined;
-
-  if (sessionUserId) {
-    [user] = await db
-      .select({ id: usersTable.id, clubId: usersTable.clubId })
-      .from(usersTable)
-      .where(eq(usersTable.id, sessionUserId));
-  } else {
-    const authHeader = (req.headers.authorization ?? "") as string;
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
-    if (!token) return res.status(401).json({ error: "Not authenticated" });
-    [user] = await db
-      .select({ id: usersTable.id, clubId: usersTable.clubId })
-      .from(usersTable)
-      .where(eq(usersTable.offlineSyncToken, token));
-    if (!user) return res.status(401).json({ error: "Invalid sync token" });
-  }
+  const authHeader = (req.headers.authorization ?? "") as string;
+  if (!sessionUserId && !authHeader.startsWith("Bearer ")) return res.status(401).json({ error: "Not authenticated" });
+  const user = await resolveSyncUser(req);
+  if (!user && !sessionUserId) return res.status(401).json({ error: "Invalid sync token" });
 
   if (!user || user.clubId !== clubId) {
     return res.status(403).json({ error: "Access denied" });

@@ -106,19 +106,24 @@ export class ObjectStorageService {
     return new Response(webStream, { headers });
   }
 
+  /**
+   * Saves an upload under uploads/<filename>. Pass the same filename used for the
+   * local disk copy so GET /storage/uploads/:filename can fall back to this object
+   * after a redeploy wipes the disk.
+   */
   async uploadObjectEntityFromBuffer(
     buffer: Buffer,
     contentType: string,
-    ext: string
+    ext: string,
+    filename: string = `${randomUUID()}${ext}`,
   ): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
-    const objectId = randomUUID();
-    const fullPath = `${privateObjectDir}/uploads/${objectId}${ext}`;
+    const fullPath = `${privateObjectDir}/uploads/${filename}`;
     const { bucketName, objectName } = parseObjectPath(fullPath);
     const bucket = objectStorageClient.bucket(bucketName);
     const file = bucket.file(objectName);
     await file.save(buffer, { contentType, resumable: false });
-    return `/objects/uploads/${objectId}${ext}`;
+    return `/objects/uploads/${filename}`;
   }
 
   async getObjectEntityUploadURL(): Promise<string> {

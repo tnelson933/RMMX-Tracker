@@ -13,13 +13,9 @@ function capLapTimes(lapTimes: unknown, lapCount: number | null | undefined): un
   return arr;
 }
 
+/** The club this caller is limited to (staff and club organizers alike), or null for super admins. */
 function getStaffClubId(res: any): number | null {
   const v = res.locals?.staffClubId;
-  return typeof v === "number" ? v : null;
-}
-
-function getOrganizerClubId(res: any): number | null {
-  const v = res.locals?.organizerClubId;
   return typeof v === "number" ? v : null;
 }
 
@@ -68,10 +64,9 @@ function searchCond(s: string) {
 router.get("/riders", async (req, res) => {
   const { search } = req.query;
   const staffCId = getStaffClubId(res);
-  const orgCId = getOrganizerClubId(res);
 
-  // Determine the effective club scope (staff OR club_organizer — whichever applies)
-  const scopedClubId = staffCId ?? orgCId;
+  // Effective club scope: staff and club organizers both get res.locals.staffClubId
+  const scopedClubId = staffCId;
 
   let riders;
   if (scopedClubId !== null) {
@@ -110,7 +105,7 @@ router.post("/riders", async (req, res) => {
   }
 
   // Tag the rider with the organizer's club so they remain visible in that club's rider list
-  const orgCId = getOrganizerClubId(res);
+  const orgCId = getStaffClubId(res); // set for club organizers and staff
 
   const [rider] = await db.insert(ridersTable).values({
     firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact,
@@ -128,8 +123,7 @@ router.get("/riders/:riderId", async (req, res) => {
   const rider = riders[0];
 
   const staffCId = getStaffClubId(res);
-  const orgCId = getOrganizerClubId(res);
-  const scopedClubId = staffCId ?? orgCId;
+  const scopedClubId = staffCId;
 
   if (scopedClubId !== null) {
     const riderIds = await getClubRiderIds(scopedClubId);
@@ -181,8 +175,7 @@ router.patch("/riders/:riderId", async (req, res) => {
   const id = Number(req.params.riderId);
 
   const staffCId = getStaffClubId(res);
-  const orgCId = getOrganizerClubId(res);
-  const scopedClubId = staffCId ?? orgCId;
+  const scopedClubId = staffCId;
 
   if (scopedClubId !== null) {
     const riderIds = await getClubRiderIds(scopedClubId);

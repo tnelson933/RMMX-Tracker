@@ -38,9 +38,10 @@ import {
   rfidAssignmentsTable,
   enduroCheckpointArrivalsTable,
   compCodesTable,
+  riderProfileManagersTable,
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull } from "drizzle-orm";
-import { canManageRider, managedRiderWhere } from "../lib/riderAccess";
+import { canManageRider, managedRiderWhere, ownsRider } from "../lib/riderAccess";
 
 const router = Router();
 
@@ -211,11 +212,12 @@ async function loadClubTimingIdentityResolver(
 }
 
 export function requireRiderAuth(req: any, res: any, next: any) {
-  // Session auth (web portal)
-  if ((req.session as any).riderAccountId) return next();
-
-  // Bearer token auth (mobile app)
+  // Bearer token auth (mobile app) is checked first whenever a token is presented,
+  // so a revoked token (logout, password change) stops working even if the app's
+  // cookie jar still carries a session from an earlier request.
   const auth = req.headers.authorization as string | undefined;
+  if (!auth?.startsWith("Bearer ") && (req.session as any).riderAccountId) return next();
+
   if (auth?.startsWith("Bearer ")) {
     const token = auth.slice(7);
     db.select()
@@ -231,6 +233,20 @@ export function requireRiderAuth(req: any, res: any, next: any) {
   }
 
   return res.status(401).json({ error: "Not authenticated" });
+}
+
+/** The mobile Bearer token presented on this request, if any. */
+function presentedMobileToken(req: any): string | null {
+  const auth = req.headers.authorization as string | undefined;
+  return auth?.startsWith("Bearer ") ? auth.slice(7).trim() || null : null;
+}
+
+/** Revoke an account's mobile tokens (after a password change/reset), optionally keeping one. */
+async function revokeMobileTokens(riderAccountId: number, keepToken: string | null) {
+  await db.delete(riderMobileTokensTable).where(and(
+    eq(riderMobileTokensTable.riderAccountId, riderAccountId),
+    keepToken ? ne(riderMobileTokensTable.token, keepToken) : undefined,
+  ));
 }
 
 // POST /rider/auth/register
@@ -364,6 +380,8 @@ router.post("/rider/auth/reset-password", async (req, res) => {
   const hash = await bcrypt.hash(String(password), 12);
   await db.update(riderAccountsTable).set({ passwordHash: hash }).where(eq(riderAccountsTable.id, record.riderAccountId));
   riderResetTokens.delete(String(token));
+  // Signed-in phones may belong to whoever caused the reset: sign them all out.
+  await revokeMobileTokens(record.riderAccountId, null);
 
   return res.json({ ok: true });
 });
@@ -383,14 +401,34 @@ router.post("/rider/auth/change-password", requireRiderAuth, async (req, res) =>
 
   const hash = await bcrypt.hash(String(newPassword), 12);
   await db.update(riderAccountsTable).set({ passwordHash: hash }).where(eq(riderAccountsTable.id, riderAccountId));
+  // Sign out every other phone; the device making the change (if it's the app) stays signed in.
+  await revokeMobileTokens(riderAccountId, presentedMobileToken(req));
 
   return res.json({ ok: true });
 });
 
 // POST /rider/auth/logout
-router.post("/rider/auth/logout", (req, res) => {
-  delete (req.session as any).riderAccountId;
-  req.session.save(() => res.json({ ok: true }));
+// Revokes the presented mobile Bearer token (the app's sign-out) and ends the rider
+// session. If the same browser session also holds an organizer login, only the rider
+// part is cleared so the organizer isn't signed out too.
+router.post("/rider/auth/logout", async (req, res) => {
+  const token = presentedMobileToken(req);
+  if (token) {
+    try {
+      await db.delete(riderMobileTokensTable).where(eq(riderMobileTokensTable.token, token));
+    } catch (err) {
+      req.log?.error({ err }, "Failed to revoke mobile token on logout");
+      return res.status(500).json({ error: "Could not sign out. Please try again." });
+    }
+  }
+  if ((req.session as any).userId) {
+    delete (req.session as any).riderAccountId;
+    return req.session.save(() => res.json({ ok: true }));
+  }
+  return req.session.destroy(() => {
+    res.clearCookie("connect.sid");
+    res.json({ ok: true });
+  });
 });
 
 // GET /rider/auth/me
@@ -430,6 +468,24 @@ router.post("/rider/push-token", requireRiderAuth, async (req, res) => {
 
   req.log.info({ riderAccountId }, "Push token registered");
   return res.json({ ok: true });
+});
+
+// DELETE /rider/push-token — stop push notifications to this device. Body: { token }.
+// Only removes the token if it belongs to the signed-in account.
+router.delete("/rider/push-token", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const { token } = (req.body ?? {}) as { token?: string };
+  if (!token || typeof token !== "string") {
+    return res.status(400).json({ error: "token required" });
+  }
+  const removed = await db
+    .delete(riderPushTokensTable)
+    .where(and(
+      eq(riderPushTokensTable.riderAccountId, riderAccountId),
+      eq(riderPushTokensTable.expoPushToken, token),
+    ))
+    .returning({ id: riderPushTokensTable.id });
+  return res.json({ ok: true, removed: removed.length });
 });
 
 // GET /rider/my-event-ids — lightweight list of event IDs any family rider is registered for
@@ -1140,6 +1196,20 @@ router.delete("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => 
   if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
   const ownership = await verifyRiderOwnership(riderAccountId, riderId);
   if (!ownership) return res.status(403).json({ error: "Access denied" });
+
+  // Only the owner may detach or delete the profile. A manager (second parent, coach)
+  // removing it just stops managing it: drop their own manager row and nothing else.
+  if (!ownsRider(ownership.account, ownership.rider)) {
+    const accountEmail = String(ownership.account.email).trim().toLowerCase();
+    await db.delete(riderProfileManagersTable).where(and(
+      eq(riderProfileManagersTable.riderId, riderId),
+      or(
+        eq(riderProfileManagersTable.riderAccountId, ownership.account.id),
+        eq(riderProfileManagersTable.invitedEmail, accountEmail),
+      ),
+    ));
+    return res.json({ ok: true, mode: "unlinked" });
+  }
 
   // Block removal while registered for an upcoming event (today counts as upcoming).
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
@@ -2569,7 +2639,7 @@ router.post("/rider/mechanic-memory-update", requireRiderAuth, async (req, res) 
 // ─── Bike Maintenance ────────────────────────────────────────────────────────
 
 // GET /rider/maintenance/:riderId — list all maintenance items for a rider
-router.get("/rider/maintenance/:riderId", async (req, res) => {
+router.get("/rider/maintenance/:riderId", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
 
@@ -2594,7 +2664,7 @@ router.get("/rider/maintenance/:riderId", async (req, res) => {
 });
 
 // PUT /rider/maintenance/:riderId/:itemKey — upsert a maintenance item
-router.put("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
+router.put("/rider/maintenance/:riderId/:itemKey", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
 
@@ -2655,7 +2725,7 @@ router.put("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
 });
 
 // DELETE /rider/maintenance/:riderId/:itemKey — remove a maintenance item
-router.delete("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
+router.delete("/rider/maintenance/:riderId/:itemKey", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
 
@@ -2683,7 +2753,7 @@ router.delete("/rider/maintenance/:riderId/:itemKey", async (req, res) => {
 });
 
 // GET /rider/maintenance/:riderId/history — list all history records for a rider
-router.get("/rider/maintenance/:riderId/history", async (req, res) => {
+router.get("/rider/maintenance/:riderId/history", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
 
@@ -2708,7 +2778,7 @@ router.get("/rider/maintenance/:riderId/history", async (req, res) => {
 });
 
 // PATCH /rider/maintenance/:riderId/history/:historyId — edit notes or serviced date of a history entry
-router.patch("/rider/maintenance/:riderId/history/:historyId", async (req, res) => {
+router.patch("/rider/maintenance/:riderId/history/:historyId", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
 
@@ -2746,7 +2816,7 @@ router.patch("/rider/maintenance/:riderId/history/:historyId", async (req, res) 
 });
 
 // DELETE /rider/maintenance/:riderId/history/:historyId — delete a history entry
-router.delete("/rider/maintenance/:riderId/history/:historyId", async (req, res) => {
+router.delete("/rider/maintenance/:riderId/history/:historyId", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
 
@@ -2773,7 +2843,7 @@ router.delete("/rider/maintenance/:riderId/history/:historyId", async (req, res)
 });
 
 // POST /rider/maintenance/:riderId/ai-generate — AI-generate a maintenance schedule for the rider's bike
-router.post("/rider/maintenance/:riderId/ai-generate", async (req, res) => {
+router.post("/rider/maintenance/:riderId/ai-generate", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
 

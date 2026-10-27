@@ -14,6 +14,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, asc, and, inArray } from "drizzle-orm";
 import { computeEnduroPenalty, recomputeEnduroPositionsForEvent } from "./enduro-scoring";
+import { callerOwnsClub } from "../middleware/accessControl";
 
 const router = Router();
 
@@ -269,14 +270,12 @@ router.get("/events/:eventId/penalty-summary", async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
 
-  // Allow organizers; fall back to publication check for public access.
-  const userId = (req.session as any)?.userId;
-  if (userId) {
-    // Authenticated — verify the user belongs to the owning club.
-    const isOrg = await authEvent(req, res, eventId);
-    if (!isOrg) return; // authEvent already sent the error response
-  } else {
-    // Unauthenticated — require results that are actively published (published=true).
+  // The owning club (or a super admin) always sees it; everyone else — anonymous,
+  // riders, other clubs' organizers/staff — only once results are published.
+  const [owner] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!owner) return res.status(404).json({ error: "Event not found" });
+  if (!callerOwnsClub(res, owner.clubId)) {
+    // Require results that are actively published (published=true).
     const [pub] = await db
       .select({ published: eventPublicationTable.published })
       .from(eventPublicationTable)

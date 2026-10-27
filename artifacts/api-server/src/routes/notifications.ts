@@ -10,8 +10,9 @@ import {
   riderNotificationPrefsTable,
   notificationLogsTable,
 } from "@workspace/db";
-import { eq, inArray, and, countDistinct, desc } from "drizzle-orm";
+import { eq, inArray, and, countDistinct, desc, ne } from "drizzle-orm";
 import { sendPushNotifications } from "../lib/push";
+import { accountIdsForRiders } from "../lib/riderAccess";
 
 const router = Router();
 
@@ -67,12 +68,13 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
       return res.status(403).json({ error: "Event does not belong to your club" });
     }
 
+    // Riders with a live (non-void) entry; accounts include invited profile managers.
     const regs = await db
       .select({ riderId: registrationsTable.riderId })
       .from(registrationsTable)
-      .where(eq(registrationsTable.eventId, eventId));
+      .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")));
 
-    const riderIds = regs.map((r) => r.riderId).filter(Boolean) as number[];
+    const riderIds = [...new Set(regs.map((r) => r.riderId).filter(Boolean) as number[])];
     if (riderIds.length === 0) {
       await db.insert(notificationLogsTable).values({
         clubId: callingUser.clubId ?? null,
@@ -86,16 +88,8 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
       return res.json({ ok: true, sent: 0 });
     }
 
-    const riders = await db
-      .select({ email: ridersTable.email })
-      .from(ridersTable)
-      .where(inArray(ridersTable.id, riderIds));
-
-    const emails = riders
-      .map((r) => r.email?.toLowerCase())
-      .filter((e): e is string => !!e);
-
-    if (emails.length === 0) {
+    accountIds = await accountIdsForRiders(riderIds);
+    if (accountIds.length === 0) {
       await db.insert(notificationLogsTable).values({
         clubId: callingUser.clubId ?? null,
         userId,
@@ -108,12 +102,6 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
       return res.json({ ok: true, sent: 0 });
     }
 
-    const accounts = await db
-      .select({ id: riderAccountsTable.id })
-      .from(riderAccountsTable)
-      .where(inArray(riderAccountsTable.email, emails));
-
-    accountIds = accounts.map((a) => a.id);
     audienceType = "event";
     resolvedEventId = eventId;
   } else {
@@ -151,7 +139,7 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
       const regs = await db
         .select({ riderId: registrationsTable.riderId })
         .from(registrationsTable)
-        .where(inArray(registrationsTable.eventId, eventIds));
+        .where(and(inArray(registrationsTable.eventId, eventIds), ne(registrationsTable.status, "void")));
 
       const riderIds = [...new Set(regs.map((r) => r.riderId).filter(Boolean) as number[])];
       if (riderIds.length === 0) {
@@ -167,34 +155,8 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
         return res.json({ ok: true, sent: 0 });
       }
 
-      const riders = await db
-        .select({ email: ridersTable.email })
-        .from(ridersTable)
-        .where(inArray(ridersTable.id, riderIds));
-
-      const emails = [...new Set(
-        riders.map((r) => r.email?.toLowerCase()).filter((e): e is string => !!e)
-      )];
-
-      if (emails.length === 0) {
-        await db.insert(notificationLogsTable).values({
-          clubId: callingUser.clubId ?? null,
-          userId,
-          title: title.trim(),
-          body: body.trim(),
-          audienceType: "all",
-          eventId: null,
-          sentCount: 0,
-        });
-        return res.json({ ok: true, sent: 0 });
-      }
-
-      const accounts = await db
-        .select({ id: riderAccountsTable.id })
-        .from(riderAccountsTable)
-        .where(inArray(riderAccountsTable.email, emails));
-
-      accountIds = accounts.map((a) => a.id);
+      // Owners and invited managers of those riders.
+      accountIds = await accountIdsForRiders(riderIds);
     }
     audienceType = isSuperAdmin ? "all_global" : "all";
     // accountIds remains null → push to all tokens (super admin no-eventId case)
@@ -465,7 +427,7 @@ router.get("/admin/notifications/audience-count", async (req, res) => {
       const regs = await db
         .select({ riderId: registrationsTable.riderId })
         .from(registrationsTable)
-        .where(inArray(registrationsTable.eventId, eventIds));
+        .where(and(inArray(registrationsTable.eventId, eventIds), ne(registrationsTable.status, "void")));
 
       const riderIds = [...new Set(regs.map((r) => r.riderId).filter(Boolean) as number[])];
       if (riderIds.length === 0) return res.json({ count: 0 });

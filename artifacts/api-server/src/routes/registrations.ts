@@ -1,12 +1,14 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable, raceResultsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
-import { eq, and, sql, desc, asc, ne, isNull, inArray } from "drizzle-orm";
+import { eq, and, sql, desc, asc, ne, isNull, inArray, or, lt } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
 import { isRegistrationTransponderRequirementSatisfied } from "../lib/registrationTransponderRequirement";
 import { resolvePurchaseOptions } from "../lib/purchaseOptions";
+import { canManageRider } from "../lib/riderAccess";
+import { riderMobileTokensTable } from "@workspace/db";
 
 const router = Router();
 
@@ -19,10 +21,15 @@ async function autoLinkTransponder(riderId: number, eventId: number, transponder
     throw new Error("Cannot auto-link an invalid active transponder identifier");
   }
 
-  // 1. Store on the rider's permanent profile so it pre-fills next time
+  // 1. Store on the rider's permanent profile so it pre-fills next time — only when the
+  //    profile has none. A registration (often anonymous) never replaces a saved
+  //    transponder; profile owners/managers change it through their own profile edit.
   await db.update(ridersTable)
     .set({ mylapsTransponderId: normalized })
-    .where(eq(ridersTable.id, riderId));
+    .where(and(
+      eq(ridersTable.id, riderId),
+      or(isNull(ridersTable.mylapsTransponderId), eq(ridersTable.mylapsTransponderId, "")),
+    ));
 
   // 2. Create an rfid_assignment for this event if one doesn't exist yet
   const existing = await db.select({ id: rfidAssignmentsTable.id })
@@ -130,6 +137,42 @@ function submittedRiderProfile(
   }
 
   return profile;
+}
+
+/** Rider account behind this request (web session or mobile Bearer token), without touching the session. */
+async function requestRiderAccount(req: any): Promise<{ id: number; email: string } | null> {
+  let accountId = (req.session as any)?.riderAccountId as number | undefined;
+  if (!accountId) {
+    const auth = (req.headers.authorization ?? "") as string;
+    if (auth.startsWith("Bearer ")) {
+      const [tok] = await db.select({ riderAccountId: riderMobileTokensTable.riderAccountId })
+        .from(riderMobileTokensTable).where(eq(riderMobileTokensTable.token, auth.slice(7).trim()));
+      accountId = tok?.riderAccountId;
+    }
+  }
+  if (!accountId) return null;
+  const [account] = await db.select({ id: riderAccountsTable.id, email: riderAccountsTable.email })
+    .from(riderAccountsTable).where(eq(riderAccountsTable.id, accountId));
+  return account ?? null;
+}
+
+/**
+ * For callers who can't manage the matched rider (anonymous or another account),
+ * keep only submitted fields the saved profile doesn't have yet. Existing values,
+ * including transponder, bib and AMA numbers, are never replaced. The submitted
+ * values still go on the registration row.
+ */
+function fillOnlyEmptyProfileFields(
+  existing: RiderRow,
+  submitted: Partial<typeof ridersTable.$inferInsert>,
+): Partial<typeof ridersTable.$inferInsert> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(submitted)) {
+    const current = (existing as Record<string, unknown>)[key];
+    const isEmpty = current == null || (typeof current === "string" && current.trim() === "");
+    if (isEmpty && value != null && value !== "") out[key] = value;
+  }
+  return out as Partial<typeof ridersTable.$inferInsert>;
 }
 
 async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
@@ -1033,11 +1076,27 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     if (!liabilityWaiverSignatureId) {
       return res.status(400).json({ error: "You must sign the liability waiver to complete registration" });
     }
-    const [sig] = await db.select({ id: liabilityWaiverSignaturesTable.id, eventId: liabilityWaiverSignaturesTable.eventId })
+    const [sig] = await db.select({
+      id: liabilityWaiverSignaturesTable.id,
+      eventId: liabilityWaiverSignaturesTable.eventId,
+      registrationId: liabilityWaiverSignaturesTable.registrationId,
+      signerEmail: liabilityWaiverSignaturesTable.signerEmail,
+    })
       .from(liabilityWaiverSignaturesTable)
       .where(eq(liabilityWaiverSignaturesTable.id, liabilityWaiverSignatureId));
     if (!sig || sig.eventId !== eventId) {
       return res.status(400).json({ error: "Invalid liability waiver signature" });
+    }
+    // A signature belongs to one registration and to the person registering: it must be
+    // unused and signed with the registration email (or the signed-in rider account's email).
+    if (sig.registrationId != null) {
+      return res.status(400).json({ error: "This liability waiver signature was already used for another registration. Please sign the waiver again." });
+    }
+    const signer = sig.signerEmail.trim().toLowerCase();
+    const riderAccountForWaiver = await requestRiderAccount(req);
+    const allowedSignerEmails = [String(email).trim().toLowerCase(), riderAccountForWaiver?.email.trim().toLowerCase()].filter(Boolean);
+    if (!allowedSignerEmails.includes(signer)) {
+      return res.status(400).json({ error: "The liability waiver was signed with a different email address. Please sign it with the email you are registering with." });
     }
   }
 
@@ -1089,7 +1148,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     if (classLimit != null && classLimit > 0) {
       const classCount = await db.select({ count: sql<number>`count(*)::int` })
         .from(registrationsTable)
-        .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.raceClass, cls)));
+        .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.raceClass, cls), ne(registrationsTable.status, "void")));
       if ((classCount[0]?.count ?? 0) >= classLimit) {
         return res.status(409).json({ error: `${cls} is full (${classLimit} rider limit reached)` });
       }
@@ -1122,6 +1181,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   let compDiscountType: "fixed" | "percentage" = "fixed";
   let compDiscountRaw = 0;
   let validatedCompCode: string | null = null;
+  let validatedCompCodeId: number | null = null;
   if (compCode) {
     const codeStr = String(compCode).trim().toUpperCase();
 
@@ -1189,18 +1249,46 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     compDiscountType = (codeRow.discountType as "fixed" | "percentage") ?? "fixed";
     compDiscountRaw = Number(codeRow.amount);
     validatedCompCode = codeRow.code;
+    validatedCompCodeId = codeRow.id;
   }
 
-  // Persist every submitted profile field, including blanks, so edits replace the
-  // selected rider's saved values rather than merely filling missing data.
+  // Claim one use of the code atomically, so two riders can't both take the last use.
+  if (validatedCompCodeId != null) {
+    const [claimed] = await db.update(compCodesTable)
+      .set({ usesCount: sql`${compCodesTable.usesCount} + 1` })
+      .where(and(eq(compCodesTable.id, validatedCompCodeId), lt(compCodesTable.usesCount, compCodesTable.maxUses)))
+      .returning({ id: compCodesTable.id });
+    if (!claimed) {
+      return res.status(400).json({ error: "Invalid or already-used discount code" });
+    }
+  }
+  const releaseCompCodeUse = async () => {
+    if (validatedCompCodeId == null) return;
+    await db.update(compCodesTable)
+      .set({ usesCount: sql`GREATEST(${compCodesTable.usesCount} - 1, 0)` })
+      .where(eq(compCodesTable.id, validatedCompCodeId));
+  };
+
+  // A caller signed in as the profile's owner or manager may edit the saved profile
+  // with what they submit (blank fields keep saved values). Anyone else, anonymous
+  // or a different account, only fills fields the profile doesn't have yet.
   let rider: RiderRow;
   const profileFields = submittedRiderProfile(req.body, normalizedTransponderNumber);
   if (resolvedExistingRider) {
-    const [updated] = await db.update(ridersTable)
-      .set(profileFields)
-      .where(eq(ridersTable.id, resolvedExistingRider.id))
-      .returning();
-    rider = updated;
+    const callerAccount = await requestRiderAccount(req);
+    const callerManages = callerAccount ? await canManageRider(callerAccount, resolvedExistingRider) : false;
+    const fieldsToSave = callerManages
+      ? profileFields
+      : fillOnlyEmptyProfileFields(resolvedExistingRider, profileFields);
+    if (Object.keys(fieldsToSave).length > 0) {
+      const [updated] = await db.update(ridersTable)
+        .set(fieldsToSave)
+        .where(eq(ridersTable.id, resolvedExistingRider.id))
+        .returning();
+      rider = updated;
+    } else {
+      rider = resolvedExistingRider;
+    }
   } else {
     const [created] = await db.insert(ridersTable).values({
       ...profileFields,
@@ -1269,14 +1357,10 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   if (events[0].requireLiabilityWaiver && liabilityWaiverSignatureId && insertedRegs[0]?.id) {
     await db.update(liabilityWaiverSignaturesTable)
       .set({ registrationId: insertedRegs[0].id })
-      .where(eq(liabilityWaiverSignaturesTable.id, liabilityWaiverSignatureId));
-  }
-
-  // Mark comp code as used
-  if (validatedCompCode) {
-    await db.update(compCodesTable)
-      .set({ usesCount: sql`${compCodesTable.usesCount} + 1` })
-      .where(eq(compCodesTable.code, validatedCompCode));
+      .where(and(
+        eq(liabilityWaiverSignaturesTable.id, liabilityWaiverSignatureId),
+        isNull(liabilityWaiverSignaturesTable.registrationId),
+      ));
   }
 
   // Only create the check-in record now if no payment is required.
@@ -1414,8 +1498,14 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       }
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[checkout] Failed to create Stripe Checkout session");
-      // Roll back ALL pending registrations so the rider can try again cleanly
-      await db.delete(registrationsTable).where(inArray(registrationsTable.id, insertedRegs.map(r => r.id)));
+      // Roll back ALL pending registrations so the rider can try again cleanly: free the
+      // waiver signature for reuse and give back the discount-code use.
+      const rolledBackIds = insertedRegs.map(r => r.id);
+      await db.update(liabilityWaiverSignaturesTable)
+        .set({ registrationId: null })
+        .where(inArray(liabilityWaiverSignaturesTable.registrationId, rolledBackIds));
+      await db.delete(registrationsTable).where(inArray(registrationsTable.id, rolledBackIds));
+      await releaseCompCodeUse();
       const isConnectError = err?.message?.toLowerCase().includes("no such destination") || err?.message?.toLowerCase().includes("no such account");
       return res.status(500).json({
         error: isConnectError
@@ -1767,6 +1857,12 @@ router.post("/public/registrations/:id/verify-payment", async (req, res) => {
     if (!regIdsStr) {
       return res.status(403).json({ error: "Session does not match registration" });
     }
+    // Add-on sessions (transponder_rental, rfid_sticker, ...) also carry a registrationId;
+    // they must never confirm the registration itself.
+    const sessionType = session.metadata?.type;
+    if (sessionType && sessionType !== "registration") {
+      return res.status(403).json({ error: "Session is not a registration payment" });
+    }
     const regIds = regIdsStr.split(",").map(Number).filter(Boolean);
     if (!regIds.includes(id)) {
       return res.status(403).json({ error: "Session does not match registration" });
@@ -1782,14 +1878,17 @@ router.post("/public/registrations/:id/verify-payment", async (req, res) => {
       ? String(Math.round((amountPaidTotal / regIds.length) * 100) / 100)
       : null;
 
+    // Voided (cancelled) registrations are never re-confirmed by a later payment check.
     const updatedRegs = await db.update(registrationsTable)
       .set({ paymentStatus: "paid", status: "confirmed", paymentMethod: "card", amountPaid: amountPerReg })
-      .where(inArray(registrationsTable.id, regIds))
+      .where(and(inArray(registrationsTable.id, regIds), ne(registrationsTable.status, "void")))
       .returning();
 
-    if (!updatedRegs.length) return res.status(404).json({ error: "Registration not found" });
+    if (!updatedRegs.length) {
+      return res.status(409).json({ error: "This registration was cancelled or no longer exists. Contact the event organizer about your payment." });
+    }
 
-    const primaryReg = updatedRegs[0];
+    const primaryReg = updatedRegs.find(r => r.id === id) ?? updatedRegs[0];
 
     // Create one check-in record per rider per event
     const [existingCheckin] = await db.select({ id: checkinsTable.id })

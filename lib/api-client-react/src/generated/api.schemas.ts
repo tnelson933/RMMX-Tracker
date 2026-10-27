@@ -886,6 +886,8 @@ export interface CheckinInput {
   riderId: number;
   rfidNumber?: string;
   bibNumber?: string;
+  /** false un-checks the rider (no row is created if none exists); omitted or true checks the rider in */
+  checkedIn?: boolean;
 }
 
 export interface RfidAssignment {

@@ -2042,7 +2042,15 @@ router.get("/timing/rmonitor-snapshot", async (req, res) => {
     .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "in_progress")))
     .limit(1);
 
-  const moto = activeMoto ?? (await db
+  const [lastCompletedMoto] = activeMoto ? [] : await db
+    .select()
+    .from(motosTable)
+    .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed")))
+    .orderBy(sql`${motosTable.completedAt} DESC NULLS LAST`, desc(motosTable.id))
+    .limit(1);
+
+  // Before anything has run, show the first moto of the day as before.
+  const moto = activeMoto ?? lastCompletedMoto ?? (await db
     .select()
     .from(motosTable)
     .where(eq(motosTable.eventId, eventId))
