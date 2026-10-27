@@ -2,8 +2,10 @@ import { Router } from "express";
 
 const router = Router();
 
-const ANTHROPIC_BASE_URL = process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL;
-const ANTHROPIC_API_KEY = process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY;
+// Replit's AI proxy vars are honored for compatibility; elsewhere ANTHROPIC_API_KEY
+// is used against Anthropic's API (same rule as @workspace/integrations-anthropic-ai).
+const ANTHROPIC_BASE_URL = process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL || "https://api.anthropic.com";
+const ANTHROPIC_API_KEY = process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
 
 const SYSTEM_PROMPT = `You are an expert motorsport race administrator helping club organizers configure points scoring tables for ATV and motorcycle races.
 

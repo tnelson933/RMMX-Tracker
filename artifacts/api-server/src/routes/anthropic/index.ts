@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { conversations, messages, eventsTable, motosTable, checkinsTable, usersTable } from "@workspace/db";
-import { eq, and, desc, count, asc } from "drizzle-orm";
+import { conversations, messages, eventsTable, motosTable, checkinsTable, usersTable, registrationsTable } from "@workspace/db";
+import { eq, and, desc, count, asc, ne } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import SYSTEM_PROMPT from "./SYSTEM_PROMPT.md";
 
@@ -129,7 +129,9 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
     content: m.content,
   }));
 
-  let systemPrompt = SYSTEM_PROMPT;
+  // The knowledge base goes first and is cached; per-event context follows it
+  // so it never invalidates the cached prefix.
+  let eventContext: string | null = null;
 
   if (eventId && Number.isInteger(Number(eventId))) {
     const numericEventId = Number(eventId);
@@ -172,7 +174,17 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
         .orderBy(asc(motosTable.motoNumber))
         .limit(1);
 
+      // Entries are class registrations, not unique riders.
+      const [entryCountRow] = await db
+        .select({ count: count() })
+        .from(registrationsTable)
+        .where(and(eq(registrationsTable.eventId, numericEventId), ne(registrationsTable.status, "void")));
+
       const classes = Array.isArray(event.raceClasses) ? event.raceClasses : [];
+      const purchaseOptions = Array.isArray(event.purchaseOptions)
+        ? (event.purchaseOptions as Array<{ name?: string } | null>).map(o => o?.name).filter(Boolean)
+        : [];
+      const venue = [event.trackName, event.location, event.state].filter(Boolean).join(", ");
       const contextLines: string[] = [
         `## Current Event Context`,
         ``,
@@ -181,9 +193,17 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
         `- **Event name:** ${event.name}`,
         `- **Date:** ${event.date}`,
         `- **Status:** ${event.status.replace(/_/g, " ")}`,
+        `- **Race style:** ${event.raceStyle}`,
+        `- **Timing technology:** ${event.timingTechnology === "active_transponder" ? "Active Transponder Timing" : "RFID"}`,
+        ...(venue ? [`- **Venue:** ${venue}`] : []),
         `- **Race classes:** ${classes.length > 0 ? classes.join(", ") : "none set"}`,
+        `- **Online payments:** ${event.paymentEnabled ? "on" : "off"}`,
+        `- **Quick Check-In:** ${event.quickCheckinEnabled ? "on" : "off"}`,
+        `- **Transponder rental:** ${event.transponderRentalEnabled ? "on" : "off"}`,
+        ...(purchaseOptions.length > 0 ? [`- **Purchase options:** ${purchaseOptions.join(", ")}`] : []),
+        `- **Registration entries (class entries, not unique riders):** ${entryCountRow?.count ?? 0}`,
         `- **Total motos:** ${motoCountRow?.count ?? 0}`,
-        `- **Riders checked in:** ${checkinCountRow?.count ?? 0}`,
+        `- **Entries checked in:** ${checkinCountRow?.count ?? 0}`,
       ];
 
       if (inProgressMoto) {
@@ -200,7 +220,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
 
       contextLines.push(``, `When answering, reference this event by name and use these numbers to give specific, accurate answers.`, ``);
 
-      systemPrompt = contextLines.join("\n") + "\n---\n\n" + SYSTEM_PROMPT;
+      eventContext = contextLines.join("\n");
     }
   }
 
@@ -212,9 +232,14 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
 
   try {
     const stream = anthropic.messages.stream({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      system: systemPrompt,
+      model: "claude-opus-5-5",
+      max_tokens: 16000,
+      // Help-desk answers: low effort keeps replies quick.
+      output_config: { effort: "low" },
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+        ...(eventContext ? [{ type: "text" as const, text: eventContext }] : []),
+      ],
       messages: chatMessages,
     });
 
@@ -223,6 +248,12 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
         fullResponse += event.delta.text;
         res.write(`data: ${JSON.stringify({ content: event.delta.text })}\n\n`);
       }
+    }
+
+    const final = await stream.finalMessage();
+    if (final.stop_reason === "refusal" && !fullResponse) {
+      fullResponse = "Sorry, I can't help with that one. Try rephrasing, or ask about a specific RM Roost page or task.";
+      res.write(`data: ${JSON.stringify({ content: fullResponse })}\n\n`);
     }
 
     await db.insert(messages).values({
