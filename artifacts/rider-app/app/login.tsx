@@ -2,18 +2,23 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -156,263 +161,314 @@ export default function LoginScreen() {
     }
   }
 
+
+  // Dark, race-themed palette for the sign-in screens (the brand art is built for black)
+  const ink = "#0B0B0C";
+  const panel = "#17171A";
+  const field = "#232327";
+  const line = "#2E2E33";
+  const text = "#FFFFFF";
+  const muted = "#A1A1AA";
+  const red = colors.primary;
+  const { width: screenWidth } = useWindowDimensions();
+  const bannerWidth = Math.min(screenWidth - 44, 440);
+
   const s = StyleSheet.create({
+    root: { flex: 1, backgroundColor: ink },
     container: {
       flexGrow: 1,
-      backgroundColor: colors.background,
-      paddingTop: insets.top + 40,
-      paddingBottom: insets.bottom + 32,
-      paddingHorizontal: 28,
+      paddingTop: insets.top + 24,
+      paddingBottom: insets.bottom + 28,
+      paddingHorizontal: 22,
     },
-    logoRow: { alignItems: "center", marginBottom: 36 },
-    logoBox: {
-      width: 72, height: 72, borderRadius: 20,
-      backgroundColor: colors.primary,
-      alignItems: "center", justifyContent: "center",
-      marginBottom: 16,
+    hero: { alignItems: "center", marginBottom: 22 },
+    headline: {
+      marginTop: 14, fontSize: 26, color: text, fontFamily: "Inter_700Bold",
+      letterSpacing: 1.5, textTransform: "uppercase", textAlign: "center",
     },
-    appName: {
-      fontSize: 28, fontWeight: "800", color: colors.foreground,
-      fontFamily: "Inter_700Bold", letterSpacing: -0.5, textAlign: "center",
+    subhead: {
+      marginTop: 6, fontSize: 14, color: muted, fontFamily: "Inter_400Regular",
+      textAlign: "center", lineHeight: 20, maxWidth: 320,
     },
-    tagline: {
-      fontSize: 14, color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 4,
+    chips: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 6, marginTop: 14 },
+    chip: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+      backgroundColor: panel, borderColor: line, borderWidth: 1,
+      paddingVertical: 5, paddingLeft: 5, paddingRight: 9, borderRadius: 999,
     },
-    tabRow: {
-      flexDirection: "row", backgroundColor: colors.muted,
-      borderRadius: 10, padding: 3, marginBottom: 24,
+    chipDot: { width: 18, height: 18, borderRadius: 9, backgroundColor: red, alignItems: "center", justifyContent: "center" },
+    chipText: { fontSize: 11, color: text, fontFamily: "Inter_600SemiBold" },
+    card: {
+      backgroundColor: panel, borderRadius: 22, padding: 18,
+      borderWidth: 1, borderColor: line,
+      shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 8,
     },
-    tab: { flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: "center" },
-    tabActive: { backgroundColor: colors.card },
-    tabText: { fontSize: 14, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" },
-    tabTextActive: { color: colors.foreground },
+    cardTitle: { fontSize: 20, color: text, fontFamily: "Inter_700Bold", textAlign: "center" },
+    cardSub: { fontSize: 13, color: muted, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 4, marginBottom: 16 },
+    tabRow: { flexDirection: "row", backgroundColor: ink, borderRadius: 999, padding: 4, marginBottom: 16 },
+    tab: { flex: 1, paddingVertical: 10, borderRadius: 999, alignItems: "center" },
+    tabActive: { backgroundColor: red },
+    tabText: { fontSize: 14, color: muted, fontFamily: "Inter_600SemiBold" },
+    tabTextActive: { color: "#fff" },
     inputWrapper: {
       flexDirection: "row", alignItems: "center",
-      backgroundColor: colors.muted, borderRadius: 10,
-      paddingHorizontal: 14, borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border, marginBottom: 12,
+      backgroundColor: field, borderRadius: 14,
+      paddingHorizontal: 14, borderWidth: 1, borderColor: line, marginBottom: 12,
     },
-    input: {
-      flex: 1, paddingVertical: 14,
-      fontSize: 15, color: colors.foreground,
-      fontFamily: "Inter_400Regular",
-    },
+    input: { flex: 1, paddingVertical: 15, fontSize: 15, color: text, fontFamily: "Inter_400Regular" },
     btn: {
-      backgroundColor: colors.primary, paddingVertical: 16,
-      borderRadius: 10, alignItems: "center", marginTop: 8,
+      flexDirection: "row", gap: 8, backgroundColor: red, paddingVertical: 16,
+      borderRadius: 999, alignItems: "center", justifyContent: "center", marginTop: 6,
     },
-    btnDisabled: { opacity: 0.5 },
-    btnText: { color: "#fff", fontWeight: "700", fontSize: 16, fontFamily: "Inter_700Bold" },
+    btnDisabled: { opacity: 0.45 },
+    btnText: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" },
     biometricBtn: {
       flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-      borderWidth: 1.5, borderColor: colors.border,
-      paddingVertical: 15, borderRadius: 10, marginTop: 12,
+      borderWidth: 1.5, borderColor: line, backgroundColor: field,
+      paddingVertical: 15, borderRadius: 999, marginBottom: 14,
     },
-    biometricText: { fontSize: 15, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" },
-    orRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 16 },
-    orLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
-    orText: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+    biometricText: { fontSize: 15, color: text, fontFamily: "Inter_600SemiBold" },
+    orRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 },
+    orLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: line },
+    orText: { fontSize: 12, color: muted, fontFamily: "Inter_400Regular" },
     error: {
-      backgroundColor: "#FEE2E2", borderRadius: 8, padding: 12,
-      fontSize: 13, color: "#DC2626", fontFamily: "Inter_400Regular", marginBottom: 12,
+      backgroundColor: "rgba(239,68,68,0.14)", borderColor: "rgba(239,68,68,0.4)", borderWidth: 1,
+      borderRadius: 12, padding: 12, fontSize: 13, color: "#FCA5A5", fontFamily: "Inter_400Regular", marginBottom: 12,
     },
     success: {
-      backgroundColor: "#D1FAE5", borderRadius: 8, padding: 12,
-      fontSize: 13, color: "#065F46", fontFamily: "Inter_400Regular", marginBottom: 12,
+      backgroundColor: "rgba(16,185,129,0.14)", borderColor: "rgba(16,185,129,0.4)", borderWidth: 1,
+      borderRadius: 12, padding: 12, fontSize: 13, color: "#A7F3D0", fontFamily: "Inter_400Regular", marginBottom: 12,
     },
-    footer: {
-      marginTop: 24, alignItems: "center", gap: 8,
-      borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
-      paddingTop: 24,
-    },
-    footerText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 18 },
-    forgotLink: { marginTop: 4, alignItems: "center" },
-    forgotText: { fontSize: 13, color: colors.primary, fontFamily: "Inter_400Regular" },
-    backLink: { marginTop: 12, alignItems: "center" },
-    backText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+    forgotLink: { alignSelf: "flex-end", marginTop: -2, marginBottom: 8 },
+    forgotText: { fontSize: 13, color: text, fontFamily: "Inter_500Medium", textDecorationLine: "underline" },
+    backLink: { marginTop: 16, alignItems: "center" },
+    backText: { fontSize: 14, color: text, fontFamily: "Inter_500Medium" },
+    footerText: { fontSize: 12, color: muted, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 18, marginTop: 18 },
+    poweredBy: { fontSize: 11, color: "#71717A", fontFamily: "Inter_500Medium", textAlign: "center", marginTop: 14, letterSpacing: 1, textTransform: "uppercase" },
   });
+
+  // Hero slides in on first paint
+  const heroAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(heroAnim, { toValue: 1, duration: 650, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [heroAnim]);
+  const heroStyle = {
+    opacity: heroAnim,
+    transform: [{ translateX: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [-40, 0] }) }],
+  };
+
+  // Shared backdrop: speed stripes and a checkered-flag band echoing the logo
+  const backdrop = (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={{ position: "absolute", top: insets.top - 10, left: -80, right: -80, height: 160, transform: [{ rotate: "-14deg" }] }}>
+        <View style={{ height: 3, backgroundColor: red, opacity: 0.55, marginTop: 30, marginRight: 140 }} />
+        <View style={{ height: 8, backgroundColor: red, opacity: 0.35, marginTop: 18, marginLeft: 90 }} />
+        <View style={{ height: 2, backgroundColor: "#fff", opacity: 0.12, marginTop: 26, marginRight: 60 }} />
+      </View>
+      <View style={{ position: "absolute", bottom: insets.bottom, left: 0, right: 0, opacity: 0.07 }}>
+        {[0, 1].map(row => (
+          <View key={row} style={{ flexDirection: "row" }}>
+            {Array.from({ length: 24 }).map((_, i) => (
+              <View key={i} style={{ width: 18, height: 18, backgroundColor: (i + row) % 2 === 0 ? "#fff" : "transparent" }} />
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
+  const hero = (compact: boolean) => (
+    <Animated.View style={[s.hero, heroStyle]}>
+      <Image
+        source={require("../assets/images/brand-banner-hero.png")}
+        style={{ width: compact ? bannerWidth * 0.8 : bannerWidth, height: (compact ? bannerWidth * 0.8 : bannerWidth) * 501 / 1600 }}
+        resizeMode="contain"
+      />
+      {!compact && (
+        <>
+          <Text style={s.headline}>Race day starts here</Text>
+          <Text style={s.subhead}>Live timing, results and race-day alerts for every event you enter.</Text>
+          <View style={s.chips}>
+            {([["clock", "Live timing"], ["bar-chart-2", "Results & stats"], ["bell", "Race alerts"]] as const).map(([icon, label]) => (
+              <View key={label} style={s.chip}>
+                <View style={s.chipDot}><Feather name={icon} size={11} color="#fff" /></View>
+                <Text style={s.chipText}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+    </Animated.View>
+  );
+
+  const shell = (children: React.ReactNode, compact = false) => (
+    <KeyboardAvoidingView style={s.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <StatusBar barStyle="light-content" />
+      {backdrop}
+      <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
+        {hero(compact)}
+        <View style={s.card}>{children}</View>
+        <Text style={s.poweredBy}>Rocky Mountain ATV/MC</Text>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
 
   // ── Forgot password view ──────────────────────────────────────────────────
   if (mode === "forgot") {
-    return (
-      <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
-          <View style={s.logoRow}>
-            <View style={s.logoBox}>
-              <Feather name="lock" size={30} color="#fff" />
+    return shell(
+      <>
+        <Text style={s.cardTitle}>Forgot your password?</Text>
+        <Text style={s.cardSub}>We'll email you a link to set a new one.</Text>
+
+        {error && <Text style={s.error}>{error}</Text>}
+
+        {forgotSent ? (
+          <>
+            <Text style={s.success}>
+              If an account exists for {email}, you'll receive a reset link shortly. Check your inbox and follow the link to set a new password.
+            </Text>
+            <Pressable style={s.backLink} onPress={() => { setMode("login"); setForgotSent(false); setEmail(""); }}>
+              <Text style={s.backText}>← Back to Sign In</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <View style={s.inputWrapper}>
+              <Feather name="mail" size={16} color={muted} style={{ marginRight: 10 }} />
+              <TextInput
+                style={s.input}
+                placeholder="Email address"
+                placeholderTextColor={muted}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoCorrect={false}
+                returnKeyType="send"
+                onSubmitEditing={handleSubmit}
+                autoFocus
+              />
             </View>
-            <Text style={s.appName}>Forgot Password</Text>
-            <Text style={s.tagline}>We'll email you a reset link</Text>
-          </View>
 
-          {error && <Text style={s.error}>{error}</Text>}
+            <Pressable
+              style={[s.btn, (loading || !email.trim()) && s.btnDisabled]}
+              onPress={handleSubmit}
+              disabled={loading || !email.trim()}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={s.btnText}>Send Reset Link</Text>
+              }
+            </Pressable>
 
-          {forgotSent ? (
-            <>
-              <Text style={s.success}>
-                If an account exists for {email}, you'll receive a reset link shortly. Check your inbox and follow the link to set a new password.
-              </Text>
-              <Pressable style={s.backLink} onPress={() => { setMode("login"); setForgotSent(false); setEmail(""); }}>
-                <Text style={s.forgotText}>← Back to Sign In</Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <View style={s.inputWrapper}>
-                <Feather name="mail" size={16} color={colors.mutedForeground} style={{ marginRight: 10 }} />
-                <TextInput
-                  style={s.input}
-                  placeholder="Email address"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoCorrect={false}
-                  returnKeyType="send"
-                  onSubmitEditing={handleSubmit}
-                  autoFocus
-                />
-              </View>
-
-              <Pressable
-                style={[s.btn, (loading || !email.trim()) && s.btnDisabled]}
-                onPress={handleSubmit}
-                disabled={loading || !email.trim()}
-              >
-                {loading
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={s.btnText}>Send Reset Link</Text>
-                }
-              </Pressable>
-
-              <Pressable style={s.backLink} onPress={() => { setMode("login"); setError(null); }}>
-                <Text style={s.backText}>← Back to Sign In</Text>
-              </Pressable>
-            </>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+            <Pressable style={s.backLink} onPress={() => { setMode("login"); setError(null); }}>
+              <Text style={s.backText}>← Back to Sign In</Text>
+            </Pressable>
+          </>
+        )}
+      </>,
+      true,
     );
   }
 
   // ── Login / Register view ─────────────────────────────────────────────────
-  return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
-        {/* Logo + name */}
-        <View style={s.logoRow}>
-          <View style={s.logoBox}>
-            <Feather name="flag" size={30} color="#fff" />
+  return shell(
+    <>
+      {/* Biometric quick-sign-in (login mode only, if enabled) */}
+      {showBiometric && (
+        <>
+          <Pressable
+            style={[s.biometricBtn, loading && s.btnDisabled]}
+            onPress={handleBiometric}
+            disabled={loading}
+          >
+            <Feather name={biometricType === "face" ? "aperture" : "check-circle"} size={20} color={text} />
+            <Text style={s.biometricText}>
+              {biometricType === "face" ? "Sign in with Face ID" : "Sign in with Fingerprint"}
+            </Text>
+          </Pressable>
+          <View style={s.orRow}>
+            <View style={s.orLine} />
+            <Text style={s.orText}>or use password</Text>
+            <View style={s.orLine} />
           </View>
-          <Text style={s.appName}>RM Roost</Text>
-          <Text style={s.tagline}>Your race schedule, results & more</Text>
-        </View>
+        </>
+      )}
 
-        {/* Biometric quick-sign-in (login mode only, if enabled) */}
-        {showBiometric && (
-          <>
-            <Pressable
-              style={[s.biometricBtn, loading && s.btnDisabled]}
-              onPress={handleBiometric}
-              disabled={loading}
-            >
-              <Feather
-                name={biometricType === "face" ? "aperture" : "check-circle"}
-                size={20}
-                color={colors.primary}
-              />
-              <Text style={s.biometricText}>
-                {biometricType === "face" ? "Sign in with Face ID" : "Sign in with Fingerprint"}
-              </Text>
-            </Pressable>
-            <View style={s.orRow}>
-              <View style={s.orLine} />
-              <Text style={s.orText}>or use password</Text>
-              <View style={s.orLine} />
-            </View>
-          </>
-        )}
-
-        {/* Login / Register tab toggle */}
-        <View style={[s.tabRow, showBiometric && { marginTop: 16 }]}>
-          <Pressable style={[s.tab, mode === "login" && s.tabActive]} onPress={() => { setMode("login"); setError(null); }}>
-            <Text style={[s.tabText, mode === "login" && s.tabTextActive]}>Sign In</Text>
-          </Pressable>
-          <Pressable style={[s.tab, mode === "register" && s.tabActive]} onPress={() => { setMode("register"); setError(null); }}>
-            <Text style={[s.tabText, mode === "register" && s.tabTextActive]}>Create Account</Text>
-          </Pressable>
-        </View>
-
-        {error && <Text style={s.error}>{error}</Text>}
-
-        {/* Email */}
-        <View style={s.inputWrapper}>
-          <Feather name="mail" size={16} color={colors.mutedForeground} style={{ marginRight: 10 }} />
-          <TextInput
-            style={s.input}
-            placeholder="Email address"
-            placeholderTextColor={colors.mutedForeground}
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoCorrect={false}
-            returnKeyType="next"
-          />
-        </View>
-
-        {/* Password */}
-        <View style={s.inputWrapper}>
-          <Feather name="lock" size={16} color={colors.mutedForeground} style={{ marginRight: 10 }} />
-          <TextInput
-            style={s.input}
-            placeholder="Password"
-            placeholderTextColor={colors.mutedForeground}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            returnKeyType="done"
-            onSubmitEditing={handleSubmit}
-          />
-          <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8}>
-            <Feather name={showPassword ? "eye-off" : "eye"} size={16} color={colors.mutedForeground} />
-          </Pressable>
-        </View>
-
-        {/* Forgot password — login mode only */}
-        {mode === "login" && (
-          <Pressable style={s.forgotLink} onPress={() => { setMode("forgot"); setError(null); setForgotSent(false); }}>
-            <Text style={s.forgotText}>Forgot password?</Text>
-          </Pressable>
-        )}
-
-        <Pressable
-          style={[s.btn, (loading || !email.trim() || !password) && s.btnDisabled]}
-          onPress={handleSubmit}
-          disabled={loading || !email.trim() || !password}
-        >
-          {loading
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={s.btnText}>{mode === "login" ? "Sign In" : "Create Account"}</Text>
-          }
+      {/* Login / Register tab toggle */}
+      <View style={s.tabRow}>
+        <Pressable style={[s.tab, mode === "login" && s.tabActive]} onPress={() => { setMode("login"); setError(null); }}>
+          <Text style={[s.tabText, mode === "login" && s.tabTextActive]}>Sign In</Text>
         </Pressable>
+        <Pressable style={[s.tab, mode === "register" && s.tabActive]} onPress={() => { setMode("register"); setError(null); }}>
+          <Text style={[s.tabText, mode === "register" && s.tabTextActive]}>Create Account</Text>
+        </Pressable>
+      </View>
 
-        <View style={s.footer}>
-          <Text style={s.footerText}>
-            {mode === "login"
-              ? "RM Roost gives you real-time race schedules,\nlap times, and results for every event you enter."
-              : "Your account links to all riders with the same email\nso your whole family's schedule is in one place."}
-          </Text>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      {error && <Text style={s.error}>{error}</Text>}
+
+      {/* Email */}
+      <View style={s.inputWrapper}>
+        <Feather name="mail" size={16} color={muted} style={{ marginRight: 10 }} />
+        <TextInput
+          style={s.input}
+          placeholder="Email address"
+          placeholderTextColor={muted}
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          autoCorrect={false}
+          returnKeyType="next"
+        />
+      </View>
+
+      {/* Password */}
+      <View style={s.inputWrapper}>
+        <Feather name="lock" size={16} color={muted} style={{ marginRight: 10 }} />
+        <TextInput
+          style={s.input}
+          placeholder="Password"
+          placeholderTextColor={muted}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry={!showPassword}
+          returnKeyType="done"
+          onSubmitEditing={handleSubmit}
+        />
+        <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8}>
+          <Feather name={showPassword ? "eye-off" : "eye"} size={16} color={muted} />
+        </Pressable>
+      </View>
+
+      {/* Forgot password — login mode only */}
+      {mode === "login" && (
+        <Pressable style={s.forgotLink} onPress={() => { setMode("forgot"); setError(null); setForgotSent(false); }}>
+          <Text style={s.forgotText}>Forgot password?</Text>
+        </Pressable>
+      )}
+
+      <Pressable
+        style={[s.btn, (loading || !email.trim() || !password) && s.btnDisabled]}
+        onPress={handleSubmit}
+        disabled={loading || !email.trim() || !password}
+      >
+        {loading
+          ? <ActivityIndicator color="#fff" />
+          : (
+            <>
+              <Text style={s.btnText}>{mode === "login" ? "Let's Ride" : "Create Account"}</Text>
+              <Feather name="arrow-right" size={18} color="#fff" />
+            </>
+          )
+        }
+      </Pressable>
+
+      <Text style={s.footerText}>
+        {mode === "login"
+          ? "Use the email you register for races with to see your schedule, laps and results."
+          : "Use the email you register for races with. Every rider registered under it, your whole family included, links to this account."}
+      </Text>
+    </>,
   );
 }
