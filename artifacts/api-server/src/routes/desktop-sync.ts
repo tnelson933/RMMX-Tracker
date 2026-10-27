@@ -30,6 +30,9 @@ import {
 } from "@workspace/db";
 import { canonicalizeCrossingTimestamp } from "../lib/crossingTimestamp";
 import { resolveSyncUser, canReceivePasswordHashes, type SyncUser } from "../lib/offlineSyncAccess";
+import { clubSettingsTable, readersTable } from "@workspace/db";
+import { sendLiabilityWaiverConfirmation } from "../lib/email";
+import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 
 const router = Router();
 
@@ -87,6 +90,9 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   // Tables that received explicit (desktop-supplied) ids; their serial sequences
   // are advanced at the end so later cloud inserts don't hit duplicate keys.
   const explicitIdTables = new Set<string>();
+  // Follow-up work done after the transaction commits.
+  let pushedEnduroEventIds = new Set<number>();
+  let pushedWaiverEmails: Array<{ to: string; signerName: string; eventId: number; signedAt: Date; contentHash: string; waiverSnapshot: string }> = [];
 
   await db.transaction(async (tx) => {
     const clubEventCache = new Map<number, boolean>();
@@ -385,6 +391,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       const rawScheduledTime = firstDefined(rawMoto, "scheduled_time", "scheduledTime");
       const rawStaggeredGroupId = firstDefined(rawMoto, "staggered_group_id", "staggeredGroupId");
       const rawStaggeredOrder = firstDefined(rawMoto, "staggered_order", "staggeredOrder");
+      const rawPausedAt = firstDefined(rawMoto, "paused_at", "pausedAt");
+      const rawTotalPausedMs = firstDefined(rawMoto, "total_paused_ms", "totalPausedMs");
       const requestedLapCount = rawLapCount === undefined ? undefined : (rawLapCount === null ? null : Number(rawLapCount));
       const requestedTimeLimitMs = rawTimeLimitMs === undefined ? undefined : (rawTimeLimitMs === null ? null : Number(rawTimeLimitMs));
       const requestedPlusLaps = rawPlusLaps === undefined ? undefined : (rawPlusLaps === null ? null : Number(rawPlusLaps));
@@ -524,6 +532,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         else if (rawStaggeredGroupId === null) updateSet.staggeredGroupId = null;
         if (rawStaggeredOrder     != null)  updateSet.staggeredOrder    = Number(rawStaggeredOrder);
         else if (rawStaggeredOrder === null)    updateSet.staggeredOrder = null;
+        if (rawPausedAt !== undefined) updateSet.pausedAt = rawPausedAt === null ? null : toDate(rawPausedAt);
+        if (rawTotalPausedMs != null && Number.isFinite(Number(rawTotalPausedMs))) {
+          updateSet.totalPausedMs = Math.max(0, Math.round(Number(rawTotalPausedMs)));
+        }
         if (Object.keys(updateSet).length > 0) {
           await tx
             .update(motosTable)
@@ -557,6 +569,9 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           completedAt:      rawCompletedAt == null ? null : toDate(rawCompletedAt),
           staggeredGroupId: rawStaggeredGroupId != null ? Number(rawStaggeredGroupId) : null,
           staggeredOrder:   rawStaggeredOrder    != null ? Number(rawStaggeredOrder)    : null,
+          pausedAt:         rawPausedAt == null ? null : toDate(rawPausedAt),
+          totalPausedMs:    rawTotalPausedMs != null && Number.isFinite(Number(rawTotalPausedMs))
+            ? Math.max(0, Math.round(Number(rawTotalPausedMs))) : 0,
         }).returning({ id: motosTable.id });
         if (clientId) explicitIdTables.add("motos");
         if (inserted) {
@@ -935,7 +950,40 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       bike_brand?: unknown;
       amount_paid?: unknown;
       payment_method?: unknown;
+      mylaps_transponder_number?: unknown;
+      transponder_rental?: unknown;
+      rfid_sticker_purchased?: unknown;
+      rm_trackr_purchased?: unknown;
+      rm_trackr_fulfilled_at?: unknown;
+      rm_trackr_transponder?: unknown;
+      transponder_returned?: unknown;
+      refund_verified_at?: unknown;
     }>;
+
+    // Race-day fields set on the desktop (check-in add-ons, rentals, refunds).
+    // Purchase flags and one-time stamps only ever move forward from a push, so
+    // a desktop row pulled before an online purchase can't undo it.
+    const isTrue = (v: unknown) => v === true || v === 1 || v === "1" || v === "true";
+    const raceDayRegistrationFields = (r: (typeof regs)[number]) => {
+      const set: Record<string, unknown> = {};
+      if (isTrue(r.transponder_rental)) set.transponderRental = true;
+      if (isTrue(r.rfid_sticker_purchased)) set.rfidStickerPurchased = true;
+      if (isTrue(r.rm_trackr_purchased)) set.rmTrackrPurchased = true;
+      const fulfilledAt = r.rm_trackr_fulfilled_at != null ? toDate(r.rm_trackr_fulfilled_at) : null;
+      if (fulfilledAt) {
+        set.rmTrackrFulfilledAt = fulfilledAt;
+        if (r.rm_trackr_transponder != null) set.rmTrackrTransponder = String(r.rm_trackr_transponder);
+      }
+      if (r.transponder_returned !== undefined && r.transponder_returned !== null) {
+        set.transponderReturned = isTrue(r.transponder_returned);
+      }
+      const refundVerifiedAt = r.refund_verified_at != null ? toDate(r.refund_verified_at) : null;
+      if (refundVerifiedAt) set.refundVerifiedAt = refundVerifiedAt;
+      if (r.mylaps_transponder_number != null && String(r.mylaps_transponder_number).trim()) {
+        set.myLapsTransponderNumber = String(r.mylaps_transponder_number);
+      }
+      return set;
+    };
 
     let regsUpserted = 0;
     for (const r of regs) {
@@ -945,15 +993,32 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
 
       if (!await isClubEvent(eventId)) { skip("registrations", r, "event not found for this club"); continue; }
 
-      const [existing] = await tx
-        .select({ id: registrationsTable.id })
-        .from(registrationsTable)
-        .where(
-          and(
-            eq(registrationsTable.eventId, eventId),
-            eq(registrationsTable.riderId, riderId),
-          ),
-        );
+      // Registration rows are class entries: match the pushed row by id when it
+      // is this event's row for this rider, otherwise fall back to (event, rider).
+      const requestedRegId = r.id != null && Number(r.id) > 0 ? Number(r.id) : undefined;
+      let [existing] = requestedRegId
+        ? await tx
+            .select({ id: registrationsTable.id })
+            .from(registrationsTable)
+            .where(
+              and(
+                eq(registrationsTable.id, requestedRegId),
+                eq(registrationsTable.eventId, eventId),
+                eq(registrationsTable.riderId, riderId),
+              ),
+            )
+        : [];
+      if (!existing) {
+        [existing] = await tx
+          .select({ id: registrationsTable.id })
+          .from(registrationsTable)
+          .where(
+            and(
+              eq(registrationsTable.eventId, eventId),
+              eq(registrationsTable.riderId, riderId),
+            ),
+          );
+      }
 
       if (existing) {
         await tx
@@ -965,6 +1030,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
             bikeBrand:     r.bike_brand    != null ? String(r.bike_brand)     : undefined,
             amountPaid:    r.amount_paid   != null ? String(r.amount_paid)    : undefined,
             paymentMethod: r.payment_method != null ? String(r.payment_method) : undefined,
+            ...raceDayRegistrationFields(r),
           })
           .where(eq(registrationsTable.id, existing.id));
       } else {
@@ -982,6 +1048,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           bikeBrand:     r.bike_brand     != null ? String(r.bike_brand)     : null,
           amountPaid:    r.amount_paid    != null ? String(r.amount_paid)    : null,
           paymentMethod: r.payment_method != null ? String(r.payment_method) : null,
+          ...raceDayRegistrationFields(r),
         });
       }
       regsUpserted++;
@@ -995,6 +1062,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       rider_id: unknown;
       event_id: unknown;
       rfid_number?: unknown;
+      expires_at?: unknown;
     }>;
 
     let rfidUpserted = 0;
@@ -1016,10 +1084,12 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           ),
         );
 
+      // Rental transponders carry an expiry; a plain assignment clears it.
+      const expiresAt = a.expires_at != null ? toDate(a.expires_at) : null;
       if (existing) {
         await tx
           .update(rfidAssignmentsTable)
-          .set({ rfidNumber })
+          .set({ rfidNumber, expiresAt })
           .where(eq(rfidAssignmentsTable.id, existing.id));
       } else {
         const requestedId = a.id != null && Number(a.id) > 0 ? Number(a.id) : undefined;
@@ -1030,6 +1100,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           riderId,
           eventId,
           rfidNumber,
+          expiresAt,
         });
       }
       rfidUpserted++;
@@ -1137,6 +1208,196 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     results["practice_crossings"] = practiceCrossingsUpserted;
     total += practiceCrossingsUpserted;
 
+    // ── liability_waiver_signatures (signed at desktop check-in) ──────────────
+    // Legal records: insert-only, never updated or deleted from a push. A retry
+    // after a lost response finds the same signature and doesn't duplicate it.
+    const waiverSignatures = (payload["liability_waiver_signatures"] ?? []) as Array<Record<string, unknown>>;
+    const signedWaiverEmails: Array<{ to: string; signerName: string; eventId: number; signedAt: Date; contentHash: string; waiverSnapshot: string }> = [];
+    let waiversInserted = 0;
+    for (const w of waiverSignatures) {
+      const eventId = mapEventId(w.event_id);
+      const signerName = w.signer_name != null ? String(w.signer_name).trim() : "";
+      const signerEmail = w.signer_email != null ? String(w.signer_email).trim().toLowerCase() : "";
+      const waiverSnapshot = w.waiver_snapshot != null ? String(w.waiver_snapshot) : "";
+      const contentHash = w.waiver_content_hash != null ? String(w.waiver_content_hash) : "";
+      const signedAt = toDate(w.signed_at);
+      if (!eventId || !signerName || !signerEmail || !waiverSnapshot || !contentHash || !signedAt) {
+        skip("liability_waiver_signatures", w as { id?: unknown }, "missing signature fields");
+        continue;
+      }
+      if (!await isClubEvent(eventId)) { skip("liability_waiver_signatures", w as { id?: unknown }, "event not found for this club"); continue; }
+      const [already] = await tx
+        .select({ id: liabilityWaiverSignaturesTable.id })
+        .from(liabilityWaiverSignaturesTable)
+        .where(and(
+          eq(liabilityWaiverSignaturesTable.eventId, eventId),
+          eq(liabilityWaiverSignaturesTable.signerEmail, signerEmail),
+          eq(liabilityWaiverSignaturesTable.signedAt, signedAt),
+          eq(liabilityWaiverSignaturesTable.waiverContentHash, contentHash),
+        ))
+        .limit(1);
+      if (already) { waiversInserted++; continue; }
+      const requestedId = w.id != null && Number(w.id) > 0 ? Number(w.id) : undefined;
+      const clientId = requestedId && await idIsFree(liabilityWaiverSignaturesTable, requestedId) ? requestedId : undefined;
+      if (clientId) explicitIdTables.add("liability_waiver_signatures");
+      let fieldLayout: unknown = w.field_layout ?? null;
+      if (typeof fieldLayout === "string") { try { fieldLayout = JSON.parse(fieldLayout); } catch { fieldLayout = null; } }
+      const isGuardian = w.signer_type === "guardian";
+      await tx.insert(liabilityWaiverSignaturesTable).values({
+        ...(clientId ? { id: clientId } : {}),
+        clubId,
+        eventId,
+        registrationId: w.registration_id != null ? Number(w.registration_id) : null,
+        signerName,
+        signerEmail,
+        signerIp: w.signer_ip != null ? String(w.signer_ip) : null,
+        signerUserAgent: w.signer_user_agent != null ? String(w.signer_user_agent) : null,
+        consentToEsign: true,
+        waiverContentHash: contentHash,
+        waiverSnapshot,
+        fieldLayout: fieldLayout as any,
+        signerType: isGuardian ? "guardian" : "self",
+        minorRiderName: isGuardian && w.minor_rider_name != null ? String(w.minor_rider_name) : null,
+        signedAt,
+      });
+      signedWaiverEmails.push({ to: signerEmail, signerName, eventId, signedAt, contentHash, waiverSnapshot });
+      waiversInserted++;
+    }
+    results["liability_waiver_signatures"] = waiversInserted;
+    total += waiversInserted;
+
+    // ── event_enduro_setup (time checks + penalty config + reader assignments) ─
+    // One snapshot per event, saved as a whole on the desktop. Applied like the
+    // cloud's own PUT handlers: replace the event's rows, keeping desktop ids
+    // when they are free so later arrivals and assignments still match.
+    const enduroSetups = (payload["event_enduro_setup"] ?? []) as Array<Record<string, unknown>>;
+    const enduroEventIds = new Set<number>();
+    // Desktop time-check id → cloud id, for arrivals pushed in the same batch.
+    const timeCheckIdMap = new Map<number, number>();
+    for (const setup of enduroSetups) {
+      const eventId = mapEventId(setup.event_id ?? setup.id);
+      if (!eventId || !await isClubEvent(eventId)) { skip("event_enduro_setup", { id: setup.id }, "event not found for this club"); continue; }
+      const checks = Array.isArray(setup.time_checks) ? setup.time_checks as Array<Record<string, unknown>> : [];
+      const assignments = Array.isArray(setup.reader_assignments) ? setup.reader_assignments as Array<Record<string, unknown>> : [];
+
+      const existingChecks = await tx.select({ id: enduroTimeChecksTable.id })
+        .from(enduroTimeChecksTable).where(eq(enduroTimeChecksTable.eventId, eventId));
+      const existingCheckIds = new Set(existingChecks.map((c) => c.id));
+      const incomingCheckIds = new Set(checks.map((c) => Number(c.id)).filter((n) => n > 0));
+      const removedCheckIds = [...existingCheckIds].filter((id) => !incomingCheckIds.has(id));
+      if (removedCheckIds.length > 0) {
+        const [withArrivals] = await tx.select({ id: enduroCheckpointArrivalsTable.id })
+          .from(enduroCheckpointArrivalsTable)
+          .where(inArray(enduroCheckpointArrivalsTable.timeCheckId, removedCheckIds)).limit(1);
+        if (withArrivals) { skip("event_enduro_setup", { id: setup.id }, "time checks with recorded arrivals can't be removed"); continue; }
+      }
+
+      // Reader assignments first (they reference time checks), then checks.
+      await tx.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, eventId));
+      if (removedCheckIds.length > 0) {
+        await tx.delete(enduroTimeChecksTable).where(inArray(enduroTimeChecksTable.id, removedCheckIds));
+      }
+      const checkIdMap = new Map<number, number>();
+      for (const c of checks) {
+        const localId = Number(c.id);
+        let targets: unknown = c.targets ?? [];
+        if (typeof targets === "string") { try { targets = JSON.parse(targets); } catch { targets = []; } }
+        const values = {
+          eventId,
+          checkNumber: Number(c.check_number) || 0,
+          name: c.name != null && String(c.name).trim() ? String(c.name).trim() : "Time Check",
+          targets: (Array.isArray(targets) ? targets : []) as any,
+        };
+        if (existingCheckIds.has(localId)) {
+          await tx.update(enduroTimeChecksTable).set(values).where(eq(enduroTimeChecksTable.id, localId));
+          checkIdMap.set(localId, localId);
+          continue;
+        }
+        const keepId = localId > 0 && await idIsFree(enduroTimeChecksTable, localId);
+        if (keepId) explicitIdTables.add("enduro_time_checks");
+        const [ins] = await tx.insert(enduroTimeChecksTable)
+          .values({ ...(keepId ? { id: localId } : {}), ...values })
+          .returning({ id: enduroTimeChecksTable.id });
+        checkIdMap.set(localId, ins.id);
+      }
+      for (const [localId, cloudId] of checkIdMap) timeCheckIdMap.set(localId, cloudId);
+
+      const clubReaderIds = new Set((await tx.select({ id: readersTable.id })
+        .from(readersTable).where(eq(readersTable.clubId, clubId))).map((r) => r.id));
+      for (const a of assignments) {
+        const readerId = Number(a.reader_id);
+        if (!clubReaderIds.has(readerId)) { skip("event_enduro_setup", { id: setup.id }, `reader ${readerId} does not belong to this club`); continue; }
+        const role = ["start", "finish", "time_check"].includes(String(a.role)) ? String(a.role) as "start" | "finish" | "time_check" : "start";
+        const motoId = a.moto_id != null ? mapMotoId(a.moto_id) : null;
+        const timeCheckId = a.time_check_id != null ? checkIdMap.get(Number(a.time_check_id)) ?? null : null;
+        await tx.insert(eventReaderAssignmentsTable).values({
+          eventId,
+          readerId,
+          antennaId: a.antenna_id != null ? Number(a.antenna_id) : null,
+          role,
+          motoId: motoId && await motoInEvent(motoId, eventId) ? motoId : null,
+          timeCheckId,
+        });
+      }
+
+      let penaltyConfig: unknown = setup.enduro_penalty_config ?? null;
+      if (typeof penaltyConfig === "string") { try { penaltyConfig = JSON.parse(penaltyConfig); } catch { penaltyConfig = null; } }
+      await tx.update(eventsTable)
+        .set({ enduroPenaltyConfig: (penaltyConfig && typeof penaltyConfig === "object" ? penaltyConfig : null) as any })
+        .where(eq(eventsTable.id, eventId));
+      enduroEventIds.add(eventId);
+    }
+    results["event_enduro_setup"] = enduroEventIds.size;
+    total += enduroEventIds.size;
+
+    // ── enduro_checkpoint_arrivals (manual arrivals recorded on the desktop) ──
+    const arrivals = (payload["enduro_checkpoint_arrivals"] ?? []) as Array<Record<string, unknown>>;
+    let arrivalsUpserted = 0;
+    for (const a of arrivals) {
+      const eventId = mapEventId(a.event_id);
+      const timeCheckId = timeCheckIdMap.get(Number(a.time_check_id)) ?? Number(a.time_check_id);
+      const riderId = Number(a.rider_id);
+      const arrivalTime = toDate(a.arrival_time);
+      if (!eventId || !timeCheckId || !riderId || !arrivalTime) { skip("enduro_checkpoint_arrivals", a as { id?: unknown }, "missing arrival fields"); continue; }
+      if (!await isClubEvent(eventId)) { skip("enduro_checkpoint_arrivals", a as { id?: unknown }, "event not found for this club"); continue; }
+      const [check] = await tx.select({ id: enduroTimeChecksTable.id }).from(enduroTimeChecksTable)
+        .where(and(eq(enduroTimeChecksTable.id, timeCheckId), eq(enduroTimeChecksTable.eventId, eventId)));
+      if (!check) { skip("enduro_checkpoint_arrivals", a as { id?: unknown }, "time check not found for this event"); continue; }
+      const recordedBy = a.recorded_by != null ? String(a.recorded_by) : "manual";
+      const requestedId = a.id != null && Number(a.id) > 0 ? Number(a.id) : undefined;
+      const [existingArrival] = await tx.select({ id: enduroCheckpointArrivalsTable.id })
+        .from(enduroCheckpointArrivalsTable)
+        .where(and(eq(enduroCheckpointArrivalsTable.timeCheckId, timeCheckId), eq(enduroCheckpointArrivalsTable.riderId, riderId)));
+      if (existingArrival) {
+        await tx.update(enduroCheckpointArrivalsTable).set({ arrivalTime, recordedBy })
+          .where(eq(enduroCheckpointArrivalsTable.id, existingArrival.id));
+      } else {
+        const keepId = requestedId && await idIsFree(enduroCheckpointArrivalsTable, requestedId) ? requestedId : undefined;
+        if (keepId) explicitIdTables.add("enduro_checkpoint_arrivals");
+        await tx.insert(enduroCheckpointArrivalsTable).values({
+          ...(keepId ? { id: keepId } : {}),
+          eventId, timeCheckId, riderId, arrivalTime, recordedBy,
+        });
+      }
+      enduroEventIds.add(eventId);
+      arrivalsUpserted++;
+    }
+    const arrivalDeletes = ((deletes["enduro_checkpoint_arrivals"] ?? []) as unknown[]).map(Number).filter(Boolean);
+    for (const arrivalId of arrivalDeletes) {
+      const [row] = await tx.select({ id: enduroCheckpointArrivalsTable.id, eventId: enduroCheckpointArrivalsTable.eventId })
+        .from(enduroCheckpointArrivalsTable).where(eq(enduroCheckpointArrivalsTable.id, arrivalId));
+      // Already gone (or never synced): nothing to delete.
+      if (!row) continue;
+      if (!await isClubEvent(row.eventId)) { skip("enduro_checkpoint_arrivals_deleted", { id: arrivalId }, "arrival not found for this club"); continue; }
+      await tx.delete(enduroCheckpointArrivalsTable).where(eq(enduroCheckpointArrivalsTable.id, arrivalId));
+      enduroEventIds.add(row.eventId);
+      arrivalsUpserted++;
+    }
+    results["enduro_checkpoint_arrivals"] = arrivalsUpserted;
+    total += arrivalsUpserted;
+    pushedEnduroEventIds = enduroEventIds;
+    pushedWaiverEmails = signedWaiverEmails;
+
     // Explicit-id inserts don't advance serial sequences; move each one past the
     // highest id so the next cloud-side insert doesn't collide.
     for (const table of explicitIdTables) {
@@ -1188,6 +1449,30 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         }
       })();
     });
+  }
+
+  // Enduro standings reflect pushed time checks / arrivals (as the cloud's own
+  // handlers do after each change), and signers of waivers taken at desktop
+  // check-in get the same confirmation email as online signers.
+  for (const eventId of pushedEnduroEventIds) {
+    recomputeEnduroPositionsForEvent(eventId).catch(() => {});
+  }
+  if (pushedWaiverEmails.length > 0) {
+    const eventNames = new Map<number, string>();
+    for (const w of pushedWaiverEmails) {
+      if (!eventNames.has(w.eventId)) {
+        const [ev] = await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, w.eventId));
+        eventNames.set(w.eventId, ev?.name ?? "");
+      }
+      sendLiabilityWaiverConfirmation({
+        to: w.to,
+        signerName: w.signerName,
+        eventName: eventNames.get(w.eventId) ?? "",
+        signedAt: w.signedAt.toISOString(),
+        contentHash: w.contentHash,
+        waiverSnapshot: w.waiverSnapshot,
+      }).catch(() => {});
+    }
   }
 
   const skippedCount = Object.values(skipped).reduce((n, rows) => n + rows.length, 0);
@@ -1281,8 +1566,22 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
           .where(inArray(practiceCrossingsTable.sessionId, practiceSessionIds))
       : [];
 
+  // Club waiver texts/PDFs for offline check-in (desktop table keys rows by id).
+  const [clubSettingsRow] = await db.select().from(clubSettingsTable).where(eq(clubSettingsTable.clubId, clubId));
+  const clubSettings = clubSettingsRow ? [{ id: clubId, ...clubSettingsRow }] : [];
+  // Signed liability waivers, so desktop check-in knows who has signed.
+  const liabilityWaiverSignatures = await db
+    .select()
+    .from(liabilityWaiverSignaturesTable)
+    .where(eq(liabilityWaiverSignaturesTable.clubId, clubId));
+
   if (clubEvents.length === 0) {
     return res.json({
+      clubSettings,
+      liabilityWaiverSignatures,
+      enduroTimeChecks: [],
+      enduroCheckpointArrivals: [],
+      eventReaderAssignments: [],
       registrations: [], checkins: [], riders: [],
       rfidAssignments: [], events: [], motos: [],
       lapCrossings: [], raceResults: [], users: clubUsers,
@@ -1326,6 +1625,11 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     db.select().from(raceResultsTable).where(
       inArray(raceResultsTable.eventId, clubEventIds),
     ),
+  ]);
+  const [enduroTimeChecks, enduroCheckpointArrivals, eventReaderAssignments] = await Promise.all([
+    db.select().from(enduroTimeChecksTable).where(inArray(enduroTimeChecksTable.eventId, clubEventIds)),
+    db.select().from(enduroCheckpointArrivalsTable).where(inArray(enduroCheckpointArrivalsTable.eventId, clubEventIds)),
+    db.select().from(eventReaderAssignmentsTable).where(inArray(eventReaderAssignmentsTable.eventId, clubEventIds)),
   ]);
 
   // Riders: return only riders who have a registration for a club event. This
@@ -1414,6 +1718,11 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     practiceCrossings,
     riderAccounts,
     riderPushTokens,
+    clubSettings,
+    liabilityWaiverSignatures,
+    enduroTimeChecks,
+    enduroCheckpointArrivals,
+    eventReaderAssignments,
   });
 });
 

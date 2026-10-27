@@ -339,19 +339,7 @@ router.get("/public/events/:eventId/check-bib", (req, res) => {
   return res.json({ taken: !!existing });
 });
 
-// ── Stripe charge — not available on desktop; return graceful error ───────────
-router.post("/events/:eventId/registrations/:regId/charge", (req, res) => {
-  return res.status(503).json({
-    error:
-      "Online payment processing is not available in the desktop app. Collect payment manually and mark the registration as paid.",
-  });
-});
-
-// ── Stripe verify-payment — not available on desktop; return graceful error ───
-router.post("/public/registrations/:id/verify-payment", (req, res) => {
-  return res.status(503).json({
-    error: "Payment verification is not available in the desktop app.",
-  });
-});
+// Card charges and Stripe payment verification are not handled locally: the
+// cloud pass-through (lib/cloud-proxy.ts) forwards them when online.
 
 export default router;

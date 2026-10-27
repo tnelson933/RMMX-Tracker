@@ -44,7 +44,13 @@ import {
   FunctionSquare,
 } from "lucide-react";
 
-const isDesktop = typeof (window as any).electronAPI !== "undefined";
+// A 503 means the AI service can't be reached (in RM Roost: no internet).
+// Show the server's message instead of blaming the organizer's wording.
+function unavailableMessage(err: unknown): string | undefined {
+  const e = err as { status?: number; data?: { error?: unknown } } | null;
+  if (e?.status !== 503) return undefined;
+  return typeof e.data?.error === "string" ? e.data.error : undefined;
+}
 
 const SUPERCROSS_SCALE = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 const OLYMPIC_SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
@@ -387,7 +393,6 @@ function AiAssistPanel({
   const [motoDesc, setMotoDesc] = useState("");
   const [motoNotes, setMotoNotes] = useState<string | null>(null);
   const suggestMutation = useAiSuggestPointsTable();
-  const [aiSuggestPending, setAiSuggestPending] = useState(false);
   const { toast } = useToast();
 
   async function handleGenerate() {
@@ -401,33 +406,18 @@ function AiAssistPanel({
         : "";
       const combinedMotoDesc = terminologyNote + (motoDesc.trim() || "");
 
-      let result: any;
-      if (isDesktop) {
-        setAiSuggestPending(true);
-        try {
-          const ipcResult = await (window as any).electronAPI.ai.suggestPointsTable({
-            scoringDescription: scoringDesc.trim(),
-            motoDescription: combinedMotoDesc || undefined,
-          });
-          if (!ipcResult.ok) throw new Error((ipcResult.data as any)?.error ?? "AI request failed");
-          result = ipcResult.data;
-        } finally {
-          setAiSuggestPending(false);
-        }
-      } else {
-        result = await suggestMutation.mutateAsync({
-          data: {
-            scoringDescription: scoringDesc.trim(),
-            motoDescription: combinedMotoDesc || undefined,
-          },
-        });
-      }
+      const result: any = await suggestMutation.mutateAsync({
+        data: {
+          scoringDescription: scoringDesc.trim(),
+          motoDescription: combinedMotoDesc || undefined,
+        },
+      });
 
       setMotoNotes(result.motoNotes ?? null);
       onApply(result);
       toast({ title: "Form filled from your description ✓", description: "Review and adjust anything below." });
-    } catch {
-      toast({ title: "AI couldn't parse that description", description: "Try adding more detail.", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "AI couldn't parse that description", description: unavailableMessage(err) ?? "Try adding more detail.", variant: "destructive" });
     }
   }
 
@@ -486,9 +476,9 @@ function AiAssistPanel({
         type="button"
         className="w-full gap-2"
         onClick={handleGenerate}
-        disabled={suggestMutation.isPending || aiSuggestPending || !scoringDesc.trim()}
+        disabled={suggestMutation.isPending || !scoringDesc.trim()}
       >
-        {(suggestMutation.isPending || aiSuggestPending) ? (
+        {suggestMutation.isPending ? (
           <>
             <span className="animate-spin">✦</span>
             Generating…
@@ -534,7 +524,6 @@ function AiTweakPanel({
 }) {
   const [instruction, setInstruction] = useState("");
   const tweakMutation = useAiTweakPointsTable();
-  const [aiTweakPending, setAiTweakPending] = useState(false);
   const { toast } = useToast();
 
   async function handleTweak() {
@@ -552,33 +541,18 @@ function AiTweakPanel({
         scoringFormula: currentForm.scoringFormula || null,
       };
 
-      let result: any;
-      if (isDesktop) {
-        setAiTweakPending(true);
-        try {
-          const ipcResult = await (window as any).electronAPI.ai.tweakPointsTable({
-            instruction: instruction.trim(),
-            currentTable: tablePayload,
-          });
-          if (!ipcResult.ok) throw new Error((ipcResult.data as any)?.error ?? "AI request failed");
-          result = ipcResult.data;
-        } finally {
-          setAiTweakPending(false);
-        }
-      } else {
-        result = await tweakMutation.mutateAsync({
-          data: {
-            instruction: instruction.trim(),
-            currentTable: tablePayload,
-          },
-        });
-      }
+      const result: any = await tweakMutation.mutateAsync({
+        data: {
+          instruction: instruction.trim(),
+          currentTable: tablePayload,
+        },
+      });
 
       onApply(result);
       setInstruction("");
       toast({ title: "Table updated by AI ✓", description: "Review the changes below before saving." });
-    } catch {
-      toast({ title: "AI couldn't apply that change", description: "Try rephrasing.", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "AI couldn't apply that change", description: unavailableMessage(err) ?? "Try rephrasing.", variant: "destructive" });
     }
   }
 
@@ -618,9 +592,9 @@ function AiTweakPanel({
         type="button"
         className="w-full gap-2"
         onClick={handleTweak}
-        disabled={tweakMutation.isPending || aiTweakPending || !instruction.trim()}
+        disabled={tweakMutation.isPending || !instruction.trim()}
       >
-        {(tweakMutation.isPending || aiTweakPending) ? (
+        {tweakMutation.isPending ? (
           <>
             <span className="animate-spin">✦</span>
             {isRefine ? "Refining…" : "Applying…"}

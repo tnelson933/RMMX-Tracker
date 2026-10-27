@@ -405,6 +405,10 @@ export class SyncEngine {
     const payload: Record<string, unknown> = {};
 
     for (const [table, ids] of Object.entries(grouped)) {
+      if (table === SyncEngine.ENDURO_SETUP_QUEUE) {
+        payload[table] = this.buildEnduroSetupSnapshots(ids);
+        continue;
+      }
       const placeholders = ids.map(() => "?").join(",");
       let tableRows = this.db
         .prepare(`SELECT * FROM ${table} WHERE id IN (${placeholders})`)
@@ -417,6 +421,7 @@ export class SyncEngine {
           "race_results",
           "lap_crossings",
           "practice_crossings",
+          "enduro_checkpoint_arrivals",
         ].includes(table)
       ) {
         const cloudIdFor = this.db.prepare(
@@ -647,7 +652,72 @@ export class SyncEngine {
     ["race_results",      "event_id"],
     ["lap_crossings",     "event_id"],
     ["practice_sessions", "event_id"],
+    ["liability_waiver_signatures", "event_id"],
+    ["enduro_checkpoint_arrivals",  "event_id"],
   ];
+
+  /**
+   * Write-queue name for an event's enduro setup: its time checks, penalty
+   * config and reader assignments. Each is saved as a whole on the desktop
+   * (PUT replaces them), so they sync as one snapshot per event whose
+   * record_id is the event id (queued by local-server routes/enduro.ts).
+   */
+  private static readonly ENDURO_SETUP_QUEUE = "event_enduro_setup";
+
+  /** Snapshot tables pushed under ENDURO_SETUP_QUEUE (pull prunes them per event). */
+  private static readonly ENDURO_SETUP_TABLES: ReadonlyArray<string> = [
+    "enduro_time_checks",
+    "event_reader_assignments",
+  ];
+
+  private buildEnduroSetupSnapshots(eventIds: number[]): Record<string, unknown>[] {
+    const out: Record<string, unknown>[] = [];
+    for (const eventId of eventIds) {
+      const event = this.db
+        .prepare("SELECT id, enduro_penalty_config FROM events WHERE id = ?")
+        .get(eventId) as { id: number; enduro_penalty_config: string | null } | undefined;
+      // Event deleted since: its delete is pushed separately; nothing to send.
+      if (!event) continue;
+      let penaltyConfig: unknown = null;
+      try { penaltyConfig = event.enduro_penalty_config ? JSON.parse(event.enduro_penalty_config) : null; } catch { /* keep null */ }
+      out.push({
+        id: eventId,
+        event_id: eventId,
+        enduro_penalty_config: penaltyConfig,
+        time_checks: this.db
+          .prepare("SELECT * FROM enduro_time_checks WHERE event_id = ? ORDER BY check_number, id")
+          .all(eventId),
+        reader_assignments: this.db
+          .prepare("SELECT * FROM event_reader_assignments WHERE event_id = ? ORDER BY id")
+          .all(eventId),
+      });
+    }
+    return out;
+  }
+
+  /** Moves an event's (or moto's) enduro setup to a remapped id and re-queues it. */
+  private remapEnduroSetup(column: "event_id" | "moto_id", localId: number, cloudId: number): void {
+    const eventIds = new Set<number>();
+    for (const table of SyncEngine.ENDURO_SETUP_TABLES) {
+      if (!this.localColumns(table).has(column)) continue;
+      for (const row of this.db
+        .prepare(`SELECT DISTINCT event_id FROM ${table} WHERE ${column} = ?`)
+        .all(localId) as Array<{ event_id: number }>) {
+        eventIds.add(column === "event_id" ? cloudId : row.event_id);
+      }
+      this.db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(cloudId, localId);
+    }
+    if (column === "event_id") {
+      this.db
+        .prepare("UPDATE _write_queue SET record_id = ? WHERE table_name = ? AND record_id = ?")
+        .run(cloudId, SyncEngine.ENDURO_SETUP_QUEUE, localId);
+    }
+    for (const eventId of eventIds) {
+      this.db
+        .prepare("INSERT INTO _write_queue (table_name, record_id, operation) VALUES (?, ?, 'upsert')")
+        .run(SyncEngine.ENDURO_SETUP_QUEUE, eventId);
+    }
+  }
 
   /**
    * When a desktop-created event collides with an existing cloud event from a
@@ -675,6 +745,7 @@ export class SyncEngine {
           // Patch FK columns in all child tables, then re-queue the rewritten
           // children so they push under the new id.
           this.remapChildForeignKeys(SyncEngine.EVENT_CHILD_TABLES, localId, cloudId);
+          this.remapEnduroSetup("event_id", localId, cloudId);
 
           // Keep the write-queue entry pointing at the new id.
           this.db
@@ -701,6 +772,7 @@ export class SyncEngine {
   private static readonly QUEUE_OPERATION: Readonly<Record<string, string>> = {
     lap_crossings: "insert",
     practice_crossings: "insert",
+    liability_waiver_signatures: "insert",
   };
 
   /**
@@ -777,6 +849,7 @@ export class SyncEngine {
             .run(cloudId, localId);
 
           this.remapChildForeignKeys(SyncEngine.MOTO_CHILD_TABLES, localId, cloudId);
+          this.remapEnduroSetup("moto_id", localId, cloudId);
 
           this.db
             .prepare(
@@ -908,6 +981,11 @@ export class SyncEngine {
       compCodes?: Record<string, unknown>[];
       practiceSessions?: Record<string, unknown>[];
       practiceCrossings?: Record<string, unknown>[];
+      clubSettings?: Record<string, unknown>[];
+      liabilityWaiverSignatures?: Record<string, unknown>[];
+      enduroTimeChecks?: Record<string, unknown>[];
+      enduroCheckpointArrivals?: Record<string, unknown>[];
+      eventReaderAssignments?: Record<string, unknown>[];
     };
 
     const now = new Date().toISOString();
@@ -939,6 +1017,11 @@ export class SyncEngine {
           ["lap_crossings",       data.lapCrossings        ?? []],
           ["race_results",        data.raceResults         ?? []],
           ["users",               data.users               ?? []],
+          ["club_settings",       data.clubSettings        ?? []],
+          ["liability_waiver_signatures", data.liabilityWaiverSignatures ?? []],
+          ["enduro_time_checks",  data.enduroTimeChecks    ?? []],
+          ["enduro_checkpoint_arrivals", data.enduroCheckpointArrivals ?? []],
+          ["event_reader_assignments", data.eventReaderAssignments ?? []],
         ];
 
         for (const [table, rows] of tableMap) {
@@ -953,6 +1036,7 @@ export class SyncEngine {
             )
             .run(table, now);
         }
+        this.pruneEnduroRows(data);
       } finally {
         // Always clear the guard, even if an upsert threw.
         this.db.prepare("DELETE FROM _cloud_pull_guard").run();
@@ -1038,6 +1122,57 @@ export class SyncEngine {
   }
 
   /**
+   * The cloud replaces an event's time checks and reader assignments wholesale
+   * (new ids each save) and deletes arrivals, so rows the cloud no longer has
+   * would otherwise linger locally. For each event in this pull, removes local
+   * rows missing from the cloud response unless they still wait to be pushed.
+   * Older cloud servers that don't send these tables are left alone. Runs
+   * under _cloud_pull_guard, so the deletes are not queued back to the cloud.
+   */
+  private pruneEnduroRows(data: {
+    events?: Record<string, unknown>[];
+    enduroTimeChecks?: Record<string, unknown>[];
+    enduroCheckpointArrivals?: Record<string, unknown>[];
+    eventReaderAssignments?: Record<string, unknown>[];
+  }): void {
+    const eventIds = (data.events ?? []).map((e) => Number(e["id"])).filter((n) => n > 0);
+    if (eventIds.length === 0) return;
+    const pendingSetup = new Set(
+      (this.db
+        .prepare(
+          `SELECT record_id FROM _write_queue
+           WHERE table_name = ? AND synced_at IS NULL AND attempt_count < ?`,
+        )
+        .all(SyncEngine.ENDURO_SETUP_QUEUE, MAX_ATTEMPTS) as Array<{ record_id: number }>).map((r) => r.record_id),
+    );
+    const pendingArrivals = new Set(
+      (this.db
+        .prepare(
+          `SELECT record_id FROM _write_queue
+           WHERE table_name = 'enduro_checkpoint_arrivals' AND synced_at IS NULL AND attempt_count < ?`,
+        )
+        .all(MAX_ATTEMPTS) as Array<{ record_id: number }>).map((r) => r.record_id),
+    );
+    const sets: Array<[string, Record<string, unknown>[] | undefined, (eventId: number, rowId: number) => boolean]> = [
+      ["enduro_time_checks", data.enduroTimeChecks, (eventId) => pendingSetup.has(eventId)],
+      ["event_reader_assignments", data.eventReaderAssignments, (eventId) => pendingSetup.has(eventId)],
+      ["enduro_checkpoint_arrivals", data.enduroCheckpointArrivals, (_eventId, rowId) => pendingArrivals.has(rowId)],
+    ];
+    for (const [table, rows, isPending] of sets) {
+      if (!Array.isArray(rows) || !this.localColumns(table).has("event_id")) continue;
+      const cloudIds = new Set(rows.map((r) => Number(r["id"])));
+      const select = this.db.prepare(`SELECT id, event_id FROM ${table} WHERE event_id = ?`);
+      const del = this.db.prepare(`DELETE FROM ${table} WHERE id = ?`);
+      for (const eventId of eventIds) {
+        for (const row of select.all(eventId) as Array<{ id: number; event_id: number }>) {
+          if (cloudIds.has(row.id) || isPending(row.event_id, row.id)) continue;
+          del.run(row.id);
+        }
+      }
+    }
+  }
+
+  /**
    * Upserts cloud rows into the local SQLite table.
    * - Converts camelCase cloud keys to snake_case.
    * - Filters out any cloud-side columns that don't exist locally (avoids
@@ -1063,6 +1198,17 @@ export class SyncEngine {
           .all(table, MAX_ATTEMPTS) as Array<{ record_id: number }>
       ).map((r) => r.record_id),
     );
+    // Snapshot tables are queued per event: skip every row of a pending event.
+    const pendingSetupEvents = SyncEngine.ENDURO_SETUP_TABLES.includes(table)
+      ? new Set(
+          (this.db
+            .prepare(
+              `SELECT record_id FROM _write_queue
+               WHERE table_name = ? AND synced_at IS NULL AND attempt_count < ?`,
+            )
+            .all(SyncEngine.ENDURO_SETUP_QUEUE, MAX_ATTEMPTS) as Array<{ record_id: number }>).map((r) => r.record_id),
+        )
+      : null;
     if (table === "riders") {
       for (const row of this.db
         .prepare("SELECT DISTINCT rider_id FROM _rider_profile_dirty")
@@ -1111,7 +1257,10 @@ export class SyncEngine {
 
       // Skip rows with a pending local write — their local version wins until
       // successfully pushed to the cloud.
-      if (pendingIds.has(snakeRow.id as number)) {
+      if (
+        pendingIds.has(snakeRow.id as number) ||
+        (pendingSetupEvents && pendingSetupEvents.has(Number(snakeRow.event_id)))
+      ) {
         this.pullSkippedPending++;
         if (table === "events") {
           console.warn(

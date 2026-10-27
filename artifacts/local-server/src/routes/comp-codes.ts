@@ -162,41 +162,40 @@ router.post("/public/events/:eventId/validate-comp-code", (req, res) => {
   });
 });
 
-// GET /clubs/:clubId/riders/:riderId/discount-code — rider-specific comp codes
+// GET /clubs/:clubId/riders/:riderId/discount-code — the rider's club-wide
+// discount code, or null. Same shape as the cloud: one object, not a list.
 router.get("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
   const userId = (req.session as any)?.userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+  const clubId = Number(req.params.clubId);
   const riderId = Number(req.params.riderId);
   const db = getDb();
 
-  const rows = db
-    .prepare(
-      `SELECT cc.*, (r.first_name || ' ' || r.last_name) AS rider_name
-       FROM comp_codes cc
-       LEFT JOIN riders r ON cc.rider_id = r.id
-       WHERE cc.rider_id = ? AND cc.is_active = 1`,
-    )
-    .all(riderId) as any[];
+  const rider = db
+    .prepare("SELECT first_name, last_name FROM riders WHERE id = ?")
+    .get(riderId) as { first_name: string; last_name: string } | undefined;
+  if (!rider) return res.status(404).json({ error: "Rider not found" });
 
-  return res.json(
-    rows.map((r: any) => ({
-      id: r.id,
-      eventId: r.event_id ?? null,
-      clubId: r.club_id ?? null,
-      riderId: r.rider_id ?? null,
-      riderName: r.rider_name ?? null,
-      code: r.code,
-      discountType: r.discount_type,
-      amount: Number(r.amount),
-      maxUses: r.max_uses,
-      usesCount: r.uses_count,
-      isActive: r.is_active === 1,
-      expiresAt: r.expires_at ?? null,
-      categoryIds: r.category_ids ? JSON.parse(r.category_ids) : [],
-      createdAt: r.created_at,
-    })),
-  );
+  const row = db
+    .prepare(
+      `SELECT * FROM comp_codes
+       WHERE event_id IS NULL AND club_id = ? AND rider_id = ?
+       ORDER BY created_at ASC, id ASC LIMIT 1`,
+    )
+    .get(clubId, riderId) as any;
+  if (!row) return res.json(null);
+
+  return res.json({
+    id: row.id,
+    code: row.code,
+    amount: Number(row.amount),
+    maxUses: row.max_uses,
+    usesCount: row.uses_count,
+    createdAt: row.created_at,
+    riderId: row.rider_id,
+    riderName: `${rider.first_name} ${rider.last_name}`,
+  });
 });
 
 // POST /clubs/:clubId/riders/:riderId/discount-code — assign a comp code to a specific rider

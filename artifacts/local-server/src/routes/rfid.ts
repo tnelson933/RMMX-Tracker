@@ -3,6 +3,7 @@ import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb, parseJsonArr } from "../db";
 import { formatLapTime } from "./timing";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
+import { fulfillRmTrackr } from "../lib/rm-trackr";
 
 const router = Router();
 
@@ -148,6 +149,7 @@ router.post("/rfid", (req, res) => {
         `UPDATE checkins SET rfid_number = ?, rfid_linked = 1
          WHERE event_id = ? AND rider_id = ?`,
       ).run(activeTransponderNumber, numEventId, numRiderId);
+      fulfillRmTrackr(db, numEventId, numRiderId, activeTransponderNumber);
     }
 
     const rider = db
@@ -203,6 +205,7 @@ router.post("/rfid", (req, res) => {
     db.prepare(
       "UPDATE checkins SET rfid_number = ?, rfid_linked = 1 WHERE event_id = ? AND rider_id = ?",
     ).run(rfidNumber, numEventId, numRiderId);
+    fulfillRmTrackr(db, numEventId, numRiderId, rfidNumber);
   }
 
   const assignmentRow = numEventId

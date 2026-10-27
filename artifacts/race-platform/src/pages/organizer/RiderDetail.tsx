@@ -395,8 +395,12 @@ function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number
   } = useGetRiderDiscountCode(clubId, riderId, {
     query: { queryKey: codeQueryKey, retry: false },
   });
-  // The endpoint returns JSON null when no code is assigned.
-  const code: DiscountCodeLegacy | null = codeData ?? null;
+  // The endpoint returns JSON null when no code is assigned. The RM Roost
+  // local server returns an array of the rider's active codes instead, so
+  // show the first one.
+  const code: DiscountCodeLegacy | null = Array.isArray(codeData)
+    ? ((codeData as DiscountCodeLegacy[])[0] ?? null)
+    : (codeData ?? null);
   const setCode = (next: DiscountCodeLegacy | null) => {
     queryClient.setQueryData(codeQueryKey, next as DiscountCodeLegacy);
   };
@@ -703,7 +707,6 @@ export default function RiderDetail() {
 
   const r = rider as any;
   const clubId = (me as any)?.clubId;
-  const isDesktop = typeof (window as any).electronAPI !== "undefined";
   const { hasPermission } = useAuth();
   const canManageDiscountCodes = hasPermission("discount_codes");
 
@@ -1021,8 +1024,8 @@ export default function RiderDetail() {
             </CardContent>
           </Card>
 
-          {/* Assigned Discount Codes — cloud-only feature */}
-          {!isDesktop && canManageDiscountCodes && <RiderAssignedCodesSection riderId={riderId} />}
+          {/* Assigned Discount Codes */}
+          {canManageDiscountCodes && <RiderAssignedCodesSection riderId={riderId} />}
 
           {/* Sponsors callout (read view) */}
           {!isEditing && r.sponsors && (
@@ -1165,8 +1168,8 @@ export default function RiderDetail() {
             </CardContent>
           </Card>
 
-          {/* Discount Code — cloud-only feature */}
-          {!isDesktop && clubId && canManageDiscountCodes && (
+          {/* Discount Code */}
+          {clubId && canManageDiscountCodes && (
             <DiscountCodeCard riderId={riderId} clubId={clubId} />
           )}
 

@@ -143,7 +143,6 @@ export default function EventDetail() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isAdmin = user?.role === "super_admin";
-  const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
   const { data: event, isLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const { data: summary } = useGetRaceDaySummary(eventId, { query: { enabled: !!eventId } as any });

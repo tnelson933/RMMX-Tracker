@@ -3,6 +3,7 @@ import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
 import { resolveRegistrationRider } from "../registration-rider";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
+import { includesRmTrackr } from "../lib/rm-trackr";
 
 const router = Router();
 
@@ -53,10 +54,14 @@ function serializeEvent(e: any) {
     transponderRentalFee: e.transponder_rental_fee != null ? Number(e.transponder_rental_fee) : null,
     noDuplicateBibs: e.no_duplicate_bibs === 1,
     requireClubId: e.require_club_id === 1,
-    // Synced from the cloud but not enforced offline: the local server has no
-    // waiver signing endpoint, so gating check-in here would block race day.
-    // Signatures are collected online (registration or cloud check-in).
-    requireLiabilityWaiver: false,
+    rfidStickerFee: e.rfid_sticker_fee != null ? Number(e.rfid_sticker_fee) : null,
+    requireWaiver: e.require_waiver === 1,
+    // Enforced at check-in: waivers can be signed offline
+    // (POST /public/events/:id/liability-waiver/sign, routes/waivers.ts).
+    requireLiabilityWaiver: e.require_liability_waiver === 1,
+    requireTransponder: e.require_transponder === 1,
+    raceClassDetails: (() => { try { return JSON.parse(e.race_class_details || "{}"); } catch { return {}; } })(),
+    enduroPenaltyConfig: (() => { try { return e.enduro_penalty_config ? JSON.parse(e.enduro_penalty_config) : null; } catch { return null; } })(),
     scoringTableId: e.scoring_table_id ?? null,
     minLapMs: e.min_lap_ms ?? null,
     amaEventId: e.ama_event_id ?? null,
@@ -300,6 +305,17 @@ router.delete("/events/:eventId", (req, res) => {
   const id = Number(req.params.eventId);
   const event = db.prepare("SELECT id FROM events WHERE id = ?").get(id);
   if (!event) return res.status(404).json({ error: "Not found" });
+  // Signed liability waivers are legal records and are never deleted, so an
+  // event that has any is kept (the cloud refuses the same delete).
+  const signedWaiver = db
+    .prepare("SELECT 1 FROM liability_waiver_signatures WHERE event_id = ? LIMIT 1")
+    .get(id);
+  if (signedWaiver) {
+    return res.status(409).json({ error: "This event has signed liability waivers, so it can't be deleted." });
+  }
+  db.prepare("DELETE FROM enduro_checkpoint_arrivals WHERE event_id = ?").run(id);
+  db.prepare("DELETE FROM enduro_time_checks WHERE event_id = ?").run(id);
+  db.prepare("DELETE FROM event_reader_assignments WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM race_results WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM lap_crossings WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM motos WHERE event_id = ?").run(id);
@@ -359,8 +375,8 @@ router.post("/events/:eventId/registrations", (req, res) => {
   const result = db.prepare(
     `INSERT INTO registrations (event_id, rider_id, race_class, bib_number, ama_number, club_id_number,
        bike_brand, bike_model, bike_year, sponsors, mylaps_transponder_number, transponder_rental,
-       selected_purchase_options, payment_method, amount_paid, payment_status, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+       selected_purchase_options, payment_method, amount_paid, payment_status, status, rm_trackr_purchased, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
   ).run(
     eventId, riderId, String(raceClass),
     bibNumber ?? null, amaNumber ?? null, clubIdNumber ?? null,
@@ -372,6 +388,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     amountPaid ?? null,
     resolvedPaymentStatus,
     resolvedStatus,
+    includesRmTrackr(selectedPurchaseOptions) ? 1 : 0,
   );
 
   const reg = db.prepare("SELECT * FROM registrations WHERE id = ?").get(Number(result.lastInsertRowid)) as any;

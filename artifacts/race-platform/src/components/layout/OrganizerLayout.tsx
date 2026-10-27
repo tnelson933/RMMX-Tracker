@@ -35,8 +35,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const isDesktop = typeof (window as any).electronAPI !== "undefined";
-
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permKey: "dashboard", tourId: undefined },
   { href: "/events", label: "Events", icon: CalendarDays, permKey: "events", tourId: "nav-events" },
@@ -90,7 +88,6 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   // For staff: only show nav items they have permissions for
   // For organizer/admin: show all nav items
   const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (isDesktop && (item as any).desktopHidden) return false;
     if (!isStaff) return true;
     return permissions.includes(item.permKey);
   });

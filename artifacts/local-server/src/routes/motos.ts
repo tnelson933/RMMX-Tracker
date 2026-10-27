@@ -52,6 +52,8 @@ function serializeMoto(m: any, groupMembersMap?: Map<number, number[]>) {
     startedAt: m.started_at ?? null,
     timeExpiredAt: m.time_expired_at ?? null,
     completedAt: m.completed_at ?? null,
+    pausedAt: m.paused_at ?? null,
+    totalPausedMs: m.total_paused_ms ?? 0,
     staggeredOrder: m.staggered_order ?? null,
     staggeredGroupId: groupId,
     staggeredGroupMembers: groupId != null && groupMembersMap ? (groupMembersMap.get(groupId) ?? null) : null,
@@ -316,7 +318,7 @@ router.post("/motos/:motoId/restart", (req, res) => {
   db.prepare(
     `UPDATE motos
      SET status = 'scheduled', started_at = NULL, time_expired_at = NULL,
-         completed_at = NULL
+         completed_at = NULL, paused_at = NULL, total_paused_ms = 0
      WHERE id = ?`,
   ).run(id);
 
@@ -326,6 +328,47 @@ router.post("/motos/:motoId/restart", (req, res) => {
   if (snapshot) sseBroadcast(id, snapshot);
 
   return res.json({ ok: true, moto: serializeMoto(updated) });
+});
+
+// POST /motos/:motoId/pause — freeze the clock without ending the moto
+router.post("/motos/:motoId/pause", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const db = getDb();
+  const id = Number(req.params.motoId);
+
+  const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
+  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (moto.status !== "in_progress") return res.status(400).json({ error: "Moto is not in progress" });
+  if (moto.paused_at) return res.status(400).json({ error: "Moto is already paused" });
+
+  db.prepare("UPDATE motos SET paused_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+  const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
+  const snapshot = buildLeaderboard(id);
+  if (snapshot) sseBroadcast(id, snapshot);
+  return res.json(serializeMoto(updated));
+});
+
+// POST /motos/:motoId/resume — unfreeze the clock from where it was paused
+router.post("/motos/:motoId/resume", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const db = getDb();
+  const id = Number(req.params.motoId);
+
+  const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
+  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (moto.status !== "in_progress") return res.status(400).json({ error: "Moto is not in progress" });
+  if (!moto.paused_at) return res.status(400).json({ error: "Moto is not paused" });
+
+  const pausedAtMs = new Date(moto.paused_at).getTime();
+  const additionalMs = Number.isNaN(pausedAtMs) ? 0 : Math.max(0, Date.now() - pausedAtMs);
+  db.prepare("UPDATE motos SET paused_at = NULL, total_paused_ms = ? WHERE id = ?")
+    .run((moto.total_paused_ms ?? 0) + additionalMs, id);
+  const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
+  const snapshot = buildLeaderboard(id);
+  if (snapshot) sseBroadcast(id, snapshot);
+  return res.json(serializeMoto(updated));
 });
 
 // POST /events/:eventId/stagger — link N motos as a staggered start group
@@ -1360,6 +1403,72 @@ router.post("/events/:eventId/generate-practice-sessions", (req, res) => {
   }
 
   return res.status(201).json(created);
+});
+
+// POST /events/:eventId/advance-to-main — move the top heat finishers into the
+// Main Event lineup (manual trigger). Mirrors the cloud handler.
+router.post("/events/:eventId/advance-to-main", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const db = getDb();
+  const eventId = Number(req.params.eventId);
+  const { raceClass, topPerHeat = 5 } = req.body ?? {};
+  if (!raceClass) return res.status(400).json({ error: "raceClass is required" });
+  const top = Number(topPerHeat);
+
+  const heatMotos = db
+    .prepare("SELECT * FROM motos WHERE event_id = ? AND race_class = ? AND type = 'heat'")
+    .all(eventId, String(raceClass)) as any[];
+  if (heatMotos.length === 0) return res.status(404).json({ error: "No heat motos found for this class" });
+
+  const mainMoto = db
+    .prepare("SELECT * FROM motos WHERE event_id = ? AND race_class = ? AND type = 'main' LIMIT 1")
+    .get(eventId, String(raceClass)) as any;
+  if (!mainMoto) return res.status(404).json({ error: "No main event moto found. Generate lineups first." });
+
+  type LineupEntry = { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber: string | null };
+  const resultsFor = db.prepare("SELECT * FROM race_results WHERE moto_id = ?");
+  const advancedRiderIds = new Set<number>();
+  const advancedLineup: LineupEntry[] = [];
+
+  for (const heat of heatMotos) {
+    const results = resultsFor.all(heat.id) as any[];
+    const heatLineup = parseJsonArr<LineupEntry>(heat.lineup);
+
+    if (results.length > 0) {
+      const sorted = results.filter((r) => r.dnf !== 1 && r.dns !== 1).sort((a, b) => a.position - b.position);
+      for (const r of sorted.slice(0, top)) {
+        if (advancedRiderIds.has(r.rider_id)) continue;
+        advancedRiderIds.add(r.rider_id);
+        const fromLineup = heatLineup.find((l) => l.riderId === r.rider_id);
+        advancedLineup.push({
+          position: advancedLineup.length + 1,
+          riderId: r.rider_id,
+          riderName: fromLineup?.riderName ?? `Rider #${r.rider_id}`,
+          bibNumber: r.bib_number ?? fromLineup?.bibNumber ?? null,
+          rfidNumber: fromLineup?.rfidNumber ?? null,
+        });
+      }
+    } else {
+      const sorted = [...heatLineup].sort((a, b) => a.position - b.position);
+      for (const l of sorted.slice(0, top)) {
+        if (advancedRiderIds.has(l.riderId)) continue;
+        advancedRiderIds.add(l.riderId);
+        advancedLineup.push({
+          position: advancedLineup.length + 1,
+          riderId: l.riderId,
+          riderName: l.riderName,
+          bibNumber: l.bibNumber ?? null,
+          rfidNumber: l.rfidNumber ?? null,
+        });
+      }
+    }
+  }
+
+  advancedLineup.forEach((r, i) => { r.position = i + 1; });
+  db.prepare("UPDATE motos SET lineup = ? WHERE id = ?").run(JSON.stringify(advancedLineup), mainMoto.id);
+  const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(mainMoto.id) as any;
+  return res.json(serializeMoto(updated));
 });
 
 export default router;

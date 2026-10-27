@@ -18,32 +18,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRight, Unlink, Globe, RefreshCw } from "lucide-react";
+import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRight, Unlink, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-
-const isDesktop =
-  typeof (window as any).electronAPI !== "undefined" ||
-  window.location.hostname === "127.0.0.1" ||
-  window.location.hostname === "localhost";
-
-function useRelativeTime(ts: number) {
-  const [label, setLabel] = useState(() => formatRelative(ts));
-  useEffect(() => {
-    const id = setInterval(() => setLabel(formatRelative(ts)), 10_000);
-    return () => clearInterval(id);
-  }, [ts]);
-  return label;
-}
-
-function formatRelative(ts: number) {
-  if (!ts) return "";
-  const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  return `${Math.floor(diff / 3600)}h ago`;
-}
 
 function LinkifiedStripeError({ message }: { message: string }) {
   const parts = message.split(/(https?:\/\/[^\s]+)/g);
@@ -73,191 +50,6 @@ function LinkifiedStripeError({ message }: { message: string }) {
   );
 }
 
-function DesktopStripeRedirect() {
-  const [cloudUrl, setCloudUrl] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  useEffect(() => {
-    (window as any).electronAPI?.sync?.getState?.()
-      .then((s: any) => setCloudUrl(s?.cloudUrl ?? null))
-      .catch(() => {});
-  }, []);
-
-  const {
-    data: status,
-    isLoading,
-    isFetching,
-    dataUpdatedAt,
-    refetch,
-  } = useQuery({
-    queryKey: ["stripe-connect-status"],
-    queryFn: async () => {
-      const res = await fetch("/api/stripe/connect/status", { credentials: "include" });
-      if (!res.ok) return { connected: false, onboardingComplete: false, accountId: null, source: "local" as const };
-      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null; source: "cloud" | "local" }>;
-    },
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: false,
-  });
-
-  const lastCheckedLabel = useRelativeTime(dataUpdatedAt);
-  const paymentsUrl = cloudUrl ? `${cloudUrl.replace(/\/$/, "")}/payments` : null;
-  const fromCloud = status?.source === "cloud";
-
-  async function handleRefresh() {
-    setRefreshing(true);
-    try {
-      await refetch();
-      const api = (window as any).electronAPI;
-      if (api?.sync?.flush) await api.sync.flush();
-      await queryClient.invalidateQueries({ queryKey: ["stripe-connect-status"] });
-      toast({ title: "Status refreshed", description: "Stripe payment status is up to date." });
-    } catch (err: any) {
-      toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  return (
-    <div className="p-8 max-w-3xl mx-auto space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-heading font-bold uppercase tracking-tight">Payments</h1>
-          <p className="text-muted-foreground mt-1">
-            Connect your Stripe account to collect entry fees from riders at registration.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={refreshing || isFetching}
-          className="font-heading uppercase tracking-wider shrink-0 mt-1"
-        >
-          {(refreshing || isFetching) ? (
-            <><Loader2 size={14} className="mr-1.5 animate-spin" /> Checking...</>
-          ) : (
-            <><RefreshCw size={14} className="mr-1.5" /> Refresh Status</>
-          )}
-        </Button>
-      </div>
-
-      {/* Status source indicator */}
-      {!isLoading && dataUpdatedAt > 0 && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className={`w-1.5 h-1.5 rounded-full ${fromCloud ? "bg-green-500" : "bg-amber-400"}`} />
-          {fromCloud ? "Live from cloud" : "From local cache — cloud unreachable"}
-          <span className="text-muted-foreground/60">· checked {lastCheckedLabel}</span>
-          <span className="text-muted-foreground/40">· auto-refreshes every 30s</span>
-        </div>
-      )}
-
-      {isLoading ? (
-        <Card>
-          <CardContent className="flex items-center justify-center h-28">
-            <Loader2 className="animate-spin text-muted-foreground" size={24} />
-          </CardContent>
-        </Card>
-      ) : status?.connected ? (
-        <Card className="border-green-500/30">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-3">
-              <div className="bg-green-500/10 rounded-full p-3">
-                <CheckCircle2 size={24} className="text-green-600" />
-              </div>
-              <div>
-                <CardTitle className="font-heading uppercase flex items-center gap-2">
-                  Stripe Connected
-                  <Badge className="bg-green-500/15 text-green-700 border-green-500/30 text-xs normal-case font-normal">Active</Badge>
-                </CardTitle>
-                <CardDescription>Payment collection is enabled for your club</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {!status.onboardingComplete && (
-              <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700">
-                <AlertCircle size={15} className="mt-0.5 shrink-0" />
-                <span>Stripe account setup is incomplete. Visit the cloud portal to finish setup and activate payouts.</span>
-              </div>
-            )}
-            <p className="text-sm text-muted-foreground">
-              Payment collection is active. On any event, open the edit form and check <strong>Collect Payments</strong> to charge riders an entry fee at registration.
-            </p>
-            {paymentsUrl && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.open(paymentsUrl, "_blank")}
-                className="font-heading uppercase tracking-wider"
-              >
-                <ExternalLink size={14} className="mr-1.5" /> Open in Cloud Portal
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="border-blue-500/30 bg-blue-500/5">
-          <CardContent className="pt-6 space-y-4">
-            <div className="flex items-start gap-4">
-              <div className="bg-blue-500/15 rounded-full p-3 shrink-0">
-                <Globe size={24} className="text-blue-400" />
-              </div>
-              <div className="space-y-1">
-                <h2 className="font-heading font-semibold uppercase tracking-wide text-base">
-                  Payments Not Connected
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Stripe Connect must be set up from the web portal — it handles the OAuth flow.
-                  Once connected there, this page updates automatically within 30 seconds.
-                </p>
-              </div>
-            </div>
-            {paymentsUrl ? (
-              <Button
-                className="font-heading uppercase tracking-wider"
-                size="lg"
-                onClick={() => window.open(paymentsUrl, "_blank")}
-              >
-                <ExternalLink size={16} className="mr-2" />
-                Set Up Payments in Cloud Portal
-              </Button>
-            ) : (
-              <div className="text-sm text-muted-foreground rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center gap-2">
-                <AlertCircle size={14} className="text-amber-400 shrink-0" />
-                No cloud URL configured. Log out and log back in to connect this app to your cloud account.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="bg-muted/30">
-        <CardContent className="pt-6">
-          <h3 className="font-heading font-semibold uppercase tracking-wide text-sm mb-3">How it works</h3>
-          <div className="grid gap-3 sm:grid-cols-3 text-sm text-muted-foreground">
-            <div className="space-y-1">
-              <div className="font-medium text-foreground">1. Connect (web)</div>
-              <div>Visit Payments in your cloud portal to link your Stripe Express account once.</div>
-            </div>
-            <div className="space-y-1">
-              <div className="font-medium text-foreground">2. Enable on Events</div>
-              <div>Check "Collect Payments" and set an entry fee when creating events — works on desktop too.</div>
-            </div>
-            <div className="space-y-1">
-              <div className="font-medium text-foreground">3. Get Paid</div>
-              <div>Riders pay at registration and funds deposit directly to your Stripe account.</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 function useStripeConnectStatus() {
   return useQuery({
     queryKey: ["stripe-connect-status"],
@@ -269,12 +61,13 @@ function useStripeConnectStatus() {
       }
       return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null }>;
     },
+    // Stripe onboarding opens in another tab (or, in RM Roost, the system
+    // browser), so re-check whenever the organizer comes back to this window.
+    refetchOnWindowFocus: "always",
   });
 }
 
 export default function StripeConnect() {
-  if (isDesktop) return <DesktopStripeRedirect />;
-
   const [location] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -312,7 +105,7 @@ export default function StripeConnect() {
         body: JSON.stringify({ email: stripeEmail.trim() || undefined }),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? "Failed to start Stripe Connect");
       }
       return res.json() as Promise<{ url: string }>;
@@ -348,7 +141,10 @@ export default function StripeConnect() {
   const dashboardMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/stripe/connect/dashboard-link", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to open dashboard");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Failed to open dashboard");
+      }
       return res.json() as Promise<{ url: string }>;
     },
     onSuccess: (data) => {
@@ -365,7 +161,10 @@ export default function StripeConnect() {
         method: "DELETE",
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to disconnect");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Failed to disconnect");
+      }
       return res.json();
     },
     onSuccess: () => {

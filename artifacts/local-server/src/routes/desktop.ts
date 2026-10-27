@@ -1,6 +1,8 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import { timingSafeEqual } from "crypto";
 import { getDb } from "../db";
+import { setRuntimeCloudCredentials } from "../lib/cloud-session";
 
 const router = Router();
 
@@ -47,6 +49,53 @@ router.post("/desktop/init", (req, res) => {
     }
     return res.json({ ok: true });
   });
+});
+
+/**
+ * POST /api/desktop/cloud-credentials
+ *
+ * Called only by the Electron main process (never the renderer) to hand over
+ * the signed-in organizer's cloud account, which the cloud pass-through uses.
+ * Body: { email, password, cloudUrl } to sign in, or { clear: true } to sign out.
+ * Requires the per-launch DESKTOP_CONTROL_TOKEN the desktop passed when it
+ * started this server, and rejects anything a web page could send.
+ */
+const DESKTOP_CONTROL_TOKEN = process.env.DESKTOP_CONTROL_TOKEN ?? "";
+
+function controlTokenMatches(given: unknown): boolean {
+  if (!DESKTOP_CONTROL_TOKEN || typeof given !== "string") return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(DESKTOP_CONTROL_TOKEN);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+router.post("/desktop/cloud-credentials", (req, res) => {
+  if (req.headers.origin !== undefined || !req.is("application/json")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  if (!controlTokenMatches(req.headers["x-rm-desktop-control"])) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const { email, password, cloudUrl, clear } = (req.body ?? {}) as Record<string, unknown>;
+  if (clear === true) {
+    setRuntimeCloudCredentials(null);
+    return res.json({ ok: true });
+  }
+  if (typeof email !== "string" || !email || typeof password !== "string" || !password) {
+    return res.status(400).json({ error: "email and password are required" });
+  }
+  let url: string | undefined;
+  if (typeof cloudUrl === "string" && cloudUrl) {
+    try {
+      const parsed = new URL(cloudUrl);
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("bad protocol");
+      url = parsed.origin;
+    } catch {
+      return res.status(400).json({ error: "cloudUrl must be an http(s) URL" });
+    }
+  }
+  setRuntimeCloudCredentials({ email, password, cloudUrl: url });
+  return res.json({ ok: true });
 });
 
 export default router;

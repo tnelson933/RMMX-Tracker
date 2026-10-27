@@ -24,6 +24,10 @@ import teamRouter from "./team";
 import storageRouter from "./storage";
 import notificationsRouter from "./notifications";
 import tracksRouter from "./tracks";
+import raceDayRouter from "./race-day";
+import enduroRouter from "./enduro";
+import waiversRouter from "./waivers";
+import { cloudPassThrough } from "../lib/cloud-proxy";
 
 const router = Router();
 
@@ -52,9 +56,13 @@ router.use(teamRouter);
 router.use(storageRouter);
 router.use(notificationsRouter);
 router.use(tracksRouter);
+router.use(raceDayRouter);
+router.use(enduroRouter);
+router.use(waiversRouter);
 
-router.use((_req, res) => {
-  res.status(404).json({ error: "Not found" });
-});
+// Everything above works offline. Any other /api request is forwarded to the
+// cloud as the signed-in organizer (503 with a readable error when offline).
+// It must stay last so a local route always wins.
+router.use(cloudPassThrough);
 
 export default router;

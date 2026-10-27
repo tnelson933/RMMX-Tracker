@@ -742,6 +742,32 @@ export function initDb() {
     ["practice_sessions", "venue_name TEXT"],
     // events — liability waiver requirement (pulled from cloud; checked at check-in)
     ["events", "require_liability_waiver INTEGER NOT NULL DEFAULT 0"],
+    // events — fields pulled from the cloud for check-in add-ons, register-info and enduro
+    ["events", "rfid_sticker_fee         TEXT"],
+    ["events", "require_waiver           INTEGER NOT NULL DEFAULT 0"],
+    ["events", "require_transponder      INTEGER NOT NULL DEFAULT 0"],
+    ["events", "race_class_details       TEXT NOT NULL DEFAULT '{}'"],
+    ["events", "enduro_penalty_config    TEXT"],
+    // registrations — check-in add-ons, waiver acknowledgment and rider cancellations
+    ["registrations", "rfid_sticker_purchased INTEGER NOT NULL DEFAULT 0"],
+    ["registrations", "rm_trackr_purchased    INTEGER NOT NULL DEFAULT 0"],
+    ["registrations", "rm_trackr_fulfilled_at TEXT"],
+    ["registrations", "rm_trackr_transponder  TEXT"],
+    ["registrations", "transponder_returned   INTEGER NOT NULL DEFAULT 0"],
+    ["registrations", "waiver_acknowledged_at TEXT"],
+    ["registrations", "waiver_snapshot        TEXT"],
+    ["registrations", "cancelled_at           TEXT"],
+    ["registrations", "cancellation_source    TEXT"],
+    ["registrations", "refund_verified_at     TEXT"],
+    // motos — pause / resume
+    ["motos", "paused_at       TEXT"],
+    ["motos", "total_paused_ms INTEGER NOT NULL DEFAULT 0"],
+    // rfid_assignments — rental transponders expire 24 h after the event
+    ["rfid_assignments", "expires_at TEXT"],
+    // tracks — library address fields (PATCH /tracks/:id)
+    ["tracks", "address TEXT"],
+    ["tracks", "city    TEXT"],
+    ["tracks", "zip     TEXT"],
   ];
 
   for (const [table, colDef] of migrations) {
@@ -750,6 +776,121 @@ export function initDb() {
     } catch {
       // Column already exists — ignore
     }
+  }
+
+  // ── Race-day tables mirrored from the cloud ──────────────────────────────
+  // Pulled by the desktop sync engine and pushed back through the write queue.
+  // Locally created rows get ids far above the cloud's serial range.
+  db.exec(`
+    -- Signed liability waivers are legal records: never deleted locally.
+    CREATE TABLE IF NOT EXISTS liability_waiver_signatures (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      club_id             INTEGER NOT NULL,
+      event_id            INTEGER NOT NULL,
+      registration_id     INTEGER,
+      signer_name         TEXT NOT NULL,
+      signer_email        TEXT NOT NULL,
+      signer_ip           TEXT,
+      signer_user_agent   TEXT,
+      consent_to_esign    INTEGER NOT NULL DEFAULT 0,
+      waiver_content_hash TEXT NOT NULL,
+      waiver_snapshot     TEXT NOT NULL,
+      field_layout        TEXT,
+      signer_type         TEXT NOT NULL DEFAULT 'self',
+      minor_rider_name    TEXT,
+      signed_at           TEXT NOT NULL,
+      created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_liability_waiver_signatures_event
+      ON liability_waiver_signatures (event_id);
+
+    CREATE TRIGGER IF NOT EXISTS _wq_liability_waiver_signatures_insert
+    AFTER INSERT ON liability_waiver_signatures
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('liability_waiver_signatures', NEW.id, 'insert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _liability_waiver_signatures_no_delete
+    BEFORE DELETE ON liability_waiver_signatures
+    BEGIN
+      SELECT RAISE(ABORT, 'Signed liability waivers cannot be deleted');
+    END;
+
+    -- Club waiver texts/PDFs and default class details (id = club id).
+    CREATE TABLE IF NOT EXISTS club_settings (
+      id                       INTEGER PRIMARY KEY,
+      club_id                  INTEGER,
+      rider_acknowledgement    TEXT,
+      waiver_pdf_url           TEXT,
+      liability_waiver_text    TEXT,
+      liability_waiver_pdf_url TEXT,
+      liability_waiver_fields  TEXT,
+      default_classes          TEXT,
+      track_name               TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS enduro_time_checks (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id     INTEGER NOT NULL,
+      check_number INTEGER NOT NULL,
+      name         TEXT NOT NULL,
+      targets      TEXT NOT NULL DEFAULT '[]',
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_enduro_time_checks_event
+      ON enduro_time_checks (event_id);
+
+    CREATE TABLE IF NOT EXISTS enduro_checkpoint_arrivals (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id      INTEGER NOT NULL,
+      time_check_id INTEGER NOT NULL,
+      rider_id      INTEGER NOT NULL,
+      arrival_time  TEXT NOT NULL,
+      recorded_by   TEXT NOT NULL DEFAULT 'rfid',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (time_check_id, rider_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS event_reader_assignments (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id      INTEGER NOT NULL,
+      reader_id     INTEGER NOT NULL,
+      antenna_id    INTEGER,
+      role          TEXT NOT NULL,
+      moto_id       INTEGER,
+      time_check_id INTEGER,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Arrivals sync row by row. Time checks and reader assignments are saved as
+    -- a whole per event (each PUT replaces them), so they sync as one per-event
+    -- snapshot queued under 'event_enduro_setup' with record_id = event id.
+    CREATE TRIGGER IF NOT EXISTS _wq_enduro_checkpoint_arrivals_insert
+    AFTER INSERT ON enduro_checkpoint_arrivals
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('enduro_checkpoint_arrivals', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_enduro_checkpoint_arrivals_update
+    AFTER UPDATE ON enduro_checkpoint_arrivals
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('enduro_checkpoint_arrivals', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_enduro_checkpoint_arrivals_delete
+    AFTER DELETE ON enduro_checkpoint_arrivals
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('enduro_checkpoint_arrivals', OLD.id, 'delete');
+    END;
+  `);
+  for (const table of [
+    "liability_waiver_signatures",
+    "enduro_time_checks",
+    "enduro_checkpoint_arrivals",
+    "event_reader_assignments",
+  ]) {
+    raiseAutoincrementFloor(db, table, 9999999);
   }
 
   // Track names were historically stored locally but omitted from desktop sync.
@@ -784,15 +925,26 @@ export function initDb() {
 
   // Seed autoincrement sequences so desktop-created rows start at a high ID range
   // and never collide with cloud-assigned sequential IDs (1, 2, 3...).
-  // ON CONFLICT DO UPDATE uses MAX so an already-elevated sequence is never lowered.
+  // An already-elevated sequence is never lowered. (practice_sessions has no
+  // AUTOINCREMENT, so its row is inert; kept for older databases.)
+  raiseAutoincrementFloor(db, "events", 9999999);
+  raiseAutoincrementFloor(db, "practice_sessions", 9999999);
+}
+
+/**
+ * Makes the next AUTOINCREMENT id of `table` at least floor + 1. sqlite_sequence
+ * has no unique constraint on name, so this updates the row or inserts one
+ * (an earlier INSERT … ON CONFLICT(name) version always failed silently).
+ */
+function raiseAutoincrementFloor(db: ReturnType<typeof getDb>, table: string, floor: number): void {
   try {
-    db.exec(`
-      INSERT INTO sqlite_sequence (name, seq) VALUES ('events', 9999999)
-        ON CONFLICT(name) DO UPDATE SET seq = MAX(seq, excluded.seq);
-      INSERT INTO sqlite_sequence (name, seq) VALUES ('practice_sessions', 9999999)
-        ON CONFLICT(name) DO UPDATE SET seq = MAX(seq, excluded.seq);
-    `);
+    const updated = db
+      .prepare("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = ?")
+      .run(floor, table);
+    if (updated.changes === 0) {
+      db.prepare("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)").run(table, floor);
+    }
   } catch {
-    // sqlite_sequence doesn't exist until the first AUTOINCREMENT insert — safe to ignore on a brand-new DB
+    // sqlite_sequence exists once any AUTOINCREMENT table has been created.
   }
 }

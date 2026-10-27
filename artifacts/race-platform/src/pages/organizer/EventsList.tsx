@@ -988,9 +988,7 @@ export default function EventsList() {
                             </div>
                           </TooltipTrigger>
                           <TooltipContent side="right" className="max-w-64">
-                            {isDesktop
-                              ? "Connect Stripe in the cloud portal, then sync your data to enable payments here."
-                              : <>Set up Stripe Connect under <strong>Payments</strong> in the sidebar to collect entry fees.</>}
+                            <>Set up Stripe Connect under <strong>Payments</strong> in the sidebar to collect entry fees.</>
                           </TooltipContent>
                         </Tooltip>
                       )}

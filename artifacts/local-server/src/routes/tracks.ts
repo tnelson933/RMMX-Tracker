@@ -18,7 +18,10 @@ function serializeTrack(row: any) {
     id: row.id,
     clubId: row.club_id,
     name: row.name,
+    address: row.address ?? null,
+    city: row.city ?? null,
     state: row.state ?? null,
+    zip: row.zip ?? null,
     createdAt: row.created_at,
   };
 }
@@ -44,18 +47,48 @@ router.post("/tracks", (req, res) => {
   const clubId = getClubId(req);
   if (!clubId) return res.status(403).json({ error: "No club" });
 
-  const { name, state } = req.body as { name?: string; state?: string };
+  const { name, address, city, state, zip } = req.body as {
+    name?: string; address?: string; city?: string; state?: string; zip?: string;
+  };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
   const db = getDb();
   const ins = db
-    .prepare("INSERT INTO tracks (club_id, name, state) VALUES (?, ?, ?)")
-    .run(clubId, name.trim(), state?.trim() || null);
+    .prepare("INSERT INTO tracks (club_id, name, address, city, state, zip) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(clubId, name.trim(), address?.trim() || null, city?.trim() || null, state?.trim() || null, zip?.trim() || null);
 
   const track = db
     .prepare("SELECT * FROM tracks WHERE id = ?")
     .get(ins.lastInsertRowid);
   return res.status(201).json(serializeTrack(track));
+});
+
+// PATCH /tracks/:id — update address/city/state/zip for an existing library track
+router.patch("/tracks/:id", (req, res) => {
+  const userId = (req.session as any)?.userId;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  const clubId = getClubId(req);
+  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid id" });
+
+  const body = (req.body ?? {}) as Record<string, string | null | undefined>;
+  const fields: string[] = [];
+  const values: Array<string | null> = [];
+  for (const key of ["address", "city", "state", "zip"] as const) {
+    if (body[key] === undefined) continue;
+    fields.push(`${key} = ?`);
+    values.push(typeof body[key] === "string" ? body[key]!.trim() || null : null);
+  }
+  if (fields.length === 0) return res.json({ ok: true });
+
+  const db = getDb();
+  const result = db
+    .prepare(`UPDATE tracks SET ${fields.join(", ")} WHERE id = ? AND club_id = ?`)
+    .run(...values, id, clubId);
+  if (result.changes === 0) return res.status(404).json({ error: "Not found" });
+  return res.json(serializeTrack(db.prepare("SELECT * FROM tracks WHERE id = ?").get(id)));
 });
 
 // DELETE /tracks/:id — remove a track

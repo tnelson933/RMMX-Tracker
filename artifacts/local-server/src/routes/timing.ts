@@ -248,6 +248,8 @@ export function buildLeaderboard(motoId: number) {
     status: moto.status,
     startedAt: moto.started_at ?? null,
     completedAt: moto.completed_at ?? null,
+    pausedAt: moto.paused_at ?? null,
+    totalPausedMs: moto.total_paused_ms ?? 0,
     leaderboard: withGaps,
     updatedAt: new Date().toISOString(),
   };

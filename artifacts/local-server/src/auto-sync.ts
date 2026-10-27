@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { RIDER_PROFILE_FIELDS } from "./rider-profile-dirty";
 import { CLOUD_URL as RESOLVED_CLOUD_URL } from "./lib/cloud-url";
+import { getCloudAuthHeader } from "./lib/cloud-session";
 
 const UPLOADS_DIR = path.join(process.cwd(), ".uploads");
 
@@ -117,31 +118,13 @@ function toJsonStr(v: unknown, fallback = "{}"): string {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+// Shares the login with the cloud pass-through (lib/cloud-session.ts). Each sync
+// run still signs in fresh, as before; the pass-through then reuses that cookie.
 async function getAuthHeader(): Promise<Record<string, string>> {
   if (SYNC_TOKEN) {
     return { Authorization: `Bearer ${SYNC_TOKEN}` };
   }
-
-  const loginRes = await fetch(`${CLOUD_URL}/api/auth/login`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ email: EMAIL, password: PASSWORD }),
-  });
-
-  if (!loginRes.ok) {
-    const body = await loginRes.text();
-    throw new Error(`Login failed (${loginRes.status}): ${body}`);
-  }
-
-  const rawSetCookie = loginRes.headers.get("set-cookie") ?? "";
-  const cookieValue = rawSetCookie
-    .split(",")
-    .map((c) => c.trim().split(";")[0].trim())
-    .filter(Boolean)
-    .join("; ");
-
-  if (!cookieValue) throw new Error("Login succeeded but no session cookie received");
-  return { Cookie: cookieValue };
+  return getCloudAuthHeader({ fresh: true });
 }
 
 // ─── Connectivity probe ───────────────────────────────────────────────────────

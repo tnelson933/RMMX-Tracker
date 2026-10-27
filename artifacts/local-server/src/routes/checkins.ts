@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { getDb, parseBool } from "../db";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
+import { fulfillRmTrackr } from "../lib/rm-trackr";
+import { signedWaiverEmails } from "./waivers";
 
 const router = Router();
 
@@ -19,6 +21,12 @@ router.get("/events/:eventId/checkins", (req, res) => {
         r.race_class  AS raceClass,
         r.bib_number  AS registrationBib,
         r.mylaps_transponder_number AS transponderNumber,
+        r.transponder_rental AS transponderRental,
+        r.rfid_sticker_purchased AS rfidStickerPurchased,
+        r.rm_trackr_purchased AS rmTrackrPurchased,
+        r.rm_trackr_fulfilled_at AS rmTrackrFulfilledAt,
+        r.rm_trackr_transponder AS rmTrackrTransponder,
+        r.payment_status AS paymentStatus,
         ri.first_name AS firstName,
         ri.last_name  AS lastName,
         ri.email,
@@ -44,9 +52,15 @@ router.get("/events/:eventId/checkins", (req, res) => {
     if (!checkinByRider.has(rid)) checkinByRider.set(rid, c);
   }
 
+  // Signed waivers (pulled from the cloud or signed here at check-in), matched
+  // by rider email the same way the cloud does.
+  const signedEmails = signedWaiverEmails(db, eventId);
+
   return res.json(
     regs.map((r) => {
       const c = checkinByRider.get(r.riderId as number);
+      const riderEmail = typeof r.email === "string" ? r.email.toLowerCase() : null;
+      const timingNumber = (c?.rfid_number as string | null | undefined) ?? (r.transponderNumber as string | null) ?? null;
       return {
         id: c?.id ?? null,
         eventId,
@@ -60,15 +74,17 @@ router.get("/events/:eventId/checkins", (req, res) => {
         phone: r.phone ?? null,
         transponderNumber: r.transponderNumber ?? null,
         myLapsTransponderNumber: r.transponderNumber ?? null,
+        transponderRental: parseBool(r.transponderRental as number),
+        rfidStickerPurchased: parseBool(r.rfidStickerPurchased as number),
+        rmTrackrPurchased: parseBool(r.rmTrackrPurchased as number),
+        rmTrackrFulfilledAt: r.rmTrackrFulfilledAt ?? null,
+        rmTrackrTransponder: r.rmTrackrTransponder ?? null,
+        paymentStatus: r.paymentStatus ?? null,
         checkedIn: parseBool(c?.checked_in as number),
         checkedInAt: c?.checked_in_at ?? null,
-        rfidNumber: c?.rfid_number ?? null,
-        rfidLinked: parseBool(c?.rfid_linked as number),
-        // The cloud computes this from liability_waiver_signatures, which is
-        // not synced to the offline database. Without signature data the local
-        // server cannot prove a waiver was signed, so it fails closed: events
-        // that require a liability waiver show every rider as unsigned.
-        waiverSigned: false,
+        rfidNumber: timingNumber,
+        rfidLinked: parseBool(c?.rfid_linked as number) || !!timingNumber,
+        waiverSigned: riderEmail ? signedEmails.has(riderEmail) : false,
       };
     }),
   );
@@ -176,6 +192,7 @@ router.post("/events/:eventId/checkins", (req, res) => {
       Number(riderId),
     );
     markRiderFieldsDirty(db, Number(riderId), ["rfidNumber"]);
+    fulfillRmTrackr(db, eventId, Number(riderId), rfidNumber);
   }
 
   const bibToSync = checkin.bib_number as string | null;

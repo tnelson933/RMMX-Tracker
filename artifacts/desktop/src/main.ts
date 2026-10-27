@@ -100,6 +100,9 @@ function validateCloudUrl(raw: string): string {
 
 let mainWindow: BrowserWindow | null = null;
 let localServerProcess: ChildProcess | null = null;
+// Per-launch secret that lets only this process hand the signed-in cloud
+// account to the local server (for its cloud pass-through).
+const LOCAL_CONTROL_TOKEN = crypto.randomBytes(32).toString("base64url");
 let syncEngine: SyncEngine | null = null;
 let readerStatePollTimer: ReturnType<typeof setInterval> | null = null;
 let lastReaderState: boolean | null = null;
@@ -178,6 +181,7 @@ function startLocalServer(): Promise<void> {
     SQLITE_FILE: dbPath,
     SESSION_SECRET: deriveSessionSecret(),
     NODE_ENV: "production",
+    DESKTOP_CONTROL_TOKEN: LOCAL_CONTROL_TOKEN,
   };
 
   if (fs.existsSync(staticDir)) {
@@ -387,6 +391,45 @@ function deriveSessionSecret(): string {
   const secret = crypto.randomBytes(36).toString("base64url");
   fs.writeFileSync(secretFile, secret, { mode: 0o600 });
   return secret;
+}
+
+// ── Cloud account for the local server's pass-through ─────────────────────────
+
+/**
+ * Hands the saved cloud account (or a sign-out) to the local server, which uses
+ * it to forward /api requests it can't answer offline to the cloud. Sent over
+ * loopback with the per-launch control token; never via environment variables,
+ * which would also start the local server's own auto-sync loop.
+ */
+function sendCloudCredentialsToLocalServer(): void {
+  const creds = loadCredentials();
+  const payload = creds?.email && creds.password
+    ? { email: creds.email, password: creds.password, cloudUrl: resolveCloudUrl(creds.cloudUrl) }
+    : { clear: true };
+  const body = JSON.stringify(payload);
+  const req = http.request(
+    {
+      host: "127.0.0.1",
+      port: LOCAL_PORT,
+      path: "/api/desktop/cloud-credentials",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+        "X-RM-Desktop-Control": LOCAL_CONTROL_TOKEN,
+      },
+    },
+    (res) => {
+      if (res.statusCode !== 200) {
+        console.error(`[auth] Local server rejected cloud credentials: HTTP ${res.statusCode}`);
+      }
+      res.resume();
+    },
+  );
+  req.on("error", (err) => {
+    console.error(`[auth] Could not pass cloud credentials to the local server: ${err.message}`);
+  });
+  req.end(body);
 }
 
 // ── Sync engine management ────────────────────────────────────────────────────
@@ -656,6 +699,7 @@ function registerIpcHandlers(): void {
     (_event, email: string, password: string, rawCloudUrl: string, clubId: string) => {
       const cloudUrl = validateCloudUrl(resolveCloudUrl(rawCloudUrl));
       saveCredentials({ email, password, cloudUrl, clubId });
+      sendCloudCredentialsToLocalServer();
       stopSyncEngine();
       startSyncEngine();
     },
@@ -663,6 +707,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("auth:clearCredentials", () => {
     clearCredentials();
+    sendCloudCredentialsToLocalServer();
     stopSyncEngine();
   });
 
@@ -699,6 +744,7 @@ function registerIpcHandlers(): void {
         }
 
         saveCredentials({ email, password, cloudUrl, clubId: String(clubId) });
+        sendCloudCredentialsToLocalServer();
         stopSyncEngine();
         startSyncEngine();
 
@@ -1003,6 +1049,7 @@ app.whenReady().then(async () => {
   try {
     await startLocalServer();
     console.log(`[main] Local server ready on :${LOCAL_PORT}`);
+    sendCloudCredentialsToLocalServer();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     dialog.showErrorBox("Failed to start local server", msg);
