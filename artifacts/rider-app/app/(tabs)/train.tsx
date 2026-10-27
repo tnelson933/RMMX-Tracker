@@ -1220,8 +1220,8 @@ export default function TrainScreen() {
     statBox:   { flex: 1, backgroundColor: colors.muted, borderRadius: 10, padding: 12, alignItems: "center" },
     statValue: { fontSize: 18, fontWeight: "700", color: ACCENT, fontFamily: "Inter_700Bold" },
     statLabel: { fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 },
-    segControl: { flexDirection: "row", margin: 16, borderRadius: 10, backgroundColor: colors.muted, padding: 3, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-    segBtn:    { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" },
+    segControl: { flexDirection: "row", margin: 16, borderRadius: 999, backgroundColor: colors.muted, padding: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    segBtn:    { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center" },
     pickerRow: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     pickerLabel: { fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8, paddingHorizontal: 16, marginBottom: 6 },
     footer:    { height: insets.bottom + 32 },
@@ -1260,10 +1260,10 @@ export default function TrainScreen() {
           {(["track", "coach"] as TabMode[]).map(mode => {
             const active = tabMode === mode;
             return (
-              <Pressable key={mode} onPress={() => setTabMode(mode)} style={[styles.segBtn, { backgroundColor: active ? colors.background : "transparent" }]}>
+              <Pressable key={mode} onPress={() => setTabMode(mode)} style={[styles.segBtn, { backgroundColor: active ? colors.primary : "transparent" }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                  <Feather name={mode === "track" ? "activity" : "cpu"} size={13} color={active ? ACCENT : colors.mutedForeground} />
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: active ? ACCENT : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
+                  <Feather name={mode === "track" ? "activity" : "cpu"} size={13} color={active ? "#fff" : colors.mutedForeground} />
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
                     {mode === "track" ? "Track" : "Train"}
                   </Text>
                 </View>

@@ -878,7 +878,7 @@ function EventScheduleScreen({
             {event.name}
           </Text>
           <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-            {[event.location || event.trackName, event.state].filter(Boolean).join(", ")}
+            {placeLabel(event.location || event.trackName, event.state)}
             {event.date ? `  ·  ${fmtEventRange(event.date, event.endDate)}` : ""}
           </Text>
           {event.clubName ? (
@@ -1062,7 +1062,7 @@ function EventCard({
               {fmtEventRange(event.date, event.endDate)}
             </Text>
             <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-              {[event.location || event.trackName, event.state].filter(Boolean).join(", ")}
+              {placeLabel(event.location || event.trackName, event.state)}
             </Text>
             {event.clubName ? (
               <Text style={{ fontSize: 11, color: colors.mutedForeground + "88", fontFamily: "Inter_400Regular", marginTop: 1 }}>{event.clubName}</Text>
@@ -1434,6 +1434,18 @@ function SeriesStandingsScreen({
 
 type MainTab = "races" | "series";
 
+/** "City, ST" without repeating the state when the location already includes it ("Denver, CO" + "CO"). */
+function placeLabel(place: string | null | undefined, state: string | null | undefined): string {
+  const p = (place ?? "").trim();
+  const st = (state ?? "").trim();
+  if (!st) return p;
+  if (!p) return st;
+  const lower = p.toLowerCase();
+  const before = p.charAt(p.length - st.length - 1);
+  const endsWithState = lower.endsWith(st.toLowerCase()) && (p.length === st.length || before === "," || before === " ");
+  return endsWithState ? p : `${p}, ${st}`;
+}
+
 export default function ResultsScreen() {
   const colors  = useColors();
   const insets  = useSafeAreaInsets();
@@ -1569,7 +1581,7 @@ export default function ResultsScreen() {
         {/* Tab toggle */}
         <View style={{
           flexDirection: "row", backgroundColor: colors.muted,
-          borderRadius: 10, padding: 3,
+          borderRadius: 999, padding: 4,
           borderWidth: 1, borderColor: colors.border, marginBottom: 12,
         }}>
           {(["races", "series"] as MainTab[]).map(t => {
@@ -1579,8 +1591,8 @@ export default function ResultsScreen() {
                 key={t}
                 onPress={() => setTab(t)}
                 style={{
-                  flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center",
-                  backgroundColor: active ? colors.background : "transparent",
+                  flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center",
+                  backgroundColor: active ? colors.primary : "transparent",
                   shadowColor: active ? "#000" : "transparent",
                   shadowOpacity: active ? 0.08 : 0,
                   shadowOffset: { width: 0, height: 1 },
@@ -1592,12 +1604,12 @@ export default function ResultsScreen() {
                   <Feather
                     name={t === "races" ? "flag" : "award"}
                     size={13}
-                    color={active ? colors.primary : colors.mutedForeground}
+                    color={active ? "#fff" : colors.mutedForeground}
                   />
                   <Text style={{
                     fontSize: 13, fontWeight: "700",
                     fontFamily: "Inter_700Bold",
-                    color: active ? colors.primary : colors.mutedForeground,
+                    color: active ? "#fff" : colors.mutedForeground,
                   }}>
                     {t === "races" ? "Race Events" : "Series"}
                   </Text>
