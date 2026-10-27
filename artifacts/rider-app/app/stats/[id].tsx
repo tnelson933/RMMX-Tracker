@@ -11,6 +11,7 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { StatsShareCard, formatLap, useShareCapture, type CareerStats } from "@/components/ShareCard";
 import { parsePosition, podiumColor, podiumTextColor } from "@/components/RaceStats";
 import { useTheme } from "@/context/ThemeContext";
+import { goBack } from "@/lib/navigation";
 
 interface Manager { id: number; email: string; joined: boolean; isYou: boolean }
 
@@ -84,7 +85,7 @@ export default function RiderStatsScreen() {
         { text: "Remove", style: "destructive", onPress: async () => {
           const r = await riderFetch(`/api/rider/profiles/${id}/managers/${m.id}`, { method: "DELETE" });
           if (!r.ok) { Alert.alert("Couldn't remove", `Error ${r.status}`); return; }
-          if (m.isYou) router.back(); else load();
+          if (m.isYou) goBack(router); else load();
         } },
       ]);
   }, [id, load, riderFetch, router]);
@@ -108,7 +109,7 @@ export default function RiderStatsScreen() {
   return (
     <View style={s.root}>
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={() => router.back()} style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}>
+        <Pressable onPress={() => goBack(router)} style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}>
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <Text style={s.headerTitle} numberOfLines={1}>{name || "Rider stats"}</Text>

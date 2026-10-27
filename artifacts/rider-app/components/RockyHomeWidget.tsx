@@ -11,27 +11,10 @@ import {
   View,
 } from "react-native";
 
+import { ROCKY_QUICK_QUESTIONS, RockyAvatar } from "@/components/RockyAvatar";
 import { useRockyChat } from "@/context/RockyChatContext";
 import { useColors } from "@/hooks/useColors";
 import { resolveFollowUpChips } from "@/utils/rockyFollowUps";
-
-const ACCENT = "#cf152d";
-
-// ─── Capability chips ─────────────────────────────────────────────────────────
-
-interface Chip {
-  label: string;
-  question: string;
-}
-
-const CHIPS: Chip[] = [
-  { label: "Suspension setup", question: "How do I set up my suspension for a motocross track?" },
-  { label: "Arm pump fix", question: "How do I fix arm pump while riding?" },
-  { label: "Corner technique", question: "What's the best technique for cornering on a dirt bike?" },
-  { label: "Jetting help", question: "How do I know if my jetting is off and how do I fix it?" },
-  { label: "Starts", question: "How do I get a better holeshot start?" },
-  { label: "Bike maintenance", question: "What are the most important regular maintenance tasks for a motocross bike?" },
-];
 
 // ─── Main widget ──────────────────────────────────────────────────────────────
 
@@ -41,62 +24,57 @@ export function RockyHomeWidget() {
   const { messages, isTyping, error, setError, inputText, setInputText, sendMessage, suggestedFollowUps } =
     useRockyChat();
 
-  function handleChip(chip: Chip) {
-    void sendMessage(chip.question);
+  // Questions open the full chat so the answer has room
+  function ask(question: string) {
+    void sendMessage(question);
+    router.push("/mechanic" as any);
   }
 
   function handleSend() {
+    if (!inputText.trim() || isTyping) return;
     void sendMessage();
+    router.push("/mechanic" as any);
   }
 
   // Find last user + last assistant messages
   const lastUser = [...messages].reverse().find(m => m.role === "user");
   const lastAssistant = [...messages].reverse().find(m => m.role === "assistant");
-  const hasConversation = messages.length > 0;
+  // Rocky's built-in greeting doesn't count: a conversation starts with the rider's question
+  const hasConversation = !!lastUser;
 
   // Show follow-up chips when Rocky has finished replying to at least one user message
   const showFollowUpChips = !isTyping && !!lastUser && !!lastAssistant;
   // Prefer AI-suggested follow-ups; fall back to keyword-matched chips via shared utility
-  const followUpChips: Chip[] = showFollowUpChips
+  const followUpChips = showFollowUpChips
     ? resolveFollowUpChips(suggestedFollowUps, lastUser!.content)
     : [];
 
   return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <View style={styles.iconWrap}>
-          <Feather name="zap" size={14} color={colors.primary} />
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.primary + "66", shadowColor: colors.primary }]}>
+      {/* ── Hero header ── */}
+      <Pressable onPress={() => router.push("/mechanic" as any)} style={({ pressed }) => [styles.hero, { opacity: pressed ? 0.85 : 1 }]}>
+        <View pointerEvents="none" style={styles.stripes}>
+          <View style={{ height: 3, backgroundColor: colors.primary, opacity: 0.3, marginRight: 140 }} />
+          <View style={{ height: 8, backgroundColor: colors.primary, opacity: 0.12, marginTop: 9, marginLeft: 110 }} />
+          <View style={{ height: 2, backgroundColor: colors.foreground, opacity: 0.06, marginTop: 9, marginRight: 60 }} />
         </View>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-          Rocky{" "}
-          <Text style={[styles.headerSubtitle, { color: colors.mutedForeground }]}>
-            · AI Mechanic
-          </Text>
-        </Text>
-        <Pressable
-          onPress={() => router.push("/mechanic" as any)}
-          hitSlop={10}
-          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-        >
-          <Feather name="arrow-right" size={16} color={colors.mutedForeground} />
-        </Pressable>
-      </View>
+        <RockyAvatar size={54} />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.kicker, { color: colors.primary }]}>AI mechanic & riding coach</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>Ask Rocky</Text>
+          <Text style={[styles.tagline, { color: colors.mutedForeground }]}>Setup, fixes and faster laps, any time.</Text>
+        </View>
+        <View style={[styles.openBtn, { backgroundColor: colors.primary }]}>
+          <Feather name="arrow-right" size={18} color="#fff" />
+        </View>
+      </Pressable>
 
-      {/* ── Last exchange (only when conversation exists) ── */}
+      {/* ── Last exchange (only once the rider has asked something) ── */}
       {hasConversation && (
-        <View style={[styles.exchangeArea, { borderTopColor: colors.border }]}>
+        <Pressable onPress={() => router.push("/mechanic" as any)} style={[styles.exchangeArea, { borderTopColor: colors.border }]}>
           {lastUser && (
             <View style={[styles.userBubble, { backgroundColor: colors.primary }]}>
-              <Text style={styles.userBubbleText} numberOfLines={3}>
+              <Text style={styles.userBubbleText} numberOfLines={2}>
                 {lastUser.content}
               </Text>
             </View>
@@ -107,40 +85,30 @@ export function RockyHomeWidget() {
             </View>
           ) : lastAssistant ? (
             <View style={[styles.assistantBubble, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-              <Text style={[styles.assistantBubbleText, { color: colors.foreground }]} numberOfLines={5}>
+              <Text style={[styles.assistantBubbleText, { color: colors.foreground }]} numberOfLines={4}>
                 {lastAssistant.content}
               </Text>
             </View>
           ) : null}
-        </View>
+        </Pressable>
       )}
 
-      {/* ── Capability chips (empty state) ── */}
+      {/* ── Quick questions (before the first question) ── */}
       {!hasConversation && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsRow}
-        >
-          {CHIPS.map((chip) => (
+        <View style={styles.grid}>
+          {ROCKY_QUICK_QUESTIONS.map(q => (
             <Pressable
-              key={chip.label}
-              onPress={() => handleChip(chip)}
-              style={({ pressed }) => [
-                styles.chip,
-                {
-                  backgroundColor: colors.muted,
-                  borderColor: colors.border,
-                  opacity: pressed ? 0.72 : 1,
-                },
-              ]}
+              key={q.label}
+              onPress={() => ask(q.question)}
+              style={({ pressed }) => [styles.tile, { backgroundColor: colors.muted, borderColor: colors.border, opacity: pressed ? 0.72 : 1 }]}
             >
-              <Text style={[styles.chipText, { color: colors.mutedForeground }]}>
-                {chip.label}
-              </Text>
+              <View style={[styles.tileIcon, { backgroundColor: colors.primaryTint }]}>
+                <Feather name={q.icon} size={14} color={colors.primary} />
+              </View>
+              <Text style={[styles.tileText, { color: colors.foreground }]} numberOfLines={1}>{q.label}</Text>
             </Pressable>
           ))}
-        </ScrollView>
+        </View>
       )}
 
       {/* ── Follow-up chips (after a completed exchange) ── */}
@@ -153,17 +121,17 @@ export function RockyHomeWidget() {
           {followUpChips.map((chip) => (
             <Pressable
               key={chip.label}
-              onPress={() => handleChip(chip)}
+              onPress={() => ask(chip.question)}
               style={({ pressed }) => [
                 styles.followUpChip,
                 {
-                  backgroundColor: colors.primary + "12",
-                  borderColor: colors.primary + "40",
+                  backgroundColor: colors.primaryTint,
+                  borderColor: colors.primary + "55",
                   opacity: pressed ? 0.72 : 1,
                 },
               ]}
             >
-              <Text style={[styles.followUpChipText, { color: colors.primary }]}>
+              <Text style={[styles.followUpChipText, { color: colors.foreground }]}>
                 {chip.label}
               </Text>
             </Pressable>
@@ -183,7 +151,7 @@ export function RockyHomeWidget() {
       )}
 
       {/* ── Input bar ── */}
-      <View style={[styles.inputBar, { borderTopColor: colors.border }]}>
+      <View style={styles.inputBar}>
         <TextInput
           style={[
             styles.input,
@@ -193,43 +161,35 @@ export function RockyHomeWidget() {
               color: colors.foreground,
             },
           ]}
-          placeholder="Ask Rocky anything…"
+          placeholder="Ask about your bike or riding…"
           placeholderTextColor={colors.mutedForeground}
           value={inputText}
           onChangeText={setInputText}
-          multiline
           maxLength={1000}
           returnKeyType="send"
           onSubmitEditing={handleSend}
-          blurOnSubmit={false}
           editable={!isTyping}
         />
         <Pressable
           onPress={handleSend}
           disabled={!inputText.trim() || isTyping}
           style={({ pressed }) => ({
-            width: 34,
-            height: 34,
-            borderRadius: 17,
-            backgroundColor: inputText.trim() && !isTyping ? colors.primary : colors.muted,
-            borderWidth: 1,
-            borderColor: inputText.trim() && !isTyping ? colors.primary : colors.border,
+            width: 42,
+            height: 42,
+            borderRadius: 21,
+            backgroundColor: colors.primary,
             alignItems: "center",
             justifyContent: "center",
-            opacity: pressed ? 0.75 : 1,
+            opacity: !inputText.trim() || isTyping ? 0.45 : pressed ? 0.75 : 1,
           })}
         >
-          <Feather
-            name="send"
-            size={14}
-            color={inputText.trim() && !isTyping ? "#fff" : colors.mutedForeground}
-          />
+          <Feather name="send" size={16} color="#fff" />
         </Pressable>
       </View>
 
       {/* ── Disclaimer ── */}
       <Text style={[styles.disclaimer, { color: colors.mutedForeground }]}>
-        Advice is for informational purposes only. Always consult a qualified mechanic and certified riding coach.
+        Advice is for information only. Check with a qualified mechanic or coach for safety-critical work.
       </Text>
     </View>
   );
@@ -241,40 +201,31 @@ const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
     marginBottom: 24,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 20,
+    borderWidth: 1.5,
     overflow: "hidden",
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
-  header: {
+  hero: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 14,
   },
-  iconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    backgroundColor: ACCENT + "18",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "700",
-    fontFamily: "Inter_700Bold",
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    fontWeight: "400",
-    fontFamily: "Inter_400Regular",
-  },
+  stripes: { position: "absolute", top: 14, left: -60, right: -60, transform: [{ rotate: "-12deg" }] },
+  kicker: { fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 1.2, textTransform: "uppercase" },
+  title: { fontSize: 24, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: 0.5, textTransform: "uppercase", marginTop: 1 },
+  tagline: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
+  openBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   exchangeArea: {
     paddingHorizontal: 12,
     paddingTop: 10,
-    paddingBottom: 4,
+    paddingBottom: 6,
     borderTopWidth: 1,
     gap: 8,
   },
@@ -304,54 +255,52 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontFamily: "Inter_400Regular",
   },
-  chipsRow: {
-    paddingHorizontal: 12,
-    paddingTop: 2,
-    paddingBottom: 12,
-    gap: 8,
+  grid: {
     flexDirection: "row",
-  },
-  chip: {
+    flexWrap: "wrap",
+    gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingBottom: 4,
+  },
+  tile: {
+    width: "48.5%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  chipText: {
-    fontSize: 12,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-  },
+  tileIcon: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  tileText: { flex: 1, fontSize: 12, fontFamily: "Inter_600SemiBold" },
   inputBar: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     gap: 8,
     paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 12,
-    borderTopWidth: 1,
+    paddingTop: 12,
+    paddingBottom: 10,
   },
   input: {
     flex: 1,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    height: 42,
+    borderRadius: 21,
+    paddingHorizontal: 16,
     fontSize: 13,
-    lineHeight: 18,
     borderWidth: 1,
-    maxHeight: 90,
     fontFamily: "Inter_400Regular",
   },
   followUpChipsRow: {
     paddingHorizontal: 12,
     paddingTop: 6,
-    paddingBottom: 10,
+    paddingBottom: 4,
     gap: 8,
     flexDirection: "row",
   },
   followUpChip: {
     paddingHorizontal: 11,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
   },
@@ -365,7 +314,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     marginHorizontal: 12,
-    marginBottom: 6,
+    marginTop: 6,
     padding: 8,
     borderRadius: 8,
   },
@@ -379,7 +328,7 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     textAlign: "center",
     paddingHorizontal: 14,
-    paddingBottom: 10,
+    paddingBottom: 12,
     lineHeight: 14,
     opacity: 0.65,
   },

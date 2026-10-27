@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
+import { goBack } from "@/lib/navigation";
 
 interface FoundRider { id: number; name: string; lastRaced: string | null; clubName: string | null; following: boolean }
 interface Followed { riderId: number; name: string }
@@ -86,7 +87,7 @@ export default function FollowScreen() {
   return (
     <View style={s.root}>
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={() => router.back()} style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}>
+        <Pressable onPress={() => goBack(router)} style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}>
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <Text style={s.headerTitle}>Find riders</Text>

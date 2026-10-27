@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
+import { goBack } from "@/lib/navigation";
 
 interface Organization {
   clubId: number;
@@ -217,7 +218,7 @@ export default function OrganizationsScreen() {
       {/* Header */}
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => goBack(router)}
           style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}
         >
           <Feather name="arrow-left" size={18} color={colors.foreground} />

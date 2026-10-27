@@ -371,6 +371,11 @@ export default function HomeScreen() {
         {/* ── No profile warning ── */}
         {!hasProfile && <NoProfileLinked variant="card" />}
 
+        {/* ── Rocky: AI mechanic, up front ── */}
+        <View style={{ marginTop: 18 }}>
+          <RockyHomeWidget />
+        </View>
+
         {/* ── Upcoming events ── */}
         {hasProfile && (
           <>
@@ -421,9 +426,6 @@ export default function HomeScreen() {
 
         {/* ── Riders you follow ── */}
         {hasProfile && <FollowingFeed refreshKey={feedRefreshKey} />}
-
-        {/* ── Rocky inline chat ── */}
-        <RockyHomeWidget />
 
         {/* Footer */}
         <View style={{ height: insets.bottom + 40 }} />

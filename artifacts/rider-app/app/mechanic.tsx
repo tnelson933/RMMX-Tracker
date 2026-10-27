@@ -20,6 +20,8 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useRockyChat, type ChatMessage } from "@/context/RockyChatContext";
 import { resolveFollowUpChips } from "@/utils/rockyFollowUps";
+import { goBack } from "@/lib/navigation";
+import { ROCKY_QUICK_QUESTIONS, RockyAvatar } from "@/components/RockyAvatar";
 
 const CONFIRM_CLEAR_LABEL = "Clear chat";
 
@@ -69,9 +71,7 @@ function MessageBubble({ msg, colors }: { msg: ChatMessage; colors: ReturnType<t
       isUser ? styles.bubbleRowRight : styles.bubbleRowLeft,
     ]}>
       {!isUser && (
-        <View style={[styles.avatar, { backgroundColor: colors.primary + "22", borderColor: colors.primary + "44" }]}>
-          <Text style={{ fontSize: 14 }}>🔧</Text>
-        </View>
+        <RockyAvatar size={30} online={false} />
       )}
       <View style={[
         styles.bubble,
@@ -97,9 +97,7 @@ function MessageBubble({ msg, colors }: { msg: ChatMessage; colors: ReturnType<t
 function TypingIndicator({ colors }: { colors: ReturnType<typeof useColors> }) {
   return (
     <View style={[styles.bubbleRow, styles.bubbleRowLeft]}>
-      <View style={[styles.avatar, { backgroundColor: colors.primary + "22", borderColor: colors.primary + "44" }]}>
-        <Text style={{ fontSize: 14 }}>🔧</Text>
-      </View>
+      <RockyAvatar size={30} online={false} />
       <View style={[styles.bubble, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}>
         <ActivityIndicator size="small" color={colors.primary} />
       </View>
@@ -263,7 +261,7 @@ export default function MechanicScreen() {
         borderBottomColor: colors.border,
       }]}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => goBack(router)}
           hitSlop={12}
           style={({ pressed }) => ({
             width: 36, height: 36, borderRadius: 18,
@@ -275,16 +273,19 @@ export default function MechanicScreen() {
           <Feather name="chevron-down" size={20} color={colors.foreground} />
         </Pressable>
 
-        <View style={{ flex: 1, alignItems: "center" }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Rocky</Text>
-            <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, backgroundColor: colors.primary + "22", borderWidth: 1, borderColor: colors.primary + "44" }}>
-              <Text style={{ fontSize: 9, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", letterSpacing: 0.8 }}>AI</Text>
+        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <RockyAvatar size={42} />
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ fontSize: 19, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: 0.5, textTransform: "uppercase" }}>Rocky</Text>
+              <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, backgroundColor: colors.primary }}>
+                <Text style={{ fontSize: 9, color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 0.8 }}>AI</Text>
+              </View>
             </View>
+            <Text style={{ fontSize: 11, color: colors.success, fontFamily: "Inter_600SemiBold", marginTop: 1 }}>
+              {isTyping ? "Rocky is typing…" : "Online · Mechanic & riding coach"}
+            </Text>
           </View>
-          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
-            Mechanic & Riding Coach
-          </Text>
         </View>
 
         {/* Clear chat button */}
@@ -338,7 +339,7 @@ export default function MechanicScreen() {
       {/* Disclaimer */}
       <View style={{ paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.background }}>
         <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 14 }}>
-          Rocky's advice is for informational purposes only. Always consult your owner's manual, a qualified mechanic for safety-critical repairs, and a certified riding coach before making technique changes.
+          Rocky's advice is for information only. Check your owner's manual, and use a qualified mechanic for safety-critical repairs.
         </Text>
       </View>
 
@@ -351,7 +352,31 @@ export default function MechanicScreen() {
         data={messages}
         keyExtractor={item => item.id}
         renderItem={({ item }) => <MessageBubble msg={item} colors={colors} />}
-        ListFooterComponent={isTyping ? <TypingIndicator colors={colors} /> : null}
+        ListFooterComponent={isTyping ? <TypingIndicator colors={colors} /> : !lastUser ? (
+          <View style={{ paddingHorizontal: 12, paddingTop: 4 }}>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8, marginLeft: 2 }}>
+              Try asking
+            </Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {ROCKY_QUICK_QUESTIONS.map(q => (
+                <Pressable
+                  key={q.label}
+                  onPress={() => void sendMessage(q.question)}
+                  style={({ pressed }) => ({
+                    width: "48.5%", flexDirection: "row", alignItems: "center", gap: 8,
+                    paddingHorizontal: 10, paddingVertical: 11, borderRadius: 12,
+                    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.72 : 1,
+                  })}
+                >
+                  <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center" }}>
+                    <Feather name={q.icon} size={14} color={colors.primary} />
+                  </View>
+                  <Text style={{ flex: 1, fontSize: 12, color: colors.foreground, fontFamily: "Inter_600SemiBold" }} numberOfLines={1}>{q.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
         contentContainerStyle={{ paddingTop: 16, paddingBottom: 12 }}
         showsVerticalScrollIndicator={false}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
@@ -429,14 +454,12 @@ export default function MechanicScreen() {
             disabled={!inputText.trim() || isTyping}
             style={({ pressed }) => ({
               width: 42, height: 42, borderRadius: 21,
-              backgroundColor: inputText.trim() && !isTyping ? colors.primary : colors.muted,
+              backgroundColor: colors.primary,
               alignItems: "center", justifyContent: "center",
-              opacity: pressed ? 0.75 : 1,
-              borderWidth: 1,
-              borderColor: inputText.trim() && !isTyping ? colors.primary : colors.border,
+              opacity: !inputText.trim() || isTyping ? 0.45 : pressed ? 0.75 : 1,
             })}
           >
-            <Feather name="send" size={17} color={inputText.trim() && !isTyping ? "#fff" : colors.mutedForeground} />
+            <Feather name="send" size={17} color="#fff" />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -536,7 +559,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   input: {
-    flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10,
+    flex: 1, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 11,
     fontSize: 14, lineHeight: 20,
     borderWidth: 1,
     maxHeight: 120, fontFamily: "Inter_400Regular",

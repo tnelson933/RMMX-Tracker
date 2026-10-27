@@ -10,6 +10,7 @@ import { formatLap, type CareerStats } from "@/components/ShareCard";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { parsePosition, podiumColor, podiumTextColor } from "@/components/RaceStats";
 import { useTheme } from "@/context/ThemeContext";
+import { goBack } from "@/lib/navigation";
 
 interface Recent { eventId: number; eventName: string; eventDate: string; raceClass: string; bestPosition: number | null; motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }> }
 
@@ -61,7 +62,7 @@ export default function RacerScreen() {
   return (
     <View style={s.root}>
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={() => router.back()} style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}>
+        <Pressable onPress={() => goBack(router)} style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}>
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <Text style={s.headerTitle} numberOfLines={1}>{data?.name ?? "Rider"}</Text>

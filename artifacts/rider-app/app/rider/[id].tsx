@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
+import { goBack } from "@/lib/navigation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -828,7 +829,7 @@ export default function RiderDetailScreen() {
     return (
       <View style={[s.root, { paddingTop: insets.top }]}>
         <View style={s.header}>
-          <Pressable style={s.backBtn} onPress={() => router.back()}>
+          <Pressable style={s.backBtn} onPress={() => goBack(router)}>
             <Feather name="arrow-left" size={18} color={colors.foreground} />
           </Pressable>
           <Text style={s.headerTitle}>Rider Profile</Text>
@@ -844,7 +845,7 @@ export default function RiderDetailScreen() {
     return (
       <View style={[s.root, { paddingTop: insets.top }]}>
         <View style={s.header}>
-          <Pressable style={s.backBtn} onPress={() => router.back()}>
+          <Pressable style={s.backBtn} onPress={() => goBack(router)}>
             <Feather name="arrow-left" size={18} color={colors.foreground} />
           </Pressable>
           <Text style={s.headerTitle}>Rider Profile</Text>
@@ -872,7 +873,7 @@ export default function RiderDetailScreen() {
     <View style={[s.root, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={s.header}>
-        <Pressable style={s.backBtn} onPress={() => router.back()}>
+        <Pressable style={s.backBtn} onPress={() => goBack(router)}>
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <Text style={s.headerTitle} numberOfLines={1}>

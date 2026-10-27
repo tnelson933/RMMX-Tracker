@@ -16,6 +16,7 @@ import { useColors } from "@/hooks/useColors";
 import { ShareResultButton } from "@/components/ShareCard";
 import { PositionBadge } from "@/components/RaceStats";
 import { displayDate } from "@/lib/format";
+import { goBack } from "@/lib/navigation";
 
 function parseLapMs(s: string): number {
   if (!s) return Infinity;
@@ -142,7 +143,7 @@ export default function ResultDetailScreen() {
           {error ?? "Results for this event haven't been posted yet."}
         </Text>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => goBack(router)}
           style={{ marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary }}
         >
           <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Go Back</Text>
@@ -161,7 +162,7 @@ export default function ResultDetailScreen() {
         borderBottomWidth: 1, borderBottomColor: colors.border,
       }}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => goBack(router)}
           hitSlop={12}
           style={({ pressed }) => ({
             flexDirection: "row", alignItems: "center", gap: 6,

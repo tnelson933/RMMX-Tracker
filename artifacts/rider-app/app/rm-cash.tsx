@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { goBack } from "@/lib/navigation";
 
 export default function RmCashScreen() {
   const colors = useColors();
@@ -138,7 +139,7 @@ export default function RmCashScreen() {
   return (
     <View style={s.container}>
       <View style={s.topBar}>
-        <Pressable style={s.backBtn} onPress={() => router.back()}>
+        <Pressable style={s.backBtn} onPress={() => goBack(router)}>
           <Feather name="chevron-left" size={20} color={colors.primary} />
           <Text style={s.backText}>Back</Text>
         </Pressable>

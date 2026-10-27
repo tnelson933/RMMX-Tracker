@@ -22,6 +22,7 @@ import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import * as WebBrowser from "expo-web-browser";
 import { EmptyState } from "@/components/EmptyState";
 import { eventDay, placeLabel } from "@/lib/format";
+import { goBack } from "@/lib/navigation";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 
@@ -392,7 +393,7 @@ export default function EventDetailScreen() {
             <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Try again</Text>
           </Pressable>
         )}
-        <Pressable onPress={() => router.back()} style={{ marginTop: 8 }}>
+        <Pressable onPress={() => goBack(router)} style={{ marginTop: 8 }}>
           <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Go back</Text>
         </Pressable>
       </View>
@@ -422,7 +423,7 @@ export default function EventDetailScreen() {
       >
         {/* Top bar */}
         <View style={s.topBar}>
-          <Pressable style={s.backBtn} onPress={() => router.back()}>
+          <Pressable style={s.backBtn} onPress={() => goBack(router)}>
             <Feather name="chevron-left" size={20} color={colors.primary} />
             <Text style={s.backText}>Events</Text>
           </Pressable>
