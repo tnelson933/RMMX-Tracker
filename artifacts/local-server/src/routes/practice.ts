@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Response } from "express";
 import { getDb } from "../db";
+import { rejectForeignBrowserIngest } from "../lib/request-origin";
 
 const router = Router();
 
@@ -31,6 +32,16 @@ type PracticeCrossingRow = {
   created_at: string;
 };
 
+// Older rows stored started_at with SQLite datetime('now') ("YYYY-MM-DD HH:MM:SS",
+// UTC with no zone marker), which browsers parse as local time. Return those as
+// ISO UTC like every other local timestamp.
+function toIsoUtc(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(value)
+    ? `${value.replace(" ", "T")}Z`
+    : value;
+}
+
 function serializeSession(s: PracticeSessionRow) {
   return {
     id: s.id,
@@ -39,7 +50,7 @@ function serializeSession(s: PracticeSessionRow) {
     status: s.status,
     debounceMs: s.debounce_ms,
     venueName: s.venue_name ?? null,
-    startedAt: s.started_at ?? null,
+    startedAt: toIsoUtc(s.started_at),
     endedAt: s.ended_at ?? null,
     createdAt: s.created_at,
   };
@@ -204,7 +215,7 @@ function processCrossing(
 }
 
 // POST /practice/active/crossing — from an RFID bridge or timing decoder, no session ID needed
-router.post("/practice/active/crossing", (req, res) => {
+router.post("/practice/active/crossing", rejectForeignBrowserIngest, (req, res) => {
   const clubId = Number(req.query.clubId);
   if (!clubId || isNaN(clubId)) {
     return res.status(400).json({ error: "clubId query param is required" });
@@ -293,9 +304,9 @@ router.post("/practice", (req, res) => {
   const db = getDb();
   const ins = db
     .prepare(
-      "INSERT INTO practice_sessions (club_id, name, debounce_ms, venue_name, status, started_at) VALUES (?, ?, ?, ?, 'active', datetime('now'))",
+      "INSERT INTO practice_sessions (club_id, name, debounce_ms, venue_name, status, started_at) VALUES (?, ?, ?, ?, 'active', ?)",
     )
-    .run(clubId, name, debounceMs ? Number(debounceMs) : 10000, venueName.trim());
+    .run(clubId, name, debounceMs ? Number(debounceMs) : 10000, venueName.trim(), new Date().toISOString());
 
   const session = db
     .prepare("SELECT * FROM practice_sessions WHERE id = ?")

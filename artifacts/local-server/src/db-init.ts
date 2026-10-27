@@ -740,6 +740,8 @@ export function initDb() {
     ["clubs",  "image_sync_attempts INTEGER NOT NULL DEFAULT 0"],
     // practice_sessions — track/venue name stored on the session
     ["practice_sessions", "venue_name TEXT"],
+    // events — liability waiver requirement (pulled from cloud; checked at check-in)
+    ["events", "require_liability_waiver INTEGER NOT NULL DEFAULT 0"],
   ];
 
   for (const [table, colDef] of migrations) {

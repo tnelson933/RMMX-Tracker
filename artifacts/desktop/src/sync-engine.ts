@@ -35,6 +35,10 @@ export class SyncEngine {
   /** Stable JSON fingerprint of the last successful sync-pull response.
    *  Used to skip upserts (and UI invalidations) on no-op cycles. */
   private lastPullHash: string | null = null;
+  /** Rows skipped by upsertPulled() during the current pull because they have
+   *  pending local writes. A pull with skipped rows is not cached in
+   *  lastPullHash so the same cloud response is re-applied once they push. */
+  private pullSkippedPending = 0;
   private sessionCookie: string | null = null;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private listeners: StateChangeCallback[] = [];
@@ -405,7 +409,16 @@ export class SyncEngine {
       let tableRows = this.db
         .prepare(`SELECT * FROM ${table} WHERE id IN (${placeholders})`)
         .all(...ids) as Record<string, unknown>[];
-      if (["checkins", "rfid_assignments", "registrations", "race_results"].includes(table)) {
+      if (
+        [
+          "checkins",
+          "rfid_assignments",
+          "registrations",
+          "race_results",
+          "lap_crossings",
+          "practice_crossings",
+        ].includes(table)
+      ) {
         const cloudIdFor = this.db.prepare(
           "SELECT cloud_rider_id FROM _rider_cloud_map WHERE local_rider_id = ?",
         );
@@ -470,21 +483,76 @@ export class SyncEngine {
       throw new Error(errMsg);
     }
 
-    this.db
-      .prepare(
-        "UPDATE _write_queue SET synced_at = ?, error = NULL WHERE id IN (" +
-          rows.map(() => "?").join(",") +
-          ")",
-      )
-      .run(now, ...rows.map((r) => r.id));
-
-    // Apply any id remaps returned by the cloud (e.g. event id collisions).
-    type PushResponse = { idRemaps?: { events?: Array<{ localId: number; cloudId: number }> } };
+    type IdRemap = { localId: number; cloudId: number };
+    type PushResponse = {
+      idRemaps?: { events?: IdRemap[]; motos?: IdRemap[] };
+      // Rows the cloud did not apply, keyed by table (deletes use
+      // "<table>_deleted"), identified by the desktop id that was sent.
+      skipped?: Record<string, Array<{ id: number | null; reason: string }>>;
+    };
     let pushResponse: PushResponse | null = null;
     try { pushResponse = JSON.parse(body) as PushResponse; } catch { /* ignore */ }
+
+    // A 2xx response can still skip individual rows. Those must not be marked
+    // synced: count them as a failed attempt with the cloud's reason so they
+    // are retried and, after MAX_ATTEMPTS, dead-lettered visibly.
+    const skippedReasonByQueueId = new Map<number, string>();
+    for (const [key, entries] of Object.entries(pushResponse?.skipped ?? {})) {
+      if (!Array.isArray(entries)) continue;
+      const isDelete = key.endsWith("_deleted");
+      const table = isDelete ? key.slice(0, -"_deleted".length) : key;
+      for (const entry of entries) {
+        if (entry?.id == null) {
+          console.warn(`[sync] Cloud skipped a ${key} row without an id: ${entry?.reason ?? "unknown reason"}`);
+          continue;
+        }
+        for (const row of rows) {
+          if (
+            row.table_name === table &&
+            (row.operation === "delete") === isDelete &&
+            Number(row.record_id) === Number(entry.id)
+          ) {
+            skippedReasonByQueueId.set(row.id, `Cloud skipped: ${entry.reason ?? "unknown reason"}`);
+          }
+        }
+      }
+    }
+
+    const syncedRows = rows.filter((r) => !skippedReasonByQueueId.has(r.id));
+    const markResults = this.db.transaction(() => {
+      if (syncedRows.length > 0) {
+        this.db
+          .prepare(
+            "UPDATE _write_queue SET synced_at = ?, error = NULL WHERE id IN (" +
+              syncedRows.map(() => "?").join(",") +
+              ")",
+          )
+          .run(now, ...syncedRows.map((r) => r.id));
+      }
+      const markSkipped = this.db.prepare(
+        "UPDATE _write_queue SET attempt_count = attempt_count + 1, error = ? WHERE id = ?",
+      );
+      for (const [queueId, reason] of skippedReasonByQueueId) {
+        markSkipped.run(reason, queueId);
+      }
+    });
+    markResults();
+    if (skippedReasonByQueueId.size > 0) {
+      console.warn(
+        `[sync] Cloud skipped ${skippedReasonByQueueId.size} pushed row(s); ` +
+        `they stay queued for retry (max ${MAX_ATTEMPTS} attempts)`,
+      );
+    }
+
+    // Apply any id remaps returned by the cloud (event/moto id collisions).
+    // Events first: remapped motos may belong to a remapped event.
     const eventRemaps = pushResponse?.idRemaps?.events ?? [];
     if (eventRemaps.length > 0) {
       this.applyEventIdRemaps(eventRemaps);
+    }
+    const motoRemaps = pushResponse?.idRemaps?.motos ?? [];
+    if (motoRemaps.length > 0) {
+      this.applyMotoIdRemaps(motoRemaps);
     }
   }
 
@@ -604,17 +672,115 @@ export class SyncEngine {
             .prepare("UPDATE events SET id = ? WHERE id = ?")
             .run(cloudId, localId);
 
-          // Patch FK columns in all child tables.
-          for (const [childTable, fkCol] of SyncEngine.EVENT_CHILD_TABLES) {
-            this.db
-              .prepare(`UPDATE ${childTable} SET ${fkCol} = ? WHERE ${fkCol} = ?`)
-              .run(cloudId, localId);
-          }
+          // Patch FK columns in all child tables, then re-queue the rewritten
+          // children so they push under the new id.
+          this.remapChildForeignKeys(SyncEngine.EVENT_CHILD_TABLES, localId, cloudId);
 
           // Keep the write-queue entry pointing at the new id.
           this.db
             .prepare(
               "UPDATE _write_queue SET record_id = ? WHERE table_name = 'events' AND record_id = ?",
+            )
+            .run(cloudId, localId);
+        }
+      } finally {
+        this.db.prepare("DELETE FROM _cloud_pull_guard").run();
+      }
+    });
+
+    doRemap();
+  }
+
+  // Child tables that carry a moto_id FK (see local-server db-init.ts).
+  private static readonly MOTO_CHILD_TABLES: ReadonlyArray<[string, string]> = [
+    ["lap_crossings", "moto_id"],
+    ["race_results",  "moto_id"],
+  ];
+
+  // Write-queue operation each table's insert trigger uses (db-init.ts).
+  private static readonly QUEUE_OPERATION: Readonly<Record<string, string>> = {
+    lap_crossings: "insert",
+    practice_crossings: "insert",
+  };
+
+  /**
+   * Rewrites `fkCol` from localId to cloudId in each child table and enqueues
+   * every rewritten row. Must run under _cloud_pull_guard (the UPDATE triggers
+   * are suppressed there), so without the explicit enqueue the cloud would
+   * keep the children under the stale parent id. Child tables whose FK column
+   * does not exist locally are skipped instead of failing the remap.
+   */
+  private remapChildForeignKeys(
+    childTables: ReadonlyArray<[string, string]>,
+    localId: number,
+    cloudId: number,
+  ): void {
+    const hasPending = this.db.prepare(
+      `SELECT 1 FROM _write_queue
+       WHERE table_name = ? AND record_id = ? AND synced_at IS NULL
+         AND attempt_count < ? AND operation != 'delete'
+       LIMIT 1`,
+    );
+    const enqueue = this.db.prepare(
+      "INSERT INTO _write_queue (table_name, record_id, operation) VALUES (?, ?, ?)",
+    );
+    for (const [childTable, fkCol] of childTables) {
+      if (!this.localColumns(childTable).has(fkCol)) continue;
+      const childIds = (
+        this.db
+          .prepare(`SELECT id FROM ${childTable} WHERE ${fkCol} = ?`)
+          .all(localId) as Array<{ id: number }>
+      ).map((r) => r.id);
+      if (childIds.length === 0) continue;
+      this.db
+        .prepare(`UPDATE ${childTable} SET ${fkCol} = ? WHERE ${fkCol} = ?`)
+        .run(cloudId, localId);
+      const operation = SyncEngine.QUEUE_OPERATION[childTable] ?? "upsert";
+      for (const id of childIds) {
+        // A live pending entry already pushes the current row; don't duplicate.
+        if (hasPending.get(childTable, id, MAX_ATTEMPTS)) continue;
+        enqueue.run(childTable, id, operation);
+      }
+    }
+  }
+
+  /**
+   * Same as applyEventIdRemaps, for motos the cloud stored under a different
+   * id: patches motos.id, every moto_id FK, and the motos write-queue rows,
+   * then re-queues the rewritten children.
+   */
+  private applyMotoIdRemaps(
+    remaps: Array<{ localId: number; cloudId: number }>,
+  ): void {
+    if (!remaps.length) return;
+
+    const doRemap = this.db.transaction(() => {
+      this.db.prepare("INSERT OR IGNORE INTO _cloud_pull_guard VALUES(1)").run();
+      try {
+        for (const { localId, cloudId } of remaps) {
+          if (localId === cloudId) continue;
+          // If a different local moto already holds the cloud id, rewriting the
+          // primary key would fail and roll back every remap in this batch.
+          const occupied = this.db
+            .prepare("SELECT 1 FROM motos WHERE id = ?")
+            .get(cloudId);
+          if (occupied) {
+            console.warn(
+              `[sync] Moto id remap ${localId} -> ${cloudId} skipped: ` +
+              `a local moto already uses id ${cloudId}`,
+            );
+            continue;
+          }
+
+          this.db
+            .prepare("UPDATE motos SET id = ? WHERE id = ?")
+            .run(cloudId, localId);
+
+          this.remapChildForeignKeys(SyncEngine.MOTO_CHILD_TABLES, localId, cloudId);
+
+          this.db
+            .prepare(
+              "UPDATE _write_queue SET record_id = ? WHERE table_name = 'motos' AND record_id = ?",
             )
             .run(cloudId, localId);
         }
@@ -723,7 +889,6 @@ export class SyncEngine {
       // Identical response — nothing to upsert, nothing changed.
       return false;
     }
-    this.lastPullHash = stableHash;
 
     const data = rawData as {
       registrations?: Record<string, unknown>[];
@@ -794,7 +959,13 @@ export class SyncEngine {
       }
     });
 
+    this.pullSkippedPending = 0;
     upsertAll();
+
+    // Cache the fingerprint only after the upsert transaction committed, and
+    // only when every row was applied. If rows were skipped because of pending
+    // local writes, an identical response must still be upserted next cycle.
+    this.lastPullHash = this.pullSkippedPending === 0 ? stableHash : null;
 
     // Return whether any SQLite rows were actually inserted or updated.
     // The caller (_flush) stores this in lastRowsChanged so DesktopSyncWatcher
@@ -941,6 +1112,7 @@ export class SyncEngine {
       // Skip rows with a pending local write — their local version wins until
       // successfully pushed to the cloud.
       if (pendingIds.has(snakeRow.id as number)) {
+        this.pullSkippedPending++;
         if (table === "events") {
           console.warn(
             `[sync] upsertPulled: skipping cloud event id=${snakeRow.id as number} ` +

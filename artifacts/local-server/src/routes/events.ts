@@ -53,6 +53,10 @@ function serializeEvent(e: any) {
     transponderRentalFee: e.transponder_rental_fee != null ? Number(e.transponder_rental_fee) : null,
     noDuplicateBibs: e.no_duplicate_bibs === 1,
     requireClubId: e.require_club_id === 1,
+    // Synced from the cloud but not enforced offline: the local server has no
+    // waiver signing endpoint, so gating check-in here would block race day.
+    // Signatures are collected online (registration or cloud check-in).
+    requireLiabilityWaiver: false,
     scoringTableId: e.scoring_table_id ?? null,
     minLapMs: e.min_lap_ms ?? null,
     amaEventId: e.ama_event_id ?? null,

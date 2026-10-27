@@ -37,14 +37,34 @@ exports.default = async function (context) {
   console.log(`[after-pack] appOutDir=${appOutDir}`);
 
   // Rebuild native modules bundled with the local-server (extraResources).
-  // These live at resources/local-server regardless of asar mode and are NOT
-  // rebuilt by electron-builder's built-in @electron/rebuild step.
-  const localServerPath = path.join(appOutDir, "resources", "local-server");
+  // These are NOT rebuilt by electron-builder's built-in @electron/rebuild step.
+  // extraResources land in the platform's resources directory:
+  //   Windows/Linux: <appOutDir>/resources/local-server
+  //   macOS:         <appOutDir>/<productFilename>.app/Contents/Resources/local-server
+  const platformName = context.electronPlatformName ?? process.platform;
+  const isMac = platformName === "darwin" || platformName === "mas";
+  let resourcesDir;
+  if (isMac) {
+    const productFilename =
+      context.packager?.appInfo?.productFilename ??
+      fs.readdirSync(appOutDir).find((name) => name.endsWith(".app"))?.replace(/\.app$/, "");
+    resourcesDir = path.join(appOutDir, `${productFilename}.app`, "Contents", "Resources");
+  } else {
+    resourcesDir = path.join(appOutDir, "resources");
+  }
+  const localServerPath = path.join(resourcesDir, "local-server");
+  console.log(`[after-pack] platform=${platformName} localServerPath=${localServerPath}`);
 
   if (!fs.existsSync(localServerPath)) {
-    console.log(`[after-pack] local-server path not found (${localServerPath}), skipping.`);
-    console.log("[after-pack] Done.");
-    return;
+    // electron-builder.yml always copies local-server via extraResources, so a
+    // missing directory means the path is wrong for this platform. Fail loudly
+    // instead of shipping a better-sqlite3 binary built for the wrong arch.
+    const message =
+      `[after-pack] ERROR: local-server directory not found at ${localServerPath} ` +
+      `(platform=${platformName}, arch=${archStr}). The arch-specific better-sqlite3 ` +
+      `rebuild cannot run, and the packaged offline server would not load.`;
+    console.error(message);
+    throw new Error(message);
   }
 
   // @electron/rebuild requires a package.json at buildPath.

@@ -64,6 +64,16 @@ const {
 } = activeReaderModule.default ?? activeReaderModule;
 const deduperModule = await import(pathToFileURL(deduperOutputFile).href);
 const { RecentReadDeduper } = deduperModule.default ?? deduperModule;
+const retryQueueOutputFile = path.join(os.tmpdir(), `rm-connect-retry-queue-${process.pid}.cjs`);
+await build({
+  entryPoints: [path.resolve("src/crossing-retry-queue.ts")],
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  outfile: retryQueueOutputFile,
+});
+const retryQueueModule = await import(pathToFileURL(retryQueueOutputFile).href);
+const { CrossingRetryQueue, isRetryableCrossingResult } = retryQueueModule.default ?? retryQueueModule;
 
 function commandsFromWire(messages) {
   return messages.join("").split(";").filter(Boolean).map(packet => packet.split("@")[1]);
@@ -480,4 +490,74 @@ test("suppresses duplicate reader callbacks inside the local debounce window", (
   assert.equal(deduper.accept("ABC123", 10_100), false);
   assert.equal(deduper.accept("OTHER", 10_100), true);
   assert.equal(deduper.accept("ABC123", 11_501), true);
+});
+
+test("retries only transient cloud failures", () => {
+  assert.equal(isRetryableCrossingResult({ ok: false, status: 503 }), true);
+  assert.equal(isRetryableCrossingResult({ ok: false, status: 429 }), true);
+  assert.equal(isRetryableCrossingResult({ ok: false, status: 409 }), false);
+  assert.equal(isRetryableCrossingResult({ ok: false, status: 422 }), false);
+  assert.equal(isRetryableCrossingResult({ ok: true, status: 200 }), false);
+});
+
+test("retry queue delivers in order with original timestamps and never resends a success", async () => {
+  const sent = [];
+  let failuresLeft = 2;
+  const queue = new CrossingRetryQueue({
+    baseDelayMs: 5,
+    maxDelayMs: 10,
+    log: () => {},
+    send: async (crossing) => {
+      sent.push(crossing);
+      if (failuresLeft-- > 0) throw new Error("ECONNREFUSED");
+      return { ok: true, status: 200 };
+    },
+  });
+  queue.enqueue({ rfidNumber: "A", crossingTime: "2025-01-02T03:04:05.000Z" }, 1);
+  queue.enqueue({ rfidNumber: "B", crossingTime: "2025-01-02T03:04:06.000Z" }, 0);
+  for (let i = 0; i < 100 && queue.size > 0; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  queue.dispose();
+  assert.equal(queue.size, 0);
+  assert.deepEqual(sent.map(c => c.rfidNumber), ["A", "A", "A", "B"]);
+  assert.equal(sent[2].crossingTime, "2025-01-02T03:04:05.000Z");
+});
+
+test("retry queue persists undelivered crossings across restarts", async () => {
+  const file = path.join(os.tmpdir(), `rm-connect-pending-${process.pid}.json`);
+  const first = new CrossingRetryQueue({ filePath: file, baseDelayMs: 60_000, log: () => {}, send: async () => ({ ok: false, status: 502 }) });
+  first.enqueue({ rfidNumber: "C", crossingTime: "2025-01-02T03:04:07.000Z" }, 1);
+  first.dispose();
+  const delivered = [];
+  const second = new CrossingRetryQueue({ filePath: file, log: () => {}, send: async (c) => { delivered.push(c); return { ok: true, status: 200 }; } });
+  second.load();
+  for (let i = 0; i < 100 && second.size > 0; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  second.dispose();
+  assert.deepEqual(delivered.map(c => c.crossingTime), ["2025-01-02T03:04:07.000Z"]);
+});
+
+test("a restarted cloud link does not reconnect from the replaced socket", async () => {
+  const server = createServer();
+  const webSockets = new WebSocketServer({ server });
+  let connections = 0;
+  webSockets.on("connection", () => { connections++; });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const link = new CloudLink();
+  let disconnects = 0;
+  link.on("disconnected", () => { disconnects++; });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    link.start(url, "token-a");
+    await once(link, "connected");
+    link.start(url, "token-b");
+    await once(link, "connected");
+    await new Promise(resolve => setTimeout(resolve, 200));
+    assert.equal(disconnects, 0);
+    assert.equal(connections, 2);
+    assert.equal(link.getStatus().connected, true);
+  } finally {
+    link.stop();
+    webSockets.close();
+    await new Promise(resolve => server.close(resolve));
+  }
 });

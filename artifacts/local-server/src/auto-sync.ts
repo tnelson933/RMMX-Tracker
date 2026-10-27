@@ -623,8 +623,8 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         race_class_limits, purchase_options, image_url, timing_technology,
         transponder_rental_enabled, transponder_rental_fee,
         no_duplicate_bibs, require_club_id, scoring_table_id,
-        entry_fee_category_id, min_lap_ms, ama_event_id, race_style, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        entry_fee_category_id, min_lap_ms, ama_event_id, race_style, require_liability_waiver, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name                       = excluded.name,
         date                       = excluded.date,
@@ -653,7 +653,8 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         entry_fee_category_id      = excluded.entry_fee_category_id,
         min_lap_ms                 = excluded.min_lap_ms,
         ama_event_id               = excluded.ama_event_id,
-        race_style                 = excluded.race_style
+        race_style                 = excluded.race_style,
+        require_liability_waiver   = excluded.require_liability_waiver
     `);
 
     for (const ev of data.events ?? []) {
@@ -679,6 +680,7 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         toSQLiteScalar(ev.minLapMs) ?? null,
         toSQLiteScalar(ev.amaEventId) ?? null,
         toSQLiteScalar(ev.raceStyle) ?? null,
+        (ev as any).requireLiabilityWaiver ? 1 : 0,
         toDateStr(ev.createdAt) ?? new Date().toISOString(),
       );
       rows.eventsPulled++;

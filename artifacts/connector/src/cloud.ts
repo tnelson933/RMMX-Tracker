@@ -135,13 +135,19 @@ export class CloudLink extends EventEmitter {
       clearInterval(this.statusTimer);
       this.statusTimer = null;
     }
-    if (this.ws) {
-      try {
-        this.ws.close();
-      } catch {
-        // ignore
-      }
-      this.ws = null;
+    this.discardSocket();
+  }
+
+  /** Detach and terminate the current socket. Its handlers ignore events once
+   *  it is no longer `this.ws`, so a late close cannot schedule a reconnect. */
+  private discardSocket(): void {
+    const old = this.ws;
+    this.ws = null;
+    if (!old) return;
+    try {
+      old.terminate();
+    } catch {
+      // ignore
     }
   }
 
@@ -173,7 +179,7 @@ export class CloudLink extends EventEmitter {
     receivedAtUtc?: Date;
     deviceTimezone?: string | null;
     source?: string;
-  }): Promise<{ ok: boolean; message?: string }> {
+  }): Promise<{ ok: boolean; message?: string; status?: number }> {
     if (!this.cloudUrl || !this.readerToken) {
       return { ok: false, message: "Cloud link not configured" };
     }
@@ -205,7 +211,7 @@ export class CloudLink extends EventEmitter {
       tokenMessage.includes("no active race_day event")
     );
     if (!shouldUseFacilityRouting) {
-      return { ok: !!data.ok, message: data.message };
+      return { ok: !!data.ok, message: data.message, status: res.status };
     }
 
     if (!input.clubId) {
@@ -222,7 +228,7 @@ export class CloudLink extends EventEmitter {
       keepalive: true,
     });
     const data2 = (await res2.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
-    return { ok: !!data2.ok, message: data2.message ?? data2.error };
+    return { ok: !!data2.ok, message: data2.message ?? data2.error, status: res2.status };
   }
 
   private open(): void {
@@ -232,10 +238,13 @@ export class CloudLink extends EventEmitter {
       this.cloudUrl.replace(/^http/, "ws") +
       `/api/connector/ws?token=${encodeURIComponent(this.readerToken)}`;
 
+    // Never leave a previous socket alive alongside the new one.
+    this.discardSocket();
     const ws = new WebSocket(wsUrl, { perMessageDeflate: false });
     this.ws = ws;
 
     ws.on("open", () => {
+      if (this.ws !== ws) return;
       const socket = (ws as any)._socket;
       socket?.setNoDelay?.(true);
       socket?.setKeepAlive?.(true, 1_000);
@@ -246,6 +255,7 @@ export class CloudLink extends EventEmitter {
     });
 
     ws.on("message", (data) => {
+      if (this.ws !== ws) return;
       let msg: unknown;
       try {
         msg = JSON.parse(data.toString());
@@ -272,11 +282,16 @@ export class CloudLink extends EventEmitter {
     });
 
     ws.on("error", (err) => {
+      // A replaced/stopped socket must not overwrite the live socket's state.
+      if (this.ws !== ws) return;
       this.lastError = err.message;
     });
 
     ws.on("close", (code) => {
-      if (this.ws === ws) this.ws = null;
+      // Ignore late closes from a socket that stop()/open() already replaced;
+      // otherwise it would schedule a reconnect and orphan the live socket.
+      if (this.ws !== ws) return;
+      this.ws = null;
       if (this.stopped) return;
       if (code === 1008 || this.lastError?.includes("401")) {
         this.lastError = "Cloud rejected the reader token — re-select your reader in Settings.";

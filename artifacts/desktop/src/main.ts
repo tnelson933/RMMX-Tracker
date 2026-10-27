@@ -12,6 +12,7 @@ import { autoUpdater } from "electron-updater";
 import path from "path";
 import fs from "fs";
 import http from "http";
+import crypto from "crypto";
 import { ChildProcess, spawn } from "child_process";
 import { SyncEngine } from "./sync-engine";
 import {
@@ -49,6 +50,49 @@ const LOCAL_PORT = 9090;
 const STARTUP_TIMEOUT_MS = 15_000;
 const WINDOW_TITLE = "RM Roost";
 const LOCAL_TIMING_HTTP_AGENT = new http.Agent({ keepAlive: true, maxSockets: 4 });
+// Origins the main window may navigate within (the bundled local server).
+const LOCAL_APP_ORIGINS = new Set([
+  `http://127.0.0.1:${LOCAL_PORT}`,
+  `http://localhost:${LOCAL_PORT}`,
+]);
+
+function parseUrl(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+
+function isLocalAppUrl(raw: string): boolean {
+  const url = parseUrl(raw);
+  return url != null && LOCAL_APP_ORIGINS.has(url.origin);
+}
+
+function isExternalWebUrl(raw: string): boolean {
+  const url = parseUrl(raw);
+  return url != null && (url.protocol === "https:" || url.protocol === "http:");
+}
+
+/**
+ * Validates a cloud URL before credentials are sent to it. Production clouds
+ * must use https; plain http is allowed only for local development hosts.
+ * Returns the normalized URL (no trailing slash) or throws.
+ */
+function validateCloudUrl(raw: string): string {
+  const url = parseUrl(String(raw ?? "").trim());
+  if (!url) throw new Error("Cloud URL is not a valid URL.");
+  const host = url.hostname.toLowerCase();
+  const isLocalDevHost =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "[::1]" ||
+    host.endsWith(".localhost");
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLocalDevHost)) {
+    throw new Error("Cloud URL must use https:// (http:// is allowed only for localhost development).");
+  }
+  return url.toString().replace(/\/$/, "");
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -309,11 +353,7 @@ function deriveSessionSecret(): string {
   if (fs.existsSync(secretFile)) {
     return fs.readFileSync(secretFile, "utf8").trim();
   }
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let secret = "";
-  for (let i = 0; i < 48; i++) {
-    secret += chars[Math.floor(Math.random() * chars.length)];
-  }
+  const secret = crypto.randomBytes(36).toString("base64url");
   fs.writeFileSync(secretFile, secret, { mode: 0o600 });
   return secret;
 }
@@ -361,7 +401,9 @@ function createWindow(): void {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // The preload only uses contextBridge/ipcRenderer (plus process.platform,
+      // which sandboxed preloads still expose), so it runs fine sandboxed.
+      sandbox: true,
       // Allow Web Audio API (AudioContext) to play without requiring a prior
       // user gesture — needed so RFID crossing pings fire reliably even when
       // the organizer hasn't clicked recently.
@@ -372,8 +414,31 @@ function createWindow(): void {
   mainWindow.loadURL(`http://127.0.0.1:${LOCAL_PORT}/login`);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    // Only hand real web links to the OS browser; never file:, custom
+    // protocol handlers, or other schemes.
+    if (isExternalWebUrl(url) && !isLocalAppUrl(url)) {
+      void shell.openExternal(url);
+    } else if (!isExternalWebUrl(url)) {
+      console.warn(`[security] Blocked window.open to non-web URL: ${url}`);
+    }
     return { action: "deny" };
+  });
+
+  // Keep the main window on the local app origin. Off-origin web links open in
+  // the system browser instead of replacing the app (and its preload bridge).
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (isLocalAppUrl(url)) return;
+    event.preventDefault();
+    if (isExternalWebUrl(url)) {
+      void shell.openExternal(url);
+    } else {
+      console.warn(`[security] Blocked navigation to non-web URL: ${url}`);
+    }
+  });
+  mainWindow.webContents.on("will-redirect", (event, url) => {
+    if (isLocalAppUrl(url)) return;
+    event.preventDefault();
+    console.warn(`[security] Blocked redirect away from the local app: ${url}`);
   });
 
   mainWindow.on("closed", () => {
@@ -557,7 +622,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     "auth:setCredentials",
-    (_event, email: string, password: string, cloudUrl: string, clubId: string) => {
+    (_event, email: string, password: string, rawCloudUrl: string, clubId: string) => {
+      const cloudUrl = validateCloudUrl(rawCloudUrl);
       saveCredentials({ email, password, cloudUrl, clubId });
       stopSyncEngine();
       startSyncEngine();
@@ -573,13 +639,19 @@ function registerIpcHandlers(): void {
     "auth:cloudLogin",
     async (_event, email: string, password: string, fallbackCloudUrl: string) => {
       const saved = loadCredentials();
-      const cloudUrl = (saved?.cloudUrl || fallbackCloudUrl || "").replace(/\/$/, "");
-      if (!cloudUrl) {
+      const rawCloudUrl = (saved?.cloudUrl || fallbackCloudUrl || "").replace(/\/$/, "");
+      if (!rawCloudUrl) {
         return {
           ok: false,
           error:
             "Cloud URL not configured. Open Cloud Sync Settings from the app menu and enter your cloud URL.",
         };
+      }
+      let cloudUrl: string;
+      try {
+        cloudUrl = validateCloudUrl(rawCloudUrl);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
 
       try {

@@ -4,17 +4,16 @@ import session from "express-session";
 import path from "path";
 import router from "./routes/index";
 import { initDb } from "./db-init";
+import { corsOptionsFor } from "./lib/request-origin";
 
 initDb();
 
 const app = express();
 
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-  }),
-);
+// Only reflect CORS for the app's own origin (the desktop renderer or a LAN
+// device that opened this server) and loopback dev origins. Other web pages in
+// a browser on the timing laptop get no CORS headers.
+app.use(cors((req, callback) => callback(null, corsOptionsFor(req))));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

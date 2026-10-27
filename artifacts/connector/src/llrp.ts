@@ -385,7 +385,10 @@ export class LlrpClient extends EventEmitter {
   private readCount = 0;
   private antennaSet = new Set<number>();
   private lastError: string | null = null;
-  private closingIntentionally = false;
+  /** Sockets closed on purpose by disconnect(). Tracked per socket so a late
+   *  "close" from a replaced socket never looks like an unexpected drop of the
+   *  new connection (which would trigger a reconnect loop). */
+  private intentionallyClosed = new WeakSet<net.Socket>();
   private rfConfig: LlrpRfConfig | null = null;
 
   getStatus(): LlrpStatus {
@@ -407,7 +410,6 @@ export class LlrpClient extends EventEmitter {
   async connect(host: string, opts: { impinjExtensions?: boolean } = {}): Promise<void> {
     const useImpinjExtensions = opts.impinjExtensions ?? true;
     await this.disconnect();
-    this.closingIntentionally = false;
     this.lastError = null;
     this.recvBuf = Buffer.alloc(0);
 
@@ -430,19 +432,24 @@ export class LlrpClient extends EventEmitter {
       s.once("timeout", () => onError(new Error(`Connection to ${host}:${LLRP_PORT} timed out — check the reader is powered on, on this network, and set to LLRP mode.`)));
       s.once("error", onError);
 
-      s.on("data", (chunk: Buffer) => this.onData(chunk));
+      s.on("data", (chunk: Buffer) => {
+        // Ignore late frames from a socket that has been replaced.
+        if (this.socket === s) this.onData(chunk);
+      });
       s.on("close", () => {
-        const wasIntentional = this.closingIntentionally;
+        const wasIntentional = this.intentionallyClosed.has(s);
         if (this.socket === s) {
           this.socket = null;
           this.reading = false;
           this.antennaSet = new Set();
+          // Pending requests belong to the current socket only; a stale
+          // socket's close must not reject the new connection's handshake.
+          for (const p of this.pending.values()) {
+            clearTimeout(p.timer);
+            p.reject(new Error("Connection closed"));
+          }
+          this.pending.clear();
         }
-        for (const p of this.pending.values()) {
-          clearTimeout(p.timer);
-          p.reject(new Error("Connection closed"));
-        }
-        this.pending.clear();
         if (!wasIntentional) {
           this.emit("disconnected", this.lastError ?? "Connection lost");
         }
@@ -469,7 +476,7 @@ export class LlrpClient extends EventEmitter {
   }
 
   async disconnect(): Promise<void> {
-    this.closingIntentionally = true;
+    if (this.socket) this.intentionallyClosed.add(this.socket);
     if (this.socket && !this.socket.destroyed) {
       try {
         this.send(message(MSG.CLOSE_CONNECTION, this.nextMessageId++));
@@ -480,6 +487,13 @@ export class LlrpClient extends EventEmitter {
     }
     this.socket = null;
     this.reading = false;
+    // The old socket's close handler no longer owns `pending` once it is
+    // detached here, so settle its outstanding requests now.
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(new Error("Connection closed"));
+    }
+    this.pending.clear();
   }
 
   /**

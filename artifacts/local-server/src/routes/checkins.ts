@@ -64,6 +64,11 @@ router.get("/events/:eventId/checkins", (req, res) => {
         checkedInAt: c?.checked_in_at ?? null,
         rfidNumber: c?.rfid_number ?? null,
         rfidLinked: parseBool(c?.rfid_linked as number),
+        // The cloud computes this from liability_waiver_signatures, which is
+        // not synced to the offline database. Without signature data the local
+        // server cannot prove a waiver was signed, so it fails closed: events
+        // that require a liability waiver show every rider as unsigned.
+        waiverSigned: false,
       };
     }),
   );
@@ -74,8 +79,11 @@ router.post("/events/:eventId/checkins", (req, res) => {
   if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
   const eventId = Number(req.params.eventId);
-  const { riderId, rfidNumber, bibNumber } = req.body;
+  const { riderId, rfidNumber, bibNumber, checkedIn } = req.body;
   if (!riderId) return res.status(400).json({ error: "riderId required" });
+  // `checkedIn: false` un-checks the rider (e.g. dragging a pool rider to the
+  // trash). Any other value, including omitted, checks the rider in.
+  const uncheck = checkedIn === false;
 
   const db = getDb();
 
@@ -102,12 +110,27 @@ router.post("/events/:eventId/checkins", (req, res) => {
 
   let checkin: Record<string, unknown>;
 
+  if (uncheck && !existing) {
+    // Nothing to un-check: never insert a row just to mark it not checked in.
+    return res.json({
+      id: null,
+      eventId,
+      riderId: Number(riderId),
+      riderName: "",
+      raceClass,
+      bibNumber: regBib,
+      checkedIn: false,
+      checkedInAt: null,
+      rfidNumber: null,
+      rfidLinked: false,
+    });
+  }
+
   if (existing) {
-    const updates: string[] = [
-      "checked_in = 1",
-      "checked_in_at = ?",
-    ];
-    const params: unknown[] = [now];
+    const updates: string[] = uncheck
+      ? ["checked_in = 0", "checked_in_at = NULL"]
+      : ["checked_in = 1", "checked_in_at = ?"];
+    const params: unknown[] = uncheck ? [] : [now];
 
     if (rfidNumber !== undefined) {
       updates.push("rfid_number = ?", "rfid_linked = ?");

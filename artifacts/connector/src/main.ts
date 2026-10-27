@@ -19,10 +19,16 @@ import {
   shell,
 } from "electron";
 import path from "path";
+import { pathToFileURL } from "url";
 import { LlrpClient, impinjHostFromMac } from "./llrp";
 import { ActiveTransponderClient, type ActiveTimingReceiptMetadata } from "./active-transponder-client";
 import { RecentReadDeduper } from "./recent-read-deduper";
 import { shouldForwardCrossing, type CrossingSource } from "./crossing-policy";
+import {
+  CrossingRetryQueue,
+  isRetryableCrossingResult,
+  type QueuedCrossing,
+} from "./crossing-retry-queue";
 import {
   CloudLink,
   cloudLogin,
@@ -58,6 +64,23 @@ let sessionCookie: string | null = null;
 const llrp = new LlrpClient();
 const activeTransponder = new ActiveTransponderClient();
 const cloud = new CloudLink();
+
+function sendQueuedCrossing(crossing: QueuedCrossing) {
+  return cloud.postCrossing({
+    rfidNumber: crossing.rfidNumber,
+    crossingTime: new Date(crossing.crossingTime),
+    antennaId: crossing.antennaId,
+    clubId: crossing.clubId,
+    eventId: crossing.eventId,
+    receivedAtUtc: crossing.receivedAtUtc ? new Date(crossing.receivedAtUtc) : undefined,
+    deviceTimezone: crossing.deviceTimezone,
+    source: crossing.source,
+  });
+}
+
+// Crossings the cloud could not accept because of a network error, 5xx or 429.
+// Created at app ready, when the userData path is final.
+let crossingQueue: CrossingRetryQueue | null = null;
 
 let activeMoto: { motoId: number; name: string; eventId: number | null } | null = null;
 let testMode = false;
@@ -211,7 +234,23 @@ function openSettingsWindow(): void {
     },
   });
   settingsWindow.setMenuBarVisibility(false);
-  settingsWindow.loadFile(path.join(__dirname, "ui", "settings.html"));
+  // The settings page is a local file and never navigates or opens windows.
+  // Links that should open go through the openExternal IPC (http/https only).
+  // (location.reload() of the settings page itself stays allowed.)
+  const settingsPage = path.join(__dirname, "ui", "settings.html");
+  const settingsPageUrl = pathToFileURL(settingsPage).href;
+  const normalizeFileUrl = (url: string) => {
+    try { return decodeURIComponent(url.split(/[?#]/)[0]).toLowerCase(); } catch { return url.toLowerCase(); }
+  };
+  const isSettingsPage = (url: string) => normalizeFileUrl(url) === normalizeFileUrl(settingsPageUrl);
+  settingsWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  settingsWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isSettingsPage(url)) event.preventDefault();
+  });
+  settingsWindow.webContents.on("will-redirect", (event, url) => {
+    if (!isSettingsPage(url)) event.preventDefault();
+  });
+  settingsWindow.loadFile(settingsPage);
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
@@ -234,22 +273,36 @@ async function forwardCrossing(
 
   if (!recentReads.accept(rfidNumber)) return;
 
+  // Keep the original crossing and receipt timestamps so a delayed delivery is
+  // scored at the moment the rider crossed.
+  const crossing: QueuedCrossing = {
+    rfidNumber,
+    crossingTime: crossingTime.toISOString(),
+    antennaId,
+    clubId: settings.clubId,
+    eventId: activeMoto?.eventId ?? null,
+    receivedAtUtc: receipt?.receivedAt?.toISOString(),
+    deviceTimezone: receipt?.deviceTimezone,
+    source: receipt?.source,
+  };
+
+  // While earlier crossings are still waiting for the cloud, queue behind them
+  // so crossings are delivered in order. Test reads are never queued.
+  if (!testMode && crossingQueue && crossingQueue.size > 0) {
+    crossingQueue.enqueue(crossing, 0);
+    return;
+  }
+
   try {
     if (testMode) {
       testProgress = "sending_crossing";
       testMessage = "PowerTag received. Sending the crossing to RM Race…";
       pushStatusToWindow();
     }
-    const result = await cloud.postCrossing({
-      rfidNumber,
-      crossingTime,
-      antennaId,
-      clubId: settings.clubId,
-      eventId: activeMoto?.eventId ?? null,
-      receivedAtUtc: receipt?.receivedAt,
-      deviceTimezone: receipt?.deviceTimezone,
-      source: receipt?.source,
-    });
+    const result = await sendQueuedCrossing(crossing);
+    if (!testMode && isRetryableCrossingResult(result)) {
+      crossingQueue?.enqueue(crossing, 1);
+    }
     if (testMode) {
       if (result.ok) {
         testProgress = "confirmed";
@@ -267,9 +320,11 @@ async function forwardCrossing(
       testProgress = "unresolved";
       testMessage = "PowerTag was read, but the crossing could not reach RM Race. Check the cloud connection.";
       pushStatusToWindow();
+      return;
     }
-    // Network hiccup — the rider will cross again next lap; server-side
-    // parity/debounce keeps state consistent. Cloud WS status shows red.
+    // Network error — the request never got an answer. Queue it for retry
+    // with backoff instead of dropping the lap.
+    crossingQueue?.enqueue(crossing, 1);
   }
 }
 
@@ -464,7 +519,11 @@ cloud.on("command", (cmd: CloudCommand) => {
   pushStatusToWindow();
 });
 
-cloud.on("connected", pushStatusToWindow);
+cloud.on("connected", () => {
+  // The cloud is reachable again: deliver anything queued during the outage.
+  crossingQueue?.retryNow();
+  pushStatusToWindow();
+});
 cloud.on("disconnected", pushStatusToWindow);
 
 // ── Full connect / disconnect ─────────────────────────────────────────────────
@@ -673,6 +732,12 @@ if (!gotLock) {
 
     sessionCookie = loadSessionCookie();
 
+    crossingQueue = new CrossingRetryQueue({
+      send: sendQueuedCrossing,
+      filePath: path.join(app.getPath("userData"), "pending-crossings.json"),
+    });
+    crossingQueue.load();
+
     // Push status to the settings window periodically
     setInterval(() => pushStatusToWindow(), 2_000);
 
@@ -693,6 +758,7 @@ if (!gotLock) {
   });
 
   app.on("before-quit", () => {
+    crossingQueue?.dispose();
     disconnectAll();
   });
 }

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Response } from "express";
 import { getDb, parseJsonArr, parseJson } from "../db";
+import { rejectForeignBrowserIngest } from "../lib/request-origin";
 
 const router = Router();
 const MAX_CROSSING_FUTURE_MS = 5 * 60 * 1000;
@@ -587,7 +588,7 @@ router.get("/timing/reader-state", (_req, res) => {
 });
 
 // POST /timing/crossing — direct motoId crossing (hardware or simulation)
-router.post("/timing/crossing", (req, res) => {
+router.post("/timing/crossing", rejectForeignBrowserIngest, (req, res) => {
   const ingestStartedAt = new Date().toISOString();
   const { rfidNumber, motoId, crossingTime, readerId, antennaId, readerReceivedAt } = req.body;
   if (!rfidNumber || !motoId) {
@@ -616,7 +617,7 @@ router.post("/timing/crossing", (req, res) => {
 // POST /timing/active/crossing?clubId=N — stable facility endpoint
 // Accepts all hardware formats: Generic/RFID bridge, AMBrc, Impinj R700, Zebra FX7500
 // In the local server, clubId is accepted for compatibility but ignored (only one club).
-router.post("/timing/active/crossing", (req, res) => {
+router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) => {
   const ingestStartedAt = new Date().toISOString();
   const body = req.body as any;
 
@@ -720,7 +721,7 @@ router.post("/timing/active/crossing", (req, res) => {
 
 // POST /timing/transponder-crossing?eventId=N — AMBrc timing-decoder format.
 // The former endpoint remains available as a compatibility alias.
-router.post(["/timing/transponder-crossing", "/timing/mylaps-crossing"], (req, res) => {
+router.post(["/timing/transponder-crossing", "/timing/mylaps-crossing"], rejectForeignBrowserIngest, (req, res) => {
   const ingestStartedAt = new Date().toISOString();
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) return res.status(400).json({ error: "eventId query param is required" });
@@ -750,7 +751,7 @@ router.post(["/timing/transponder-crossing", "/timing/mylaps-crossing"], (req, r
 });
 
 // POST /timing/impinj-crossing?eventId=N — Impinj R700 native IoT Connector format
-router.post("/timing/impinj-crossing", (req, res) => {
+router.post("/timing/impinj-crossing", rejectForeignBrowserIngest, (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) return res.status(400).json({ error: "eventId query param is required" });
   const body = req.body as { events?: unknown[] };
@@ -775,7 +776,7 @@ router.post("/timing/impinj-crossing", (req, res) => {
 });
 
 // POST /timing/zebra-crossing?eventId=N — Zebra FX7500 IoT Connector format
-router.post("/timing/zebra-crossing", (req, res) => {
+router.post("/timing/zebra-crossing", rejectForeignBrowserIngest, (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) return res.status(400).json({ error: "eventId query param is required" });
   const body = req.body as any;
