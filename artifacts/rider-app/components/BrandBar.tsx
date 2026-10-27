@@ -102,11 +102,11 @@ export function BrandBar() {
   return (
     <View style={styles.row}>
       <View style={styles.left}>
-        {/* The banner's white lettering needs a dark backdrop: the page itself in dark mode, a black badge in light mode. */}
-        <View style={isDark ? styles.bannerBare : styles.bannerBadge}>
+        {/* White-lettered banner on dark; an inverted (black-lettered) copy on light. Red stays red. */}
+        <View style={styles.bannerBare}>
           <Image
-            source={require("../assets/images/brand-banner-hero.png")}
-            style={isDark ? styles.bannerLarge : styles.banner}
+            source={isDark ? require("../assets/images/brand-banner-hero.png") : require("../assets/images/brand-banner-hero-light.png")}
+            style={styles.bannerLarge}
             resizeMode="contain"
             accessibilityLabel="RM Roost"
           />
@@ -138,16 +138,6 @@ const styles = StyleSheet.create({
   right: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  bannerBadge: {
-    backgroundColor: "#000000",
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  banner: {
-    width: 120,
-    height: 38,
   },
   bannerBare: {
     marginLeft: -6,

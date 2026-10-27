@@ -318,10 +318,10 @@ export default function HomeScreen() {
               upcoming.map(e => <UpcomingEventCard key={e.eventId} event={e} colors={colors} onPress={() => router.push(`/event/${e.eventId}` as any)} />)
             ) : (
               <EmptyState
-                variant="card"
+                variant="compact"
                 icon="flag"
-                title="Your next race awaits"
-                message="Nothing on your calendar yet. Find an open race near you and lock in your gate."
+                title="No races booked"
+                message="Find an open race near you and lock in your gate."
                 primary={{ label: "Find a race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
               />
             )}
@@ -347,10 +347,10 @@ export default function HomeScreen() {
               ))
             ) : (
               <EmptyState
-                variant="card"
+                variant="compact"
                 icon="award"
                 title="No results yet"
-                message="Your finishes, points and lap times show up here after your first race."
+                message="Finishes, points and laps land here after your first race."
                 primary={{ label: "Find a race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
               />
             )}

@@ -40,11 +40,11 @@ export function FollowingFeed({ refreshKey }: { refreshKey: number }) {
       </View>
       {items && items.length === 0 ? (
         <EmptyState
-          variant="card"
+          variant="compact"
           icon="users"
           title="Ride with your crew"
-          message="Follow friends, teammates or rivals. Their results show up here the moment they're posted."
-          primary={{ label: "Find riders", icon: "user-plus", onPress: () => router.push("/follow" as any) }}
+          message="Follow friends and rivals to see their results here."
+          primary={{ label: "Follow", icon: "user-plus", onPress: () => router.push("/follow" as any) }}
         />
       ) : (
         (items ?? []).map(i => (

@@ -24,10 +24,47 @@ export function EmptyState({
   message: string;
   primary?: EmptyStateAction;
   secondary?: EmptyStateAction;
-  variant?: "screen" | "card";
+  variant?: "screen" | "card" | "compact";
 }) {
   const colors = useColors();
   const card = variant === "card";
+
+  // Compact: a single-row card for lists on busy screens (Home)
+  if (variant === "compact") {
+    return (
+      <View style={{
+        marginHorizontal: 16, marginBottom: 20, borderRadius: 16, backgroundColor: colors.card,
+        borderWidth: 1, borderColor: colors.border, padding: 14, flexDirection: "row", alignItems: "center", gap: 12,
+      }}>
+        <View style={{
+          width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primaryTint,
+          borderWidth: 1.5, borderColor: colors.primary, alignItems: "center", justifyContent: "center",
+        }}>
+          <Feather name={icon} size={19} color={colors.foreground} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 0.6, textTransform: "uppercase" }} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={{ marginTop: 2, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 16 }} numberOfLines={2}>
+            {message}
+          </Text>
+        </View>
+        {primary && (
+          <Pressable
+            onPress={primary.onPress}
+            style={({ pressed }) => ({
+              flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary,
+              borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Text style={{ color: "#fff", fontSize: 11, fontFamily: "Inter_700Bold", letterSpacing: 0.6, textTransform: "uppercase" }}>{primary.label}</Text>
+            <Feather name={primary.icon ?? "arrow-right"} size={12} color="#fff" />
+          </Pressable>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View
