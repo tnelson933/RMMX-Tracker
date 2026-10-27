@@ -19,6 +19,10 @@ function showView(v) {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+function readerTypeLabel(type) {
+  return type === "active_transponder" ? "active timing" : type === "rfid" ? "RFID" : (type || "reader");
+}
+
 function fmtAgo(iso) {
   if (!iso) return "";
   const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
@@ -91,6 +95,8 @@ function renderStatus(st) {
     setCheck("checkCloud", st.cloud.connected, "Cloud registration", (st.cloud.connected ? "connected" : "cloud disconnected; verify internet and reader registration"));
   }
   $("errStatus").textContent = st.device.diagnosis || "";
+  // "No active moto" and similar hints are information, not a fault.
+  $("errStatus").classList.toggle("info", st.state !== "error" && st.cloud.connected);
 
 }
 
@@ -105,13 +111,13 @@ function populateStatusReaders(readers, currentId) {
   if (!statusReadersCache.length) {
     const opt = document.createElement("option");
     opt.value = "";
-    opt.textContent = "No readers found — create one in the web app";
+    opt.textContent = "No readers found — create one on Reader Setup in RM Roost";
     sel.appendChild(opt);
   } else {
     for (const r of statusReadersCache) {
       const opt = document.createElement("option");
       opt.value = r.id;
-      opt.textContent = r.name + " (" + r.type + ")";
+      opt.textContent = r.name + " (" + readerTypeLabel(r.type) + ")";
       if (currentId && r.id === currentId) opt.selected = true;
       sel.appendChild(opt);
     }
@@ -168,14 +174,14 @@ function populateReaders(readers, selectedId) {
   for (const r of readersCache) {
     const opt = document.createElement("option");
     opt.value = r.id;
-    opt.textContent = r.name + " (" + r.type + ")";
+    opt.textContent = r.name + " (" + readerTypeLabel(r.type) + ")";
     if (selectedId && r.id === selectedId) opt.selected = true;
     sel.appendChild(opt);
   }
   if (!readersCache.length) {
     const opt = document.createElement("option");
     opt.value = "";
-    opt.textContent = "No readers yet — create one on Reader Setup in the web app";
+    opt.textContent = "No readers yet — create one on Reader Setup in RM Roost";
     sel.appendChild(opt);
   }
   autofillFromReader();
@@ -239,14 +245,21 @@ $("btnSyncClock").addEventListener("click", () => applyActiveTiming(true));
 
 $("btnLogin").addEventListener("click", async () => {
   $("errLogin").textContent = "";
+  if (!$("inEmail").value.trim() || !$("inPassword").value) {
+    $("errLogin").textContent = "Enter your organizer email and password.";
+    return;
+  }
   $("btnLogin").disabled = true;
+  $("btnLogin").textContent = "Signing in…";
   const res = await api.login({
     cloudUrl: $("inCloudUrl").value,
     email: $("inEmail").value,
     password: $("inPassword").value,
   });
   $("btnLogin").disabled = false;
+  $("btnLogin").textContent = "Sign in";
   if (!res.ok) { $("errLogin").textContent = res.error; return; }
+  $("inPassword").value = "";
   showView('setup');
   $("btnLogout").classList.remove("hidden");
   populateReaders(res.readers || []);
@@ -326,6 +339,13 @@ $("btnLogout").addEventListener("click", async () => {
   await api.logout();
   location.reload();
 });
+
+// Enter in any sign-in field submits.
+for (const id of ["inCloudUrl", "inEmail", "inPassword"]) {
+  $(id).addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !$("btnLogin").disabled) $("btnLogin").click();
+  });
+}
 
 // ── Init ────────────────────────────────────────────────────────────────────
 

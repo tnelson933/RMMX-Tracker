@@ -74,6 +74,20 @@ await build({
 });
 const retryQueueModule = await import(pathToFileURL(retryQueueOutputFile).href);
 const { CrossingRetryQueue, isRetryableCrossingResult } = retryQueueModule.default ?? retryQueueModule;
+const cloudUrlOutputFile = path.join(os.tmpdir(), `rm-connect-cloud-url-${process.pid}.cjs`);
+const loadCloudUrlModule = async (bakedUrl) => {
+  const file = cloudUrlOutputFile.replace(/\.cjs$/, `-${Buffer.from(String(bakedUrl)).toString("hex")}.cjs`);
+  await build({
+    entryPoints: [path.resolve("src/cloud-url.ts")],
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    outfile: file,
+    ...(bakedUrl === undefined ? {} : { define: { __DEFAULT_CLOUD_URL__: JSON.stringify(bakedUrl) } }),
+  });
+  const mod = await import(pathToFileURL(file).href);
+  return mod.default ?? mod;
+};
 
 function commandsFromWire(messages) {
   return messages.join("").split(";").filter(Boolean).map(packet => packet.split("@")[1]);
@@ -555,6 +569,63 @@ test("a restarted cloud link does not reconnect from the replaced socket", async
     assert.equal(disconnects, 0);
     assert.equal(connections, 2);
     assert.equal(link.getStatus().connected, true);
+  } finally {
+    link.stop();
+    webSockets.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test("cloud URL defaults to the build-time CLOUD_URL, else the RM Roost site", async () => {
+  const baked = await loadCloudUrlModule("https://staging.example.test/ ");
+  assert.equal(baked.builtInCloudUrl(), "https://staging.example.test");
+  const empty = await loadCloudUrlModule("");
+  assert.equal(empty.builtInCloudUrl(), "https://www.rmroost.com");
+  const undefinedBuild = await loadCloudUrlModule(undefined);
+  assert.equal(undefinedBuild.builtInCloudUrl(), "https://www.rmroost.com");
+  // A build that still carries the retired Replit host must not use it.
+  const retired = await loadCloudUrlModule("https://rmmx-tracker.replit.app");
+  assert.equal(retired.builtInCloudUrl(), "https://www.rmroost.com");
+});
+
+test("saved Replit cloud URLs migrate to the built-in URL; other choices stay", async () => {
+  const { migrateCloudUrl, normalizeCloudUrl } = await loadCloudUrlModule("https://www.rmroost.com");
+  assert.equal(migrateCloudUrl("https://rmmx-tracker.replit.app/"), "https://www.rmroost.com");
+  assert.equal(migrateCloudUrl("https://RMMX-Tracker.Replit.App"), "https://www.rmroost.com");
+  assert.equal(migrateCloudUrl(""), "https://www.rmroost.com");
+  assert.equal(migrateCloudUrl(undefined), "https://www.rmroost.com");
+  assert.equal(migrateCloudUrl("http://192.168.1.20:8080/"), "http://192.168.1.20:8080");
+  assert.equal(migrateCloudUrl("https://www.rmroost.com"), "https://www.rmroost.com");
+  assert.equal(normalizeCloudUrl(" rmroost.com/ "), "https://rmroost.com");
+});
+
+test("facility fallback without a saved clubId uses the per-reader URL", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      requests.push({ url: request.url, authorization: request.headers.authorization ?? null });
+      const checkpoint = request.url === "/api/timing/readers/test-reader-token/crossing";
+      response.writeHead(checkpoint ? 422 : 200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(checkpoint
+        ? { ok: false, message: "Reader has no checkpoint assignment for this event" }
+        : { ok: true }));
+    });
+  });
+  const webSockets = new WebSocketServer({ server });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const link = new CloudLink();
+  link.start(`http://127.0.0.1:${server.address().port}`, "test-reader-token");
+  try {
+    const result = await link.postCrossing({
+      rfidNumber: "12345",
+      crossingTime: new Date("2025-01-02T03:04:05.000Z"),
+      clubId: null,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].url, "/api/timing/readers/test-reader-token/active/crossing");
   } finally {
     link.stop();
     webSockets.close();

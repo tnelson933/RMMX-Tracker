@@ -19,8 +19,9 @@ async function buildAll() {
     logLevel: "info",
     sourcemap: "linked",
     define: {
-      // Baked in by CI from the CLOUD_URL repo variable so users never type the URL
-      __DEFAULT_CLOUD_URL__: JSON.stringify(process.env.CLOUD_URL ?? ""),
+      // Baked in by CI from the CLOUD_URL repo variable so users never type the URL.
+      // Empty means src/cloud-url.ts falls back to https://www.rmroost.com.
+      __DEFAULT_CLOUD_URL__: JSON.stringify((process.env.CLOUD_URL ?? "").trim()),
       __CONNECTOR_PACKAGE_VERSION__: JSON.stringify(packageJson.version),
     },
   };
@@ -42,7 +43,7 @@ async function buildAll() {
     { recursive: true },
   );
 
-  console.log("✓ Connector build complete");
+  console.log(`✓ Connector ${packageJson.version} build complete (CLOUD_URL: ${(process.env.CLOUD_URL ?? "").trim() || "unset, app falls back to https://www.rmroost.com"})`);
 }
 
 buildAll().catch((err) => {

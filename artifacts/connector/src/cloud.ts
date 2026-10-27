@@ -214,13 +214,14 @@ export class CloudLink extends EventEmitter {
       return { ok: !!data.ok, message: data.message, status: res.status };
     }
 
-    if (!input.clubId) {
-      return { ok: false, message: data.message ?? "No checkpoint assignment and no clubId for facility routing" };
-    }
     // The facility URL is addressed by club ID, so authenticate with this
     // reader's token. Servers without ingest auth ignore the header; servers
     // with it reject a facility post without a credential once the club enforces.
-    const facilityUrl = `${this.cloudUrl}/api/timing/active/crossing?clubId=${input.clubId}`;
+    // When no clubId was saved with the sign-in, use the per-reader facility
+    // URL, which takes the club from the reader token instead of failing.
+    const facilityUrl = input.clubId
+      ? `${this.cloudUrl}/api/timing/active/crossing?clubId=${input.clubId}`
+      : `${this.cloudUrl}/api/timing/readers/${encodeURIComponent(this.readerToken)}/active/crossing`;
     const res2 = await fetch(facilityUrl, {
       method: "POST",
       headers: { ...headers, Authorization: `Bearer ${this.readerToken}` },
@@ -294,7 +295,7 @@ export class CloudLink extends EventEmitter {
       this.ws = null;
       if (this.stopped) return;
       if (code === 1008 || this.lastError?.includes("401")) {
-        this.lastError = "Cloud rejected the reader token — re-select your reader in Settings.";
+        this.lastError = "Reader token was rejected. Use Change reader to select your reader again.";
       }
       this.emit("disconnected", this.lastError ?? `Connection closed (${code})`);
       this.scheduleReconnect();
@@ -341,8 +342,10 @@ export async function cloudLogin(
     body: JSON.stringify({ email, password }),
   });
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error ?? `Login failed (${res.status})`);
+    const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    // Some rejections carry a code in `error` and the readable text in `message`
+    // (e.g. CLUB_INACTIVE).
+    throw new Error(data.message ?? data.error ?? `Login failed (${res.status})`);
   }
   const setCookie = res.headers.get("set-cookie") ?? "";
   const cookie = setCookie.split(";")[0] ?? "";

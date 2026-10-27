@@ -6,37 +6,50 @@
 <title>RM Connect</title>
 <style>
   :root {
-    --bg: #0f172a;
-    --card: #1e293b;
-    --border: #334155;
-    --text: #e2e8f0;
-    --muted: #94a3b8;
-    --accent: #f97316;
+    /* RM Roost / Rocky Mountain ATV/MC: charcoal surfaces, brand red actions.
+       Brand red is too dark for text on charcoal, so errors use a lighter red. */
+    --bg: #1a1a1a;
+    --card: #242424;
+    --border: #3d3d3d;
+    --field: #141414;
+    --text: #ececec;
+    --muted: #a3a3a3;
+    --accent: #b30000;
+    --accent-hover: #cc1a1a;
+    --focus: #ff5c5c;
     --green: #22c55e;
-    --red: #ef4444;
+    --red: #ff6b6b;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--bg); color: var(--text); font-size: 13px;
     padding: 16px; user-select: none;
   }
-  h1 { font-size: 16px; margin-bottom: 2px; }
-  .sub { color: var(--muted); margin-bottom: 14px; font-size: 12px; }
+  button, input, select { font-family: inherit; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .brand img { width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0; }
+  h1 { font-family: Barlow, "Segoe UI", Roboto, sans-serif; font-size: 17px; margin-bottom: 2px; }
+  .sub { color: var(--muted); font-size: 12px; line-height: 1.35; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
   .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 10px; }
   label { display: block; color: var(--muted); font-size: 11px; margin: 8px 0 3px; }
   input, select {
     width: 100%; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--border);
-    background: #0b1220; color: var(--text); font-size: 13px; outline: none;
+    background: var(--field); color: var(--text); font-size: 13px; outline: none;
   }
-  input:focus, select:focus { border-color: var(--accent); }
+  input:focus, select:focus { border-color: var(--focus); }
+  input::placeholder { color: #6b6b6b; }
   button {
-    margin-top: 10px; padding: 8px 14px; border: none; border-radius: 6px;
+    margin-top: 10px; padding: 8px 16px; border: none; border-radius: 999px;
     background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer;
   }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.secondary:hover:not(:disabled) { background: #2e2e2e; }
   button.danger { background: transparent; border: 1px solid var(--red); color: var(--red); }
+  button.danger:hover:not(:disabled) { background: rgba(255, 107, 107, 0.1); }
   button:disabled { opacity: 0.5; cursor: default; }
   .row { display: flex; gap: 8px; align-items: center; }
   .row button { flex: 1; }
@@ -44,12 +57,15 @@
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
   .dot.on { background: var(--green); }
   .dot.off { background: var(--red); }
-  .err { color: var(--red); font-size: 12px; margin-top: 8px; min-height: 15px; }
+  .err { color: var(--red); font-size: 12px; margin-top: 8px; line-height: 1.4; }
+  .err:empty { display: none; }
+  .err.info { color: var(--muted); }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 4px; line-height: 1.4; }
   .ok-msg { color: var(--green); font-size: 12px; margin-top: 8px; }
   .muted { color: var(--muted); font-size: 11px; }
   .hidden { display: none; }
-  .badge { background: #0b1220; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 11px; color: var(--muted); }
-  .switch { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .badge { background: var(--field); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 11px; color: var(--muted); }
+  .switch { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 0; color: var(--text); font-size: 13px; }
    .checklist { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 7px; }
    .check { display:flex; gap:7px; padding:4px 0; color:var(--muted); font-size:12px; }
    .check b { color:var(--text); font-weight:500; }
@@ -58,8 +74,13 @@
 </style>
 </head>
 <body>
-  <h1>RM Connect</h1>
-  <div class="sub">Bridges your timing hardware to the cloud — leave it running on race day.</div>
+  <div class="brand">
+    <img src="logo.png" alt="" />
+    <div>
+      <h1>RM Connect</h1>
+      <div class="sub">Bridges your timing hardware to RM Roost. Leave it running on race day.</div>
+    </div>
+  </div>
 
   <!-- STATUS -->
   <div class="card" id="statusCard">
@@ -72,18 +93,18 @@
        <div class="check" id="checkTransport"><span class="mark">●</span><span><b>Network transport</b> — connect to the F2000 on TCP 55555</span></div>
        <div class="check" id="checkMachine"><span class="mark">●</span><span><b>Machine &amp; heartbeat</b> — waiting for F2000 identification</span></div>
        <div class="check" id="checkLoops"><span class="mark">●</span><span><b>Finish-gate loops 1 / 2</b> — idle until a moto, practice, or test starts</span></div>
-       <div class="check" id="checkCloud"><span class="mark">●</span><span><b>Cloud registration</b> — reader must be online in RM Race</span></div>
+       <div class="check" id="checkCloud"><span class="mark">●</span><span><b>Cloud registration</b> — reader must be online in RM Roost</span></div>
      </div>
-    <div class="switch">
+    <label class="switch" for="chkTest">
       <span>Test mode <span class="muted">(forward reads without a live moto)</span></span>
       <input type="checkbox" id="chkTest" style="width:auto" />
-    </div>
+    </label>
     <div class="row">
       <button id="btnDisconnect" class="secondary">Disconnect</button>
       <button id="btnReconnect">Reconnect</button>
     </div>
       <div id="activeTimingManagedNotice" class="hidden muted" style="margin-top:10px; line-height:1.45;">
-        F2000 channel, power, loop, and clock settings are managed from Reader Setup in RM Race and sync here automatically.
+        F2000 channel, power, loop, and clock settings are managed from Reader Setup in RM Roost and sync here automatically.
       </div>
       <button id="btnActiveTimingSettings" class="secondary hidden" style="width:100%">F2000 device settings…</button>
     <div class="err" id="errStatus"></div>
@@ -96,7 +117,7 @@
         <button id="btnCancelSwitch" class="secondary" style="margin-top:0; flex:0 0 auto; padding:7px 10px;">✕</button>
       </div>
       <div class="muted" style="margin-top:6px; line-height:1.4;">
-        Need to add a reader first? Go to <strong style="color:var(--text);">Reader Setup</strong> in the web app, add the reader there, then come back and the dropdown above will include it.
+        Need to add a reader first? Add it on <strong style="color:var(--text);">Reader Setup</strong> in RM Roost, then come back and pick it here.
       </div>
       <div class="err" id="errSwitch"></div>
     </div>
@@ -108,12 +129,13 @@
   <!-- LOGIN -->
   <div class="card" id="loginCard">
     <h2>Sign in</h2>
-    <label>Cloud URL</label>
-    <input id="inCloudUrl" placeholder="https://your-app.replit.app" />
-    <label>Organizer email</label>
-    <input id="inEmail" type="email" placeholder="you@yourclub.com" />
-    <label>Password</label>
-    <input id="inPassword" type="password" />
+    <label for="inCloudUrl">RM Roost server</label>
+    <input id="inCloudUrl" type="url" placeholder="https://www.rmroost.com" spellcheck="false" />
+    <div class="hint">Leave this as is unless your club runs its own server.</div>
+    <label for="inEmail">Organizer email</label>
+    <input id="inEmail" type="email" placeholder="you@yourclub.com" autocomplete="username" />
+    <label for="inPassword">Password</label>
+    <input id="inPassword" type="password" autocomplete="current-password" />
     <button id="btnLogin">Sign in</button>
     <div class="err" id="errLogin"></div>
   </div>
@@ -121,7 +143,7 @@
   <!-- SETUP -->
    <div class="card hidden" id="setupCard">
      <h2 id="setupTitle">Hardware setup</h2>
-    <label>Reader registration <span class="muted">(create readers on Reader Setup in the web app)</span></label>
+    <label>Reader registration <span class="muted">(create readers on Reader Setup in RM Roost)</span></label>
     <select id="selReader"></select>
     <label>Hardware type</label>
     <select id="selHardware">
@@ -132,10 +154,10 @@
     </select>
     <label id="lblAddress">Last 6 of reader MAC address</label>
     <input id="inAddress" placeholder="e.g. 16-25-B2" />
-    <div class="muted" id="hintAddress">Printed on the reader label — we connect via impinj-XX-XX-XX.local</div>
+    <div class="hint" id="hintAddress">Printed on the reader label — we connect via impinj-XX-XX-XX.local</div>
      <div class="checklist hidden" id="activeTimingSetupGuide">
-        <div class="check ready"><span class="mark">●</span><span><b>1. Register</b> — select the F2000 reader created in RM Race.</span></div>
-        <div class="check"><span class="mark">●</span><span><b>2. Sync</b> — F2000 address and device settings come from Reader Setup in RM Race.</span></div>
+        <div class="check ready"><span class="mark">●</span><span><b>1. Register</b> — select the F2000 reader created in RM Roost.</span></div>
+        <div class="check"><span class="mark">●</span><span><b>2. Sync</b> — F2000 address and device settings come from Reader Setup in RM Roost.</span></div>
         <div class="check"><span class="mark">●</span><span><b>3. Verify</b> — connect, then run a PowerTag test through either loop.</span></div>
      </div>
      <div class="hidden" id="activeTimingControls">

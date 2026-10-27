@@ -8,6 +8,7 @@ import { safeStorage, app } from "electron";
 import path from "path";
 import fs from "fs";
 import { migrateLegacyActiveTransponderAddress } from "./settings-migrations";
+import { builtInCloudUrl, migrateCloudUrl } from "./cloud-url";
 
 const SETTINGS_FILE = () => path.join(app.getPath("userData"), "connector-settings.json");
 const PASSWORD_FILE = () => path.join(app.getPath("userData"), "credentials.enc");
@@ -48,9 +49,13 @@ const DEFAULT_SETTINGS: ConnectorSettings = {
   activeTimingLoop2Enabled: true,
 };
 
+function defaultSettings(): ConnectorSettings {
+  return { ...DEFAULT_SETTINGS, cloudUrl: builtInCloudUrl() };
+}
+
 export function loadSettings(): ConnectorSettings {
   try {
-    if (!fs.existsSync(SETTINGS_FILE())) return { ...DEFAULT_SETTINGS };
+    if (!fs.existsSync(SETTINGS_FILE())) return defaultSettings();
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE(), "utf8"));
     // Preserve existing installations while migrating both the former decoder
     // hardware kind and its obsolete F2000 TCP port.
@@ -62,6 +67,8 @@ export function loadSettings(): ConnectorSettings {
     const legacy = (suffix: string) => raw[legacyPrefix + suffix];
     const migrated = {
       ...raw,
+      // Empty or retired (former Replit) URLs move to the built-in cloud URL.
+      cloudUrl: migrateCloudUrl(raw.cloudUrl),
       hardware,
       hardwareAddress,
       activeTimingChannel: raw.activeTimingChannel ?? legacy("Channel") ?? DEFAULT_SETTINGS.activeTimingChannel,
@@ -76,7 +83,7 @@ export function loadSettings(): ConnectorSettings {
     fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(normalized, null, 2), "utf8");
     return normalized;
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return defaultSettings();
   }
 }
 

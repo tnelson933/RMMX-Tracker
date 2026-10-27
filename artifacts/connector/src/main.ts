@@ -45,6 +45,7 @@ import {
   clearAll,
   type ConnectorSettings,
 } from "./auth-manager";
+import { builtInCloudUrl, normalizeCloudUrl } from "./cloud-url";
 import { ICON_GREEN, ICON_RED, ICON_GRAY } from "./tray-icons";
 import type { AggregateStatus, ConnectInput, LoginResult } from "./ipc-types";
 
@@ -52,13 +53,10 @@ import type { AggregateStatus, ConnectInput, LoginResult } from "./ipc-types";
 
 let tray: Tray | null = null;
 let settingsWindow: BrowserWindow | null = null;
-declare const __DEFAULT_CLOUD_URL__: string;
 declare const __CONNECTOR_PACKAGE_VERSION__: string;
 
+// loadSettings() fills in the built-in cloud URL and migrates retired hosts.
 let settings: ConnectorSettings = loadSettings();
-if (!settings.cloudUrl && __DEFAULT_CLOUD_URL__) {
-  settings.cloudUrl = __DEFAULT_CLOUD_URL__.replace(/\/+$/, "");
-}
 let sessionCookie: string | null = null;
 
 const llrp = new LlrpClient();
@@ -125,7 +123,7 @@ function getAggregateStatus(): AggregateStatus {
   const diagnosis = active?.diagnosis
     ?? deviceError
     ?? (!cloudStatus.connected ? (cloudStatus.error ?? "Cloud disconnected — check internet access and reader registration.") : null)
-    ?? (!activeMoto && !testMode ? "No active moto. Start a moto in RM Race when you are ready to time." : null);
+    ?? (!activeMoto && !testMode ? "No active moto. Start a moto in RM Roost when you are ready to time." : null);
   return {
     configured: !!settings.readerToken && !!settings.hardware && !!settings.hardwareAddress,
     cloudUrl: settings.cloudUrl,
@@ -227,6 +225,8 @@ function openSettingsWindow(): void {
     minHeight: 500,
     resizable: true,
     title: "RM Connect",
+    icon: path.join(__dirname, "ui", "logo.png"),
+    backgroundColor: "#1a1a1a",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -296,7 +296,7 @@ async function forwardCrossing(
   try {
     if (testMode) {
       testProgress = "sending_crossing";
-      testMessage = "PowerTag received. Sending the crossing to RM Race…";
+      testMessage = "PowerTag received. Sending the crossing to RM Roost…";
       pushStatusToWindow();
     }
     const result = await sendQueuedCrossing(crossing);
@@ -306,19 +306,19 @@ async function forwardCrossing(
     if (testMode) {
       if (result.ok) {
         testProgress = "confirmed";
-        testMessage = result.message ?? "PowerTag crossing received and confirmed by RM Race.";
+        testMessage = result.message ?? "PowerTag crossing received and confirmed by RM Roost.";
         testMode = false;
         if (!activeMoto && isLlrpHardware()) await llrp.stopReading().catch(() => {});
       } else {
         testProgress = "unresolved";
-        testMessage = result.message ?? "PowerTag was read, but RM Race could not confirm the crossing. Check cloud connection and reader registration.";
+        testMessage = result.message ?? "PowerTag was read, but RM Roost could not confirm the crossing. Check cloud connection and reader registration.";
       }
       pushStatusToWindow();
     }
   } catch {
     if (testMode) {
       testProgress = "unresolved";
-      testMessage = "PowerTag was read, but the crossing could not reach RM Race. Check the cloud connection.";
+      testMessage = "PowerTag was read, but the crossing could not reach RM Roost. Check the cloud connection.";
       pushStatusToWindow();
       return;
     }
@@ -566,7 +566,9 @@ function registerIpc(): void {
     "auth:login",
     async (_e, input: { cloudUrl: string; email: string; password: string }): Promise<LoginResult> => {
       try {
-        const cloudUrl = input.cloudUrl.trim().replace(/\/+$/, "");
+        // A blank field means the built-in RM Roost cloud; "host.com" gets https://.
+        const cloudUrl = normalizeCloudUrl(input.cloudUrl) || builtInCloudUrl();
+        if (!/^https?:\/\//i.test(cloudUrl)) throw new Error("Cloud URL must start with https:// (or http:// for a local server)");
         const { cookie, clubId } = await cloudLogin(cloudUrl, input.email.trim(), input.password);
         sessionCookie = cookie;
         settings = { ...settings, cloudUrl, email: input.email.trim(), clubId };
@@ -689,7 +691,7 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("open-external", (_e, url: string) => {
-    if (typeof url === "string" && /^https?:\/\//.test(url)) shell.openExternal(url);
+    if (typeof url === "string" && /^https?:\/\//.test(url)) shell.openExternal(url).catch(() => {});
   });
 }
 
