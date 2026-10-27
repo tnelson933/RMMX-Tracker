@@ -2,91 +2,67 @@ import { Router } from "express";
 
 const router = Router();
 
-interface ReleaseInfo {
-  tag: string;
-  macArm: string;
-  macX64: string;
-  windows: string;
-  fetchedAt: number;
-}
-
-let cache: ReleaseInfo | null = null;
+const REPO = "tnelson933/RMMX-Tracker";
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-function buildFromTag(tag: string): Omit<ReleaseInfo, "fetchedAt"> {
-  const base = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${tag}`;
-  return {
-    tag,
-    macArm:  `${base}/RM-Tracker-arm64.dmg`,
-    macX64:  `${base}/RM-Tracker-x64.dmg`,
-    windows: `${base}/RM-Tracker-Setup.exe`,
-  };
-}
-
-interface ConnectorReleaseInfo {
+interface ReleaseLinks {
   tag: string;
   macArm: string;
   macX64: string;
   windows: string;
-  fetchedAt: number;
 }
 
-let connectorCache: ConnectorReleaseInfo | null = null;
+interface GithubRelease {
+  tag_name: string;
+  draft: boolean;
+  prerelease: boolean;
+  assets: Array<{ name: string; browser_download_url: string }>;
+}
 
-function buildConnectorFromTag(tag: string): Omit<ConnectorReleaseInfo, "fetchedAt"> {
-  const base = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${tag}`;
-  return {
-    tag,
-    macArm:  `${base}/RM-Connect-arm64.dmg`,
-    macX64:  `${base}/RM-Connect-x64.dmg`,
-    windows: `${base}/RM-Connect-Setup.exe`,
+/**
+ * Download links for the newest published release whose tag starts with
+ * `prefix` ("desktop-v" / "connector-v"). Links come from the release's own
+ * assets, so installer renames (RM-Tracker → RM-Roost) don't break them.
+ * The repo holds both apps, so GitHub's single "latest" release can't be used.
+ */
+function releaseEndpoint(prefix: string, fallbackTag: string, fallbackStem: string) {
+  let cache: (ReleaseLinks & { fetchedAt: number }) | null = null;
+
+  const fromNames = (tag: string, stem: string): ReleaseLinks => {
+    const base = `https://github.com/${REPO}/releases/download/${tag}`;
+    return { tag, macArm: `${base}/${stem}-arm64.dmg`, macX64: `${base}/${stem}-x64.dmg`, windows: `${base}/${stem}-Setup.exe` };
+  };
+
+  return async (_req: any, res: any) => {
+    if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
+      const { fetchedAt: _, ...data } = cache;
+      return res.json(data);
+    }
+    try {
+      const r = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=50`, {
+        headers: { "User-Agent": "rm-roost-server", Accept: "application/vnd.github+json" },
+      });
+      if (!r.ok) throw new Error(`GitHub ${r.status}`);
+      const releases = (await r.json()) as GithubRelease[];
+      const latest = releases.find(rel => !rel.draft && !rel.prerelease && rel.tag_name.startsWith(prefix));
+      if (!latest) throw new Error(`no ${prefix} release`);
+      const find = (test: (n: string) => boolean) => latest.assets.find(a => test(a.name))?.browser_download_url;
+      const named = fromNames(latest.tag_name, fallbackStem);
+      const links: ReleaseLinks = {
+        tag: latest.tag_name,
+        macArm: find(n => n.endsWith(".dmg") && n.includes("arm64")) ?? named.macArm,
+        macX64: find(n => n.endsWith(".dmg") && n.includes("x64")) ?? named.macX64,
+        windows: find(n => n.endsWith(".exe")) ?? named.windows,
+      };
+      cache = { ...links, fetchedAt: Date.now() };
+      return res.json(links);
+    } catch {
+      return res.json(fromNames(fallbackTag, fallbackStem));
+    }
   };
 }
 
-router.get("/config/connector-release", async (_req, res) => {
-  if (connectorCache && Date.now() - connectorCache.fetchedAt < CACHE_TTL_MS) {
-    const { fetchedAt: _, ...data } = connectorCache;
-    return res.json(data);
-  }
-
-  try {
-    const r = await fetch(
-      "https://api.github.com/repos/tnelson933/RMMX-Tracker/releases?per_page=30",
-      { headers: { "User-Agent": "rmmx-server" } },
-    );
-    if (!r.ok) throw new Error(`GitHub ${r.status}`);
-    const releases = (await r.json()) as Array<{ tag_name: string; draft: boolean }>;
-    const latest = releases.find((rel) => !rel.draft && rel.tag_name.startsWith("connector-v"));
-    if (!latest) throw new Error("no connector release yet");
-    const info = buildConnectorFromTag(latest.tag_name);
-    connectorCache = { ...info, fetchedAt: Date.now() };
-    return res.json(info);
-  } catch {
-    const info = buildConnectorFromTag("connector-v1.0.14");
-    return res.json(info);
-  }
-});
-
-router.get("/config/desktop-release", async (_req, res) => {
-  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
-    const { fetchedAt: _, ...data } = cache;
-    return res.json(data);
-  }
-
-  try {
-    const r = await fetch(
-      "https://api.github.com/repos/tnelson933/RMMX-Tracker/releases/latest",
-      { headers: { "User-Agent": "rmmx-server" } },
-    );
-    if (!r.ok) throw new Error(`GitHub ${r.status}`);
-    const json = (await r.json()) as { tag_name: string };
-    const info = buildFromTag(json.tag_name);
-    cache = { ...info, fetchedAt: Date.now() };
-    return res.json(info);
-  } catch {
-    const info = buildFromTag("desktop-v1.0.111");
-    return res.json(info);
-  }
-});
+router.get("/config/connector-release", releaseEndpoint("connector-v", "connector-v1.0.16", "RM-Connect"));
+router.get("/config/desktop-release", releaseEndpoint("desktop-v", "desktop-v1.0.111", "RM-Tracker"));
 
 export default router;
