@@ -40,3 +40,7 @@ yarn-error.*
 .vercel
 
 .env
+
+# EAS local signing credentials (holds the .p12 password)
+credentials.json
+*.mobileprovision
