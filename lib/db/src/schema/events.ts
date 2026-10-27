@@ -5,6 +5,11 @@ import { clubsTable } from "./clubs";
 import { discountCategoriesTable } from "./discount-categories";
 
 export type PurchaseOption = { id: string; name: string; amount: number; categoryId?: number | null };
+
+/** The RM TrackR active timing transponder: a purchase option with a fixed id and price. */
+export const RM_TRACKR_OPTION_ID = "rm-trackr";
+export const RM_TRACKR_NAME = "RM TrackR";
+export const RM_TRACKR_PRICE = 40;
 export type EnduroPenaltyConfig = {
   earlySecPerMin: number;
   lateSecPerMin: number;

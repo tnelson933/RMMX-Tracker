@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
+import { RM_TRACKR_OPTION_ID } from "@/lib/rmTrackr";
 import { useRoute, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zodResolver";
@@ -1498,6 +1499,11 @@ export default function Register() {
                                     <span>{opt.name}</span>
                                     <span className="text-primary">${Number(opt.amount).toFixed(2)}</span>
                                   </label>
+                                  {opt.id === RM_TRACKR_OPTION_ID && (
+                                    <p className="text-xs text-muted-foreground pt-1">
+                                      Your own active timing transponder to keep. Pick it up at check-in.
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                             </FormItem>

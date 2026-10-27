@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, CheckCircle, Tag, X, AlertCircle, Clock, RefreshCw, CheckCircle2, Banknote, CreditCard, ExternalLink, Loader2, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Search, CheckCircle, Tag, X, AlertCircle, Clock, RefreshCw, CheckCircle2, Banknote, CreditCard, ExternalLink, Loader2, ShieldCheck, ShieldAlert, Keyboard, Smartphone } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useOfflineAwareQuery } from "@/hooks/useOfflineAwareQuery";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
@@ -14,6 +14,7 @@ import { useSyncQueue } from "@/hooks/useSyncQueue";
 import { CacheStatusBadge } from "@/components/CacheStatusBadge";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
+import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
 
 // RFID tags: alphanumeric + dashes, 1–32 characters.
 function isInvalidRfid(val: string | null | undefined): boolean {
@@ -255,6 +256,16 @@ export default function Checkin() {
   const [stickerSubmitting, setStickerSubmitting] = useState(false);
   const [stickerError, setStickerError] = useState<string | null>(null);
 
+  // RM TrackR sale (POS) modal state
+  type TrackrStep = "method" | "card";
+  interface TrackrTarget { registrationId: number; riderName: string; }
+  interface TrackrCard { checkoutUrl: string; sessionId: string; regId: number; price: number; }
+  const [trackrTarget, setTrackrTarget] = useState<TrackrTarget | null>(null);
+  const [trackrStep, setTrackrStep] = useState<TrackrStep>("method");
+  const [trackrCard, setTrackrCard] = useState<TrackrCard | null>(null);
+  const [trackrSubmitting, setTrackrSubmitting] = useState(false);
+  const [trackrError, setTrackrError] = useState<string | null>(null);
+
   // Liability waiver modal state
   interface WaiverTarget { riderId: number; riderName: string; email: string; rfidNumber?: string | null; bibToSave?: string; }
   const [waiverTarget, setWaiverTarget] = useState<WaiverTarget | null>(null);
@@ -455,6 +466,69 @@ export default function Checkin() {
       setStickerSubmitting(false);
     }
   };
+
+  // RM TrackR sale handlers
+  const closeTrackrModal = useCallback(() => {
+    setTrackrTarget(null);
+    setTrackrStep("method");
+    setTrackrCard(null);
+    setTrackrSubmitting(false);
+    setTrackrError(null);
+  }, []);
+
+  const sellTrackr = async (paymentMethod: "cash" | "card") => {
+    if (!trackrTarget) return;
+    setTrackrSubmitting(true);
+    setTrackrError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/${trackrTarget.registrationId}/add-rm-trackr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentMethod }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Failed to sell ${RM_TRACKR_NAME} (error ${res.status})`);
+      if (paymentMethod === "cash") {
+        queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+        toast({ title: `${RM_TRACKR_NAME} sold`, description: `$${Number(json.price).toFixed(2)} collected in cash. Assign the transponder to finish.` });
+        closeTrackrModal();
+      } else {
+        setTrackrCard({ checkoutUrl: json.checkoutUrl, sessionId: json.sessionId, regId: trackrTarget.registrationId, price: json.price });
+        setTrackrStep("card");
+      }
+    } catch (e: any) {
+      setTrackrError(e.message);
+    } finally {
+      setTrackrSubmitting(false);
+    }
+  };
+
+  // Poll the RM TrackR Stripe session until paid
+  useEffect(() => {
+    if (trackrStep !== "card" || !trackrCard) return;
+    let stopped = false;
+    const poll = async () => {
+      while (!stopped) {
+        await new Promise(r => setTimeout(r, 3000));
+        if (stopped) break;
+        try {
+          const res = await fetch(`/api/public/registrations/${trackrCard.regId}/verify-rm-trackr`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: trackrCard.sessionId }),
+          });
+          if (res.ok) {
+            stopped = true;
+            queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
+            toast({ title: `${RM_TRACKR_NAME} paid`, description: `$${Number(trackrCard.price).toFixed(2)} collected by card. Assign the transponder to finish.` });
+            closeTrackrModal();
+          }
+        } catch { /* keep polling */ }
+      }
+    };
+    poll();
+    return () => { stopped = true; };
+  }, [trackrStep, trackrCard]);
 
   // Rental modal close handler
   const closeRentalModal = useCallback(() => {
@@ -886,6 +960,25 @@ export default function Checkin() {
                             </button>
                           )
                         )}
+                        {/* RM TrackR: purchased and awaiting a transponder, or sell one here */}
+                        {(checkin as any).rmTrackrPurchased ? (
+                          !(checkin as any).rmTrackrFulfilledAt && (
+                            <button
+                              onClick={() => setRfidInputOpenId(checkin.riderId)}
+                              className="flex items-center gap-1 text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded text-xs font-semibold hover:bg-amber-200 transition-colors"
+                              title={`Rider bought an ${RM_TRACKR_NAME}. Hand it over and assign its number to mark it fulfilled.`}
+                            >
+                              <Tag size={12} /> {RM_TRACKR_NAME} Purchased — Assign
+                            </button>
+                          )
+                        ) : isActiveTransponder && !isOffline && !checkin.rfidLinked && checkin.registrationId != null && (
+                          <button
+                            onClick={() => setTrackrTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName })}
+                            className="flex items-center gap-1 text-xs font-semibold text-primary bg-primary/5 border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors"
+                          >
+                            + Sell {RM_TRACKR_NAME}
+                          </button>
+                        )}
                         {/* RFID sticker status */}
                         {!isActiveTransponder && rfidStickerFee != null && (
                           (checkin as any).rfidStickerPurchased ? (
@@ -1189,6 +1282,80 @@ export default function Checkin() {
               Waiting for payment…
             </div>
             <Button variant="ghost" size="sm" onClick={closeStickerModal} className="text-xs">
+              Cancel
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+
+    {/* ── RM TrackR Sale (POS) Modal ── */}
+    <Dialog open={!!trackrTarget} onOpenChange={open => { if (!open) closeTrackrModal(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-heading uppercase tracking-wide">Sell {RM_TRACKR_NAME}</DialogTitle>
+        </DialogHeader>
+
+        {trackrStep === "method" && (
+          <div className="flex flex-col gap-4">
+            <div className="text-center">
+              <p className="text-muted-foreground text-sm">{trackrTarget?.riderName}</p>
+              <p className="text-3xl font-heading font-bold mt-1">${RM_TRACKR_PRICE.toFixed(2)}</p>
+            </div>
+
+            {trackrError && (
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg p-3">
+                <AlertCircle size={16} className="flex-shrink-0" />
+                {trackrError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                className="h-16 flex flex-col gap-1"
+                onClick={() => sellTrackr("cash")}
+                disabled={trackrSubmitting}
+              >
+                {trackrSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Banknote size={20} />}
+                <span className="text-xs font-heading uppercase tracking-wide">Collect Cash</span>
+              </Button>
+              <Button
+                className="h-16 flex flex-col gap-1"
+                onClick={() => sellTrackr("card")}
+                disabled={trackrSubmitting}
+              >
+                {trackrSubmitting ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}
+                <span className="text-xs font-heading uppercase tracking-wide">Pay with Card</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {trackrStep === "card" && trackrCard && (
+          <div className="flex flex-col items-center gap-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Collect <strong>${Number(trackrCard.price).toFixed(2)}</strong> one of two ways:
+            </p>
+            <Button asChild className="w-full h-12 gap-2">
+              <a href={trackrCard.checkoutUrl} target="_blank" rel="noreferrer">
+                <Keyboard size={18} /> Type card number on this device
+              </a>
+            </Button>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground w-full">
+              <span className="h-px bg-border flex-1" /> or <span className="h-px bg-border flex-1" />
+            </div>
+            <p className="text-sm text-center flex items-center gap-1.5">
+              <Smartphone size={16} /> Rider scans to pay on their phone
+            </p>
+            <div className="p-3 bg-white rounded-xl border shadow-sm">
+              <QRCodeSVG value={trackrCard.checkoutUrl} size={180} />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              Waiting for payment. This closes by itself once paid.
+            </div>
+            <Button variant="ghost" size="sm" onClick={closeTrackrModal} className="text-xs">
               Cancel
             </Button>
           </div>

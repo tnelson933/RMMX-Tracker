@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable, motosTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, ne, asc } from "drizzle-orm";
+import { fulfillRmTrackr } from "../lib/rmTrackr";
 
 const router = Router();
 
@@ -32,6 +33,9 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
     transponderRental: registrationsTable.transponderRental,
     rfidStickerPurchased: registrationsTable.rfidStickerPurchased,
+    rmTrackrPurchased: registrationsTable.rmTrackrPurchased,
+    rmTrackrFulfilledAt: registrationsTable.rmTrackrFulfilledAt,
+    rmTrackrTransponder: registrationsTable.rmTrackrTransponder,
     paymentStatus: registrationsTable.paymentStatus,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
@@ -81,6 +85,9 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       myLapsTransponderNumber: r.myLapsTransponderNumber ?? null,
       transponderRental: r.transponderRental ?? false,
       rfidStickerPurchased: r.rfidStickerPurchased ?? false,
+      rmTrackrPurchased: r.rmTrackrPurchased ?? false,
+      rmTrackrFulfilledAt: r.rmTrackrFulfilledAt?.toISOString() ?? null,
+      rmTrackrTransponder: r.rmTrackrTransponder ?? null,
       paymentStatus: r.paymentStatus ?? null,
       checkedIn: c?.checkedIn ?? false,
       checkedInAt: c?.checkedInAt?.toISOString() ?? null,
@@ -170,6 +177,7 @@ router.post("/events/:eventId/checkins", async (req, res) => {
 
   if (rfidNumber) {
     await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, checkin.riderId));
+    await fulfillRmTrackr(eventId, checkin.riderId, rfidNumber);
   }
 
   // Auto-slot rider into pre-generated lineup slots (created via useRegistrations).

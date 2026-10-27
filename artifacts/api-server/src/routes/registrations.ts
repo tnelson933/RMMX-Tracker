@@ -7,6 +7,8 @@ import { sendPushNotifications } from "../lib/push";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
 import { isRegistrationTransponderRequirementSatisfied } from "../lib/registrationTransponderRequirement";
 import { resolvePurchaseOptions } from "../lib/purchaseOptions";
+import { includesRmTrackr, markRmTrackrPurchased, fulfillRmTrackr } from "../lib/rmTrackr";
+import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
 
@@ -456,6 +458,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     transponderRental: wantsRental,
     myLapsTransponderNumber: normalizedTransponderNumber,
     selectedPurchaseOptions: resolvePurchaseOptions(selectedPurchaseOptions, eventData?.purchaseOptions),
+    rmTrackrPurchased: includesRmTrackr(resolvePurchaseOptions(selectedPurchaseOptions, eventData?.purchaseOptions)),
   }).returning();
 
   // Only create the check-in record immediately for free events.
@@ -792,6 +795,100 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
   }
 
   return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
+});
+
+// ── Organizer: sell an RM TrackR at the check-in gate (POS) ────────────────────
+// Cash marks it purchased now; card returns a Stripe Checkout session the
+// employee opens on their device to key in the card, or shows as a QR code for
+// the rider to pay on their phone. Card numbers never touch our servers.
+router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const regId = Number(req.params.regId);
+  const { paymentMethod } = req.body; // 'cash' | 'card'
+
+  const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
+  if (!reg) return res.status(404).json({ error: "Registration not found" });
+  if (reg.eventId !== eventId) return res.status(403).json({ error: "Registration does not belong to this event" });
+  if (reg.status === "void") return res.status(400).json({ error: "This registration was cancelled" });
+  if (reg.rmTrackrPurchased) return res.status(400).json({ error: `Rider already purchased an ${RM_TRACKR_NAME}` });
+
+  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const price = RM_TRACKR_PRICE;
+
+  if (paymentMethod === "cash") {
+    await markRmTrackrPurchased(eventId, reg.riderId);
+    return res.json({ success: true, price });
+  }
+
+  if (paymentMethod === "card") {
+    try {
+      const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, event.clubId));
+      if (!club?.stripeAccountId) {
+        return res.status(400).json({ error: "Club has no Stripe account configured. Use cash payment instead." });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const appUrl = getAppUrl();
+      const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, reg.riderId));
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        line_items: [{
+          price_data: {
+            currency: "usd",
+            product_data: { name: RM_TRACKR_NAME },
+            unit_amount: Math.round(price * 100),
+          },
+          quantity: 1,
+        }],
+        customer_email: rider?.email ?? undefined,
+        payment_intent_data: {
+          transfer_data: { destination: club.stripeAccountId },
+        },
+        metadata: { registrationId: String(regId), type: "rm_trackr" },
+        success_url: `${appUrl}/events/${eventId}/checkin`,
+        cancel_url: `${appUrl}/events/${eventId}/checkin`,
+      });
+
+      return res.json({ checkoutUrl: session.url, sessionId: session.id, price });
+    } catch (err: any) {
+      req.log?.error({ err: err?.message }, "[add-rm-trackr] Error");
+      return res.status(500).json({ error: err?.message ?? "Failed to create checkout session" });
+    }
+  }
+
+  return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
+});
+
+// ── Public: verify RM TrackR Stripe payment and mark purchased ─────────────────
+router.post("/public/registrations/:id/verify-rm-trackr", async (req, res) => {
+  const id = Number(req.params.id);
+  const { sessionId } = req.body;
+  if (!sessionId) return res.status(400).json({ error: "sessionId required" });
+
+  try {
+    const stripe = await getUncachableStripeClient();
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (session.metadata?.registrationId !== String(id) || session.metadata?.type !== "rm_trackr") {
+      return res.status(403).json({ error: "Session does not match this RM TrackR purchase" });
+    }
+    if (session.payment_status !== "paid") {
+      return res.status(402).json({ error: "Payment not yet completed" });
+    }
+
+    const [reg] = await db.select({ riderId: registrationsTable.riderId, eventId: registrationsTable.eventId })
+      .from(registrationsTable).where(eq(registrationsTable.id, id));
+    if (!reg) return res.status(404).json({ error: "Registration not found" });
+
+    await markRmTrackrPurchased(reg.eventId, reg.riderId);
+    return res.json({ paid: true });
+  } catch (err: any) {
+    req.log?.error({ err: err?.message }, "[verify-rm-trackr] Error");
+    return res.status(500).json({ error: err?.message ?? "Verification failed" });
+  }
 });
 
 // ── Public: verify RFID sticker Stripe payment and mark purchased ──────────────
@@ -1338,6 +1435,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     statsEmailOptIn: !!statsEmailOptIn,
     transponderRental: wantsRental,
     rfidStickerPurchased: wantsRfidSticker,
+    rmTrackrPurchased: includesRmTrackr(purchaseOptsList),
     myLapsTransponderNumber: normalizedTransponderNumber,
     compCode: validatedCompCode,
     compDiscount: compDiscount > 0 ? String(compDiscount) : null,
@@ -1721,6 +1819,8 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
       eq(registrationsTable.riderId, reg.riderId),
       eq(registrationsTable.transponderRental, true),
     ));
+
+  await fulfillRmTrackr(eventId, reg.riderId, tag);
 
   return res.json({ success: true, transponderNumber: tag, expiresAt: expiresAt.toISOString() });
 });

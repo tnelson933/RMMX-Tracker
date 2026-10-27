@@ -4,6 +4,7 @@ import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practice
 import { eq, and, inArray, isNull, isNotNull, asc, or, gt, sql } from "drizzle-orm";
 import { formatLapTime } from "./timing";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
+import { fulfillRmTrackr } from "../lib/rmTrackr";
 
 const router = Router();
 
@@ -170,6 +171,8 @@ router.post("/rfid", async (req, res) => {
           eq(checkinsTable.eventId, numEventId),
           eq(checkinsTable.riderId, numRiderId),
         ));
+
+      await fulfillRmTrackr(numEventId, numRiderId, activeTransponderNumber);
     }
 
     return res.status(201).json({
@@ -238,6 +241,8 @@ router.post("/rfid", async (req, res) => {
         eq(registrationsTable.eventId, numEventId),
         eq(registrationsTable.riderId, numRiderId),
       ));
+
+    await fulfillRmTrackr(numEventId, numRiderId, rfidNumber);
   }
 
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, numRiderId));

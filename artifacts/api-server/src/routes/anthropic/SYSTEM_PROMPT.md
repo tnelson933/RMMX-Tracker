@@ -231,6 +231,10 @@ RM Roost supports two timing hardware modes. Select the mode for an event in the
 - Each rider needs an active transponder number (numeric, 1–9 digits) — assigned in the Check-In tab or entered during registration
 - In Reader Setup, switch to Active Transponder Timing and configure the decoder IP; the desktop app adds a native serial-port picker
 - Transponder rental: if enabled in the event settings, riders can rent a transponder at registration; a rental fee is added to their total
+- RM TrackR sales: riders can buy their own RM TrackR transponder for a standard $40.
+  - In the event's Purchase Options, click **Add RM TrackR ($40)**. Its name and price are fixed.
+  - Riders who buy one at registration show an amber **RM TrackR Purchased — Assign** flag on the Check-In tab. Assigning the transponder number marks it fulfilled and clears the flag.
+  - On Check-In, **+ Sell RM TrackR** appears for riders without a transponder (active timing events, online only). Staff can collect cash or take a card. For a card, staff either type the card on their own device (Stripe checkout) or the rider scans the QR code to pay on their phone. The window closes by itself once payment goes through.
 
 ---
 

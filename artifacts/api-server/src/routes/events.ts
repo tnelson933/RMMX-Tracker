@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable, enduroTimeChecksTable, enduroCheckpointArrivalsTable, eventReaderAssignmentsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
+import { normalizeEventPurchaseOptions } from "../lib/rmTrackr";
 import { sendStatsEmail } from "../lib/email";
 import { normalizeState } from "../utils/normalizeState";
 
@@ -225,7 +226,7 @@ router.post("/events", async (req, res) => {
     transponderRentalEnabled: transponderRentalEnabled || false,
     transponderRentalFee: transponderRentalFee ? String(transponderRentalFee) : null,
     rfidStickerFee: rfidStickerFee ? String(rfidStickerFee) : null,
-    purchaseOptions: purchaseOptions || [],
+    purchaseOptions: normalizeEventPurchaseOptions(purchaseOptions),
     scoringTableId: scoringTableId ?? null,
     entryFeeCategoryId: entryFeeCat?.id ?? null,
     amaEventId: amaEventId ?? null,
@@ -357,6 +358,7 @@ router.patch("/events/:eventId", async (req, res) => {
   if (updates.timingTechnology !== undefined) {
     updates.timingTechnology = normalizeTimingTechnology(updates.timingTechnology);
   }
+  if (updates.purchaseOptions !== undefined) updates.purchaseOptions = normalizeEventPurchaseOptions(updates.purchaseOptions);
   // Always store date fields as plain YYYY-MM-DD — strip any time component that
   // may arrive from a datetime-local input or ISO timestamp (e.g. "2026-06-23T18:00:00.000Z").
   if (typeof updates.date === "string") updates.date = updates.date.substring(0, 10);

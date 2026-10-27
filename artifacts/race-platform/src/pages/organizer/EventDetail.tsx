@@ -6,6 +6,7 @@ import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
 import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, getListEventsQueryKey, useListDiscountCategories, useDeleteEvent, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -121,6 +122,7 @@ const updateEventSchema = z.object({
   quickCheckinEnabled: z.boolean().default(false),
   scoringTableId: z.number().optional(),
   purchaseOptions: z.array(z.object({
+    optionId: z.string().optional(),
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
     categoryId: z.number().nullable().optional(),
@@ -468,7 +470,7 @@ export default function EventDetail() {
       requireTransponder: (evt as any).requireTransponder ?? false,
       quickCheckinEnabled: (evt as any).quickCheckinEnabled ?? false,
       scoringTableId: (evt as any).scoringTableId ?? undefined,
-      purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number; categoryId?: number | null }) => ({ name: o.name, amount: String(o.amount), categoryId: o.categoryId ?? null })),
+      purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number; categoryId?: number | null }) => ({ optionId: o.id, name: o.name, amount: String(o.amount), categoryId: o.categoryId ?? null })),
       amaEventId: (evt as any).amaEventId ?? "",
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
@@ -589,7 +591,7 @@ export default function EventDetail() {
         transponderRentalEnabled: data.timingTechnology === "active_transponder" && data.paymentEnabled ? data.transponderRentalEnabled : false,
         transponderRentalFee: data.timingTechnology === "active_transponder" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
         rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
-        purchaseOptions: data.purchaseOptions.map(o => ({ id: crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
+        purchaseOptions: data.purchaseOptions.map(o => ({ id: o.optionId || crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
         amaEventId: data.amaEventId || undefined,
         contingencyBrands: editContingencyBrands.length > 0 ? editContingencyBrands : null,
       } as any
@@ -1650,14 +1652,25 @@ export default function EventDetail() {
                     <div className="space-y-2 pt-1">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-medium text-foreground">Purchase Options</p>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => appendPurchaseOption({ name: "", amount: "" })}
-                        >
-                          <Plus size={13} className="mr-1" /> Add Purchase Option
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={form.watch("purchaseOptions").some(o => o.optionId === RM_TRACKR_OPTION_ID)}
+                            onClick={() => appendPurchaseOption({ optionId: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: String(RM_TRACKR_PRICE) })}
+                          >
+                            <Plus size={13} className="mr-1" /> Add {RM_TRACKR_NAME} (${RM_TRACKR_PRICE})
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => appendPurchaseOption({ name: "", amount: "" })}
+                          >
+                            <Plus size={13} className="mr-1" /> Add Purchase Option
+                          </Button>
+                        </div>
                       </div>
                       {purchaseOptionFields.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
@@ -1673,7 +1686,7 @@ export default function EventDetail() {
                                 render={({ field }) => (
                                   <FormItem className="flex-1">
                                     <FormControl>
-                                      <Input placeholder="Gate fee, pit pass…" {...field} />
+                                      <Input placeholder="Gate fee, pit pass…" {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
                                     </FormControl>
                                     <FormMessage />
                                   </FormItem>
@@ -1687,7 +1700,7 @@ export default function EventDetail() {
                                     <FormControl>
                                       <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                                        <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" {...field} />
+                                        <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
                                       </div>
                                     </FormControl>
                                     <FormMessage />

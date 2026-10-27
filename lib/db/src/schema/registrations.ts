@@ -30,6 +30,11 @@ export const registrationsTable = pgTable("registrations", {
   displayFirstName: text("display_first_name"),
   displayLastName: text("display_last_name"),
   rfidStickerPurchased: boolean("rfid_sticker_purchased").notNull().default(false),
+  // RM TrackR sale: set at registration (purchase option) or at check-in (POS);
+  // fulfilled once staff assign the rider a transponder.
+  rmTrackrPurchased: boolean("rm_trackr_purchased").notNull().default(false),
+  rmTrackrFulfilledAt: timestamp("rm_trackr_fulfilled_at"),
+  rmTrackrTransponder: text("rm_trackr_transponder"),
   transponderReturned: boolean("transponder_returned").notNull().default(false),
   waiverAcknowledgedAt: timestamp("waiver_acknowledged_at"),
   waiverSnapshot: text("waiver_snapshot"),
