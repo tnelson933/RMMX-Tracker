@@ -48,7 +48,7 @@ export default defineConfig(async ({ command }) => {
       devOptions: {
         enabled: false,
       },
-      includeAssets: ["favicon.svg", "rm-logo.png"],
+      includeAssets: ["favicon-32.png", "favicon-48.png", "apple-touch-icon.png", "rm-logo.png"],
       manifest: {
         name: "RM Roost",
         short_name: "RM Roost",
@@ -58,18 +58,9 @@ export default defineConfig(async ({ command }) => {
         background_color: "#ffffff",
         display: "standalone",
         icons: [
-          {
-            src: "rm-logo.png",
-            sizes: "1788x1788",
-            type: "image/png",
-            purpose: "any",
-          },
-          {
-            src: "rm-logo.png",
-            sizes: "1788x1788",
-            type: "image/png",
-            purpose: "maskable",
-          },
+          { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {

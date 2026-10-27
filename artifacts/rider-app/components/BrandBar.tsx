@@ -96,21 +96,18 @@ const pa = StyleSheet.create({
 // ─── BrandBar ─────────────────────────────────────────────────────────────────
 
 export function BrandBar() {
-  const colors = useColors();
   const router = useRouter();
   return (
     <View style={styles.row}>
       <View style={styles.left}>
-        <View style={styles.logoBacking}>
+        {/* RM Roost banner on a black badge so the white lettering reads in light and dark mode. */}
+        <View style={styles.bannerBadge}>
           <Image
-            source={require("../assets/images/icon.png")}
-            style={styles.logo}
+            source={require("../assets/images/brand-banner.png")}
+            style={styles.banner}
             resizeMode="contain"
+            accessibilityLabel="RM Roost"
           />
-        </View>
-        <View>
-          <Text style={[styles.brand, { color: colors.foreground }]}>RM</Text>
-          <Text style={[styles.sub, { color: colors.mutedForeground }]}>ROOST</Text>
         </View>
       </View>
 
@@ -140,32 +137,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  logoBacking: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#ffffff",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
+  bannerBadge: {
+    backgroundColor: "#000000",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  logo: {
-    width: 44,
-    height: 44,
-  },
-  brand: {
-    fontSize: 15,
-    fontWeight: "800",
-    fontFamily: "Inter_700Bold",
-    letterSpacing: 1,
-    lineHeight: 17,
-  },
-  sub: {
-    fontSize: 9,
-    fontWeight: "700",
-    fontFamily: "Inter_700Bold",
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
-    lineHeight: 12,
+  banner: {
+    width: 120,
+    height: 38,
   },
 });

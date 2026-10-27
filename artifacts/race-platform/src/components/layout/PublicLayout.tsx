@@ -4,7 +4,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRiderAuth } from "@/contexts/RiderAuthContext";
 import { Button } from "@/components/ui/button";
 import { Menu, X, Timer, Flag, Trophy } from "lucide-react";
-import rmLogo from "@assets/rm-logo.png";
 
 const isDesktop = typeof (window as any).electronAPI !== "undefined";
 const BASE = import.meta.env.BASE_URL;
@@ -21,11 +20,7 @@ const NAV = [
 function Lockup({ onClick }: { onClick?: () => void }) {
   return (
     <Link href="/" className="flex items-center gap-3 shrink-0" onClick={onClick}>
-      <img src={rmLogo} alt="" className="h-10 w-10" />
-      <span className="flex flex-col leading-none">
-        <span className="font-heading font-extrabold text-white text-2xl uppercase tracking-wide">RM Roost</span>
-        <span className="text-[13px] text-[#8C8C8C] mt-1">Race timing &amp; results</span>
-      </span>
+      <img src={`${import.meta.env.BASE_URL}brand/rm-roost-banner-640.png`} alt="RM Roost" className="h-11 md:h-14 w-auto" />
     </Link>
   );
 }

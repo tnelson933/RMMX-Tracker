@@ -569,11 +569,7 @@ function Header({
     <div className="bg-[#0d1220] border-b border-white/[0.07] px-6 py-4 flex items-center gap-4 shrink-0">
       {/* Logo */}
       <div className="flex items-center gap-3 shrink-0">
-        <img src={rmLogo} alt="RM Roost" className="h-10 w-10" />
-        <div className="flex flex-col leading-none">
-          <span className="font-heading font-black text-white text-lg uppercase tracking-widest">RM</span>
-          <span className="font-heading font-black text-white/30 text-[10px] uppercase tracking-[0.3em]">Roost</span>
-        </div>
+        <img src={`${import.meta.env.BASE_URL}brand/rm-roost-banner-640.png`} alt="RM Roost" className="h-11 w-auto" />
       </div>
 
       <div className="w-px h-8 bg-white/10 shrink-0" />

@@ -34,7 +34,6 @@ import {
   Monitor,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import rmLogo from "@assets/rm-logo.png";
 
 const isDesktop = typeof (window as any).electronAPI !== "undefined";
 
@@ -99,11 +98,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const SidebarContent = () => (
     <>
       <div className="h-16 flex items-center px-4 gap-3 border-b border-sidebar-border/50 shrink-0">
-        <img src={rmLogo} alt="RM Roost" className="h-9 w-9 shrink-0" />
-        <span className="flex flex-col leading-none">
-          <span className="text-white font-heading font-extrabold text-xl uppercase tracking-wider">RM</span>
-          <span className="text-[#8C8C8C] font-heading font-bold text-xs uppercase tracking-widest">Roost</span>
-        </span>
+        <img src={`${import.meta.env.BASE_URL}brand/rm-roost-banner-640.png`} alt="RM Roost" className="h-11 w-auto shrink-0" />
         {/* Close button — mobile only */}
         <button
           className="ml-auto md:hidden p-1 rounded hover:bg-sidebar-accent text-sidebar-foreground/70"
@@ -277,11 +272,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu size={22} />
           </button>
-          <img src={rmLogo} alt="RM Roost" className="h-7 w-7" />
-          <span className="flex flex-col leading-none">
-            <span className="font-heading font-extrabold text-base uppercase tracking-wider text-white">RM</span>
-            <span className="font-heading font-bold text-[10px] uppercase tracking-widest text-[#8C8C8C]">Roost</span>
-          </span>
+          <img src={`${import.meta.env.BASE_URL}brand/rm-roost-banner-640.png`} alt="RM Roost" className="h-8 w-auto" />
           <div className="ml-auto">
             <LocalSyncBadge />
           </div>

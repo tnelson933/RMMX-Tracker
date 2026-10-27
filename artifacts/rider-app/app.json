@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/icon.png",
+      "image": "./assets/images/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0a0a0a"
     },
@@ -51,8 +51,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
-          "color": "#cf152d"
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#B30000"
         }
       ]
     ],
