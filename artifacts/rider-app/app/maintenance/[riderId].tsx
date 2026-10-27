@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 const ACCENT = "#cf152d";
 
@@ -94,6 +95,7 @@ export default function MaintenanceScreen() {
 
   const [items, setItems] = useState<MaintenanceItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [loggingKey, setLoggingKey] = useState<string | null>(null);
@@ -106,8 +108,16 @@ export default function MaintenanceScreen() {
   const load = useCallback(async () => {
     try {
       const res = await riderFetch(`/api/rider/maintenance/${riderId}`);
-      if (res.ok) setItems(await res.json());
-    } catch { /* ignore */ }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setLoadError((d as any).error ?? `Couldn't load your maintenance schedule (error ${res.status}).`);
+        return;
+      }
+      setItems(await res.json());
+      setLoadError(null);
+    } catch {
+      setLoadError(NETWORK_ERROR_MESSAGE);
+    }
   }, [riderFetch, riderId]);
 
   useEffect(() => {
@@ -138,7 +148,7 @@ export default function MaintenanceScreen() {
       setItems(data);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      Alert.alert("Error", "Network error. Please try again.");
+      Alert.alert("Error", NETWORK_ERROR_MESSAGE);
     } finally {
       setGenerating(false);
     }
@@ -170,14 +180,20 @@ export default function MaintenanceScreen() {
           sortOrder: logSheetItem.sortOrder,
         }),
       });
-      if (res.ok) {
-        const updated: MaintenanceItem = await res.json();
-        setItems(prev => prev.map(i => i.itemKey === logSheetItem.itemKey ? updated : i));
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setLogSheetItem(null);
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        Alert.alert("Service not logged", (d as any).error ?? `Couldn't save this service (error ${res.status}).`);
+        return;
       }
-    } catch { /* ignore */ }
-    setLogSheetSaving(false);
+      const updated: MaintenanceItem = await res.json();
+      setItems(prev => prev.map(i => i.itemKey === logSheetItem.itemKey ? updated : i));
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setLogSheetItem(null);
+    } catch {
+      Alert.alert("Service not logged", NETWORK_ERROR_MESSAGE);
+    } finally {
+      setLogSheetSaving(false);
+    }
   }
 
   function handleShop(item: MaintenanceItem) {
@@ -195,10 +211,18 @@ export default function MaintenanceScreen() {
           text: "Remove", style: "destructive",
           onPress: async () => {
             try {
-              await riderFetch(`/api/rider/maintenance/${riderId}/${item.itemKey}`, { method: "DELETE" });
+              const res = await riderFetch(`/api/rider/maintenance/${riderId}/${item.itemKey}`, { method: "DELETE" });
+              if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                Alert.alert("Item not removed", (d as any).error ?? `Couldn't remove this item (error ${res.status}).`);
+                return;
+              }
+              // Only drop the row once the server confirms the delete.
               setItems(prev => prev.filter(i => i.itemKey !== item.itemKey));
               await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            } catch { /* ignore */ }
+            } catch {
+              Alert.alert("Item not removed", NETWORK_ERROR_MESSAGE);
+            }
           },
         },
       ],
@@ -375,8 +399,20 @@ export default function MaintenanceScreen() {
             </View>
           )}
 
+          {/* Load error (kept separate from the genuinely empty schedule) */}
+          {loadError && (
+            <View style={s.emptyBox}>
+              <Feather name="wifi-off" size={36} color={colors.mutedForeground + "50"} />
+              <Text style={s.emptyTitle}>Couldn't load your schedule</Text>
+              <Text style={s.emptyText}>{loadError}</Text>
+              <Pressable onPress={handleRefresh} style={({ pressed }) => ({ marginTop: 4, opacity: pressed ? 0.6 : 1 })}>
+                <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Try again</Text>
+              </Pressable>
+            </View>
+          )}
+
           {/* Empty state */}
-          {items.length === 0 && (
+          {items.length === 0 && !loadError && (
             <View style={s.emptyBox}>
               <Feather name="tool" size={36} color={colors.mutedForeground + "50"} />
               <Text style={s.emptyTitle}>No Maintenance Schedule</Text>

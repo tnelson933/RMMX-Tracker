@@ -85,7 +85,14 @@ export default function ResultDetailScreen() {
   const profileKey = activeProfiles.map(p => p.id).join(",");
 
   const load = useCallback(async () => {
-    if (!id || activeProfiles.length === 0) return;
+    if (!id || activeProfiles.length === 0) {
+      // Nothing to fetch: stop the spinner and show the empty/error state instead.
+      setResults([]);
+      setError(!id ? "This result link is missing an event." : "Add a rider profile to see your results.");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     setError(null);
     try {
       const responses = await Promise.all(

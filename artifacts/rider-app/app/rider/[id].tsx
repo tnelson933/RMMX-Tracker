@@ -349,7 +349,12 @@ export default function RiderDetailScreen() {
   const [rfidSaving, setRfidSaving] = useState(false);
 
   useEffect(() => {
-    if (isNaN(riderId)) return;
+    if (isNaN(riderId)) {
+      // Bad link: show the error state rather than spinning forever.
+      setLoadError("This rider link isn't valid.");
+      setLoading(false);
+      return;
+    }
     loadRider();
   }, [riderId]);
 

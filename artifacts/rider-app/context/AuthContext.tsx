@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Alert, Linking, Platform } from "react-native";
-import { postJson } from "@/lib/friendlyErrors";
+import { NETWORK_ERROR_MESSAGE, postJson, serverErrorMessage } from "@/lib/friendlyErrors";
 
 const TOKEN_KEY = "rider_mobile_token";
 const SELECTED_IDS_KEY = "rider_selected_profile_ids";
@@ -10,6 +10,8 @@ const BIKE_INFO_KEY = "rider_bike_info";
 const BIOMETRIC_ENABLED_KEY = "rider_biometric_enabled";
 const BIOMETRIC_EMAIL_SKEY = "rider_bio_email";
 const BIOMETRIC_PASS_SKEY = "rider_bio_pass";
+const PUSH_TOKEN_KEY = "rider_expo_push_token";
+const PUSH_DENIED_PROMPTED_KEY = "rider_push_denied_prompted";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 
@@ -90,7 +92,7 @@ interface AuthContextType {
   refreshProfiles: () => Promise<void>;
   riderFetch: (path: string, options?: RequestInit) => Promise<Response>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
-  enableBiometric: () => Promise<void>;
+  enableBiometric: (password: string) => Promise<void>;
   disableBiometric: () => Promise<void>;
 }
 
@@ -109,12 +111,35 @@ async function authedFetch(
   return fetch(`${BASE_URL}${path}`, { ...options, headers });
 }
 
+/** Best-effort request that gives up after a few seconds so it can't stall the caller. */
+async function bestEffortFetch(path: string, token: string, options: RequestInit): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    await authedFetch(path, token, { ...options, signal: controller.signal });
+  } catch {
+    // ignore — offline or server unreachable; the local sign-out still happens
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function tryRegisterPushToken(mobileToken: string): Promise<void> {
   if (Platform.OS === "web") return;
   try {
     const Notifications = await import("expo-notifications");
     const Device = await import("expo-device");
-    if (!Device.default.isDevice) return;
+    if (!Device.isDevice) return;
+
+    // Android 13+ only shows the permission prompt once a channel exists.
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "Race updates",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#B30000",
+      });
+    }
 
     const { status: existing } = await Notifications.getPermissionsAsync();
     let finalStatus = existing;
@@ -124,14 +149,19 @@ async function tryRegisterPushToken(mobileToken: string): Promise<void> {
     }
 
     if (finalStatus !== "granted") {
-      Alert.alert(
-        "Notifications are off",
-        "Enable notifications to receive race-day updates, gate schedules, and results.",
-        [
-          { text: "Not now", style: "cancel" },
-          { text: "Open Settings", onPress: () => Linking.openSettings() },
-        ],
-      );
+      // Explain once; don't nag on every cold start.
+      const alreadyPrompted = await AsyncStorage.getItem(PUSH_DENIED_PROMPTED_KEY);
+      if (!alreadyPrompted) {
+        await AsyncStorage.setItem(PUSH_DENIED_PROMPTED_KEY, "true");
+        Alert.alert(
+          "Notifications are off",
+          "Enable notifications to receive race-day updates, gate schedules, and results.",
+          [
+            { text: "Not now", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
       return;
     }
 
@@ -142,7 +172,7 @@ async function tryRegisterPushToken(mobileToken: string): Promise<void> {
     if (!projectId || projectId === "YOUR_EAS_PROJECT_ID") return;
 
     const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
-    await fetch(`${BASE_URL}/api/rider/push-token`, {
+    const res = await fetch(`${BASE_URL}/api/rider/push-token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -150,8 +180,15 @@ async function tryRegisterPushToken(mobileToken: string): Promise<void> {
       },
       body: JSON.stringify({ expoPushToken: tokenData.data }),
     });
-  } catch {
-    // ignore — push is best-effort
+    if (!res.ok) {
+      console.warn(`Push token registration failed (HTTP ${res.status})`);
+      return;
+    }
+    // Remembered so logout can unregister this device.
+    await AsyncStorage.setItem(PUSH_TOKEN_KEY, tokenData.data);
+  } catch (e) {
+    // Push is best-effort, but make failures visible in logs.
+    console.warn("Push registration failed:", e);
   }
 }
 
@@ -234,7 +271,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (bikeRaw) {
         try { setBikeInfoMapState(JSON.parse(bikeRaw)); } catch { /* ignore */ }
       }
-      if (bioFlag === "true") setBiometricEnabledState(true);
+      if (bioFlag === "true") {
+        setBiometricEnabledState(true);
+      } else {
+        // Older builds saved credentials for everyone; only keep them when opted in.
+        void secureDelete(BIOMETRIC_EMAIL_SKEY);
+        void secureDelete(BIOMETRIC_PASS_SKEY);
+      }
       if (token) {
         const acc = await validateAndLoad(token);
         if (acc) {
@@ -256,9 +299,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
     setAccount(acc);
-    // Always persist latest credentials so biometric stays fresh
-    await secureSet(BIOMETRIC_EMAIL_SKEY, email.trim().toLowerCase());
-    await secureSet(BIOMETRIC_PASS_SKEY, password);
+    // Refresh the saved credentials only when the rider opted into biometric sign-in
+    if (biometricEnabled) {
+      await secureSet(BIOMETRIC_EMAIL_SKEY, email.trim().toLowerCase());
+      await secureSet(BIOMETRIC_PASS_SKEY, password);
+    }
     void loadProfiles(data.mobileToken);
     void tryRegisterPushToken(data.mobileToken);
   }
@@ -290,14 +335,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
     setAccount(acc);
-    await secureSet(BIOMETRIC_EMAIL_SKEY, email.trim().toLowerCase());
-    await secureSet(BIOMETRIC_PASS_SKEY, password);
     void loadProfiles(data.mobileToken);
     void tryRegisterPushToken(data.mobileToken);
   }
 
   async function logout(): Promise<void> {
-    const keysToRemove: string[] = [TOKEN_KEY, SELECTED_IDS_KEY];
+    const token = account?.mobileToken;
+    if (token) {
+      // Best-effort server cleanup: stop pushes to this device, then revoke the token.
+      const pushToken = await AsyncStorage.getItem(PUSH_TOKEN_KEY).catch(() => null);
+      if (pushToken) {
+        await bestEffortFetch("/api/rider/push-token", token, {
+          method: "DELETE",
+          body: JSON.stringify({ token: pushToken }),
+        });
+      }
+      await bestEffortFetch("/api/rider/auth/logout", token, { method: "POST" });
+    }
+    const keysToRemove: string[] = [TOKEN_KEY, SELECTED_IDS_KEY, PUSH_TOKEN_KEY];
     if (account) keysToRemove.push(`workout_plan_${account.id}`);
     await AsyncStorage.multiRemove(keysToRemove);
     // Clear biometric only if it was enabled; don't clear the stored creds so
@@ -335,17 +390,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [bikeInfoMap, account?.mobileToken]);
 
   async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    const res = await riderFetch("/api/rider/auth/change-password", {
-      method: "POST",
-      body: JSON.stringify({ currentPassword, newPassword }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Failed to change password");
+    let res: Response;
+    try {
+      res = await riderFetch("/api/rider/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+    } catch {
+      throw new Error(NETWORK_ERROR_MESSAGE);
+    }
+    if (res.status >= 500) throw new Error(serverErrorMessage(res.status));
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error(res.ok ? NETWORK_ERROR_MESSAGE : `Couldn't change your password (error ${res.status}).`);
+    }
+    if (!res.ok) throw new Error(data?.error ?? `Couldn't change your password (error ${res.status}).`);
     // Keep stored credential fresh so biometric login keeps working
-    await secureSet(BIOMETRIC_PASS_SKEY, newPassword);
+    if (biometricEnabled) await secureSet(BIOMETRIC_PASS_SKEY, newPassword);
   }
 
-  async function enableBiometric(): Promise<void> {
+  /**
+   * Turn on biometric sign-in. The caller collects the rider's current password;
+   * it's saved to SecureStore only after a successful biometric check.
+   */
+  async function enableBiometric(password: string): Promise<void> {
+    if (Platform.OS === "web") throw new Error("Biometric sign-in is not supported on web");
+    if (!account) throw new Error("Sign in first to turn on biometric sign-in");
+    if (!password) throw new Error("Enter your password to turn on biometric sign-in");
+    const LocalAuth = await import("expo-local-authentication");
+    const result = await LocalAuth.authenticateAsync({
+      promptMessage: "Turn on biometric sign-in",
+      cancelLabel: "Cancel",
+    });
+    if (!result.success) throw new Error("Biometric check was cancelled or failed");
+    await secureSet(BIOMETRIC_EMAIL_SKEY, account.email.trim().toLowerCase());
+    await secureSet(BIOMETRIC_PASS_SKEY, password);
     await AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, "true");
     setBiometricEnabledState(true);
   }

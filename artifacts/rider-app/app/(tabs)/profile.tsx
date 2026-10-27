@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -23,8 +24,11 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useTheme, type ThemePreference } from "@/context/ThemeContext";
 import { BrandBar } from "@/components/BrandBar";
+import { NETWORK_ERROR_MESSAGE, postJson } from "@/lib/friendlyErrors";
 
 const ACCENT = "#cf152d";
+const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+const PRIVACY_URL = `${BASE_URL}/privacy`;
 
 // ─── Auth form (shown when logged out) ──────────────────────────────────────
 
@@ -163,6 +167,12 @@ function ProfileList() {
   const [pwSuccess, setPwSuccess] = useState(false);
   const [biometricHardware, setBiometricHardware] = useState(false);
   const [biometricType, setBiometricType] = useState<"face" | "fingerprint">("face");
+  // Enabling biometric sign-in asks for the password once so it can be saved securely.
+  const [bioSetupOpen, setBioSetupOpen] = useState(false);
+  const [bioPassword, setBioPassword] = useState("");
+  const [bioSaving, setBioSaving] = useState(false);
+  const [bioError, setBioError] = useState<string | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   React.useEffect(() => {
     if (Platform.OS === "web") return;
@@ -207,9 +217,74 @@ function ProfileList() {
       await disableBiometric();
       await Haptics.selectionAsync();
     } else {
-      await enableBiometric();
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setBioError(null);
+      setBioPassword("");
+      setBioSetupOpen(v => !v);
     }
+  }
+
+  async function handleConfirmBiometric() {
+    if (!bioPassword) { setBioError("Enter your password"); return; }
+    setBioSaving(true);
+    setBioError(null);
+    try {
+      await enableBiometric(bioPassword);
+      setBioSetupOpen(false);
+      setBioPassword("");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      setBioError(e.message ?? "Couldn't turn on biometric sign-in");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setBioSaving(false);
+    }
+  }
+
+  function handleOpenPrivacy() {
+    void WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {
+      Alert.alert("Couldn't open the privacy policy", NETWORK_ERROR_MESSAGE);
+    });
+  }
+
+  async function submitDeletion() {
+    if (!account) return;
+    setDeletingAccount(true);
+    try {
+      await postJson(`${BASE_URL}/api/account-deletion-request`,
+        { email: account.email, reason: "Requested in the RM Roost app" },
+        "Couldn't send your deletion request");
+    } catch (e: any) {
+      setDeletingAccount(false);
+      Alert.alert("Request not sent", e.message ?? "Couldn't send your deletion request");
+      return;
+    }
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const done = async () => {
+      await disableBiometric();
+      await logout();
+      setDeletingAccount(false);
+    };
+    const message = "We received your request to delete your RM Roost account and its data. " +
+      "We'll confirm by email when it's complete. You'll now be signed out.";
+    if (Platform.OS === "web") {
+      (globalThis as Record<string, any>)["alert"]?.(message);
+      await done();
+      return;
+    }
+    Alert.alert("Deletion requested", message, [{ text: "OK", onPress: () => { void done(); } }], { cancelable: false });
+  }
+
+  function handleDeleteAccount() {
+    const prompt = "This permanently deletes your RM Roost account, rider profiles and race history. This can't be undone.";
+    if (Platform.OS === "web") {
+      if (!(globalThis as Record<string, any>)["confirm"]?.(`Delete your account? ${prompt}`)) return;
+      void submitDeletion();
+      return;
+    }
+    Alert.alert("Delete account?", prompt, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete Account", style: "destructive", onPress: () => { void submitDeletion(); } },
+    ]);
   }
 
   const RACE_TYPES = ["Motocross", "Supercross", "Desert", "Cross Country", "Flat / Dirt Track", "Supermoto"] as const;
@@ -851,16 +926,24 @@ function ProfileList() {
                       onPress={async () => {
                         setGarageSaving(true);
                         try {
-                          await Promise.all([
+                          const [, res] = await Promise.all([
                             setBikeInfo(profile.id, { rideExperience: garageEdit.rideExperience, bikeHours: garageEdit.bikeHours }),
                             riderFetch(`/api/rider/profiles/${profile.id}`, {
                               method: "PATCH",
                               body: JSON.stringify({ raceTypes: garageEdit.raceTypes }),
                             }),
                           ]);
+                          if (!res.ok) {
+                            const data = await res.json().catch(() => null);
+                            throw new Error(data?.error ?? `Couldn't save your race types (error ${res.status}).`);
+                          }
                           await refreshProfiles();
                           setExpandedGarageId(null);
                           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        } catch (e: any) {
+                          const msg = e instanceof TypeError ? NETWORK_ERROR_MESSAGE : (e?.message ?? "Couldn't save garage settings");
+                          Alert.alert("Garage not saved", msg);
+                          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
                         } finally {
                           setGarageSaving(false);
                         }
@@ -1013,6 +1096,51 @@ function ProfileList() {
               </Pressable>
             )}
 
+            {biometricHardware && !biometricEnabled && bioSetupOpen && (
+              <View style={{ gap: 8 }}>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                  Enter your password once. It's stored in this device's secure keychain and used only for {biometricType === "face" ? "Face ID" : "fingerprint"} sign-in.
+                </Text>
+                {bioError && (
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#FEE2E2", borderRadius: 8, padding: 10 }}>
+                    <Feather name="alert-circle" size={14} color="#DC2626" style={{ marginTop: 1 }} />
+                    <Text style={{ flex: 1, fontSize: 13, color: "#DC2626", fontFamily: "Inter_400Regular" }}>{bioError}</Text>
+                  </View>
+                )}
+                <View style={{
+                  borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+                  borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
+                }}>
+                  <TextInput
+                    style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                    placeholder="Your password"
+                    placeholderTextColor={colors.mutedForeground}
+                    secureTextEntry
+                    value={bioPassword}
+                    onChangeText={setBioPassword}
+                    autoCapitalize="none"
+                    returnKeyType="done"
+                    onSubmitEditing={handleConfirmBiometric}
+                  />
+                </View>
+                <Pressable
+                  onPress={handleConfirmBiometric}
+                  disabled={bioSaving}
+                  style={({ pressed }) => ({
+                    backgroundColor: ACCENT, borderRadius: 10, paddingVertical: 13,
+                    alignItems: "center", opacity: pressed || bioSaving ? 0.75 : 1,
+                  })}
+                >
+                  {bioSaving
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>
+                        Turn On {biometricType === "face" ? "Face ID" : "Fingerprint"}
+                      </Text>
+                  }
+                </Pressable>
+              </View>
+            )}
+
             {biometricHardware && (
               <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
             )}
@@ -1098,6 +1226,12 @@ function ProfileList() {
         )}
       </View>
 
+      {/* Privacy policy */}
+      <Pressable style={s.signOutBtn} onPress={handleOpenPrivacy} accessibilityRole="link">
+        <Feather name="shield" size={16} color={colors.foreground} />
+        <Text style={[s.signOutText, { color: colors.foreground }]}>Privacy Policy</Text>
+      </Pressable>
+
       {/* Sign out */}
       <Pressable style={s.signOutBtn} onPress={handleSignOut} disabled={loggingOut}>
         {loggingOut ? (
@@ -1106,6 +1240,18 @@ function ProfileList() {
           <>
             <Feather name="log-out" size={16} color="#DC2626" />
             <Text style={s.signOutText}>Sign Out</Text>
+          </>
+        )}
+      </Pressable>
+
+      {/* Delete account (App Store 5.1.1(v)) */}
+      <Pressable style={s.signOutBtn} onPress={handleDeleteAccount} disabled={deletingAccount || loggingOut}>
+        {deletingAccount ? (
+          <ActivityIndicator color="#DC2626" size="small" />
+        ) : (
+          <>
+            <Feather name="trash-2" size={16} color="#DC2626" />
+            <Text style={s.signOutText}>Delete Account</Text>
           </>
         )}
       </Pressable>

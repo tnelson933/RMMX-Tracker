@@ -8,8 +8,11 @@ import {
 import { setBaseUrl } from "@workspace/api-client-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
+import * as Notifications from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import * as WebBrowser from "expo-web-browser";
+import React, { useEffect, useRef } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -25,12 +28,58 @@ setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`);
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
+// Show pushes that arrive while the app is in the foreground.
+if (Platform.OS !== "web") {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
+
 const queryClient = new QueryClient();
+
+// Notification responses aren't available on web; keep the hook call unconditional.
+const useLastNotificationResponse: () => Notifications.NotificationResponse | null | undefined =
+  Platform.OS === "web" ? () => null : Notifications.useLastNotificationResponse;
+
+/**
+ * Open the screen a tapped push points at. Server payloads (api-server/src/lib):
+ * `{ type: "quick_checkin" | "follow-results", eventId }` and broadcast `{ url }`.
+ */
+function useNotificationNavigation(ready: boolean) {
+  const router = useRouter();
+  const response = useLastNotificationResponse();
+  const handledId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!ready || !response) return;
+    if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+    const id = response.notification.request.identifier;
+    if (handledId.current === id) return;
+    handledId.current = id;
+
+    const data = (response.notification.request.content.data ?? {}) as Record<string, unknown>;
+    const eventId = Number(data.eventId);
+    if (Number.isInteger(eventId) && eventId > 0) {
+      router.push(`/event/${eventId}` as any);
+      return;
+    }
+    if (typeof data.url === "string" && /^https?:\/\//i.test(data.url)) {
+      void WebBrowser.openBrowserAsync(data.url).catch(() => { /* ignore */ });
+    }
+  }, [ready, response]);
+}
 
 function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useRiderAuth();
   const router = useRouter();
   const segments = useSegments();
+
+  useNotificationNavigation(!isLoading && isAuthenticated);
 
   useEffect(() => {
     if (isLoading) return;

@@ -1,12 +1,13 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { formatLap, type CareerStats } from "@/components/ShareCard";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 const ACCENT = "#cf152d";
 
@@ -23,18 +24,29 @@ export default function RacerScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const r = await riderFetch(`/api/rider/riders/${id}/public`);
-    if (!r.ok) { setError(r.status === 404 ? "This rider has no published results yet." : `Error ${r.status}`); return; }
-    setData(await r.json());
+    setError(null);
+    try {
+      const r = await riderFetch(`/api/rider/riders/${id}/public`);
+      if (!r.ok) { setError(r.status === 404 ? "This rider has no published results yet." : `Couldn't load this rider (error ${r.status}).`); return; }
+      setData(await r.json());
+    } catch {
+      setError(NETWORK_ERROR_MESSAGE);
+    }
   }, [id, riderFetch]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const toggle = useCallback(async () => {
     if (!data) return;
     const follow = !data.following;
     setData({ ...data, following: follow });
-    const r = await riderFetch(`/api/rider/follows/${id}`, { method: follow ? "POST" : "DELETE" });
-    if (!r.ok) setData(d => (d ? { ...d, following: !follow } : d));
+    const rollback = () => setData(d => (d ? { ...d, following: !follow } : d));
+    try {
+      const r = await riderFetch(`/api/rider/follows/${id}`, { method: follow ? "POST" : "DELETE" });
+      if (!r.ok) { rollback(); Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", `Try again (error ${r.status}).`); }
+    } catch {
+      rollback();
+      Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", NETWORK_ERROR_MESSAGE);
+    }
   }, [data, id, riderFetch]);
 
   const s = styles(colors, insets);
@@ -61,7 +73,12 @@ export default function RacerScreen() {
       {!data && !error ? (
         <View style={s.center}><ActivityIndicator color={colors.primary} /></View>
       ) : error ? (
-        <View style={s.center}><Text style={s.muted}>{error}</Text></View>
+        <View style={s.center}>
+          <Text style={[s.muted, { textAlign: "center" }]}>{error}</Text>
+          <Pressable onPress={() => { void load(); }} style={({ pressed }) => ({ marginTop: 12, opacity: pressed ? 0.6 : 1 })}>
+            <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Try again</Text>
+          </Pressable>
+        </View>
       ) : (
         <ScrollView contentContainerStyle={s.content}>
           <View style={s.grid}>

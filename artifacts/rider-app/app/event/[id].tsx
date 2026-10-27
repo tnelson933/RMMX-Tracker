@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { RmCashWidget } from "@/components/RmCashWidget";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
 
@@ -121,20 +122,21 @@ export default function EventDetailScreen() {
 
   const load = useCallback(async () => {
     if (!id) return;
-    setError(null);
     try {
       const [evtRes, motoRes] = await Promise.all([
         fetch(`${BASE_URL}/api/events/${id}`),
         fetch(`${BASE_URL}/api/events/${id}/motos`),
       ]);
-      if (!evtRes.ok) throw new Error("Event not found");
+      if (!evtRes.ok) throw new Error(evtRes.status === 404 ? "Event not found" : `Couldn't load this event (error ${evtRes.status}).`);
       setEvent(await evtRes.json());
+      setError(null);
       if (motoRes.ok) {
         const raw: any[] = await motoRes.json();
         setMotos(raw.map(m => ({ ...m, lineup: Array.isArray(m.lineup) ? m.lineup : [] })));
       }
     } catch (e: any) {
-      setError(e.message ?? "Failed to load event");
+      // A failed background refresh keeps the loaded event; the screen shows a banner instead.
+      setError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : (e?.message ?? "Failed to load event"));
     } finally {
       setLoading(false);
     }
@@ -183,12 +185,14 @@ export default function EventDetailScreen() {
     }
   }
 
+  const loadFailed = error !== null;
   // Auto-poll every 15 s while the event is live so riders see race updates instantly
   useEffect(() => {
-    if (!event || event.status !== "race_day") return;
+    // Also retry after a failed refresh so the "Offline, retrying" banner clears itself.
+    if (!event || (event.status !== "race_day" && !loadFailed)) return;
     const timer = setInterval(() => { void load(); }, 15_000);
     return () => clearInterval(timer);
-  }, [event?.status, load]);
+  }, [event?.status, loadFailed, load]);
 
   // Auto-scroll to Race Schedule when arriving from a live event tap
   useEffect(() => {
@@ -361,12 +365,21 @@ export default function EventDetailScreen() {
     );
   }
 
-  if (error || !event) {
+  if (!event) {
     return (
       <View style={[s.container, { alignItems: "center", justifyContent: "center", padding: 32, gap: 10 }]}>
         <Feather name="alert-circle" size={36} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>Event not found</Text>
-        <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>{error}</Text>
+        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+          {error === "Event not found" || !error ? "Event not found" : "Couldn't load event"}
+        </Text>
+        {error && error !== "Event not found" && (
+          <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>{error}</Text>
+        )}
+        {error && error !== "Event not found" && (
+          <Pressable onPress={() => { setLoading(true); void load(); }} style={{ marginTop: 8 }}>
+            <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Try again</Text>
+          </Pressable>
+        )}
         <Pressable onPress={() => router.back()} style={{ marginTop: 8 }}>
           <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Go back</Text>
         </Pressable>
@@ -402,6 +415,18 @@ export default function EventDetailScreen() {
           </Pressable>
           <RmCashWidget />
         </View>
+
+        {/* Background refresh failed: keep showing the last data */}
+        {error && (
+          <View style={{
+            flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "center",
+            backgroundColor: colors.muted, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6,
+            marginBottom: 8,
+          }}>
+            <Feather name="wifi-off" size={12} color={colors.mutedForeground} />
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>Offline, retrying</Text>
+          </View>
+        )}
 
         {/* Event header */}
         <View style={s.eventHeader}>
@@ -667,7 +692,7 @@ export default function EventDetailScreen() {
               </Pressable>
             ) : (
               <>
-                <Pressable style={s.mutedBtn} onPress={() => router.push("/rider" as any)}>
+                <Pressable style={s.mutedBtn} onPress={() => router.push("/login" as any)}>
                   <Text style={[s.btnText, { color: colors.mutedForeground }]}>Sign in to Register</Text>
                 </Pressable>
                 <Text style={{ marginTop: 8, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
