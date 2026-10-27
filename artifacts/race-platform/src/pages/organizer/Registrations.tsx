@@ -313,8 +313,12 @@ export default function Registrations() {
     setBibCheckState("checking");
     const timer = setTimeout(() => {
       fetch(`/api/public/events/${eventId}/check-bib?bib=${encodeURIComponent(bib)}`)
-        .then(r => r.json())
-        .then(data => setBibCheckState(data.taken ? "taken" : "available"))
+        .then(r => {
+          // A failed check (rate limit, server error) must not read as "available".
+          if (!r.ok) throw new Error(`Bib check failed (HTTP ${r.status})`);
+          return r.json();
+        })
+        .then(data => setBibCheckState(data?.taken ? "taken" : "available"))
         .catch(() => setBibCheckState("idle"));
     }, 400);
     return () => clearTimeout(timer);

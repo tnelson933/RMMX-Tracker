@@ -9,7 +9,7 @@ import {
   useListReaders, useListEventReaderAssignments, useSetEventReaderAssignments,
   getListMotosQueryKey, getListCheckinsQueryKey, getListEnduroTimeChecksQueryKey,
   getListReadersQueryKey, getListEventReaderAssignmentsQueryKey, getListCheckpointArrivalsQueryKey,
-  getGetEnduroPenaltySummaryQueryKey,
+  getGetEnduroPenaltySummaryQueryKey, getGetEventQueryKey,
   type Moto,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -1660,7 +1660,7 @@ export default function EventSchedule() {
         onSuccess: () => {
           if (saveEventId !== currentEventIdRef.current) return;
           lastCommittedRef.current = newMs;
-          queryClient.invalidateQueries({ queryKey: ["getEvent", eventId] as any });
+          queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
           setMinLapSaveStatus('saved');
           minLapSavedTimer.current = setTimeout(() => {
             setMinLapSaveStatus('idle');

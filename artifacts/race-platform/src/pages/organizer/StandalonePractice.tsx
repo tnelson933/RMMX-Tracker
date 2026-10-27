@@ -72,6 +72,7 @@ export default function StandalonePractice() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [selectedClubId, setSelectedClubId] = useState<number | "">("");
   const [expandedRfids, setExpandedRfids] = useState<Set<string>>(new Set());
@@ -157,11 +158,18 @@ export default function StandalonePractice() {
   }, [selectedId]);
 
   async function createSession() {
+    // Same guards as the Create button, so Enter can't bypass them or double-submit.
+    if (creating || creatingRef.current) return;
     if (!newName.trim()) return;
+    if (!selectedVenue.trim()) {
+      toast({ title: "Select a venue first", variant: "destructive" });
+      return;
+    }
     if (isSuperAdmin && !selectedClubId) {
       toast({ title: "Select a club first", variant: "destructive" });
       return;
     }
+    creatingRef.current = true;
     setCreating(true);
     try {
       const res = await fetch("/api/practice", {
@@ -174,7 +182,10 @@ export default function StandalonePractice() {
           ...(isSuperAdmin && selectedClubId ? { clubId: selectedClubId } : {}),
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || `Request failed (HTTP ${res.status})`);
+      }
       const session: PracticeSession = await res.json();
       setSessions(prev => [session, ...prev]);
       setSelectedId(session.id);
@@ -182,9 +193,14 @@ export default function StandalonePractice() {
       setShowNewForm(false);
       setMobilePanel("board");
       toast({ title: "Practice session created" });
-    } catch {
-      toast({ title: "Failed to create session", variant: "destructive" });
+    } catch (err) {
+      toast({
+        title: "Failed to create session",
+        description: err instanceof Error && err.message ? err.message : undefined,
+        variant: "destructive",
+      });
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   }
@@ -334,7 +350,7 @@ export default function StandalonePractice() {
                 <Input
                   value={newName}
                   onChange={e => setNewName(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && newName.trim()) createSession(); if (e.key === "Escape") setShowNewForm(false); }}
+                  onKeyDown={e => { if (e.key === "Enter") createSession(); if (e.key === "Escape") setShowNewForm(false); }}
                   placeholder="Session name…"
                   className="h-8 text-sm bg-sidebar-accent border-sidebar-border text-white placeholder:text-sidebar-foreground/40 w-full"
                   autoFocus

@@ -398,16 +398,37 @@ function GarageCard({ riderId }: { riderId: number }) {
     }
   }
 
+  const [pendingBikeId, setPendingBikeId] = useState<number | null>(null);
+  const [bikeError, setBikeError] = useState<string | null>(null);
+
   async function handleDelete(bikeId: number) {
-    await riderApi.deleteBike(riderId, bikeId);
-    queryClient.invalidateQueries({ queryKey: ["rider-bikes", riderId] });
-    queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
+    if (pendingBikeId !== null) return;
+    setPendingBikeId(bikeId);
+    setBikeError(null);
+    try {
+      await riderApi.deleteBike(riderId, bikeId);
+      queryClient.invalidateQueries({ queryKey: ["rider-bikes", riderId] });
+      queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
+    } catch (err) {
+      setBikeError(err instanceof Error && err.message ? err.message : "Failed to remove bike. Please try again.");
+    } finally {
+      setPendingBikeId(null);
+    }
   }
 
   async function handleSetDefault(bikeId: number) {
-    await riderApi.setDefaultBike(riderId, bikeId);
-    queryClient.invalidateQueries({ queryKey: ["rider-bikes", riderId] });
-    queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
+    if (pendingBikeId !== null) return;
+    setPendingBikeId(bikeId);
+    setBikeError(null);
+    try {
+      await riderApi.setDefaultBike(riderId, bikeId);
+      queryClient.invalidateQueries({ queryKey: ["rider-bikes", riderId] });
+      queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
+    } catch (err) {
+      setBikeError(err instanceof Error && err.message ? err.message : "Failed to set default bike. Please try again.");
+    } finally {
+      setPendingBikeId(null);
+    }
   }
 
   return (
@@ -429,6 +450,8 @@ function GarageCard({ riderId }: { riderId: number }) {
         <p className="text-sm text-muted-foreground italic">No bikes in your garage yet. Add one above.</p>
       )}
 
+      {bikeError && <p className="text-xs text-destructive">{bikeError}</p>}
+
       <div className="space-y-2">
         {(bikes as any[]).map((bike: any) => {
           const label = [bike.bikeYear, bike.bikeManufacturer, bike.bikeModel].filter(Boolean).join(" ") || "Unnamed bike";
@@ -439,7 +462,8 @@ function GarageCard({ riderId }: { riderId: number }) {
                 type="button"
                 title={bike.isDefault ? "Default bike" : "Set as default"}
                 onClick={() => !bike.isDefault && handleSetDefault(bike.id)}
-                className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${bike.isDefault ? "border-primary bg-primary" : "border-muted-foreground/40 hover:border-primary"}`}
+                disabled={pendingBikeId !== null}
+                className={`flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${bike.isDefault ? "border-primary bg-primary" : "border-muted-foreground/40 hover:border-primary"}`}
               >
                 {bike.isDefault && <Check size={11} strokeWidth={3} className="text-white" />}
               </button>
@@ -455,8 +479,10 @@ function GarageCard({ riderId }: { riderId: number }) {
                 variant="ghost"
                 className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                 onClick={() => handleDelete(bike.id)}
+                disabled={pendingBikeId !== null}
+                title="Remove bike"
               >
-                <X size={13} />
+                {pendingBikeId === bike.id ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
               </Button>
             </div>
           );
@@ -1357,7 +1383,12 @@ function NearMeTab({ riderEmail }: { riderEmail?: string | null }) {
 
   const { data: rawEvents = [], isLoading } = useQuery<UpcomingEvent[]>({
     queryKey: ["public-upcoming-nearbytab"],
-    queryFn: () => fetch("/api/public/upcoming").then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch("/api/public/upcoming");
+      if (!r.ok) throw new Error(`Failed to load upcoming events (HTTP ${r.status})`);
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    },
     staleTime: 5 * 60_000,
   } as any);
 
@@ -2289,8 +2320,13 @@ export default function RiderHistory() {
   const searchStr = useSearch();
   const tabParam = new URLSearchParams(searchStr).get("tab");
   const validTabs = ["today", "upcoming", "nearby", "races", "practice", "profile"] as const;
-  const initialTab = validTabs.includes(tabParam as any) ? (tabParam as typeof validTabs[number]) : "today";
+  const hasExplicitTab = validTabs.includes(tabParam as any);
+  const initialTab = hasExplicitTab ? (tabParam as typeof validTabs[number]) : "today";
   const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(initialTab);
+  // Follow ?tab= changes while the page stays mounted (e.g. in-app deep links).
+  useEffect(() => {
+    if (hasExplicitTab) setActiveTab(tabParam as typeof validTabs[number]);
+  }, [tabParam]);
   const [practiceMode, setPracticeMode] = useState<"event" | "open">("event");
   const [practiceVenueFilter, setPracticeVenueFilter] = useState<string | null>(null);
   const [cancelModal, setCancelModal] = useState<{
@@ -2369,11 +2405,13 @@ export default function RiderHistory() {
     (!e.eventDate || e.eventDate.substring(0, 10) !== _todayStr)
   );
 
-  // Auto-switch tab based on what the rider has scheduled
+  // Auto-switch tab based on what the rider has scheduled, unless the URL
+  // asked for a specific tab with ?tab=.
   const didAutoTab = useRef(false);
   useEffect(() => {
     if (!scheduleLoading && scheduleData && !didAutoTab.current) {
       didAutoTab.current = true;
+      if (hasExplicitTab) return;
       if (todayEvents.length > 0) {
         setActiveTab("today");
       } else if (upcomingEvents.length > 0) {

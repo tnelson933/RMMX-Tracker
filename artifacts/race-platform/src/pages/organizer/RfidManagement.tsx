@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tag, Plus, Search, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function RfidManagement() {
   const queryClient = useQueryClient();
@@ -20,7 +21,10 @@ export default function RfidManagement() {
   const [rfidInput, setRfidInput] = useState("");
   const [filterEventId, setFilterEventId] = useState<string>("all");
 
-  const { data: events } = useListEvents({}, { query: {} as any });
+  // Super-admin sees all events; organizers and staff see their own club's
+  const { user } = useAuth();
+  const sessionClubId = user?.role === "super_admin" ? undefined : user?.clubId ?? undefined;
+  const { data: events } = useListEvents({ clubId: sessionClubId }, { query: {} as any });
   const selectedEvent = events?.find(e => e.id.toString() === filterEventId);
   const hasEventFilter = filterEventId !== "all";
   const tech = ((selectedEvent as any)?.timingTechnology ?? "rfid") as "rfid" | "active_transponder";

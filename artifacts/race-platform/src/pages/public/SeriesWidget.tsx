@@ -123,10 +123,11 @@ export default function SeriesWidget() {
   useEffect(() => {
     if (!seriesId) return;
     Promise.all([
-      fetch(`/api/public/series/${seriesId}`).then(r => r.json()),
-      fetch(`/api/public/series/${seriesId}/standings`).then(r => r.json()),
+      fetch(`/api/public/series/${seriesId}`).then(r => (r.ok ? r.json() : null)),
+      fetch(`/api/public/series/${seriesId}/standings`).then(r => (r.ok ? r.json() : [])),
     ]).then(([info, stands]) => {
-      setSeries(info);
+      // A failed series lookup leaves `series` null so the not-found state renders.
+      setSeries(info && Array.isArray(info.events) ? info : null);
       setStandings(Array.isArray(stands) ? stands : []);
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -142,8 +143,8 @@ export default function SeriesWidget() {
     const doFetch = (showLoader = false) => {
       if (showLoader) setEventLoading(true);
       return Promise.all([
-        fetch(`/api/events/${selectedEventId}/results`).then(r => r.json()),
-        fetch(`/api/events/${selectedEventId}/motos`).then(r => r.json()),
+        fetch(`/api/events/${selectedEventId}/results`).then(r => (r.ok ? r.json() : [])),
+        fetch(`/api/events/${selectedEventId}/motos`).then(r => (r.ok ? r.json() : [])),
         fetch(`/api/events/${selectedEventId}`).then(r => r.ok ? r.json() : null),
       ]).then(([results, motos, event]) => {
         setEventResults(Array.isArray(results) ? results : []);

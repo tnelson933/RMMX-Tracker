@@ -12,8 +12,8 @@ import {
   Clock, Award, Radio, CheckCircle, AlertCircle, Activity,
   ChevronDown, ChevronUp, Users, Timer, Zap, ZoomIn, X as XIcon,
 } from "lucide-react";
-import { format, parseISO, isToday } from "date-fns";
-import { formatEventDatesFull } from "@/lib/eventDates";
+import { format, parseISO } from "date-fns";
+import { formatEventDatesFull, isEventOnLocalDate } from "@/lib/eventDates";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -370,12 +370,12 @@ export default function EventResults() {
   const params = useParams();
   const eventId = parseInt(params.eventId || "0");
 
-  const isLiveDay = (date: string, status: string) =>
-    isToday(new Date(date)) || status === "race_day";
+  const isLiveDay = (date: string, endDate: string | null | undefined, status: string) =>
+    isEventOnLocalDate(date, endDate) || status === "race_day";
 
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
 
-  const liveMode = !!(event && isLiveDay(event.date, event.status));
+  const liveMode = !!(event && isLiveDay(event.date, (event as any).endDate, event.status));
   const isEnduroEvent = (event as any)?.raceStyle === "enduro";
 
   const { data: results, isLoading: resultsLoading } = useListResults(eventId, {

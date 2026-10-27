@@ -263,7 +263,10 @@ function useStripeConnectStatus() {
     queryKey: ["stripe-connect-status"],
     queryFn: async () => {
       const res = await fetch("/api/stripe/connect/status", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch Stripe Connect status");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || `Failed to fetch Stripe Connect status (HTTP ${res.status})`);
+      }
       return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null }>;
     },
   });
@@ -279,7 +282,7 @@ export default function StripeConnect() {
   const [justConnected, setJustConnected] = useState(false);
   const [stripeEmail, setStripeEmail] = useState("");
 
-  const { data: status, isLoading, refetch } = useStripeConnectStatus();
+  const { data: status, isLoading, isError, error: statusError, isFetching, refetch } = useStripeConnectStatus();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -396,6 +399,28 @@ export default function StripeConnect() {
         <Card>
           <CardContent className="flex items-center justify-center h-40">
             <Loader2 className="animate-spin text-muted-foreground" size={28} />
+          </CardContent>
+        </Card>
+      ) : isError ? (
+        <Card className="border-destructive/30">
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+            <AlertCircle className="text-destructive" size={28} />
+            <div>
+              <p className="font-heading font-bold uppercase">Couldn&apos;t check your Stripe connection</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {statusError instanceof Error ? statusError.message : "The payment status request failed."}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="font-heading uppercase tracking-wider"
+            >
+              {isFetching ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <RefreshCw size={14} className="mr-1.5" />}
+              Try Again
+            </Button>
           </CardContent>
         </Card>
       ) : !status?.connected ? (

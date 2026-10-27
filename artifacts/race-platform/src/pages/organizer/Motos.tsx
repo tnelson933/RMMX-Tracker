@@ -6,7 +6,7 @@ import {
   useListMotos, useGenerateLineups, useGenerateMotoLineup, useUpdateMoto, useDeleteMoto,
   useGetEvent, useListCheckins, useCreateMoto, useListPointsTables,
   useUpdateResultLaps, useListResults, useGeneratePracticeSessions, useGetEnduroPenaltySummary,
-  getListMotosQueryKey, getListCheckinsQueryKey, Moto, updateMoto, useLinkStagger,
+  getListMotosQueryKey, getListCheckinsQueryKey, getListResultsQueryKey, Moto, updateMoto, useLinkStagger,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -856,7 +856,10 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
   useEffect(() => {
     setLoading(true);
     fetch(`/api/events/${target.eventId}/results`)
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((results: any[]) => {
         const match = results.find((r: any) => r.motoId === target.motoId && r.riderId === target.riderId);
         if (match) {
@@ -891,7 +894,7 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
       {
         onSuccess: () => {
           toast({ title: "Lap times saved", description: `${lapMs.length} laps for ${target.riderName}` });
-          queryClient.invalidateQueries({ queryKey: ["listResults", target.eventId] as any });
+          queryClient.invalidateQueries({ queryKey: getListResultsQueryKey(target.eventId) });
           onClose();
         },
         onError: (err: any) => {

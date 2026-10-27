@@ -113,6 +113,10 @@ export default function EventLayout() {
             <Route path="/events/:eventId/report" component={Report} />
             <Route path="/events/:eventId/cancellations" component={Cancellations} />
             <Route path="/events/:eventId/transponder-rentals" component={TransponderRentals} />
+            {/* Unknown event sub-route: send back to the event overview instead of a blank pane. */}
+            <Route>
+              <Redirect to={basePath} replace />
+            </Route>
           </Switch>
         </PageErrorBoundary>
       </div>

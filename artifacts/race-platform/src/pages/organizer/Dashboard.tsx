@@ -41,7 +41,7 @@ export default function Dashboard() {
   const { mutateAsync: updateMe } = useUpdateMe();
 
   // ── Logo upload ──────────────────────────────────────────────────────────
-  const LOGO_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"];
+  const LOGO_ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
   const LOGO_MAX_BYTES = 10 * 1024 * 1024;
   const [uploadState, setUploadState] = useState<"idle" | "processing" | "uploading" | "done" | "error">("idle");
   const [uploadErrorMsg, setUploadErrorMsg] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export default function Dashboard() {
     if (!file || !clubId) return;
     setUploadErrorMsg(null);
     if (!LOGO_ALLOWED_TYPES.includes(file.type)) {
-      setUploadErrorMsg(`"${file.type || file.name.split(".").pop()}" is not supported — please use a JPEG, PNG, GIF, WebP, or SVG file.`);
+      setUploadErrorMsg(`"${file.type || file.name.split(".").pop()}" is not supported — please use a JPEG, PNG, GIF, or WebP file.`);
       setUploadState("error");
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
@@ -418,7 +418,7 @@ export default function Dashboard() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+            accept="image/png,image/jpeg,image/jpg,image/webp"
             onChange={handleFileChange}
             className="hidden"
             id="logo-upload"
@@ -461,7 +461,7 @@ export default function Dashboard() {
                 <div className="space-y-3 text-center sm:text-left">
                   <div>
                     <h3 className="font-heading font-bold uppercase tracking-tight text-lg">No Club Logo</h3>
-                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG, SVG or WebP · Recommended square, at least 200×200px</p>
+                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG or WebP · Recommended square, at least 200×200px</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <label htmlFor="logo-upload" className="cursor-pointer">

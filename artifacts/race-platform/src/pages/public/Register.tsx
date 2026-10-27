@@ -370,7 +370,7 @@ export default function Register() {
           minorRiderName: liabilityWaiverSignerType === "guardian" ? liabilityWaiverMinorRiderName.trim() : null,
         }),
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Signing failed");
       setLiabilityWaiverSignatureId(json.signatureId);
       setLiabilityWaiverSignedAt(new Date().toISOString());
@@ -470,7 +470,7 @@ export default function Register() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code }),
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.valid) {
         setCompError(json.error || "Invalid discount code");
         setAppliedComp(null);
@@ -560,13 +560,18 @@ export default function Register() {
     const bib = (watchedBib ?? "").trim();
     if (!bib) { setBibCheckState("idle"); return; }
     setBibCheckState("checking");
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetch(`/api/public/events/${eventId}/check-bib?bib=${encodeURIComponent(bib)}`)
-        .then(r => r.json())
-        .then(data => setBibCheckState(data.taken ? "taken" : "available"))
-        .catch(() => setBibCheckState("idle"));
+      fetch(`/api/public/events/${eventId}/check-bib?bib=${encodeURIComponent(bib)}`, { signal: controller.signal })
+        .then(r => {
+          // A failed check (rate limit, server error) must not read as "available".
+          if (!r.ok) throw new Error(`Bib check failed (HTTP ${r.status})`);
+          return r.json();
+        })
+        .then(data => setBibCheckState(data?.taken ? "taken" : "available"))
+        .catch(() => { if (!controller.signal.aborted) setBibCheckState("idle"); });
     }, 400);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [watchedBib, eventId, event?.noDuplicateBibs]);
 
   // Handle return from Stripe — payment_success=1 or payment_cancelled=1 in URL
@@ -689,7 +694,7 @@ export default function Register() {
     // Fetch which classes this rider is already registered for at this event
     if (eventId && rider.id) {
       fetch(`/api/public/events/${eventId}/rider-classes?riderId=${rider.id}`)
-        .then(r => r.json())
+        .then(r => (r.ok ? r.json() : {}))
         .then((d: { registeredClasses?: string[] }) => {
           if (classesRequest !== riderClassesRequestRef.current) return;
           setAlreadyRegisteredClasses(new Set(d.registeredClasses ?? []));
@@ -767,7 +772,7 @@ export default function Register() {
           ...(selectedRiderId ? { riderId: selectedRiderId } : {}),
         }),
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Registration failed");
 
       if (json.requiresPayment && json.checkoutUrl) {

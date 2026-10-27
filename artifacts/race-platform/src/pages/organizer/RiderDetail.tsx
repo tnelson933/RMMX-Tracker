@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { useRoute, Link } from "wouter";
-import { useGetRider, useUpdateRider, useAssignRfid, useListDiscountCodes, getGetRiderQueryKey } from "@workspace/api-client-react";
+import { useGetRider, useUpdateRider, useAssignRfid, useListDiscountCodes, getGetRiderQueryKey, useGetRiderDiscountCode, getGetRiderDiscountCodeQueryKey } from "@workspace/api-client-react";
 import type { DiscountCode as DiscountCodeType } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ti
 import { format } from "date-fns";
 import { useGetMe } from "@workspace/api-client-react";
 import { PdfSignedViewer } from "@/components/PdfSignedViewer";
+import { useAuth } from "@/contexts/AuthContext";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -384,30 +385,26 @@ interface DiscountCodeLegacy {
 function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [code, setCode] = useState<DiscountCodeLegacy | null | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
+  const codeQueryKey = getGetRiderDiscountCodeQueryKey(clubId, riderId);
+  const {
+    data: codeData,
+    isLoading: loading,
+    isError: codeLoadFailed,
+    error: codeLoadError,
+    refetch: refetchCode,
+  } = useGetRiderDiscountCode(clubId, riderId, {
+    query: { queryKey: codeQueryKey, retry: false },
+  });
+  // The endpoint returns JSON null when no code is assigned.
+  const code: DiscountCodeLegacy | null = codeData ?? null;
+  const setCode = (next: DiscountCodeLegacy | null) => {
+    queryClient.setQueryData(codeQueryKey, next as DiscountCodeLegacy);
+  };
   const [copied, setCopied] = useState(false);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generateAmount, setGenerateAmount] = useState("");
   const [generating, setGenerating] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  const fetchCode = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/clubs/${clubId}/riders/${riderId}/discount-code`, { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setCode(data);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (code === undefined && !loading) {
-    fetchCode();
-  }
 
   const handleGenerate = async () => {
     const amount = parseFloat(generateAmount);
@@ -427,7 +424,7 @@ function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number
         setGenerateAmount("");
         toast({ title: "Discount code generated", description: `Code: ${data.code}` });
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         toast({ title: "Failed to generate code", description: err.error, variant: "destructive" });
       }
     } finally {
@@ -446,7 +443,7 @@ function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number
         setCode(null);
         toast({ title: "Discount code removed" });
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         toast({ title: "Failed to delete code", description: err.error, variant: "destructive" });
       }
     } finally {
@@ -474,9 +471,21 @@ function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number
           </CardTitle>
         </CardHeader>
         <CardContent className="p-6">
-          {loading || code === undefined ? (
+          {loading ? (
             <div className="flex items-center justify-center py-4">
               <Loader2 size={20} className="animate-spin text-muted-foreground" />
+            </div>
+          ) : codeLoadFailed ? (
+            <div className="space-y-3 text-center py-2">
+              <p className="text-sm text-destructive">
+                Couldn&apos;t load this rider&apos;s discount code.
+              </p>
+              {codeLoadError instanceof Error && (
+                <p className="text-xs text-muted-foreground">{codeLoadError.message}</p>
+              )}
+              <Button variant="outline" size="sm" className="font-heading uppercase" onClick={() => refetchCode()}>
+                Try Again
+              </Button>
             </div>
           ) : code && !isUsed ? (
             <div className="space-y-4">
@@ -695,6 +704,8 @@ export default function RiderDetail() {
   const r = rider as any;
   const clubId = (me as any)?.clubId;
   const isDesktop = typeof (window as any).electronAPI !== "undefined";
+  const { hasPermission } = useAuth();
+  const canManageDiscountCodes = hasPermission("discount_codes");
 
   const form = useForm<z.infer<typeof updateRiderSchema>>({
     resolver: zodResolver(updateRiderSchema),
@@ -1011,7 +1022,7 @@ export default function RiderDetail() {
           </Card>
 
           {/* Assigned Discount Codes — cloud-only feature */}
-          {!isDesktop && <RiderAssignedCodesSection riderId={riderId} />}
+          {!isDesktop && canManageDiscountCodes && <RiderAssignedCodesSection riderId={riderId} />}
 
           {/* Sponsors callout (read view) */}
           {!isEditing && r.sponsors && (
@@ -1155,7 +1166,7 @@ export default function RiderDetail() {
           </Card>
 
           {/* Discount Code — cloud-only feature */}
-          {!isDesktop && clubId && (
+          {!isDesktop && clubId && canManageDiscountCodes && (
             <DiscountCodeCard riderId={riderId} clubId={clubId} />
           )}
 

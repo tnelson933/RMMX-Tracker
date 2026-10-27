@@ -38,27 +38,59 @@ export default function Report() {
 
   const [desktopReport, setDesktopReport] = useState<DesktopReport | null>(null);
   const [desktopLoading, setDesktopLoading] = useState(false);
+  const [desktopError, setDesktopError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isDesktop || !eventId) return;
+    let cancelled = false;
     setDesktopLoading(true);
-    fetch(`/reports/event/${eventId}`)
-      .then(r => r.json())
-      .then(data => setDesktopReport(data))
-      .catch(() => setDesktopReport(null))
-      .finally(() => setDesktopLoading(false));
+    setDesktopError(null);
+    fetch(`/api/reports/event/${eventId}`)
+      .then(async r => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          throw new Error(body?.error || `Report request failed (HTTP ${r.status})`);
+        }
+        return r.json();
+      })
+      .then(data => { if (!cancelled) setDesktopReport(data); })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setDesktopReport(null);
+        setDesktopError(err instanceof Error ? err.message : "Couldn't load the event report.");
+      })
+      .finally(() => { if (!cancelled) setDesktopLoading(false); });
+    return () => { cancelled = true; };
   }, [isDesktop, eventId]);
 
-  const { data: summary, isLoading: summaryLoading } = useGetRaceDaySummary(eventId, {
+  const { data: summary, isLoading: summaryLoading, error: summaryError } = useGetRaceDaySummary(eventId, {
     query: { enabled: !!eventId && !isDesktop } as any,
   });
-  const { data: report, isLoading: reportLoading } = useGetEventReport(eventId, {
+  const { data: report, isLoading: reportLoading, error: reportError } = useGetEventReport(eventId, {
     query: { enabled: !!eventId && !isDesktop } as any,
   });
 
   const loading = isDesktop ? desktopLoading : (summaryLoading || reportLoading);
 
   if (loading) return <div className="p-8">Loading report data...</div>;
+
+  const loadError = isDesktop
+    ? (desktopError ?? (desktopReport && !desktopReport.data ? "The report response was empty." : null))
+    : ((reportError || summaryError) as Error | null)?.message ?? null;
+
+  if (loadError) {
+    return (
+      <div className="p-8 max-w-5xl mx-auto">
+        <Card>
+          <CardContent className="p-8 text-center space-y-2">
+            <XCircle className="mx-auto text-destructive" size={32} />
+            <p className="font-heading font-bold uppercase tracking-wide">Couldn&apos;t load the event report</p>
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (isDesktop) {
     const d = desktopReport?.data;

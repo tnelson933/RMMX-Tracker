@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { ShieldOff, LayoutDashboard, CalendarDays, Users, Trophy, ListOrdered, CreditCard, Tag, Wifi, WifiOff, Timer } from "lucide-react";
+import { ShieldOff, LayoutDashboard, CalendarDays, Users, Trophy, ListOrdered, CreditCard, Tag, Wifi, WifiOff, Timer, Monitor } from "lucide-react";
 
 const PAGE_ICONS: Record<string, React.ElementType> = {
   dashboard: LayoutDashboard,
@@ -13,6 +13,7 @@ const PAGE_ICONS: Record<string, React.ElementType> = {
   discount_codes: Tag,
   reader_setup: Wifi,
   offline_mode: WifiOff,
+  gate_schedule: Monitor,
 };
 
 const PAGE_LABELS: Record<string, string> = {
@@ -26,6 +27,7 @@ const PAGE_LABELS: Record<string, string> = {
   discount_codes: "Discount Codes",
   reader_setup: "Reader Setup",
   offline_mode: "Offline Mode",
+  gate_schedule: "Race Day Display",
 };
 
 const PAGE_HREFS: Record<string, string> = {
@@ -39,12 +41,15 @@ const PAGE_HREFS: Record<string, string> = {
   discount_codes: "/discount-codes",
   reader_setup: "/rfid/setup",
   offline_mode: "/offline-mode",
+  gate_schedule: "/race-day-display",
 };
 
 export default function NoAccessPage() {
   const { user, permissions } = useAuth();
 
-  const portalPerms = permissions.filter((p) => p !== "gate_schedule");
+  // Only list pages we know how to link to; gate_schedule staff land on the
+  // Race Day Display.
+  const portalPerms = permissions.filter((p) => p in PAGE_HREFS);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
