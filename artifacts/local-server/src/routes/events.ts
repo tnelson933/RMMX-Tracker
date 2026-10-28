@@ -19,7 +19,9 @@ function computeAutoStatus(event: any): string | null {
   } else {
     correct = "draft";
   }
-  if (correct === "registration_closed") {
+  // Registration is over once the event date arrives, whether or not a close
+  // date was set (matches the cloud API's event status rules).
+  if (correct !== "draft") {
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
     if (eventDateStr && eventDateStr <= todayStr) correct = "race_day";

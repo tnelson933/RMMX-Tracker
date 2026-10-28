@@ -4,6 +4,7 @@ import { logger } from "./lib/logger";
 import { attachVideoWebSocket } from "./lib/videoRelay";
 import { attachConnectorWebSocket } from "./lib/connectorRelay";
 import { normalizeEventStates } from "./normalizeStateMigration";
+import { startEventStatusSweeper } from "./lib/eventStatus";
 
 const rawPort = process.env["PORT"];
 
@@ -31,4 +32,6 @@ httpServer.listen(port, (err?: Error) => {
 
   logger.info({ port }, "Server listening");
   normalizeEventStates().catch(err => logger.error({ err }, "normalizeEventStates failed"));
+  // Close registration and advance event statuses on schedule, not only when a page is opened.
+  startEventStatusSweeper();
 });

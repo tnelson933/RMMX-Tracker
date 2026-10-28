@@ -1,3 +1,4 @@
+import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable, raceResultsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
@@ -1208,7 +1209,9 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       return res.status(400).json({ error: "No waiver configured for this event's club" });
     }
   }
-  if (events[0].status !== "registration_open") {
+  // The date check backs up the status sweep: never take a rider registration
+  // on or after the event date, even if the status hasn't been advanced yet.
+  if (events[0].status !== "registration_open" || eventDateReached(events[0])) {
     return res.status(409).json({ error: "Registration is not currently open for this event" });
   }
   const now = new Date();

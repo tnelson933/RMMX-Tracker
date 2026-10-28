@@ -1,3 +1,4 @@
+import { advanceEventStatuses } from "../lib/eventStatus";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable, lapCrossingsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
@@ -347,50 +348,7 @@ router.get("/public/states", async (req, res) => {
   return res.json(stateData.map(s => ({ state: s.state, eventCount: s.count })));
 });
 
-// ── Status auto-advancement helpers (mirrors events.ts) ──────────────────────
-function _computeAutoStatus(event: { id: number; date: string; endDate?: string | null; status: string; registrationOpen: string | null; registrationClose: string | null }): string | null {
-  const now = new Date();
-  const { status, registrationOpen, registrationClose } = event;
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-  // Auto-complete race_day events whose last day has already passed
-  if (status === "race_day") {
-    const lastDayStr = event.endDate ? String(event.endDate).substring(0, 10) : (event.date ? String(event.date).substring(0, 10) : null);
-    if (lastDayStr && lastDayStr < todayStr) return "completed";
-    return null;
-  }
-
-  if (status === "draft") {
-    if (registrationOpen && now >= new Date(registrationOpen)) return "registration_open";
-  }
-  if (status === "registration_open") {
-    if (registrationClose && now >= new Date(registrationClose)) return "registration_closed";
-  }
-  if (status === "registration_closed") {
-    const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
-    const lastDayStr = event.endDate ? String(event.endDate).substring(0, 10) : eventDateStr;
-    // Past → completed; today → race_day
-    if (lastDayStr && lastDayStr < todayStr) return "completed";
-    if (eventDateStr && eventDateStr <= todayStr) return "race_day";
-  }
-  return null;
-}
-
-async function _advanceStatuses(events: Array<{ id: number; date: string; endDate?: string | null; status: string; registrationOpen: string | null; registrationClose: string | null }>): Promise<Map<number, string>> {
-  const updates = new Map<number, string>();
-  for (const e of events) {
-    const next = _computeAutoStatus(e);
-    if (next) updates.set(e.id, next);
-  }
-  if (updates.size > 0) {
-    await Promise.all(
-      [...updates.entries()].map(([id, status]) =>
-        db.update(eventsTable).set({ status }).where(eq(eventsTable.id, id))
-      )
-    );
-  }
-  return updates;
-}
+const _advanceStatuses = advanceEventStatuses;
 
 router.get("/public/upcoming", async (req, res) => {
   // Fetch including registration window fields needed for status auto-advancement.

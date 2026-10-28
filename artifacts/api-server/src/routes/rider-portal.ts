@@ -1,3 +1,4 @@
+import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { randomBytes, randomUUID } from "crypto";
@@ -592,10 +593,10 @@ router.patch("/rider/events/:eventId/my-registrations/:regId", requireRiderAuth,
   }
   if (reg.status === "void") return res.status(400).json({ error: "Registration is void" });
 
-  const [event] = await db.select({ status: eventsTable.status, raceClasses: eventsTable.raceClasses })
+  const [event] = await db.select({ status: eventsTable.status, raceClasses: eventsTable.raceClasses, date: eventsTable.date })
     .from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event) return res.status(404).json({ error: "Event not found" });
-  if (event.status !== "registration_open") {
+  if (event.status !== "registration_open" || eventDateReached(event)) {
     return res.status(409).json({ error: "Class changes are only allowed while registration is open" });
   }
 

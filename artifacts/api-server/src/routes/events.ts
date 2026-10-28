@@ -1,3 +1,4 @@
+import { advanceEventStatuses, todayInMountainTime } from "../lib/eventStatus";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable, enduroTimeChecksTable, enduroCheckpointArrivalsTable, eventReaderAssignmentsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
@@ -18,44 +19,13 @@ function getStaffClubId(res: Response): number | null {
 
 type EventRow = { id: number; date: string; endDate?: string | null; status: string; registrationOpen: string | null; registrationClose: string | null };
 
-function computeAutoStatus(event: EventRow): string | null {
-  const now = new Date();
-  const { status, registrationOpen, registrationClose } = event;
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-  // Never regress from completed
-  if (status === "completed") return null;
-
-  // Auto-complete race_day events whose last day has already passed
-  if (status === "race_day") {
-    const lastDayStr = event.endDate ? String(event.endDate).substring(0, 10) : (event.date ? String(event.date).substring(0, 10) : null);
-    if (lastDayStr && lastDayStr < todayStr) return "completed";
-    return null;
-  }
-
-  // If today is on or after the event start date, jump straight to race_day.
-  // An event on race day should never stay stuck in registration_open/closed.
-  const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
-  if (eventDateStr && eventDateStr <= todayStr) return "race_day";
-
-  // Pre-race: manage the registration window
-  if (status === "draft") {
-    if (registrationOpen && now >= new Date(registrationOpen)) return "registration_open";
-  }
-  if (status === "registration_open") {
-    if (registrationClose && now >= new Date(registrationClose)) return "registration_closed";
-  }
-
-  return null;
-}
-
 // Recompute the correct status from scratch based on date + registration window.
 function computeCorrectStatus(event: EventRow): string | null {
   const { status, registrationOpen, registrationClose } = event;
   if (!["draft", "registration_open", "registration_closed", "race_day"].includes(status)) return null;
 
   const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayStr = todayInMountainTime(now);
   const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
   const lastDayStr = event.endDate ? String(event.endDate).substring(0, 10) : eventDateStr;
 
@@ -79,22 +49,7 @@ function computeCorrectStatus(event: EventRow): string | null {
   return correct !== status ? correct : null;
 }
 
-async function advanceStatuses(events: EventRow[]): Promise<Map<number, string>> {
-  const updates = new Map<number, string>();
-  for (const e of events) {
-    const next = computeAutoStatus(e);
-    if (next) updates.set(e.id, next);
-  }
-  if (updates.size > 0) {
-    const ids = [...updates.keys()];
-    await Promise.all(
-      ids.map((id) =>
-        db.update(eventsTable).set({ status: updates.get(id)! }).where(eq(eventsTable.id, id))
-      )
-    );
-  }
-  return updates;
-}
+const advanceStatuses = advanceEventStatuses;
 
 router.get("/events", async (req, res) => {
   const { state, status } = req.query;

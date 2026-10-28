@@ -50,6 +50,8 @@ Events move through these statuses:
 
 To change status: open the event → **Overview** tab → **Edit** on the "Event Information" card → **Status** → **Save Changes**. Publishing results to the public is separate from the status: use **Publish to Web** on the Enter Results tab.
 
+**Automatic status changes** (checked every 10 minutes, Mountain time): an event opens when its Registration Window opens and closes when the window closes. On the event's start date registration closes automatically and the event moves to **Race Day**, even if no close date was set; the day after its last day it moves to **Completed**. Riders can't register online on or after the event date. Organizers can still add walk-up entries on the Registrations tab.
+
 To delete an event: Overview tab → **Delete Event** (top right).
 
 ---
